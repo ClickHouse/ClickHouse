@@ -9,11 +9,11 @@
 0
 64
 64
--- 34. a sibling index dropped by CLEAR COLUMN does not keep the column absent
+-- 34. a sibling index rebuilt by CLEAR COLUMN does not keep the column absent
 1
 1
 1
-1
+2
 1
 0
 0

@@ -415,9 +415,9 @@ static NameSet collectIndicesRebuiltByMutation(
 
         const auto & index_columns = index.expression->getRequiredColumns();
 
-        /// An index over a cleared column is dropped, and one over a column whose type changes is
-        /// rebuilt or dropped depending on the mode; only the two modes that refuse the `ALTER`
-        /// outright leave it alone, and then no part is written at all.
+        /// Neither an index over a cleared column nor one over a column whose type changes carries
+        /// its granules over; only the two modes that refuse the `ALTER` outright leave the latter
+        /// alone, and then no part is written at all.
         if (std::ranges::any_of(index_columns, [&](const auto & column) { return cleared_columns.contains(column); })
             || (std::ranges::any_of(index_columns, [&](const auto & column) { return type_changed_columns.contains(column); })
                 && (index_mode == AlterColumnSecondaryIndexMode::REBUILD

@@ -53,9 +53,9 @@ SELECT count() FROM t_sibling_modify_rebuilt WHERE c = '150' SETTINGS use_skip_i
 SELECT count() FROM t_sibling_modify_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_modify_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
-SELECT '-- 34. a sibling index dropped by CLEAR COLUMN does not keep the column absent';
--- Clearing a column drops every index over it, so `idx_old` keeps no granules at all and cannot
--- constrain what the part records.
+SELECT '-- 34. a sibling index rebuilt by CLEAR COLUMN does not keep the column absent';
+-- Clearing a column rebuilds every index over it from that column's default, so `idx_old` carries
+-- no granules over and cannot constrain what the part records.
 DROP TABLE IF EXISTS t_sibling_cleared;
 CREATE TABLE t_sibling_cleared (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
     g String, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
@@ -73,7 +73,7 @@ SYSTEM STOP MERGES t_sibling_cleared;
 SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase()
     AND table = 't_sibling_cleared' AND active AND column = 'c';
 SELECT count() = 64 FROM t_sibling_cleared WHERE g = '';
--- Only `idx_new` holds files: `idx_old` was dropped along with the column it reads.
+-- Both indices hold files: `idx_old` is rebuilt over the cleared column rather than dropped.
 SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase()
     AND table = 't_sibling_cleared';
 SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_cleared WHERE c = '150'
