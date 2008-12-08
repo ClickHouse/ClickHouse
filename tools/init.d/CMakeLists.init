@@ -1,0 +1,13 @@
+# В этом файле описаны действия для добавления init.d скрипта. Пока в разработке.
+
+# Данный файл нужно включать в CMakeLists.txt в каталоге каждого конкретного демона.
+# Пример использования:
+# set(SRCS)
+# INCLUDE( ${PROJECT_SOURCE_DIR}/CMakeLists.ssqls )
+
+macro (CREATE_INIT_SCRIPT initname daemonname)
+add_custom_command(OUTPUT ${initname} ${daemonname}
+    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${initname}
+    COMMENT "Building ${initname}"
+)
+endmacro (CREATE_INIT_SCRIPT)
