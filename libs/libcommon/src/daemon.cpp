@@ -17,7 +17,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/SplitterChannel.h>
-//#include <Poco/LevelFilterChannel.h>
+#include <Poco/Ext/LevelFilterChannel.h>
 #include <Poco/FormattingChannel.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FileChannel.h>
@@ -129,8 +129,8 @@ void Daemon::buildLoggers()
 			if( config().hasProperty("logger.errorlog") )
 			{
 				std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
-				//Poco::LevelFilterChannel *level = new Poco::LevelFilterChannel();
-				//level->setLevel(Message::PRIO_NOTICE);
+				Poco::LevelFilterChannel *level = new Poco::LevelFilterChannel();
+				level->setLevel(Message::PRIO_NOTICE);
 				PatternFormatter *pf = new PatternFormatter(format);
 				pf->setProperty("times", "local");
 				FormattingChannel *errorlog = new FormattingChannel(pf);
@@ -140,8 +140,8 @@ void Daemon::buildLoggers()
 				errorfile->setProperty("archive", "number");
 				errorfile->setProperty("purgeCount", config().getRawString("logger.count", "1"));
 				errorlog->setChannel(errorfile);
-				//level->setChannel(errorlog);
-				//split->addChannel(level);
+				level->setChannel(errorlog);
+				split->addChannel(level);
 				errorlog->open();
 			}
 
