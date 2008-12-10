@@ -1,13 +1,19 @@
 # В этом файле описаны действия для добавления init.d скрипта. Пока в разработке.
-
 # Данный файл нужно включать в CMakeLists.txt в каталоге каждого конкретного демона.
 # Пример использования:
-# set(SRCS)
-# INCLUDE( ${PROJECT_SOURCE_DIR}/CMakeLists.ssqls )
+# INCLUDE( ${PROJECT_SOURCE_DIR}/tools/init.d/CMakeLists.init )
+# CREATE_INIT_SCRIPT(divider Divider)
+# Будет создан init.d скрипт с названием divider для демона (бинарника) Divider
 
 macro (CREATE_INIT_SCRIPT initname daemonname)
-add_custom_command(OUTPUT ${initname} ${daemonname}
-    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${initname}
+add_custom_target(${initname}.target ALL
+    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${initname}
+    COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${initname}
     COMMENT "Building ${initname}"
+)
+INSTALL(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/${initname}
+    DESTINATION /etc/init.d
+    PERMISSIONS OWNER_EXECUTE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
 )
 endmacro (CREATE_INIT_SCRIPT)
