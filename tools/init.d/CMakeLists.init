@@ -5,6 +5,17 @@
 # CREATE_INIT_SCRIPT(divider Divider)
 # Будет создан init.d скрипт с названием divider для демона (бинарника) Divider
 
+# NB Тут _не_ используется add_custom_command. Это делается только потому, что
+# если её использовать, то у cmake сносит крышу, и она начинает путать цели и файлы. А
+# именно, начинает ругаться, что нет файла divider.cpp и нельзя собрать divider.cpp.o.
+# Опытным путём было установлено, что эта ошибка возникает из-за совпадения названия (без учёта расширения)
+# 'divider.cpp' и добавляемой custom command 'divider' (тот который init.d скрипт). Было найдено два пути решения:
+# - писать add_executable (Divider ${CMAKE_CURRENT_SOURCE_DIR}/divider.cpp ${SRCS}), т.е. явно указать,
+# где искать файлы для сборки Divider
+# - переименовать init.d-скрипт
+# Оба варианта накладывают странные ограничения, поэтому, учитывая, что само создание init.d файла весьма
+# недорого, было принято решение не использовать add_custom_command
+
 macro (CREATE_INIT_SCRIPT initname daemonname)
 add_custom_target(${initname}.target ALL
     COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${initname}
