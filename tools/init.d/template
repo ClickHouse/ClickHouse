@@ -76,7 +76,7 @@ stop()
 	echo -n "Stop $PROGRAM service: "
 
 	if isrun; then
-		kill -9 `cat "$PIDFILE"`
+		kill -INT `cat "$PIDFILE"`
 		wait4done
 		rm -f "$LOCKFILE"
 	fi
