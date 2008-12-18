@@ -71,7 +71,7 @@ start()
 stop()
 {
 	local EXIT_STATUS
-	EXITS_STATUS=0
+	EXIT_STATUS=0
 
 	echo -n "Stop $PROGRAM service: "
 
