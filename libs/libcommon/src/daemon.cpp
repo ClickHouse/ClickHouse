@@ -25,6 +25,7 @@
 #include <Poco/Message.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Ext/MProfile.h>
+#include <Poco/Exception.h>
 
 
 #include "revision.h"
@@ -54,11 +55,15 @@ void Daemon::reloadConfiguration()
 		if( config().hasProperty("logger.log") && !config().hasProperty("logger.console") )
 		{
 			std::string path = Yandex::mkdir( config().getString("logger.log") );
-			if(config().getBool("application.runAsDaemon", false)) chdir(path.c_str());
+			if (config().getBool("application.runAsDaemon", false)
+				&& chdir(path.c_str()) != 0)
+				throw Poco::Exception("Cannot change directory to " + path);
 		}
 		else
 		{
-			if(config().getBool("application.runAsDaemon", false)) chdir("/tmp");
+			if (config().getBool("application.runAsDaemon", false)
+				&& chdir("/tmp") != 0)
+				throw Poco::Exception("Cannot change directory to /tmp");
 		}
 		
 		buildLoggers();
