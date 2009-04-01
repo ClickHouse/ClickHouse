@@ -5,6 +5,7 @@
 #include <Yandex/Exception.h>
 #include <Yandex/logger_useful.h>
 #include <Yandex/mkdir.h>
+#include <Yandex/KillingErrorHandler.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -26,6 +27,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Ext/MProfile.h>
 #include <Poco/Exception.h>
+#include <Poco/ErrorHandler.h>
 
 
 #include "revision.h"
@@ -219,6 +221,9 @@ void Daemon::initialize(Application& self)
 
 	// Считаем конфигурацию
 	reloadConfiguration();
+
+	// Ставим ErrorHandler для потоков
+	Poco::ErrorHandler::set(new Yandex::KillingErrorHandler());
 	
 	// Выведем ревизию демона
 	Logger::root().information("Starting daemon with svn revision " + Yandex::to_string(SVN_REVISION));
