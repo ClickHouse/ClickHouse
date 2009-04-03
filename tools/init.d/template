@@ -15,6 +15,7 @@ PIDDIR=/var/run/$PROGRAM
 LOGDIR=/var/log/$PROGRAM
 LOCALSTATEDIR=/var/lock
 BINDIR=/usr/bin
+CRONFILE=/etc/cron.d/@CRONFILE@
 
 [ -x $BINDIR/$PROGRAM ] || exit 0
 
@@ -91,14 +92,24 @@ restart()
 	start
 }
 
+enable_cron()
+{
+	sed -i 's/^#*//' "$CRONFILE"
+}
+
+disable_cron()
+{
+	sed -i 's/^#*/#/' "$CRONFILE"
+}
+
 # See how we were called.
 EXIT_STATUS=0
 case "$1" in
 	start)
-		start
+		enable_cron && start
 		;;
 	stop)
-		stop
+		disable_cron && stop
 		;;
 	status)
 		isrun && echo "$PROGRAM service is running" || echo "$PROGRAM service is stopped"

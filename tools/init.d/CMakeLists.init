@@ -19,6 +19,7 @@
 macro (CREATE_INIT_SCRIPT initname daemonname)
 add_custom_target(${initname}.target ALL
     COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${initname}
+    COMMAND sed -i 's,[@]CRONFILE[@],${initname}-metrica-yandex,g' ${CMAKE_CURRENT_BINARY_DIR}/${initname}
     COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${initname}
     COMMENT "Building ${initname}"
 )
