@@ -106,7 +106,7 @@ disable_cron()
 EXIT_STATUS=0
 case "$1" in
 	start)
-		enable_cron && start
+		start && enable_cron
 		;;
 	stop)
 		disable_cron && stop
