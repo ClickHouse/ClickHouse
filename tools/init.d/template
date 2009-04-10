@@ -115,7 +115,7 @@ case "$1" in
 		isrun && echo "$PROGRAM service is running" || echo "$PROGRAM service is stopped"
 		;;
 	restart)
-		restart
+		restart && enable_cron
 		;;
 	reload)
 		restart
