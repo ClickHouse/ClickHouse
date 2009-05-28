@@ -6,14 +6,14 @@ namespace Yandex
 {
 	DateLUT::DateLUT()
 	{
-		time_t t, next_t;
-		for (t = Yandex::Time2Date(DATE_LUT_MIN); t <= DATE_LUT_MAX; t = next_t)
+		/** Дополнительный вызов Time2Date для случая, когда в 1981-1984 году в России,
+		  * 1 апреля начиналось в час ночи, не в полночь.
+		  */
+		for (time_t t = Yandex::Time2Date(DATE_LUT_MIN);
+			t <= DATE_LUT_MAX;
+			t = Yandex::Time2Date(Yandex::TimeDayShift(t)))
 		{
-			/** Дополнительный вызов Time2Date для случая, когда в 1981-1984 году в России,
-			  * 1 апреля начиналось в час ночи, не в полночь.
-			  */
-			next_t = Yandex::Time2Date(Yandex::TimeDayShift(t));
-			Values & values = lut[next_t];
+			Values values;
 
 			struct tm tm;
 			localtime_r(&t, &tm);
@@ -29,12 +29,8 @@ namespace Yandex
         	tm.tm_isdst = -1;
 	
 			values.date = mktime(&tm);
+
+			lut.push_back(values);
 		}
 	}
-
-	time_t 		DateLUT::toDate(time_t t) 		const {	return lut.upper_bound(t)->second.date; }
-	unsigned 	DateLUT::toMonth(time_t t) 		const {	return lut.upper_bound(t)->second.month; }
-	unsigned 	DateLUT::toYear(time_t t) 		const {	return lut.upper_bound(t)->second.year; }
-	unsigned 	DateLUT::toDayOfWeek(time_t t) 	const {	return lut.upper_bound(t)->second.day_of_week; }
-	unsigned 	DateLUT::toDayOfMonth(time_t t) const {	return lut.upper_bound(t)->second.day_of_month; }
 }
