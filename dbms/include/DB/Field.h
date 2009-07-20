@@ -8,6 +8,7 @@
 
 #include <boost/variant.hpp>
 #include <boost/variant/recursive_variant.hpp>
+#include <boost/variant/static_visitor.hpp>
 
 #include <DB/Exception.h>
 #include <DB/ErrorCodes.h>
