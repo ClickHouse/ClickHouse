@@ -62,15 +62,12 @@ bool PrimaryKeyNoneTablePartReader::fetch(Row & row)
 	if (key.size() > pk->column_group->column_numbers.size())
 		throw Exception("Too many columns specified for key", ErrorCodes::TOO_MANY_COLUMNS_FOR_KEY);
 
+	row.resize(pk->column_group->column_numbers.size());
+
 	while (1)
 	{
 		for (size_t i = 0; i < pk->column_group->column_numbers.size(); ++i)
 			pk->table->columns->at(pk->column_group->column_numbers[i]).type->deserializeBinary(row[i], istr);
-
-		/// проверим, что ключи совпадают (замечание: столбцы ключа всегда идут первыми)
-		for (size_t i = 0; i < key.size(); ++i)
-			if (key[i] != row[i])
-				continue;
 
 		if (istr.eof())
 			return false;
@@ -78,6 +75,11 @@ bool PrimaryKeyNoneTablePartReader::fetch(Row & row)
 		if (istr.fail())
 			throw Exception("Cannot read data file " + pk->data_file_name
 				, ErrorCodes::CANT_READ_DATA_FILE);
+
+		/// проверим, что ключи совпадают (замечание: столбцы ключа всегда идут первыми)
+		for (size_t i = 0; i < key.size(); ++i)
+			if (key[i] != row[i])
+				continue;
 
 		return true;
 	}

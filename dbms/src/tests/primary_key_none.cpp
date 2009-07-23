@@ -46,6 +46,7 @@ int main(int argc, char ** argv)
 
 	/// создаём набор данных
 	DB::AggregatedRowSet data;
+	std::string text("http://www.google.com/custom?cof=LW%3A277%3BL%3Ahttp%3A%2F%2Fwww.boost.org%2Fboost.png%3BLH%3A86%3BAH%3Acenter%3BGL%3A0%3BS%3Ahttp%3A%2F%2Fwww.boost.org%3BAWFID%3A9b83d16ce652ed5a%3B&sa=Google+Search&domains=www.boost.org%3Blists.boost.org&hq=site%3Awww.boost.org+OR+site%3Alists.boost.org&q=boost%3A%3Ablank");
 	{
 		DB::Row key;
 		key.push_back(DB::Field(DB::UInt(0)));
@@ -56,11 +57,11 @@ int main(int argc, char ** argv)
 
 		stopwatch.restart();
 
-		for (int i = 0; i < 1000000; ++i)
+		for (DB::UInt i = 0; i < 1000000; ++i)
 		{
-			key[0] = DB::UInt(i);
-			key[1] = DB::UInt(i * 123456789 % 1000000);
-			key[2] = "http://www.google.com/custom?cof=LW%3A277%3BL%3Ahttp%3A%2F%2Fwww.boost.org%2Fboost.png%3BLH%3A86%3BAH%3Acenter%3BGL%3A0%3BS%3Ahttp%3A%2F%2Fwww.boost.org%3BAWFID%3A9b83d16ce652ed5a%3B&sa=Google+Search&domains=www.boost.org%3Blists.boost.org&hq=site%3Awww.boost.org+OR+site%3Alists.boost.org&q=boost%3A%3Ablank";
+			key[0] = i;
+			key[1] = i * 123456789 % 1000000;
+			key[2] = text;
 
 			data[key] = value;
 		}
@@ -79,6 +80,31 @@ int main(int argc, char ** argv)
 
 		stopwatch.stop();
 		std::cout << "Saving data: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+	}
+
+	/// читаем таблицу
+	DB::AggregatedRowSet data_read;
+	{
+		DB::Row key;
+		Poco::SharedPtr<DB::ITablePartReader> reader(column_group0.primary_key->read(key));
+		
+		stopwatch.restart();
+
+		DB::Row row;
+		DB::UInt i = 0;
+		while (reader->fetch(row))
+		{
+			if (boost::get<DB::UInt>(row[0]) != i
+				|| boost::get<DB::UInt>(row[1]) != i * 123456789 % 1000000
+				|| boost::get<DB::String>(row[2]) != text)
+				throw Poco::Exception("Incorrect data");
+			++i;
+		}
+		if (i != 1000000)
+			throw Poco::Exception("Number of rows doesn't match");
+
+		stopwatch.stop();
+		std::cout << "Reading data: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
 	}
 
 	return 0;

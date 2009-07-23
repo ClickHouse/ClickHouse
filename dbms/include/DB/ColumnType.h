@@ -112,7 +112,9 @@ public:
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
 		Poco::BinaryReader r(istr);
-		r >> boost::get<UInt>(field);
+		UInt x;
+		r >> x;
+		field = x;
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
@@ -122,7 +124,9 @@ public:
 
 	void deserializeText(DB::Field & field, std::istream & istr) const
 	{
-		istr >> boost::get<UInt>(field);
+		UInt x;
+		istr >> x;
+		field = x;
 	}
 };
 
@@ -144,7 +148,7 @@ public:
 		Poco::BinaryReader r(istr);
 		Poco::UInt32 x;
 		r >> x;
-		boost::get<UInt>(field) = x;
+		field = UInt(x);
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
@@ -156,7 +160,7 @@ public:
 	{
 		Poco::UInt32 x;
 		istr >> x;
-		boost::get<UInt>(field) = x;
+		field = UInt(x);
 	}
 };
 
@@ -176,7 +180,9 @@ public:
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
 		Poco::BinaryReader r(istr);
-		r >> boost::get<Int>(field);
+		Int x;
+		r >> x;
+		field = x;
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
@@ -186,7 +192,9 @@ public:
 
 	void deserializeText(DB::Field & field, std::istream & istr) const
 	{
-		istr >> boost::get<Int>(field);
+		Int x;
+		istr >> x;
+		field = x;
 	}
 };
 
@@ -208,7 +216,7 @@ public:
 		Poco::BinaryReader r(istr);
 		Poco::Int32 x;
 		r >> x;
-		boost::get<Int>(field) = x;
+		field = Int(x);
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
@@ -220,7 +228,7 @@ public:
 	{
 		Poco::Int32 x;
 		istr >> x;
-		boost::get<Int>(field) = x;
+		field = Int(x);
 	}
 };
 
@@ -238,7 +246,9 @@ public:
 
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
-		readVarUInt(boost::get<UInt>(field), istr);
+		UInt x;
+		readVarUInt(x, istr);
+		field = x;
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
@@ -248,7 +258,9 @@ public:
 
 	void deserializeText(DB::Field & field, std::istream & istr) const
 	{
-		istr >> boost::get<UInt>(field);
+		UInt x;
+		istr >> x;
+		field = x;
 	}
 };
 
@@ -266,7 +278,9 @@ public:
 
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
-		readVarInt(boost::get<Int>(field), istr);
+		Int x;
+		readVarInt(x, istr);
+		field = x;
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
@@ -276,7 +290,9 @@ public:
 
 	void deserializeText(DB::Field & field, std::istream & istr) const
 	{
-		istr >> boost::get<Int>(field);
+		Int x;
+		istr >> x;
+		field = x;
 	}
 };
 
@@ -296,10 +312,12 @@ public:
 
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
-		field = std::string("");
-		std::string & str = boost::get<String>(field);
+		field = String("");
+		String & str = boost::get<String>(field);
 		UInt size;
 		readVarUInt(size, istr);
+		if (!istr.good())
+			return;
 		str.resize(size);
 		/// непереносимо, но (действительно) быстрее
 		istr.read(const_cast<char*>(str.data()), size);
@@ -312,6 +330,7 @@ public:
 
 	void deserializeText(DB::Field & field, std::istream & istr) const
 	{
+		field = std::string("");
 		istr >> boost::get<String>(field);
 	}
 };
@@ -346,7 +365,7 @@ public:
 
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
-		field = std::string("");
+		field = String("");
 		std::string & str = boost::get<String>(field);
 		str.resize(size);
 		/// непереносимо, но (действительно) быстрее
@@ -360,6 +379,7 @@ public:
 
 	void deserializeText(DB::Field & field, std::istream & istr) const
 	{
+		field = String("");
 		istr >> boost::get<String>(field);
 	}
 };
@@ -392,9 +412,12 @@ public:
 
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
+		field = FieldVector();
 		FieldVector & vec = boost::get<FieldVector>(field);
 		UInt size;
 		readVarUInt(size, istr);
+		if (!istr.good())
+			return;
 		vec.resize(size);
 		for (UInt i(0); i < size; ++i)
 			nested_type->deserializeBinary(vec[i], istr);
@@ -453,6 +476,7 @@ public:
 
 	void deserializeBinary(DB::Field & field, std::istream & istr) const
 	{
+		field = FieldVector();
 		FieldVector & vec = boost::get<FieldVector>(field);
 		vec.resize(size);
 		for (UInt i(0); i < size; ++i)
