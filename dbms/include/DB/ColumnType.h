@@ -36,17 +36,19 @@ public:
 
 	/// Бинарная сериализация - для сохранения на диск / в сеть и т. п.
 	virtual void serializeBinary(const DB::Field & field, std::ostream & ostr) const = 0;
-	virtual void deserializeBinary(DB::Field & field, std::istream & ostr) const = 0;
+	virtual void deserializeBinary(DB::Field & field, std::istream & istr) const = 0;
 
 	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
 	  * Считается, что разделители, а также escape-инг обязан делать вызывающий.
 	  */
 	virtual void serializeText(const DB::Field & field, std::ostream & ostr) const = 0;
-	virtual void deserializeText(DB::Field & field, std::istream & ostr) const = 0;
+	virtual void deserializeText(DB::Field & field, std::istream & istr) const = 0;
 
 	/// Шаблонные методы для параметризуемого типа сериализации.
 	template <typename SerializationTag> void serialize(const DB::Field & field, std::ostream & ostr) const;
-	template <typename SerializationTag> void deserialize(DB::Field & field, std::istream & ostr) const;
+	template <typename SerializationTag> void deserialize(DB::Field & field, std::istream & istr) const;
+
+	virtual ~IColumnType() {}
 };
 
 
@@ -288,7 +290,7 @@ public:
 	void serializeBinary(const DB::Field & field, std::ostream & ostr) const
 	{
 		const std::string & str = boost::get<String>(field);
-		writeVarUInt(str.size(), ostr);
+		writeVarUInt(UInt(str.size()), ostr);
 		ostr << str;
 	}
 
@@ -335,7 +337,7 @@ public:
 	void serializeBinary(const DB::Field & field, std::ostream & ostr) const
 	{
 		const String & str = boost::get<String>(field);
-		if (str.size() != size)
+		if (UInt(str.size()) != size)
 			throw Exception("Incorrect size of value of type " + getName()
 				+ ": " + Poco::NumberFormatter::format(str.size()), ErrorCodes::INCORRECT_SIZE_OF_VALUE);
 				
@@ -383,8 +385,8 @@ public:
 	void serializeBinary(const DB::Field & field, std::ostream & ostr) const
 	{
 		const FieldVector & vec = boost::get<FieldVector>(field);
-		writeVarUInt(vec.size(), ostr);
-		for (UInt i = 0; i < vec.size(); ++i)
+		writeVarUInt(UInt(vec.size()), ostr);
+		for (UInt i(0); i < vec.size(); ++i)
 			nested_type->serializeBinary(vec[i], ostr);
 	}
 
@@ -394,14 +396,14 @@ public:
 		UInt size;
 		readVarUInt(size, istr);
 		vec.resize(size);
-		for (UInt i = 0; i < size; ++i)
+		for (UInt i(0); i < size; ++i)
 			nested_type->deserializeBinary(vec[i], istr);
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
 	{
 		const FieldVector & vec = boost::get<FieldVector>(field);
-		for (UInt i = 0; i < vec.size(); ++i)
+		for (UInt i(0); i < vec.size(); ++i)
 		{
 			std::stringstream stream;
 			nested_type->serializeText(vec[i], stream);
@@ -441,11 +443,11 @@ public:
 	{
 		const FieldVector & vec = boost::get<FieldVector>(field);
 
-		if (vec.size() != size)
+		if (UInt(vec.size()) != size)
 			throw Exception("Incorrect size of value of type " + getName()
 				+ ": " + Poco::NumberFormatter::format(vec.size()), ErrorCodes::INCORRECT_SIZE_OF_VALUE);
 				
-		for (UInt i = 0; i < size; ++i)
+		for (UInt i(0); i < size; ++i)
 			nested_type->serializeBinary(vec[i], ostr);
 	}
 
@@ -453,14 +455,14 @@ public:
 	{
 		FieldVector & vec = boost::get<FieldVector>(field);
 		vec.resize(size);
-		for (UInt i = 0; i < size; ++i)
+		for (UInt i(0); i < size; ++i)
 			nested_type->deserializeBinary(vec[i], istr);
 	}
 
 	void serializeText(const DB::Field & field, std::ostream & ostr) const
 	{
 		const FieldVector & vec = boost::get<FieldVector>(field);
-		for (UInt i = 0; i < size; ++i)
+		for (UInt i(0); i < size; ++i)
 		{
 			std::stringstream stream;
 			nested_type->serializeText(vec[i], stream);

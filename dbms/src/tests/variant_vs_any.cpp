@@ -66,6 +66,10 @@ public:
 		ostr << '}' << "," << std::endl;
 	}
 
+	void operator() (const DB::AggregateFunctionPtr & x) const
+	{
+	}
+
 private:
 	std::ostream & ostr;
 	unsigned indent;
@@ -75,14 +79,23 @@ private:
 class TimesTwoVisitor : public boost::static_visitor<>
 {
 public:
-	template <typename T> void operator() (T & x) const { x *= 2; }
+	void operator() (DB::Int & x) const { x *= 2; }
+	void operator() (DB::UInt & x) const { x *= 2; }
 
-	void operator() (DB::Null & x) const {}
-	void operator() (DB::String & x) const { x = ""; }
-	void operator() (DB::FieldVector & x) const
+	void operator() (const DB::String & x) const
 	{
-		TimesTwoVisitor visitor;
-		std::for_each(x.begin(), x.end(), boost::apply_visitor(visitor));
+	}
+
+	void operator() (const DB::Null & x) const
+	{
+	}
+
+	void operator() (const DB::FieldVector & x) const
+	{
+	}
+
+	void operator() (const DB::AggregateFunctionPtr & x) const
+	{
 	}
 };
 
