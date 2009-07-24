@@ -83,7 +83,6 @@ int main(int argc, char ** argv)
 	}
 
 	/// читаем таблицу
-	DB::AggregatedRowSet data_read;
 	{
 		DB::Row key;
 		Poco::SharedPtr<DB::ITablePartReader> reader(column_group0.primary_key->read(key));
