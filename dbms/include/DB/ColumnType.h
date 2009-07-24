@@ -44,57 +44,9 @@ public:
 	virtual void serializeText(const DB::Field & field, std::ostream & ostr) const = 0;
 	virtual void deserializeText(DB::Field & field, std::istream & istr) const = 0;
 
-	/// Шаблонные методы для параметризуемого типа сериализации.
-	template <typename SerializationTag> void serialize(const DB::Field & field, std::ostream & ostr) const;
-	template <typename SerializationTag> void deserialize(DB::Field & field, std::istream & istr) const;
-
 	virtual ~IColumnType() {}
 };
 
-
-struct BinarySerializationTag;
-struct TextSerializationTag;
-
-template <typename SerializationTag> struct SerializeImpl;
-
-template <typename SerializationTag>
-void IColumnType::serialize(const DB::Field & field, std::ostream & ostr) const
-{
-	SerializeImpl<SerializationTag>::serialize(this, field, ostr);
-}
-
-template <typename SerializationTag>
-void IColumnType::deserialize(DB::Field & field, std::istream & ostr) const
-{
-	SerializeImpl<SerializationTag>::deserialize(this, field, ostr);
-}
-
-
-template <> struct SerializeImpl<BinarySerializationTag>
-{
-	static inline void serialize(const IColumnType * column, const DB::Field & field, std::ostream & ostr)
-	{
-		column->serializeBinary(field, ostr);
-	}
-
-	static inline void deserialize(const IColumnType * column, DB::Field & field, std::istream & ostr)
-	{
-		column->deserializeBinary(field, ostr);
-	}
-};
-
-template <> struct SerializeImpl<TextSerializationTag>
-{
-	static inline void serialize(const IColumnType * column, const DB::Field & field, std::ostream & ostr)
-	{
-		column->serializeText(field, ostr);
-	}
-
-	static inline void deserialize(const IColumnType * column, DB::Field & field, std::istream & ostr)
-	{
-		column->deserializeText(field, ostr);
-	}
-};
 
 
 /** Аналог BIGINT UNSIGNED, сериализуется в набор байт фиксированной длины */

@@ -17,6 +17,9 @@ struct Column
 {
 	std::string name;
 	Poco::SharedPtr<IColumnType> type;
+
+	Column(const std::string & name_, Poco::SharedPtr<IColumnType> type_)
+		: name(name_), type(type_) {}
 };
 	
 }

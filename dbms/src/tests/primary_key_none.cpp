@@ -13,30 +13,57 @@ int main(int argc, char ** argv)
 	Poco::Stopwatch stopwatch;
 	
 	/// создаём таблицу
-	DB::Column column0;
-	column0.name = "ID";
-	column0.type = new DB::ColumnTypeVarUInt;
-
-	DB::Column column1;
-	column1.name = "PageViews";
-	column1.type = new DB::ColumnTypeVarUInt;
-
-	DB::Column column2;
-	column2.name = "URL";
-	column2.type = new DB::ColumnTypeText;
 
 	Poco::SharedPtr<DB::Table::Columns> columns = new DB::Table::Columns;
-	columns->push_back(column0);
-	columns->push_back(column1);
-	columns->push_back(column2);
+	
+	columns->push_back(DB::Column("WatchID", 			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("ChunkID", 			new DB::ColumnTypeUInt64));
+	columns->push_back(DB::Column("Random", 			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("JavaEnable", 		new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("FrameEnable", 		new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("Title", 				new DB::ColumnTypeText));
+	columns->push_back(DB::Column("GoodEvent", 			new DB::ColumnTypeVarInt));
+	columns->push_back(DB::Column("EventTime", 			new DB::ColumnTypeUInt32));
+	columns->push_back(DB::Column("CounterID", 			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("ClientIP", 			new DB::ColumnTypeUInt32));
+	columns->push_back(DB::Column("RegionID", 			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("UniqID", 			new DB::ColumnTypeUInt64));
+	columns->push_back(DB::Column("SessID", 			new DB::ColumnTypeUInt32));
+	columns->push_back(DB::Column("CounterClass",	 	new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("OS", 				new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("UserAgent", 			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("URL", 				new DB::ColumnTypeText));
+	columns->push_back(DB::Column("Referer", 			new DB::ColumnTypeText));
+	columns->push_back(DB::Column("Refresh", 			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("ResolutionWidth", 	new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("ResolutionHeight",	new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("ResolutionDepth", 	new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("FlashMajor",			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("FlashMinor",			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("FlashMinor2",		new DB::ColumnTypeText));
+	columns->push_back(DB::Column("NetMajor",			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("NetMinor",			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("UserAgentMajor",		new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("UserAgentMinor",		new DB::ColumnTypeFixedText(2)));
+	columns->push_back(DB::Column("CookieEnable",		new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("JavascriptEnable",	new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("IsMobile",			new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("MobilePhone",		new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("MobilePhoneModel",	new DB::ColumnTypeText));
+	columns->push_back(DB::Column("Params",				new DB::ColumnTypeText));
+	columns->push_back(DB::Column("IPNetworkID",		new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("TraficSourceID",		new DB::ColumnTypeVarInt));
+	columns->push_back(DB::Column("SearchEngineID",		new DB::ColumnTypeVarUInt));
+	columns->push_back(DB::Column("SearchPhrase",		new DB::ColumnTypeText));
+	columns->push_back(DB::Column("AdvEngineID",		new DB::ColumnTypeVarUInt));
 
 	Poco::SharedPtr<DB::Table::ColumnNumbers> primary_key_column_numbers = new DB::Table::ColumnNumbers;
 	primary_key_column_numbers->push_back(0);
 
 	DB::ColumnGroup column_group0;
-	column_group0.column_numbers.push_back(0);
-	column_group0.column_numbers.push_back(1);
-	column_group0.column_numbers.push_back(2);
+ 	for (size_t i = 0; i < columns->size(); ++i)
+		column_group0.column_numbers.push_back(i);
+
 	column_group0.primary_key = new DB::PrimaryKeyNone("./", "TestPrimaryKeyNone");
 
 	Poco::SharedPtr<DB::Table::ColumnGroups> column_groups = new DB::Table::ColumnGroups;
@@ -46,24 +73,57 @@ int main(int argc, char ** argv)
 
 	/// создаём набор данных
 	DB::AggregatedRowSet data;
-	std::string text("http://www.google.com/custom?cof=LW%3A277%3BL%3Ahttp%3A%2F%2Fwww.boost.org%2Fboost.png%3BLH%3A86%3BAH%3Acenter%3BGL%3A0%3BS%3Ahttp%3A%2F%2Fwww.boost.org%3BAWFID%3A9b83d16ce652ed5a%3B&sa=Google+Search&domains=www.boost.org%3Blists.boost.org&hq=site%3Awww.boost.org+OR+site%3Alists.boost.org&q=boost%3A%3Ablank");
+	DB::Row key;
+	DB::Row value;
+
+	key.push_back(DB::Field(DB::UInt(65765691660ULL)));
+	value.push_back(DB::Field(DB::UInt(20090724165002400ULL)));
+	value.push_back(DB::Field(DB::UInt(9154640)));
+	value.push_back(DB::Field(DB::UInt(1)));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::String("Китайские ученые перепрограммировали клетки и создали из них мышей. Иностранная пресса о событиях в ")));
+	value.push_back(DB::Field(DB::Int(1)));
+	value.push_back(DB::Field(DB::UInt(1248456711)));
+	value.push_back(DB::Field(DB::UInt(71551)));
+	value.push_back(DB::Field(DB::UInt(1220865079)));
+	value.push_back(DB::Field(DB::UInt(84)));
+	value.push_back(DB::Field(DB::UInt(5243575589842965681ULL)));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::UInt(1)));
+	value.push_back(DB::Field(DB::UInt(3)));
+	value.push_back(DB::Field(DB::UInt(5)));
+	value.push_back(DB::Field(DB::String("http://www.example.ru/wsj/2009/07/24/15:10:00/mouse")));
+	value.push_back(DB::Field(DB::String("http://www.example.com/")));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::UInt(1024)));
+	value.push_back(DB::Field(DB::UInt(768)));
+	value.push_back(DB::Field(DB::UInt(16)));
+	value.push_back(DB::Field(DB::UInt(10)));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::String("")));
+	value.push_back(DB::Field(DB::UInt(3)));
+	value.push_back(DB::Field(DB::UInt(5)));
+	value.push_back(DB::Field(DB::UInt(8)));
+	value.push_back(DB::Field(DB::String("0 ")));
+	value.push_back(DB::Field(DB::UInt(1)));
+	value.push_back(DB::Field(DB::UInt(1)));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::String("")));
+	value.push_back(DB::Field(DB::String("")));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::Int(1)));
+	value.push_back(DB::Field(DB::UInt(0)));
+	value.push_back(DB::Field(DB::String("")));
+	value.push_back(DB::Field(DB::UInt(0)));
+	
 	{
-		DB::Row key;
-		key.push_back(DB::Field(DB::UInt(0)));
-		key.push_back(DB::Field(DB::UInt(0)));
-		key.push_back(DB::Field(DB::String("")));
-
-		DB::Row value;
-
 		stopwatch.restart();
 
 		for (DB::UInt i = 0; i < 1000000; ++i)
 		{
-			key[0] = i;
-			key[1] = i * 123456789 % 1000000;
-			key[2] = text;
-
 			data[key] = value;
+			++boost::get<DB::UInt>(key[0]);
 		}
 
 		stopwatch.stop();
@@ -72,7 +132,7 @@ int main(int argc, char ** argv)
 
 	/// заполняем таблицу
 	{
-		DB::ColumnMask mask(3, true);
+		DB::ColumnMask mask(columns->size(), true);
 	
 		stopwatch.restart();
 
@@ -89,14 +149,10 @@ int main(int argc, char ** argv)
 		
 		stopwatch.restart();
 
-		DB::Row row;
 		DB::UInt i = 0;
+		DB::Row row;
 		while (reader->fetch(row))
 		{
-			if (boost::get<DB::UInt>(row[0]) != i
-				|| boost::get<DB::UInt>(row[1]) != i * 123456789 % 1000000
-				|| boost::get<DB::String>(row[2]) != text)
-				throw Poco::Exception("Incorrect data");
 			++i;
 		}
 		if (i != 1000000)
