@@ -2,13 +2,13 @@
 #include <Poco/FileStream.h>
 #include <Poco/BinaryWriter.h>
 
-#include <DB/PrimaryKeyPlain.h>
+#include <DB/StoragePlain.h>
 
 
 namespace DB
 {
 	
-PrimaryKeyPlain::PrimaryKeyPlain(const std::string & path_, const std::string & name_)
+StoragePlain::StoragePlain(const std::string & path_, const std::string & name_)
 	: path(path_),
 	name(name_),
 	data_file_name(path + name + ".dat"),
@@ -44,9 +44,9 @@ PrimaryKeyPlain::PrimaryKeyPlain(const std::string & path_, const std::string & 
 }
 
 
-void PrimaryKeyPlain::addToTable(Table * table_, ColumnGroup * column_group_)
+void StoragePlain::addToTable(Table * table_, ColumnGroup * column_group_)
 {
-	PrimaryKeyBase::addToTable(table_, column_group_);
+	StorageBase::addToTable(table_, column_group_);
 
 	/// прочитаем список смещений
 	Poco::FileInputStream offsets_istr(offsets_file_name);
@@ -77,7 +77,7 @@ void PrimaryKeyPlain::addToTable(Table * table_, ColumnGroup * column_group_)
 }
 
 
-void PrimaryKeyPlain::merge(const AggregatedRowSet & data, const ColumnMask & mask)
+void StoragePlain::merge(const AggregatedRowSet & data, const ColumnMask & mask)
 {
 /*	std::set<Row> keys;
 

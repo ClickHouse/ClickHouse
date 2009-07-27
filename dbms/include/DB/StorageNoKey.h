@@ -1,24 +1,24 @@
-#ifndef DBMS_PRIMARY_KEY_NONE_H
-#define DBMS_PRIMARY_KEY_NONE_H
+#ifndef DBMS_STORAGE_NO_KEY_H
+#define DBMS_STORAGE_NO_KEY_H
 
 #include <Poco/SharedPtr.h>
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
 
-#include <DB/PrimaryKey.h>
+#include <DB/Storage.h>
 #include <DB/TablePartReader.h>
 
 
 namespace DB
 {
 	
-/** Самый простой первичный ключ - ничего не индексирует;
+/** Самое простое хранилище - в нём первичный ключ ничего не индексирует;
   * для чтения или обновления приходится читать файл целиком.
   * - удобно для логов.
   */
-class PrimaryKeyNone : public PrimaryKeyBase
+class StorageNoKey : public StorageBase
 {
-friend class PrimaryKeyNoneTablePartReader;
+friend class StorageNoKeyTablePartReader;
 private:
 	std::string path;
 	std::string name;
@@ -28,7 +28,7 @@ private:
 
 public:
 	/** Путь со слешем на конце. */
-	PrimaryKeyNone(const std::string & path_, const std::string & name_);
+	StorageNoKey(const std::string & path_, const std::string & name_);
 
 	/** Просто дописывает данные в конец. */
 	void merge(const AggregatedRowSet & data, const ColumnMask & mask);
@@ -38,16 +38,16 @@ public:
 };
 
 
-class PrimaryKeyNoneTablePartReader : public ITablePartReader
+class StorageNoKeyTablePartReader : public ITablePartReader
 {
-friend class PrimaryKeyNone;
+friend class StorageNoKey;
 private:
 	const Row key;
-	/// слабый указатель на первичный ключ
-	PrimaryKeyNone * pk;
+	/// слабый указатель на хранилище
+	StorageNoKey * pk;
 	Poco::FileInputStream istr;
 
-	PrimaryKeyNoneTablePartReader(const Row & key_, PrimaryKeyNone * pk_);
+	StorageNoKeyTablePartReader(const Row & key_, StorageNoKey * pk_);
 
 public:
 	bool fetch(Row & row);

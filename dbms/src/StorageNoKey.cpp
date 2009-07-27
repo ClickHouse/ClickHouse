@@ -3,13 +3,13 @@
 #include <DB/Table.h>
 #include <DB/ColumnGroup.h>
 
-#include <DB/PrimaryKeyNone.h>
+#include <DB/StorageNoKey.h>
 
 
 namespace DB
 {
 	
-PrimaryKeyNone::PrimaryKeyNone(const std::string & path_, const std::string & name_)
+StorageNoKey::StorageNoKey(const std::string & path_, const std::string & name_)
 	: path(path_),
 	name(name_),
 	data_file_name(path + name + ".dat"),
@@ -20,11 +20,11 @@ PrimaryKeyNone::PrimaryKeyNone(const std::string & path_, const std::string & na
 }
 
 
-void PrimaryKeyNone::merge(const AggregatedRowSet & data, const ColumnMask & mask)
+void StorageNoKey::merge(const AggregatedRowSet & data, const ColumnMask & mask)
 {
 	if (!table || !column_group)
-		throw Exception("Primary key was not attached to table and column group",
-			ErrorCodes::PRIMARY_KEY_WAS_NOT_ATTACHED);
+		throw Exception("Storage was not attached to table and column group",
+			ErrorCodes::STORAGE_WAS_NOT_ATTACHED);
 
 	/// просто дописываем данные в конец файла
 	Poco::FileOutputStream ostr(data_file_name, std::ios::out | std::ios::binary | std::ios::app);
@@ -44,20 +44,20 @@ void PrimaryKeyNone::merge(const AggregatedRowSet & data, const ColumnMask & mas
 }
 
 
-Poco::SharedPtr<ITablePartReader> PrimaryKeyNone::read(const Row & key)
+Poco::SharedPtr<ITablePartReader> StorageNoKey::read(const Row & key)
 {
-	return new PrimaryKeyNoneTablePartReader(key, this);
+	return new StorageNoKeyTablePartReader(key, this);
 }
 
 
-PrimaryKeyNoneTablePartReader::PrimaryKeyNoneTablePartReader(
-	const Row & key_, PrimaryKeyNone * pk_)
+StorageNoKeyTablePartReader::StorageNoKeyTablePartReader(
+	const Row & key_, StorageNoKey * pk_)
 	: key(key_), pk(pk_), istr(pk->data_file_name)
 {
 }
 
 
-bool PrimaryKeyNoneTablePartReader::fetch(Row & row)
+bool StorageNoKeyTablePartReader::fetch(Row & row)
 {
 	if (key.size() > pk->column_group->column_numbers.size())
 		throw Exception("Too many columns specified for key", ErrorCodes::TOO_MANY_COLUMNS_FOR_KEY);

@@ -7,7 +7,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Column.h>
-#include <DB/PrimaryKey.h>
+#include <DB/Storage.h>
 
 
 namespace DB
@@ -23,8 +23,8 @@ struct ColumnGroup
 	typedef std::vector<size_t> ColumnNumbers;
 	ColumnNumbers column_numbers;
 
-	/// Первичный ключ
-	Poco::SharedPtr<IPrimaryKey> primary_key;
+	/// Хранилище
+	Poco::SharedPtr<IStorage> storage;
 };
 
 }

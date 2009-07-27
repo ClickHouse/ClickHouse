@@ -14,9 +14,9 @@ namespace DB
 
 class Table
 {
-friend class PrimaryKeyNone;
-friend class PrimaryKeyNoneTablePartReader;
-friend class PrimaryKeyPlain;
+friend class StorageNoKey;
+friend class StorageNoKeyTablePartReader;
+friend class StoragePlain;
 
 public:
 	typedef std::vector<Column> Columns;
@@ -48,7 +48,7 @@ public:
 	{
 		/// Пропишем в первичных ключах в кол-группах указатель на таблицу и кол-группу
 		for (ColumnGroups::iterator it = column_groups->begin(); it != column_groups->end(); ++it)
-			it->primary_key->addToTable(this, &*it);
+			it->storage->addToTable(this, &*it);
 	}
 };
 

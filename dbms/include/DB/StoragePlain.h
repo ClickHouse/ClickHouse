@@ -1,5 +1,5 @@
-#ifndef DBMS_PRIMARY_KEY_PLAIN_H
-#define DBMS_PRIMARY_KEY_PLAIN_H
+#ifndef DBMS_STORAGE_PLAIN_H
+#define DBMS_STORAGE_PLAIN_H
 
 #include <set>
 #include <map>
@@ -9,20 +9,20 @@
 
 #include <DB/Table.h>
 
-#include <DB/PrimaryKey.h>
+#include <DB/Storage.h>
 
 
 namespace DB
 {
 	
-/** Простой, "плоский" первичный ключ.
+/** Простое хранилище с "плоским" первичным ключом.
   * Хранит список смещений в бинарном файле, список свободных блоков - в другом бинарном файле.
   * Поиск в этом файле линейный.
   * При обновлении данных, индексный файл полностью перезаписывается.
   * Файл с данными не сжатый.
   * Индекс полностью загружается в память во время работы.
   */
-class PrimaryKeyPlain : public PrimaryKeyBase
+class StoragePlain : public StorageBase
 {
 private:
 	std::string path;
@@ -52,7 +52,7 @@ private:
 
 public:
 	/** Путь со слешем на конце. */
-	PrimaryKeyPlain(const std::string & path_, const std::string & name_);
+	StoragePlain(const std::string & path_, const std::string & name_);
 
 	void addToTable(Table * table_, ColumnGroup * column_group_);
 

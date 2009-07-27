@@ -4,7 +4,7 @@
 #include <DB/Table.h>
 #include <DB/Column.h>
 #include <DB/ColumnType.h>
-#include <DB/PrimaryKeyNone.h>
+#include <DB/StorageNoKey.h>
 #include <DB/RowSet.h>
 
 
@@ -64,7 +64,7 @@ int main(int argc, char ** argv)
  	for (size_t i = 0; i < columns->size(); ++i)
 		column_group0.column_numbers.push_back(i);
 
-	column_group0.primary_key = new DB::PrimaryKeyNone("./", "TestPrimaryKeyNone");
+	column_group0.storage = new DB::StorageNoKey("./", "TestStorageNoKey");
 
 	Poco::SharedPtr<DB::Table::ColumnGroups> column_groups = new DB::Table::ColumnGroups;
 	column_groups->push_back(column_group0);
@@ -136,7 +136,7 @@ int main(int argc, char ** argv)
 	
 		stopwatch.restart();
 
-		column_group0.primary_key->merge(data, mask);
+		column_group0.storage->merge(data, mask);
 
 		stopwatch.stop();
 		std::cout << "Saving data: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
@@ -145,7 +145,7 @@ int main(int argc, char ** argv)
 	/// читаем таблицу
 	{
 		DB::Row key;
-		Poco::SharedPtr<DB::ITablePartReader> reader(column_group0.primary_key->read(key));
+		Poco::SharedPtr<DB::ITablePartReader> reader(column_group0.storage->read(key));
 		
 		stopwatch.restart();
 
