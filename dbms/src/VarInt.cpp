@@ -9,7 +9,7 @@ namespace DB
 
 void writeVarUInt(UInt x, std::ostream & ostr)
 {
-	static char buf[9];
+	char buf[9];
 
 	buf[0] = static_cast<Poco::UInt8>(x | 0x80);
 	if (x >= (1ULL << 7))
