@@ -511,6 +511,39 @@ public:
 };
 
 
+/** IP адрес. Отличается от UInt32 текстовой сериализацией. */
+class ColumnTypeIPAddress : public ColumnTypeUInt32
+{
+public:
+	std::string getName() const { return "IPAddress"; }
+	
+	void serializeText(const DB::Field & field, std::ostream & ostr) const
+	{
+		UInt x = boost::get<UInt>(field);
+		ostr << static_cast<Poco::UInt8>((x >> 24) & 0xFF)
+			<< "." << static_cast<Poco::UInt8>((x >> 16) & 0xFF)
+			<< "." << static_cast<Poco::UInt8>((x >> 8) & 0xFF)
+			<< "." << static_cast<Poco::UInt8>(x & 0xFF);
+	}
+
+	void deserializeText(DB::Field & field, std::istream & istr) const
+	{
+		Poco::UInt32 n1, n2, n3, n4;
+		istr >> n1;
+		istr.ignore();
+		istr >> n2;
+		istr.ignore();
+		istr >> n3;
+		istr.ignore();
+		istr >> n4;
+		istr.ignore();
+		if (n1 > 255 || n2 > 255 || n3 > 255 || n4 > 255)
+			throw Exception("Invalid IP address", ErrorCodes::INVALID_IP_ADDRESS);
+		boost::get<UInt>(field) = (n1 << 24) | (n2 << 16) | (n3 << 8) | n4;
+	}
+};
+
+
 class ColumnTypeFactory
 {
 public:
@@ -530,6 +563,8 @@ public:
 			return new ColumnTypeUInt64;
 		if (name == "Text")
 			return new ColumnTypeText;
+		if (name == "IPAddress")
+			return new ColumnTypeIPAddress;
 
 		/// параметризованные типы
 		static Poco::RegularExpression one_parameter_regexp("^([^\\(]+)\\((.+)\\)$");
@@ -537,7 +572,7 @@ public:
 
 		Poco::RegularExpression::MatchVec matches;
 
-		if (two_parameters_regexp.match(name, 0, matches))
+		if (two_parameters_regexp.match(name, 0, matches) && matches.size() == 3)
 		{
 			/// FixedArray(T, N), где T - любой тип, а N - размер
 			if (name.substr(matches[0].offset, matches[0].length) == "FixedArray")
@@ -554,7 +589,7 @@ public:
 			}
 		}
 		
-		if (one_parameter_regexp.match(name, 0, matches))
+		if (one_parameter_regexp.match(name, 0, matches) && matches.size() == 2)
 		{
 			/// FixedText(N), где N - размер
 			if (name.substr(matches[0].offset, matches[0].length) == "FixedText")
