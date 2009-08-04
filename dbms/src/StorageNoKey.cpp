@@ -31,15 +31,24 @@ void StorageNoKey::merge(const AggregatedRowSet & data, const ColumnMask & mask)
 
 	for (AggregatedRowSet::const_iterator it = data.begin(); it != data.end(); ++it)
 	{
+		size_t column_num = 0;
 		for (size_t j = 0; j != it->first.size(); ++j)
+		{
 			if (mask[j])
-				table->columns->at(column_group->column_numbers[j]).type->serializeBinary(it->first[j], ostr);
+			{
+				table->columns->at(column_group->column_numbers[column_num]).type->serializeBinary(it->first[j], ostr);
+				++column_num;
+			}
+		}
 
 		for (size_t j = 0; j != it->second.size(); ++j)
+		{
 			if (mask[j + it->first.size()])
-				table->columns->at(
-					column_group->column_numbers[j + it->first.size()]
-					).type->serializeBinary(it->second[j], ostr);
+			{
+				table->columns->at(column_group->column_numbers[column_num]).type->serializeBinary(it->second[j], ostr);
+				++column_num;
+			}
+		}
 	}
 }
 
