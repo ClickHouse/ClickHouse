@@ -11,6 +11,7 @@
 int main(int argc, char ** argv)
 {
 	Poco::Stopwatch stopwatch;
+	Poco::Stopwatch column_stopwatch;
 	
 	/// создаём таблицу
 
@@ -138,9 +139,15 @@ int main(int argc, char ** argv)
 
 		for (size_t i = 0; i < column_groups->size(); ++i)
 		{
+			column_stopwatch.restart();
+
 			mask[i] = true;
 			(*column_groups)[i].storage->merge(data, mask);
 			mask[i] = false;
+
+			column_stopwatch.stop();
+			std::cout << "Saving column " << (*columns)[i].name << ": "
+				<< static_cast<double>(column_stopwatch.elapsed()) / 1000000 << std::endl;
 		}
 
 		stopwatch.stop();
@@ -149,19 +156,29 @@ int main(int argc, char ** argv)
 
 	/// читаем таблицу
 	{
-		DB::Row key;
-		Poco::SharedPtr<DB::ITablePartReader> reader((*column_groups)[30].storage->read(key));	/// UniqID
-		
 		stopwatch.restart();
 
-		DB::UInt i = 0;
-		DB::Row row;
-		while (reader->fetch(row))
+		DB::Row key;
+
+		for (size_t i = 0; i < column_groups->size(); ++i)
 		{
-			++i;
+			column_stopwatch.restart();
+		
+			Poco::SharedPtr<DB::ITablePartReader> reader((*column_groups)[i].storage->read(key));
+			
+			DB::UInt i = 0;
+			DB::Row row;
+			while (reader->fetch(row))
+			{
+				++i;
+			}
+			if (i != 1000000)
+				throw Poco::Exception("Number of rows doesn't match");
+
+			column_stopwatch.stop();
+			std::cout << "Reading column " << (*columns)[i].name << ": "
+				<< static_cast<double>(column_stopwatch.elapsed()) / 1000000 << std::endl;
 		}
-		if (i != 1000000)
-			throw Poco::Exception("Number of rows doesn't match");
 
 		stopwatch.stop();
 		std::cout << "Reading data: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
