@@ -166,13 +166,13 @@ int main(int argc, char ** argv)
 		
 			Poco::SharedPtr<DB::ITablePartReader> reader((*column_groups)[i].storage->read(key));
 			
-			DB::UInt i = 0;
+			DB::UInt j = 0;
 			DB::Row row;
 			while (reader->fetch(row))
 			{
-				++i;
+				++j;
 			}
-			if (i != 1000000)
+			if (j != 1000000)
 				throw Poco::Exception("Number of rows doesn't match");
 
 			column_stopwatch.stop();
