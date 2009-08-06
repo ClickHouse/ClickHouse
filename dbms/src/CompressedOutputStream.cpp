@@ -64,6 +64,9 @@ int CompressingStreamBuf::writeToDevice(const char * buffer, std::streamsize len
 		
 		if (pos_in_buffer == uncompressed_buffer.size())
 			writeCompressedChunk();
+
+		if (!p_ostr->good())
+			return bytes_processed;
 	}
 
 	return static_cast<int>(length);

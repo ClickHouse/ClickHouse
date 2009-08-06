@@ -41,7 +41,7 @@ private:
 };
 
 
-/** Базовый класс для CompressingOutputStream; содержит CompressingStreamBuf
+/** Базовый класс для CompressedOutputStream; содержит CompressingStreamBuf
   */
 class CompressingIOS : public virtual std::ios
 {
