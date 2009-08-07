@@ -59,11 +59,17 @@ int DecompressingStreamBuf::readFromDevice(char * buffer, std::streamsize length
 			pos_in_buffer = 0;
 
 			if (!p_istr->good())
+			{
+				p_istr = 0;
 				return bytes_processed;
+			}
 		}
 
-		size_t bytes_to_copy = std::min(uncompressed_buffer.size() - pos_in_buffer, static_cast<size_t>(length));
-		memcpy(buffer, &uncompressed_buffer[0], bytes_to_copy);
+		size_t bytes_to_copy = std::min(
+			uncompressed_buffer.size() - pos_in_buffer,
+			static_cast<size_t>(length) - bytes_processed);
+		
+		memcpy(buffer + bytes_processed, &uncompressed_buffer[pos_in_buffer], bytes_to_copy);
 		pos_in_buffer += bytes_to_copy;
 		bytes_processed += bytes_to_copy;
 	}

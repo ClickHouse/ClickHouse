@@ -57,16 +57,21 @@ int CompressingStreamBuf::writeToDevice(const char * buffer, std::streamsize len
 
 	while (bytes_processed < static_cast<size_t>(length))
 	{
-		size_t bytes_to_copy = std::min(uncompressed_buffer.size() - pos_in_buffer, static_cast<size_t>(length));
-		memcpy(&uncompressed_buffer[0], buffer, bytes_to_copy);
+		size_t bytes_to_copy = std::min(
+			uncompressed_buffer.size() - pos_in_buffer,
+			static_cast<size_t>(length) - bytes_processed);
+		memcpy(&uncompressed_buffer[pos_in_buffer], buffer + bytes_processed, bytes_to_copy);
 		pos_in_buffer += bytes_to_copy;
 		bytes_processed += bytes_to_copy;
-		
+
 		if (pos_in_buffer == uncompressed_buffer.size())
 			writeCompressedChunk();
 
 		if (!p_ostr->good())
+		{
+			p_ostr = 0;
 			return bytes_processed;
+		}
 	}
 
 	return static_cast<int>(length);
