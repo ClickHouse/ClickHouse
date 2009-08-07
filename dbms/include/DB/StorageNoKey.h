@@ -7,6 +7,8 @@
 
 #include <DB/Storage.h>
 #include <DB/TablePartReader.h>
+#include <DB/CompressedOutputStream.h>
+#include <DB/CompressedInputStream.h>
 
 
 namespace DB
@@ -46,6 +48,7 @@ private:
 	/// слабый указатель на хранилище
 	StorageNoKey * pk;
 	Poco::FileInputStream istr;
+	CompressedInputStream decompressor;
 
 	StorageNoKeyTablePartReader(const Row & key_, StorageNoKey * pk_);
 

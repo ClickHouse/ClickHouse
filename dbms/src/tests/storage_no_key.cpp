@@ -156,7 +156,10 @@ int main(int argc, char ** argv)
 			++i;
 		}
 		if (i != 1000000)
+		{
+			std::cerr << i << std::endl;
 			throw Poco::Exception("Number of rows doesn't match");
+		}
 
 		stopwatch.stop();
 		std::cout << "Reading data: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;

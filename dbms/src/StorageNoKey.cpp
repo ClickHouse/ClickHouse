@@ -28,6 +28,7 @@ void StorageNoKey::merge(const AggregatedRowSet & data, const ColumnMask & mask)
 
 	/// просто дописываем данные в конец файла
 	Poco::FileOutputStream ostr(data_file_name, std::ios::out | std::ios::binary | std::ios::app);
+	CompressedOutputStream compressor(ostr);
 
 	for (AggregatedRowSet::const_iterator it = data.begin(); it != data.end(); ++it)
 	{
@@ -36,7 +37,7 @@ void StorageNoKey::merge(const AggregatedRowSet & data, const ColumnMask & mask)
 		{
 			if (mask[j])
 			{
-				table->columns->at(column_group->column_numbers[column_num]).type->serializeBinary(it->first[j], ostr);
+				table->columns->at(column_group->column_numbers[column_num]).type->serializeBinary(it->first[j], compressor);
 				++column_num;
 			}
 		}
@@ -45,11 +46,13 @@ void StorageNoKey::merge(const AggregatedRowSet & data, const ColumnMask & mask)
 		{
 			if (mask[j + it->first.size()])
 			{
-				table->columns->at(column_group->column_numbers[column_num]).type->serializeBinary(it->second[j], ostr);
+				table->columns->at(column_group->column_numbers[column_num]).type->serializeBinary(it->second[j], compressor);
 				++column_num;
 			}
 		}
 	}
+
+	compressor.close();
 }
 
 
@@ -61,7 +64,7 @@ Poco::SharedPtr<ITablePartReader> StorageNoKey::read(const Row & key)
 
 StorageNoKeyTablePartReader::StorageNoKeyTablePartReader(
 	const Row & key_, StorageNoKey * pk_)
-	: key(key_), pk(pk_), istr(pk->data_file_name)
+	: key(key_), pk(pk_), istr(pk->data_file_name), decompressor(istr)
 {
 }
 
@@ -76,12 +79,12 @@ bool StorageNoKeyTablePartReader::fetch(Row & row)
 	while (1)
 	{
 		for (size_t i = 0; i < pk->column_group->column_numbers.size(); ++i)
-			pk->table->columns->at(pk->column_group->column_numbers[i]).type->deserializeBinary(row[i], istr);
+			pk->table->columns->at(pk->column_group->column_numbers[i]).type->deserializeBinary(row[i], decompressor);
 
-		if (istr.eof())
+		if (decompressor.eof())
 			return false;
 
-		if (istr.fail())
+		if (decompressor.fail())
 			throw Exception("Cannot read data file " + pk->data_file_name
 				, ErrorCodes::CANT_READ_DATA_FILE);
 
