@@ -137,4 +137,18 @@ void readVarUInt(UInt & x, std::istream & istr)
 }
 
 
+size_t getLengthOfVarUInt(UInt x)
+{
+	return x < (1ULL << 7) ? 1
+		: (x < (1ULL << 14) ? 2
+		: (x < (1ULL << 21) ? 3
+		: (x < (1ULL << 28) ? 4
+		: (x < (1ULL << 35) ? 5
+		: (x < (1ULL << 42) ? 6
+		: (x < (1ULL << 49) ? 7
+		: (x < (1ULL << 56) ? 8
+		: 9)))))));
+}
+
+
 }
