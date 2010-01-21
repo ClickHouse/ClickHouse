@@ -27,12 +27,11 @@ inline void writeVarInt(Int x, std::ostream & ostr)
 }
 
 
-// TODO: здесь баг
 /** Прочитать Int64, записанный в формате переменной длины (base128) */
 inline void readVarInt(Int & x, std::istream & istr)
 {
 	readVarUInt(*reinterpret_cast<UInt*>(&x), istr);
-	x = (x >> 1) ^ (x << 63);
+	x = (static_cast<UInt>(x) >> 1) ^ -(x & 1);
 }
 
 
