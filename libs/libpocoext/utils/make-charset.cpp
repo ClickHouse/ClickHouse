@@ -243,6 +243,7 @@ Encoding::buildHead (std::ostream& _os, const std::string& _class_name) const
 	_os << "\t\tbool isA(const std::string& encodingName) const;\n";
 	_os << "\t\tconst CharacterMap& characterMap() const;\n";
 	_os << "\t\tint convert(const unsigned char* bytes) const;\n";
+	_os << "\t\tint queryConvert(const unsigned char* bytes, int length) const;\n";
 	_os << "\t\tint convert(int ch, unsigned char* bytes, int length) const;\n";
 	_os << "\t};\n";
 	_os << "}\n\n";
@@ -322,6 +323,11 @@ Encoding::buildBody (std::ostream& _os, const std::string& _class_name) const
 			"}\n\n\n";
 
 	_os << "int Poco::" << _class_name << "::convert(const unsigned char* bytes) const\n"
+			"{\n"
+				"\treturn _map[*bytes];\n"
+			"}\n\n\n";
+			
+	_os << "int Poco::" << _class_name << "::queryConvert(const unsigned char* bytes, int length) const\n"
 			"{\n"
 				"\treturn _map[*bytes];\n"
 			"}\n\n\n";
