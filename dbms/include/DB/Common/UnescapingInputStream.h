@@ -17,7 +17,7 @@ public:
 	UnescapingStreamBuf(std::istream & istr);
 
 protected:
-	int readFromDevice(char * buffer, std::streamsize length);
+	int readFromDevice();
 
 private:
 	std::istream * p_istr;

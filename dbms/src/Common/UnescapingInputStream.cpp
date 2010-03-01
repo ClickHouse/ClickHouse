@@ -11,78 +11,53 @@ UnescapingStreamBuf::UnescapingStreamBuf(std::istream & istr)
 }
 
 
-int UnescapingStreamBuf::readFromDevice(char * buffer, std::streamsize length)
+int UnescapingStreamBuf::readFromDevice()
 {
-	if (length == 0 || !p_istr)
-		return 0;
+	int res = p_istr->get();
+	if (!p_istr->good())
+		return res;
 
-	for (std::streamsize pos = 0; pos < length;)
+	char c = res;
+	switch (c)
 	{
-		char c = p_istr->get();
-		if (!p_istr->good())
-		{
-			p_istr = 0;
-			return pos;
-		}
-		
-		switch (state)
-		{
-			case EscapeSequence:
-				switch (c)
-				{
-					case '\\':
-						buffer[pos] = '\\';
-						break;
-					case 'b':
-						buffer[pos] = '\b';
-						break;
-					case 'f':
-						buffer[pos] = '\f';
-						break;
-					case 'n':
-						buffer[pos] = '\n';
-						break;
-					case 'r':
-						buffer[pos] = '\r';
-						break;
-					case 't':
-						buffer[pos] = '\t';
-						break;
-					case '\'':
-						buffer[pos] = '\'';
-						break;
-					case '"':
-						buffer[pos] = '"';
-						break;
-					default:
-						buffer[pos] = c;
-				}
-				++pos;
-				state = Normal;
-				break;
-				
-			case Normal:
-			default:
-				switch (c)
-				{
-					case '\\':
-						state = EscapeSequence;
-						break;
-					default:
-						buffer[pos] = c;
-						++pos;
-				}
-		}
+		case '\\':
+			res = p_istr->get();
+			if (!p_istr->good())
+				return res;
+			c = res;
+			switch (c)
+			{
+				case '\\':
+					return '\\';
+					break;
+				case 'b':
+					return '\b';
+					break;
+				case 'f':
+					return '\f';
+					break;
+				case 'n':
+					return '\n';
+					break;
+				case 'r':
+					return '\r';
+					break;
+				case 't':
+					return '\t';
+					break;
+				default:
+					return c;
+			}
+			break;
+		default:
+			return c;
 	}
-
-	return static_cast<int>(length);
 }
 
 
 UnescapingIOS::UnescapingIOS(std::istream & istr)
 	: buf(istr)
 {
-	poco_ios_init(&buf);
 }
 
 

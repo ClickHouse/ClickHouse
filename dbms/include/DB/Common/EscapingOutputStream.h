@@ -18,7 +18,7 @@ public:
 	EscapingStreamBuf(std::ostream & ostr);
 
 protected:
-	int writeToDevice(const char * buffer, std::streamsize length);
+	int writeToDevice(char c);
 
 private:
 	std::ostream * p_ostr;
