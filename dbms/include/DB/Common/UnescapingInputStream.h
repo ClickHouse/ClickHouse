@@ -14,28 +14,21 @@ namespace DB
 class UnescapingStreamBuf : public Poco::UnbufferedStreamBuf
 {
 public:
-	UnescapingStreamBuf(std::istream & istr);
+	UnescapingStreamBuf(std::istream & istr, char delimiter_);
 
 protected:
 	int readFromDevice();
 
 private:
 	std::istream * p_istr;
-
-	enum State
-	{
-		Normal = 0,
-		EscapeSequence
-	};
-
-	State state;
+	char delimiter;
 };
 
 
 class UnescapingIOS : public virtual std::ios
 {
 public:
-	UnescapingIOS(std::istream & istr);
+	UnescapingIOS(std::istream & istr, char delimiter_);
 	UnescapingStreamBuf * rdbuf();
 
 protected:
@@ -46,7 +39,7 @@ protected:
 class UnescapingInputStream : public UnescapingIOS, public std::istream
 {
 public:
-	UnescapingInputStream(std::istream & istr);
+	UnescapingInputStream(std::istream & istr, char delimiter_);
 };
 
 

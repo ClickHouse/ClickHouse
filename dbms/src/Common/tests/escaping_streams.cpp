@@ -11,12 +11,13 @@ int main(int argc, char ** argv)
 	std::stringstream stream;
 
 	DB::EscapingOutputStream o(stream);
-	DB::UnescapingInputStream i(stream);
+	DB::UnescapingInputStream i(stream, '"');
 	
 	std::cout << s1 << std::endl;
 	o << s1;
+	stream << "\"xxx";
 	std::cout << stream.str() << std::endl;
-	i >> s2;
+	std::getline(i, s2);
 	std::cout << s2 << std::endl;
 
 	return 0;
