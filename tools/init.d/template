@@ -26,7 +26,7 @@ RETVAL=0
 
 isrun()
 {
-	[ -r "$PIDFILE" ] && pgrep -s `cat "$PIDFILE"` >/dev/null 2>&1 && return 0 || return 1
+	[ -r "$PIDFILE" ] && pgrep -s `cat "$PIDFILE"` >/dev/null 2>&1
 }
 
 wait4done()
@@ -77,9 +77,14 @@ stop()
 	echo -n "Stop $PROGRAM service: "
 
 	if isrun; then
+	    if [ -f "$LOCKFILE" ]; then
+		rm -f "$LOCKFILE"
 		kill -INT `cat "$PIDFILE"`
 		wait4done
-		rm -f "$LOCKFILE"
+	    else
+		echo "has been stopping already"
+		return 1
+	    fi
 	fi
 
 	echo "DONE"
