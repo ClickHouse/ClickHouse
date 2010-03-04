@@ -14,6 +14,7 @@ namespace DB
 {
 
 /** Типы данных для представления столбцов значений в оперативке.
+  * Столбец значений может быть представлен массивом значений или единичным значением, если столбец - константа.
   */
 
 typedef std::vector<UInt8> UInt8Column;
@@ -45,6 +46,36 @@ typedef boost::make_recursive_variant<
 
 typedef std::vector<Column> TupleColumn;	/// Столбец значений типа "кортеж" - несколько столбцов произвольного типа
 typedef std::vector<Column> ArrayColumn;	/// Столбец значений типа "массив" - столбец, значения в котором - массивы
+
+
+/** Возвращает количество значений в столбце
+  * TODO: поправить для tuple.
+  */
+class ColumnVisitorSize : public boost::static_visitor<size_t>
+{
+public:
+	template <typename T> size_t operator() (const T & x) const { return x.size(); }
+};
+
+
+/** Возвращает n-ый элемент столбца.
+  * TODO: поправить для tuple.
+  */
+class ColumnVisitorNthElement : public boost::static_visitor<Field>
+{
+public:
+	ColumnVisitorNthElement(size_t n_) : n(n_) {}
+
+	template <typename T> Field operator() (const T & x) const
+	{
+		return x.size() == 1
+			? x[0]	/// столбец - константа
+			: x[n];
+	}
+private:
+	size_t n;
+};
+
 
 }
 

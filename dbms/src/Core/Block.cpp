@@ -1,3 +1,6 @@
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
+
 #include <DB/Core/Block.h>
 
 
@@ -6,16 +9,16 @@ namespace DB
 
 void Block::rebuildIndexByPosition()
 {
-	index_by_position.resize(columns.size());
+	index_by_position.resize(data.size());
 	size_t pos = 0;
-	for (Container_t::iterator it = columns.begin(); it != columns.end(); ++it, ++pos)
+	for (Container_t::iterator it = data.begin(); it != data.end(); ++it, ++pos)
 		index_by_position[pos] = it;
 }
 
 
 void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 {
-	Container_t::iterator it = columns.insert(index_by_position[position], elem);
+	Container_t::iterator it = data.insert(index_by_position[position], elem);
 	rebuildIndexByPosition();
 	index_by_name[elem.name] = it; 
 }
@@ -25,34 +28,63 @@ void Block::erase(size_t position)
 {
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
-	columns.erase(it);
+	data.erase(it);
 	rebuildIndexByPosition();
 }
 
 
-Block::ColumnWithNameAndType & Block::getByPosition(size_t position)
+ColumnWithNameAndType & Block::getByPosition(size_t position)
 {
 	return *index_by_position[position];
 }
 
 
-const Block::ColumnWithNameAndType & Block::getByPosition(size_t position) const
+const ColumnWithNameAndType & Block::getByPosition(size_t position) const
 {
 	return *index_by_position[position];
 }
 
 
-Block::ColumnWithNameAndType & Block::getByName(const std::string & name)
+ColumnWithNameAndType & Block::getByName(const std::string & name)
 {
 	return *index_by_name[name];
 }
 
 
-const Block::ColumnWithNameAndType & Block::getByName(const std::string & name) const
+const ColumnWithNameAndType & Block::getByName(const std::string & name) const
 {
-	return *index_by_name[name];
+	IndexByName_t::const_iterator it = index_by_name.find(name);
+	if (index_by_name.end() == it)
+		throw Exception("Not found column " + name + " in block.", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+
+	return *it->second;
+}
+
+
+size_t Block::rows() const
+{
+	size_t res = 0;
+	ColumnVisitorSize visitor;
+	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	{
+		size_t size = boost::apply_visitor(visitor, *it->column);
+
+		if (size == 0)
+			throw Exception("Empty column in block.", ErrorCodes::EMPTY_COLUMN_IN_BLOCK);
+
+		if (size != 1 && res != 0 && size != res)
+			throw Exception("Sizes of columns doesn't match.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		res = size;
+	}
+
+	return res;
+}
+
+
+size_t Block::columns() const
+{
+	return data.size();
 }
 
 }
-
-#endif

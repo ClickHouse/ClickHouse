@@ -1,12 +1,22 @@
 #ifndef DBMS_STORAGES_ISTORAGE_H
 #define DBMS_STORAGES_ISTORAGE_H
 
+//#include <boost/property_tree/ptree.hpp>
+
 #include <Poco/SharedPtr.h>
+
+#include <DB/Core/ColumnNames.h>
+#include <DB/Core/Exception.h>
+#include <DB/DataStreams/IBlockInputStream.h>
+
+#define DEFAULT_BLOCK_SIZE 1048576
 
 
 namespace DB
 {
 
+typedef char ptree;	/// временная заглушка, вместо boost::property_tree::ptree
+//using boost::property_tree::ptree;
 using Poco::SharedPtr;
 
 /** Хранилище. Отвечает за:
@@ -18,27 +28,23 @@ using Poco::SharedPtr;
   */
 class IStorage
 {
-private:
-	/** Установить указатель на таблицу и кол-группу.
-	  * - часть инициализации, которая выполняется при инициализации таблицы.
-	  * (инициализация хранилища выполняется в два шага:
-	  * 1 - конструктор,
-	  * 2 - добавление к таблице (выполняется в конструкторе Table))
-	  */
-	virtual void addToTable(Table * table_, ColumnGroup * column_group_) = 0;
-	
 public:
-	/** Прочитать данные, соответствующие точному значению ключа или префиксу.
+	/// Основное имя типа таблицы (например, StorageWithoutKey).
+	virtual std::string getName() const = 0;
+
+	/** Читать набор столбцов из таблицы.
+	  * Принимает список столбцов, которых нужно прочитать, а также описание запроса,
+	  *  из которого может быть извлечена информация о том, каким способом извлекать данные
+	  *  (индексы, блокировки и т. п.)
 	  * Возвращает объект, с помощью которого можно последовательно читать данные.
 	  */
-	virtual Poco::SharedPtr<ITablePartReader> read(const Row & key) = 0;
-
-	/** Записать пачку данных в таблицу, обновляя существующие данные, если они есть.
-	  * @param data - набор данных вида ключ (набор столбцов) -> значение (набор столбцов)
-	  * @param mask - битовая маска - какие столбцы входят в кол-группу,
-	  * которую хранит это хранилище
-	  */
-	virtual void merge(const AggregatedRowSet & data, const ColumnMask & mask) = 0;
+	virtual SharedPtr<IBlockInputStream> read(
+		const ColumnNames & column_names,
+		const ptree & query,
+		size_t max_block_size = DEFAULT_BLOCK_SIZE)
+	{
+		throw Exception("Method read() is not supported by storage " + getName());
+	}
 
 	virtual ~IStorage() {}
 };

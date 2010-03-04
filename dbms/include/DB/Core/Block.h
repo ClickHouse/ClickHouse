@@ -5,7 +5,7 @@
 #include <map>
 #include <list>
 
-#include <DB/Core/ColumnWithMetadata.h>
+#include <DB/Core/ColumnWithNameAndType.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ public:
 	typedef std::map<String, Container_t::iterator> IndexByName_t;
 	
 private:
-	Container_t columns;
+	Container_t data;
 	IndexByPosition_t index_by_position;
 	IndexByName_t index_by_name;
 
@@ -40,8 +40,15 @@ public:
 	ColumnWithNameAndType & getByName(const std::string & name);
 	const ColumnWithNameAndType & getByName(const std::string & name) const;
 
-	operator bool() { return !columns.empty(); }
-	operator!() { return columns.empty(); }
+	/** Возвращает количество строк в блоке.
+	  * Заодно проверяет, что все столбцы кроме констант (которые содержат единственное значение),
+	  *  содержат одинаковое число значений.
+	  */
+	size_t rows() const;
+	size_t columns() const;
+
+	operator bool() const { return !data.empty(); }
+	bool operator!() const { return data.empty(); }
 };
 
 }
