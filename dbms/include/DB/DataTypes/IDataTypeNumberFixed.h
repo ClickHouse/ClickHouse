@@ -1,17 +1,17 @@
-#ifndef DBMS_COLUMN_TYPES_ICOLUMNTYPE_NUMBER_FIXED_H
-#define DBMS_COLUMN_TYPES_ICOLUMNTYPE_NUMBER_FIXED_H
+#ifndef DBMS_DATA_TYPES_IDATATYPE_NUMBER_FIXED_H
+#define DBMS_DATA_TYPES_IDATATYPE_NUMBER_FIXED_H
 
 #include <Poco/BinaryWriter.h>
 #include <Poco/BinaryReader.h>
 
-#include <DB/ColumnTypes/IColumnTypeNumber.h>
+#include <DB/DataTypes/IDataTypeNumber.h>
 
 
 namespace DB
 {
 
 
-/** Реализует часть интерфейса IColumnType, общую для всяких чисел фиксированной ширины
+/** Реализует часть интерфейса IDataType, общую для всяких чисел фиксированной ширины
   * - ввод и вывод в текстовом и бинарном виде.
   * Остаётся лишь чисто виртуальный метод getName().
   *
@@ -19,7 +19,7 @@ namespace DB
   * (см. Field.h, Column.h)
   */
 template <typename FieldType, typename ColumnType>
-class IColumnTypeNumberFixed : public IColumnTypeNumber<FieldType>
+class IDataTypeNumberFixed : public IDataTypeNumber<FieldType>
 {
 public:
 	/** Формат платформозависимый (зависит от представления данных в памяти).

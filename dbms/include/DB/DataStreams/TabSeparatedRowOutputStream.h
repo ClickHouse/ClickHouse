@@ -5,7 +5,7 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/ColumnTypes/ColumnTypes.h>
+#include <DB/DataTypes/DataTypes.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
@@ -20,7 +20,7 @@ using Poco::SharedPtr;
 class TabSeparatedRowOutputStream : public IRowOutputStream
 {
 public:
-	TabSeparatedRowOutputStream(std::ostream & ostr_, SharedPtr<ColumnTypes> column_types_);
+	TabSeparatedRowOutputStream(std::ostream & ostr_, SharedPtr<DataTypes> data_types_);
 
 	void writeField(const Field & field);
 	void writeFieldDelimiter();
@@ -28,7 +28,7 @@ public:
 
 private:
 	std::ostream & ostr;
-	SharedPtr<ColumnTypes> column_types;
+	SharedPtr<DataTypes> data_types;
 	size_t field_number;
 };
 

@@ -1,18 +1,18 @@
-#ifndef DBMS_COLUMN_TYPES_ICOLUMNTYPE_NUMBER_H
-#define DBMS_COLUMN_TYPES_ICOLUMNTYPE_NUMBER_H
+#ifndef DBMS_DATA_TYPES_IDATATYPE_NUMBER_H
+#define DBMS_DATA_TYPES_IDATATYPE_NUMBER_H
 
-#include <DB/ColumnTypes/IColumnType.h>
+#include <DB/DataTypes/IDataType.h>
 
 
 namespace DB
 {
 
 
-/** Реализует часть интерфейса IColumnType, общую для всяких чисел
+/** Реализует часть интерфейса IDataType, общую для всяких чисел
   * - ввод и вывод в текстовом виде.
   */
 template <typename FieldType>
-class IColumnTypeNumber : public IColumnType
+class IDataTypeNumber : public IDataType
 {
 public:
 	void serializeText(const Field & field, std::ostream & ostr) const

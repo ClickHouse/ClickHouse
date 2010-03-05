@@ -4,7 +4,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Column.h>
-#include <DB/ColumnTypes/IColumnType.h>
+#include <DB/DataTypes/IDataType.h>
 
 
 namespace DB
@@ -17,7 +17,7 @@ using Poco::SharedPtr;
 
 struct NameAndType
 {
-	SharedPtr<IColumnType> type;
+	SharedPtr<IDataType> type;
 	String name;
 };
 

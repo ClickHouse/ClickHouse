@@ -7,15 +7,15 @@ namespace DB
 using Poco::SharedPtr;
 
 
-TabSeparatedRowOutputStream::TabSeparatedRowOutputStream(std::ostream & ostr_, SharedPtr<ColumnTypes> column_types_)
-	: ostr(ostr_), column_types(column_types_), field_number(0)
+TabSeparatedRowOutputStream::TabSeparatedRowOutputStream(std::ostream & ostr_, SharedPtr<DataTypes> data_types_)
+	: ostr(ostr_), data_types(data_types_), field_number(0)
 {
 }
 
 
 void TabSeparatedRowOutputStream::writeField(const Field & field)
 {
-	column_types->at(field_number)->serializeTextEscaped(field, ostr);
+	data_types->at(field_number)->serializeTextEscaped(field, ostr);
 	++field_number;
 }
 

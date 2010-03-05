@@ -1,5 +1,5 @@
-#ifndef DBMS_COLUMN_TYPES_ICOLUMNTYPE_H
-#define DBMS_COLUMN_TYPES_ICOLUMNTYPE_H
+#ifndef DBMS_DATA_TYPES_IDATATYPE_H
+#define DBMS_DATA_TYPES_IDATATYPE_H
 
 #include <ostream>
 
@@ -14,7 +14,7 @@ namespace DB
 /** Метаданные типа для хранения (столбца).
   * Содержит методы для сериализации/десериализации.
   */
-class IColumnType
+class IDataType
 {
 public:
 	/// Основное имя типа (например, BIGINT UNSIGNED).
@@ -53,7 +53,7 @@ public:
 	virtual void deserializeTextQuoted(Field & field, std::istream & istr, bool compatible = false) const = 0;
 
 
-	virtual ~IColumnType() {}
+	virtual ~IDataType() {}
 };
 
 }

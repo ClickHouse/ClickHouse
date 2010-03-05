@@ -5,7 +5,7 @@
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
-#include <DB/ColumnTypes/ColumnTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 using Poco::SharedPtr;
 
@@ -19,8 +19,8 @@ int main(int argc, char ** argv)
 		DB::ColumnNames column_names;
 		column_names.push_back("number");
 
-		Poco::SharedPtr<DB::ColumnTypes> column_types = new DB::ColumnTypes;
-		column_types->push_back(new DB::ColumnTypeUInt64);
+		Poco::SharedPtr<DB::DataTypes> column_types = new DB::DataTypes;
+		column_types->push_back(new DB::DataTypeUInt64);
 		
 		SharedPtr<DB::IBlockInputStream> input = table.read(column_names, 0);
 		DB::TabSeparatedRowOutputStream output(std::cout, column_types);
