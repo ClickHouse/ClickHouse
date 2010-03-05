@@ -20,7 +20,7 @@ NumbersBlockInputStream::NumbersBlockInputStream(size_t block_size_) : block_siz
 Block NumbersBlockInputStream::read()
 {
 	Block res;
-	res.insert(0, ColumnWithNameAndType());
+	res.insert(ColumnWithNameAndType());
 	ColumnWithNameAndType & column_with_name_and_type = res.getByPosition(0);
 	column_with_name_and_type.name = "number";
 	column_with_name_and_type.type = new ColumnTypeUInt64();

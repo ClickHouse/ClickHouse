@@ -5,7 +5,6 @@
 
 #include <boost/variant.hpp>
 #include <boost/variant/recursive_variant.hpp>
-#include <boost/variant/static_visitor.hpp>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Field.h>
@@ -46,36 +45,6 @@ typedef boost::make_recursive_variant<
 
 typedef std::vector<Column> TupleColumn;	/// Столбец значений типа "кортеж" - несколько столбцов произвольного типа
 typedef std::vector<Column> ArrayColumn;	/// Столбец значений типа "массив" - столбец, значения в котором - массивы
-
-
-/** Возвращает количество значений в столбце
-  * TODO: поправить для tuple.
-  */
-class ColumnVisitorSize : public boost::static_visitor<size_t>
-{
-public:
-	template <typename T> size_t operator() (const T & x) const { return x.size(); }
-};
-
-
-/** Возвращает n-ый элемент столбца.
-  * TODO: поправить для tuple.
-  */
-class ColumnVisitorNthElement : public boost::static_visitor<Field>
-{
-public:
-	ColumnVisitorNthElement(size_t n_) : n(n_) {}
-
-	template <typename T> Field operator() (const T & x) const
-	{
-		return x.size() == 1
-			? x[0]	/// столбец - константа
-			: x[n];
-	}
-private:
-	size_t n;
-};
-
 
 }
 

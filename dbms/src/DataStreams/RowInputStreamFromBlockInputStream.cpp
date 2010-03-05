@@ -1,5 +1,6 @@
-#include <DB/DataStreams/RowInputStreamFromBlockInputStream.h>
+#include <DB/Core/ColumnVisitors.h>
 
+#include <DB/DataStreams/RowInputStreamFromBlockInputStream.h>
 
 namespace DB
 {
@@ -12,19 +13,10 @@ RowInputStreamFromBlockInputStream::RowInputStreamFromBlockInputStream(IBlockInp
 {
 }
 
-class TestVisitor : public boost::static_visitor<UInt64>
-{
-public:
-	template <typename T> UInt64 operator() (const T & x) const
-	{
-		return 0;
-	}
-};
-
 
 Row RowInputStreamFromBlockInputStream::read()
 {
-/*	if (pos >= current_rows)
+	if (pos >= current_rows)
 	{
 		current_block = block_input.read();
 		current_rows = current_block.rows();
@@ -38,13 +30,7 @@ Row RowInputStreamFromBlockInputStream::read()
 	for (size_t i = 0; i < columns; ++i)
 		row[i] = boost::apply_visitor(visitor, *current_block.getByPosition(i).column);
 
-	return row;
-*/
-
-	Column column = UInt64Column(0);
-	Field field = boost::apply_visitor(TestVisitor(), column);
-
-	Row row;
+	++pos;
 	return row;
 }
 

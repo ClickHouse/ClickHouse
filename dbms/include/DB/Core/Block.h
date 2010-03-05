@@ -6,6 +6,8 @@
 #include <list>
 
 #include <DB/Core/ColumnWithNameAndType.h>
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
 
 
 namespace DB
@@ -31,7 +33,11 @@ private:
 	void rebuildIndexByPosition();
 	
 public:
+	/// вставить столбец в заданную позицию
 	void insert(size_t position, const ColumnWithNameAndType & elem);
+	/// вставить столбец в конец
+	void insert(const ColumnWithNameAndType & elem);
+	/// удалить столбец в заданной позиции
 	void erase(size_t position);
 
 	ColumnWithNameAndType & getByPosition(size_t position);

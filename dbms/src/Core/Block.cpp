@@ -1,5 +1,6 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Core/ColumnVisitors.h>
 
 #include <DB/Core/Block.h>
 
@@ -18,7 +19,18 @@ void Block::rebuildIndexByPosition()
 
 void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 {
+	if (position >= index_by_position.size())
+		throw Exception("Position out of bound in Block::insert()", ErrorCodes::POSITION_OUT_OF_BOUND);
+		
 	Container_t::iterator it = data.insert(index_by_position[position], elem);
+	rebuildIndexByPosition();
+	index_by_name[elem.name] = it; 
+}
+
+
+void Block::insert(const ColumnWithNameAndType & elem)
+{
+	Container_t::iterator it = data.insert(data.end(), elem);
 	rebuildIndexByPosition();
 	index_by_name[elem.name] = it; 
 }
@@ -26,6 +38,9 @@ void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 
 void Block::erase(size_t position)
 {
+	if (position >= index_by_position.size())
+		throw Exception("Position out of bound in Block::erase()", ErrorCodes::POSITION_OUT_OF_BOUND);
+		
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
 	data.erase(it);
