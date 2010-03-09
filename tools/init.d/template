@@ -79,7 +79,7 @@ stop()
 	if isrun; then
 	    if [ -f "$LOCKFILE" ]; then
 		rm -f "$LOCKFILE"
-		kill -INT `cat "$PIDFILE"`
+		kill -TERM `cat "$PIDFILE"`
 		wait4done
 	    else
 		echo "has been stopping already"
@@ -94,6 +94,34 @@ stop()
 restart()
 {
 	stop
+	start
+}
+
+forcestop()
+{
+	local EXIT_STATUS
+	EXIT_STATUS=0
+
+	echo -n "Stop $PROGRAM service: "
+
+	if isrun; then
+	    if [ -f "$LOCKFILE" ]; then
+		rm -f "$LOCKFILE"
+		kill -9 `cat "$PIDFILE"`
+		wait4done
+	    else
+		echo "has been stopping already"
+		return 1
+	    fi
+	fi
+
+	echo "DONE"
+	return $EXIT_STATUS
+}
+
+forcerestart()
+{
+	forcestop
 	start
 }
 
@@ -121,6 +149,12 @@ case "$1" in
 		;;
 	restart)
 		restart && enable_cron
+		;;
+	forcestop)
+		disable_cron && forcestop
+		;;
+	forcerestart)
+		forcerestart && enable_cron
 		;;
 	reload)
 		restart
