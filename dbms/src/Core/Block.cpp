@@ -1,6 +1,5 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-#include <DB/Core/ColumnVisitors.h>
 
 #include <DB/Core/Block.h>
 
@@ -79,10 +78,9 @@ const ColumnWithNameAndType & Block::getByName(const std::string & name) const
 size_t Block::rows() const
 {
 	size_t res = 0;
-	ColumnVisitorSize visitor;
 	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
 	{
-		size_t size = boost::apply_visitor(visitor, *it->column);
+		size_t size = it->column->size();
 
 		if (size == 0)
 			throw Exception("Empty column in block.", ErrorCodes::EMPTY_COLUMN_IN_BLOCK);

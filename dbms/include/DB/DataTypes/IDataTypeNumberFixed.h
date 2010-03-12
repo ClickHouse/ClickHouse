@@ -16,7 +16,7 @@ namespace DB
   * Остаётся лишь чисто виртуальный метод getName().
   *
   * Параметры: FieldType - тип единичного значения, ColumnType - тип столбца со значениями.
-  * (см. Field.h, Column.h)
+  * (см. Core/Field.h, Columns/IColumn.h)
   */
 template <typename FieldType, typename ColumnType>
 class IDataTypeNumberFixed : public IDataTypeNumber<FieldType>
@@ -39,15 +39,15 @@ public:
 		field = x;
 	}
 	
-	void serializeBinary(const Column & column, std::ostream & ostr) const
+	void serializeBinary(const IColumn & column, std::ostream & ostr) const
 	{
-		const ColumnType & x = boost::get<ColumnType>(column);
+		const typename ColumnType::Container_t & x = dynamic_cast<const ColumnType &>(column).getData();
 		ostr.write(reinterpret_cast<const char *>(&x[0]), sizeof(typename ColumnType::value_type) * x.size());
 	}
 	
-	void deserializeBinary(Column & column, std::istream & istr, size_t limit) const
+	void deserializeBinary(IColumn & column, std::istream & istr, size_t limit) const
 	{
-		ColumnType & x = boost::get<ColumnType>(column);
+		typename ColumnType::Container_t & x =  dynamic_cast<ColumnType &>(column).getData();
 		x.resize(limit);
 		istr.read(reinterpret_cast<char*>(&x[0]), sizeof(typename ColumnType::value_type) * limit);
 		x.resize(istr.gcount());

@@ -2,6 +2,7 @@
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 
@@ -24,9 +25,9 @@ Block NumbersBlockInputStream::read()
 	ColumnWithNameAndType & column_with_name_and_type = res.getByPosition(0);
 	column_with_name_and_type.name = "number";
 	column_with_name_and_type.type = new DataTypeUInt64();
-	column_with_name_and_type.column = new Column;
-	*column_with_name_and_type.column = UInt64Column(block_size);
-	UInt64Column & vec = boost::get<UInt64Column>(*column_with_name_and_type.column);
+	ColumnUInt64 * column = new ColumnUInt64(block_size);
+	ColumnUInt64::Container_t & vec = column->getData();
+	column_with_name_and_type.column = column;
 
 	for (size_t i = 0; i < block_size; ++i)
 		vec[i] = next++;

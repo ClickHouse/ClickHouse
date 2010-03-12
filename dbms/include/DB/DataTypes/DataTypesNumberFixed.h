@@ -1,7 +1,7 @@
 #ifndef DBMS_DATA_TYPES_NUMBER_FIXED_H
 #define DBMS_DATA_TYPES_NUMBER_FIXED_H
 
-#include <DB/Core/Column.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/IDataTypeNumberFixed.h>
 
 
@@ -11,7 +11,7 @@ namespace DB
 /** Типы столбцов для чисел фиксированной ширины. */
 
 #define DEFINE_DATA_TYPE_NUMBER_FIXED(TYPE) 										\
-	class DataType ## TYPE : public IDataTypeNumberFixed<TYPE, TYPE ## Column>	\
+	class DataType ## TYPE : public IDataTypeNumberFixed<TYPE, Column ## TYPE>		\
 	{																				\
 	public:																			\
 		std::string getName() const { return #TYPE; }								\

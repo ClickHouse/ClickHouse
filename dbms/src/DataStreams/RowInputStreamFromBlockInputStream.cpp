@@ -1,5 +1,3 @@
-#include <DB/Core/ColumnVisitors.h>
-
 #include <DB/DataStreams/RowInputStreamFromBlockInputStream.h>
 
 namespace DB
@@ -23,12 +21,11 @@ Row RowInputStreamFromBlockInputStream::read()
 		pos = 0;
 	}
 
-	ColumnVisitorNthElement visitor(pos);
 	size_t columns = current_block.columns();
 	Row row(columns);
 
 	for (size_t i = 0; i < columns; ++i)
-		row[i] = boost::apply_visitor(visitor, *current_block.getByPosition(i).column);
+		row[i] = (*current_block.getByPosition(i).column)[pos];
 
 	++pos;
 	return row;

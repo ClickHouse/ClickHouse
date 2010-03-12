@@ -3,7 +3,7 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/Core/Column.h>
+#include <DB/Columns/IColumn.h>
 #include <DB/DataTypes/IDataType.h>
 
 
@@ -17,7 +17,7 @@ using Poco::SharedPtr;
 
 struct ColumnWithNameAndType
 {
-	SharedPtr<Column> column;
+	SharedPtr<IColumn> column;
 	SharedPtr<IDataType> type;
 	String name;
 };

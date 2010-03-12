@@ -4,7 +4,7 @@
 #include <ostream>
 
 #include <DB/Core/Field.h>
-#include <DB/Core/Column.h>
+#include <DB/Columns/IColumn.h>
 
 
 namespace DB
@@ -29,9 +29,9 @@ public:
 	  */
 	virtual void serializeBinary(const Field & field, std::ostream & ostr) const = 0;
 	virtual void deserializeBinary(Field & field, std::istream & istr) const = 0;
-	virtual void serializeBinary(const Column & column, std::ostream & ostr) const = 0;
+	virtual void serializeBinary(const IColumn & column, std::ostream & ostr) const = 0;
 	/** Считать не более limit значений. */
-	virtual void deserializeBinary(Column & column, std::istream & istr, size_t limit) const = 0;
+	virtual void deserializeBinary(IColumn & column, std::istream & istr, size_t limit) const = 0;
 
 	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
 	  * Без эскейпинга и квотирования.

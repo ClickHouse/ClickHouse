@@ -3,6 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -22,10 +23,10 @@ int main(int argc, char ** argv)
 		Poco::SharedPtr<DB::DataTypes> column_types = new DB::DataTypes;
 		column_types->push_back(new DB::DataTypeUInt64);
 		
-		SharedPtr<DB::IBlockInputStream> input = table.read(column_names, 0);
+		DB::LimitBlockInputStream input(table.read(column_names, 0, 10), 100, 100);
 		DB::TabSeparatedRowOutputStream output(std::cout, column_types);
 		
-		DB::copyData(*input, output);
+		DB::copyData(input, output);
 	}
 	catch (const DB::Exception & e)
 	{
