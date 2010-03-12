@@ -33,6 +33,12 @@ private:
 	void rebuildIndexByPosition();
 	
 public:
+	Block() {}
+	
+	/// нужны, чтобы правильно скопировались индексы
+	Block(const Block & other);
+	Block & operator= (const Block & other);
+
 	/// вставить столбец в заданную позицию
 	void insert(size_t position, const ColumnWithNameAndType & elem);
 	/// вставить столбец в конец

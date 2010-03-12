@@ -1,3 +1,5 @@
+#include <iterator>
+
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -6,6 +8,29 @@
 
 namespace DB
 {
+
+
+Block::Block(const Block & other)
+{
+	*this = other;
+}
+
+
+Block & Block::operator= (const Block & other)
+{
+	data = other.data;
+	rebuildIndexByPosition();
+	
+	for (IndexByName_t::const_iterator it = other.index_by_name.begin(); it != other.index_by_name.end(); ++it)
+	{
+		Container_t::iterator value = data.begin();
+		std::advance(value, std::distance(const_cast<Block&>(other).data.begin(), it->second));
+		index_by_name[it->first] = value;
+	}
+	
+	return *this;
+}
+
 
 void Block::rebuildIndexByPosition()
 {

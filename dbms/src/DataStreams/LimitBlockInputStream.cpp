@@ -19,26 +19,30 @@ Block LimitBlockInputStream::read()
 	Block res;
 	size_t rows = 0;
 
+	/// pos - сколько строк было прочитано, включая последний прочитанный блок
+
 	if (pos >= offset + limit)
 		return res;
 
-	while (pos + rows <= offset)
+	do
 	{
 		res = input->read();
+		res.getByPosition(0);
 		rows = res.rows();
 		pos += rows;
-	}
+	} while (pos <= offset);
 
-	if (pos >= offset && pos + rows <= offset + limit)
-	{
-		pos += rows;
+	/// отдать целый блок
+	if (pos >= offset + rows && pos <= offset + limit)
 		return res;
-	}
 
-	/// блок, от которого надо выбрать кусок
+	/// отдать кусок блока
+	size_t start = std::max(0, static_cast<int>(offset) + static_cast<int>(rows) - static_cast<int>(pos));
+	size_t length = std::min(rows - start, limit + offset + rows - pos);
+	
 	for (size_t i = 0; i < res.columns(); ++i)
-		res.getByPosition(i).column->cut(std::max(0, static_cast<int>(offset) - static_cast<int>(pos)), limit);
-	pos += rows;
+		res.getByPosition(i).column->cut(start, length);
+	
 	return res;
 }
 

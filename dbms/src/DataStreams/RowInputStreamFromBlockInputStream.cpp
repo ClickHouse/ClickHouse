@@ -1,5 +1,6 @@
 #include <DB/DataStreams/RowInputStreamFromBlockInputStream.h>
 
+
 namespace DB
 {
 
