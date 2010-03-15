@@ -27,7 +27,6 @@ Block LimitBlockInputStream::read()
 	do
 	{
 		res = input->read();
-		res.getByPosition(0);
 		rows = res.rows();
 		pos += rows;
 	} while (pos <= offset);
