@@ -29,13 +29,6 @@ typedef boost::make_recursive_variant<
 typedef std::vector<Field> Array;			/// Значение типа "массив"
 
 
-/// почему-то у boost::variant определены операторы < и ==, но не остальные операторы сравнения
-inline bool operator!= (const Field & lhs, const Field & rhs) { return !(lhs == rhs); }
-inline bool operator<= (const Field & lhs, const Field & rhs) { return lhs < rhs || lhs == rhs; }
-inline bool operator>= (const Field & lhs, const Field & rhs) { return !(lhs < rhs); }
-inline bool operator> (const Field & lhs, const Field & rhs) { return !(lhs < rhs) && !(lhs == rhs); }
-
-
 /** Числовое значение конкретного типа Field */
 namespace FieldType
 {
