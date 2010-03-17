@@ -31,7 +31,8 @@ namespace DB
   */
 namespace ExpressionGrammarTypes
 {
-	typedef boost::variant<UInt64, Int64, Float64> NumberConstant;	/// 1, -1, 0.1
+	/// с тем, какой конкретно тип у числа, будем разбираться потом
+	typedef Float64 NumberConstant;									/// 1, -1, 0.1
 	typedef String StringConstant;									/// 'abc', 'ab\'c', 'abc\\'
 	typedef Null NullConstant;										/// NULL, null, NuLl
 
@@ -103,7 +104,7 @@ struct ExpressionGrammar : qi::grammar<Iterator, ExpressionGrammarTypes::Express
 		name %= raw[lexeme[alpha >> -*(alnum | '_')]];
 		constant %= number | string | null;
 		function %= name >> '(' >> expression >> ')';
-		number %= ulong_long | long_long | double_;
+		number %= double_;
 		null = eps[_val = boost::none] >> no_case["NULL"];
 		string %= raw[lexeme['\'' >> *((char_ - (char_('\\') | '\'')) | (char_('\'') >> char_)) >> '\'']];
 	}

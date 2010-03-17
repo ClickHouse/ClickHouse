@@ -12,31 +12,12 @@ namespace ascii = boost::spirit::ascii;
 
 typedef DB::ExpressionGrammarTypes::Expression Expr;
 
-class dumpNumber : public boost::static_visitor<>
-{
-public:
-	void operator() (const DB::UInt64 & x) const
-	{
-		std::cout << "UInt64: " << x << std::endl;
-	}
-
-	void operator() (const DB::Int64 & x) const
-	{
-		std::cout << "Int64: " << x << std::endl;
-	}
-
-	void operator() (const DB::Float64 & x) const
-	{
-		std::cout << "Float64: " << x << std::endl;
-	}
-};
-
 class dumpConst : public boost::static_visitor<>
 {
 public:
 	void operator() (const DB::ExpressionGrammarTypes::NumberConstant & x) const
 	{
-		boost::apply_visitor(dumpNumber(), x);
+		std::cout << "Number: " << x << std::endl;
 	}
 
 	void operator() (const DB::ExpressionGrammarTypes::StringConstant & x) const
