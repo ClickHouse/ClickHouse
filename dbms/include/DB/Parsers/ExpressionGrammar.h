@@ -3,8 +3,6 @@
 
 #include <boost/spirit/include/qi.hpp>
 #include <boost/spirit/include/phoenix_operator.hpp>
-#include <boost/lambda/lambda.hpp>
-#include <boost/tuple/tuple.hpp>
 #include <boost/variant/recursive_wrapper.hpp>
 #include <boost/fusion/include/adapt_struct.hpp>
 
@@ -77,7 +75,6 @@ namespace DB
 
 namespace qi = boost::spirit::qi;
 namespace ascii = boost::spirit::ascii;
-namespace lambda = boost::lambda;
 
 
 /** Грамматика */
@@ -90,8 +87,6 @@ struct ExpressionGrammar : qi::grammar<Iterator, ExpressionGrammarTypes::Express
 		using qi::raw;
 		using qi::alpha;
 		using qi::alnum;
-		using qi::ulong_long;
-		using qi::long_long;
 		using qi::double_;
 		using qi::eps;
 		using qi::no_case;
