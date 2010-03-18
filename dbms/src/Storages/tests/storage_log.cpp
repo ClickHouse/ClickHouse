@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
 			data_types->push_back(new DB::DataTypeUInt64);
 			data_types->push_back(new DB::DataTypeUInt8);
 			
-			DB::LimitBlockInputStream in_limit(in, 1000000);
+			DB::LimitBlockInputStream in_limit(in, 10);
 			DB::TabSeparatedRowOutputStream output(std::cout, data_types);
 			
 			DB::copyData(in_limit, output);

@@ -22,19 +22,6 @@ CompressingStreamBuf::~CompressingStreamBuf()
 }
 
 
-void CompressingStreamBuf::writeCompressedChunk()
-{
-	size_t compressed_size = qlz_compress(
-		&uncompressed_buffer[0],
-		&compressed_buffer[0],
-		pos_in_buffer,
-		&scratch[0]);
-
-	p_ostr->write(&compressed_buffer[0], compressed_size);
-	pos_in_buffer = 0;
-}
-
-
 int CompressingStreamBuf::close()
 {
 	sync();

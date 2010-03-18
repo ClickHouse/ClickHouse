@@ -28,8 +28,7 @@ Block LogBlockInputStream::read()
 			throw Exception("There is no column with name " + *it + " in table.",
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-		streams.insert(std::make_pair(*it,
-			new Poco::FileInputStream(storage.files[*it].path(), std::ios::in | std::ios::binary)));
+		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].path())));
 	}
 
 	for (ColumnNames::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -38,7 +37,7 @@ Block LogBlockInputStream::read()
 		column.name = *it;
 		column.type = (*storage.columns)[*it];
 		column.column = column.type->createColumn();
-		column.type->deserializeBinary(*column.column, *streams[column.name], block_size);
+		column.type->deserializeBinary(*column.column, streams[column.name]->compressed, block_size);
 
 		res.insert(column);
 	}
@@ -62,14 +61,13 @@ void LogBlockOutputStream::write(const Block & block)
 			throw Exception("There is no column with name " + name + " in table.",
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-		streams.insert(std::make_pair(name,
-			new Poco::FileOutputStream(storage.files[name].path(), std::ios::out | std::ios::ate | std::ios::binary)));
+		streams.insert(std::make_pair(name, new Stream(storage.files[name].path())));
 	}
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
-		column.type->serializeBinary(*column.column, *streams[column.name]);
+		column.type->serializeBinary(*column.column, streams[column.name]->compressed);
 	}
 }
 

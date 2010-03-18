@@ -8,6 +8,8 @@
 #include <Poco/FileStream.h>
 
 #include <DB/Core/NamesAndTypes.h>
+#include <DB/Common/CompressedInputStream.h>
+#include <DB/Common/CompressedOutputStream.h>
 #include <DB/Storages/IStorage.h>
 
 
@@ -27,7 +29,16 @@ private:
 	const ColumnNames & column_names;
 	StorageLog & storage;
 
-	typedef std::map<std::string, SharedPtr<Poco::FileInputStream> > FileStreams;
+	struct Stream
+	{
+		Stream(const std::string & path)
+			: plain(path, std::ios::in | std::ios::binary), compressed(plain) {}
+		
+		Poco::FileInputStream plain;
+		CompressedInputStream compressed;
+	};
+	
+	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
 	FileStreams streams;
 };
 
@@ -40,7 +51,16 @@ public:
 private:
 	StorageLog & storage;
 
-	typedef std::map<std::string, SharedPtr<Poco::FileOutputStream> > FileStreams;
+	struct Stream
+	{
+		Stream(const std::string & path)
+			: plain(path, std::ios::out | std::ios::ate | std::ios::binary), compressed(plain) {}
+		
+		Poco::FileOutputStream plain;
+		CompressedOutputStream compressed;
+	};
+
+	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
 	FileStreams streams;
 };
 
