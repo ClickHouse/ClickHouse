@@ -28,7 +28,8 @@ Block LogBlockInputStream::read()
 			throw Exception("There is no column with name " + *it + " in table.",
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-		streams.insert(std::make_pair(*it, new Poco::FileInputStream(storage.files[*it].path())));
+		streams.insert(std::make_pair(*it,
+			new Poco::FileInputStream(storage.files[*it].path(), std::ios::in | std::ios::binary)));
 	}
 
 	for (ColumnNames::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -61,7 +62,8 @@ void LogBlockOutputStream::write(const Block & block)
 			throw Exception("There is no column with name " + name + " in table.",
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-		streams.insert(std::make_pair(name, new Poco::FileOutputStream(storage.files[name].path())));
+		streams.insert(std::make_pair(name,
+			new Poco::FileOutputStream(storage.files[name].path(), std::ios::out | std::ios::ate | std::ios::binary)));
 	}
 
 	for (size_t i = 0; i < block.columns(); ++i)

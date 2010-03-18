@@ -6,7 +6,6 @@
 
 #include <DB/DataTypes/IDataTypeNumber.h>
 
-
 namespace DB
 {
 
@@ -50,7 +49,7 @@ public:
 		typename ColumnType::Container_t & x =  dynamic_cast<ColumnType &>(column).getData();
 		x.resize(limit);
 		istr.read(reinterpret_cast<char*>(&x[0]), sizeof(typename ColumnType::value_type) * limit);
-		x.resize(istr.gcount());
+		x.resize(istr.gcount() / sizeof(typename ColumnType::value_type));
 	}
 
 	SharedPtr<IColumn> createColumn() const

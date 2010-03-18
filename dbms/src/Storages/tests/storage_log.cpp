@@ -34,8 +34,9 @@ int main(int argc, char ** argv)
 			column1.name = "a";
 			column1.type = (*names_and_types)["a"];
 			column1.column = column1.type->createColumn();
-			DB::ColumnUInt64::Container_t vec1 = dynamic_cast<DB::ColumnUInt64&>(*column1.column).getData();
+			DB::ColumnUInt64::Container_t & vec1 = dynamic_cast<DB::ColumnUInt64&>(*column1.column).getData();
 
+			vec1.resize(rows);
 			for (size_t i = 0; i < rows; ++i)
 				vec1[i] = i;
 
@@ -45,8 +46,9 @@ int main(int argc, char ** argv)
 			column2.name = "b";
 			column2.type = (*names_and_types)["b"];
 			column2.column = column2.type->createColumn();
-			DB::ColumnUInt8::Container_t vec2 = dynamic_cast<DB::ColumnUInt8&>(*column2.column).getData();
+			DB::ColumnUInt8::Container_t & vec2 = dynamic_cast<DB::ColumnUInt8&>(*column2.column).getData();
 
+			vec2.resize(rows);
 			for (size_t i = 0; i < rows; ++i)
 				vec2[i] = i;
 
@@ -68,7 +70,7 @@ int main(int argc, char ** argv)
 			data_types->push_back(new DB::DataTypeUInt64);
 			data_types->push_back(new DB::DataTypeUInt8);
 			
-			DB::LimitBlockInputStream in_limit(in, 10);
+			DB::LimitBlockInputStream in_limit(in, 1000000);
 			DB::TabSeparatedRowOutputStream output(std::cout, data_types);
 			
 			DB::copyData(in_limit, output);

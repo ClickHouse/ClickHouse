@@ -110,7 +110,7 @@ size_t Block::rows() const
 		if (size == 0)
 			throw Exception("Empty column in block.", ErrorCodes::EMPTY_COLUMN_IN_BLOCK);
 
-		if (size != 1 && res != 0 && size != res)
+		if (res != 0 && size != res)
 			throw Exception("Sizes of columns doesn't match.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		res = size;
