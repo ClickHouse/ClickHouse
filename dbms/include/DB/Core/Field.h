@@ -65,6 +65,22 @@ public:
 };
 
 
+template <typename T> struct NearestFieldType;
+
+template <> struct NearestFieldType<UInt8> { typedef UInt64 Type; };
+template <> struct NearestFieldType<UInt16> { typedef UInt64 Type; };
+template <> struct NearestFieldType<UInt32> { typedef UInt64 Type; };
+template <> struct NearestFieldType<UInt64> { typedef UInt64 Type; };
+
+template <> struct NearestFieldType<Int8> { typedef Int64 Type; };
+template <> struct NearestFieldType<Int16> { typedef Int64 Type; };
+template <> struct NearestFieldType<Int32> { typedef Int64 Type; };
+template <> struct NearestFieldType<Int64> { typedef Int64 Type; };
+
+template <> struct NearestFieldType<Float32> { typedef Float64 Type; };
+template <> struct NearestFieldType<Float64> { typedef Float64 Type; };
+
+
 }
 
 #endif

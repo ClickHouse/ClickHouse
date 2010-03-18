@@ -8,6 +8,7 @@
 #include <DB/Core/ColumnNames.h>
 #include <DB/Core/Exception.h>
 #include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 #define DEFAULT_BLOCK_SIZE 1048576
 
@@ -44,6 +45,16 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE)
 	{
 		throw Exception("Method read() is not supported by storage " + getName());
+	}
+
+	/** Пишет данные в таблицу.
+	  * Принимает описание запроса, в котором может содержаться информация о методе записи данных.
+	  * Возвращает объект, с помощью которого можно последовательно писать данные.
+	  */
+	virtual SharedPtr<IBlockOutputStream> write(
+		const ptree & query)
+	{
+		throw Exception("Method write() is not supported by storage " + getName());
 	}
 
 	virtual ~IStorage() {}

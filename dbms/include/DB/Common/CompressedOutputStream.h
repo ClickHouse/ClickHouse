@@ -30,14 +30,9 @@ protected:
 	int writeToDevice(const char * buffer, std::streamsize length);
 
 private:
-	size_t pos_in_buffer;
 	std::ostream * p_ostr;
-	std::vector<char> uncompressed_buffer;
 	std::vector<char> compressed_buffer;
 	std::vector<char> scratch;
-
-	/** Сжимает данные, находящиеся в буфере и записывает их. */
-	void writeCompressedChunk();
 };
 
 

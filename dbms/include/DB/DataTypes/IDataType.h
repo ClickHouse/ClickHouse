@@ -3,6 +3,8 @@
 
 #include <ostream>
 
+#include <Poco/SharedPtr.h>
+
 #include <DB/Core/Field.h>
 #include <DB/Columns/IColumn.h>
 
@@ -10,6 +12,7 @@
 namespace DB
 {
 
+using Poco::SharedPtr;
 
 /** Метаданные типа для хранения (столбца).
   * Содержит методы для сериализации/десериализации.
@@ -52,6 +55,9 @@ public:
 	virtual void serializeTextQuoted(const Field & field, std::ostream & ostr, bool compatible = false) const = 0;
 	virtual void deserializeTextQuoted(Field & field, std::istream & istr, bool compatible = false) const = 0;
 
+	/** Создать пустой столбец соответствующего типа.
+	  */
+	virtual SharedPtr<IColumn> createColumn() const = 0;
 
 	virtual ~IDataType() {}
 };

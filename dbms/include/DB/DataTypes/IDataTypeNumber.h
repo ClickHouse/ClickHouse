@@ -17,14 +17,14 @@ class IDataTypeNumber : public IDataType
 public:
 	void serializeText(const Field & field, std::ostream & ostr) const
 	{
-		ostr << boost::get<FieldType>(field);
+		ostr << boost::get<typename NearestFieldType<FieldType>::Type>(field);
 	}
 	
 	void deserializeText(Field & field, std::istream & istr) const
 	{
 		FieldType x;
 		istr >> x;
-		field = x;
+		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 
 	void serializeTextEscaped(const Field & field, std::ostream & ostr) const

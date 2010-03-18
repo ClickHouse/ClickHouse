@@ -31,7 +31,7 @@ public:
 	
 	Field operator[](size_t n) const
 	{
-		return data[n];
+		return typename NearestFieldType<T>::Type(data[n]);
 	}
 	
 	void cut(size_t start, size_t length)

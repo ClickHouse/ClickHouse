@@ -36,7 +36,7 @@ public:
 	{
 		typename ColumnType::value_type x;
 		istr.read(reinterpret_cast<char *>(&x), sizeof(x));
-		field = x;
+		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 	
 	void serializeBinary(const IColumn & column, std::ostream & ostr) const
@@ -51,6 +51,11 @@ public:
 		x.resize(limit);
 		istr.read(reinterpret_cast<char*>(&x[0]), sizeof(typename ColumnType::value_type) * limit);
 		x.resize(istr.gcount());
+	}
+
+	SharedPtr<IColumn> createColumn() const
+	{
+		return new ColumnType;
 	}
 };
 
