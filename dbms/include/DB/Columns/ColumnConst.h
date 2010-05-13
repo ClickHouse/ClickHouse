@@ -22,6 +22,7 @@ public:
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return data; }
 	void cut(size_t start, size_t length) { s = length; }
+	void clear() { s = 0; }
 
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }
@@ -31,6 +32,7 @@ public:
 	virtual SharedPtr<IColumn> convertToFullColumn() const = 0;
 
 private:
+	size_t s;
 	T data;
 };
 

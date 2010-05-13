@@ -20,6 +20,9 @@ public:
 	/** Удалить всё кроме диапазона элементов */
 	virtual void cut(size_t start, size_t length) = 0;
 
+	/** Очистить */
+	virtual void clear() = 0;
+
 	virtual ~IColumn() {}
 };
 

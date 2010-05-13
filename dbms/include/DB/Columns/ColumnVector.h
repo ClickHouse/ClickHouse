@@ -50,6 +50,11 @@ public:
 		}
 	}
 
+	void clear()
+	{
+		data.clear();
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{

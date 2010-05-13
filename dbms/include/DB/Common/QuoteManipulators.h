@@ -4,14 +4,4 @@
 #include <strconvert/escape_manip.h>
 #include <strconvert/unescape_manip.h>
 
-
-namespace DB
-{
-
-typedef strconvert::quote_fast quote;
-typedef strconvert::unquote_fast unquote;
-
-}
-
-
 #endif

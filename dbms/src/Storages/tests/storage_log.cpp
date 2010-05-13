@@ -16,7 +16,7 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		const size_t rows = 1000000;
+		const size_t rows = 10000000;
 
 		/// создаём таблицу с парой столбцов
 	
@@ -38,7 +38,7 @@ int main(int argc, char ** argv)
 
 			vec1.resize(rows);
 			for (size_t i = 0; i < rows; ++i)
-				vec1[i] = i;
+				vec1[i] = 'z';
 
 			block.insert(column1);
 
@@ -50,7 +50,7 @@ int main(int argc, char ** argv)
 
 			vec2.resize(rows);
 			for (size_t i = 0; i < rows; ++i)
-				vec2[i] = i;
+				vec2[i] = 'x';
 
 			block.insert(column2);
 

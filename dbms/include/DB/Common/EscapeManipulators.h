@@ -4,14 +4,4 @@
 #include <strconvert/escape_manip.h>
 #include <strconvert/unescape_manip.h>
 
-
-namespace DB
-{
-
-typedef strconvert::escape_file escape;
-typedef strconvert::unescape_file unescape;
-
-}
-
-
 #endif

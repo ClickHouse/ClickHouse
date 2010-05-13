@@ -43,7 +43,6 @@ public:
 	virtual void deserializeText(Field & field, std::istream & istr) const = 0;
 
 	/** Текстовая сериализация с эскейпингом, но без квотирования.
-	  * Есть реализация по умолчанию, которая подходит почти для всех случаев.
 	  */
 	virtual void serializeTextEscaped(const Field & field, std::ostream & ostr) const = 0;
 	virtual void deserializeTextEscaped(Field & field, std::istream & istr) const = 0;

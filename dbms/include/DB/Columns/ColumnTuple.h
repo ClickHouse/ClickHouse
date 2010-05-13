@@ -17,7 +17,7 @@ using Poco::SharedPtr;
 
 /** Столбец со значениями-кортежами.
   */
-class ColumnTuple
+class ColumnTuple : public IColumn
 {
 private:
 	typedef std::vector<SharedPtr<IColumn> > Container_t;
@@ -60,6 +60,11 @@ public:
 	{
 		for (size_t i = 0; i < data.size(); ++i)
 			data[i]->cut(start, length);
+	}
+
+	void clear()
+	{
+		data.clear();
 	}
 
 	/// манипуляция с Tuple
