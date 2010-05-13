@@ -1,6 +1,8 @@
 #ifndef DBMS_CORE_COLUMN_ARRAY_H
 #define DBMS_CORE_COLUMN_ARRAY_H
 
+#include <string.h> // memcpy
+
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Exception.h>
