@@ -12,32 +12,49 @@
 
 int main(int argc, char ** argv)
 {
-	Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
-	DB::ColumnUInt8::Container_t & data = dynamic_cast<DB::ColumnUInt8 &>(column->getData()).getData();
-	DB::ColumnArray::Offsets_t & offsets = column->getOffsets();
-	DB::DataTypeString data_type;
-
 	Poco::Stopwatch stopwatch;
 	size_t n = 10000000;
-
 	const char * s = "Hello, world!";
 	size_t size = strlen(s) + 1;
+	DB::DataTypeString data_type;
 
-	data.resize(n * size);
-	offsets.resize(n);
-	for (size_t i = 0; i < n; ++i)
 	{
-		memcpy(&data[i * size], s, size);
-		offsets[i] = (i + 1) * size;
+		Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
+		DB::ColumnUInt8::Container_t & data = dynamic_cast<DB::ColumnUInt8 &>(column->getData()).getData();
+		DB::ColumnArray::Offsets_t & offsets = column->getOffsets();
+		
+		data.resize(n * size);
+		offsets.resize(n);
+		for (size_t i = 0; i < n; ++i)
+		{
+			memcpy(&data[i * size], s, size);
+			offsets[i] = (i + 1) * size;
+		}
+
+		std::ofstream ostr("test");
+
+		stopwatch.restart();
+		data_type.serializeBinary(*column, ostr);
+		stopwatch.stop();
+
+		std::cout << "Writing, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
 	}
 
-	std::ofstream ostr("/dev/null");
+	{
+		Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
 
-	stopwatch.restart();
-	data_type.serializeBinary(*column, ostr);
-	stopwatch.stop();
+		std::ifstream istr("test");
 
-	std::cout << "Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+		stopwatch.restart();
+		data_type.deserializeBinary(*column, istr, n);
+		stopwatch.stop();
+
+		std::cout << "Reading, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+
+		std::cout << std::endl
+			<< boost::get<DB::String>((*column)[0]) << std::endl
+			<< boost::get<DB::String>((*column)[n - 1]) << std::endl;
+	}
 
 	return 0;
 }
