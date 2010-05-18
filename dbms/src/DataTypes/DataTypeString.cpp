@@ -49,12 +49,12 @@ void DataTypeString::serializeBinary(const IColumn & column, std::ostream & ostr
 	if (!size)
 		return;
 
-	writeVarUInt(offsets[0], ostr);
-	ostr.write(reinterpret_cast<const char *>(&data[0]), offsets[0]);
+	writeVarUInt(offsets[0] - 1, ostr);
+	ostr.write(reinterpret_cast<const char *>(&data[0]), offsets[0] - 1);
 	
 	for (size_t i = 1; i < size; ++i)
 	{
-		UInt64 str_size = offsets[i] - offsets[i - 1];
+		UInt64 str_size = offsets[i] - offsets[i - 1] - 1;
 		writeVarUInt(str_size, ostr);
 		ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);
 	}
