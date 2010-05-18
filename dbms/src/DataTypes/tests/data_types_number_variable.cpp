@@ -5,14 +5,14 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumberVariable.h>
 
 
 int main(int argc, char ** argv)
 {
 	Poco::SharedPtr<DB::ColumnUInt64> column = new DB::ColumnUInt64();
 	DB::ColumnUInt64::Container_t & vec = column->getData();
-	DB::DataTypeUInt64 data_type;
+	DB::DataTypeVarUInt data_type;
 
 	Poco::Stopwatch stopwatch;
 	size_t n = 10000000;
