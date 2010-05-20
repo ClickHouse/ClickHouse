@@ -71,6 +71,21 @@ public:
 		data->cut(nested_offset, nested_length);
 	}
 
+	void insert(const Field & x)
+	{
+		Array & array = boost::get<Array &>(x);
+		size_t size = array.size();
+		for (size_t i = 0; i < size; ++i)
+			data->insert(array[i]);
+		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size);
+	}
+
+	void insertDefault()
+	{
+		data->insertDefault();
+		offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
+	}
+
 	void clear()
 	{
 		data->clear();

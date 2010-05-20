@@ -3,6 +3,8 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
 #include <DB/Columns/IColumn.h>
 
 
@@ -23,6 +25,11 @@ public:
 	Field operator[](size_t n) const { return data; }
 	void cut(size_t start, size_t length) { s = length; }
 	void clear() { s = 0; }
+	void insert(const Field & x)
+	{
+		throw Exception("Cannot insert element into constant column", ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
+	}
+	void insertDefault() { ++s; }
 
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }

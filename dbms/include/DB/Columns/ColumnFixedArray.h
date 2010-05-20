@@ -44,6 +44,23 @@ public:
 		data->cut(n * start, n * length);
 	}
 
+	void insert(const Field & x)
+	{
+		const Array & array = boost::get<Array &>(x);
+		if (n != array.size())
+			throw Exception("Size of array doesn't match size of FixedArray column",
+				ErrorCodes::SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN);
+
+		for (size_t i = 0; i < n; ++i)
+			data->insert(array[i]);
+	}
+
+	void insertDefault()
+	{
+		for (size_t i = 0; i < n; ++i)
+			data->insertDefault();
+	}
+
 	void clear()
 	{
 		data.clear();

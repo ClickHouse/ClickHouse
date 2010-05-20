@@ -62,6 +62,22 @@ public:
 			data[i]->cut(start, length);
 	}
 
+	void insert(const Field & x)
+	{
+		Array & arr = boost::get<Array &>(x);
+		if (arr.size() != data.size())
+			throw Exception("Sizes of columns in tuple doesn't match", ErrorCodes::SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH);
+	
+		for (size_t i = 0; i < data.size(); ++i)
+			data[i]->insert(arr[i]);
+	}
+
+	void insertDefault()
+	{
+		for (size_t i = 0; i < data.size(); ++i)
+			data[i]->insertDefault();
+	}
+
 	void clear()
 	{
 		data.clear();

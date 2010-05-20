@@ -59,6 +59,25 @@ public:
 		data->cut(start, length);
 	}
 
+	void insert(const Field & x)
+	{
+		if (x == boost::none)
+		{
+			data->insertDefault();
+			nulls.push_back(1);
+		}
+		else
+		{
+			data->insert(x);
+			nulls.push_back(0);
+		}
+	}
+
+	void insertDefault()
+	{
+		insert(Null());
+	}
+
 	void clear()
 	{
 		data.clear();

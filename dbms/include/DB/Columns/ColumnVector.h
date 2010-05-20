@@ -50,6 +50,16 @@ public:
 		}
 	}
 
+	void insert(const Field & x)
+	{
+		data.push_back(boost::get<typename NearestFieldType<T>::Type>(x));
+	}
+
+	void insertDefault()
+	{
+		data.push_back(T());
+	}
+
 	void clear()
 	{
 		data.clear();
