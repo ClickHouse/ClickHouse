@@ -21,6 +21,7 @@ class ColumnConst : public IColumn
 public:
 	ColumnConst(size_t s_, T & data_) : s(s_), data(data_) {}
 
+	SharedPtr<IColumn> cloneEmpty() const { return new ColumnConst(0, data); }
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return data; }
 	void cut(size_t start, size_t length) { s = length; }

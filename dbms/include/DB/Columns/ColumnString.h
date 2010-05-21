@@ -25,6 +25,11 @@ public:
 		char_data(dynamic_cast<ColumnUInt8 &>(*data).getData())
 	{
 	}
+
+	SharedPtr<IColumn> cloneEmpty() const
+	{
+		return new ColumnString;
+	}
 	
 	Field operator[](size_t n) const
 	{

@@ -5,12 +5,11 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/Core/Defines.h>
 #include <DB/Core/ColumnNames.h>
 #include <DB/Core/Exception.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-
-#define DEFAULT_BLOCK_SIZE 1048576
 
 
 namespace DB

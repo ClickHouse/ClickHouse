@@ -1,16 +1,23 @@
 #ifndef DBMS_CORE_ICOLUMN_H
 #define DBMS_CORE_ICOLUMN_H
 
+#include <Poco/SharedPtr.h>
+
 #include <DB/Core/Field.h>
 
 namespace DB
 {
+
+using Poco::SharedPtr;
 
 /** Интерфейс для хранения столбцов значений в оперативке.
   */
 class IColumn
 {
 public:
+	/** Создать пустой столбец такого же типа */
+	virtual SharedPtr<IColumn> cloneEmpty() const = 0;
+
 	/** Количество значений в столбце. */
 	virtual size_t size() const = 0;
 

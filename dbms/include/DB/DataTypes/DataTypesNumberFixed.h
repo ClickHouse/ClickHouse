@@ -15,6 +15,7 @@ namespace DB
 	{																				\
 	public:																			\
 		std::string getName() const { return #TYPE; }								\
+		SharedPtr<IDataType> clone() const { return new DataType ## TYPE; }			\
 	};
 
 DEFINE_DATA_TYPE_NUMBER_FIXED(UInt8);

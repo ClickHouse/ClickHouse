@@ -14,12 +14,14 @@ class DataTypeVarUInt : public IDataTypeNumberVariable<UInt64, ColumnUInt64>
 {
 public:
 	std::string getName() const { return "VarUInt"; }
+	SharedPtr<IDataType> clone() const { return new DataTypeVarUInt; }
 };
 
 class DataTypeVarInt : public IDataTypeNumberVariable<Int64, ColumnInt64>
 {
 public:
 	std::string getName() const { return "VarInt"; }
+	SharedPtr<IDataType> clone() const { return new DataTypeVarInt; }
 };
 
 }

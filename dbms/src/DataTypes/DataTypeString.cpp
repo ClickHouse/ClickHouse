@@ -101,7 +101,9 @@ void DataTypeString::serializeText(const Field & field, std::ostream & ostr) con
 
 void DataTypeString::deserializeText(Field & field, std::istream & istr) const
 {
-	istr >> boost::get<String &>(field);
+	String s;
+	istr >> s;
+	field = s;
 }
 
 
@@ -113,7 +115,9 @@ void DataTypeString::serializeTextEscaped(const Field & field, std::ostream & os
 
 void DataTypeString::deserializeTextEscaped(Field & field, std::istream & istr) const
 {
-	istr >> strconvert::unescape_file >> boost::get<String &>(field);
+	String s;
+	istr >> strconvert::unescape_file >> s;
+	field = s;
 }
 
 
@@ -125,7 +129,9 @@ void DataTypeString::serializeTextQuoted(const Field & field, std::ostream & ost
 
 void DataTypeString::deserializeTextQuoted(Field & field, std::istream & istr, bool compatible) const
 {
-	istr >> strconvert::unquote_fast >> boost::get<String &>(field);
+	String s;
+	istr >> strconvert::unquote_fast >> s;
+	field = s;
 }
 
 

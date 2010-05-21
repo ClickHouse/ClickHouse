@@ -23,6 +23,9 @@ public:
 	/// Основное имя типа (например, BIGINT UNSIGNED).
 	virtual std::string getName() const = 0;
 
+	/// Клонировать
+	virtual SharedPtr<IDataType> clone() const = 0;
+
 	/** Предполагается, что проверка статуса stream-ов производится вызывающей стороной.
 	  */
 

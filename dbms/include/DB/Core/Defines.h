@@ -1,0 +1,6 @@
+#ifndef DBMS_CORE_DEFINES_H
+#define DBMS_CORE_DEFINES_H
+
+#define DEFAULT_BLOCK_SIZE 1048576
+
+#endif

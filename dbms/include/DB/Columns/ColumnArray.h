@@ -32,6 +32,11 @@ public:
 	{
 		data->clear();
 	}
+
+	SharedPtr<IColumn> cloneEmpty() const
+	{
+		return new ColumnArray(data->cloneEmpty());
+	}
 	
 	size_t size() const
 	{

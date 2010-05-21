@@ -20,10 +20,15 @@ class ColumnFixedArray : public IColumn
 {
 public:
 	/** Создать пустой столбец массивов фиксированного размера n, со типом значений, как в столбце nested_column */
-	ColumnVector(SharedPtr<IColumn> nested_column, size_t n_)
+	ColumnFixedArray(SharedPtr<IColumn> nested_column, size_t n_)
 		: data(nested_column), n(n_)
 	{
 		data.clear();
+	}
+
+	SharedPtr<IColumn> cloneEmpty() const
+	{
+		return new ColumnFixedArray(data->cloneEmpty(), n);
 	}
 	
 	size_t size() const

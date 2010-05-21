@@ -22,6 +22,11 @@ public:
 		return "String";
 	}
 
+	SharedPtr<IDataType> clone() const
+	{
+		return new DataTypeString;
+	}
+
 	void serializeBinary(const Field & field, std::ostream & ostr) const;
 	void deserializeBinary(Field & field, std::istream & istr) const;
 	void serializeBinary(const IColumn & column, std::ostream & ostr) const;

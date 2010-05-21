@@ -21,6 +21,7 @@ public:
 	DataTypeDate() : date_lut(DateLUTSingleton::instance()) {}
 
 	std::string getName() const { return "Date"; }
+	SharedPtr<IDataType> clone() const { return new DataTypeDate; }
 
 	void serializeText(const Field & field, std::ostream & ostr) const
 	{

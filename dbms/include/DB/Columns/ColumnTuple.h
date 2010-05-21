@@ -43,6 +43,15 @@ public:
 		checkSizes();
 	}
 
+	SharedPtr<IColumn> cloneEmpty() const
+	{
+		Container_t new_data(data.size());
+		for (size_t i = 0; i < data.size(); ++i)
+			new_data[i] = data[i]->cloneEmpty();
+
+		return new ColumnTuple(new_data);
+	}
+
 	size_t size() const
 	{
 		return data[0]->size();
