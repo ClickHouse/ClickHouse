@@ -41,7 +41,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		String & s = boost::get<String &>(x);
+		const String & s = boost::get<const String &>(x);
 		size_t old_size = char_data.size();
 		size_t size_to_append = s.size() + 1;
 		char_data.resize(old_size + size_to_append);

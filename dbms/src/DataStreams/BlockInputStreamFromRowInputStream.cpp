@@ -3,6 +3,7 @@
 
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -19,10 +20,8 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
 }
 
 
-Block BlockInputStreamFromRowInputStream::read()
+void BlockInputStreamFromRowInputStream::initBlock(Block & res)
 {
-	Block res;
-
 	for (size_t i = 0; i < sample.columns(); ++i)
 	{
 		const ColumnWithNameAndType & sample_elem = sample.getByPosition(i);
@@ -34,13 +33,22 @@ Block BlockInputStreamFromRowInputStream::read()
 
 		res.insert(res_elem);
 	}
+}
+
+
+Block BlockInputStreamFromRowInputStream::read()
+{
+	Block res;
 
 	for (size_t rows = 0; rows < max_block_size; ++rows)
 	{
 		Row row = row_input.read();
 
 		if (row.empty())
-			return sample;
+			return res;
+
+		if (!res)
+			initBlock(res);
 
 		if (row.size() != sample.columns())
 			throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
@@ -48,7 +56,7 @@ Block BlockInputStreamFromRowInputStream::read()
 		for (size_t i = 0; i < row.size(); ++i)
 			res.getByPosition(i).column->insert(row[i]);
 	}
-	
+
 	return res;
 }
 

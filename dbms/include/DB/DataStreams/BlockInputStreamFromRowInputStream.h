@@ -33,6 +33,8 @@ private:
 	IRowInputStream & row_input;
 	const Block & sample;
 	size_t max_block_size;
+
+	void initBlock(Block & res);
 };
 
 }
