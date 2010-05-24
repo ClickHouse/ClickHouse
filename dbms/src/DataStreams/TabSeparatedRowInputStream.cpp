@@ -3,7 +3,6 @@
 
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 
-#include <iostream>
 
 namespace DB
 {

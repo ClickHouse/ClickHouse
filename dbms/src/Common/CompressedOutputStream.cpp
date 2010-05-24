@@ -2,7 +2,6 @@
 
 #include <DB/Common/CompressedOutputStream.h>
 
-#include <iostream>
 
 namespace DB
 {
@@ -40,11 +39,6 @@ int CompressingStreamBuf::writeToDevice(const char * buffer, std::streamsize len
 		&compressed_buffer[0],
 		length,
 		&scratch[0]);
-
-	std::cerr << "length: " << length << ", compressed_size: " << compressed_size << std::endl;
-	std::cerr.write(&buffer[0], 100);
-	std::cerr << std::endl;
-	std::cerr.write(&compressed_buffer[0], 100);
 
 	p_ostr->write(&compressed_buffer[0], compressed_size);
 	return static_cast<int>(length);

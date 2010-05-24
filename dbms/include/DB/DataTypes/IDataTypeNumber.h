@@ -22,9 +22,9 @@ public:
 	
 	void deserializeText(Field & field, std::istream & istr) const
 	{
-		FieldType x;
+		typename NearestFieldType<FieldType>::Type x;
 		istr >> x;
-		field = typename NearestFieldType<FieldType>::Type(x);
+		field = x;
 	}
 
 	void serializeTextEscaped(const Field & field, std::ostream & ostr) const

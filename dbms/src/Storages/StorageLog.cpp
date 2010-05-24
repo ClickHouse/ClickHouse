@@ -39,7 +39,8 @@ Block LogBlockInputStream::read()
 		column.column = column.type->createColumn();
 		column.type->deserializeBinary(*column.column, streams[column.name]->compressed, block_size);
 
-		res.insert(column);
+		if (column.column->size())
+			res.insert(column);
 	}
 
 	return res;

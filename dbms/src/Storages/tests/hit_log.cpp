@@ -82,7 +82,7 @@ int main(int argc, char ** argv)
 		;
 
 		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;
-		SharedPtr<DB::DataTypes> data_types;
+		SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
 		DB::ColumnNames column_names;
 		
 		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
@@ -109,6 +109,7 @@ int main(int argc, char ** argv)
 		}
 		
 		/// читаем данные из tsv файла и одновременно пишем в таблицу
+		if (argc == 2 && 0 == strcmp(argv[1], "write"))
 		{
 			DB::TabSeparatedRowInputStream in(std::cin, data_types);
 			SharedPtr<DB::IBlockOutputStream> out = table.write(0);
@@ -116,6 +117,7 @@ int main(int argc, char ** argv)
 		}
 
 		/// читаем из неё
+		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
 			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
 			DB::TabSeparatedRowOutputStream out(std::cout, data_types);
