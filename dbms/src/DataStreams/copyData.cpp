@@ -1,4 +1,5 @@
 #include <DB/DataStreams/RowInputStreamFromBlockInputStream.h>
+#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 
 #include <DB/DataStreams/copyData.h>
 
@@ -29,6 +30,13 @@ void copyData(IBlockInputStream & from, IRowOutputStream & to)
 {
 	RowInputStreamFromBlockInputStream row_input(from);
 	copyData(row_input, to);
+}
+
+
+void copyData(IRowInputStream & from, IBlockOutputStream & to, const Block & sample)
+{
+	BlockInputStreamFromRowInputStream block_input(from, sample);
+	copyData(block_input, to);
 }
 
 }
