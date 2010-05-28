@@ -1,6 +1,8 @@
 #ifndef DBMS_COMMON_READBUFFER_H
 #define DBMS_COMMON_READBUFFER_H
 
+#include <string.h>		// memcpy
+
 #include <algorithm>
 
 #include <DB/Core/Types.h>
