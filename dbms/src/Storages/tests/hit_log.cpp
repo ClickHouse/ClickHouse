@@ -119,6 +119,14 @@ int main(int argc, char ** argv)
 		/// читаем из неё
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
+/*			DB::ColumnNames column_names;
+			boost::assign::push_back(column_names)
+				("SearchPhrase");
+
+			SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
+			boost::assign::push_back(*data_types)
+				(new DB::DataTypeString);
+*/
 			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
 			DB::TabSeparatedRowOutputStream out(std::cout, data_types);
 			DB::copyData(*in, out);
