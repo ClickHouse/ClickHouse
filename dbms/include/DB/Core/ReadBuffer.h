@@ -2,6 +2,7 @@
 #define DBMS_COMMON_READBUFFER_H
 
 #include <cstring>
+#include <limits>
 #include <algorithm>
 
 #include <DB/Core/Types.h>
