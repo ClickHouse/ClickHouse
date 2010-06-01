@@ -18,16 +18,16 @@ int main(int argc, char ** argv)
 		DB::Float64 b;
 		DB::String c, d;
 
-		in.readIntText(a);
+		DB::readIntText(a, in);
 		in.ignore();
 		
-		in.readFloatText(b);
+		DB::readFloatText(b, in);
 		in.ignore();
 		
-		in.readEscapedString(c);
+		DB::readEscapedString(c, in);
 		in.ignore();
 		
-		in.readQuotedString(d);
+		DB::readQuotedString(d, in);
 
 		std::cout << a << ' ' << b << ' ' << c << '\t' << '\'' << d << '\'' << std::endl;
 	}

@@ -1,8 +1,7 @@
 #ifndef DBMS_COMMON_READBUFFER_H
 #define DBMS_COMMON_READBUFFER_H
 
-#include <string.h>		// memcpy
-
+#include <cstring>
 #include <algorithm>
 
 #include <DB/Core/Types.h>
@@ -57,199 +56,16 @@ public:
 	virtual ~ReadBuffer() {}
 
 
-	/// Функции для чтения конкретных данных
-
 	inline bool eof()
 	{
 		return pos == working_buffer.end() && !next();
 	}
-
-
-	void readChar(char & x)
-	{
-		x = 0;
-		if (!eof())
-		{
-			x = *pos;
-			++pos;
-		}
-	}
-
 
 	void ignore()
 	{
 		if (!eof())
 			++pos;
 	}
-	
-
-	/// грубо
-	template <typename T>
-	void readIntText(T & x)
-	{
-		x = 0;
-		while (!eof())
-		{
-			switch (*pos)
-			{
-				case '+':
-					break;
-				case '-':
-					x = -x;
-					break;
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-					x *= 10;
-					x += *pos - '0';
-					break;
-				default:
-					return;
-			}
-			++pos;
-		}
-	}
-
-	/// грубо; поддерживается только простой формат
-	template <typename T>
-	void readFloatText(T & x)
-	{
-		x = 0;
-		bool after_point = false;
-		double power_of_ten = 1;
-		
-		while (!eof())
-		{
-			switch (*pos)
-			{
-				case '+':
-					break;
-				case '-':
-					x = -x;
-					break;
-				case '.':
-					after_point = true;
-					break;
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-					if (after_point)
-					{
-						power_of_ten /= 10;
-						x += (*pos - '0') * power_of_ten;
-					}
-					else
-					{
-						x *= 10;
-						x += *pos - '0';
-					}
-					break;
-				default:
-					return;
-			}
-			++pos;
-		}
-	}
-
-	/// грубо; всё до '\n' или '\t'
-	void readString(String & s)
-	{
-		s = "";
-		while (!eof())
-		{
-			size_t bytes = 0;
-			for (; pos + bytes != working_buffer.end(); ++bytes)
-				if (pos[bytes] == '\t' || pos[bytes] == '\n')
-					break;
-				
-			s.append(pos, bytes);
-			pos += bytes;
-
-			if (pos != working_buffer.end())
-				return;
-		}
-	}
-
-	void readEscapedString(String & s)
-	{
-		s = "";
-		while (!eof())
-		{
-			size_t bytes = 0;
-			for (; pos + bytes != working_buffer.end(); ++bytes)
-				if (pos[bytes] == '\\' || pos[bytes] == '\t' || pos[bytes] == '\n')
-					break;
-	
-			s.append(pos, bytes);
-			pos += bytes;
-
-			if (*pos == '\t' || *pos == '\n')
-				return;
-
-			if (*pos == '\\')
-			{
-				++pos;
-				if (eof())
-					throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
-				s += parseEscapeSequence(*pos);
-				++pos;
-			}
-		}
-	}
-
-	void readQuotedString(String & s)
-	{
-		s = "";
-
-		if (eof() || *pos != '\'')
-			throw Exception("Cannot parse quoted string: expected opening single quote",
-				ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
-		++pos;
-		
-		while (!eof())
-		{
-			size_t bytes = 0;
-			for (; pos + bytes != working_buffer.end(); ++bytes)
-				if (pos[bytes] == '\\' || pos[bytes] == '\'')
-					break;
-	
-			s.append(pos, bytes);
-			pos += bytes;
-
-			if (*pos == '\'')
-			{
-				++pos;
-				return;
-			}
-
-			if (*pos == '\\')
-			{
-				++pos;
-				if (eof())
-					throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
-				s += parseEscapeSequence(*pos);
-				++pos;
-			}
-		}
-
-		throw Exception("Cannot parse quoted string: expected closing single quote",
-			ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
-	}
-
 
 	size_t read(char * to, size_t n)
 	{
@@ -258,41 +74,284 @@ public:
 		while (!eof() && bytes_copied < n)
 		{
 			size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_copied);
-			memcpy(to, pos, bytes_to_copy);
+			std::memcpy(to, pos, bytes_to_copy);
 			pos += bytes_to_copy;
 		}
 
 		return bytes_copied;
 	}
 
-
-	
-
 protected:
 	char internal_buffer[DEFAULT_READ_BUFFER_SIZE];
 	Buffer working_buffer;
 	Position pos;
+};
 
-private:
-	inline char parseEscapeSequence(char c)
+
+
+/// Функции-помошники для форматированного чтения
+
+static inline char parseEscapeSequence(char c)
+{
+	switch(c)
 	{
-		switch(c)
+		case 'b':
+			return '\b';
+		case 'f':
+			return '\f';
+		case 'n':
+			return '\n';
+		case 'r':
+			return '\r';
+		case 't':
+			return '\t';
+		case '0':
+			return '\0';
+		default:
+			return c;
+	}
+}
+
+static void assertString(const char * s, ReadBuffer & buf)
+{
+	for (; *s; ++s)
+	{
+		if (buf.eof() || *buf.position() != *s)
+			throw Exception(String("Cannot parse input: expected ") + s, ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+		++buf.position();
+	}
+}
+
+
+/// грубо
+template <typename T>
+void readIntText(T & x, ReadBuffer & buf)
+{
+	bool negative = false;
+	x = 0;
+	while (!buf.eof())
+	{
+		switch (*buf.position())
 		{
-			case 'b':
-				return '\b';
-			case 'f':
-				return '\f';
-			case 'n':
-				return '\n';
-			case 'r':
-				return '\r';
-			case 't':
-				return '\t';
+			case '+':
+				break;
+			case '-':
+				negative = true;
+				break;
+			case '0':
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+				x *= 10;
+				x += *buf.position() - '0';
+				break;
 			default:
-				return c;
+				if (negative)
+					x = -x;
+				return;
+		}
+		++buf.position();
+	}
+	if (negative)
+		x = -x;
+}
+
+/// грубо
+template <typename T>
+void readFloatText(T & x, ReadBuffer & buf)
+{
+	bool negative = false;
+	x = 0;
+	bool after_point = false;
+	double power_of_ten = 1;
+
+	while (!buf.eof())
+	{
+		switch (*buf.position())
+		{
+			case '+':
+				break;
+			case '-':
+				negative = true;
+				break;
+			case '.':
+				after_point = true;
+				break;
+			case '0':
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+				if (after_point)
+				{
+					power_of_ten /= 10;
+					x += (*buf.position() - '0') * power_of_ten;
+				}
+				else
+				{
+					x *= 10;
+					x += *buf.position() - '0';
+				}
+				break;
+			case 'e':
+			case 'E':
+			{
+				++buf.position();
+				Int32 exponent = 0;
+				readIntText(exponent, buf);
+				if (exponent == 0)
+				{
+					if (negative)
+						x = -x;
+					return;
+				}
+				else if (exponent > 0)
+				{
+					for (Int32 i = 0; i < exponent; ++i)
+						x *= 10;
+					if (negative)
+						x = -x;
+					return;
+				}
+				else
+				{
+					for (Int32 i = 0; i < exponent; ++i)
+						x /= 10;
+					if (negative)
+						x = -x;
+					return;
+				}
+			}
+			case 'i':
+				++buf.position();
+				assertString("nf", buf);
+				x = std::numeric_limits<T>::infinity();
+				if (negative)
+					x = -x;
+				return;
+			case 'I':
+				++buf.position();
+				assertString("NF", buf);
+				x = std::numeric_limits<T>::infinity();
+				if (negative)
+					x = -x;
+				return;
+			case 'n':
+				++buf.position();
+				assertString("an", buf);
+				x = std::numeric_limits<T>::quiet_NaN();
+				return;
+			case 'N':
+				++buf.position();
+				assertString("AN", buf);
+				x = std::numeric_limits<T>::quiet_NaN();
+				return;
+			default:
+				if (negative)
+					x = -x;
+				return;
+		}
+		++buf.position();
+	}
+	if (negative)
+		x = -x;
+}
+
+/// грубо; всё до '\n' или '\t'
+void readString(String & s, ReadBuffer & buf)
+{
+	s = "";
+	while (!buf.eof())
+	{
+		size_t bytes = 0;
+		for (; buf.position() + bytes != buf.buffer().end(); ++bytes)
+			if (buf.position()[bytes] == '\t' || buf.position()[bytes] == '\n')
+				break;
+
+		s.append(buf.position(), bytes);
+		buf.position() += bytes;
+
+		if (buf.position() != buf.buffer().end())
+			return;
+	}
+}
+
+void readEscapedString(String & s, ReadBuffer & buf)
+{
+	s = "";
+	while (!buf.eof())
+	{
+		size_t bytes = 0;
+		for (; buf.position() + bytes != buf.buffer().end(); ++bytes)
+			if (buf.position()[bytes] == '\\' || buf.position()[bytes] == '\t' || buf.position()[bytes] == '\n')
+				break;
+
+		s.append(buf.position(), bytes);
+		buf.position() += bytes;
+
+		if (*buf.position() == '\t' || *buf.position() == '\n')
+			return;
+
+		if (*buf.position() == '\\')
+		{
+			++buf.position();
+			if (buf.eof())
+				throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+			s += parseEscapeSequence(*buf.position());
+			++buf.position();
 		}
 	}
-};
+}
+
+void readQuotedString(String & s, ReadBuffer & buf)
+{
+	s = "";
+
+	if (buf.eof() || *buf.position() != '\'')
+		throw Exception("Cannot parse quoted string: expected opening single quote",
+			ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+	++buf.position();
+
+	while (!buf.eof())
+	{
+		size_t bytes = 0;
+		for (; buf.position() + bytes != buf.buffer().end(); ++bytes)
+			if (buf.position()[bytes] == '\\' || buf.position()[bytes] == '\'')
+				break;
+
+		s.append(buf.position(), bytes);
+		buf.position() += bytes;
+
+		if (*buf.position() == '\'')
+		{
+			++buf.position();
+			return;
+		}
+
+		if (*buf.position() == '\\')
+		{
+			++buf.position();
+			if (buf.eof())
+				throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+			s += parseEscapeSequence(*buf.position());
+			++buf.position();
+		}
+	}
+
+	throw Exception("Cannot parse quoted string: expected closing single quote",
+		ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+}
 
 
 }
