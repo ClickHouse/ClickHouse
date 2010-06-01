@@ -2,6 +2,8 @@
 #define DB_VARINT_H
 
 #include <DB/Core/Types.h>
+#include <DB/Core/ReadBuffer.h>
+#include <DB/Core/WriteBuffer.h>
 
 
 namespace DB
@@ -10,10 +12,12 @@ namespace DB
 
 /** Записать UInt64 в формате переменной длины (base128) */
 void writeVarUInt(UInt64 x, std::ostream & ostr);
+void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 
 
 /** Прочитать UInt64, записанный в формате переменной длины (base128) */
 void readVarUInt(UInt64 & x, std::istream & istr);
+void readVarUInt(UInt64 & x, ReadBuffer & istr);
 
 
 /** Получить длину UInt64 в формате VarUInt */
@@ -21,28 +25,31 @@ size_t getLengthOfVarUInt(UInt64 x);
 
 
 /** Записать Int64 в формате переменной длины (base128) */
-inline void writeVarInt(Int64 x, std::ostream & ostr)
+template <typename OUT>
+inline void writeVarInt(Int64 x, OUT & ostr)
 {
 	writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
 
 
 /** Прочитать Int64, записанный в формате переменной длины (base128) */
-inline void readVarInt(Int64 & x, std::istream & istr)
+template <typename IN>
+inline void readVarInt(Int64 & x, IN & istr)
 {
 	readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
 	x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
 }
 
 
-template <typename T> inline void writeVarT(T x, std::ostream & ostr);
-template <> inline void writeVarT<UInt64>(UInt64 x, std::ostream & ostr) { writeVarUInt(x, ostr); }
-template <> inline void writeVarT<Int64>(Int64 x, std::ostream & ostr) { writeVarInt(x, ostr); }
+inline void writeVarT(UInt64 x, std::ostream & ostr) { writeVarUInt(x, ostr); }
+inline void writeVarT(Int64 x, std::ostream & ostr) { writeVarInt(x, ostr); }
+inline void writeVarT(UInt64 x, WriteBuffer & ostr) { writeVarUInt(x, ostr); }
+inline void writeVarT(Int64 x, WriteBuffer & ostr) { writeVarInt(x, ostr); }
 
-template <typename T> inline void readVarT(T & x, std::istream & istr);
-template <> inline void readVarT<UInt64>(UInt64 & x, std::istream & istr) { readVarUInt(x, istr); }
-template <> inline void readVarT<Int64>(Int64 & x, std::istream & istr) { readVarInt(x, istr); }
-
+inline void readVarT(UInt64 & x, std::istream & istr) { readVarUInt(x, istr); }
+inline void readVarT(Int64 & x, std::istream & istr) { readVarInt(x, istr); }
+inline void readVarT(UInt64 & x, ReadBuffer & istr) { readVarUInt(x, istr); }
+inline void readVarT(Int64 & x, ReadBuffer & istr) { readVarInt(x, istr); }
 
 }
 

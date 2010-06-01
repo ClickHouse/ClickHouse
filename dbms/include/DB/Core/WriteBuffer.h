@@ -91,7 +91,7 @@ protected:
 
 /// Функции-помошники для форматированной записи
 
-void writeChar(char x, WriteBuffer & buf)
+inline void writeChar(char x, WriteBuffer & buf)
 {
 	buf.nextIfAtEnd();
 	*buf.position() = x;
@@ -100,16 +100,7 @@ void writeChar(char x, WriteBuffer & buf)
 
 
 template <typename T> struct IntFormat { static const char * format; };
-template <> const char * IntFormat<Int8>::format = "%hhi";
-template <> const char * IntFormat<Int16>::format = "%hi";
-template <> const char * IntFormat<Int32>::format = "%li";
-template <> const char * IntFormat<Int64>::format = "%lli";
-template <> const char * IntFormat<UInt8>::format = "%hhi";
-template <> const char * IntFormat<UInt16>::format = "%hi";
-template <> const char * IntFormat<UInt32>::format = "%li";
-template <> const char * IntFormat<UInt64>::format = "%lli";
 
-/// грубо
 template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
 {
@@ -135,57 +126,15 @@ void writeFloatText(T x, WriteBuffer & buf, unsigned precision = DEFAULT_FLOAT_P
 	buf.write(tmp, res - 1);
 }
 
-void writeString(const String & s, WriteBuffer & buf)
+inline void writeString(const String & s, WriteBuffer & buf)
 {
 	buf.write(s.data(), s.size());
 }
 
 /// предполагается, что строка в оперативке хранится непрерывно, и \0-terminated.
-void writeEscapedString(const String & s, WriteBuffer & buf)
-{
-	for (String::const_iterator it = s.begin(); it != s.end(); ++it)
-	{
-		switch (*it)
-		{
-			case '\b':
-				writeChar('\\', buf);
-				writeChar('b', buf);
-				break;
-			case '\f':
-				writeChar('\\', buf);
-				writeChar('f', buf);
-				break;
-			case '\n':
-				writeChar('\\', buf);
-				writeChar('n', buf);
-				break;
-			case '\r':
-				writeChar('\\', buf);
-				writeChar('r', buf);
-				break;
-			case '\t':
-				writeChar('\\', buf);
-				writeChar('t', buf);
-				break;
-			case '\0':
-				writeChar('\\', buf);
-				writeChar('0', buf);
-				break;
-			case '\'':
-				writeChar('\\', buf);
-				writeChar('\'', buf);
-				break;
-			case '\\':
-				writeChar('\\', buf);
-				writeChar('\\', buf);
-				break;
-			default:
-				writeChar(*it, buf);
-		}
-	}
-}
+void writeEscapedString(const String & s, WriteBuffer & buf);
 
-void writeQuotedString(const String & s, WriteBuffer & buf)
+inline void writeQuotedString(const String & s, WriteBuffer & buf)
 {
 	writeChar('\'', buf);
 	writeEscapedString(s, buf);

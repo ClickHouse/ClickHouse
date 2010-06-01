@@ -25,12 +25,12 @@ class IDataTypeNumberVariable : public IDataTypeNumber<FieldType>
 public:
 	void serializeBinary(const Field & field, std::ostream & ostr) const
 	{
-		writeVarT<typename ColumnType::value_type>(boost::get<FieldType>(field), ostr);
+		writeVarT(static_cast<typename ColumnType::value_type>(boost::get<FieldType>(field)), ostr);
 	}
 	
 	void deserializeBinary(Field & field, std::istream & istr) const
 	{
-		readVarT<typename ColumnType::value_type>(boost::get<FieldType>(field), istr);
+		readVarT(static_cast<typename ColumnType::value_type &>(boost::get<FieldType>(field)), istr);
 	}
 	
 	void serializeBinary(const IColumn & column, std::ostream & ostr) const
@@ -38,7 +38,7 @@ public:
 		const typename ColumnType::Container_t & x = dynamic_cast<const ColumnType &>(column).getData();
 		size_t size = x.size();
 		for (size_t i = 0; i < size; ++i)
-			writeVarT<typename ColumnType::value_type>(x[i], ostr);
+			writeVarT(x[i], ostr);
 	}
 	
 	void deserializeBinary(IColumn & column, std::istream & istr, size_t limit) const
@@ -47,7 +47,7 @@ public:
 		x.resize(limit);
 		for (size_t i = 0; i < limit; ++i)
 		{
-			readVarT<typename ColumnType::value_type>(x[i], istr);
+			readVarT(x[i], istr);
 
 			if (istr.eof())
 			{
