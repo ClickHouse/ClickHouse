@@ -25,13 +25,13 @@ Row TabSeparatedRowInputStream::read()
 	
 	for (size_t i = 0; i < size; ++i)
 	{
-		(*data_types)[i]->deserializeTextEscaped(res[i], istr);
-
 		if (i == 0 && istr.eof())
 		{
 			res.clear();
 			return res;
 		}
+		
+		(*data_types)[i]->deserializeTextEscaped(res[i], istr);
 
 		/// пропускаем разделители
 		if (i + 1 == size)

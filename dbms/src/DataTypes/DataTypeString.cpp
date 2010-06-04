@@ -29,8 +29,6 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
 	UInt64 size;
 	readVarUInt(size, istr);
-	if (istr.eof())
-		return;
 	field = String("");
 	String & s = boost::get<String>(field);
 	s.resize(size);
@@ -73,12 +71,12 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	size_t offset = 0;
 	for (size_t i = 0; i < limit; ++i)
 	{
+		if (istr.eof())
+			break;
+
 		UInt64 size;
 		readVarUInt(size, istr);
 
-		if (istr.eof())
-			break;
-		
 		offset += size;
 		offsets.push_back(offset);
 
@@ -86,9 +84,6 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 			data.resize(offset);
 		
 		istr.read(reinterpret_cast<char*>(&data[offset - size]), sizeof(ColumnUInt8::value_type) * size);
-
-		if (istr.eof())
-			throw Exception("Cannot read all data from ReadBuffer", ErrorCodes::CANNOT_READ_DATA_FROM_READ_BUFFER);
 	}
 }
 
