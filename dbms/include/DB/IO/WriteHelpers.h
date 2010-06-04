@@ -41,7 +41,7 @@ void writeIntText(T x, WriteBuffer & buf)
 	if (res >= WRITE_HELPERS_MAX_INT_WIDTH || res <= 0)
 		throw Exception("Cannot print integer", ErrorCodes::CANNOT_PRINT_INTEGER);
 
-	buf.write(tmp, res - 1);
+	buf.write(tmp, res);
 }
 
 template <typename T>
@@ -54,7 +54,7 @@ void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_D
 	if (res >= static_cast<int>(size) || res <= 0)
 		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-	buf.write(tmp, res - 1);
+	buf.write(tmp, res);
 }
 
 inline void writeString(const String & s, WriteBuffer & buf)
