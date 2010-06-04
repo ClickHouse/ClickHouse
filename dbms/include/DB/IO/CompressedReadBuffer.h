@@ -36,9 +36,7 @@ public:
 	/** Читает и разжимает следующий кусок сжатых данных. */
 	void readCompressedChunk()
 	{
-		size_t size = in.read(&compressed_buffer[0], QUICKLZ_HEADER_SIZE);
-		if (size != QUICKLZ_HEADER_SIZE)
-			throw Exception("Cannot read size of compressed chunk", ErrorCodes::CANNOT_READ_SIZE_OF_COMPRESSED_CHUNK);
+		in.readStrict(&compressed_buffer[0], QUICKLZ_HEADER_SIZE);
 
 		size_t size_compressed = qlz_size_compressed(internal_buffer);
 		size_t size_decompressed = qlz_size_decompressed(internal_buffer);
@@ -46,9 +44,7 @@ public:
 		compressed_buffer.resize(size_compressed);
 		decompressed_buffer.resize(size_decompressed);
 		
-		size = in.read(&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed - QUICKLZ_HEADER_SIZE);
-		if (size != size_compressed - QUICKLZ_HEADER_SIZE)
-			throw Exception("Cannot read compressed chunk", ErrorCodes::CANNOT_READ_COMPRESSED_CHUNK);
+		in.readStrict(&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed - QUICKLZ_HEADER_SIZE);
 
 		pos_in_buffer = 0;
 	}

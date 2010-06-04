@@ -33,7 +33,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 	String & s = boost::get<String>(field);
 	s.resize(size);
 	/// непереносимо, но (действительно) быстрее
-	istr.read(const_cast<char*>(s.data()), size);
+	istr.readStrict(const_cast<char*>(s.data()), size);
 }
 
 
@@ -47,12 +47,12 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr)
 	if (!size)
 		return;
 
-	writeVarUInt(offsets[0], ostr);
-	ostr.write(reinterpret_cast<const char *>(&data[0]), offsets[0]);
+	writeVarUInt(offsets[0] - 1, ostr);
+	ostr.write(reinterpret_cast<const char *>(&data[0]), offsets[0] - 1);
 	
 	for (size_t i = 1; i < size; ++i)
 	{
-		UInt64 str_size = offsets[i] - offsets[i - 1];
+		UInt64 str_size = offsets[i] - offsets[i - 1] - 1;
 		writeVarUInt(str_size, ostr);
 		ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);
 	}
@@ -83,7 +83,8 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 		if (data.size() < offset)
 			data.resize(offset);
 		
-		istr.read(reinterpret_cast<char*>(&data[offset - size]), sizeof(ColumnUInt8::value_type) * size);
+		istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), sizeof(ColumnUInt8::value_type) * size);
+		data[offset - 1] = 0;
 	}
 }
 

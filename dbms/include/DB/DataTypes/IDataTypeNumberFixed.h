@@ -34,7 +34,7 @@ public:
 	void deserializeBinary(Field & field, ReadBuffer & istr) const
 	{
 		typename ColumnType::value_type x;
-		istr.read(reinterpret_cast<char *>(&x), sizeof(x));
+		istr.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
 		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 	
