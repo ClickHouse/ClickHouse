@@ -63,7 +63,8 @@ public:
 			readCompressedChunk();
 		}
 	
-		size_t bytes_to_copy = std::min(decompressed_buffer.size() - pos_in_buffer, DEFAULT_READ_BUFFER_SIZE);
+		size_t bytes_to_copy = std::min(decompressed_buffer.size() - pos_in_buffer,
+			static_cast<size_t>(DEFAULT_READ_BUFFER_SIZE));
 		std::memcpy(internal_buffer, &decompressed_buffer[pos_in_buffer], bytes_to_copy);
 	
 		pos = internal_buffer;
