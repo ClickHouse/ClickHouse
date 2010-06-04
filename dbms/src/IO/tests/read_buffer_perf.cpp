@@ -3,6 +3,8 @@
 #include <iostream>
 #include <fstream>
 
+#include <DB/Core/Types.h>
+#include <DB/IO/ReadHelpers.h>
 #include <DB/IO/ReadBufferFromIStream.h>
 
 
