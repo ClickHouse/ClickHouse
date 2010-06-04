@@ -4,7 +4,7 @@
 #include <cstring>
 #include <algorithm>
 
-#define DEFAULT_WRITE_BUFFER_SIZE 1048576U
+#define DEFAULT_WRITE_BUFFER_SIZE 1048576UL
 
 
 namespace DB

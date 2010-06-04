@@ -7,7 +7,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
-#define DEFAULT_READ_BUFFER_SIZE 1048576U
+#define DEFAULT_READ_BUFFER_SIZE 1048576UL
 
 
 namespace DB
