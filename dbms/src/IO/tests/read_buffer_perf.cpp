@@ -3,7 +3,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <DB/Core/ReadBufferFromIStream.h>
+#include <DB/IO/ReadBufferFromIStream.h>
 
 
 int main(int argc, char ** argv)

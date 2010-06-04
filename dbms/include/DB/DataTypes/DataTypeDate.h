@@ -5,6 +5,10 @@
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
+
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/IDataTypeNumberFixed.h>
 
@@ -23,50 +27,49 @@ public:
 	std::string getName() const { return "Date"; }
 	SharedPtr<IDataType> clone() const { return new DataTypeDate; }
 
-	void serializeText(const Field & field, std::ostream & ostr) const
+	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
 		DateLUT::Values & values = date_lut.getValues(boost::get<UInt16>(field));
-		ostr << values.year << '-' << values.month << '-' << values.day_of_month;
+		writeIntText(values.year, ostr);
+		writeChar('-', ostr);
+		writeIntText(values.month, ostr);
+		writeChar('-', ostr);
+		writeIntText(values.day_of_month, ostr);
 	}
 	
-	void deserializeText(Field & field, std::istream & istr) const
+	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
 		std::string s;
-		istr >> s;
+		readString(s, istr);
 
+		// TODO: тормоза
 		int time_zone_diff = 0;
 		field = date_lut.toDayNum(Poco::DateTimeParser::parse(
 			s, time_zone_diff).timestamp().epochTime());
 	}
 
-	void serializeTextEscaped(const Field & field, std::ostream & ostr) const
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
 	{
 		serializeText(field, ostr);
 	}
 	
-	void deserializeTextEscaped(Field & field, std::istream & istr) const
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const
 	{
 		deserializeText(field, istr);
 	}
 	
-	void serializeTextQuoted(const Field & field, std::ostream & ostr, bool compatible = false) const
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const
 	{
-		ostr << '\'';
+		writeChar('\'', ostr);
 		serializeText(field, ostr);
-		ostr << '\'';
+		writeChar('\'', ostr);
 	}
 	
-	void deserializeTextQuoted(Field & field, std::istream & istr, bool compatible = false) const
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const
 	{
-		char delim = istr.peek();
-		if (delim == '\'' || delim == '"')
-			istr.ignore();
-
+		assertString("'", istr);
 		deserializeText(field, istr);
-
-		if (istr.get() != delim)
-			throw Exception("Delimiter in string literal doesn't match",
-				ErrorCodes::DELIMITER_IN_STRING_LITERAL_DOESNT_MATCH);
+		assertString("'", istr);
 	}
 };
 

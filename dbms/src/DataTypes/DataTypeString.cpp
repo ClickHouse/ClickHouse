@@ -1,14 +1,14 @@
 #include <Poco/SharedPtr.h>
 
-#include <DB/Common/VarInt.h>
-#include <DB/Common/QuoteManipulators.h>
-#include <DB/Common/EscapeManipulators.h>
-
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/DataTypes/DataTypeString.h>
+
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/VarInt.h>
 
 
 namespace DB
@@ -17,19 +17,19 @@ namespace DB
 using Poco::SharedPtr;
 
 
-void DataTypeString::serializeBinary(const Field & field, std::ostream & ostr) const
+void DataTypeString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
 	const String & s = boost::get<String>(field);
 	writeVarUInt(s.size(), ostr);
-	ostr << s;
+	writeString(s, ostr);
 }
 
 
-void DataTypeString::deserializeBinary(Field & field, std::istream & istr) const
+void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
 	UInt64 size;
 	readVarUInt(size, istr);
-	if (!istr.good())
+	if (istr.eof())
 		return;
 	field = String("");
 	String & s = boost::get<String>(field);
@@ -39,7 +39,7 @@ void DataTypeString::deserializeBinary(Field & field, std::istream & istr) const
 }
 
 
-void DataTypeString::serializeBinary(const IColumn & column, std::ostream & ostr) const
+void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr) const
 {
 	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
 	const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_array.getData()).getData();
@@ -61,7 +61,7 @@ void DataTypeString::serializeBinary(const IColumn & column, std::ostream & ostr
 }
 
 
-void DataTypeString::deserializeBinary(IColumn & column, std::istream & istr, size_t limit) const
+void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
 	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
 	ColumnUInt8::Container_t & data = dynamic_cast<ColumnUInt8 &>(column_array.getData()).getData();
@@ -76,7 +76,7 @@ void DataTypeString::deserializeBinary(IColumn & column, std::istream & istr, si
 		UInt64 size;
 		readVarUInt(size, istr);
 
-		if (!istr.good())
+		if (istr.eof())
 			break;
 		
 		offset += size;
@@ -87,50 +87,50 @@ void DataTypeString::deserializeBinary(IColumn & column, std::istream & istr, si
 		
 		istr.read(reinterpret_cast<char*>(&data[offset - size]), sizeof(ColumnUInt8::value_type) * size);
 
-		if (!istr.good())
-			throw Exception("Cannot read all data from stream", ErrorCodes::CANNOT_READ_DATA_FROM_ISTREAM);
+		if (istr.eof())
+			throw Exception("Cannot read all data from ReadBuffer", ErrorCodes::CANNOT_READ_DATA_FROM_READ_BUFFER);
 	}
 }
 
 
-void DataTypeString::serializeText(const Field & field, std::ostream & ostr) const
+void DataTypeString::serializeText(const Field & field, WriteBuffer & ostr) const
 {
-	ostr << boost::get<const String &>(field);
+	writeString(boost::get<const String &>(field), ostr);
 }
 
 
-void DataTypeString::deserializeText(Field & field, std::istream & istr) const
+void DataTypeString::deserializeText(Field & field, ReadBuffer & istr) const
 {
 	String s;
-	istr >> s;
+	readString(s, istr);
 	field = s;
 }
 
 
-void DataTypeString::serializeTextEscaped(const Field & field, std::ostream & ostr) const
+void DataTypeString::serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
 {
-	ostr << strconvert::escape_file << boost::get<const String &>(field);
+	writeEscapedString(boost::get<const String &>(field), ostr);
 }
 
 
-void DataTypeString::deserializeTextEscaped(Field & field, std::istream & istr) const
+void DataTypeString::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
 {
 	String s;
-	istr >> strconvert::unescape_file >> s;
+	readEscapedString(s, istr);
 	field = s;
 }
 
 
-void DataTypeString::serializeTextQuoted(const Field & field, std::ostream & ostr, bool compatible) const
+void DataTypeString::serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible) const
 {
-	ostr << strconvert::quote_fast << boost::get<const String &>(field);
+	writeQuotedString(boost::get<const String &>(field), ostr);
 }
 
 
-void DataTypeString::deserializeTextQuoted(Field & field, std::istream & istr, bool compatible) const
+void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible) const
 {
 	String s;
-	istr >> strconvert::unquote_fast >> s;
+	readQuotedString(s, istr);
 	field = s;
 }
 

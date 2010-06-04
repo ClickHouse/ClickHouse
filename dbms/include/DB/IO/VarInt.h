@@ -2,8 +2,8 @@
 #define DB_VARINT_H
 
 #include <DB/Core/Types.h>
-#include <DB/Core/ReadBuffer.h>
-#include <DB/Core/WriteBuffer.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/WriteBuffer.h>
 
 
 namespace DB

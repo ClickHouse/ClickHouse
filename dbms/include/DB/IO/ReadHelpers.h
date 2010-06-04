@@ -1,5 +1,5 @@
-#ifndef DBMS_COMMON_READBUFFER_H
-#define DBMS_COMMON_READBUFFER_H
+#ifndef DBMS_COMMON_READHELPERS_H
+#define DBMS_COMMON_READHELPERS_H
 
 #include <cstring>
 #include <limits>
@@ -9,86 +9,11 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
-#define DEFAULT_READ_BUFFER_SIZE 1048576
+#include <DB/IO/ReadBuffer.h>
 
 
 namespace DB
 {
-
-/** Простой абстрактный класс для буферизованного чтения данных (последовательности char) откуда-нибудь.
-  * В отличие от std::istream, предоставляет доступ к внутреннему буферу,
-  *  а также позволяет вручную управлять позицией внутри буфера.
-  *
-  * Наследники должны реализовать метод next().
-  *
-  * Также предоставляет набор функций для форматированного и неформатированного чтения.
-  * (с простой и грубой реализацией)
-  */
-class ReadBuffer
-{
-public:
-	typedef const char * Position;
-
-	struct Buffer
-	{
-		Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
-
-		inline Position begin() { return begin_pos; }
-		inline Position end() { return end_pos; }
-
-	private:
-		Position begin_pos;
-		Position end_pos;		/// на 1 байт после конца буфера
-	};
-
-	ReadBuffer() : working_buffer(internal_buffer, internal_buffer), pos(internal_buffer) {}
-
-	/// получить часть буфера, из которого можно читать данные
-	inline Buffer & buffer() { return working_buffer; }
-	
-	/// получить (для чтения и изменения) позицию в буфере
-	inline Position & position() { return pos; };
-
-	/** прочитать следующие данные и заполнить ими буфер; переместить позицию в начало;
-	  * вернуть false в случае конца, true иначе; кинуть исключение, если что-то не так
-	  */
-	virtual bool next() { return false; }
-
-	virtual ~ReadBuffer() {}
-
-
-	inline bool eof()
-	{
-		return pos == working_buffer.end() && !next();
-	}
-
-	void ignore()
-	{
-		if (!eof())
-			++pos;
-	}
-
-	size_t read(char * to, size_t n)
-	{
-		size_t bytes_copied = 0;
-
-		while (!eof() && bytes_copied < n)
-		{
-			size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_copied);
-			std::memcpy(to, pos, bytes_to_copy);
-			pos += bytes_to_copy;
-		}
-
-		return bytes_copied;
-	}
-
-protected:
-	char internal_buffer[DEFAULT_READ_BUFFER_SIZE];
-	Buffer working_buffer;
-	Position pos;
-};
-
-
 
 /// Функции-помошники для форматированного чтения
 
@@ -113,6 +38,23 @@ static inline char parseEscapeSequence(char c)
 	}
 }
 
+static inline void throwReadAfterEOF()
+{
+	throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+}
+
+
+inline void readChar(char & x, ReadBuffer & buf)
+{
+	if (!buf.eof())
+	{
+		x = *buf.position();
+		++buf.position();
+	}
+	else
+		throwReadAfterEOF();
+}
+
 void assertString(const char * s, ReadBuffer & buf);
 
 /// грубо
@@ -121,6 +63,9 @@ void readIntText(T & x, ReadBuffer & buf)
 {
 	bool negative = false;
 	x = 0;
+	if (buf.eof())
+		throwReadAfterEOF();
+	
 	while (!buf.eof())
 	{
 		switch (*buf.position())
@@ -162,6 +107,9 @@ void readFloatText(T & x, ReadBuffer & buf)
 	x = 0;
 	bool after_point = false;
 	double power_of_ten = 1;
+
+	if (buf.eof())
+		throwReadAfterEOF();
 
 	while (!buf.eof())
 	{

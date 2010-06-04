@@ -2,6 +2,7 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
@@ -22,9 +23,11 @@ int main(int argc, char ** argv)
 
 		Poco::SharedPtr<DB::DataTypes> column_types = new DB::DataTypes;
 		column_types->push_back(new DB::DataTypeUInt64);
+
+		DB::WriteBufferFromOStream out_buf(std::cout);
 		
 		DB::LimitBlockInputStream input(table.read(column_names, 0, 10), 10, 96);
-		DB::TabSeparatedRowOutputStream output(std::cout, column_types);
+		DB::TabSeparatedRowOutputStream output(out_buf, column_types);
 		
 		DB::copyData(input, output);
 	}

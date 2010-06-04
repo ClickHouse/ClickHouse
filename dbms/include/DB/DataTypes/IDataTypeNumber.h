@@ -3,6 +3,9 @@
 
 #include <DB/DataTypes/IDataType.h>
 
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -15,34 +18,34 @@ template <typename FieldType>
 class IDataTypeNumber : public IDataType
 {
 public:
-	void serializeText(const Field & field, std::ostream & ostr) const
+	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		ostr << boost::get<typename NearestFieldType<FieldType>::Type>(field);
+		writeIntText(boost::get<typename NearestFieldType<FieldType>::Type>(field), ostr);
 	}
 	
-	void deserializeText(Field & field, std::istream & istr) const
+	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
 		typename NearestFieldType<FieldType>::Type x;
-		istr >> x;
+		readIntText(x, istr);
 		field = x;
 	}
 
-	void serializeTextEscaped(const Field & field, std::ostream & ostr) const
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
 	{
 		serializeText(field, ostr);
 	}
 	
-	void deserializeTextEscaped(Field & field, std::istream & istr) const
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const
 	{
 		deserializeText(field, istr);
 	}
 	
-	void serializeTextQuoted(const Field & field, std::ostream & ostr, bool compatible = false) const
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const
 	{
 		serializeText(field, ostr);
 	}
 	
-	void deserializeTextQuoted(Field & field, std::istream & istr, bool compatible = false) const
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const
 	{
 		deserializeText(field, istr);
 	}

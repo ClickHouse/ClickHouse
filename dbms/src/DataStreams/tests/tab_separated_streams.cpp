@@ -6,6 +6,8 @@
 #include <Poco/Stopwatch.h>
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
@@ -24,8 +26,11 @@ int main(int argc, char ** argv)
 		std::ifstream istr("test_in");
 		std::ofstream ostr("test_out");
 
-		DB::TabSeparatedRowInputStream row_input(istr, data_types);
-		DB::TabSeparatedRowOutputStream row_output(ostr, data_types);
+		DB::ReadBufferFromIStream in_buf(istr);
+		DB::WriteBufferFromOStream out_buf(ostr);
+
+		DB::TabSeparatedRowInputStream row_input(in_buf, data_types);
+		DB::TabSeparatedRowOutputStream row_output(out_buf, data_types);
 
 		DB::copyData(row_input, row_output);
 	}

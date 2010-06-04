@@ -2,18 +2,9 @@
 #define DBMS_COMMON_WRITEBUFFER_H
 
 #include <cstring>
-#include <cstdio>
-#include <limits>
 #include <algorithm>
 
-#include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
-#include <DB/Core/ErrorCodes.h>
-
-#define DEFAULT_WRITE_BUFFER_SIZE 1048576
-#define DEFAULT_FLOAT_PRECISION 6
-/// 20 цифр, знак, и \0 для конца строки
-#define MAX_INT_WIDTH 22
+#define DEFAULT_WRITE_BUFFER_SIZE 1048576U
 
 
 namespace DB
@@ -24,9 +15,6 @@ namespace DB
   *  а также позволяет вручную управлять позицией внутри буфера.
   *
   * Наследники должны реализовать метод next().
-  *
-  * Также предоставляет набор функций для форматированной и неформатированной записи.
-  * (с простой и грубой реализацией)
   */
 class WriteBuffer
 {
@@ -58,6 +46,9 @@ public:
 	  */
 	virtual void next() {}
 
+	/** желательно в наследниках поместить в деструктор вызов next(),
+	  * чтобы последние данные записались
+	  */
 	virtual ~WriteBuffer() {}
 
 
@@ -87,59 +78,6 @@ protected:
 	Buffer working_buffer;
 	Position pos;
 };
-
-
-/// Функции-помошники для форматированной записи
-
-inline void writeChar(char x, WriteBuffer & buf)
-{
-	buf.nextIfAtEnd();
-	*buf.position() = x;
-	++buf.position();
-}
-
-
-template <typename T> struct IntFormat { static const char * format; };
-
-template <typename T>
-void writeIntText(T x, WriteBuffer & buf)
-{
-	char tmp[MAX_INT_WIDTH];
-	int res = std::snprintf(tmp, MAX_INT_WIDTH, IntFormat<T>::format, x);
-
-	if (res >= MAX_INT_WIDTH || res <= 0)
-		throw Exception("Cannot print integer", ErrorCodes::CANNOT_PRINT_INTEGER);
-
-	buf.write(tmp, res - 1);
-}
-
-template <typename T>
-void writeFloatText(T x, WriteBuffer & buf, unsigned precision = DEFAULT_FLOAT_PRECISION)
-{
-	unsigned size = precision + 10;
-	char tmp[size];	/// знаки, +0.0e+123\0
-	int res = std::snprintf(tmp, size, "%.*g", precision, x);
-
-	if (res >= static_cast<int>(size) || res <= 0)
-		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-
-	buf.write(tmp, res - 1);
-}
-
-inline void writeString(const String & s, WriteBuffer & buf)
-{
-	buf.write(s.data(), s.size());
-}
-
-/// предполагается, что строка в оперативке хранится непрерывно, и \0-terminated.
-void writeEscapedString(const String & s, WriteBuffer & buf);
-
-inline void writeQuotedString(const String & s, WriteBuffer & buf)
-{
-	writeChar('\'', buf);
-	writeEscapedString(s, buf);
-	writeChar('\'', buf);
-}
 
 
 }

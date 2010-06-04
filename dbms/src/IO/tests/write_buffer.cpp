@@ -1,9 +1,9 @@
 #include <string>
 
 #include <iostream>
-#include <fstream>
+#include <sstream>
 
-#include <DB/Core/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromOStream.h>
 
 
 int main(int argc, char ** argv)
@@ -15,11 +15,11 @@ int main(int argc, char ** argv)
 		DB::String c = "вася пе\tтя";
 		DB::String d = "'xyz\\";
 
-		std::ofstream s("test");
-		DB::WriteBufferFromOStream out(s);
+		std::stringstream s;
 
-		for (int i = 0; i < 1000000; ++i)
 		{
+			DB::WriteBufferFromOStream out(s);
+
 			DB::writeIntText(a, out);
 			DB::writeChar(' ', out);
 			
@@ -32,6 +32,8 @@ int main(int argc, char ** argv)
 			DB::writeQuotedString(d, out);
 			DB::writeChar('\n', out);
 		}
+
+		std::cout << s.str();
 	}
 	catch (const DB::Exception & e)
 	{

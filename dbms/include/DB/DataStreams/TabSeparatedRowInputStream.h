@@ -1,10 +1,9 @@
 #ifndef DBMS_DATA_STREAMS_TABSEPARATEDROWINPUTSTREAM_H
 #define DBMS_DATA_STREAMS_TABSEPARATEDROWINPUTSTREAM_H
 
-#include <ostream>
-
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/ReadBuffer.h>
 #include <DB/DataTypes/DataTypes.h>
 #include <DB/DataStreams/IRowInputStream.h>
 
@@ -20,12 +19,12 @@ using Poco::SharedPtr;
 class TabSeparatedRowInputStream : public IRowInputStream
 {
 public:
-	TabSeparatedRowInputStream(std::istream & istr_, SharedPtr<DataTypes> data_types_);
+	TabSeparatedRowInputStream(ReadBuffer & istr_, SharedPtr<DataTypes> data_types_);
 
 	Row read();
 
 private:
-	std::istream & istr;
+	ReadBuffer & istr;
 	SharedPtr<DataTypes> data_types;
 };
 

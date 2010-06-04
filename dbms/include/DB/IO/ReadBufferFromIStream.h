@@ -6,7 +6,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
-#include <DB/Core/ReadBuffer.h>
+#include <DB/IO/ReadBuffer.h>
 
 
 namespace DB

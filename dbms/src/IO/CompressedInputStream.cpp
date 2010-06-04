@@ -1,6 +1,6 @@
 #include <algorithm>
 
-#include <DB/Common/CompressedInputStream.h>
+#include <DB/IO/CompressedInputStream.h>
 
 
 namespace DB

@@ -2,6 +2,7 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Storages/StorageLog.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
@@ -69,9 +70,11 @@ int main(int argc, char ** argv)
 			Poco::SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
 			data_types->push_back(new DB::DataTypeUInt64);
 			data_types->push_back(new DB::DataTypeUInt8);
+
+			DB::WriteBufferFromOStream out_buf(std::cout);
 			
 			DB::LimitBlockInputStream in_limit(in, 10);
-			DB::TabSeparatedRowOutputStream output(std::cout, data_types);
+			DB::TabSeparatedRowOutputStream output(out_buf, data_types);
 			
 			DB::copyData(in_limit, output);
 		}

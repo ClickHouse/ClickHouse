@@ -6,6 +6,9 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/WriteBufferFromOStream.h>
+
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 
@@ -111,7 +114,9 @@ int main(int argc, char ** argv)
 		/// читаем данные из tsv файла и одновременно пишем в таблицу
 		if (argc == 2 && 0 == strcmp(argv[1], "write"))
 		{
-			DB::TabSeparatedRowInputStream in(std::cin, data_types);
+			DB::ReadBufferFromIStream in_buf(std::cin);
+		
+			DB::TabSeparatedRowInputStream in(in_buf, data_types);
 			SharedPtr<DB::IBlockOutputStream> out = table.write(0);
 			DB::copyData(in, *out, sample);
 		}
@@ -127,8 +132,10 @@ int main(int argc, char ** argv)
 			boost::assign::push_back(*data_types)
 				(new DB::DataTypeString);
 */
+			DB::WriteBufferFromOStream out_buf(std::cout);
+
 			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
-			DB::TabSeparatedRowOutputStream out(std::cout, data_types);
+			DB::TabSeparatedRowOutputStream out(out_buf, data_types);
 			DB::copyData(*in, out);
 		}
 	}

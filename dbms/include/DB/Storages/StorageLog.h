@@ -8,8 +8,10 @@
 #include <Poco/FileStream.h>
 
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/Common/CompressedInputStream.h>
-#include <DB/Common/CompressedOutputStream.h>
+#include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
 
 
@@ -32,10 +34,11 @@ private:
 	struct Stream
 	{
 		Stream(const std::string & path)
-			: plain(path, std::ios::in | std::ios::binary), compressed(plain) {}
+			: istr(path, std::ios::in | std::ios::binary), plain(istr), compressed(plain) {}
 		
-		Poco::FileInputStream plain;
-		CompressedInputStream compressed;
+		Poco::FileInputStream istr;
+		ReadBufferFromIStream plain;
+		CompressedReadBuffer compressed;
 	};
 	
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
@@ -54,10 +57,11 @@ private:
 	struct Stream
 	{
 		Stream(const std::string & path)
-			: plain(path, std::ios::out | std::ios::ate | std::ios::binary), compressed(plain) {}
+			: ostr(path, std::ios::out | std::ios::ate | std::ios::binary), plain(ostr), compressed(plain) {}
 		
-		Poco::FileOutputStream plain;
-		CompressedOutputStream compressed;
+		Poco::FileOutputStream ostr;
+		WriteBufferFromOStream plain;
+		CompressedWriteBuffer compressed;
 	};
 
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;

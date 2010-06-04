@@ -27,19 +27,19 @@ public:
 		return new DataTypeString;
 	}
 
-	void serializeBinary(const Field & field, std::ostream & ostr) const;
-	void deserializeBinary(Field & field, std::istream & istr) const;
-	void serializeBinary(const IColumn & column, std::ostream & ostr) const;
-	void deserializeBinary(IColumn & column, std::istream & istr, size_t limit) const;
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
+	void deserializeBinary(Field & field, ReadBuffer & istr) const;
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr) const;
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const;
 
-	void serializeText(const Field & field, std::ostream & ostr) const;
-	void deserializeText(Field & field, std::istream & istr) const;
+	void serializeText(const Field & field, WriteBuffer & ostr) const;
+	void deserializeText(Field & field, ReadBuffer & istr) const;
 
-	void serializeTextEscaped(const Field & field, std::ostream & ostr) const;
-	void deserializeTextEscaped(Field & field, std::istream & istr) const;
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const;
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const;
 
-	void serializeTextQuoted(const Field & field, std::ostream & ostr, bool compatible = false) const;
-	void deserializeTextQuoted(Field & field, std::istream & istr, bool compatible = false) const;
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const;
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const;
 
 	SharedPtr<IColumn> createColumn() const;
 };

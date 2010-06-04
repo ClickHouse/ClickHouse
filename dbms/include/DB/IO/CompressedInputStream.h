@@ -9,7 +9,7 @@
 
 #include <quicklz/quicklz_level1.h>
 
-#include <DB/Common/CompressedStream.h>
+#include <DB/IO/CompressedStream.h>
 
 
 namespace DB

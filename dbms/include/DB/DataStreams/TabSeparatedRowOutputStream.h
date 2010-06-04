@@ -1,10 +1,9 @@
 #ifndef DBMS_DATA_STREAMS_TABSEPARATEDROWOUTPUTSTREAM_H
 #define DBMS_DATA_STREAMS_TABSEPARATEDROWOUTPUTSTREAM_H
 
-#include <ostream>
-
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/WriteBuffer.h>
 #include <DB/DataTypes/DataTypes.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
@@ -20,14 +19,14 @@ using Poco::SharedPtr;
 class TabSeparatedRowOutputStream : public IRowOutputStream
 {
 public:
-	TabSeparatedRowOutputStream(std::ostream & ostr_, SharedPtr<DataTypes> data_types_);
+	TabSeparatedRowOutputStream(WriteBuffer & ostr_, SharedPtr<DataTypes> data_types_);
 
 	void writeField(const Field & field);
 	void writeFieldDelimiter();
 	void writeRowEndDelimiter();
 
 private:
-	std::ostream & ostr;
+	WriteBuffer & ostr;
 	SharedPtr<DataTypes> data_types;
 	size_t field_number;
 };

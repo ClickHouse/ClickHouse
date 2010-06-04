@@ -6,6 +6,8 @@
 #include <Poco/Stopwatch.h>
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
 
@@ -32,9 +34,10 @@ int main(int argc, char ** argv)
 		}
 
 		std::ofstream ostr("test");
+		DB::WriteBufferFromOStream out_buf(ostr);
 
 		stopwatch.restart();
-		data_type.serializeBinary(*column, ostr);
+		data_type.serializeBinary(*column, out_buf);
 		stopwatch.stop();
 
 		std::cout << "Writing, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
@@ -44,9 +47,10 @@ int main(int argc, char ** argv)
 		Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
 
 		std::ifstream istr("test");
+		DB::ReadBufferFromIStream in_buf(istr);
 
 		stopwatch.restart();
-		data_type.deserializeBinary(*column, istr, n);
+		data_type.deserializeBinary(*column, in_buf, n);
 		stopwatch.stop();
 
 		std::cout << "Reading, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;

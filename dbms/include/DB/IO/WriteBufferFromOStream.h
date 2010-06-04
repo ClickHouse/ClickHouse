@@ -6,7 +6,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
-#include <DB/Core/WriteBuffer.h>
+#include <DB/IO/WriteBuffer.h>
 
 
 namespace DB
@@ -23,6 +23,7 @@ public:
 	void next()
 	{
 		ostr.write(internal_buffer, pos - internal_buffer);
+		ostr.flush();
 		pos = internal_buffer;
 
 		if (!ostr.good())
