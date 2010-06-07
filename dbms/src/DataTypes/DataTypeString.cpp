@@ -77,13 +77,13 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 		UInt64 size;
 		readVarUInt(size, istr);
 
-		offset += size;
+		offset += size + 1;
 		offsets.push_back(offset);
 
 		if (data.size() < offset)
 			data.resize(offset);
 		
-		istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), sizeof(ColumnUInt8::value_type) * size);
+		istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), sizeof(ColumnUInt8::value_type) * size);
 		data[offset - 1] = 0;
 	}
 }

@@ -124,13 +124,14 @@ int main(int argc, char ** argv)
 		/// читаем из неё
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
-/*			DB::ColumnNames column_names;
+/*
+			DB::ColumnNames column_names;
 			boost::assign::push_back(column_names)
-				("SearchPhrase");
+				("UniqID");
 
 			SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
 			boost::assign::push_back(*data_types)
-				(new DB::DataTypeString);
+				(new DB::DataTypeUInt64);
 */
 			DB::WriteBufferFromOStream out_buf(std::cout);
 
