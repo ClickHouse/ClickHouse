@@ -12,9 +12,9 @@
 
 #include <DB/IO/WriteBuffer.h>
 
-#define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6
-/// 20 цифр, знак, и \0 для конца строки
-#define WRITE_HELPERS_MAX_INT_WIDTH 22
+#define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
+/// 20 цифр и знак
+#define WRITE_HELPERS_MAX_INT_WIDTH 21U
 
 
 namespace DB
@@ -36,12 +36,33 @@ template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
 {
 	char tmp[WRITE_HELPERS_MAX_INT_WIDTH];
-	int res = std::snprintf(tmp, WRITE_HELPERS_MAX_INT_WIDTH, IntFormat<T>::format, x);
+	bool negative = false;
 
-	if (res >= WRITE_HELPERS_MAX_INT_WIDTH || res <= 0)
-		throw Exception("Cannot print integer", ErrorCodes::CANNOT_PRINT_INTEGER);
+	if (x == 0)
+	{
+		writeChar('0', buf);
+		return;
+	}
 
-	buf.write(tmp, res);
+	if (x < 0)
+	{
+		x = -x;
+		negative = true;
+	}
+
+	char * pos;
+	for (pos = tmp + WRITE_HELPERS_MAX_INT_WIDTH - 1; x != 0; --pos)
+	{
+		*pos = '0' + x % 10;
+		x /= 10;
+	}
+
+	if (negative)
+		*pos = '-';
+	else
+		++pos;
+
+	buf.write(pos, tmp + WRITE_HELPERS_MAX_INT_WIDTH - pos);
 }
 
 template <typename T>

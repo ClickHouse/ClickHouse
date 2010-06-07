@@ -1,5 +1,7 @@
 #include <algorithm>
 
+#include <quicklz/quicklz_level1.h>
+
 #include <DB/IO/CompressedInputStream.h>
 
 
@@ -48,7 +50,6 @@ void DecompressingStreamBuf::readCompressedChunk()
 		return;
 
 	/// разжимаем блок
-
 	qlz_decompress(&compressed_buffer[0], &uncompressed_buffer[0], &scratch[0]);
 }
 

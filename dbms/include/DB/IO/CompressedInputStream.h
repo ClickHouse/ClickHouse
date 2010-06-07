@@ -7,8 +7,6 @@
 
 #include <Poco/BufferedStreamBuf.h>
 
-#include <quicklz/quicklz_level1.h>
-
 #include <DB/IO/CompressedStream.h>
 
 
