@@ -39,7 +39,7 @@ int main(int argc, char ** argv)
 
 			vec1.resize(rows);
 			for (size_t i = 0; i < rows; ++i)
-				vec1[i] = 'z';
+				vec1[i] = i;
 
 			block.insert(column1);
 
@@ -51,7 +51,7 @@ int main(int argc, char ** argv)
 
 			vec2.resize(rows);
 			for (size_t i = 0; i < rows; ++i)
-				vec2[i] = 'x';
+				vec2[i] = i * 2;
 
 			block.insert(column2);
 
