@@ -26,7 +26,7 @@ protected:
 		ParserString s("SELECT");
 		ParserNotWordCharOrEnd nw;
 		ParserNotEmptyExpressionList exp_list;
-	
+
 		ws.ignore(pos, end);
 
 		if (!(s.ignore(pos, end, expected)

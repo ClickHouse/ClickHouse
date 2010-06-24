@@ -95,8 +95,6 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 {
 	ParserWhiteSpaceOrComments ws;
 
-	ws.ignore(pos, end);
-
 	/// пробуем найти какой-нибудь из допустимых операторов
 	Pos begin = pos;
 	Operators_t::const_iterator it;
@@ -107,34 +105,36 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 			break;
 	}
 
-	if (it == operators.end())
-		return false;
-
-	ws.ignore(pos, end);
-
-	/// функция, соответствующая оператору
-	ASTFunction * p_function = new ASTFunction(StringRange(pos, pos));
-	ASTFunction & function = *p_function;
-	ASTPtr function_node = p_function;
-
-	/// аргументы функции
-	ASTExpressionList * p_exp_list = new ASTExpressionList(StringRange(pos, pos));
-	ASTExpressionList & exp_list = *p_exp_list;
-	ASTPtr exp_list_node = p_exp_list;
-
 	ASTPtr elem;
 	if (!elem_parser->parse(pos, end, elem, expected))
 		return false;
 
-	function.range.first = begin;
-	function.range.second = pos;
-	function.name = it->second;
-	function.arguments = exp_list_node;
+	if (it == operators.end())
+		node = elem;
+	else
+	{
+		ws.ignore(pos, end);
 
-	exp_list.children.push_back(elem);
-	exp_list.range.second = pos;
+		/// функция, соответствующая оператору
+		ASTFunction * p_function = new ASTFunction(StringRange(pos, pos));
+		ASTFunction & function = *p_function;
+		ASTPtr function_node = p_function;
 
-	node = function_node;
+		/// аргументы функции
+		ASTExpressionList * p_exp_list = new ASTExpressionList(StringRange(pos, pos));
+		ASTExpressionList & exp_list = *p_exp_list;
+		ASTPtr exp_list_node = p_exp_list;
+
+		function.range.first = begin;
+		function.range.second = pos;
+		function.name = it->second;
+		function.arguments = exp_list_node;
+
+		exp_list.children.push_back(elem);
+		exp_list.range.second = pos;
+
+		node = function_node;
+	}
 
 	return true;
 }

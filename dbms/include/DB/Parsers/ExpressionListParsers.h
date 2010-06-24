@@ -24,7 +24,7 @@ typedef std::map<String, String> Operators_t;
 class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
 private:
-	const Operators_t & operators;
+	Operators_t operators;
 	ParserPtr elem_parser;
 
 public:
@@ -50,7 +50,7 @@ protected:
 class ParserPrefixUnaryOperatorExpression : public IParserBase
 {
 private:
-	const Operators_t & operators;
+	Operators_t operators;
 	ParserPtr elem_parser;
 
 public:
@@ -76,7 +76,7 @@ public:
 	ParserAccessExpression();
 	
 protected:
-	String getName() { return "acess expression"; }
+	String getName() { return "access expression"; }
 	
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 	{

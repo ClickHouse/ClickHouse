@@ -17,7 +17,7 @@ using Poco::SharedPtr;
 class ParserString : public IParserBase
 {
 private:
-	const String & s;
+	String s;
 public:
 	ParserString(const String & s_) : s(s_) {}
 protected:
@@ -25,7 +25,7 @@ protected:
 
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 	{
-		if (static_cast<ssize_t>(s.size()) < end - pos || std::strncmp(pos, s.data(), s.size()))
+		if (static_cast<ssize_t>(s.size()) > end - pos || std::strncmp(pos, s.data(), s.size()))
 			return false;
 		else
 		{

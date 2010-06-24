@@ -7,6 +7,7 @@
 #include <DB/Core/Types.h>
 #include <DB/Parsers/IParser.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -19,7 +20,16 @@ public:
 	bool parse(Pos & pos, Pos end, ASTPtr & node, String & expected)
 	{
 		expected = getName();
-		return parseImpl(pos, end, node, expected);
+
+		Pos begin = pos;
+		bool res = parseImpl(pos, end, node, expected);
+		if (res)
+		{
+			String s(begin, pos - begin);
+			std::cerr << getName() << ": " << s << std::endl;
+		}
+		
+		return res;
 	}
 protected:
 	virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected) = 0;
