@@ -1,5 +1,5 @@
-#ifndef DBMS_CORE_ICOLUMN_H
-#define DBMS_CORE_ICOLUMN_H
+#ifndef DBMS_COLUMNS_ICOLUMN_H
+#define DBMS_COLUMNS_ICOLUMN_H
 
 #include <Poco/SharedPtr.h>
 
