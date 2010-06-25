@@ -10,7 +10,7 @@ int main(int argc, char ** argv)
 {
 	DB::ParserSelectQuery parser;
 	DB::ASTPtr ast;
-	std::string input = "SELECT 1, 2, 3";
+	std::string input = "SELECT f(x), 1, 2, 3, x, NULL, 'abc\\\\def\\'\\\\''";
 	std::string expected;
 
 	const char * begin = input.data();

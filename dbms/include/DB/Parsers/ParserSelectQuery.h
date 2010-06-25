@@ -23,14 +23,12 @@ protected:
 		ASTPtr select_expression_list;
 
 		ParserWhiteSpaceOrComments ws;
-		ParserString s("SELECT");
-		ParserNotWordCharOrEnd nw;
+		ParserString s("SELECT", true);
 		ParserNotEmptyExpressionList exp_list;
 
 		ws.ignore(pos, end);
 
-		if (!(s.ignore(pos, end, expected)
-			&& nw.check(pos, end, expected)))
+		if (!s.ignore(pos, end, expected))
 			return false;
 
 		ws.ignore(pos, end);

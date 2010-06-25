@@ -35,7 +35,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			Operators_t::const_iterator it;
 			for (it = operators.begin(); it != operators.end(); ++it)
 			{
-				ParserString op(it->first);
+				ParserString op(it->first, true);
 				if (op.ignore(pos, end, expected))
 					break;
 			}
@@ -46,12 +46,12 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			ws.ignore(pos, end);
 
 			/// функция, соответствующая оператору
-			ASTFunction * p_function = new ASTFunction(StringRange(pos, pos));
+			ASTFunction * p_function = new ASTFunction;
 			ASTFunction & function = *p_function;
 			ASTPtr function_node = p_function;
 
 			/// аргументы функции
-			ASTExpressionList * p_exp_list = new ASTExpressionList(StringRange(pos, pos));
+			ASTExpressionList * p_exp_list = new ASTExpressionList;
 			ASTExpressionList & exp_list = *p_exp_list;
 			ASTPtr exp_list_node = p_exp_list;
 
@@ -100,7 +100,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 	Operators_t::const_iterator it;
 	for (it = operators.begin(); it != operators.end(); ++it)
 	{
-		ParserString op(it->first);
+		ParserString op(it->first, true);
 		if (op.ignore(pos, end, expected))
 			break;
 	}
@@ -116,12 +116,12 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 		ws.ignore(pos, end);
 
 		/// функция, соответствующая оператору
-		ASTFunction * p_function = new ASTFunction(StringRange(pos, pos));
+		ASTFunction * p_function = new ASTFunction;
 		ASTFunction & function = *p_function;
 		ASTPtr function_node = p_function;
 
 		/// аргументы функции
-		ASTExpressionList * p_exp_list = new ASTExpressionList(StringRange(pos, pos));
+		ASTExpressionList * p_exp_list = new ASTExpressionList;
 		ASTExpressionList & exp_list = *p_exp_list;
 		ASTPtr exp_list_node = p_exp_list;
 
@@ -157,7 +157,7 @@ bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String &
 	ParserWhiteSpaceOrComments ws;
 	ParserString comma(",");
 
-	ASTExpressionList * p_expr_list = new ASTExpressionList(StringRange(pos, pos));
+	ASTExpressionList * p_expr_list = new ASTExpressionList;
 	ASTExpressionList & expr_list = *p_expr_list;
 	node = p_expr_list;
 

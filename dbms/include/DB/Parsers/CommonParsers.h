@@ -12,14 +12,24 @@ namespace DB
 using Poco::SharedPtr;
 
 
-/** если прямо сейчас не s, то ошибка
+/** Если прямо сейчас не s, то ошибка.
+  * Если word_boundary установлен в true, и последний символ строки - словарный (\w),
+  *  то проверяется, что последующий символ строки не словарный.
   */
 class ParserString : public IParserBase
 {
 private:
 	String s;
+	bool word_boundary;
+
+	inline bool is_word(char c)
+	{
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || (c == '_');
+	}
+	
 public:
-	ParserString(const String & s_) : s(s_) {}
+	ParserString(const String & s_, bool word_boundary_ = false) : s(s_), word_boundary(word_boundary_) {}
+	
 protected:
 	String getName() { return s; }
 
@@ -29,6 +39,10 @@ protected:
 			return false;
 		else
 		{
+			if (word_boundary && s.size() && is_word(*s.rbegin())
+				&& pos + s.size() != end && is_word(pos[s.size()]))
+				return false;
+		
 			pos += s.size();
  			return true;
  		}
@@ -36,28 +50,6 @@ protected:
 };
 
 	
-/** если сейчас словарный символ - то ошибка
-  * понимается только латиница
-  */
-class ParserNotWordCharOrEnd : public IParserBase
-{
-protected:
-	String getName() { return "non-word character"; }
-
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
-	{
-		if (pos == end)
-			return true;
-
-		if ((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z') || (*pos >= '0' && *pos <= '9') || *pos == '_')
-			return false;
-
-		++pos;
-		return true;
-	}
-};
-
-
 /** пробельные символы
   */
 class ParserWhiteSpace : public IParserBase

@@ -16,6 +16,7 @@ public:
 	StringRange range;
 	ASTPtr select, from, where, group, having, order, limit;
 
+	ASTSelectQuery() {}
 	ASTSelectQuery(StringRange range_) : range(range_) {}
 	
 	/** Получить кусок текста, откуда был получен этот элемент. */

@@ -17,6 +17,7 @@ public:
 	/// значение
 	Field value;
 
+	ASTLiteral() {}
 	ASTLiteral(StringRange range_, const Field & value_) : range(range_), value(value_) {}
 	
 	/** Получить кусок текста, откуда был получен этот элемент. */

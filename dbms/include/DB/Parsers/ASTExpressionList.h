@@ -18,6 +18,7 @@ public:
 	StringRange range;
 	ASTs children;
 
+	ASTExpressionList() {}
 	ASTExpressionList(StringRange range_) : range(range_) {}
 	
 	/** Получить кусок текста, откуда был получен этот элемент. */

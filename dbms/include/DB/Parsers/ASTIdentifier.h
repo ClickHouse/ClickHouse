@@ -16,6 +16,7 @@ public:
 	/// имя
 	String name;
 
+	ASTIdentifier() {}
 	ASTIdentifier(StringRange range_, const String & name_) : range(range_), name(name_) {}
 	
 	/** Получить кусок текста, откуда был получен этот элемент. */

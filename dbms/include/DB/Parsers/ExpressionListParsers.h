@@ -1,7 +1,7 @@
 #ifndef DBMS_PARSERS_EXPRESSIONLISTPARSERS_H
 #define DBMS_PARSERS_EXPRESSIONLISTPARSERS_H
 
-#include <map>
+#include <list>
 
 #include <boost/assign/list_of.hpp>
 
@@ -12,8 +12,10 @@
 namespace DB
 {
 
-/** Оператор и соответствующая ему функция. Например, "+" -> "plus" */
-typedef std::map<String, String> Operators_t;
+/** Оператор и соответствующая ему функция. Например, "+" -> "plus"
+  * Не std::map, так как порядок парсинга операторов задаётся явно и может отличаться от алфавитного.
+  */
+typedef std::list<std::pair<String, String> > Operators_t;
 
 
 /** Выражение с инфиксным бинарным лево-ассоциативным оператором.

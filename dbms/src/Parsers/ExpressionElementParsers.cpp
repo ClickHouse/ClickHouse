@@ -12,6 +12,7 @@
 
 #include <DB/Parsers/ExpressionElementParsers.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -118,13 +119,10 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expec
 	ParserExpressionList contents;
 	ParserWhiteSpaceOrComments ws;
 
-	ASTIdentifier * p_identifier = new ASTIdentifier(StringRange(begin, pos), "");
-	ASTIdentifier & identifier = *p_identifier;
-	ASTPtr identifier_node = p_identifier;
+	ASTPtr identifier = new ASTIdentifier;
+	ASTPtr expr_list = new ASTExpressionList;
 
-	ASTPtr expr_list_node = new ASTExpressionList(StringRange(begin, pos));
-
-	if (!id_parser.parse(pos, end, identifier_node, expected))
+	if (!id_parser.parse(pos, end, identifier, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -133,15 +131,15 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expec
 		return false;
 
 	ws.ignore(pos, end);
-	contents.parse(pos, end, expr_list_node, expected);
+	contents.parse(pos, end, expr_list, expected);
 	ws.ignore(pos, end);
 
 	if (!close.ignore(pos, end, expected))
 		return false;
 
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
-	function_node->name = identifier.name;
-	function_node->arguments = expr_list_node;
+	function_node->name = dynamic_cast<ASTIdentifier &>(*identifier).name;
+	function_node->arguments = expr_list;
 	node = function_node;
 	return true;
 }
@@ -150,7 +148,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expec
 bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	Pos begin = pos;
-	ParserString nested_parser("NULL");
+	ParserString nested_parser("NULL", true);
 	if (nested_parser.parse(pos, end, node, expected))
 	{
 		node = new ASTLiteral(StringRange(StringRange(begin, pos)), Null());
@@ -208,6 +206,8 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & 
 		expected = "opening single quote";
 		return false;
 	}
+
+	++pos;
 
 	while (pos != end)
 	{
