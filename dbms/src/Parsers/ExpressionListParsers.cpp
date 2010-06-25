@@ -22,7 +22,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 		{
 			ASTPtr elem;
 			if (!elem_parser->parse(pos, end, elem, expected))
-				break;
+				return false;
 
 			node = elem;
 		}
@@ -105,6 +105,8 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 			break;
 	}
 
+	ws.ignore(pos, end);
+
 	ASTPtr elem;
 	if (!elem_parser->parse(pos, end, elem, expected))
 		return false;
@@ -113,8 +115,6 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 		node = elem;
 	else
 	{
-		ws.ignore(pos, end);
-
 		/// функция, соответствующая оператору
 		ASTFunction * p_function = new ASTFunction;
 		ASTFunction & function = *p_function;

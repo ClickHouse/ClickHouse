@@ -26,7 +26,7 @@ public:
 		if (res)
 		{
 			String s(begin, pos - begin);
-			std::cerr << getName() << ": " << s << std::endl;
+			//std::cerr << getName() << ": " << s << std::endl;
 		}
 		
 		return res;

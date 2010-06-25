@@ -78,7 +78,7 @@ protected:
 		if (end - pos >= 4 && pos[0] == '/' && pos[1] == '*')
 		{
 			pos += 2;
-			while (end - pos >= 2 && pos[0] != '*' && pos[1] != '/')
+			while (end - pos >= 2 && (pos[0] != '*' || pos[1] != '/'))
 				++pos;
 
 			if (end - pos < 2)

@@ -12,7 +12,6 @@
 
 #include <DB/Parsers/ExpressionElementParsers.h>
 
-#include <iostream>
 
 namespace DB
 {
@@ -63,7 +62,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, S
 	if (!close.ignore(pos, end, expected))
 		return false;
 
-	ASTExpressionList & expr_list = dynamic_cast<ASTExpressionList &>(*node);
+	ASTExpressionList & expr_list = dynamic_cast<ASTExpressionList &>(*contents_node);
 
 	/// пустое выражение в скобках недопустимо
 	if (expr_list.children.empty())
