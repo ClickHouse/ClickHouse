@@ -287,4 +287,10 @@ size_t getLengthOfVarUInt(UInt64 x)
 }
 
 
+size_t getLengthOfVarInt(Int64 x)
+{
+	return getLengthOfVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)));
+}
+
+
 }

@@ -23,6 +23,9 @@ void readVarUInt(UInt64 & x, ReadBuffer & istr);
 /** Получить длину UInt64 в формате VarUInt */
 size_t getLengthOfVarUInt(UInt64 x);
 
+/** Получить длину Int64 в формате VarInt */
+size_t getLengthOfVarInt(Int64 x);
+
 
 /** Записать Int64 в формате переменной длины (base128) */
 template <typename OUT>
