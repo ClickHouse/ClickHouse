@@ -43,7 +43,8 @@ start()
 
 	echo -n "Start $PROGRAM service: "
 
-	if isrun; then
+	isrun
+	if [ $? -eq 0 -o -f "$LOCKFILE" ]; then
 		echo -n "already running "
 		EXIT_STATUS=1
 	else
@@ -78,9 +79,9 @@ stop()
 
 	if isrun; then
 	    if [ -f "$LOCKFILE" ]; then
-		rm -f "$LOCKFILE"
 		kill -TERM `cat "$PIDFILE"`
 		wait4done
+		rm -f "$LOCKFILE"
 	    else
 		echo "has been stopping already"
 		return 1
