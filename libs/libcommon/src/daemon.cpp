@@ -23,6 +23,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FileChannel.h>
 #include <Poco/File.h>
+#include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Ext/MProfile.h>
@@ -125,7 +126,7 @@ void Daemon::buildLoggers()
 			pf->setProperty("times", "local");
 			FormattingChannel *log = new FormattingChannel(pf);
 			FileChannel *file = new FileChannel();
-			file->setProperty("path", config().getString("logger.log"));
+			file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
 			file->setProperty("rotation", config().getRawString("logger.size", "100M"));
 			file->setProperty("archive", "number");
 			file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
@@ -142,7 +143,7 @@ void Daemon::buildLoggers()
 				pf->setProperty("times", "local");
 				FormattingChannel *errorlog = new FormattingChannel(pf);
 				FileChannel *errorfile = new FileChannel();
-				errorfile->setProperty("path", config().getString("logger.errorlog"));
+				errorfile->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
 				errorfile->setProperty("rotation", config().getRawString("logger.size", "100M"));
 				errorfile->setProperty("archive", "number");
 				errorfile->setProperty("purgeCount", config().getRawString("logger.count", "1"));
