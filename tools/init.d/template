@@ -86,6 +86,8 @@ stop()
 		echo "has been stopping already"
 		return 1
 	    fi
+	else
+	    rm -f "$LOCKFILE"
 	fi
 
 	echo "DONE"
