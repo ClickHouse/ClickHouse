@@ -43,8 +43,8 @@ start()
 
 	echo -n "Start $PROGRAM service: "
 
-	isrun
-	if [ $? -eq 0 -o -f "$LOCKFILE" ]; then
+	[ -f "$LOCKFILE" ] && sleep 1
+	if isrun; then
 		echo -n "already running "
 		EXIT_STATUS=1
 	else
