@@ -57,8 +57,12 @@ start()
 		chown -R $USER:$GROUP $LOGDIR
 		chown -R $USER:$GROUP $PIDDIR
 
-		xsltproc /usr/local/lib/short2old.xsl $CONFFILE | xmlstarlet fo -t > $CNFFILE
-		[ $? -ne 0 ] && echo FAILED && exit 1
+		if [ -f "$CONFFILE" ]; then
+			xsltproc /usr/local/lib/short2old.xsl $CONFFILE | xmlstarlet fo -t > $CNFFILE
+			[ $? -ne 0 ] && echo FAILED && exit 1
+		else
+			echo "Warinig: there is no $CONFFILE file; using $CNFFILE file." >&2
+		fi
 		su -l $USER -s $SHELL -c "\"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$PIDFILE\" --config-file=\"$CNFFILE\""
 		EXIT_STATUS=$?
 	fi
