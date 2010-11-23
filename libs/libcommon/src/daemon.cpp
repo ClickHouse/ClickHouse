@@ -50,12 +50,12 @@ void Daemon::reloadConfiguration()
 
 	try
 	{
-		if( !config().hasProperty("config-file") ) throw Yandex::BException("config-file and pid-file should be specified");
-		//config().remove(Poco::Util::Application::PRIO_DEFAULT);
-		loadConfiguration(config().getString("config-file"));
+		loadConfiguration(config().getString("config-file", "config.xml"));
+
+		bool log_to_console = !config().getBool("application.runAsDaemon", false);
 
 		// Перейдём в каталожек, чтобы нормально писать логи и коры
-		if( config().hasProperty("logger.log") && !config().hasProperty("logger.console") )
+		if(config().hasProperty("logger.log") && !log_to_console)
 		{
 			std::string path = Yandex::mkdir( config().getString("logger.log") );
 			if (config().getBool("application.runAsDaemon", false)
@@ -111,7 +111,9 @@ void Daemon::buildLoggers()
 
 	try
 	{
-		if( config().hasProperty("logger.log") && !config().hasProperty("logger.console") )
+		bool log_to_console = !config().getBool("application.runAsDaemon", false);
+
+		if(config().hasProperty("logger.log") && !log_to_console)
 		{
 			std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
 			
@@ -163,7 +165,7 @@ void Daemon::buildLoggers()
 			ConsoleChannel *file = new ConsoleChannel();
 			logger().close();
 			logger().setChannel( file );
-			logger().warning("Log file isn't specified. Logging to console");
+			logger().warning("Logging to console");
 		}
 	}
 	catch(...)
@@ -217,8 +219,7 @@ void Daemon::initialize(Application& self)
 	ServerApplication::initialize(self);
 
 	// Создадим pid-file
-	if( !config().hasProperty("pid") ) throw Yandex::BException("config-file and pid-file should be specified");
-	m_Pid.seed( config().getString("pid") );
+	m_Pid.seed(config().getString("pid", "pid"));
 
 	// Считаем конфигурацию
 	reloadConfiguration();
@@ -287,12 +288,5 @@ void Daemon::defineOptions(Poco::Util::OptionSet& _options)
 			.repeatable (false)
 			.argument ("<file>")
 			.binding("pid")
-			);
-
-	_options.addOption(
-		Poco::Util::Option ("console", "", "print logs on console only")
-			.required (false)
-			.repeatable (false)
-			.binding("logger.console")
 			);
 }
