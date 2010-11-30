@@ -218,8 +218,9 @@ void Daemon::initialize(Application& self)
 	p_TaskManager = new ("TaskManager") TaskManager();
 	ServerApplication::initialize(self);
 
-	// Создадим pid-file
-	m_Pid.seed(config().getString("pid", "pid"));
+	// Создадим pid-file, если запущен, как демон
+	if (config().getBool("application.runAsDaemon", false))
+		m_Pid.seed(config().getString("pid", "pid"));
 
 	// Считаем конфигурацию
 	reloadConfiguration();
