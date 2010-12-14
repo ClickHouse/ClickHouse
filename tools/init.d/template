@@ -58,7 +58,7 @@ start()
 		chown -R $USER:$GROUP $PIDDIR
 
 		if [ -f "$CONFFILE" ]; then
-			xsltproc /usr/local/lib/short2old.xsl $CONFFILE | xmlstarlet fo -t > $CNFFILE
+			/usr/local/bin/short2old.sh $CONFFILE > $CNFFILE
 			[ $? -ne 0 ] && echo FAILED && exit 1
 		else
 			echo "Warinig: there is no $CONFFILE file; using $CNFFILE file." >&2
