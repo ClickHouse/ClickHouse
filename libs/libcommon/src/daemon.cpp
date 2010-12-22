@@ -108,11 +108,12 @@ void Daemon::reloadConfiguration()
 void Daemon::buildLoggers()
 {
 	Poco::ScopedRWLock lock(*this);
+	std::string format("%Y.%m.%d %H:%M:%S [ %I ] <%p> %s: %t");
 
 	try
 	{
 		bool log_to_console = !config().getBool("application.runAsDaemon", false);
-
+		
 		if(config().hasProperty("logger.log") && !log_to_console)
 		{
 			std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
@@ -120,9 +121,6 @@ void Daemon::buildLoggers()
 			// splitter
 			SplitterChannel *split = new SplitterChannel();
 			
-			// format
-			std::string format("%Y.%m.%d %H:%M:%S [ %I ] <%p> %s: %t");
-
 			// set up two channel chains
 			PatternFormatter *pf = new PatternFormatter(format);
 			pf->setProperty("times", "local");
@@ -157,23 +155,33 @@ void Daemon::buildLoggers()
 
 			split->open();
 			logger().close();
-			logger().setChannel( split );
+			logger().setChannel(split);
 		}
 		else
 		{
 			// Выводим на консоль
-			ConsoleChannel *file = new ConsoleChannel();
+			ConsoleChannel * file = new ConsoleChannel();
+			PatternFormatter * pf = new PatternFormatter(format);
+			pf->setProperty("times", "local");
+			FormattingChannel * log = new FormattingChannel(pf);
+			log->setChannel(file);
+			
 			logger().close();
-			logger().setChannel( file );
+			logger().setChannel(log);
 			logger().warning("Logging to console");
 		}
 	}
 	catch(...)
 	{
 		// Выводим на консоль
-		ConsoleChannel *file = new ConsoleChannel();
+		ConsoleChannel * file = new ConsoleChannel();
+		PatternFormatter * pf = new PatternFormatter(format);
+		pf->setProperty("times", "local");
+		FormattingChannel * log = new FormattingChannel(pf);
+		log->setChannel(file);
+
 		logger().close();
-		logger().setChannel( file );
+		logger().setChannel(log);
 		logger().warning("Can't log to file. Logging to console");
 		throw;
 	}
