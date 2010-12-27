@@ -4,8 +4,8 @@
 #include <Yandex/ThreadNumber.h>
 
 
-__thread unsigned thread_number = 0;
-unsigned threads = 0;
+static __thread unsigned thread_number = 0;
+static unsigned threads = 0;
 
 unsigned ThreadNumber::get()
 {
