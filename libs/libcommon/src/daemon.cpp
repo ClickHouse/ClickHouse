@@ -16,7 +16,7 @@
 #include <Poco/RWLock.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
-#include <Poco/PatternFormatter.h>
+#include <Poco/Ext/PatternFormatterWithOwnThreadNumber.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Ext/LevelFilterChannel.h>
 #include <Poco/FormattingChannel.h>
@@ -36,7 +36,7 @@
 using Poco::Logger;
 using Poco::AutoPtr;
 using Poco::Observer;
-using Poco::PatternFormatter;
+using Poco::PatternFormatterWithOwnThreadNumber;
 using Poco::FormattingChannel;
 using Poco::SplitterChannel;
 using Poco::ConsoleChannel;
@@ -122,7 +122,7 @@ void Daemon::buildLoggers()
 			SplitterChannel *split = new SplitterChannel();
 			
 			// set up two channel chains
-			PatternFormatter *pf = new PatternFormatter(format);
+			PatternFormatterWithOwnThreadNumber *pf = new PatternFormatterWithOwnThreadNumber(format);
 			pf->setProperty("times", "local");
 			FormattingChannel *log = new FormattingChannel(pf);
 			FileChannel *file = new FileChannel();
@@ -139,7 +139,7 @@ void Daemon::buildLoggers()
 				std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
 				Poco::LevelFilterChannel *level = new Poco::LevelFilterChannel();
 				level->setLevel(Message::PRIO_NOTICE);
-				PatternFormatter *pf = new PatternFormatter(format);
+				PatternFormatterWithOwnThreadNumber *pf = new PatternFormatterWithOwnThreadNumber(format);
 				pf->setProperty("times", "local");
 				FormattingChannel *errorlog = new FormattingChannel(pf);
 				FileChannel *errorfile = new FileChannel();
@@ -161,7 +161,7 @@ void Daemon::buildLoggers()
 		{
 			// Выводим на консоль
 			ConsoleChannel * file = new ConsoleChannel();
-			PatternFormatter * pf = new PatternFormatter(format);
+			PatternFormatterWithOwnThreadNumber * pf = new PatternFormatterWithOwnThreadNumber(format);
 			pf->setProperty("times", "local");
 			FormattingChannel * log = new FormattingChannel(pf);
 			log->setChannel(file);
@@ -175,7 +175,7 @@ void Daemon::buildLoggers()
 	{
 		// Выводим на консоль
 		ConsoleChannel * file = new ConsoleChannel();
-		PatternFormatter * pf = new PatternFormatter(format);
+		PatternFormatterWithOwnThreadNumber * pf = new PatternFormatterWithOwnThreadNumber(format);
 		pf->setProperty("times", "local");
 		FormattingChannel * log = new FormattingChannel(pf);
 		log->setChannel(file);

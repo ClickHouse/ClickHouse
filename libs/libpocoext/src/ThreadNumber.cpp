@@ -1,13 +1,13 @@
 #include <pthread.h>
 #include <Yandex/optimization.h>
 
-#include <Yandex/ThreadNumber.h>
+#include <Poco/Ext/ThreadNumber.h>
 
 
 static __thread unsigned thread_number = 0;
 static unsigned threads = 0;
 
-unsigned ThreadNumber::get()
+unsigned Poco::ThreadNumber::get()
 {
 	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 	if (unlikely(!thread_number))
