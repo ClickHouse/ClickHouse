@@ -1,7 +1,7 @@
 #! /bin/sh
 ### BEGIN INIT INFO
 # Provides:          @DAEMON@
-# Default-Start:     2 3 4 5
+# Default-Start:     2
 # Default-Stop:      1
 # Short-Description: Yandex daemon
 ### END INIT INFO
