@@ -18,13 +18,13 @@
 
 macro (CREATE_INIT_SCRIPT initname daemonname)
 add_custom_target(${initname}.target ALL
-    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${initname}
-    COMMAND sed -i 's,[@]CRONFILE[@],${initname}-metrika-yandex,g' ${CMAKE_CURRENT_BINARY_DIR}/${initname}
-    COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${initname}
+    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
+    COMMAND sed -i 's,[@]CRONFILE[@],${initname}-metrika-yandex,g' ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
+    COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
     COMMENT "Building ${initname}"
 )
 INSTALL(
-    FILES ${CMAKE_CURRENT_BINARY_DIR}/${initname}
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
     DESTINATION /etc/init.d
     PERMISSIONS OWNER_EXECUTE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
 )
