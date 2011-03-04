@@ -6,8 +6,8 @@
 # Short-Description: Yandex daemon
 ### END INIT INFO
 
-USER=metrica
-GROUP=metrica
+USER=metrika
+GROUP=metrika
 SHELL=/bin/sh
 PROGRAM=@DAEMON@
 SYSCONFDIR=/etc/$PROGRAM
