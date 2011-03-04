@@ -15,6 +15,11 @@ typedef int Int32;
 typedef unsigned long * MYSQL_LENGTHS;
 typedef MYSQL_FIELD * MYSQL_FIELDS;
 
+/// Для совместимости с mysql++
+typedef time_t sql_datetime;
+typedef time_t sql_date;
+typedef char sql_char;
+
 }
 
 #endif

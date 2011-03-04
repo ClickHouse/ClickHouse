@@ -16,6 +16,8 @@ class StoreQueryResult : public std::vector<Row>, public ResultBase
 {
 public:
 	StoreQueryResult(MYSQL_RES & res_, Connection & conn_);
+
+	size_t num_rows() const { return size(); }
 };
 
 }

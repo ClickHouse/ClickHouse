@@ -25,13 +25,13 @@ public:
 		lengths = mysql_fetch_lengths(&res->getRes());
 	}
 
-	String operator[] (int n)
+	String operator[] (int n) const
 	{
 		std::cerr << lengths[0] << std::endl;
 		return String(row[n], lengths[n]);
 	}
 
-	String operator[] (const char * name)
+	String operator[] (const char * name) const
 	{
 		std::cerr << "???" << std::endl;
 		unsigned n = res->getNumFields();
@@ -44,13 +44,13 @@ public:
 		throw Exception(std::string("Unknown column ") + name);
 	}
 
-	String at(size_t n)
+	String at(size_t n) const
 	{
 		return operator[](n);
 	}
 
-	operator bool() 	{ return row; }
-	bool operator !() 	{ return !row; }
+	operator bool() const	{ return row; }
+	bool operator !() const	{ return !row; }
 
 private:
 	MYSQL_ROW row;

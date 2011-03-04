@@ -24,7 +24,7 @@ void Query::execute()
 {
 	std::string query_string = query_stream.str();
 	if (mysql_real_query(&conn.getDriver(), query_string.data(), query_string.size()))
-		onError(conn.getDriver());
+		throw BadQuery(mysql_error(&conn.getDriver()), mysql_errno(&conn.getDriver()));
 }
 
 UseQueryResult Query::use()

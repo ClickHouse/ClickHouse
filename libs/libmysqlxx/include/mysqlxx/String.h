@@ -160,28 +160,33 @@ public:
 	{
 	}
 
-	UInt64 getUInt()
+	bool getBool() const
+	{
+		return m_length > 0 && m_data[0] != '0';
+	}
+
+	UInt64 getUInt() const
 	{
 		UInt64 res;
 		readIntText(res, m_data, m_length);
 		return res;
 	}
 
-	Int64 getInt()
+	Int64 getInt() const
 	{
 		Int64 res;
 		readIntText(res, m_data, m_length);
 		return res;
 	}
 
-	double getDouble()
+	double getDouble() const
 	{
 		double res;
 		readFloatText(res, m_data, m_length);
 		return res;
 	}
 
-	time_t getDateTime()
+	time_t getDateTime() const
 	{
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 		
@@ -206,47 +211,45 @@ public:
 			throw Exception("Cannot parse DateTime: " + getString());
 	}
 
-	std::string getString()
+	std::string getString() const
 	{
 		return std::string(m_data, m_length);
 	}
 
-	operator UInt64()
-	{
-		return getUInt();
-	}
+	template <typename T> T get();
 
-/*	operator Int64()
-	{
-		return checkDateTime() ? getDateTime() : getInt();
-	}
-
-	operator double()
-	{
-		return getDouble();
-	}
-
-	operator std::string()
-	{
-		return getString();
-	}*/
-
-	const char * data() { return m_data; }
-	size_t length() 	{ return m_length; }
-	size_t size() 		{ return m_length; }
+	const char * data() const 	{ return m_data; }
+	size_t length() const 		{ return m_length; }
+	size_t size() const 		{ return m_length; }
 
 private:
 	const char * m_data;
 	size_t m_length;
 
-	bool checkDateTime()
+	bool checkDateTime() const
 	{
 		return m_length >= 10 && m_data[4] == '-' && m_data[7] == '-';
 	}
 };
 
 
-inline std::ostream & operator<< (std::ostream & ostr, String & x)
+template <> bool 				String::get() { return getBool(); }
+template <> char 				String::get() { return getInt(); }
+template <> signed char 		String::get() { return getInt(); }
+template <> unsigned char		String::get() { return getUInt(); }
+template <> short 				String::get() { return getInt(); }
+template <> unsigned short		String::get() { return getUInt(); }
+template <> int 				String::get() { return getInt(); }
+template <> unsigned int 		String::get() { return getUInt(); }
+template <> long 				String::get() { return getInt(); }
+template <> unsigned long 		String::get() { return getUInt(); }
+template <> long long 			String::get() { return getInt(); }
+template <> unsigned long long 	String::get() { return getUInt(); }
+template <> float 				String::get() { return getDouble(); }
+template <> double 				String::get() { return getDouble(); }
+
+
+inline std::ostream & operator<< (std::ostream & ostr, const String & x)
 {
 	return ostr.write(x.data(), x.size());
 }

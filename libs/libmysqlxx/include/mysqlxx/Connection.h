@@ -21,6 +21,8 @@ public:
 		const char* password = 0,
 		unsigned int port = 0);
 
+	Connection(const std::string & config_name);
+
 	virtual ~Connection();
 
 	virtual void connect(const char* db,

@@ -2,6 +2,9 @@
 #define MYSQLXX_H
 
 #include <mysqlxx/Connection.h>
+#include <mysqlxx/Transaction.h>
+#include <mysqlxx/Manip.h>
+#include <mysqlxx/Pool.h>
 
 /** mysqlxx - чрезвычайно простая библиотека для замены библиотеки mysql++.
   *

@@ -21,8 +21,13 @@ public:
 	UseQueryResult use();
 	StoreQueryResult store();
 
+	std::string str()
+	{
+		return query_stream.str();
+	}
+
 	template <typename T>
-	Query & operator<< (T & x)
+	Query & operator<< (const T & x)
 	{
 		query_stream << x;
 		return *this;

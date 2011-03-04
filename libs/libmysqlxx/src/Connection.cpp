@@ -1,3 +1,5 @@
+#include <Poco/Util/Application.h>
+
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Exception.h>
 
@@ -21,6 +23,20 @@ Connection::Connection(
 	connect(db, server, user, password, port);
 }
 
+Connection::Connection(const std::string & config_name)
+{
+	is_connected = false;
+	Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
+
+	std::string db 			= cfg.getString(config_name + ".db");
+	std::string server 		= cfg.getString(config_name + ".host");
+	std::string user 		= cfg.getString(config_name + ".user");
+	std::string password	= cfg.getString(config_name + ".password");
+	unsigned port			= cfg.getInt(config_name + ".port");
+	
+	connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port);
+}
+
 Connection::~Connection()
 {
 	disconnect();
@@ -36,10 +52,10 @@ void Connection::connect(const char* db,
 		disconnect();
 
 	if (!mysql_init(&driver))
-		onError(driver);
+		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	if (!mysql_real_connect(&driver, server, user, password, db, port, NULL, driver.client_flag))
-		onError(driver);
+		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	is_connected = true;
 }
