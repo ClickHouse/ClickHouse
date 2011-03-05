@@ -1,6 +1,8 @@
 #ifndef MYSQLXX_TYPES_H
 #define MYSQLXX_TYPES_H
 
+#include <string>
+
 #include <mysql/mysql.h>
 
 
@@ -18,7 +20,7 @@ typedef MYSQL_FIELD * MYSQL_FIELDS;
 /// Для совместимости с mysql++
 typedef time_t sql_datetime;
 typedef time_t sql_date;
-typedef char sql_char;
+typedef std::string sql_char;
 
 }
 

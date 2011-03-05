@@ -47,4 +47,9 @@ StoreQueryResult Query::store()
 	return StoreQueryResult(*res, conn);
 }
 
+UInt64 Query::insertID()
+{
+	return mysql_insert_id(&conn.getDriver());
+}
+
 }

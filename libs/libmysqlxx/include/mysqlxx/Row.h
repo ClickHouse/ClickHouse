@@ -14,6 +14,13 @@ class ResultBase;
 
 class Row
 {
+private:
+	/** @brief Pointer to bool data member, for use by safe bool conversion operator.
+	  * @see http://www.artima.com/cppsource/safebool.html
+	  * Взято из mysql++.
+	  */
+	typedef MYSQL_ROW Row::*private_bool_type;
+	
 public:
 	Row() : row(NULL), res(NULL)
 	{
@@ -49,8 +56,7 @@ public:
 		return operator[](n);
 	}
 
-	operator bool() const	{ return row; }
-	bool operator !() const	{ return !row; }
+	operator private_bool_type() const	{ return row == NULL ? NULL : &Row::row; }
 
 private:
 	MYSQL_ROW row;

@@ -21,6 +21,11 @@ public:
 	UseQueryResult use();
 	StoreQueryResult store();
 
+	UInt64 insertID();
+
+	/// Для совместимости
+	UInt64 insert_id() { return insertID(); }
+
 	std::string str()
 	{
 		return query_stream.str();

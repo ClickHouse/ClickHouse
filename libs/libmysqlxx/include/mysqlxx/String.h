@@ -48,9 +48,7 @@ static void readIntText(T & x, const char * buf, size_t length)
 				x += *buf - '0';
 				break;
 			default:
-				if (negative)
-					x = -x;
-				return;
+			    throw Exception("Cannot parse integer: " + std::string(buf, length));
 		}
 		++buf;
 	}
@@ -142,9 +140,7 @@ static void readFloatText(T & x, const char * buf, size_t length)
 				x = std::numeric_limits<T>::quiet_NaN();
 				return;
 			default:
-				if (negative)
-					x = -x;
-				return;
+			    throw Exception("Cannot parse floating point number: " + std::string(buf, length));
 		}
 		++buf;
 	}
@@ -162,11 +158,17 @@ public:
 
 	bool getBool() const
 	{
+		if (unlikely(isNull()))
+			throw Exception("Value is NULL");
+		
 		return m_length > 0 && m_data[0] != '0';
 	}
 
 	UInt64 getUInt() const
 	{
+		if (unlikely(isNull()))
+			throw Exception("Value is NULL");
+		
 		UInt64 res;
 		readIntText(res, m_data, m_length);
 		return res;
@@ -174,6 +176,9 @@ public:
 
 	Int64 getInt() const
 	{
+		if (unlikely(isNull()))
+			throw Exception("Value is NULL");
+		
 		Int64 res;
 		readIntText(res, m_data, m_length);
 		return res;
@@ -181,6 +186,9 @@ public:
 
 	double getDouble() const
 	{
+		if (unlikely(isNull()))
+			throw Exception("Value is NULL");
+		
 		double res;
 		readFloatText(res, m_data, m_length);
 		return res;
@@ -188,6 +196,9 @@ public:
 
 	time_t getDateTime() const
 	{
+		if (unlikely(isNull()))
+			throw Exception("Value is NULL");
+		
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 		
 		if (m_length == 10)
@@ -211,12 +222,41 @@ public:
 			throw Exception("Cannot parse DateTime: " + getString());
 	}
 
+	time_t getDate() const
+	{
+		if (unlikely(isNull()))
+			throw Exception("Value is NULL");
+
+		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+
+		if (m_length == 10 || m_length == 19)
+		{
+			return date_lut.makeDate(
+				m_data[0] * 1000 + m_data[1] * 100 + m_data[2] * 10 + m_data[3],
+				m_data[5] * 10 + m_data[6],
+				m_data[8] * 10 + m_data[9]);
+		}
+		else
+			throw Exception("Cannot parse Date: " + getString());
+	}
+
 	std::string getString() const
 	{
+		if (unlikely(isNull()))
+			throw Exception("Value is NULL");
+		
 		return std::string(m_data, m_length);
 	}
 
-	template <typename T> T get();
+	bool isNull() const
+	{
+		return m_data == NULL;
+	}
+
+	/// Для совместимости
+	bool is_null() const { return isNull(); }
+
+	template <typename T> T get() const;
 
 	const char * data() const 	{ return m_data; }
 	size_t length() const 		{ return m_length; }
@@ -233,20 +273,21 @@ private:
 };
 
 
-template <> bool 				String::get() { return getBool(); }
-template <> char 				String::get() { return getInt(); }
-template <> signed char 		String::get() { return getInt(); }
-template <> unsigned char		String::get() { return getUInt(); }
-template <> short 				String::get() { return getInt(); }
-template <> unsigned short		String::get() { return getUInt(); }
-template <> int 				String::get() { return getInt(); }
-template <> unsigned int 		String::get() { return getUInt(); }
-template <> long 				String::get() { return getInt(); }
-template <> unsigned long 		String::get() { return getUInt(); }
-template <> long long 			String::get() { return getInt(); }
-template <> unsigned long long 	String::get() { return getUInt(); }
-template <> float 				String::get() { return getDouble(); }
-template <> double 				String::get() { return getDouble(); }
+template <> inline bool 				String::get<bool				>() const { return getBool(); }
+template <> inline char 				String::get<char				>() const { return getInt(); }
+template <> inline signed char 			String::get<signed char			>() const { return getInt(); }
+template <> inline unsigned char		String::get<unsigned char		>() const { return getUInt(); }
+template <> inline short 				String::get<short				>() const { return getInt(); }
+template <> inline unsigned short		String::get<unsigned short		>() const { return getUInt(); }
+template <> inline int 					String::get<int					>() const { return getInt(); }
+template <> inline unsigned int 		String::get<unsigned int		>() const { return getUInt(); }
+template <> inline long 				String::get<long				>() const { return getInt(); }
+template <> inline unsigned long 		String::get<unsigned long		>() const { return getUInt(); }
+template <> inline long long 			String::get<long long			>() const { return getInt(); }
+template <> inline unsigned long long 	String::get<unsigned long long	>() const { return getUInt(); }
+template <> inline float 				String::get<float				>() const { return getDouble(); }
+template <> inline double 				String::get<double				>() const { return getDouble(); }
+template <> inline std::string			String::get<std::string			>() const { return getString(); }
 
 
 inline std::ostream & operator<< (std::ostream & ostr, const String & x)
