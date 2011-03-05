@@ -8,6 +8,7 @@
 #include <string>
 #include <limits>
 
+#include <Yandex/Common.h>
 #include <Yandex/DateLUT.h>
 
 #include <mysqlxx/Types.h>
@@ -198,6 +199,9 @@ public:
 	{
 		if (unlikely(isNull()))
 			throw Exception("Value is NULL");
+
+		if (!checkDateTime())
+			return getUInt();
 		
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 		
@@ -208,7 +212,7 @@ public:
 				m_data[5] * 10 + m_data[6],
 				m_data[8] * 10 + m_data[9]);
 		}
-		else if (m_length == 19)
+		else
 		{
 			return date_lut.makeDateTime(
 				m_data[0] * 1000 + m_data[1] * 100 + m_data[2] * 10 + m_data[3],
@@ -218,14 +222,15 @@ public:
 				m_data[14] * 10 + m_data[15],
 				m_data[17] * 10 + m_data[18]);
 		}
-		else
-			throw Exception("Cannot parse DateTime: " + getString());
 	}
 
 	time_t getDate() const
 	{
 		if (unlikely(isNull()))
 			throw Exception("Value is NULL");
+
+		if (!checkDateTime())
+			return getUInt();
 
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 
@@ -258,6 +263,9 @@ public:
 
 	template <typename T> T get() const;
 
+	/// Для совместимости
+	template <typename T> operator T() const { return get<T>(); }
+
 	const char * data() const 	{ return m_data; }
 	size_t length() const 		{ return m_length; }
 	size_t size() const 		{ return m_length; }
@@ -268,7 +276,7 @@ private:
 
 	bool checkDateTime() const
 	{
-		return m_length >= 10 && m_data[4] == '-' && m_data[7] == '-';
+		return (m_length == 10 || m_length == 19) && m_data[4] == '-' && m_data[7] == '-';
 	}
 };
 
@@ -288,6 +296,11 @@ template <> inline unsigned long long 	String::get<unsigned long long	>() const 
 template <> inline float 				String::get<float				>() const { return getDouble(); }
 template <> inline double 				String::get<double				>() const { return getDouble(); }
 template <> inline std::string			String::get<std::string			>() const { return getString(); }
+
+template <> inline Yandex::VisitID_t	String::get<Yandex::VisitID_t	>() const { return Yandex::VisitID_t(getUInt()); }
+//template <> inline Date					String::get<Date				>() const { return getString(); }
+
+template <typename T> inline T			String::get() 						const { return T(*this); }
 
 
 inline std::ostream & operator<< (std::ostream & ostr, const String & x)

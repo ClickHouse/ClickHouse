@@ -15,6 +15,7 @@ class Query
 public:
 	Query(Connection & conn_, const std::string & query_string);
 	Query(const Query & other);
+	Query & operator= (const Query & other);
 
 	void reset();
 	void execute();
@@ -29,6 +30,11 @@ public:
 	std::string str()
 	{
 		return query_stream.str();
+	}
+
+	std::ostream & ostr()
+	{
+		return query_stream;
 	}
 
 	template <typename T>

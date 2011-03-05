@@ -15,6 +15,12 @@ Query::Query(const Query & other) : conn(other.conn)
 	query_stream << other.query_stream.rdbuf();
 }
 
+Query & Query::operator= (const Query & other)
+{
+	query_stream << other.query_stream.rdbuf();
+	return *this;
+}
+
 void Query::reset()
 {
 	query_stream.str("");
