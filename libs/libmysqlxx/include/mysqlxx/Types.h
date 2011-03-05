@@ -90,6 +90,11 @@ public:
 	{
 		return m_year == other.m_year && m_month == other.m_month && m_day == other.m_day;
 	}
+
+	bool operator!= (const Date & other) const
+	{
+		return !(*this == other);
+	}
 };
 
 inline std::ostream & operator<< (std::ostream & ostr, const Date & date)
@@ -118,7 +123,14 @@ public:
 	Null(NullType data) : is_null(true) {}
 	Null(const T & data_) : data(data_), is_null(false) {}
 
-	operator T()
+	operator T & ()
+	{
+		if (is_null)
+			throw Exception("Value is NULL");
+		return data;
+	}
+
+	operator const T & () const
 	{
 		if (is_null)
 			throw Exception("Value is NULL");
@@ -127,22 +139,29 @@ public:
 
 	Null<T> & operator= (const T & data_) { is_null = false; data = data_; return *this; }
 
-	bool isNull() { return is_null; }
+	bool isNull() const { return is_null; }
 
-	bool operator< (const Null<T> & other)
+	bool operator< (const Null<T> & other) const
 	{
 		return is_null < other.is_null
 			|| (is_null == other.is_null && data < other.data);
 	}
 
-	bool operator< (const NullType other) { return false; }
+	bool operator< (const NullType other) const { return false; }
 
-	bool operator== (const Null<T> & other)
+	bool operator== (const Null<T> & other) const
 	{
 		return is_null == other.is_null && data == other.data;
 	}
 
-	bool operator== (const NullType other) { return is_null; }
+	bool operator== (const NullType other) const { return is_null; }
+
+	bool operator!= (const Null<T> & other) const
+	{
+		return !(*this == other);
+	}
+
+	bool operator!= (const NullType other) const { return !is_null; }
 };
 
 
