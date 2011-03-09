@@ -5,7 +5,6 @@
 #include <mysqlxx/String.h>
 #include <mysqlxx/ResultBase.h>
 
-#include <iostream>
 
 namespace mysqlxx
 {
@@ -29,18 +28,16 @@ public:
 	Row(MYSQL_ROW row_, ResultBase * res_)
 		: row(row_), res(res_)
 	{
-		lengths = mysql_fetch_lengths(&res->getRes());
+		lengths = mysql_fetch_lengths(res->getRes());
 	}
 
 	String operator[] (int n) const
 	{
-		std::cerr << lengths[0] << std::endl;
 		return String(row[n], lengths[n]);
 	}
 
 	String operator[] (const char * name) const
 	{
-		std::cerr << "???" << std::endl;
 		unsigned n = res->getNumFields();
 		MYSQL_FIELDS fields = res->getFields();
 
@@ -55,6 +52,9 @@ public:
 	{
 		return operator[](n);
 	}
+
+	size_t size() const { return res->getNumFields(); }
+	bool empty() const { return row == NULL; }
 
 	operator private_bool_type() const	{ return row == NULL ? NULL : &Row::row; }
 

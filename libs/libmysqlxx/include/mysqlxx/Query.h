@@ -13,7 +13,7 @@ namespace mysqlxx
 class Query
 {
 public:
-	Query(Connection & conn_, const std::string & query_string);
+	Query(Connection * conn_, const std::string & query_string);
 	Query(const Query & other);
 	Query & operator= (const Query & other);
 
@@ -45,7 +45,7 @@ public:
 	}
 
 private:
-	Connection & conn;
+	Connection * conn;
 	std::stringstream query_stream;
 };
 

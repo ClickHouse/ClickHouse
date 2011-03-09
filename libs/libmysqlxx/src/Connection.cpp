@@ -66,12 +66,12 @@ bool Connection::ping()
 
 Query Connection::query(const std::string & str)
 {
-	return Query(*this, str);
+	return Query(this, str);
 }
 
-MYSQL & Connection::getDriver()
+MYSQL * Connection::getDriver()
 {
-	return driver;
+	return &driver;
 }
 
 }

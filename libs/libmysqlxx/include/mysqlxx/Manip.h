@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iostream>
 #include <mysqlxx/Types.h>
+#include <mysqlxx/Row.h>
 
 
 namespace mysqlxx
@@ -78,6 +79,33 @@ struct EscapeManipResult
 			value = it + 1;
 		}
 		return ostr << value;
+	}
+
+
+	std::ostream & operator<< (const String & string)
+	{
+		writeEscapedData(string.data(), string.size());
+		return ostr;
+	}
+
+
+	std::ostream & operator<< (const Row & row)
+	{
+		for (size_t i = 0; i < row.size(); ++i)
+		{
+			if (i != 0)
+				ostr << '\t';
+			
+			if (row[i].isNull())
+			{
+				ostr << "\\N";
+				continue;
+			}
+
+			(*this) << row[i];
+		}
+
+		return ostr;
 	}
 
 private:

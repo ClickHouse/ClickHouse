@@ -49,7 +49,7 @@ public:
 	void disconnect();
 	bool ping();
 	Query query(const std::string & str = "");
-	MYSQL & getDriver();
+	MYSQL * getDriver();
 
 private:
 	MYSQL driver;

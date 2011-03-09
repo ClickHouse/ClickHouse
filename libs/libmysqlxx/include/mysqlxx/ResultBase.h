@@ -14,18 +14,18 @@ class Connection;
 class ResultBase
 {
 public:
-	ResultBase(MYSQL_RES & res_, Connection & conn_);
+	ResultBase(MYSQL_RES * res_, Connection * conn_);
 
-	Connection & getConnection() 	{ return conn; }
+	Connection * getConnection() 	{ return conn; }
 	MYSQL_FIELDS getFields() 		{ return fields; }
 	unsigned getNumFields() 		{ return num_fields; }
-	MYSQL_RES & getRes()			{ return res; }
+	MYSQL_RES * getRes()			{ return res; }
 
 	virtual ~ResultBase() {}
 
 protected:
-	MYSQL_RES & res;
-	Connection & conn;
+	MYSQL_RES * res;
+	Connection * conn;
 	MYSQL_FIELDS fields;
 	unsigned num_fields;
 };

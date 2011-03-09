@@ -5,7 +5,7 @@
 namespace mysqlxx
 {
 
-Query::Query(Connection & conn_, const std::string & query_string) : conn(conn_)
+Query::Query(Connection * conn_, const std::string & query_string) : conn(conn_)
 {
 	query_stream << query_string;
 }
@@ -29,33 +29,33 @@ void Query::reset()
 void Query::execute()
 {
 	std::string query_string = query_stream.str();
-	if (mysql_real_query(&conn.getDriver(), query_string.data(), query_string.size()))
-		throw BadQuery(mysql_error(&conn.getDriver()), mysql_errno(&conn.getDriver()));
+	if (mysql_real_query(conn->getDriver(), query_string.data(), query_string.size()))
+		throw BadQuery(mysql_error(conn->getDriver()), mysql_errno(conn->getDriver()));
 }
 
 UseQueryResult Query::use()
 {
 	execute();
-	MYSQL_RES * res = mysql_use_result(&conn.getDriver());
+	MYSQL_RES * res = mysql_use_result(conn->getDriver());
 	if (!res)
-		onError(conn.getDriver());
+		onError(conn->getDriver());
 
-	return UseQueryResult(*res, conn);
+	return UseQueryResult(res, conn);
 }
 
 StoreQueryResult Query::store()
 {
 	execute();
-	MYSQL_RES * res = mysql_store_result(&conn.getDriver());
+	MYSQL_RES * res = mysql_store_result(conn->getDriver());
 	if (!res)
-		checkError(conn.getDriver());
+		checkError(conn->getDriver());
 
-	return StoreQueryResult(*res, conn);
+	return StoreQueryResult(res, conn);
 }
 
 UInt64 Query::insertID()
 {
-	return mysql_insert_id(&conn.getDriver());
+	return mysql_insert_id(conn->getDriver());
 }
 
 }

@@ -13,7 +13,7 @@ class Connection;
 class UseQueryResult : public ResultBase
 {
 public:
-	UseQueryResult(MYSQL_RES & res_, Connection & conn_);
+	UseQueryResult(MYSQL_RES * res_, Connection * conn_);
 	
 	Row fetch_row();
 };
