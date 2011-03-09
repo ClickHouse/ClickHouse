@@ -5,6 +5,8 @@
 #include <mysqlxx/Transaction.h>
 #include <mysqlxx/Manip.h>
 #include <mysqlxx/Pool.h>
+#include <mysqlxx/Date.h>
+#include <mysqlxx/Null.h>
 
 /** mysqlxx - чрезвычайно простая библиотека для замены библиотеки mysql++.
   *
