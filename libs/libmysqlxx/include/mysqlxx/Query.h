@@ -1,7 +1,7 @@
 #ifndef MYSQLXX_QUERY_H
 #define MYSQLXX_QUERY_H
 
-#include <sstream>
+#include <ostream>
 
 #include <mysqlxx/UseQueryResult.h>
 #include <mysqlxx/StoreQueryResult.h>
@@ -10,7 +10,7 @@
 namespace mysqlxx
 {
 
-class Query
+class Query : public std::ostream
 {
 public:
 	Query(Connection * conn_, const std::string & query_string);
@@ -29,24 +29,12 @@ public:
 
 	std::string str()
 	{
-		return query_stream.str();
-	}
-
-	std::ostream & ostr()
-	{
-		return query_stream;
-	}
-
-	template <typename T>
-	Query & operator<< (const T & x)
-	{
-		query_stream << x;
-		return *this;
+		return query_buf.str();
 	}
 
 private:
 	Connection * conn;
-	std::stringstream query_stream;
+	std::stringbuf query_buf;
 };
 
 

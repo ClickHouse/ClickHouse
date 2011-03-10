@@ -3,23 +3,27 @@
 
 #include <string>
 #include <mysql/mysql.h>
+#include <Poco/Types.h>
+
+#include <mysqlxx/Date.h>
+#include <mysqlxx/DateTime.h>
 
 
 namespace mysqlxx
 {
 
-typedef unsigned long long UInt64;
-typedef long long Int64;
-typedef unsigned UInt32;
-typedef int Int32;
+typedef Poco::UInt64 UInt64;
+typedef Poco::Int64 Int64;
+typedef Poco::UInt32 UInt32;
+typedef Poco::Int32 Int32;
 
 typedef unsigned long * MYSQL_LENGTHS;
 typedef MYSQL_FIELD * MYSQL_FIELDS;
 
 /// Для совместимости с mysql++
-typedef time_t sql_datetime;
-typedef time_t sql_timestamp;
-typedef time_t sql_date;
+typedef DateTime sql_datetime;
+typedef DateTime sql_timestamp;
+typedef Date sql_date;
 typedef std::string sql_char;
 
 }

@@ -5,30 +5,46 @@
 namespace mysqlxx
 {
 
-Query::Query(Connection * conn_, const std::string & query_string) : conn(conn_)
+Query::Query(Connection * conn_, const std::string & query_string) : std::ostream(0), conn(conn_)
 {
-	query_stream << query_string;
+	init(&query_buf);
+
+	if (!query_string.empty())
+	{
+		query_buf.str(query_string);
+		seekp(0, std::ios::end);
+	}
+
+	imbue(std::locale::classic());
 }
 
-Query::Query(const Query & other) : conn(other.conn)
+Query::Query(const Query & other)
 {
-	query_stream << other.query_stream.rdbuf();
+	*this = other;
 }
 
 Query & Query::operator= (const Query & other)
 {
-	query_stream << other.query_stream.rdbuf();
+	conn = other.conn;
+
+	seekp(0);
+	clear();
+	query_buf.str(other.query_buf.str());
+	seekp(0, std::ios::end);
+	
 	return *this;
 }
 
 void Query::reset()
 {
-	query_stream.str("");
+	seekp(0);
+	clear();
+	query_buf.str("");
 }
 
 void Query::execute()
 {
-	std::string query_string = query_stream.str();
+	std::string query_string = query_buf.str();
 	if (mysql_real_query(conn->getDriver(), query_string.data(), query_string.size()))
 		throw BadQuery(mysql_error(conn->getDriver()), mysql_errno(conn->getDriver()));
 }
