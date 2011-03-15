@@ -39,13 +39,13 @@ private:
 		if (length < 19)
 			throw Exception("Cannot parse DateTime: " + std::string(s, length));
 
-		m_year = s[0] * 1000 + s[1] * 100 + s[2] * 10 + s[3];
-		m_month = s[5] * 10 + s[6];
-		m_day = s[8] * 10 + s[9];
+		m_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+		m_month = (s[5] - '0') * 10 + (s[6] - '0');
+		m_day = (s[8] - '0') * 10 + (s[9] - '0');
 
-		m_hour = s[11] * 10 + s[12];
-		m_minute = s[14] * 10 + s[15];
-		m_second = s[17] * 10 + s[18];
+		m_hour = (s[11] - '0') * 10 + (s[12] - '0');
+		m_minute = (s[14] - '0') * 10 + (s[15] - '0');
+		m_second = (s[17] - '0') * 10 + (s[18] - '0');
 	}
 
 public:

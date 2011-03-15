@@ -244,19 +244,19 @@ private:
 		if (m_length == 10)
 		{
 			return date_lut.makeDate(
-				m_data[0] * 1000 + m_data[1] * 100 + m_data[2] * 10 + m_data[3],
-				m_data[5] * 10 + m_data[6],
-				m_data[8] * 10 + m_data[9]);
+				(m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
+				(m_data[5] - '0') * 10 + (m_data[6] - '0'),
+				(m_data[8] - '0') * 10 + (m_data[9] - '0'));
 		}
 		else
 		{
 			return date_lut.makeDateTime(
-				m_data[0] * 1000 + m_data[1] * 100 + m_data[2] * 10 + m_data[3],
-				m_data[5] * 10 + m_data[6],
-				m_data[8] * 10 + m_data[9],
-				m_data[11] * 10 + m_data[12],
-				m_data[14] * 10 + m_data[15],
-				m_data[17] * 10 + m_data[18]);
+				(m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
+				(m_data[5] - '0') * 10 + (m_data[6] - '0'),
+				(m_data[8] - '0') * 10 + (m_data[9] - '0'),
+				(m_data[11] - '0') * 10 + (m_data[12] - '0'),
+				(m_data[14] - '0') * 10 + (m_data[15] - '0'),
+				(m_data[17] - '0') * 10 + (m_data[18] - '0'));
 		}
 	}
 
@@ -267,9 +267,9 @@ private:
 		if (m_length == 10 || m_length == 19)
 		{
 			return date_lut.makeDate(
-				m_data[0] * 1000 + m_data[1] * 100 + m_data[2] * 10 + m_data[3],
-				m_data[5] * 10 + m_data[6],
-				m_data[8] * 10 + m_data[9]);
+				(m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
+				(m_data[5] - '0') * 10 + (m_data[6] - '0'),
+				(m_data[8] - '0') * 10 + (m_data[9] - '0'));
 		}
 		else
 			throw Exception("Cannot parse Date: " + getString());
