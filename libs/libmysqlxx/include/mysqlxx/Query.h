@@ -21,7 +21,7 @@ public:
 	void execute();
 	UseQueryResult use();
 	StoreQueryResult store();
-
+	
 	UInt64 insertID();
 
 	/// Для совместимости
@@ -35,6 +35,8 @@ public:
 private:
 	Connection * conn;
 	std::stringbuf query_buf;
+
+	void executeImpl();
 };
 
 

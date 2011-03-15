@@ -9,7 +9,7 @@ UseQueryResult::UseQueryResult(MYSQL_RES * res_, Connection * conn_) : ResultBas
 {
 }
 
-Row UseQueryResult::fetch_row()
+Row UseQueryResult::fetch()
 {
 	MYSQL_ROW row = mysql_fetch_row(res);
 	if (!row)

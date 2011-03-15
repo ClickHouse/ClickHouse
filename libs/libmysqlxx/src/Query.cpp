@@ -42,7 +42,7 @@ void Query::reset()
 	query_buf.str("");
 }
 
-void Query::execute()
+void Query::executeImpl()
 {
 	std::string query_string = query_buf.str();
 	if (mysql_real_query(conn->getDriver(), query_string.data(), query_string.size()))
@@ -51,7 +51,7 @@ void Query::execute()
 
 UseQueryResult Query::use()
 {
-	execute();
+	executeImpl();
 	MYSQL_RES * res = mysql_use_result(conn->getDriver());
 	if (!res)
 		onError(conn->getDriver());
@@ -61,12 +61,17 @@ UseQueryResult Query::use()
 
 StoreQueryResult Query::store()
 {
-	execute();
+	executeImpl();
 	MYSQL_RES * res = mysql_store_result(conn->getDriver());
 	if (!res)
 		checkError(conn->getDriver());
 
 	return StoreQueryResult(res, conn);
+}
+
+void Query::execute()
+{
+	executeImpl();
 }
 
 UInt64 Query::insertID()

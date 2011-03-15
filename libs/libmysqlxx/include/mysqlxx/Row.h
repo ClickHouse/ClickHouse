@@ -19,7 +19,8 @@ private:
 	  * Взято из mysql++.
 	  */
 	typedef MYSQL_ROW Row::*private_bool_type;
-	
+	void this_type_does_not_support_comparisons() const {}
+
 public:
 	Row() : row(NULL), res(NULL)
 	{
@@ -63,6 +64,21 @@ private:
 	MYSQL_LENGTHS lengths;
 	ResultBase * res;
 };
+
+
+template <typename T>
+bool operator!=(const Row & lhs, const T & rhs)
+{
+	lhs.this_type_does_not_support_comparisons();
+	return false;
+}
+
+template <typename T>
+bool operator==(const Row & lhs, const T & rhs)
+{
+	lhs.this_type_does_not_support_comparisons();
+	return false;
+}
 
 }
 

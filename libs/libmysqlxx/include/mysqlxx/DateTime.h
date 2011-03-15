@@ -4,13 +4,14 @@
 #include <string>
 #include <Yandex/DateLUT.h>
 
-#include <mysqlxx/Exception.h>
+#include <mysqlxx/Date.h>
 
 
 namespace mysqlxx
 {
 
-class DateTime
+/// packed - для memcmp
+class __attribute__ ((__packed__)) DateTime
 {
 private:
 	unsigned short m_year;
@@ -48,7 +49,7 @@ private:
 	}
 
 public:
-	DateTime(time_t time)
+	explicit DateTime(time_t time)
 	{
 		init(time);
 	}
@@ -59,7 +60,7 @@ public:
 	{
 	}
 
-	DateTime(const std::string & s)
+	explicit DateTime(const std::string & s)
 	{
 		if (s.size() < 19)
 			throw Exception("Cannot parse DateTime: " + s);
@@ -83,6 +84,12 @@ public:
 		init(data, length);
 	}
 
+	DateTime & operator= (time_t time)
+	{
+		init(time);
+		return *this;
+	}
+
 	operator time_t() const
 	{
 		return Yandex::DateLUTSingleton::instance().makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
@@ -102,28 +109,16 @@ public:
 	void minute(unsigned char x) 	{ m_minute = x; }
 	void second(unsigned char x) 	{ m_second = x; }
 
-	bool operator< (const DateTime & other) const
+	Date toDate() const { return Date(m_year, m_month, m_day); }
+
+	bool operator< (const Date & other) const
 	{
-		if (m_year < other.m_year)
-			return true;
-		else if (m_month < other.m_month)
-			return true;
-		else if (m_day < other.m_day)
-			return true;
-		else if (m_hour < other.m_hour)
-			return true;
-		else if (m_minute < other.m_minute)
-			return true;
-		else if (m_second < other.m_second)
-			return true;
-		else
-			return false;
+		return -1 == memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator== (const DateTime & other) const
+	bool operator== (const Date & other) const
 	{
-		return m_year == other.m_year && m_month == other.m_month && m_day == other.m_day
-			&& m_hour == other.m_hour && m_minute == other.m_minute && m_second == other.m_second;
+		return 0 == memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator!= (const DateTime & other) const

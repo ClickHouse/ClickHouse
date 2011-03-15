@@ -1,6 +1,7 @@
 #ifndef MYSQLXX_DATE_H
 #define MYSQLXX_DATE_H
 
+#include <string.h>
 #include <string>
 #include <Yandex/DateLUT.h>
 
@@ -10,7 +11,8 @@
 namespace mysqlxx
 {
 
-class Date
+/// packed - для memcmp
+class __attribute__ ((__packed__)) Date
 {
 private:
 	unsigned short m_year;
@@ -38,7 +40,7 @@ private:
 	}
 
 public:
-	Date(time_t time)
+	explicit Date(time_t time)
 	{
 		init(time);
 	}
@@ -48,7 +50,7 @@ public:
 	{
 	}
 
-	Date(const std::string & s)
+	explicit Date(const std::string & s)
 	{
 		init(s.data(), s.size());
 	}
@@ -61,6 +63,12 @@ public:
 	Date()
 	{
 		init(time(0));
+	}
+
+	Date & operator= (time_t time)
+	{
+		init(time);
+		return *this;
 	}
 
 	operator time_t() const
@@ -78,14 +86,12 @@ public:
 
 	bool operator< (const Date & other) const
 	{
-		return m_year < other.m_year
-			|| (m_year == other.m_year && m_month < other.m_month)
-			|| (m_year == other.m_year && m_month == other.m_month && m_day < other.m_day);
+		return -1 == memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator== (const Date & other) const
 	{
-		return m_year == other.m_year && m_month == other.m_month && m_day == other.m_day;
+		return 0 == memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator!= (const Date & other) const

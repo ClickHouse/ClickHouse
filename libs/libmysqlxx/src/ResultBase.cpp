@@ -1,3 +1,4 @@
+#include <mysqlxx/Connection.h>
 #include <mysqlxx/ResultBase.h>
 
 #include <iostream>

@@ -35,6 +35,8 @@ void Connection::connect(const char* db,
 	if (is_connected)
 		disconnect();
 
+	LibrarySingleton::instance();
+
 	if (!mysql_init(&driver))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 

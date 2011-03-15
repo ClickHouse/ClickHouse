@@ -5,11 +5,32 @@
 
 #include <Poco/Util/Application.h>
 
+#include <Yandex/singleton.h>
+
 #include <mysqlxx/Query.h>
 
 
 namespace mysqlxx
 {
+
+
+/// Для корректной инициализации и деинициализации MySQL библиотеки.
+class LibrarySingleton : public Singleton<LibrarySingleton>
+{
+friend class Singleton<LibrarySingleton>;
+private:
+	LibrarySingleton()
+	{
+		if (mysql_library_init(0, NULL, NULL))
+			throw Exception("Cannot initialize MySQL library.");
+	}
+
+	~LibrarySingleton()
+	{
+		mysql_library_end();
+	}
+};
+	
 
 class Connection : private boost::noncopyable
 {

@@ -21,7 +21,10 @@ public:
 	unsigned getNumFields() 		{ return num_fields; }
 	MYSQL_RES * getRes()			{ return res; }
 
-	virtual ~ResultBase() {}
+	virtual ~ResultBase()
+	{
+		mysql_free_result(res);
+	}
 
 protected:
 	MYSQL_RES * res;
