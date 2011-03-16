@@ -49,6 +49,8 @@ struct EscapeManipResult
 	std::ostream & operator<< (double value)				{ return ostr << value; }
 	std::ostream & operator<< (long long value)				{ return ostr << value; }
 	std::ostream & operator<< (unsigned long long value)	{ return ostr << value; }
+	std::ostream & operator<< (Date value)					{ return ostr << value; }
+	std::ostream & operator<< (DateTime value)				{ return ostr << value; }
 
 	std::ostream & operator<< (const std::string & value)
 	{
@@ -155,6 +157,8 @@ public:
 	std::ostream & operator<< (double value)				{ return ostr << value; }
 	std::ostream & operator<< (long long value)				{ return ostr << value; }
 	std::ostream & operator<< (unsigned long long value)	{ return ostr << value; }
+	std::ostream & operator<< (Date value)					{ return ostr << '\'' << value << '\''; }
+	std::ostream & operator<< (DateTime value)				{ return ostr << '\'' << value << '\''; }
 
 	std::ostream & operator<< (const std::string & value)
 	{
