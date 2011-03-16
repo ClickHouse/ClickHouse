@@ -18,9 +18,12 @@ Query::Query(Connection * conn_, const std::string & query_string) : std::ostrea
 	imbue(std::locale::classic());
 }
 
-Query::Query(const Query & other)
+Query::Query(const Query & other) : std::ostream(0), conn(other.conn)
 {
-	*this = other;
+	init(&query_buf);
+	imbue(std::locale::classic());
+
+	*this << other.str();
 }
 
 Query & Query::operator= (const Query & other)
@@ -29,8 +32,7 @@ Query & Query::operator= (const Query & other)
 
 	seekp(0);
 	clear();
-	query_buf.str(other.query_buf.str());
-	seekp(0, std::ios::end);
+	*this << other.str();
 	
 	return *this;
 }

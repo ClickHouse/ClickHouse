@@ -35,12 +35,17 @@ void Connection::connect(const char* db,
 	if (is_connected)
 		disconnect();
 
+	/// Инициализация библиотеки.
 	LibrarySingleton::instance();
 
 	if (!mysql_init(&driver))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	if (!mysql_real_connect(&driver, server, user, password, db, port, NULL, driver.client_flag))
+		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+
+	/// Установим кодировки по-умолчанию - UTF-8.
+	if (mysql_set_character_set(&driver, "UTF8"))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	is_connected = true;

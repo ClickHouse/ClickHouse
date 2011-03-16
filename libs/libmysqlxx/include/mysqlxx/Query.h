@@ -27,7 +27,7 @@ public:
 	/// Для совместимости
 	UInt64 insert_id() { return insertID(); }
 
-	std::string str()
+	std::string str() const
 	{
 		return query_buf.str();
 	}
