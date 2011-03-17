@@ -129,6 +129,18 @@ int main(int argc, char ** argv)
 
 			std::cerr << connection.query("SELECT * FROM tmp").store().size() << std::endl;
 		}
+
+		{
+			/// Транзакции
+			mysqlxx::Connection connection2("test", "127.0.0.1", "root", "qwerty", 3306);
+			connection2.query("DROP TABLE IF EXISTS tmp").execute();
+			connection2.query("CREATE TABLE tmp (x INT, PRIMARY KEY (x)) ENGINE = InnoDB").execute();
+
+			mysqlxx::Transaction trans(connection2);
+			connection2.query("INSERT INTO tmp VALUES (1)").execute();
+			std::cerr << connection2.query("SELECT * FROM tmp").store().size() << std::endl;
+		}
+		std::cerr << connection.query("SELECT * FROM tmp").store().size() << std::endl;
 	}
 	catch (const mysqlxx::Exception & e)
 	{

@@ -13,11 +13,13 @@ namespace DB
 /** Записать UInt64 в формате переменной длины (base128) */
 void writeVarUInt(UInt64 x, std::ostream & ostr);
 void writeVarUInt(UInt64 x, WriteBuffer & ostr);
+char * writeVarUInt(UInt64 x, char * ostr);
 
 
 /** Прочитать UInt64, записанный в формате переменной длины (base128) */
 void readVarUInt(UInt64 & x, std::istream & istr);
 void readVarUInt(UInt64 & x, ReadBuffer & istr);
+const char * readVarUInt(UInt64 & x, const char * istr);
 
 
 /** Получить длину UInt64 в формате VarUInt */
