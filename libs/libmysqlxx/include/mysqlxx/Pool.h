@@ -20,6 +20,11 @@
 #include <mysqlxx/Connection.h>
 
 
+#define MYSQLXX_POOL_DEFAULT_START_CONNECTIONS 	1
+#define MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS 	16
+#define MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL 		10
+
+
 namespace mysqlxx
 {
 
@@ -41,12 +46,6 @@ protected:
 	};
 
 public:
-	/** @brief Количество соединений с MySQL, создаваемых при запуске. */
-	static const int Std_DefaultConnections;
-	/** @brief Максимально возможное количество соедиений. */
-	static const int Std_MaxConnections;
-	/** @brief Время, в секундах, сколько "спать", если не можем подключиться. */
-	static const int SleepOnConnectFail;
 
 	/** @brief Соединение с базой данных. */
 	class Entry
@@ -171,8 +170,10 @@ public:
 	 * @param MaxConn			Максимальное количество подключений
 	 * @param AllowMultiQueries	Не используется.
 	 */
-	Pool(const std::string & ConfigName, int DefConn = Std_DefaultConnections, int MaxConn = Std_MaxConnections,
-			bool AllowMultiQueries = false, const std::string & InitConnect_ = "")
+	Pool(const std::string & ConfigName,
+		 int DefConn = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+		 int MaxConn = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+			const std::string & InitConnect_ = "")
 		: DefaultConnections(DefConn), MaxConnections(MaxConn), InitConnect(InitConnect_),
 		Initialized(false), CfgName(ConfigName)
 	{
@@ -212,7 +213,7 @@ public:
 
 			Lock.unlock();
 			sched_yield();
-			::sleep(SleepOnConnectFail);
+			::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 			Lock.lock();
 		}
 	}
@@ -231,8 +232,6 @@ protected:
 	int DefaultConnections;
 	/** @brief Максимально возможное количество соедиений. */
 	int MaxConnections;
-	/** @brief Признак возможности использования множественных запросов. */
-	bool AllowMulti;
 	/** @brief Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251". */
 	std::string InitConnect;
 
@@ -323,11 +322,6 @@ private:
 	void afterConnect(mysqlxx::Connection & Conn)
 	{
 		Poco::Util::Application & app = Poco::Util::Application::instance();
-
-		/// Всегда устанавливаем кодировку по умолчанию - UTF8!
-		mysqlxx::Query Q = Conn.query();
-		Q << "SET NAMES utf8";
-		Q.execute();
 
 		/// Инициализирующий запрос (например, установка другой кодировки)
 		if (!InitConnect.empty())
