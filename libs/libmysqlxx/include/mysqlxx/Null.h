@@ -8,19 +8,16 @@ namespace mysqlxx
 {
 
 
-namespace detail
-{
-	struct NullTypeHelper
-	{
-		int x;
-	};
-}
-
-typedef int detail::NullTypeHelper::* NullType;
-
-const NullType null = 0;
+struct NullType {};
+const NullType null = {};
 
 
+/** Класс для NULL-able типов.
+  * Использование:
+  *		mysqlxx::Null<int> x = mysqlxx::null;
+  *		std::cout << (x.isNull() ? "Ok." : "Fail.") << std::endl;
+  *		x = 10;
+  */
 template <typename T>
 class Null
 {
@@ -30,7 +27,7 @@ public:
 	
 	Null() : is_null(true) {}
 	Null(NullType data) : is_null(true) {}
-	Null(const T & data_) : data(data_), is_null(false) {}
+	explicit Null(const T & data_) : data(data_), is_null(false) {}
 
 	operator T & ()
 	{
@@ -65,6 +62,11 @@ public:
 		return is_null == other.is_null && data == other.data;
 	}
 
+	bool operator== (const T & other) const
+	{
+		return !is_null && data == other;
+	}
+
 	bool operator== (const NullType other) const { return is_null; }
 
 	bool operator!= (const Null<T> & other) const 
@@ -73,6 +75,11 @@ public:
 	}
 
 	bool operator!= (const NullType other) const { return !is_null; }
+
+	bool operator!= (const T & other) const
+	{
+		return is_null || data != other;
+	}
 };
 
 

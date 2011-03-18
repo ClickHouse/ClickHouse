@@ -12,230 +12,135 @@
 #include <Yandex/DateLUT.h>
 
 #include <mysqlxx/Types.h>
-#include <mysqlxx/Exception.h>
+
+/// Обрезать длинный запрос до указанной длины для текста исключения.
+#define MYSQLXX_QUERY_PREVIEW_LENGTH 100
 
 
 namespace mysqlxx
 {
 
 
-template <typename T>
-static void readIntText(T & x, const char * buf, size_t length)
-{
-	bool negative = false;
-	x = 0;
-	const char * start = buf;
-	const char * end = buf + length;
-
-	while (buf != end)
-	{
-		switch (*buf)
-		{
-			case '+':
-				break;
-			case '-':
-				negative = true;
-				break;
-			case '0':
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				x *= 10;
-				x += *buf - '0';
-				break;
-			default:
-			    throw Exception("Cannot parse integer: " + std::string(start, length));
-		}
-		++buf;
-	}
-	if (negative)
-		x = -x;
-}
+class ResultBase;
 
 
-/// грубо
-template <typename T>
-static void readFloatText(T & x, const char * buf, size_t length)
-{
-	bool negative = false;
-	x = 0;
-	bool after_point = false;
-	double power_of_ten = 1;
-	const char * start = buf;
-	const char * end = buf + length;
-
-	while (buf != end)
-	{
-		switch (*buf)
-		{
-			case '+':
-				break;
-			case '-':
-				negative = true;
-				break;
-			case '.':
-				after_point = true;
-				break;
-			case '0':
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				if (after_point)
-				{
-					power_of_ten /= 10;
-					x += (*buf - '0') * power_of_ten;
-				}
-				else
-				{
-					x *= 10;
-					x += *buf - '0';
-				}
-				break;
-			case 'e':
-			case 'E':
-			{
-				++buf;
-				Int32 exponent = 0;
-				readIntText(exponent, buf, end - buf);
-				if (exponent == 0)
-				{
-					if (negative)
-						x = -x;
-					return;
-				}
-				else if (exponent > 0)
-				{
-					for (Int32 i = 0; i < exponent; ++i)
-						x *= 10;
-					if (negative)
-						x = -x;
-					return;
-				}
-				else
-				{
-					for (Int32 i = 0; i < exponent; ++i)
-						x /= 10;
-					if (negative)
-						x = -x;
-					return;
-				}
-			}
-			case 'i':
-			case 'I':
-				x = std::numeric_limits<T>::infinity();
-				if (negative)
-					x = -x;
-				return;
-			case 'n':
-			case 'N':
-				x = std::numeric_limits<T>::quiet_NaN();
-				return;
-			default:
-			    throw Exception("Cannot parse floating point number: " + std::string(start, length));
-		}
-		++buf;
-	}
-	if (negative)
-		x = -x;
-}
-
-
+/** Представляет одно значение, считанное из MySQL.
+  * Объект сам не хранит данные, а является всего лишь обёрткой над парой (const char *, size_t).
+  * Если уничтожить UseQueryResult/StoreQueryResult или Connection,
+  *  или считать следующий Row при использовании UseQueryResult, то объект станет некорректным.
+  * Позволяет преобразовать значение (распарсить) в различные типы данных:
+  * - с помощью функций вида getUInt(), getString(), ... (рекомендуется);
+  * - с помощью шаблонной функции get<Type>(), которая специализирована для многих типов (для шаблонного кода);
+  * - шаблонная функция get<Type> работает также для всех типов, у которых есть конструктор из String
+  *   (это сделано для возможности расширения);
+  * - с помощью operator Type() - но этот метод реализован лишь для совместимости и не рекомендуется
+  *   к использованию, так как неудобен (часто возникают неоднозначности).
+  *
+  * При ошибке парсинга, выкидывается исключение.
+  * При попытке достать значение, которое равно NULL, выкидывается исключение
+  * - используйте метод isNull() для проверки.
+  *
+  * Во всех распространённых системах, time_t - это всего лишь typedef от Int64 или Int32.
+  * Для того, чтобы можно было писать row[0].get<time_t>(), ожидая, что значение вида '2011-01-01 00:00:00'
+  *  корректно распарсится согласно текущей тайм-зоне, сделано так, что метод getUInt и соответствующие методы get<>()
+  *  также умеют парсить дату и дату-время.
+  */
 class String
 {
 public:
-	String(const char * data_, size_t length_) : m_data(data_), m_length(length_)
+	/** Параметр res_ используется только для генерации подробной информации в исключениях.
+	  * Можно передать NULL - тогда подробной информации в исключениях не будет.
+	  */
+	String(const char * data_, size_t length_, const ResultBase * res_) : m_data(data_), m_length(length_), res(res_)
 	{
 	}
 
+	/// Получить значение bool.
 	bool getBool() const
 	{
 		if (unlikely(isNull()))
-			throw Exception("Value is NULL");
+			throwException("Value is NULL");
 		
 		return m_length > 0 && m_data[0] != '0';
 	}
 
+	/// Получить беззнаковое целое.
 	UInt64 getUInt() const
 	{
 		if (unlikely(isNull()))
-			throw Exception("Value is NULL");
+			throwException("Value is NULL");
 		
-		UInt64 res;
-		readIntText(res, m_data, m_length);
-		return res;
+		return readUIntText(m_data, m_length);;
 	}
 
+	/// Получить целое со знаком или дату или дату-время (в unix timestamp согласно текущей тайм-зоне).
 	Int64 getInt() const
 	{
 		return getIntOrDateTime();
 	}
 
+	/// Получить число с плавающей запятой.
 	double getDouble() const
 	{
 		if (unlikely(isNull()))
-			throw Exception("Value is NULL");
+			throwException("Value is NULL");
 		
-		double res;
-		readFloatText(res, m_data, m_length);
-		return res;
+		return readFloatText(m_data, m_length);
 	}
 
+	/// Получить дату-время (из значения вида '2011-01-01 00:00:00').
 	DateTime getDateTime() const
 	{
 		return DateTime(data(), size());
 	}
 
+	/// Получить дату (из значения вида '2011-01-01' или '2011-01-01 00:00:00').
 	Date getDate() const
 	{
 		return Date(data(), size());
 	}
 
+	/// Получить строку.
 	std::string getString() const
 	{
 		if (unlikely(isNull()))
-			throw Exception("Value is NULL");
+			throwException("Value is NULL");
 		
 		return std::string(m_data, m_length);
 	}
 
+	/// Является ли NULL.
 	bool isNull() const
 	{
 		return m_data == NULL;
 	}
 
-	/// Для совместимости
+	/// Для совместимости (используйте вместо этого метод isNull())
 	bool is_null() const { return isNull(); }
 
+	/** Получить любой поддерживаемый тип (для шаблонного кода).
+	  * Поддерживаются основные типы, а также любые типы с конструктором от String (для удобства расширения).
+	  */
 	template <typename T> T get() const;
 
-	/// Для совместимости
+	/// Для совместимости. Не рекомендуется к использованию, так как неудобен (часто возникают неоднозначности).
 	template <typename T> operator T() const { return get<T>(); }
 
 	const char * data() const 	{ return m_data; }
 	size_t length() const 		{ return m_length; }
 	size_t size() const 		{ return m_length; }
 
-
 private:
 	const char * m_data;
 	size_t m_length;
+	const ResultBase * res;
 
+	
 	bool checkDateTime() const
 	{
 		return (m_length == 10 || m_length == 19) && m_data[4] == '-' && m_data[7] == '-';
 	}
+
 
 	time_t getDateTimeImpl() const
 	{
@@ -248,7 +153,7 @@ private:
 				(m_data[5] - '0') * 10 + (m_data[6] - '0'),
 				(m_data[8] - '0') * 10 + (m_data[9] - '0'));
 		}
-		else
+		else if (m_length == 19)
 		{
 			return date_lut.makeDateTime(
 				(m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
@@ -258,7 +163,12 @@ private:
 				(m_data[14] - '0') * 10 + (m_data[15] - '0'),
 				(m_data[17] - '0') * 10 + (m_data[18] - '0'));
 		}
+		else
+			throwException("Cannot parse DateTime");
+
+		return 0;	/// чтобы не было warning-а.
 	}
+
 
 	time_t getDateImpl() const
 	{
@@ -272,20 +182,20 @@ private:
 				(m_data[8] - '0') * 10 + (m_data[9] - '0'));
 		}
 		else
-			throw Exception("Cannot parse Date: " + getString());
+			throwException("Cannot parse Date");
 	}
+
 
 	Int64 getIntImpl() const
 	{
-		Int64 res;
-		readIntText(res, m_data, m_length);
-		return res;
+		return readIntText(m_data, m_length);;
 	}
+
 
 	Int64 getIntOrDateTime() const
 	{
 		if (unlikely(isNull()))
-			throw Exception("Value is NULL");
+			throwException("Value is NULL");
 
 		if (checkDateTime())
 			return getDateTimeImpl();
@@ -293,10 +203,11 @@ private:
 			return getIntImpl();
 	}
 
+
 	Int64 getIntOrDate() const
 	{
 		if (unlikely(isNull()))
-			throw Exception("Value is NULL");
+			throwException("Value is NULL");
 
 		if (checkDateTime())
 			return getDateImpl();
@@ -306,6 +217,178 @@ private:
 			return date_lut.toDate(getIntImpl());
 		}
 	}
+
+
+	/// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
+	UInt64 readUIntText(const char * buf, size_t length) const
+	{
+		UInt64 x = 0;
+		const char * end = buf + length;
+
+		while (buf != end)
+		{
+			switch (*buf)
+			{
+				case '+':
+					break;
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+					x *= 10;
+					x += *buf - '0';
+					break;
+				default:
+				    throwException("Cannot parse unsigned integer");
+			}
+			++buf;
+		}
+
+		return x;
+	}
+
+
+	/// Прочитать знаковое целое в простом формате из не-0-terminated строки.
+	Int64 readIntText(const char * buf, size_t length) const
+	{
+		bool negative = false;
+		Int64 x = 0;
+		const char * end = buf + length;
+
+		while (buf != end)
+		{
+			switch (*buf)
+			{
+				case '+':
+					break;
+				case '-':
+					negative = true;
+					break;
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+					x *= 10;
+					x += *buf - '0';
+					break;
+				default:
+				    throwException("Cannot parse signed integer");
+			}
+			++buf;
+		}
+		if (negative)
+			x = -x;
+
+		return x;
+	}
+
+
+	/// Прочитать число с плавающей запятой в простом формате, с грубым округлением, из не-0-terminated строки.
+	double readFloatText(const char * buf, size_t length) const
+	{
+		bool negative = false;
+		double x = 0;
+		bool after_point = false;
+		double power_of_ten = 1;
+		const char * end = buf + length;
+
+		while (buf != end)
+		{
+			switch (*buf)
+			{
+				case '+':
+					break;
+				case '-':
+					negative = true;
+					break;
+				case '.':
+					after_point = true;
+					break;
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+					if (after_point)
+					{
+						power_of_ten /= 10;
+						x += (*buf - '0') * power_of_ten;
+					}
+					else
+					{
+						x *= 10;
+						x += *buf - '0';
+					}
+					break;
+				case 'e':
+				case 'E':
+				{
+					++buf;
+					Int32 exponent = readIntText(buf, end - buf);
+					if (exponent == 0)
+					{
+						if (negative)
+							x = -x;
+						return x;
+					}
+					else if (exponent > 0)
+					{
+						for (Int32 i = 0; i < exponent; ++i)
+							x *= 10;
+						if (negative)
+							x = -x;
+						return x;
+					}
+					else
+					{
+						for (Int32 i = 0; i < exponent; ++i)
+							x /= 10;
+						if (negative)
+							x = -x;
+						return x;
+					}
+				}
+				case 'i':
+				case 'I':
+					x = std::numeric_limits<double>::infinity();
+					if (negative)
+						x = -x;
+					return x;
+				case 'n':
+				case 'N':
+					x = std::numeric_limits<double>::quiet_NaN();
+					return x;
+				default:
+				    throwException("Cannot parse floating point number");
+			}
+			++buf;
+		}
+		if (negative)
+			x = -x;
+
+		return x;
+	}
+
+
+	/// Выкинуть исключение с подробной информацией
+	void throwException(const char * text) const;
 };
 
 
@@ -328,7 +411,6 @@ template <> inline Date					String::get<Date				>() const { return getDate(); }
 template <> inline DateTime				String::get<DateTime			>() const { return getDateTime(); }
 
 template <> inline Yandex::VisitID_t	String::get<Yandex::VisitID_t	>() const { return Yandex::VisitID_t(getUInt()); }
-//template <> inline Date					String::get<Date				>() const { return getString(); }
 
 template <typename T> inline T			String::get() 						const { return T(*this); }
 

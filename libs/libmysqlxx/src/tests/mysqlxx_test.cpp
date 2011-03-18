@@ -141,6 +141,72 @@ int main(int argc, char ** argv)
 			std::cerr << connection2.query("SELECT * FROM tmp").store().size() << std::endl;
 		}
 		std::cerr << connection.query("SELECT * FROM tmp").store().size() << std::endl;
+
+		{
+			/// NULL
+			mysqlxx::Null<int> x = mysqlxx::null;
+			std::cerr << (x == mysqlxx::null ? "Ok" : "Fail") << std::endl;
+			std::cerr << (x == 0 ? "Fail" : "Ok") << std::endl;
+			std::cerr << (x.isNull() ? "Ok" : "Fail") << std::endl;
+			x = 1;
+			std::cerr << (x == mysqlxx::null ? "Fail" : "Ok") << std::endl;
+			std::cerr << (x == 0 ? "Fail" : "Ok") << std::endl;
+			std::cerr << (x == 1 ? "Ok" : "Fail") << std::endl;
+			std::cerr << (x.isNull() ? "Fail" : "Ok") << std::endl;
+		}
+
+		{
+			/// Исключения при попытке достать значение не того типа
+			try
+			{
+				connection.query("SELECT -1").store().at(0).at(0).getUInt();
+				std::cerr << "Fail" << std::endl;
+			}
+			catch (const mysqlxx::Exception & e)
+			{
+				std::cerr << "Ok, " << e.message() << std::endl;
+			}
+
+			try
+			{
+				connection.query("SELECT 'xxx'").store().at(0).at(0).getInt();
+				std::cerr << "Fail" << std::endl;
+			}
+			catch (const mysqlxx::Exception & e)
+			{
+				std::cerr << "Ok, " << e.message() << std::endl;
+			}
+
+			try
+			{
+				connection.query("SELECT NULL").store().at(0).at(0).getString();
+				std::cerr << "Fail" << std::endl;
+			}
+			catch (const mysqlxx::Exception & e)
+			{
+				std::cerr << "Ok, " << e.message() << std::endl;
+			}
+
+			try
+			{
+				connection.query("SELECT 123").store().at(0).at(0).getDate();
+				std::cerr << "Fail" << std::endl;
+			}
+			catch (const mysqlxx::Exception & e)
+			{
+				std::cerr << "Ok, " << e.message() << std::endl;
+			}
+
+			try
+			{
+				connection.query("SELECT '2011-01-01'").store().at(0).at(0).getDateTime();
+				std::cerr << "Fail" << std::endl;
+			}
+			catch (const mysqlxx::Exception & e)
+			{
+				std::cerr << "Ok, " << e.message() << std::endl;
+			}
+		}
 	}
 	catch (const mysqlxx::Exception & e)
 	{

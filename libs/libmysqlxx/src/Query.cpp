@@ -58,7 +58,7 @@ UseQueryResult Query::use()
 	if (!res)
 		onError(conn->getDriver());
 
-	return UseQueryResult(res, conn);
+	return UseQueryResult(res, conn, this);
 }
 
 StoreQueryResult Query::store()
@@ -68,7 +68,7 @@ StoreQueryResult Query::store()
 	if (!res)
 		checkError(conn->getDriver());
 
-	return StoreQueryResult(res, conn);
+	return StoreQueryResult(res, conn, this);
 }
 
 void Query::execute()

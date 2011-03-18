@@ -12,10 +12,19 @@ namespace mysqlxx
 
 class Connection;
 
+
+/** Результат выполнения запроса, загруженный полностью на клиента.
+  * Это требует оперативку, чтобы вместить весь результат,
+  *  но зато реализует произвольный доступ к строкам по индексу.
+  * Если размер результата большой - используйте лучше UseQueryResult.
+  * Объект содержит ссылку на Connection.
+  * Если уничтожить Connection, то объект становится некорректным и все строки результата - тоже.
+  * Если задать следующий запрос в соединении, то объект и все строки тоже становятся некорректными.
+  */
 class StoreQueryResult : public std::vector<Row>, public ResultBase
 {
 public:
-	StoreQueryResult(MYSQL_RES * res_, Connection * conn_);
+	StoreQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_);
 
 	size_t num_rows() const { return size(); }
 };

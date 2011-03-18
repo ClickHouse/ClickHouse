@@ -5,7 +5,7 @@
 namespace mysqlxx
 {
 
-UseQueryResult::UseQueryResult(MYSQL_RES * res_, Connection * conn_) : ResultBase(res_, conn_)
+UseQueryResult::UseQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_) : ResultBase(res_, conn_, query_)
 {
 }
 

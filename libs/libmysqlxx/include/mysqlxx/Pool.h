@@ -28,7 +28,17 @@
 namespace mysqlxx
 {
 
-/** @brief Пул соединений с MySQL. */
+/** @brief Пул соединений с MySQL.
+  * Этот класс имеет мало отношения в mysqlxx и сделан не в стиле библиотеки. (взят из старого кода)
+  * Использование:
+  * 	mysqlxx::Pool pool("mysql_params");
+  *
+  *		void thread()
+  *		{
+  *		  	mysqlxx::Pool::Entry connection = pool.Get();
+  *			std::string s = connection->query("SELECT 'Hello, world!' AS world").use().fetch()["world"].getString();
+  *		}
+  */
 class Pool
 {
 protected:

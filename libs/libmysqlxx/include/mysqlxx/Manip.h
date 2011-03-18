@@ -10,7 +10,9 @@
 namespace mysqlxx
 {
 
-/** @brief Манипулятор ostream, который escape-ит строки для записи в tab delimited файл. */
+/** @brief Манипулятор ostream, который escape-ит строки для записи в tab delimited файл.
+  * Использование: tab_separated_ostr << mysqlxx::escape << x;
+  */
 enum escape_enum
 {
 	escape
@@ -19,9 +21,11 @@ enum escape_enum
 
 /** @brief Манипулятор ostream, который quote-ит строки для записи в MySQL запрос.
   * Внимание! Не использует функции MySQL API, а использует свой метод quote-инга,
-  * который может быть некорректным при использовании некоторых японских кодировок
+  * который может быть некорректным при использовании некоторых кодировок
   * (multi-byte attack), а также может оказаться некорректным при изменении libmysqlclient.
   * Это сделано для увеличения производительности и это имеет значение.
+  *
+  * Использование: query << mysqlxx::quote << x;
   */
 enum quote_enum
 {
@@ -178,22 +182,6 @@ public:
 		return ostr;
 	}
 
-
-/*	template <typename T1, typename T2>
-	std::ostream & operator<< (const std::pair<T1, T2> & pair)
-	{
-		return ostr << quote << pair.first
-			<< ',' << quote << pair.second;
-	}
-
-
-	template <typename T1, typename T2, typename T3>
-	std::ostream & operator<< (const Poco::Tuple<T1, T2, T3> & tuple)
-	{
-		return ostr << quote << tuple.template get<0>()
-			<< ',' << quote << tuple.template get<1>()
-			<< ',' << quote << tuple.template get<2>();
-	}*/
 
 private:
 

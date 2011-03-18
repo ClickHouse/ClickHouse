@@ -20,7 +20,7 @@ typedef Poco::Int32 Int32;
 typedef unsigned long * MYSQL_LENGTHS;
 typedef MYSQL_FIELD * MYSQL_FIELDS;
 
-/// Для совместимости с mysql++
+/// Для совместимости с mysql++. Не используйте эти typedef-ы.
 typedef DateTime sql_datetime;
 typedef DateTime sql_timestamp;
 typedef Date sql_date;
