@@ -124,6 +124,21 @@ public:
 		return -1 == memcmp(this, &other, sizeof(*this));
 	}
 
+	bool operator> (const Date & other) const
+	{
+		return 1 == memcmp(this, &other, sizeof(*this));
+	}
+
+	bool operator<= (const Date & other) const
+	{
+		return 0 >= memcmp(this, &other, sizeof(*this));
+	}
+
+	bool operator>= (const Date & other) const
+	{
+		return 0 <= memcmp(this, &other, sizeof(*this));
+	}
+
 	bool operator== (const Date & other) const
 	{
 		return 0 == memcmp(this, &other, sizeof(*this));
