@@ -17,8 +17,6 @@ LOCALSTATEDIR=/var/lock
 BINDIR=/usr/bin
 CRONFILE=/etc/cron.d/@CRONFILE@
 
-[ -x $BINDIR/$PROGRAM ] || exit 0
-
 CNFFILE=$SYSCONFDIR/config.xml
 CONFFILE=$SYSCONFDIR/config.conf
 PIDFILE=$PIDDIR/$PROGRAM.pid
@@ -39,6 +37,7 @@ wait4done()
 
 start()
 {
+	[ -x $BINDIR/$PROGRAM ] || exit 0
 	local EXIT_STATUS
 	EXIT_STATUS=0
 
