@@ -17,7 +17,8 @@ typedef Poco::Int64 Int64;
 typedef Poco::UInt32 UInt32;
 typedef Poco::Int32 Int32;
 
-typedef unsigned long * MYSQL_LENGTHS;
+typedef unsigned long MYSQL_LENGTH;
+typedef MYSQL_LENGTH * MYSQL_LENGTHS;
 typedef MYSQL_FIELD * MYSQL_FIELDS;
 
 /// Для совместимости с mysql++. Не используйте эти typedef-ы.

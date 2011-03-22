@@ -37,10 +37,9 @@ public:
 	}
 
 	/** Для того, чтобы создать Row, используйте соответствующие методы UseQueryResult или StoreQueryResult. */
-	Row(MYSQL_ROW row_, ResultBase * res_)
-		: row(row_), res(res_)
+	Row(MYSQL_ROW row_, ResultBase * res_, MYSQL_LENGTHS lengths_)
+		: row(row_), res(res_), lengths(lengths_)
 	{
-		lengths = mysql_fetch_lengths(res->getRes());
 	}
 
 	/** Получить значение по индексу.
@@ -88,8 +87,8 @@ public:
 
 private:
 	MYSQL_ROW row;
-	MYSQL_LENGTHS lengths;
 	ResultBase * res;
+	MYSQL_LENGTHS lengths;
 };
 
 

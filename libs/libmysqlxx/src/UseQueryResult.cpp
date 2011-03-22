@@ -15,7 +15,7 @@ Row UseQueryResult::fetch()
 	if (!row)
 		checkError(conn->getDriver());
 
-	return Row(row, this);
+	return Row(row, this, mysql_fetch_lengths(res));
 }
 
 }
