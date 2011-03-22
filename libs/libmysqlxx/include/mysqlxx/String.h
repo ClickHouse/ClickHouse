@@ -14,7 +14,7 @@
 #include <mysqlxx/Types.h>
 
 /// Обрезать длинный запрос до указанной длины для текста исключения.
-#define MYSQLXX_QUERY_PREVIEW_LENGTH 100
+#define MYSQLXX_QUERY_PREVIEW_LENGTH 1000
 
 
 namespace mysqlxx
