@@ -273,6 +273,104 @@ void readVarUInt(UInt64 & x, ReadBuffer & istr)
 }
 
 
+char * writeVarUInt(UInt64 x, char * ostr)
+{
+	*ostr = static_cast<Poco::UInt8>(x | 0x80);
+	if (x >= (1ULL << 7))
+	{
+		*++ostr = static_cast<Poco::UInt8>((x >> 7) | 0x80);
+		if (x >= (1ULL << 14))
+		{
+			*++ostr = static_cast<Poco::UInt8>((x >> 14) | 0x80);
+			if (x >= (1ULL << 21))
+			{
+				*++ostr = static_cast<Poco::UInt8>((x >> 21) | 0x80);
+				if (x >= (1ULL << 28))
+				{
+					*++ostr = static_cast<Poco::UInt8>((x >> 28) | 0x80);
+					if (x >= (1ULL << 35))
+					{
+						*++ostr = static_cast<Poco::UInt8>((x >> 35) | 0x80);
+						if (x >= (1ULL << 42))
+						{
+							*++ostr = static_cast<Poco::UInt8>((x >> 42) | 0x80);
+							if (x >= (1ULL << 49))
+							{
+								*++ostr = static_cast<Poco::UInt8>((x >> 49) | 0x80);
+								if (x >= (1ULL << 56))
+								{
+									*++ostr = static_cast<Poco::UInt8>((x >> 56) | 0x80);
+								}
+								else
+									*ostr &= 0x7F;
+							}
+							else
+								*ostr &= 0x7F;
+						}
+						else
+							*ostr &= 0x7F;
+					}
+					else
+						*ostr &= 0x7F;
+				}
+				else
+					*ostr &= 0x7F;
+			}
+			else
+				*ostr &= 0x7F;
+		}
+		else
+			*ostr &= 0x7F;
+	}
+	else
+		*ostr &= 0x7F;
+
+	return ++ostr;
+}
+
+
+const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
+{
+	const char * end = istr + size;
+
+	x = static_cast<Poco::UInt64>(*istr) & 0x7F;
+	if (*istr & 0x80 && ++istr < end)
+	{
+		x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 7;
+		if (*istr & 0x80 && ++istr < end)
+		{
+			x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 14;
+			if (*istr & 0x80 && ++istr < end)
+			{
+				x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 21;
+				if (*istr & 0x80 && ++istr < end)
+				{
+					x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 28;
+					if (*istr & 0x80 && ++istr < end)
+					{
+						x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 35;
+						if (*istr & 0x80 && ++istr < end)
+						{
+							x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 42;
+							if (*istr & 0x80 && ++istr < end)
+							{
+								x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 49;
+								if (*istr & 0x80 && ++istr < end)
+								{
+									x |= (static_cast<Poco::UInt64>(*istr) & 0x7F) << 56;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return ++istr;
+}
+
+
 size_t getLengthOfVarUInt(UInt64 x)
 {
 	return x < (1ULL << 7) ? 1
