@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <strconvert/escape_manip.h>
+#include <mysqlxx/mysqlxx.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
 	else
 	{
 		std::cout << "Failed at position " << (pos - begin) << ": "
-			<< strconvert::quote_fast << input.substr(pos - begin, 10)
+			<< mysqlxx::quote << input.substr(pos - begin, 10)
 			<< ", expected " << expected << "." << std::endl;
 	}
 

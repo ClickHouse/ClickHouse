@@ -1,7 +1,6 @@
 #include <iostream>
 #include <mysqlxx/mysqlxx.h>
 #include <Yandex/time2str.h>
-#include <strconvert/escape_manip.h>
 
 
 int main(int argc, char ** argv)
@@ -29,8 +28,8 @@ int main(int argc, char ** argv)
 					<< std::endl
 					<< mysqlxx::escape << row[1].getDate() << ", " << mysqlxx::escape << row[1].getDateTime() << std::endl
 					<< mysqlxx::quote << row[1].getDate() << ", " << mysqlxx::quote << row[1].getDateTime() << std::endl
-					<< strconvert::escape_file << row[1].getDate() << ", " << strconvert::escape_file << row[1].getDateTime() << std::endl
-					<< strconvert::quote_fast << row[1].getDate() << ", " << strconvert::quote_fast << row[1].getDateTime() << std::endl
+					<< mysqlxx::escape << row[1].getDate() << ", " << mysqlxx::escape << row[1].getDateTime() << std::endl
+					<< mysqlxx::quote << row[1].getDate() << ", " << mysqlxx::quote << row[1].getDateTime() << std::endl
 					;
 
 				time_t t1 = row[0];

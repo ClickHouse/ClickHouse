@@ -3,8 +3,10 @@
 
 #include <cstring>
 #include <iostream>
+
 #include <mysqlxx/Types.h>
 #include <mysqlxx/Row.h>
+#include <mysqlxx/Null.h>
 
 
 namespace mysqlxx
@@ -232,6 +234,221 @@ inline QuoteManipResult operator<< (std::ostream & ostr, quote_enum manip)
 {
 	return QuoteManipResult(ostr);
 }
+
+
+/** Манипулятор istream, позволяет считывать значения из tab delimited файла.
+  */
+enum unescape_enum
+{
+	unescape
+};
+
+
+/** Манипулятор istream, который позволяет читать значения в кавычках или без.
+  */
+enum unquote_enum
+{
+	unquote
+};
+
+
+inline void parseEscapeSequence(std::istream & istr, std::string & value)
+{
+	char c = istr.get();
+	if (!istr.good())
+		throw Poco::Exception("Cannot parse string: unexpected end of input.");
+
+	switch(c)
+	{
+		case 'b':
+			value.push_back('\b');
+			break;
+		case 'f':
+			value.push_back('\f');
+			break;
+		case 'n':
+			value.push_back('\n');
+			break;
+		case 'r':
+			value.push_back('\r');
+			break;
+		case 't':
+			value.push_back('\t');
+			break;
+		default:
+			value.push_back(c);
+		break;
+	}
+}
+
+
+struct UnEscapeManipResult
+{
+	std::istream & istr;
+
+	UnEscapeManipResult(std::istream & istr_) : istr(istr_) {}
+
+	std::istream & operator>> (bool 				& value) { return istr >> value; }
+	std::istream & operator>> (char 				& value) { return istr >> value; }
+	std::istream & operator>> (unsigned char 		& value) { return istr >> value; }
+	std::istream & operator>> (signed char 			& value) { return istr >> value; }
+	std::istream & operator>> (short 				& value) { return istr >> value; }
+	std::istream & operator>> (unsigned short 		& value) { return istr >> value; }
+	std::istream & operator>> (int 					& value) { return istr >> value; }
+	std::istream & operator>> (unsigned int 		& value) { return istr >> value; }
+	std::istream & operator>> (long 				& value) { return istr >> value; }
+	std::istream & operator>> (unsigned long 		& value) { return istr >> value; }
+	std::istream & operator>> (float 				& value) { return istr >> value; }
+	std::istream & operator>> (double 				& value) { return istr >> value; }
+	std::istream & operator>> (long long 			& value) { return istr >> value; }
+	std::istream & operator>> (unsigned long long 	& value) { return istr >> value; }
+
+	std::istream & operator>> (std::string & value)
+	{
+		value.clear();
+
+		char c;
+		while (1)
+		{
+			istr.get(c);
+			if (!istr.good())
+				break;
+
+			switch (c)
+			{
+				case '\\':
+					parseEscapeSequence(istr, value);
+					break;
+
+				case '\t':
+					istr.unget();
+					return istr;
+					break;
+
+				case '\n':
+					istr.unget();
+					return istr;
+					break;
+
+				default:
+					value.push_back(c);
+					break;
+			}
+		}
+		return istr;
+	}
+
+	/// Чтение NULL-able типа.
+	template <typename T>
+	std::istream & operator>> (Null<T> & value)
+	{
+		char c;
+		istr.get(c);
+		if (c == '\\' && istr.peek() == 'N')
+		{
+			value.is_null = true;
+			istr.ignore();
+		}
+		else
+		{
+			istr.unget();
+			value.is_null = false;
+			*this >> value.data;
+		}
+		return istr;
+	}
+
+	std::istream & operator>> (Date & value)
+	{
+		std::string s;
+		(*this) >> s;
+		value = Date(s);
+		return istr;
+	}
+
+	std::istream & operator>> (DateTime & value)
+	{
+		std::string s;
+		(*this) >> s;
+		value = DateTime(s);
+		return istr;
+	}
+};
+
+inline UnEscapeManipResult operator>> (std::istream & istr, unescape_enum manip)
+{
+	return UnEscapeManipResult(istr);
+}
+
+
+struct UnQuoteManipResult
+{
+public:
+	std::istream & istr;
+
+	UnQuoteManipResult(std::istream & istr_) : istr(istr_) {}
+
+	std::istream & operator>> (bool 				& value) { return istr >> value; }
+	std::istream & operator>> (char 				& value) { return istr >> value; }
+	std::istream & operator>> (unsigned char 		& value) { return istr >> value; }
+	std::istream & operator>> (signed char 			& value) { return istr >> value; }
+	std::istream & operator>> (short 				& value) { return istr >> value; }
+	std::istream & operator>> (unsigned short 		& value) { return istr >> value; }
+	std::istream & operator>> (int 					& value) { return istr >> value; }
+	std::istream & operator>> (unsigned int 		& value) { return istr >> value; }
+	std::istream & operator>> (long 				& value) { return istr >> value; }
+	std::istream & operator>> (unsigned long 		& value) { return istr >> value; }
+	std::istream & operator>> (float 				& value) { return istr >> value; }
+	std::istream & operator>> (double 				& value) { return istr >> value; }
+	std::istream & operator>> (long long 			& value) { return istr >> value; }
+	std::istream & operator>> (unsigned long long 	& value) { return istr >> value; }
+
+	std::istream & operator>> (std::string & value)
+	{
+		value.clear();
+		readQuote();
+
+		char c;
+		while (1)
+		{
+			istr.get(c);
+			if (!istr.good())
+				break;
+
+			switch (c)
+			{
+				case '\\':
+					parseEscapeSequence(istr, value);
+					break;
+
+				case '\'':
+					return istr;
+					break;
+
+				default:
+					value.push_back(c);
+					break;
+			}
+		}
+		throw Poco::Exception("Cannot parse string: unexpected end of input.");
+	}
+private:
+
+	void readQuote()
+	{
+		char c = istr.get();
+		if (!istr.good())
+			throw Poco::Exception("Cannot parse string: unexpected end of input.");
+		if (c != '\'')
+			throw Poco::Exception("Cannot parse string: missing opening single quote.");
+	}
+};
+
+inline UnQuoteManipResult operator>> (std::istream & istr, unquote_enum manip)
+{
+	return UnQuoteManipResult(istr);
+}
+
 	
 }
 

@@ -4,7 +4,7 @@
 
 #include <Poco/NumberFormatter.h>
 
-#include <strconvert/escape_manip.h>
+#include <mysqlxx/Manip.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -27,7 +27,7 @@ public:
 	String operator() (const String 	& x) const
 	{
 		std::stringstream s;
-		s << strconvert::quote_fast << x;
+		s << mysqlxx::quote << x;
 		return s.str();
 	}
 
