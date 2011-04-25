@@ -73,13 +73,7 @@ public:
 		if (s.size() < 19)
 			throw Exception("Cannot parse DateTime: " + s);
 
-		m_year = s[0] * 1000 + s[1] * 100 + s[2] * 10 + s[3];
-		m_month = s[5] * 10 + s[6];
-		m_day = s[8] * 10 + s[9];
-
-		m_hour = s[11] * 10 + s[12];
-		m_minute = s[14] * 10 + s[15];
-		m_second = s[17] * 10 + s[18];
+		init(s.data(), s.size());
 	}
 
 	DateTime()
@@ -90,6 +84,23 @@ public:
 	DateTime(const char * data, size_t length)
 	{
 		init(data, length);
+	}
+
+	DateTime(const DateTime & x)
+	{
+		operator=(x);
+	}
+
+	DateTime & operator= (const DateTime & x)
+	{
+		m_year = x.m_year;
+		m_month = x.m_month;
+		m_day = x.m_day;
+		m_hour = x.m_hour;
+		m_minute = x.m_minute;
+		m_second = x.m_second;
+
+		return *this;
 	}
 
 	DateTime & operator= (time_t time)

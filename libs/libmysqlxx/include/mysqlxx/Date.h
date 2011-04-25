@@ -73,6 +73,20 @@ public:
 		init(time(0));
 	}
 
+	Date(const Date & x)
+	{
+		operator=(x);
+	}
+
+	Date & operator= (const Date & x)
+	{
+		m_year = x.m_year;
+		m_month = x.m_month;
+		m_day = x.m_day;
+
+		return *this;
+	}
+
 	Date & operator= (time_t time)
 	{
 		init(time);
