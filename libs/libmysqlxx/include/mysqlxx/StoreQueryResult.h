@@ -26,9 +26,6 @@ class StoreQueryResult : public std::vector<Row>, public ResultBase
 public:
 	StoreQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_);
 
-	StoreQueryResult(const StoreQueryResult & x);
-	StoreQueryResult & operator= (const StoreQueryResult & x);
-
 	size_t num_rows() const { return size(); }
 
 private:
@@ -42,8 +39,6 @@ private:
 	  */
 	typedef std::vector<MYSQL_LENGTH> Lengths;
 	Lengths lengths;
-
-	void init();
 };
 
 }

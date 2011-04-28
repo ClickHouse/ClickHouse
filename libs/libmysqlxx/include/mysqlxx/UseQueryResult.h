@@ -27,13 +27,6 @@ class UseQueryResult : public ResultBase
 public:
 	UseQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_);
 
-	UseQueryResult(const UseQueryResult & x) : ResultBase(x) {}
-	UseQueryResult & operator= (const UseQueryResult & x)
-	{
-		ResultBase::operator=(x);
-		return *this;
-	}
-
 	Row fetch();
 
 	/// Для совместимости
