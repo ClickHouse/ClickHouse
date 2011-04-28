@@ -21,6 +21,8 @@ class ResultBase
 {
 public:
 	ResultBase(MYSQL_RES * res_, Connection * conn_, const Query * query_);
+	ResultBase(const ResultBase & x);
+	ResultBase & operator= (const ResultBase & x);
 
 	Connection * getConnection() 	{ return conn; }
 	MYSQL_FIELDS getFields() 		{ return fields; }
@@ -39,6 +41,9 @@ protected:
 	const Query * query;
 	MYSQL_FIELDS fields;
 	unsigned num_fields;
+
+private:
+	void init();
 };
 
 }
