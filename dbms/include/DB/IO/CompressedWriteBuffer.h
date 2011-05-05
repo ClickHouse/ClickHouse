@@ -18,8 +18,10 @@ private:
 	char compressed_buffer[DBMS_COMPRESSING_STREAM_BUFFER_SIZE + QUICKLZ_ADDITIONAL_SPACE];
 	char scratch[QLZ_SCRATCH_COMPRESS];
 
+	size_t compressed_bytes;
+
 public:
-	CompressedWriteBuffer(WriteBuffer & out_) : out(out_) {}
+	CompressedWriteBuffer(WriteBuffer & out_) : out(out_), compressed_bytes(0) {}
 
 	void next()
 	{
@@ -31,6 +33,19 @@ public:
 
 		out.write(compressed_buffer, compressed_size);
 		pos = internal_buffer;
+		compressed_bytes += compressed_size;
+	}
+
+	size_t getCompressedBytes()
+	{
+		nextIfAtEnd();
+		return compressed_bytes;
+	}
+
+	size_t getUncompressedBytes()
+	{
+		nextIfAtEnd();
+		return pos - internal_buffer;
 	}
 
 	~CompressedWriteBuffer()

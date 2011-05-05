@@ -6,6 +6,8 @@
 #include <limits>
 #include <algorithm>
 
+#include <Yandex/DateLUT.h>
+
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -29,8 +31,6 @@ inline void writeChar(char x, WriteBuffer & buf)
 	++buf.position();
 }
 
-
-template <typename T> struct IntFormat { static const char * format; };
 
 template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
@@ -91,6 +91,28 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
 	writeChar('\'', buf);
 	writeEscapedString(s, buf);
 	writeChar('\'', buf);
+}
+
+
+/// в формате YYYY-MM-DD
+inline void writeDateText(Yandex::DayNum_t date, WriteBuffer & buf)
+{
+	char s[10];
+
+	const Yandex::DateLUT::Values & values = Yandex::DateLUTSingleton::instance().getValues(date);
+
+	s[0] = '0' + values.year / 1000;
+	s[1] = '0' + (values.year / 100) % 10;
+	s[2] = '0' + (values.year / 10) % 10;
+	s[3] = '0' + values.year % 10;
+	s[4] = '-';
+	s[5] = '0' + values.month / 10;
+	s[6] = '0' + values.month % 10;
+	s[7] = '-';
+	s[8] = '0' + values.day_of_month / 10;
+	s[9] = '0' + values.day_of_month % 10;
+	
+	buf.write(s, 10);
 }
 
 

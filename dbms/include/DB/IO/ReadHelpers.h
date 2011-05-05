@@ -5,6 +5,8 @@
 #include <limits>
 #include <algorithm>
 
+#include <Yandex/DateLUT.h>
+
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -215,6 +217,19 @@ void readEscapedString(String & s, ReadBuffer & buf);
 
 void readQuotedString(String & s, ReadBuffer & buf);
 
+
+/// в формате YYYY-MM-DD
+inline void readDateText(Yandex::DayNum_t & date, ReadBuffer & buf)
+{
+	char s[10];
+	buf.read(s, 10);
+
+	UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+	UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+	UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+
+	date = Yandex::DateLUTSingleton::instance().makeDayNum(year, month, day);
+}
 
 }
 

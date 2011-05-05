@@ -33,7 +33,7 @@ public:
 		Position end_pos;		/// на 1 байт после конца буфера
 	};
 
-	WriteBuffer() : working_buffer(internal_buffer, internal_buffer + DEFAULT_WRITE_BUFFER_SIZE), pos(internal_buffer) {}
+	WriteBuffer() : working_buffer(internal_buffer, internal_buffer + DEFAULT_WRITE_BUFFER_SIZE), pos(internal_buffer), bytes_written(0) {}
 
 	/// получить часть буфера, в который можно писать данные
 	inline Buffer & buffer() { return working_buffer; }
@@ -71,12 +71,22 @@ public:
 			pos += bytes_to_copy;
 			bytes_copied += bytes_to_copy;
 		}
+
+		bytes_written += n;
+	}
+
+	size_t count()
+	{
+		return bytes_written;
 	}
 
 protected:
 	char internal_buffer[DEFAULT_WRITE_BUFFER_SIZE];
 	Buffer working_buffer;
 	Position pos;
+
+private:
+	size_t bytes_written;
 };
 
 
