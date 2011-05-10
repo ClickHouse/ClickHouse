@@ -75,6 +75,16 @@ public:
 		bytes_written += n;
 	}
 
+
+	inline void write(char x)
+	{
+		nextIfAtEnd();
+		*pos = x;
+		++pos;
+		++bytes_written;
+	}
+	
+
 	size_t count()
 	{
 		return bytes_written;
