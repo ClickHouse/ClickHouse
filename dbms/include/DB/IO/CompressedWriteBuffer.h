@@ -36,13 +36,21 @@ public:
 		compressed_bytes += compressed_size;
 	}
 
+	/// Объём данных, которые были сжаты
 	size_t getCompressedBytes()
 	{
 		nextIfAtEnd();
 		return compressed_bytes;
 	}
 
+	/// Сколько несжатых байт было записано в буфер
 	size_t getUncompressedBytes()
+	{
+		return count();
+	}
+
+	/// Сколько байт находится в буфере (ещё не сжато)
+	size_t getRemainingBytes()
 	{
 		nextIfAtEnd();
 		return pos - internal_buffer;
