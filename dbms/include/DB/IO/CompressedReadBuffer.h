@@ -64,11 +64,11 @@ public:
 	
 		size_t bytes_to_copy = std::min(decompressed_buffer.size() - pos_in_buffer,
 			static_cast<size_t>(DEFAULT_READ_BUFFER_SIZE));
-		std::memcpy(internal_buffer, &decompressed_buffer[pos_in_buffer], bytes_to_copy);
+		std::memcpy(working_buffer.begin(), &decompressed_buffer[pos_in_buffer], bytes_to_copy);
 
 		pos_in_buffer += bytes_to_copy;
-		pos = internal_buffer;
-		working_buffer = Buffer(internal_buffer, internal_buffer + bytes_to_copy);
+		pos = working_buffer.begin();
+		working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + bytes_to_copy);
 
 		return true;
 	}

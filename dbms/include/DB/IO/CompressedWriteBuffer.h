@@ -26,13 +26,13 @@ public:
 	void next()
 	{
 		size_t compressed_size = qlz_compress(
-			internal_buffer,
+			working_buffer.begin(),
 			compressed_buffer,
-			pos - internal_buffer,
+			pos - working_buffer.begin(),
 			scratch);
 
 		out.write(compressed_buffer, compressed_size);
-		pos = internal_buffer;
+		pos = working_buffer.begin();
 		compressed_bytes += compressed_size;
 	}
 
@@ -53,7 +53,7 @@ public:
 	size_t getRemainingBytes()
 	{
 		nextIfAtEnd();
-		return pos - internal_buffer;
+		return pos - working_buffer.begin();
 	}
 
 	~CompressedWriteBuffer()

@@ -22,10 +22,10 @@ public:
 
 	bool next()
 	{
-		istr.read(internal_buffer, DEFAULT_READ_BUFFER_SIZE);
+		istr.read(working_buffer.begin(), DEFAULT_READ_BUFFER_SIZE);
 
-		pos = internal_buffer;
-		working_buffer = Buffer(internal_buffer, internal_buffer + istr.gcount());
+		pos = working_buffer.begin();
+		working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + istr.gcount());
 
 		if (working_buffer.end() == working_buffer.begin())
 		{

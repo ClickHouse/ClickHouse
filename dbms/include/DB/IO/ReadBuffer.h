@@ -1,6 +1,7 @@
 #ifndef DBMS_COMMON_READBUFFER_H
 #define DBMS_COMMON_READBUFFER_H
 
+#include <vector>
 #include <cstring>
 #include <algorithm>
 
@@ -22,7 +23,7 @@ namespace DB
 class ReadBuffer
 {
 public:
-	typedef const char * Position;
+	typedef char * Position;
 
 	struct Buffer
 	{
@@ -36,7 +37,12 @@ public:
 		Position end_pos;		/// на 1 байт после конца буфера
 	};
 
-	ReadBuffer() : working_buffer(internal_buffer, internal_buffer), pos(internal_buffer) {}
+	ReadBuffer()
+		: internal_buffer(DEFAULT_READ_BUFFER_SIZE),
+		working_buffer(&internal_buffer[0], &internal_buffer[0]),
+		pos(&internal_buffer[0]),
+		bytes_read(0)
+	{}
 
 	/// получить часть буфера, из которого можно читать данные
 	inline Buffer & buffer() { return working_buffer; }
@@ -85,6 +91,7 @@ public:
 			bytes_copied += bytes_to_copy;
 		}
 
+		bytes_read += bytes_copied;
 		return bytes_copied;
 	}
 
@@ -95,10 +102,19 @@ public:
 			throw Exception("Cannot read all data", ErrorCodes::CANNOT_READ_ALL_DATA);
 	}
 
+
+	size_t count()
+	{
+		return bytes_read;
+	}
+
 protected:
-	char internal_buffer[DEFAULT_READ_BUFFER_SIZE];
+	std::vector<char> internal_buffer;
 	Buffer working_buffer;
 	Position pos;
+
+private:
+	size_t bytes_read;
 };
 
 

@@ -1,6 +1,7 @@
 #ifndef DBMS_COMMON_WRITEBUFFER_H
 #define DBMS_COMMON_WRITEBUFFER_H
 
+#include <vector>
 #include <cstring>
 #include <algorithm>
 
@@ -33,7 +34,13 @@ public:
 		Position end_pos;		/// на 1 байт после конца буфера
 	};
 
-	WriteBuffer() : working_buffer(internal_buffer, internal_buffer + DEFAULT_WRITE_BUFFER_SIZE), pos(internal_buffer), bytes_written(0) {}
+	WriteBuffer()
+		: internal_buffer(DEFAULT_WRITE_BUFFER_SIZE),
+		working_buffer(&internal_buffer[0], &internal_buffer[0] + DEFAULT_WRITE_BUFFER_SIZE),
+		pos(&internal_buffer[0]),
+		bytes_written(0)
+	{
+	}
 
 	/// получить часть буфера, в который можно писать данные
 	inline Buffer & buffer() { return working_buffer; }
@@ -91,7 +98,7 @@ public:
 	}
 
 protected:
-	char internal_buffer[DEFAULT_WRITE_BUFFER_SIZE];
+	std::vector<char> internal_buffer;
 	Buffer working_buffer;
 	Position pos;
 

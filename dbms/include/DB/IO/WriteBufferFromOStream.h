@@ -22,9 +22,9 @@ public:
 
 	void next()
 	{
-		ostr.write(internal_buffer, pos - internal_buffer);
+		ostr.write(working_buffer.begin(), pos - working_buffer.begin());
 		ostr.flush();
-		pos = internal_buffer;
+		pos = working_buffer.begin();
 
 		if (!ostr.good())
 			throw Exception("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
