@@ -41,6 +41,12 @@ void Connection::connect(const char* db,
 	if (!mysql_init(&driver))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
+	/// Установим таймауты
+	unsigned int timeout = MYSQLXX_TIMEOUT;
+	if (!mysql_options(&driver, MYSQL_OPT_CONNECT_TIMEOUT, &timeout)
+		|| !mysql_options(&driver, MYSQL_OPT_READ_TIMEOUT, &timeout))
+		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+
 	if (!mysql_real_connect(&driver, server, user, password, db, port, NULL, driver.client_flag))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 

@@ -9,6 +9,8 @@
 
 #include <mysqlxx/Query.h>
 
+#define MYSQLXX_TIMEOUT 60
+
 
 namespace mysqlxx
 {
