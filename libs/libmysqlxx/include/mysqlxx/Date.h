@@ -98,6 +98,11 @@ public:
 		return Yandex::DateLUTSingleton::instance().makeDate(m_year, m_month, m_day);
 	}
 
+	operator Yandex::DayNum_t() const
+	{
+		return Yandex::DateLUTSingleton::instance().makeDayNum(m_year, m_month, m_day);
+	}
+
 	unsigned short year() const { return m_year; }
 	unsigned char month() const { return m_month; }
 	unsigned char day() const { return m_day; }
