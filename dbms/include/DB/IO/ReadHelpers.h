@@ -222,7 +222,12 @@ void readQuotedString(String & s, ReadBuffer & buf);
 inline void readDateText(Yandex::DayNum_t & date, ReadBuffer & buf)
 {
 	char s[10];
-	buf.read(s, 10);
+	size_t size = buf.read(s, 10);
+	if (10 != size)
+	{
+		s[size] = 0;
+		throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
+	}
 
 	UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
 	UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
