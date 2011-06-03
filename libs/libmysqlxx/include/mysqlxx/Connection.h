@@ -80,11 +80,11 @@ public:
 	virtual ~Connection();
 
 	/// Для отложенной инициализации или для того, чтобы подключиться с другими параметрами.
-	virtual void connect(const char* db,
-		const char* server = 0,
-		const char* user = 0,
-		const char* password = 0,
-		unsigned int port = 0);
+	virtual void connect(const char * db,
+		const char * server,
+		const char * user,
+		const char * password,
+		unsigned int port);
 
 	/// Было ли произведено соединение с MySQL.
 	bool connected() const;
