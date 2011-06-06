@@ -73,8 +73,25 @@ public:
 	void ignore()
 	{
 		if (!eof())
+		{
 			++pos;
+			++bytes_read;
+		}
 		else
+			throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+	}
+
+	void ignore(size_t n)
+	{
+		while (!eof() && n != 0)
+		{
+			size_t bytes_to_ignore = std::min(static_cast<size_t>(working_buffer.end() - pos), n);
+			pos += bytes_to_ignore;
+			n -= bytes_to_ignore;
+			bytes_read += bytes_to_ignore;
+		}
+
+		if (n)
 			throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 	}
 
