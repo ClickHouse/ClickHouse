@@ -26,7 +26,6 @@
 #include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Ext/MProfile.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
 
@@ -223,7 +222,7 @@ void Daemon::initialize(Application& self)
 	// Используется при загрузке конфигурации
 	is_Running = false;
 
-	p_TaskManager = new ("TaskManager") TaskManager();
+	p_TaskManager = new TaskManager();
 	ServerApplication::initialize(self);
 
 	// Создадим pid-file, если запущен, как демон
