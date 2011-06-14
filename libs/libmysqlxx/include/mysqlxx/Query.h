@@ -1,6 +1,7 @@
 #ifndef MYSQLXX_QUERY_H
 #define MYSQLXX_QUERY_H
 
+#include <sstream>
 #include <ostream>
 
 #include <mysqlxx/UseQueryResult.h>

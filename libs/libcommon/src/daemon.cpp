@@ -10,7 +10,6 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 	      
-
 #include <iostream>
 #include <Poco/Observer.h>
 #include <Poco/RWLock.h>
@@ -28,9 +27,10 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-
+#include <Poco/NumberFormatter.h>
 
 #include "revision.h"
+
 
 using Poco::Logger;
 using Poco::AutoPtr;
@@ -209,11 +209,11 @@ void Daemon::initialize(Application& self)
 	/// В случае падения - сохраняем коры
 	{
 		struct rlimit rlim;
-		int res = getrlimit(RLIMIT_CORE, &rlim);
-		assert(!res);
+		if (getrlimit(RLIMIT_CORE, &rlim))
+			throw Poco::Exception("Cannot getrlimit");
 		rlim.rlim_cur = RLIM_INFINITY;
-		res = setrlimit(RLIMIT_CORE, &rlim);
-		assert(!res);
+		if (setrlimit(RLIMIT_CORE, &rlim))
+			throw Poco::Exception("Cannot setrlimit");
 	}
 	
 	// Сбросим генератор случайных чисел
@@ -236,7 +236,7 @@ void Daemon::initialize(Application& self)
 	Poco::ErrorHandler::set(new Yandex::KillingErrorHandler());
 	
 	// Выведем ревизию демона
-	Logger::root().information("Starting daemon with svn revision " + Yandex::to_string(SVN_REVISION));
+	Logger::root().information("Starting daemon with svn revision " + Poco::NumberFormatter::format(SVN_REVISION));
 }
 
 void Daemon::uninitialize()
