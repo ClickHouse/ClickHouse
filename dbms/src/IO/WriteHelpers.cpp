@@ -37,6 +37,10 @@ void writeEscapedString(const String & s, WriteBuffer & buf)
 				writeChar('\\', buf);
 				writeChar('\'', buf);
 				break;
+			case '"':
+				writeChar('\\', buf);
+				writeChar('"', buf);
+				break;
 			case '\\':
 				writeChar('\\', buf);
 				writeChar('\\', buf);
