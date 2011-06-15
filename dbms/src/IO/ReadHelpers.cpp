@@ -58,12 +58,14 @@ void readEscapedString(String & s, ReadBuffer & buf)
 	}
 }
 
-void readQuotedString(String & s, ReadBuffer & buf)
+
+template <char quote>
+static void readAnyQuotedString(String & s, ReadBuffer & buf)
 {
 	s = "";
 
-	if (buf.eof() || *buf.position() != '\'')
-		throw Exception("Cannot parse quoted string: expected opening single quote",
+	if (buf.eof() || *buf.position() != quote)
+		throw Exception("Cannot parse quoted string: expected opening quote",
 			ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 	++buf.position();
 
@@ -71,13 +73,13 @@ void readQuotedString(String & s, ReadBuffer & buf)
 	{
 		size_t bytes = 0;
 		for (; buf.position() + bytes != buf.buffer().end(); ++bytes)
-			if (buf.position()[bytes] == '\\' || buf.position()[bytes] == '\'')
+			if (buf.position()[bytes] == '\\' || buf.position()[bytes] == quote)
 				break;
 
 		s.append(buf.position(), bytes);
 		buf.position() += bytes;
 
-		if (*buf.position() == '\'')
+		if (*buf.position() == quote)
 		{
 			++buf.position();
 			return;
@@ -93,8 +95,19 @@ void readQuotedString(String & s, ReadBuffer & buf)
 		}
 	}
 
-	throw Exception("Cannot parse quoted string: expected closing single quote",
+	throw Exception("Cannot parse quoted string: expected closing quote",
 		ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+}
+
+
+void readQuotedString(String & s, ReadBuffer & buf)
+{
+	readAnyQuotedString<'\''>(s, buf);
+}
+
+void readDoubleQuotedString(String & s, ReadBuffer & buf)
+{
+	readAnyQuotedString<'"'>(s, buf);
 }
 
 }

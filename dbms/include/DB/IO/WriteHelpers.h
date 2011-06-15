@@ -93,6 +93,9 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
 	writeChar('\'', buf);
 }
 
+/// Совместимо с JSON.
+void writeDoubleQuotedString(const String & s, WriteBuffer & buf);
+
 
 /// в формате YYYY-MM-DD
 inline void writeDateText(Yandex::DayNum_t date, WriteBuffer & buf)

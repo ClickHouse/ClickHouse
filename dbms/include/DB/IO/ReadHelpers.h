@@ -217,6 +217,8 @@ void readEscapedString(String & s, ReadBuffer & buf);
 
 void readQuotedString(String & s, ReadBuffer & buf);
 
+void readDoubleQuotedString(String & s, ReadBuffer & buf);
+
 
 /// в формате YYYY-MM-DD
 inline void readDateText(Yandex::DayNum_t & date, ReadBuffer & buf)
