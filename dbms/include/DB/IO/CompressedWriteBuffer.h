@@ -1,10 +1,10 @@
 #ifndef DBMS_COMMON_COMPRESSED_WRITEBUFFER_H
 #define DBMS_COMMON_COMPRESSED_WRITEBUFFER_H
 
-#include <snappy.h>
+#include <quicklz/quicklz_level1.h>
 
 #include <DB/IO/WriteBuffer.h>
-#include <DB/IO/VarInt.h>
+#include <DB/IO/CompressedStream.h>
 
 
 namespace DB
@@ -15,7 +15,9 @@ class CompressedWriteBuffer : public WriteBuffer
 private:
 	WriteBuffer & out;
 
-	std::vector<char> compressed_buffer;
+	char compressed_buffer[DBMS_COMPRESSING_STREAM_BUFFER_SIZE + QUICKLZ_ADDITIONAL_SPACE];
+	char scratch[QLZ_SCRATCH_COMPRESS];
+
 	size_t compressed_bytes;
 
 public:
@@ -23,18 +25,15 @@ public:
 
 	void next()
 	{
-		compressed_buffer.resize(snappy::MaxCompressedLength(pos - working_buffer.begin()));
-		size_t compressed_size = 0;
-		snappy::RawCompress(
+		size_t compressed_size = qlz_compress(
 			working_buffer.begin(),
+			compressed_buffer,
 			pos - working_buffer.begin(),
-			&compressed_buffer[0],
-			&compressed_size);
+			scratch);
 
-		DB::writeVarUInt(compressed_size, out);
-		out.write(&compressed_buffer[0], compressed_size);
+		out.write(compressed_buffer, compressed_size);
 		pos = working_buffer.begin();
-		compressed_bytes += compressed_size + DB::getLengthOfVarUInt(compressed_size);
+		compressed_bytes += compressed_size;
 	}
 
 	/// Объём данных, которые были сжаты
