@@ -1,5 +1,5 @@
 #!/bin/sh
 
-./compressor < compressor > compressor.qlz
-./compressor -d < compressor.qlz > compressor2
+./compressor < compressor > compressor.snp
+./compressor -d < compressor.snp > compressor2
 cmp compressor compressor2 && echo "Ok." || echo "Fail."
