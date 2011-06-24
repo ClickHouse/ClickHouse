@@ -21,7 +21,7 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		size_t n = 10000000;
+		size_t n = 100000000;
 		Poco::Stopwatch stopwatch;
 	
 		{
