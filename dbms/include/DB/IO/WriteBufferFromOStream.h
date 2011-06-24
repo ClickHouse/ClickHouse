@@ -20,11 +20,10 @@ private:
 public:
 	WriteBufferFromOStream(std::ostream & ostr_) : ostr(ostr_) {}
 
-	void next()
+	void nextImpl()
 	{
 		ostr.write(working_buffer.begin(), pos - working_buffer.begin());
 		ostr.flush();
-		pos = working_buffer.begin();
 
 		if (!ostr.good())
 			throw Exception("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);

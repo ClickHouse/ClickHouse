@@ -18,7 +18,7 @@ namespace DB
   * В отличие от std::istream, предоставляет доступ к внутреннему буферу,
   *  а также позволяет вручную управлять позицией внутри буфера.
   *
-  * Наследники должны реализовать метод next().
+  * Наследники должны реализовать метод nextImpl().
   */
 class ReadBuffer
 {
@@ -53,7 +53,13 @@ public:
 	/** прочитать следующие данные и заполнить ими буфер; переместить позицию в начало;
 	  * вернуть false в случае конца, true иначе; кинуть исключение, если что-то не так
 	  */
-	virtual bool next() { return false; }
+	inline bool next()
+	{
+		bytes_read += pos - working_buffer.begin();
+		bool res = nextImpl();
+		pos = working_buffer.begin();
+		return res;
+	}
 
 	virtual ~ReadBuffer() {}
 
@@ -73,10 +79,7 @@ public:
 	void ignore()
 	{
 		if (!eof())
-		{
 			++pos;
-			++bytes_read;
-		}
 		else
 			throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 	}
@@ -88,7 +91,6 @@ public:
 			size_t bytes_to_ignore = std::min(static_cast<size_t>(working_buffer.end() - pos), n);
 			pos += bytes_to_ignore;
 			n -= bytes_to_ignore;
-			bytes_read += bytes_to_ignore;
 		}
 
 		if (n)
@@ -108,7 +110,6 @@ public:
 			bytes_copied += bytes_to_copy;
 		}
 
-		bytes_read += bytes_copied;
 		return bytes_copied;
 	}
 
@@ -120,9 +121,10 @@ public:
 	}
 
 
+	/** Сколько байт было прочитано из буфера. */
 	size_t count()
 	{
-		return bytes_read;
+		return bytes_read + pos - working_buffer.begin();
 	}
 
 protected:
@@ -132,6 +134,13 @@ protected:
 
 private:
 	size_t bytes_read;
+
+
+	/** Прочитать следующие данные и заполнить ими буфер.
+	  * Вернуть false в случае конца, true иначе.
+	  * Кинуть исключение, если что-то не так.
+	  */
+	virtual bool nextImpl() { return false; };
 };
 
 

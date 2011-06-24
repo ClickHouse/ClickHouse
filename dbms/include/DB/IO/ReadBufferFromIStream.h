@@ -20,11 +20,10 @@ private:
 public:
 	ReadBufferFromIStream(std::istream & istr_) : istr(istr_) {}
 
-	bool next()
+	bool nextImpl()
 	{
 		istr.read(working_buffer.begin(), DEFAULT_READ_BUFFER_SIZE);
 
-		pos = working_buffer.begin();
 		working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + istr.gcount());
 
 		if (working_buffer.end() == working_buffer.begin())

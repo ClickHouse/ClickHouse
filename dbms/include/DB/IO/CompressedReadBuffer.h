@@ -33,7 +33,7 @@ public:
 	{
 	}
 
-	bool next()
+	bool nextImpl()
 	{
 		if (in.eof())
 			return false;
@@ -59,7 +59,6 @@ public:
 				
 		qlz_decompress(&compressed_buffer[0], &internal_buffer[0], scratch);
 
-		pos = working_buffer.begin();
 		working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + size_decompressed);
 
 		return true;

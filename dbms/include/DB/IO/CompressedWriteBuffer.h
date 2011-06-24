@@ -26,7 +26,7 @@ private:
 public:
 	CompressedWriteBuffer(WriteBuffer & out_) : out(out_), compressed_bytes(0) {}
 
-	void next()
+	void nextImpl()
 	{
 		size_t uncompressed_size = pos - working_buffer.begin();
 		compressed_buffer.resize(uncompressed_size + QUICKLZ_ADDITIONAL_SPACE);
@@ -41,11 +41,10 @@ public:
 		out.write(reinterpret_cast<const char *>(&checksum), sizeof(checksum));
 
 		out.write(&compressed_buffer[0], compressed_size);
-		pos = working_buffer.begin();
 		compressed_bytes += compressed_size;
 	}
 
-	/// Объём данных, которые были сжаты
+	/// Объём сжатых данных
 	size_t getCompressedBytes()
 	{
 		nextIfAtEnd();

@@ -15,7 +15,7 @@ namespace DB
   * В отличие от std::ostream, предоставляет доступ к внутреннему буферу,
   *  а также позволяет вручную управлять позицией внутри буфера.
   *
-  * Наследники должны реализовать метод next().
+  * Наследники должны реализовать метод nextImpl().
   */
 class WriteBuffer
 {
@@ -51,7 +51,12 @@ public:
 	/** записать данные, находящиеся в буфере (от начала буфера до текущей позиции);
 	  * переместить позицию в начало; кинуть исключение, если что-то не так
 	  */
-	virtual void next() {}
+	inline void next()
+	{
+		bytes_written += pos - working_buffer.begin();
+		nextImpl();
+		pos = working_buffer.begin();
+	}
 
 	/** желательно в наследниках поместить в деструктор вызов next(),
 	  * чтобы последние данные записались
@@ -78,8 +83,6 @@ public:
 			pos += bytes_to_copy;
 			bytes_copied += bytes_to_copy;
 		}
-
-		bytes_written += n;
 	}
 
 
@@ -88,13 +91,13 @@ public:
 		nextIfAtEnd();
 		*pos = x;
 		++pos;
-		++bytes_written;
 	}
 	
 
+	/** Сколько байт было записано в буфер. */
 	size_t count()
 	{
-		return bytes_written;
+		return bytes_written + pos - working_buffer.begin();
 	}
 
 protected:
@@ -104,6 +107,12 @@ protected:
 
 private:
 	size_t bytes_written;
+
+
+	/** Записать данные, находящиеся в буфере (от начала буфера до текущей позиции).
+	  * Кинуть исключение, если что-то не так.
+	  */
+	virtual void nextImpl() = 0;
 };
 
 
