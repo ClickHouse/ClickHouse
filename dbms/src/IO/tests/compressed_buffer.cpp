@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 
 #include <Poco/Stopwatch.h>
 
@@ -21,6 +22,8 @@ int main(int argc, char ** argv)
 {
 	try
 	{
+		std::cout << std::fixed << std::setprecision(2);
+		
 		size_t n = 100000000;
 		Poco::Stopwatch stopwatch;
 	
@@ -36,7 +39,9 @@ int main(int argc, char ** argv)
 				DB::writeChar('\t', compressed_buf);
 			}
 			stopwatch.stop();
-			std::cout << "Writing done (1). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+			std::cout << "Writing done (1). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000
+				<< ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsed()) << " MB/s"
+				<< std::endl;
 		}
 
 		{
@@ -51,7 +56,9 @@ int main(int argc, char ** argv)
 				DB::writeChar('\t', compressed_buf);
 			}
 			stopwatch.stop();
-			std::cout << "Writing done (2). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+			std::cout << "Writing done (2). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000
+				<< ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsed()) << " MB/s"
+				<< std::endl;
 		}
 
 		{
@@ -75,7 +82,9 @@ int main(int argc, char ** argv)
 				}
 			}
 			stopwatch.stop();
-			std::cout << "Reading done (1). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+			std::cout << "Reading done (1). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000
+				<< ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsed()) << " MB/s"
+				<< std::endl;
 		}
 
 		{
@@ -99,7 +108,9 @@ int main(int argc, char ** argv)
 				}
 			}
 			stopwatch.stop();
-			std::cout << "Reading done (2). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
+			std::cout << "Reading done (2). Elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000
+				<< ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsed()) << " MB/s"
+				<< std::endl;
 		}
 	}
 	catch (const DB::Exception & e)
