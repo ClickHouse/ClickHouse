@@ -23,14 +23,11 @@ private:
 
 	size_t compressed_bytes;
 
-public:
-	CompressedWriteBuffer(WriteBuffer & out_) : out(out_), compressed_bytes(0) {}
-
 	void nextImpl()
 	{
 		size_t uncompressed_size = pos - working_buffer.begin();
 		compressed_buffer.resize(uncompressed_size + QUICKLZ_ADDITIONAL_SPACE);
-		
+
 		size_t compressed_size = qlz_compress(
 			working_buffer.begin(),
 			&compressed_buffer[0],
@@ -43,6 +40,9 @@ public:
 		out.write(&compressed_buffer[0], compressed_size);
 		compressed_bytes += compressed_size;
 	}
+
+public:
+	CompressedWriteBuffer(WriteBuffer & out_) : out(out_), compressed_bytes(0) {}
 
 	/// Объём сжатых данных
 	size_t getCompressedBytes()

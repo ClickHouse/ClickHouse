@@ -57,6 +57,9 @@ public:
 	{
 		bytes_read += pos - working_buffer.begin();
 		bool res = nextImpl();
+		if (!res)
+			working_buffer = Buffer(working_buffer.begin(), working_buffer.begin());
+		
 		pos = working_buffer.begin();
 		return res;
 	}

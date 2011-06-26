@@ -17,25 +17,26 @@ class ReadBufferFromIStream : public ReadBuffer
 private:
 	std::istream & istr;
 
-public:
-	ReadBufferFromIStream(std::istream & istr_) : istr(istr_) {}
-
 	bool nextImpl()
 	{
 		istr.read(working_buffer.begin(), DEFAULT_READ_BUFFER_SIZE);
+		size_t gcount = istr.gcount();
 
-		working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + istr.gcount());
-
-		if (working_buffer.end() == working_buffer.begin())
+		if (!gcount)
 		{
 			if (istr.eof())
 				return false;
-			if (!istr.good())
+			else
 				throw Exception("Cannot read from istream", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
 		}
-		
+		else
+			working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + gcount);
+
 		return true;
 	}
+
+public:
+	ReadBufferFromIStream(std::istream & istr_) : istr(istr_) {}
 };
 
 }

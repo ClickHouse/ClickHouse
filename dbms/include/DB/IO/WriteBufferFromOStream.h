@@ -17,9 +17,6 @@ class WriteBufferFromOStream : public WriteBuffer
 private:
 	std::ostream & ostr;
 
-public:
-	WriteBufferFromOStream(std::ostream & ostr_) : ostr(ostr_) {}
-
 	void nextImpl()
 	{
 		ostr.write(working_buffer.begin(), pos - working_buffer.begin());
@@ -28,6 +25,9 @@ public:
 		if (!ostr.good())
 			throw Exception("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
 	}
+
+public:
+	WriteBufferFromOStream(std::ostream & ostr_) : ostr(ostr_) {}
 
 	~WriteBufferFromOStream()
 	{
