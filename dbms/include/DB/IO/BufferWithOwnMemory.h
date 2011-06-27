@@ -19,7 +19,7 @@ class BufferWithOwnMemory : public Base
 protected:
 	std::vector<char> memory;
 public:
-	BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE) : Base(NULL, size), memory(size)
+	BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE) : Base(NULL, 0), memory(size)
 	{
 		Base::set(&memory[0], size);
 	}

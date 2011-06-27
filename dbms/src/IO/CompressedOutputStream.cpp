@@ -1,5 +1,7 @@
 #include <algorithm>
 
+#include <city.h>
+
 #include <DB/IO/CompressedOutputStream.h>
 
 
@@ -40,6 +42,8 @@ int CompressingStreamBuf::writeToDevice(const char * buffer, std::streamsize len
 		length,
 		&scratch[0]);
 
+	uint128 checksum = CityHash128(&compressed_buffer[0], compressed_size);
+	p_ostr->write(reinterpret_cast<const char *>(&checksum), sizeof(checksum));
 	p_ostr->write(&compressed_buffer[0], compressed_size);
 	return static_cast<int>(length);
 }

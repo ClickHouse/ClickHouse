@@ -13,9 +13,6 @@
 #include <DB/IO/CompressedStream.h>
 
 
-#define DBMS_COMPRESSED_READ_BUFFER_MAX_COMPRESSED_SIZE 0x40000000ULL	/// 1GB
-
-
 namespace DB
 {
 
@@ -38,7 +35,7 @@ private:
 		in.readStrict(&compressed_buffer[0], QUICKLZ_HEADER_SIZE);
 
 		size_t size_compressed = qlz_size_compressed(&compressed_buffer[0]);
-		if (size_compressed > DBMS_COMPRESSED_READ_BUFFER_MAX_COMPRESSED_SIZE)
+		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
 		size_t size_decompressed = qlz_size_decompressed(&compressed_buffer[0]);

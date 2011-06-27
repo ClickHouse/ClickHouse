@@ -3,6 +3,7 @@
 
 /** Общие для CompressingStream.h и DecompressingStream.h дефайны */
 
+#define DBMS_MAX_COMPRESSED_SIZE 0x40000000ULL	/// 1GB
 #define DBMS_STREAM_BUFFER_SIZE 4096
 #define DBMS_COMPRESSING_STREAM_BUFFER_SIZE 1048576
 #define QUICKLZ_ADDITIONAL_SPACE 400

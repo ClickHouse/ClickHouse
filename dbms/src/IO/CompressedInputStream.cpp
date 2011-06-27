@@ -1,7 +1,10 @@
 #include <algorithm>
 
+#include <city.h>
 #include <quicklz/quicklz_level1.h>
 
+#include <DB/Core/ErrorCodes.h>
+#include <DB/Core/Exception.h>
 #include <DB/IO/CompressedInputStream.h>
 
 
@@ -30,13 +33,25 @@ void DecompressingStreamBuf::getChunk(std::vector<char> & res)
 
 void DecompressingStreamBuf::readCompressedChunk()
 {
+	/// прочитаем чексумму
+	uint128 checksum;
+	p_istr->read(reinterpret_cast<char *>(&checksum), sizeof(checksum));
+
+	if (p_istr->eof())
+		return;
+	if (!p_istr->good())
+		throw Exception("Cannot read all data.", ErrorCodes::CANNOT_READ_ALL_DATA);
+	
 	/// прочитаем заголовок
 	p_istr->read(&compressed_buffer[0], QUICKLZ_HEADER_SIZE);
 
 	if (!p_istr->good())
-		return;
+		throw Exception("Cannot read all data.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
 	size_t size_compressed = qlz_size_compressed(&compressed_buffer[0]);
+	if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
+		throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+	
 	size_t size_decompressed = qlz_size_decompressed(&compressed_buffer[0]);
 
 	compressed_buffer.resize(size_compressed);
@@ -47,7 +62,10 @@ void DecompressingStreamBuf::readCompressedChunk()
 	p_istr->read(&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed - QUICKLZ_HEADER_SIZE);
 
 	if (!p_istr->good())
-		return;
+		throw Exception("Cannot read all data.", ErrorCodes::CANNOT_READ_ALL_DATA);
+
+	if (checksum != CityHash128(&compressed_buffer[0], size_compressed))
+		throw Exception("Checksum doesnt match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
 	/// разжимаем блок
 	qlz_decompress(&compressed_buffer[0], &uncompressed_buffer[0], &scratch[0]);
