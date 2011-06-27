@@ -67,7 +67,7 @@ public:
 
 	~CompressedWriteBuffer()
 	{
-		next();
+		nextImpl();
 	}
 };
 
