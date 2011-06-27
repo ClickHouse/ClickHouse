@@ -20,6 +20,9 @@ private:
 
 	void nextImpl()
 	{
+		if (!offset())
+			return;
+		
 		ostr.write(working_buffer.begin(), offset());
 		ostr.flush();
 

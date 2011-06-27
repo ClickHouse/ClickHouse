@@ -26,6 +26,9 @@ private:
 
 	void nextImpl()
 	{
+		if (!offset())
+			return;
+
 		size_t uncompressed_size = offset();
 		compressed_buffer.resize(uncompressed_size + QUICKLZ_ADDITIONAL_SPACE);
 
