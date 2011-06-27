@@ -27,6 +27,8 @@ public:
 	  */
 	inline void next()
 	{
+		if (!offset())
+			return;
 		bytes += offset();
 		nextImpl();
 		pos = working_buffer.begin();
