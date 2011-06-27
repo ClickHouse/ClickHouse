@@ -7,19 +7,20 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
+#include <DB/IO/BufferWithOwnMemory.h>
 
 
 namespace DB
 {
 
-class WriteBufferFromOStream : public WriteBuffer
+class WriteBufferFromOStream : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
 	std::ostream & ostr;
 
 	void nextImpl()
 	{
-		ostr.write(working_buffer.begin(), pos - working_buffer.begin());
+		ostr.write(working_buffer.begin(), offset());
 		ostr.flush();
 
 		if (!ostr.good())

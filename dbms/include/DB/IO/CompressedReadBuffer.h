@@ -9,6 +9,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/CompressedStream.h>
 
 
@@ -18,7 +19,7 @@
 namespace DB
 {
 
-class CompressedReadBuffer : public ReadBuffer
+class CompressedReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 private:
 	ReadBuffer & in;
@@ -43,16 +44,16 @@ private:
 		size_t size_decompressed = qlz_size_decompressed(&compressed_buffer[0]);
 
 		compressed_buffer.resize(size_compressed);
+		memory.resize(size_decompressed);
 		internal_buffer.resize(size_decompressed);
+		working_buffer.resize(size_decompressed);
 
 		in.readStrict(&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed - QUICKLZ_HEADER_SIZE);
 
 		if (checksum != CityHash128(&compressed_buffer[0], size_compressed))
 			throw Exception("Checksum doesnt match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
-		qlz_decompress(&compressed_buffer[0], &internal_buffer[0], scratch);
-
-		working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + size_decompressed);
+		qlz_decompress(&compressed_buffer[0], working_buffer.begin(), scratch);
 
 		return true;
 	}

@@ -7,13 +7,14 @@
 #include <quicklz/quicklz_level1.h>
 
 #include <DB/IO/WriteBuffer.h>
+#include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/CompressedStream.h>
 
 
 namespace DB
 {
 
-class CompressedWriteBuffer : public WriteBuffer
+class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
 	WriteBuffer & out;
@@ -25,7 +26,7 @@ private:
 
 	void nextImpl()
 	{
-		size_t uncompressed_size = pos - working_buffer.begin();
+		size_t uncompressed_size = offset();
 		compressed_buffer.resize(uncompressed_size + QUICKLZ_ADDITIONAL_SPACE);
 
 		size_t compressed_size = qlz_compress(

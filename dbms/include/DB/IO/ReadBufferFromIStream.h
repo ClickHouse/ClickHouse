@@ -7,19 +7,20 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/BufferWithOwnMemory.h>
 
 
 namespace DB
 {
 
-class ReadBufferFromIStream : public ReadBuffer
+class ReadBufferFromIStream : public BufferWithOwnMemory<ReadBuffer>
 {
 private:
 	std::istream & istr;
 
 	bool nextImpl()
 	{
-		istr.read(working_buffer.begin(), DEFAULT_READ_BUFFER_SIZE);
+		istr.read(working_buffer.begin(), working_buffer.size());
 		size_t gcount = istr.gcount();
 
 		if (!gcount)
@@ -30,7 +31,7 @@ private:
 				throw Exception("Cannot read from istream", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
 		}
 		else
-			working_buffer = Buffer(working_buffer.begin(), working_buffer.begin() + gcount);
+			working_buffer.resize(gcount);
 
 		return true;
 	}

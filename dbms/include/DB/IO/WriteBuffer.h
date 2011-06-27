@@ -1,11 +1,10 @@
 #ifndef DBMS_COMMON_WRITEBUFFER_H
 #define DBMS_COMMON_WRITEBUFFER_H
 
-#include <vector>
-#include <cstring>
 #include <algorithm>
+#include <cstring>
 
-#define DEFAULT_WRITE_BUFFER_SIZE 1048576UL
+#include <DB/IO/BufferBase.h>
 
 
 namespace DB
@@ -17,43 +16,18 @@ namespace DB
   *
   * Наследники должны реализовать метод nextImpl().
   */
-class WriteBuffer
+class WriteBuffer : public BufferBase
 {
 public:
-	typedef char * Position;
-
-	struct Buffer
-	{
-		Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
-
-		inline Position begin() { return begin_pos; }
-		inline Position end() { return end_pos; }
-
-	private:
-		Position begin_pos;
-		Position end_pos;		/// на 1 байт после конца буфера
-	};
-
-	WriteBuffer()
-		: internal_buffer(DEFAULT_WRITE_BUFFER_SIZE),
-		working_buffer(&internal_buffer[0], &internal_buffer[0] + DEFAULT_WRITE_BUFFER_SIZE),
-		pos(&internal_buffer[0]),
-		bytes_written(0)
-	{
-	}
-
-	/// получить часть буфера, в который можно писать данные
-	inline Buffer & buffer() { return working_buffer; }
-	
-	/// получить (для чтения и изменения) позицию в буфере
-	inline Position & position() { return pos; };
+    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
+    void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
 	/** записать данные, находящиеся в буфере (от начала буфера до текущей позиции);
 	  * переместить позицию в начало; кинуть исключение, если что-то не так
 	  */
 	inline void next()
 	{
-		bytes_written += pos - working_buffer.begin();
+		bytes += offset();
 		nextImpl();
 		pos = working_buffer.begin();
 	}
@@ -93,22 +67,7 @@ public:
 		++pos;
 	}
 	
-
-	/** Сколько байт было записано в буфер. */
-	size_t count()
-	{
-		return bytes_written + pos - working_buffer.begin();
-	}
-
-protected:
-	std::vector<char> internal_buffer;
-	Buffer working_buffer;
-	Position pos;
-
 private:
-	size_t bytes_written;
-
-
 	/** Записать данные, находящиеся в буфере (от начала буфера до текущей позиции).
 	  * Кинуть исключение, если что-то не так.
 	  */

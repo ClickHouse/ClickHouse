@@ -29,6 +29,7 @@ int main(int argc, char ** argv)
 	
 		{
 			std::ofstream ostr("test1");
+			
 			DB::WriteBufferFromOStream buf(ostr);
 			DB::CompressedWriteBuffer compressed_buf(buf);
 

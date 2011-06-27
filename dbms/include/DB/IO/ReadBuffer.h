@@ -1,14 +1,11 @@
 #ifndef DBMS_COMMON_READBUFFER_H
 #define DBMS_COMMON_READBUFFER_H
 
-#include <vector>
 #include <cstring>
-#include <algorithm>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-
-#define DEFAULT_READ_BUFFER_SIZE 1048576UL
+#include <DB/IO/BufferBase.h>
 
 
 namespace DB
@@ -20,45 +17,21 @@ namespace DB
   *
   * Наследники должны реализовать метод nextImpl().
   */
-class ReadBuffer
+class ReadBuffer : public BufferBase
 {
 public:
-	typedef char * Position;
-
-	struct Buffer
-	{
-		Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
-
-		inline Position begin() { return begin_pos; }
-		inline Position end() { return end_pos; }
-
-	private:
-		Position begin_pos;
-		Position end_pos;		/// на 1 байт после конца буфера
-	};
-
-	ReadBuffer()
-		: internal_buffer(DEFAULT_READ_BUFFER_SIZE),
-		working_buffer(&internal_buffer[0], &internal_buffer[0]),
-		pos(&internal_buffer[0]),
-		bytes_read(0)
-	{}
-
-	/// получить часть буфера, из которого можно читать данные
-	inline Buffer & buffer() { return working_buffer; }
-	
-	/// получить (для чтения и изменения) позицию в буфере
-	inline Position & position() { return pos; };
+	ReadBuffer(Position ptr, size_t size) : BufferBase(ptr, size, size) {}
+	void set(Position ptr, size_t size) { BufferBase::set(ptr, size, size); }
 
 	/** прочитать следующие данные и заполнить ими буфер; переместить позицию в начало;
 	  * вернуть false в случае конца, true иначе; кинуть исключение, если что-то не так
 	  */
 	inline bool next()
 	{
-		bytes_read += pos - working_buffer.begin();
+		bytes += offset();
 		bool res = nextImpl();
 		if (!res)
-			working_buffer = Buffer(working_buffer.begin(), working_buffer.begin());
+			working_buffer.resize(0);
 		
 		pos = working_buffer.begin();
 		return res;
@@ -123,22 +96,7 @@ public:
 			throw Exception("Cannot read all data", ErrorCodes::CANNOT_READ_ALL_DATA);
 	}
 
-
-	/** Сколько байт было прочитано из буфера. */
-	size_t count()
-	{
-		return bytes_read + pos - working_buffer.begin();
-	}
-
-protected:
-	std::vector<char> internal_buffer;
-	Buffer working_buffer;
-	Position pos;
-
 private:
-	size_t bytes_read;
-
-
 	/** Прочитать следующие данные и заполнить ими буфер.
 	  * Вернуть false в случае конца, true иначе.
 	  * Кинуть исключение, если что-то не так.
