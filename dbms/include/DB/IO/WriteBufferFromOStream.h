@@ -31,7 +31,7 @@ public:
 
 	~WriteBufferFromOStream()
 	{
-		next();
+		nextImpl();
 	}
 };
 
