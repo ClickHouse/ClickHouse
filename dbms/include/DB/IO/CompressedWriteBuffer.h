@@ -22,8 +22,6 @@ private:
 	std::vector<char> compressed_buffer;
 	char scratch[QLZ_SCRATCH_COMPRESS];
 
-	size_t compressed_bytes;
-
 	void nextImpl()
 	{
 		if (!offset())
@@ -42,17 +40,16 @@ private:
 		out.write(reinterpret_cast<const char *>(&checksum), sizeof(checksum));
 
 		out.write(&compressed_buffer[0], compressed_size);
-		compressed_bytes += compressed_size;
 	}
 
 public:
-	CompressedWriteBuffer(WriteBuffer & out_) : out(out_), compressed_bytes(0) {}
+	CompressedWriteBuffer(WriteBuffer & out_) : out(out_) {}
 
 	/// Объём сжатых данных
 	size_t getCompressedBytes()
 	{
 		nextIfAtEnd();
-		return compressed_bytes;
+		return out.count();
 	}
 
 	/// Сколько несжатых байт было записано в буфер
@@ -65,7 +62,7 @@ public:
 	size_t getRemainingBytes()
 	{
 		nextIfAtEnd();
-		return pos - working_buffer.begin();
+		return offset();
 	}
 
 	~CompressedWriteBuffer()
