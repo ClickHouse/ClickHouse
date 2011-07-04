@@ -46,6 +46,14 @@ static inline void throwReadAfterEOF()
 }
 
 
+/// Чтение числа в native формате
+template <typename T>
+inline void readIntBinary(T & x, ReadBuffer & buf)
+{
+	buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
+}
+
+
 inline void readChar(char & x, ReadBuffer & buf)
 {
 	if (!buf.eof())

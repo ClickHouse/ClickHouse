@@ -28,13 +28,13 @@ public:
 	{
 		/// ColumnType::value_type - более узкий тип. Например, UInt8, когда тип Field - UInt64
 		typename ColumnType::value_type x = boost::get<FieldType>(field);
-		ostr.write(reinterpret_cast<const char *>(&x), sizeof(x));
+		writeIntBinary(x, ostr);
 	}
 	
 	void deserializeBinary(Field & field, ReadBuffer & istr) const
 	{
 		typename ColumnType::value_type x;
-		istr.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
+		readIntBinary(x, istr);
 		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 	

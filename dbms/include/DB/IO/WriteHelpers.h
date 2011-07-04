@@ -32,6 +32,14 @@ inline void writeChar(char x, WriteBuffer & buf)
 }
 
 
+/// Запись числа в native формате
+template <typename T>
+inline void writeIntBinary(T & x, WriteBuffer & buf)
+{
+	buf.write(reinterpret_cast<const char *>(&x), sizeof(x));
+}
+
+
 template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
 {
