@@ -15,7 +15,7 @@ namespace mysqlxx
 struct Exception : public Poco::Exception
 {
     Exception(const std::string & msg, int code = 0) : Poco::Exception(msg, code) {}
-	int errnum() { return code(); }
+	int errnum() const { return code(); }
 };
 
 
