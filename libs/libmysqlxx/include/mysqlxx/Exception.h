@@ -16,6 +16,8 @@ struct Exception : public Poco::Exception
 {
     Exception(const std::string & msg, int code = 0) : Poco::Exception(msg, code) {}
 	int errnum() const { return code(); }
+	const char * name() const throw() { return "mysqlxx::Exception"; }
+	const char * className() const throw() { return "mysqlxx::Exception"; }
 };
 
 
@@ -23,6 +25,8 @@ struct Exception : public Poco::Exception
 struct ConnectionFailed : public Exception
 {
 	ConnectionFailed(const std::string & msg, int code = 0) : Exception(msg, code) {}
+	const char * name() const throw() { return "mysqlxx::ConnectionFailed"; }
+	const char * className() const throw() { return "mysqlxx::ConnectionFailed"; }
 };
 
 
@@ -30,6 +34,8 @@ struct ConnectionFailed : public Exception
 struct BadQuery : public Exception
 {
 	BadQuery(const std::string & msg, int code = 0) : Exception(msg, code) {}
+	const char * name() const throw() { return "mysqlxx::BadQuery"; }
+	const char * className() const throw() { return "mysqlxx::BadQuery"; }
 };
 
 
@@ -37,6 +43,8 @@ struct BadQuery : public Exception
 struct CannotParseValue : public Exception
 {
 	CannotParseValue(const std::string & msg, int code = 0) : Exception(msg, code) {}
+	const char * name() const throw() { return "mysqlxx::CannotParseValue"; }
+	const char * className() const throw() { return "mysqlxx::CannotParseValue"; }
 };
 
 
