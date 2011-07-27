@@ -128,6 +128,7 @@ void Daemon::buildLoggers()
 			file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
 			file->setProperty("rotation", config().getRawString("logger.size", "100M"));
 			file->setProperty("archive", "number");
+			file->setProperty("compression", "true");
 			file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
 			log->setChannel(file);
 			split->addChannel(log);
