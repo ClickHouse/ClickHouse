@@ -128,7 +128,7 @@ void Daemon::buildLoggers()
 			file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
 			file->setProperty("rotation", config().getRawString("logger.size", "100M"));
 			file->setProperty("archive", "number");
-			file->setProperty("compression", config().getRawString("logger.compression", "true"));
+			file->setProperty("compress", config().getRawString("logger.compress", "true"));
 			file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
 			log->setChannel(file);
 			split->addChannel(log);
@@ -146,7 +146,7 @@ void Daemon::buildLoggers()
 				errorfile->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
 				errorfile->setProperty("rotation", config().getRawString("logger.size", "100M"));
 				errorfile->setProperty("archive", "number");
-				file->setProperty("compression", config().getRawString("logger.compression", "true"));
+				file->setProperty("compress", config().getRawString("logger.compress", "true"));
 				errorfile->setProperty("purgeCount", config().getRawString("logger.count", "1"));
 				errorlog->setChannel(errorfile);
 				level->setChannel(errorlog);
