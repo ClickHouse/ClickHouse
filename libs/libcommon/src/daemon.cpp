@@ -146,6 +146,7 @@ void Daemon::buildLoggers()
 				errorfile->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
 				errorfile->setProperty("rotation", config().getRawString("logger.size", "100M"));
 				errorfile->setProperty("archive", "number");
+				file->setProperty("compression", config().getRawString("logger.compression", "true"));
 				errorfile->setProperty("purgeCount", config().getRawString("logger.count", "1"));
 				errorlog->setChannel(errorfile);
 				level->setChannel(errorlog);
