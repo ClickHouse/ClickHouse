@@ -13,6 +13,7 @@ namespace mysqlxx
 
 /** Хранит дату в broken-down виде.
   * Может быть инициализирован из даты в текстовом виде '2011-01-01' и из time_t.
+  * Может быть инициализирован из даты в текстовом виде '20110101...(юзаются первые 8 символов)
   * Неявно преобразуется в time_t.
   * Сериализуется в ostream в текстовом виде.
   * Внимание: преобразование в unix timestamp и обратно производится в текущей тайм-зоне!
@@ -39,12 +40,21 @@ private:
 
 	void init(const char * s, size_t length)
 	{
-		if (length < 10)
+		if(length < 8)
 			throw Exception("Cannot parse Date: " + std::string(s, length));
-
 		m_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-		m_month = (s[5] - '0') * 10 + (s[6] - '0');
-		m_day = (s[8] - '0') * 10 + (s[9] - '0');
+		if(s[4] == '-')
+		{
+			if(length < 10)
+				throw Exception("Cannot parse Date: " + std::string(s, length));
+			m_month = (s[5] - '0') * 10 + (s[6] - '0');
+			m_day = (s[8] - '0') * 10 + (s[9] - '0');
+		}
+		else
+		{
+			m_month = (s[4] -'0') * 10 + (s[5] -'0');
+			m_day = (s[6] - '0')* 10 + (s[7] -'0');
+		}
 	}
 
 public:
