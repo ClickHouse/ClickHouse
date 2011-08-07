@@ -10,23 +10,23 @@
 namespace DB
 {
 
-class DataTypeDate : public IDataTypeNumberFixed<UInt16, ColumnUInt16>
+class DataTypeDateTime : public IDataTypeNumberFixed<UInt32, ColumnUInt32>
 {
 public:
-	DataTypeDate() {}
+	DataTypeDateTime() {}
 
-	std::string getName() const { return "Date"; }
-	SharedPtr<IDataType> clone() const { return new DataTypeDate; }
+	std::string getName() const { return "DateTime"; }
+	SharedPtr<IDataType> clone() const { return new DataTypeDateTime; }
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeDateText(boost::get<UInt64>(field), ostr);
+		writeDateTimeText(boost::get<UInt64>(field), ostr);
 	}
 	
 	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
-		Yandex::DayNum_t x;
-		readDateText(x, istr);
+		time_t x;
+		readDateTimeText(x, istr);
 		field = x;
 	}
 

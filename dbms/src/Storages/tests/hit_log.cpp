@@ -11,6 +11,8 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
@@ -33,18 +35,14 @@ int main(int argc, char ** argv)
 
 		boost::assign::push_back(names_and_types_list)
 			("WatchID",				new DB::DataTypeUInt64)
-			("ChunkID",				new DB::DataTypeUInt64)
-			("Random",				new DB::DataTypeUInt32)
 			("JavaEnable",			new DB::DataTypeUInt8)
-			("FrameEnable",			new DB::DataTypeUInt8)
 			("Title",				new DB::DataTypeString)
 			("GoodEvent",			new DB::DataTypeUInt32)
-//			("EventTime",			new DB::DataTypeDateTime)
+			("EventTime",			new DB::DataTypeDateTime)
 			("CounterID",			new DB::DataTypeUInt32)
 			("ClientIP",			new DB::DataTypeUInt32)
 			("RegionID",			new DB::DataTypeUInt32)
 			("UniqID",				new DB::DataTypeUInt64)
-			("SessID",				new DB::DataTypeUInt32)
 			("CounterClass",		new DB::DataTypeUInt8)
 			("OS",					new DB::DataTypeUInt8)
 			("UserAgent",			new DB::DataTypeUInt8)
@@ -60,7 +58,7 @@ int main(int argc, char ** argv)
 			("NetMajor",			new DB::DataTypeUInt8)
 			("NetMinor",			new DB::DataTypeUInt8)
 			("UserAgentMajor",		new DB::DataTypeUInt16)
-//			("UserAgentMinor",		new DB::DataTypeFixedString(2))
+			("UserAgentMinor",		new DB::DataTypeFixedString(2))
 			("CookieEnable",		new DB::DataTypeUInt8)
 			("JavascriptEnable",	new DB::DataTypeUInt8)
 			("IsMobile",			new DB::DataTypeUInt8)
@@ -76,12 +74,24 @@ int main(int argc, char ** argv)
 			("WindowClientWidth",	new DB::DataTypeUInt16)
 			("WindowClientHeight",	new DB::DataTypeUInt16)
 			("ClientTimeZone",		new DB::DataTypeInt16)
-//			("ClientEventTime",		new DB::DataTypeDateTime)
+			("ClientEventTime",		new DB::DataTypeDateTime)
 			("SilverlightVersion1",	new DB::DataTypeUInt8)
 			("SilverlightVersion2",	new DB::DataTypeUInt8)
 			("SilverlightVersion3",	new DB::DataTypeUInt32)
 			("SilverlightVersion4",	new DB::DataTypeUInt16)
 			("PageCharset",			new DB::DataTypeString)
+			("CodeVersion",			new DB::DataTypeUInt32) 
+			("IsLink",				new DB::DataTypeUInt8)
+			("IsDownload",			new DB::DataTypeUInt8)
+			("IsNotBounce",			new DB::DataTypeUInt8)
+			("FUniqID",				new DB::DataTypeUInt64)
+			("OriginalURL",			new DB::DataTypeString)
+			("HID",					new DB::DataTypeUInt32)
+			("IsOldCounter",		new DB::DataTypeUInt8)
+			("IsEvent",				new DB::DataTypeUInt8)
+			("IsParameter",			new DB::DataTypeUInt8)
+			("DontCountHits",		new DB::DataTypeUInt8)
+			("WithHash",			new DB::DataTypeUInt8)
 		;
 
 		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;

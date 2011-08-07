@@ -29,7 +29,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
 	UInt64 size;
 	readVarUInt(size, istr);
-	field = String("");
+	field = String();
 	String & s = boost::get<String>(field);
 	s.resize(size);
 	/// непереносимо, но (действительно) быстрее

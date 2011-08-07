@@ -23,7 +23,7 @@ public:
 	ColumnFixedArray(SharedPtr<IColumn> nested_column, size_t n_)
 		: data(nested_column), n(n_)
 	{
-		data.clear();
+		clear();
 	}
 
 	SharedPtr<IColumn> cloneEmpty() const
@@ -68,7 +68,7 @@ public:
 
 	void clear()
 	{
-		data.clear();
+		data->clear();
 	}
 
 	/** Более эффективные методы манипуляции */
@@ -82,7 +82,7 @@ public:
 		return *data;
 	}
 
-private:
+protected:
 	SharedPtr<IColumn> data;
 	const size_t n;
 };

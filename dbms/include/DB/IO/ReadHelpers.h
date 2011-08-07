@@ -246,6 +246,30 @@ inline void readDateText(Yandex::DayNum_t & date, ReadBuffer & buf)
 	date = Yandex::DateLUTSingleton::instance().makeDayNum(year, month, day);
 }
 
+
+/// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
+{
+	char s[19];
+	size_t size = buf.read(s, 19);
+	if (19 != size)
+	{
+		s[size] = 0;
+		throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+	}
+
+	UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+	UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+	UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+
+	UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
+	UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
+	UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+
+	datetime = Yandex::DateLUTSingleton::instance().makeDateTime(year, month, day, hour, minute, second);
+}
+
+
 }
 
 #endif

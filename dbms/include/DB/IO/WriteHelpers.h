@@ -127,6 +127,43 @@ inline void writeDateText(Yandex::DayNum_t date, WriteBuffer & buf)
 }
 
 
+/// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+{
+	char s[19];
+
+	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+	const Yandex::DateLUT::Values & values = date_lut.getValues(datetime);
+
+	s[0] = '0' + values.year / 1000;
+	s[1] = '0' + (values.year / 100) % 10;
+	s[2] = '0' + (values.year / 10) % 10;
+	s[3] = '0' + values.year % 10;
+	s[4] = '-';
+	s[5] = '0' + values.month / 10;
+	s[6] = '0' + values.month % 10;
+	s[7] = '-';
+	s[8] = '0' + values.day_of_month / 10;
+	s[9] = '0' + values.day_of_month % 10;
+
+	UInt8 hour = date_lut.toHourInaccurate(datetime);
+	UInt8 minute = date_lut.toMinute(datetime);
+	UInt8 second = date_lut.toSecond(datetime);
+
+	s[10] = ' ';
+	s[11] = '0' + hour / 10;
+	s[12] = '0' + hour % 10;
+	s[13] = ':';
+	s[14] = '0' + minute / 10;
+	s[15] = '0' + minute % 10;
+	s[16] = ':';
+	s[17] = '0' + second / 10;
+	s[18] = '0' + second % 10;
+
+	buf.write(s, 19);
+}
+
+
 }
 
 #endif
