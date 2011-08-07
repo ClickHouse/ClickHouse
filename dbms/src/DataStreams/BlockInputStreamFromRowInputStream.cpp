@@ -3,7 +3,6 @@
 
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 
-#include <iostream>
 
 namespace DB
 {

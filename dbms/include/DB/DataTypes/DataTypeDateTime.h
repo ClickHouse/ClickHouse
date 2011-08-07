@@ -27,7 +27,7 @@ public:
 	{
 		time_t x;
 		readDateTimeText(x, istr);
-		field = x;
+		field = NearestFieldType<UInt32>::Type(x);
 	}
 
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const

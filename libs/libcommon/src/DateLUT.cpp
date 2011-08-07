@@ -35,10 +35,10 @@ namespace Yandex
 
 		/// Заполняем lookup таблицу для годов
 		memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));
-		for (size_t day = 0; day < lut.size() && lut[day].year < DATE_LUT_YEARS + 1900; ++day)
+		for (size_t day = 0; day < lut.size() && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
 		{
 			if (lut[day].month == 1 && lut[day].day_of_month == 1)
-				years_lut[lut[day].year - 1900] = day;
+				years_lut[lut[day].year - DATE_LUT_MIN_YEAR] = day;
 		}
 	}
 }
