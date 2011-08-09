@@ -7,7 +7,7 @@
 #include <boost/mpl/or.hpp>
 #include <boost/mpl/not.hpp>
 #include <boost/mpl/greater.hpp>
-#include <boost/mpl/max.hpp>
+#include <boost/mpl/min_max.hpp>
 
 #include <DB/Core/Types.h>
 
