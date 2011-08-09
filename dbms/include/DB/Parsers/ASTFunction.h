@@ -2,6 +2,7 @@
 #define DBMS_PARSERS_ASTFUNCTION_H
 
 #include <DB/Parsers/IAST.h>
+#include <DB/Functions/IFunction.h>
 
 
 namespace DB
@@ -18,11 +19,25 @@ public:
 	/// параметры
 	ASTPtr arguments;
 
+	/// сама функция
+	FunctionPtr function;
+
 	ASTFunction() {}
 	ASTFunction(StringRange range_) : range(range_) {}
 
 	/** Получить кусок текста, откуда был получен этот элемент. */
 	StringRange getRange() { return range; }
+
+	/** Получить всех детей. */
+	ASTs getChildren()
+	{
+		ASTs res;
+		res.push_back(arguments);
+		return res;
+	}
+
+	/** Получить текст, который идентифицирует этот элемент. */
+	String getID() { return "Function_" + name; }
 };
 
 }

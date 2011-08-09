@@ -22,6 +22,12 @@ public:
 	
 	/** Получить кусок текста, откуда был получен этот элемент. */
 	StringRange getRange() { return range; }
+
+	/** Получить всех детей. */
+	ASTs getChildren() { return ASTs(); }
+
+	/** Получить текст, который идентифицирует этот элемент. */
+	String getID() { return "Literal_" + boost::apply_visitor(FieldVisitorDump(), value); }
 };
 
 }

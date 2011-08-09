@@ -22,7 +22,7 @@ public:
 		return "String";
 	}
 
-	SharedPtr<IDataType> clone() const
+	DataTypePtr clone() const
 	{
 		return new DataTypeString;
 	}
@@ -41,7 +41,7 @@ public:
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const;
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const;
 
-	SharedPtr<IColumn> createColumn() const;
+	ColumnPtr createColumn() const;
 };
 
 }

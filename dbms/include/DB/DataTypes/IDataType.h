@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_TYPES_IDATATYPE_H
-#define DBMS_DATA_TYPES_IDATATYPE_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
@@ -61,6 +60,9 @@ public:
 	virtual ~IDataType() {}
 };
 
+
+typedef Poco::SharedPtr<IDataType> DataTypePtr;
+typedef std::vector<DataTypePtr> DataTypes;
+
 }
 
-#endif

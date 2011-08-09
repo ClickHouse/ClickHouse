@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Poco/SharedPtr.h>
+
 #include <DB/Core/Names.h>
 #include <DB/Core/Block.h>
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/DataTypes/IDataType.h>
-#include <DB/DataTypes/DataTypes.h>
 
 
 namespace DB
@@ -38,6 +39,11 @@ public:
 	/// Выполнить функцию над блоком.
 	virtual void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result) = 0;
 };
+
+
+using Poco::SharedPtr;
+
+typedef SharedPtr<IFunction> FunctionPtr;
 
 
 }

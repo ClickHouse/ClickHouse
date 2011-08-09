@@ -49,6 +49,9 @@ public:
 };
 
 
+typedef SharedPtr<IColumn> ColumnPtr;
+typedef std::vector<ColumnPtr> Columns;
+
 }
 
 #endif

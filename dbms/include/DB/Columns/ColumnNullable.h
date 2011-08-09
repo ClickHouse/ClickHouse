@@ -25,13 +25,13 @@ public:
 	typedef std::vector<Flag_t> Nulls_t;
 
 	/** Создать пустой столбец, с типом значений, как в столбце nested_column */
-	ColumnNullable(SharedPtr<IColumn> nested_column)
+	ColumnNullable(ColumnPtr nested_column)
 		: data(nested_column)
 	{
 		data.clear();
 	}
 
-	SharedPtr<IColumn> cloneEmpty() const
+	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnNullable(data->cloneEmpty());
 	}
@@ -111,7 +111,7 @@ public:
 	}
 
 private:
-	SharedPtr<IColumn> data;
+	ColumnPtr data;
 	Nulls_t nulls;
 };
 

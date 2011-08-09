@@ -1,10 +1,9 @@
-#ifndef DBMS_DATA_STREAMS_TABSEPARATEDROWINPUTSTREAM_H
-#define DBMS_DATA_STREAMS_TABSEPARATEDROWINPUTSTREAM_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
 #include <DB/IO/ReadBuffer.h>
-#include <DB/DataTypes/DataTypes.h>
+#include <DB/DataTypes/IDataType.h>
 #include <DB/DataStreams/IRowInputStream.h>
 
 
@@ -29,5 +28,3 @@ private:
 };
 
 }
-
-#endif

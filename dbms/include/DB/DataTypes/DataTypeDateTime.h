@@ -16,7 +16,7 @@ public:
 	DataTypeDateTime() {}
 
 	std::string getName() const { return "DateTime"; }
-	SharedPtr<IDataType> clone() const { return new DataTypeDateTime; }
+	DataTypePtr clone() const { return new DataTypeDateTime; }
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{

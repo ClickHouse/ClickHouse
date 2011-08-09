@@ -23,6 +23,12 @@ public:
 	
 	/** Получить кусок текста, откуда был получен этот элемент. */
 	StringRange getRange() { return range; }
+
+	/** Получить всех детей. */
+	ASTs getChildren() { return children; }
+
+	/** Получить текст, который идентифицирует этот элемент. */
+	String getID() { return "ExpressionList"; }
 };
 
 }

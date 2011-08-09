@@ -7,7 +7,7 @@
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-#include <DB/Column/IColumn.h>
+#include <DB/Columns/IColumn.h>
 
 
 namespace DB
@@ -43,7 +43,7 @@ public:
 		checkSizes();
 	}
 
-	SharedPtr<IColumn> cloneEmpty() const
+	ColumnPtr cloneEmpty() const
 	{
 		Container_t new_data(data.size());
 		for (size_t i = 0; i < data.size(); ++i)
@@ -94,7 +94,7 @@ public:
 
 	/// манипуляция с Tuple
 
-	void insertColumn(size_t pos, SharedPtr<IColumn> & column)
+	void insertColumn(size_t pos, ColumnPtr & column)
 	{
 		if (pos > data.size())
 			throw Exception("Position out of bound in ColumnTuple::insertColumn().",

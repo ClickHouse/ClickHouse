@@ -131,7 +131,7 @@ void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr, boo
 }
 
 
-SharedPtr<IColumn> DataTypeString::createColumn() const
+ColumnPtr DataTypeString::createColumn() const
 {
 	return new ColumnString;
 }

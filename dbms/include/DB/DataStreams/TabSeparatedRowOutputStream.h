@@ -1,10 +1,9 @@
-#ifndef DBMS_DATA_STREAMS_TABSEPARATEDROWOUTPUTSTREAM_H
-#define DBMS_DATA_STREAMS_TABSEPARATEDROWOUTPUTSTREAM_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
 #include <DB/IO/WriteBuffer.h>
-#include <DB/DataTypes/DataTypes.h>
+#include <DB/DataTypes/IDataType.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
@@ -33,4 +32,3 @@ private:
 
 }
 
-#endif

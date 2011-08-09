@@ -14,7 +14,7 @@ namespace DB
 
 using Poco::SharedPtr;
 
-typedef std::map<std::string, SharedPtr<IDataType> > NamesAndTypes;
+typedef std::map<std::string, DataTypePtr> NamesAndTypes;
 
 }
 

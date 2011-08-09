@@ -17,7 +17,7 @@ struct DataTypeFromFieldType;
 	{																				\
 	public:																			\
 		std::string getName() const { return #TYPE; }								\
-		SharedPtr<IDataType> clone() const { return new DataType ## TYPE; }			\
+		DataTypePtr clone() const { return new DataType ## TYPE; }			\
 	};																				\
 																					\
 	template <> struct DataTypeFromFieldType<TYPE>									\

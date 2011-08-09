@@ -17,7 +17,7 @@ using Poco::SharedPtr;
 
 struct NameAndType
 {
-	SharedPtr<IDataType> type;
+	DataTypePtr type;
 	String name;
 };
 

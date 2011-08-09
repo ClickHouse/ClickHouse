@@ -105,7 +105,7 @@ void DataTypeFixedString::deserializeTextQuoted(Field & field, ReadBuffer & istr
 }
 
 
-SharedPtr<IColumn> DataTypeFixedString::createColumn() const
+ColumnPtr DataTypeFixedString::createColumn() const
 {
 	return new ColumnFixedString(n);
 }

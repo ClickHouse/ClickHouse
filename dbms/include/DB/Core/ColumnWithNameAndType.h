@@ -17,8 +17,8 @@ using Poco::SharedPtr;
 
 struct ColumnWithNameAndType
 {
-	SharedPtr<IColumn> column;
-	SharedPtr<IDataType> type;
+	ColumnPtr column;
+	DataTypePtr type;
 	String name;
 };
 

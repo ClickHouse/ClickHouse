@@ -24,7 +24,7 @@ public:
 	ColumnVector() {}
 	ColumnVector(size_t n) : data(n) {}
 
-	SharedPtr<IColumn> cloneEmpty() const
+	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnVector<T>;
 	}

@@ -51,7 +51,7 @@ public:
 		x.resize(size / sizeof(typename ColumnType::value_type));
 	}
 
-	SharedPtr<IColumn> createColumn() const
+	ColumnPtr createColumn() const
 	{
 		return new ColumnType;
 	}

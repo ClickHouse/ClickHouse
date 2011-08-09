@@ -58,7 +58,7 @@ public:
 		}
 	}
 
-	SharedPtr<IColumn> createColumn() const
+	ColumnPtr createColumn() const
 	{
 		return new ColumnType;
 	}

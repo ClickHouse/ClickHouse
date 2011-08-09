@@ -27,13 +27,13 @@ public:
 	typedef std::vector<size_t> Offsets_t;
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
-	ColumnArray(SharedPtr<IColumn> nested_column)
+	ColumnArray(ColumnPtr nested_column)
 		: data(nested_column)
 	{
 		data->clear();
 	}
 
-	SharedPtr<IColumn> cloneEmpty() const
+	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnArray(data->cloneEmpty());
 	}
@@ -119,7 +119,7 @@ public:
 	}
 
 protected:
-	SharedPtr<IColumn> data;
+	ColumnPtr data;
 	Offsets_t offsets;
 };
 

@@ -26,7 +26,7 @@ public:
 	{
 	}
 
-	SharedPtr<IColumn> cloneEmpty() const
+	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnString;
 	}

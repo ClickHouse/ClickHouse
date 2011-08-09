@@ -27,7 +27,7 @@ public:
 		return "FixedString(" + Poco::NumberFormatter::format(n) + ")";
 	}
 
-	SharedPtr<IDataType> clone() const
+	DataTypePtr clone() const
 	{
 		return new DataTypeFixedString(n);
 	}
@@ -46,7 +46,7 @@ public:
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const;
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const;
 
-	SharedPtr<IColumn> createColumn() const;
+	ColumnPtr createColumn() const;
 };
 
 }
