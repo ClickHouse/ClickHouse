@@ -10,7 +10,9 @@
 namespace DB
 {
 
-/** Арифметические функции: +, -, *, /, %, div.
+/** Арифметические функции: +, -, *, /, %,
+  * div (целочисленное деление),
+  * TODO: <<, >>, <<<, >>>, &, |, ^, &&, ||, ^^, !
   */
 
 template<typename A, typename B>
@@ -42,6 +44,166 @@ struct PlusImpl
 	static void constant_constant(A a, B b, ResultType & c)
 	{
 		c = a + b;
+	}
+};
+
+template<typename A, typename B>
+struct MultiplyImpl
+{
+	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
+
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] * b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] * b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a * b[i];
+	}
+
+	static void constant_constant(A a, B b, ResultType & c)
+	{
+		c = a * b;
+	}
+};
+
+template<typename A, typename B>
+struct MinusImpl
+{
+	typedef typename NumberTraits::ResultOfSubtraction<A, B>::Type ResultType;
+
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] - b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] - b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a - b[i];
+	}
+
+	static void constant_constant(A a, B b, ResultType & c)
+	{
+		c = a - b;
+	}
+};
+
+template<typename A, typename B>
+struct DivideFloatingImpl
+{
+	typedef typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type ResultType;
+
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = static_cast<ResultType>(a[i]) / b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = static_cast<ResultType>(a[i]) / b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = static_cast<ResultType>(a) / b[i];
+	}
+
+	static void constant_constant(A a, B b, ResultType & c)
+	{
+		c = static_cast<ResultType>(a) / b;
+	}
+};
+
+template<typename A, typename B>
+struct DivideIntegralImpl
+{
+	typedef typename NumberTraits::ResultOfIntegerDivision<A, B>::Type ResultType;
+
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] / b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] / b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a / b[i];
+	}
+
+	static void constant_constant(A a, B b, ResultType & c)
+	{
+		c = a / b;
+	}
+};
+
+template<typename A, typename B>
+struct ModuloImpl
+{
+	typedef typename NumberTraits::ResultOfModulo<A, B>::Type ResultType;
+
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] % b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] % b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a % b[i];
+	}
+
+	static void constant_constant(A a, B b, ResultType & c)
+	{
+		c = a % b;
 	}
 };
 
@@ -160,9 +322,19 @@ public:
 };
 
 
-struct NamePlus { static const char * get() { return "plus"; } };
+struct NamePlus 			{ static const char * get() { return "plus"; } };
+struct NameMinus 			{ static const char * get() { return "minus"; } };
+struct NameMultiply 		{ static const char * get() { return "multiply"; } };
+struct NameDivideFloating	{ static const char * get() { return "divide"; } };
+struct NameDivideIntegral 	{ static const char * get() { return "div"; } };
+struct NameModulo 			{ static const char * get() { return "modulo"; } };
 
-typedef FunctionBinaryArithmetic<PlusImpl, NamePlus> FunctionPlus;
+typedef FunctionBinaryArithmetic<PlusImpl, 				NamePlus> 			FunctionPlus;
+typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 			FunctionMinus;
+typedef FunctionBinaryArithmetic<MultiplyImpl, 			NameMultiply> 		FunctionMultiply;
+typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating> FunctionDivideFloating;
+typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> FunctionDivideIntegral;
+typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 		FunctionModulo;
 
 
 }

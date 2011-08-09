@@ -85,7 +85,7 @@ namespace NumberTraits
 			typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type>::Type Type;
 	};
 
-	template <typename A, typename B> struct ResultOfSubstraction
+	template <typename A, typename B> struct ResultOfSubtraction
 	{
 		typedef typename Construct<
 			typename boost::mpl::if_<

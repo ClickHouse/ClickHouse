@@ -32,11 +32,11 @@ int main(int argc, char ** argv)
 
 		for (size_t i = 0; i < n; ++i)
 		{
-			col1->getData()[i] = 1;
-			col2->getData()[i] = 1;
+			col1->getData()[i] = 10;
+			col2->getData()[i] = 3;
 		}
 
-		DB::FunctionPlus f;
+		DB::FunctionDivideFloating f;
 		DB::DataTypes arg_types;
 		arg_types.push_back(descr1.type);
 		arg_types.push_back(descr2.type);
@@ -73,9 +73,9 @@ int main(int argc, char ** argv)
 				<< std::endl;
 		}
 
-		size_t x = 0;
+		DB::Float64 x = 0;
 		for (size_t i = 0; i < n; ++i)
-			x += boost::get<DB::Int64>((*block.getByPosition(2).column)[i]);
+			x += boost::get<DB::Float64>((*block.getByPosition(2).column)[i]);
 
 		std::cout << x << std::endl;
 	}

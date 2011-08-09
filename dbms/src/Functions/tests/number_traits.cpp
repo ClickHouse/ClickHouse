@@ -20,9 +20,9 @@ int main(int argc, char ** argv)
 	printType(DB::NumberTraits::ResultOfAdditionMultiplication<DB::UInt8, DB::UInt8>::Type());
 	printType(DB::NumberTraits::ResultOfAdditionMultiplication<DB::UInt8, DB::Int32>::Type());
 	printType(DB::NumberTraits::ResultOfAdditionMultiplication<DB::UInt8, DB::Float32>::Type());
-	printType(DB::NumberTraits::ResultOfSubstraction<DB::UInt8, DB::UInt8>::Type());
-	printType(DB::NumberTraits::ResultOfSubstraction<DB::UInt16, DB::UInt8>::Type());
-	printType(DB::NumberTraits::ResultOfSubstraction<DB::UInt16, DB::Int8>::Type());
+	printType(DB::NumberTraits::ResultOfSubtraction<DB::UInt8, DB::UInt8>::Type());
+	printType(DB::NumberTraits::ResultOfSubtraction<DB::UInt16, DB::UInt8>::Type());
+	printType(DB::NumberTraits::ResultOfSubtraction<DB::UInt16, DB::Int8>::Type());
 	printType(DB::NumberTraits::ResultOfFloatingPointDivision<DB::UInt16, DB::Int16>::Type());
 	printType(DB::NumberTraits::ResultOfFloatingPointDivision<DB::UInt32, DB::Int16>::Type());
 	printType(DB::NumberTraits::ResultOfIntegerDivision<DB::UInt8, DB::Int16>::Type());

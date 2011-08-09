@@ -48,11 +48,22 @@ static inline void throwReadAfterEOF()
 
 /// Чтение числа в native формате
 template <typename T>
-inline void readIntBinary(T & x, ReadBuffer & buf)
+inline void readBinary(T & x, ReadBuffer & buf)
 {
 	buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
 }
 
+template <typename T>
+inline void readIntBinary(T & x, ReadBuffer & buf)
+{
+	readBinary(x, buf);
+}
+
+template <typename T>
+inline void readFloatBinary(T & x, ReadBuffer & buf)
+{
+	readBinary(x, buf);
+}
 
 inline void readChar(char & x, ReadBuffer & buf)
 {
@@ -217,6 +228,21 @@ void readFloatText(T & x, ReadBuffer & buf)
 	if (negative)
 		x = -x;
 }
+
+template <typename T>
+void readText(T & x, ReadBuffer & buf);
+
+template <> inline void readText<UInt8>		(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<UInt16>	(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<UInt32>	(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<UInt64>	(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int8>		(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int16>		(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int32>		(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int64>		(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Float32>	(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+template <> inline void readText<Float64>	(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+
 
 /// грубо; всё до '\n' или '\t'
 void readString(String & s, ReadBuffer & buf);

@@ -20,13 +20,13 @@ class IDataTypeNumber : public IDataType
 public:
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeIntText(boost::get<typename NearestFieldType<FieldType>::Type>(field), ostr);
+		writeText(boost::get<typename NearestFieldType<FieldType>::Type>(field), ostr);
 	}
 	
 	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
 		typename NearestFieldType<FieldType>::Type x;
-		readIntText(x, istr);
+		readText(x, istr);
 		field = x;
 	}
 

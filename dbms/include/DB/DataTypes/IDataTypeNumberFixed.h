@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_TYPES_IDATATYPE_NUMBER_FIXED_H
-#define DBMS_DATA_TYPES_IDATATYPE_NUMBER_FIXED_H
+#pragma once
 
 #include <Poco/BinaryWriter.h>
 #include <Poco/BinaryReader.h>
@@ -28,13 +27,13 @@ public:
 	{
 		/// ColumnType::value_type - более узкий тип. Например, UInt8, когда тип Field - UInt64
 		typename ColumnType::value_type x = boost::get<FieldType>(field);
-		writeIntBinary(x, ostr);
+		writeBinary(x, ostr);
 	}
 	
 	void deserializeBinary(Field & field, ReadBuffer & istr) const
 	{
 		typename ColumnType::value_type x;
-		readIntBinary(x, istr);
+		readBinary(x, istr);
 		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 	
@@ -58,6 +57,5 @@ public:
 	}
 };
 
-}
 
-#endif
+}

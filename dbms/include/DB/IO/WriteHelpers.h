@@ -34,9 +34,21 @@ inline void writeChar(char x, WriteBuffer & buf)
 
 /// Запись числа в native формате
 template <typename T>
-inline void writeIntBinary(T & x, WriteBuffer & buf)
+inline void writeBinary(T & x, WriteBuffer & buf)
 {
 	buf.write(reinterpret_cast<const char *>(&x), sizeof(x));
+}
+
+template <typename T>
+inline void writeIntBinary(T & x, WriteBuffer & buf)
+{
+	writeBinary(x, buf);
+}
+
+template <typename T>
+inline void writeFloatBinary(T & x, WriteBuffer & buf)
+{
+	writeBinary(x, buf);
 }
 
 
@@ -85,6 +97,20 @@ void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_D
 
 	buf.write(tmp, res);
 }
+
+template <typename T>
+void writeText(T x, WriteBuffer & buf);
+
+template <> inline void writeText<UInt8>	(UInt8 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<UInt16>	(UInt16 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<UInt32>	(UInt32 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<UInt64>	(UInt64 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int8>		(Int8 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int16>	(Int16 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int32>	(Int32 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int64>	(Int64 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Float32>	(Float32 x, WriteBuffer & buf) { writeFloatText(x, buf); }
+template <> inline void writeText<Float64>	(Float64 x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeString(const String & s, WriteBuffer & buf)
 {
