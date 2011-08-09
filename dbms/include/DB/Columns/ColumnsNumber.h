@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_COLUMNS_NUMBER_H
-#define DBMS_CORE_COLUMNS_NUMBER_H
+#pragma once
 
 #include <DB/Core/Types.h>
 #include <DB/Columns/ColumnVector.h>
@@ -24,5 +23,3 @@ typedef ColumnVector<Float32> ColumnFloat32;
 typedef ColumnVector<Float64> ColumnFloat64;
 
 }
-
-#endif

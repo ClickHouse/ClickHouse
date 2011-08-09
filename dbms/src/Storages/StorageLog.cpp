@@ -12,7 +12,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-LogBlockInputStream::LogBlockInputStream(size_t block_size_, const ColumnNames & column_names_, StorageLog & storage_)
+LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_)
 	: block_size(block_size_), column_names(column_names_), storage(storage_)
 {
 }
@@ -22,7 +22,7 @@ Block LogBlockInputStream::read()
 {
 	Block res;
 
-	for (ColumnNames::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
 		if (storage.columns->end() == storage.columns->find(*it))
 			throw Exception("There is no column with name " + *it + " in table.",
@@ -31,7 +31,7 @@ Block LogBlockInputStream::read()
 		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].path())));
 	}
 
-	for (ColumnNames::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
 		ColumnWithNameAndType column;
 		column.name = *it;
@@ -93,7 +93,7 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Sha
 
 
 SharedPtr<IBlockInputStream> StorageLog::read(
-	const ColumnNames & column_names,
+	const Names & column_names,
 	const ptree & query,
 	size_t max_block_size)
 {

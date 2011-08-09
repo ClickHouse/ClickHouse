@@ -18,7 +18,7 @@ int main(int argc, char ** argv)
 	{
 		DB::StorageSystemNumbers table;
 
-		DB::ColumnNames column_names;
+		DB::Names column_names;
 		column_names.push_back("number");
 
 		Poco::SharedPtr<DB::DataTypes> column_types = new DB::DataTypes;

@@ -6,7 +6,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Defines.h>
-#include <DB/Core/ColumnNames.h>
+#include <DB/Core/Names.h>
 #include <DB/Core/Exception.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
@@ -39,7 +39,7 @@ public:
 	  * Возвращает объект, с помощью которого можно последовательно читать данные.
 	  */
 	virtual SharedPtr<IBlockInputStream> read(
-		const ColumnNames & column_names,
+		const Names & column_names,
 		const ptree & query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE)
 	{

@@ -61,7 +61,7 @@ int main(int argc, char ** argv)
 	
 		/// читаем из неё
 		{
-			DB::ColumnNames column_names;
+			DB::Names column_names;
 			column_names.push_back("a");
 			column_names.push_back("b");
 

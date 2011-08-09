@@ -10,12 +10,20 @@ namespace DB
 
 /** Типы столбцов для чисел фиксированной ширины. */
 
+template <typename T>
+struct DataTypeFromFieldType;
+
 #define DEFINE_DATA_TYPE_NUMBER_FIXED(TYPE) 										\
 	class DataType ## TYPE : public IDataTypeNumberFixed<TYPE, Column ## TYPE>		\
 	{																				\
 	public:																			\
 		std::string getName() const { return #TYPE; }								\
 		SharedPtr<IDataType> clone() const { return new DataType ## TYPE; }			\
+	};																				\
+																					\
+	template <> struct DataTypeFromFieldType<TYPE>									\
+	{																				\
+		typedef DataType ## TYPE Type;												\
 	};
 
 DEFINE_DATA_TYPE_NUMBER_FIXED(UInt8);

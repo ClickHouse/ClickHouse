@@ -24,11 +24,11 @@ class StorageLog;
 class LogBlockInputStream : public IBlockInputStream
 {
 public:
-	LogBlockInputStream(size_t block_size_, const ColumnNames & column_names_, StorageLog & storage_);
+	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_);
 	Block read();
 private:
 	size_t block_size;
-	const ColumnNames & column_names;
+	const Names & column_names;
 	StorageLog & storage;
 
 	struct Stream
@@ -89,7 +89,7 @@ public:
 	std::string getName() const { return "Log"; }
 
 	SharedPtr<IBlockInputStream> read(
-		const ColumnNames & column_names,
+		const Names & column_names,
 		const ptree & query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE);
 

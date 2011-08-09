@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_BLOCK_H
-#define DBMS_CORE_BLOCK_H
+#pragma once
 
 #include <vector>
 #include <map>
@@ -64,5 +63,3 @@ public:
 };
 
 }
-
-#endif

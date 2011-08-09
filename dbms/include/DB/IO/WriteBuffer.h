@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_WRITEBUFFER_H
-#define DBMS_COMMON_WRITEBUFFER_H
+#pragma once
 
 #include <algorithm>
 #include <cstring>
@@ -78,5 +77,3 @@ private:
 
 
 }
-
-#endif

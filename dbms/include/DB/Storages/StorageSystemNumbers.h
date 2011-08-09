@@ -33,7 +33,7 @@ public:
 	std::string getName() const { return "SystemNumbers"; }
 
 	SharedPtr<IBlockInputStream> read(
-		const ColumnNames & column_names,
+		const Names & column_names,
 		const ptree & query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE);
 };

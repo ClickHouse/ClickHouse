@@ -96,7 +96,7 @@ int main(int argc, char ** argv)
 
 		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;
 		SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
-		DB::ColumnNames column_names;
+		DB::Names column_names;
 		
 		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
 		{
@@ -135,7 +135,7 @@ int main(int argc, char ** argv)
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
 /*
-			DB::ColumnNames column_names;
+			DB::Names column_names;
 			boost::assign::push_back(column_names)
 				("UniqID");
 

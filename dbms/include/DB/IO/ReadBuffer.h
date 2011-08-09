@@ -1,7 +1,7 @@
-#ifndef DBMS_COMMON_READBUFFER_H
-#define DBMS_COMMON_READBUFFER_H
+#pragma once
 
 #include <cstring>
+#include <algorithm>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -106,5 +106,3 @@ private:
 
 
 }
-
-#endif
