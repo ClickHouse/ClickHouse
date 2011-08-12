@@ -57,6 +57,10 @@ public:
 	  */
 	virtual SharedPtr<IColumn> createColumn() const = 0;
 
+	/** Создать столбец соответствующего типа, содержащий константу со значением Field, длины size.
+	  */
+	virtual SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const = 0;
+
 	virtual ~IDataType() {}
 };
 

@@ -15,40 +15,6 @@
 namespace DB
 {
 
-/** Выводит текстовое представление типа, как литерала в SQL запросе */
-class FieldVisitorToString : public boost::static_visitor<String>
-{
-public:
-	String operator() (const Null 		& x) const { return "NULL"; }
-	String operator() (const UInt64 	& x) const { return Poco::NumberFormatter::format(x); }
-	String operator() (const Int64 		& x) const { return Poco::NumberFormatter::format(x); }
-	String operator() (const Float64 	& x) const { return Poco::NumberFormatter::format(x); }
-
-	String operator() (const String 	& x) const
-	{
-		std::stringstream s;
-		s << mysqlxx::quote << x;
-		return s.str();
-	}
-
-	String operator() (const Array 		& x) const
-	{
-		std::stringstream s;
-		FieldVisitorToString visitor;
-		
-		s << "[";
-		for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
-		{
-			if (it != x.begin())
-				s << ", ";
-			s << boost::apply_visitor(FieldVisitorToString(), *it);
-		}
-		s << "]";
-
-		return s.str();
-	}
-};
-
 
 void formatAST(const IAST & ast, std::ostream & s)
 {

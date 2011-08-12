@@ -21,6 +21,8 @@ public:
 
 	/// сама функция
 	FunctionPtr function;
+	/// типы возвращаемых значений
+	DataTypes return_types;
 
 	ASTFunction() {}
 	ASTFunction(StringRange range_) : range(range_) {}

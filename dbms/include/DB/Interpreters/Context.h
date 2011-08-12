@@ -13,7 +13,7 @@ namespace DB
 
 using Poco::SharedPtr;
 
-typedef std::map<String, SharedPtr<IFunction> > Functions;
+typedef std::map<String, FunctionPtr> Functions;
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
   */

@@ -6,6 +6,8 @@
 
 #include <DB/IO/VarInt.h>
 
+#include <DB/Columns/ColumnConst.h>
+
 #include <DB/DataTypes/IDataTypeNumber.h>
 
 
@@ -61,6 +63,11 @@ public:
 	ColumnPtr createColumn() const
 	{
 		return new ColumnType;
+	}
+
+	ColumnPtr createConstColumn(size_t size, const Field & field) const
+	{
+		return new ColumnConst<FieldType>(size, boost::get<FieldType>(field));
 	}
 };
 

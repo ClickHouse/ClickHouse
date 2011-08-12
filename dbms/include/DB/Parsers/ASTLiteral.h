@@ -2,6 +2,7 @@
 #define DBMS_PARSERS_ASTLITERAL_H
 
 #include <DB/Core/Field.h>
+#include <DB/DataTypes/IDataType.h>
 #include <DB/Parsers/IAST.h>
 
 
@@ -16,6 +17,8 @@ public:
 	StringRange range;
 	/// значение
 	Field value;
+	/// тип
+	DataTypePtr type;
 
 	ASTLiteral() {}
 	ASTLiteral(StringRange range_, const Field & value_) : range(range_), value(value_) {}

@@ -3,6 +3,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnConst.h>
 
 #include <DB/DataTypes/DataTypeString.h>
 
@@ -134,6 +135,12 @@ void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr, boo
 ColumnPtr DataTypeString::createColumn() const
 {
 	return new ColumnString;
+}
+
+
+ColumnPtr DataTypeString::createConstColumn(size_t size, const Field & field) const
+{
+	return new ColumnConst<String>(size, boost::get<String>(field));
 }
 
 }
