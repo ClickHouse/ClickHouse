@@ -54,7 +54,6 @@ int main(int argc, char ** argv)
 		{
 			DB::ColumnWithNameAndType descr_res;
 			descr_res.type = *it;
-			descr_res.column = descr_res.type->createColumn();
 			descr_res.name = "z";
 
 			block.insert(descr_res);

@@ -20,6 +20,8 @@ template <typename T>
 class ColumnConst : public IColumn
 {
 public:
+	typedef T Type;
+	
 	ColumnConst(size_t s_, const T & data_) : s(s_), data(data_) {}
 
 	ColumnPtr cloneEmpty() const { return new ColumnConst(0, data); }

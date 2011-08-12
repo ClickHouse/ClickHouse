@@ -2,6 +2,7 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnConst.h>
 
 
 namespace DB
@@ -21,5 +22,19 @@ typedef ColumnVector<Int64> ColumnInt64;
 
 typedef ColumnVector<Float32> ColumnFloat32;
 typedef ColumnVector<Float64> ColumnFloat64;
+
+
+typedef ColumnConst<UInt8> ColumnConstUInt8;
+typedef ColumnConst<UInt16> ColumnConstUInt16;
+typedef ColumnConst<UInt32> ColumnConstUInt32;
+typedef ColumnConst<UInt64> ColumnConstUInt64;
+
+typedef ColumnConst<Int8> ColumnConstInt8;
+typedef ColumnConst<Int16> ColumnConstInt16;
+typedef ColumnConst<Int32> ColumnConstInt32;
+typedef ColumnConst<Int64> ColumnConstInt64;
+
+typedef ColumnConst<Float32> ColumnConstFloat32;
+typedef ColumnConst<Float64> ColumnConstFloat64;
 
 }

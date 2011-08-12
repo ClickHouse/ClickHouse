@@ -51,6 +51,8 @@ public:
 	ColumnWithNameAndType & getByName(const std::string & name);
 	const ColumnWithNameAndType & getByName(const std::string & name) const;
 
+	size_t getPositionByName(const std::string & name) const;
+
 	/** Возвращает количество строк в блоке.
 	  * Заодно проверяет, что все столбцы кроме констант (которые содержат единственное значение),
 	  *  содержат одинаковое число значений.

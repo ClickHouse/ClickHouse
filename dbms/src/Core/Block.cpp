@@ -100,6 +100,16 @@ const ColumnWithNameAndType & Block::getByName(const std::string & name) const
 }
 
 
+size_t Block::getPositionByName(const std::string & name) const
+{
+	IndexByName_t::const_iterator it = index_by_name.find(name);
+	if (index_by_name.end() == it)
+		throw Exception("Not found column " + name + " in block.", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+
+	return std::distance(const_cast<Container_t &>(data).begin(), it->second);
+}
+
+
 size_t Block::rows() const
 {
 	size_t res = 0;

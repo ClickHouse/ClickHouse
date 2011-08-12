@@ -112,7 +112,7 @@ void Expression::setNotCalculated(ASTPtr ast)
 	ast->calculated = false;
 	ASTs children = ast->getChildren();
 	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
-		setNotCalculated(ast);
+		setNotCalculated(*it);
 }
 
 
@@ -140,12 +140,50 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
+		std::cerr << node->getTreeID() << std::endl;
 		
+		/// Вставляем в блок столбцы - результаты вычисления функции
+		ColumnNumbers argument_numbers;
+		ColumnNumbers result_numbers;
+				
+		size_t res_num = 0;
+		for (DataTypes::const_iterator it = node->return_types.begin(); it != node->return_types.end(); ++it)
+		{
+			ColumnWithNameAndType column;
+			column.type = *it;
+			column.name = node->getTreeID() + "_" + Poco::NumberFormatter::format(res_num);
+
+			result_numbers.push_back(block.columns());
+			block.insert(column);
+			++res_num;
+		}
+
+		ASTs arguments = node->arguments->getChildren();
+		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
+		{
+			if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
+				argument_numbers.push_back(block.getPositionByName(ident->name));
+			else
+				argument_numbers.push_back(block.getPositionByName((*it)->getTreeID()));
+		}
+
+		node->function->execute(block, argument_numbers, result_numbers);
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
 	{
+		std::cerr << node->getTreeID() << std::endl;
+				
+		/// Вставляем в блок столбец - константу
 		
+		ColumnWithNameAndType column;
+		column.column = node->type->createConstColumn(block.rows(), node->value);
+		column.type = node->type;
+		column.name = node->getTreeID();
+		
+		block.insert(column);
 	}
+
+	ast->calculated = true;
 }
 
 	

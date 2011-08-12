@@ -36,7 +36,7 @@ struct PlusImpl
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
-		size_t size = a.size();
+		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a + b[i];
 	}
@@ -68,7 +68,7 @@ struct MultiplyImpl
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
-		size_t size = a.size();
+		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a * b[i];
 	}
@@ -100,7 +100,7 @@ struct MinusImpl
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
-		size_t size = a.size();
+		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a - b[i];
 	}
@@ -132,7 +132,7 @@ struct DivideFloatingImpl
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
-		size_t size = a.size();
+		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = static_cast<ResultType>(a) / b[i];
 	}
@@ -164,7 +164,7 @@ struct DivideIntegralImpl
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
-		size_t size = a.size();
+		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a / b[i];
 	}
@@ -196,7 +196,7 @@ struct ModuloImpl
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
-		size_t size = a.size();
+		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a % b[i];
 	}
@@ -211,6 +211,148 @@ struct ModuloImpl
 template <template <typename, typename> class Impl, typename Name>
 class FunctionBinaryArithmetic : public IFunction
 {
+private:
+	template <typename T0, typename T1>
+	bool checkRightType(const DataTypes & arguments, DataTypes & types_res) const
+	{
+		if (dynamic_cast<const typename DataTypeFromFieldType<T1>::Type *>(&*arguments[1]))
+		{
+			types_res.push_back(new typename DataTypeFromFieldType<typename Impl<T0, T1>::ResultType>::Type);
+			return true;
+		}
+		return false;
+	}
+
+	template <typename T0>
+	bool checkLeftType(const DataTypes & arguments, DataTypes & types_res) const
+	{
+		if (dynamic_cast<const typename DataTypeFromFieldType<T0>::Type *>(&*arguments[0]))
+		{
+			if (	checkRightType<T0, UInt8>(arguments, types_res)
+				||	checkRightType<T0, UInt16>(arguments, types_res)
+				||	checkRightType<T0, UInt32>(arguments, types_res)
+				||	checkRightType<T0, UInt64>(arguments, types_res)
+				||	checkRightType<T0, Int8>(arguments, types_res)
+				||	checkRightType<T0, Int16>(arguments, types_res)
+				||	checkRightType<T0, Int32>(arguments, types_res)
+				||	checkRightType<T0, Int64>(arguments, types_res)
+				||	checkRightType<T0, Float32>(arguments, types_res)
+				||	checkRightType<T0, Float64>(arguments, types_res))
+				return true;
+			else
+				throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+		return false;
+	}
+
+
+	template <typename T0, typename T1>
+	bool executeRightType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result, const ColumnVector<T0> * col_left)
+	{
+		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		{
+			typedef typename Impl<T0, T1>::ResultType ResultType;
+
+			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			block.getByPosition(result[0]).column = col_res;
+
+			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			vec_res.resize(col_left->getData().size());
+			Impl<T0, T1>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+
+			return true;
+		}
+		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		{
+			typedef typename Impl<T0, T1>::ResultType ResultType;
+
+			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			block.getByPosition(result[0]).column = col_res;
+
+			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			vec_res.resize(col_left->getData().size());
+			Impl<T0, T1>::vector_constant(col_left->getData(), col_right->getData(), vec_res);
+
+			return true;
+		}
+			
+		return false;
+	}
+
+	template <typename T0, typename T1>
+	bool executeConstRightType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result, const ColumnConst<T0> * col_left)
+	{
+		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		{
+			typedef typename Impl<T0, T1>::ResultType ResultType;
+
+			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			block.getByPosition(result[0]).column = col_res;
+
+			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			vec_res.resize(col_left->size());
+			Impl<T0, T1>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
+
+			return true;
+		}
+		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		{
+			typedef typename Impl<T0, T1>::ResultType ResultType;
+
+			ResultType res = 0;
+			Impl<T0, T1>::constant_constant(col_left->getData(), col_right->getData(), res);
+			
+			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_left->size(), res);
+			block.getByPosition(result[0]).column = col_res;
+
+			return true;
+		}
+
+		return false;
+	}
+
+	template <typename T0>
+	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	{
+		if (ColumnVector<T0> * col_left = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			if (	executeRightType<T0, UInt8>(block, arguments, result, col_left)
+				||	executeRightType<T0, UInt16>(block, arguments, result, col_left)
+				||	executeRightType<T0, UInt32>(block, arguments, result, col_left)
+				||	executeRightType<T0, UInt64>(block, arguments, result, col_left)
+				||	executeRightType<T0, Int8>(block, arguments, result, col_left)
+				||	executeRightType<T0, Int16>(block, arguments, result, col_left)
+				||	executeRightType<T0, Int32>(block, arguments, result, col_left)
+				||	executeRightType<T0, Int64>(block, arguments, result, col_left)
+				||	executeRightType<T0, Float32>(block, arguments, result, col_left)
+				||	executeRightType<T0, Float64>(block, arguments, result, col_left))
+				return true;
+			else
+				throw Exception("Illegal column of second argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else if (ColumnConst<T0> * col_left = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			if (	executeConstRightType<T0, UInt8>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, UInt16>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, UInt32>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, UInt64>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, Int8>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, Int16>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, Int32>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, Int64>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, Float32>(block, arguments, result, col_left)
+				||	executeConstRightType<T0, Float64>(block, arguments, result, col_left))
+				return true;
+			else
+				throw Exception("Illegal column of second argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		
+		return false;
+	}
+	
 public:
 	/// Получить все имена функции.
 	Names getNames() const
@@ -230,40 +372,18 @@ public:
 
 		DataTypes types_res;
 
-		#define CHECK_RIGHT_TYPE(TYPE0, TYPE1) \
-			if (dynamic_cast<const DataType ## TYPE1 *>(&*arguments[1])) \
-				types_res.push_back(new typename DataTypeFromFieldType<typename Impl<TYPE0, TYPE1>::ResultType>::Type);
-
-		#define CHECK_LEFT_TYPE(TYPE0) 											\
-			if (dynamic_cast<const DataType ## TYPE0 *>(&*arguments[0])) 		\
-			{ 																	\
-						CHECK_RIGHT_TYPE(TYPE0, UInt8)		\
-				else 	CHECK_RIGHT_TYPE(TYPE0, UInt16)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, UInt32)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, UInt64)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int8)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int16)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int32)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int64)		\
-				else										\
-					throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),	\
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT); \
-			}
-
-				CHECK_LEFT_TYPE(UInt8)
-		else 	CHECK_LEFT_TYPE(UInt16)
-		else 	CHECK_LEFT_TYPE(UInt32)
-		else 	CHECK_LEFT_TYPE(UInt64)
-		else 	CHECK_LEFT_TYPE(Int8)
-		else 	CHECK_LEFT_TYPE(Int16)
-		else 	CHECK_LEFT_TYPE(Int32)
-		else 	CHECK_LEFT_TYPE(Int64)
-		else
+		if (!(	checkLeftType<UInt8>(arguments, types_res)
+			||	checkLeftType<UInt16>(arguments, types_res)
+			||	checkLeftType<UInt32>(arguments, types_res)
+			||	checkLeftType<UInt64>(arguments, types_res)
+			||	checkLeftType<Int8>(arguments, types_res)
+			||	checkLeftType<Int16>(arguments, types_res)
+			||	checkLeftType<Int32>(arguments, types_res)
+			||	checkLeftType<Int64>(arguments, types_res)
+			||	checkLeftType<Float32>(arguments, types_res)
+			||	checkLeftType<Float64>(arguments, types_res)))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		#undef CHECK_LEFT_TYPE
-		#undef CHECK_RIGHT_TYPE
 
 		return types_res;
 	}
@@ -275,49 +395,18 @@ public:
 			throw Exception("Wrong number of result columns in function " + getName() + ", should be 1.",
 				ErrorCodes::ILLEGAL_NUMBER_OF_RESULT_COLUMNS);
 
-		#define CHECK_RIGHT_TYPE(TYPE0, TYPE1) \
-			if (Column ## TYPE1 * col_right = dynamic_cast<Column ## TYPE1 *>(&*block.getByPosition(arguments[1]).column))	\
-			{																												\
-				typedef typename Impl<TYPE0, TYPE1>::ResultType ResultType;													\
-																															\
-				typename ColumnVector<ResultType>::Container_t & vec_res =													\
-					dynamic_cast<ColumnVector<ResultType> &>(*block.getByPosition(result[0]).column).getData();				\
-																															\
-				vec_res.resize(col_left->getData().size());																	\
-																															\
-				Impl<TYPE0, TYPE1>::vector_vector(col_left->getData(), col_right->getData(), vec_res);						\
-			}
-
-		#define CHECK_LEFT_TYPE(TYPE0) 																						\
-			if (Column ## TYPE0 * col_left = dynamic_cast<Column ## TYPE0 *>(&*block.getByPosition(arguments[0]).column)) 	\
-			{ 												\
-						CHECK_RIGHT_TYPE(TYPE0, UInt8)		\
-				else 	CHECK_RIGHT_TYPE(TYPE0, UInt16)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, UInt32)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, UInt64)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int8)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int16)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int32)		\
-				else	CHECK_RIGHT_TYPE(TYPE0, Int64)		\
-				else										\
-				    throw Exception("Illegal column of second argument of function " + getName(),	\
-						ErrorCodes::ILLEGAL_COLUMN);												\
-			}
-
-				CHECK_LEFT_TYPE(UInt8)
-		else 	CHECK_LEFT_TYPE(UInt16)
-		else 	CHECK_LEFT_TYPE(UInt32)
-		else 	CHECK_LEFT_TYPE(UInt64)
-		else 	CHECK_LEFT_TYPE(Int8)
-		else 	CHECK_LEFT_TYPE(Int16)
-		else 	CHECK_LEFT_TYPE(Int32)
-		else 	CHECK_LEFT_TYPE(Int64)
-		else
+		if (!(	executeLeftType<UInt8>(block, arguments, result)
+			||	executeLeftType<UInt16>(block, arguments, result)
+			||	executeLeftType<UInt32>(block, arguments, result)
+			||	executeLeftType<UInt64>(block, arguments, result)
+			||	executeLeftType<Int8>(block, arguments, result)
+			||	executeLeftType<Int16>(block, arguments, result)
+			||	executeLeftType<Int32>(block, arguments, result)
+			||	executeLeftType<Int64>(block, arguments, result)
+			||	executeLeftType<Float32>(block, arguments, result)
+			||	executeLeftType<Float64>(block, arguments, result)))
 		   throw Exception("Illegal column of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
-
-		#undef CHECK_LEFT_TYPE
-		#undef CHECK_RIGHT_TYPE
 	}
 };
 
