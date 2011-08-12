@@ -152,6 +152,7 @@ template <> struct NearestFieldType<Int64> { typedef Int64 Type; };
 template <> struct NearestFieldType<Float32> { typedef Float64 Type; };
 template <> struct NearestFieldType<Float64> { typedef Float64 Type; };
 
+template <> struct NearestFieldType<String> { typedef String Type; };
 
 }
 
