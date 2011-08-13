@@ -27,11 +27,8 @@ namespace DB
 class IFunction
 {
 public:
-	/// Получить все имена функции.
-	virtual Names getNames() const = 0;
-
 	/// Получить основное имя функции.
-	std::string getName() const { return getNames()[0]; }
+	virtual String getName() const = 0;
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	virtual DataTypes getReturnTypes(const DataTypes & arguments) const = 0;

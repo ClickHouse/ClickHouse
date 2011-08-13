@@ -38,6 +38,7 @@ bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
 	function_node->name = "array";
 	function_node->arguments = contents_node;
+	function_node->children.push_back(contents_node);
 	node = function_node;
 
 	return true;
@@ -80,6 +81,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, S
 		ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
 		function_node->name = "tuple";
 		function_node->arguments = contents_node;
+		function_node->children.push_back(contents_node);
 		node = function_node;
 	}
 
@@ -138,7 +140,8 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expec
 
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
 	function_node->name = dynamic_cast<ASTIdentifier &>(*identifier).name;
-	function_node->arguments = expr_list;
+	function_node->arguments = contents_node;
+	function_node->children.push_back(expr_list);
 	node = function_node;
 	return true;
 }

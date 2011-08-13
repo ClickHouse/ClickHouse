@@ -43,7 +43,7 @@ void dump(DB::IAST & ast, int level = 0)
 			<< ", type = " << node->type->getName() << std::endl;
 	}
 
-	DB::ASTs children = ast.getChildren();
+	DB::ASTs children = ast.children;
 	for (DB::ASTs::iterator it = children.begin(); it != children.end(); ++it)
 		dump(**it, level + 1);
 }

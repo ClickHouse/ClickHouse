@@ -355,11 +355,9 @@ private:
 	
 public:
 	/// Получить все имена функции.
-	Names getNames() const
+	String getName() const
 	{
-		Names names;
-		names.push_back(Name::get());
-		return names;
+		return Name::get();
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

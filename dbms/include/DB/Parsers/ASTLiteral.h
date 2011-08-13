@@ -14,21 +14,13 @@ namespace DB
 class ASTLiteral : public IAST
 {
 public:
-	StringRange range;
-	/// значение
 	Field value;
 	/// тип
 	DataTypePtr type;
 
 	ASTLiteral() {}
-	ASTLiteral(StringRange range_, const Field & value_) : range(range_), value(value_) {}
+	ASTLiteral(StringRange range_, const Field & value_) : IAST(range_), value(value_) {}
 	
-	/** Получить кусок текста, откуда был получен этот элемент. */
-	StringRange getRange() { return range; }
-
-	/** Получить всех детей. */
-	ASTs getChildren() { return ASTs(); }
-
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Literal_" + boost::apply_visitor(FieldVisitorDump(), value); }
 };

@@ -64,6 +64,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			function.range.second = pos;
 			function.name = it->second;
 			function.arguments = exp_list_node;
+			function.children.push_back(exp_list_node);
 
 			exp_list.children.push_back(node);
 			exp_list.children.push_back(elem);
@@ -129,6 +130,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 		function.range.second = pos;
 		function.name = it->second;
 		function.arguments = exp_list_node;
+		function.children.push_back(exp_list_node);
 
 		exp_list.children.push_back(elem);
 		exp_list.range.second = pos;

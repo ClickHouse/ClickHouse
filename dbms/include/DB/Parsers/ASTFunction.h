@@ -13,30 +13,20 @@ namespace DB
 class ASTFunction : public IAST
 {
 public:
-	StringRange range;
 	/// имя функции
 	String name;
-	/// параметры
+	/// аргументы
 	ASTPtr arguments;
 
 	/// сама функция
 	FunctionPtr function;
 	/// типы возвращаемых значений
 	DataTypes return_types;
+	/// номера столбцов возвращаемых значений
+	ColumnNumbers return_column_numbers;
 
 	ASTFunction() {}
-	ASTFunction(StringRange range_) : range(range_) {}
-
-	/** Получить кусок текста, откуда был получен этот элемент. */
-	StringRange getRange() { return range; }
-
-	/** Получить всех детей. */
-	ASTs getChildren()
-	{
-		ASTs res;
-		res.push_back(arguments);
-		return res;
-	}
+	ASTFunction(StringRange range_) : IAST(range_) {}
 
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Function_" + name; }

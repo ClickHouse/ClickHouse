@@ -34,7 +34,7 @@ void Expression::addSemantic(ASTPtr ast)
 		node->type = boost::apply_visitor(FieldToDataType(), node->value);
 	}
 
-	ASTs children = ast->getChildren();
+	ASTs children = ast->children;
 	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
 		addSemantic(*it);
 }
@@ -44,7 +44,7 @@ void Expression::checkTypes(ASTPtr ast)
 {
 	/// Обход в глубину
 	
-	ASTs children = ast->getChildren();
+	ASTs children = ast->children;
 	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
 		checkTypes(*it);
 
@@ -81,7 +81,7 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 {
 	/// Обход в глубину
 
-	ASTs children = ast->getChildren();
+	ASTs children = ast->children;
 	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
 		glueTreeImpl(*it, subtrees);
 
@@ -110,7 +110,7 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 void Expression::setNotCalculated(ASTPtr ast)
 {
 	ast->calculated = false;
-	ASTs children = ast->getChildren();
+	ASTs children = ast->children;
 	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
 		setNotCalculated(*it);
 }
@@ -127,7 +127,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 {
 	/// Обход в глубину
 
-	ASTs children = ast->getChildren();
+	ASTs children = ast->children;
 	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
 		executeImpl(*it, block);
 
@@ -151,14 +151,14 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 		{
 			ColumnWithNameAndType column;
 			column.type = *it;
-			column.name = node->getTreeID() + "_" + Poco::NumberFormatter::format(res_num);
+			column.name = node->getTreeID()/* + "_" + Poco::NumberFormatter::format(res_num)*/;
 
 			result_numbers.push_back(block.columns());
 			block.insert(column);
 			++res_num;
 		}
 
-		ASTs arguments = node->arguments->getChildren();
+		ASTs arguments = node->arguments->children;
 		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
 		{
 			if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))

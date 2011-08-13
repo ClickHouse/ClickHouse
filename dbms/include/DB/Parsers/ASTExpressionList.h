@@ -15,18 +15,9 @@ using Poco::SharedPtr;
 class ASTExpressionList : public IAST
 {
 public:
-	StringRange range;
-	ASTs children;
-
 	ASTExpressionList() {}
-	ASTExpressionList(StringRange range_) : range(range_) {}
+	ASTExpressionList(StringRange range_) : IAST(range_) {}
 	
-	/** Получить кусок текста, откуда был получен этот элемент. */
-	StringRange getRange() { return range; }
-
-	/** Получить всех детей. */
-	ASTs getChildren() { return children; }
-
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "ExpressionList"; }
 };

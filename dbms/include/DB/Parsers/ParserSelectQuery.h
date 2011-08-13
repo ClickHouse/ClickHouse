@@ -39,6 +39,7 @@ protected:
 		ASTSelectQuery * select_query = new ASTSelectQuery(StringRange(begin, pos));
 		node = select_query;
 		select_query->select = select_expression_list;
+		select_query->children.push_back(select_query->select);
 
 		return true;
 	}

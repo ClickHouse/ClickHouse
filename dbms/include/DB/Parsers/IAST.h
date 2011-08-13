@@ -18,28 +18,30 @@ using Poco::SharedPtr;
 /** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
   */
 class IAST
-{	
+{
 public:
 	typedef std::list<SharedPtr<IAST> > ASTs;
+	ASTs children;
+	StringRange range;
+	/// Было ли соответствующее выражение вычислено.
+	bool calculated;
 	
-	/** Получить кусок текста, откуда был получен этот элемент. */
-	virtual StringRange getRange() = 0;
 
-	/** Получить всех детей. */
-	virtual ASTs getChildren() = 0;
-
+	IAST() : range(NULL, NULL), calculated(false) {}
+	IAST(StringRange range_) : range(range_), calculated(false) {}
+	virtual ~IAST() {}
+		
 	/** Получить текст, который идентифицирует этот элемент. */
 	virtual String getID() = 0;
 
 	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
 	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей. 
 	  */
-	virtual String getTreeID()
+	String getTreeID()
 	{
 		std::stringstream s;
 		s << getID();
 
-		ASTs children = getChildren();
 		if (!children.empty())
 		{
 			s << "(";
@@ -54,12 +56,6 @@ public:
 
 		return s.str();
 	}
-
-	IAST() : calculated(false) {}
-	virtual ~IAST() {}
-
-	/// Было ли соответствующее выражение вычислено.
-	bool calculated;
 };
 
 
