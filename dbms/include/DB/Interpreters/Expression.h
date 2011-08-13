@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <Poco/SharedPtr.h>
 
 #include <DB/Parsers/IAST.h>
@@ -58,6 +60,13 @@ private:
 	void setNotCalculated(ASTPtr ast);
 
 	void executeImpl(ASTPtr ast, Block & block);
+
+	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
+	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
+	  */
+	Block projectResult(ASTPtr ast, Block & block);
+
+	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst);
 };
 
 

@@ -34,8 +34,7 @@ void Expression::addSemantic(ASTPtr ast)
 		node->type = boost::apply_visitor(FieldToDataType(), node->value);
 	}
 
-	ASTs children = ast->children;
-	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		addSemantic(*it);
 }
 
@@ -44,8 +43,7 @@ void Expression::checkTypes(ASTPtr ast)
 {
 	/// Обход в глубину
 	
-	ASTs children = ast->children;
-	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		checkTypes(*it);
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
@@ -81,8 +79,7 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 {
 	/// Обход в глубину
 
-	ASTs children = ast->children;
-	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		glueTreeImpl(*it, subtrees);
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
@@ -110,8 +107,7 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 void Expression::setNotCalculated(ASTPtr ast)
 {
 	ast->calculated = false;
-	ASTs children = ast->children;
-	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		setNotCalculated(*it);
 }
 
@@ -120,6 +116,7 @@ void Expression::execute(Block & block)
 {
 	setNotCalculated(ast);
 	executeImpl(ast, block);
+	block = projectResult(ast, block);
 }
 
 
@@ -127,8 +124,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 {
 	/// Обход в глубину
 
-	ASTs children = ast->children;
-	for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		executeImpl(*it, block);
 
 	if (ast->calculated)
@@ -187,6 +183,35 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 	}
 
 	ast->calculated = true;
+}
+
+
+Block Expression::projectResult(ASTPtr ast, Block & block)
+{
+	Block res;
+	collectFinalColumns(ast, block, res);
+	return res;
+}
+
+
+void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst)
+{
+	if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
+	{
+		for (ASTs::iterator it = node->children.begin(); it != node->children.end(); ++it)
+		{
+			if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
+				dst.insert(src.getByName(ident->name));
+			else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
+				for (ColumnNumbers::const_iterator jt = func->return_column_numbers.begin(); jt != func->return_column_numbers.end(); ++jt)
+					dst.insert(src.getByPosition(*jt));
+			else
+				dst.insert(src.getByName((*it)->getTreeID()));
+		}
+	}
+	else
+		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+			 collectFinalColumns(*it, src, dst);
 }
 
 	

@@ -1,6 +1,7 @@
 #include <iostream>
+#include <iomanip>
 
-#include <mysqlxx/mysqlxx.h>
+#include <Poco/Stopwatch.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>
 
@@ -13,6 +14,7 @@
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Interpreters/Expression.h>
@@ -105,7 +107,7 @@ int main(int argc, char ** argv)
 
 		dump(*ast);
 
-		size_t n = 10;
+		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
 		DB::Block block;
 		DB::ColumnWithNameAndType column_x;
@@ -121,17 +123,29 @@ int main(int argc, char ** argv)
 
 		block.insert(column_x);
 
-		expression.execute(block);
+		{
+			Poco::Stopwatch stopwatch;
+			stopwatch.start();
 
+			expression.execute(block);
+
+			stopwatch.stop();
+			std::cout << std::fixed << std::setprecision(2)
+				<< "Elapsed " << stopwatch.elapsed() / 1000000.0 << " sec."
+				<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
+				<< std::endl;
+		}
+		
 		DB::DataTypes * data_types = new DB::DataTypes;
 		for (size_t i = 0; i < block.columns(); ++i)
 			data_types->push_back(block.getByPosition(i).type);
 
-		OneBlockInputStream is(block);
+		OneBlockInputStream * is = new OneBlockInputStream(block);
+		DB::LimitBlockInputStream lis(is, 10, std::max(0, static_cast<int>(n) - 10));
 		DB::WriteBufferFromOStream out_buf(std::cout);
 		DB::TabSeparatedRowOutputStream os(out_buf, data_types);
 
-		DB::copyData(is, os);
+		DB::copyData(lis, os);
 	}
 	catch (const DB::Exception & e)
 	{
