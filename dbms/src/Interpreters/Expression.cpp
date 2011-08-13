@@ -144,14 +144,15 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 		
 		/// Вставляем в блок столбцы - результаты вычисления функции
 		ColumnNumbers argument_numbers;
-		ColumnNumbers result_numbers;
+		ColumnNumbers & result_numbers = node->return_column_numbers;
+		result_numbers.clear();
 				
 		size_t res_num = 0;
 		for (DataTypes::const_iterator it = node->return_types.begin(); it != node->return_types.end(); ++it)
 		{
 			ColumnWithNameAndType column;
 			column.type = *it;
-			column.name = node->getTreeID()/* + "_" + Poco::NumberFormatter::format(res_num)*/;
+			column.name = node->getTreeID() + "_" + Poco::NumberFormatter::format(res_num);
 
 			result_numbers.push_back(block.columns());
 			block.insert(column);
@@ -163,6 +164,8 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 		{
 			if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
 				argument_numbers.push_back(block.getPositionByName(ident->name));
+			else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
+				argument_numbers.insert(argument_numbers.end(), func->return_column_numbers.begin(), func->return_column_numbers.end());
 			else
 				argument_numbers.push_back(block.getPositionByName((*it)->getTreeID()));
 		}
