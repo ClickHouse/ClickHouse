@@ -44,7 +44,8 @@ void Block::rebuildIndexByPosition()
 void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 {
 	if (position >= index_by_position.size())
-		throw Exception("Position out of bound in Block::insert()", ErrorCodes::POSITION_OUT_OF_BOUND);
+		throw Exception("Position out of bound in Block::insert(), max position = "
+			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 		
 	Container_t::iterator it = data.insert(index_by_position[position], elem);
 	rebuildIndexByPosition();
@@ -63,7 +64,8 @@ void Block::insert(const ColumnWithNameAndType & elem)
 void Block::erase(size_t position)
 {
 	if (position >= index_by_position.size())
-		throw Exception("Position out of bound in Block::erase()", ErrorCodes::POSITION_OUT_OF_BOUND);
+		throw Exception("Position out of bound in Block::erase(), max position = "
+			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 		
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
@@ -94,7 +96,8 @@ const ColumnWithNameAndType & Block::getByName(const std::string & name) const
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);
 	if (index_by_name.end() == it)
-		throw Exception("Not found column " + name + " in block.", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+		throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+			, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
 	return *it->second;
 }
@@ -104,7 +107,8 @@ size_t Block::getPositionByName(const std::string & name) const
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);
 	if (index_by_name.end() == it)
-		throw Exception("Not found column " + name + " in block.", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+		throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+			, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
 	return std::distance(const_cast<Container_t &>(data).begin(), it->second);
 }
@@ -118,10 +122,13 @@ size_t Block::rows() const
 		size_t size = it->column->size();
 
 		if (size == 0)
-			throw Exception("Empty column in block.", ErrorCodes::EMPTY_COLUMN_IN_BLOCK);
+			throw Exception("Empty column " + it->name + " in block.", ErrorCodes::EMPTY_COLUMN_IN_BLOCK);
 
 		if (res != 0 && size != res)
-			throw Exception("Sizes of columns doesn't match.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+			throw Exception("Sizes of columns doesn't match: "
+				+ data.begin()->name + ": " + Poco::NumberFormatter::format(res)
+				+ ", " + it->name + ": " + Poco::NumberFormatter::format(size)
+				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		res = size;
 	}
@@ -134,5 +141,19 @@ size_t Block::columns() const
 {
 	return data.size();
 }
+
+
+std::string Block::dumpNames() const
+{
+	std::stringstream res;
+	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	{
+		if (it != data.begin())
+			res << ", ";
+		res << it->name;
+	}
+	return res.str();
+}
+
 
 }

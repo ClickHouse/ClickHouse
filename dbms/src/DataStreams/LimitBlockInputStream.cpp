@@ -36,9 +36,11 @@ Block LimitBlockInputStream::read()
 		return res;
 
 	/// отдать кусок блока
-	size_t start = std::max(0, static_cast<int>(offset) + static_cast<int>(rows) - static_cast<int>(pos));
-	size_t length = std::min(rows - start, limit + offset + rows - pos);
-	
+	size_t start = std::max(0, static_cast<int>(offset) - static_cast<int>(pos) + static_cast<int>(rows));
+	size_t length = std::min(static_cast<int>(limit), std::min(
+		static_cast<int>(pos) - static_cast<int>(offset),
+		static_cast<int>(limit) + static_cast<int>(offset) - static_cast<int>(pos) + static_cast<int>(rows)));
+
 	for (size_t i = 0; i < res.columns(); ++i)
 		res.getByPosition(i).column->cut(start, length);
 	

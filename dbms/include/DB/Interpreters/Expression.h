@@ -29,6 +29,10 @@ public:
 	  */
 	void execute(Block & block);
 
+	/** Получить список типов столбцов результата.
+	  */
+	DataTypes getReturnTypes();
+
 private:
 	ASTPtr ast;
 	const Context & context;
@@ -67,6 +71,8 @@ private:
 	Block projectResult(ASTPtr ast, Block & block);
 
 	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst);
+
+	void getReturnTypesImpl(ASTPtr ast, DataTypes & res);
 };
 
 

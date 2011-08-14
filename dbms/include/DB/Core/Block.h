@@ -62,6 +62,9 @@ public:
 
 	operator bool() const { return !data.empty(); }
 	bool operator!() const { return data.empty(); }
+
+	/** Получить список имён столбцов через запятую. */
+	std::string dumpNames() const;
 };
 
 }

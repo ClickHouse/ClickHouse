@@ -21,9 +21,8 @@ NumbersBlockInputStream::NumbersBlockInputStream(size_t block_size_) : block_siz
 Block NumbersBlockInputStream::read()
 {
 	Block res;
-	res.insert(ColumnWithNameAndType());
-
-	ColumnWithNameAndType & column_with_name_and_type = res.getByPosition(0);
+	
+	ColumnWithNameAndType column_with_name_and_type;
 	
 	column_with_name_and_type.name = "number";
 	column_with_name_and_type.type = new DataTypeUInt64();
@@ -33,6 +32,8 @@ Block NumbersBlockInputStream::read()
 
 	for (size_t i = 0; i < block_size; ++i)
 		vec[i] = next++;
+
+	res.insert(column_with_name_and_type);
 	
 	return res;
 }
