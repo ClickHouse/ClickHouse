@@ -1,7 +1,7 @@
 #ifndef DBMS_PARSERS_COMMONPARSERS_H
 #define DBMS_PARSERS_COMMONPARSERS_H
 
-#include <cstring>
+#include <string.h>		/// strncmp, strncasecmp
 
 #include <DB/Parsers/IParserBase.h>
 
@@ -21,6 +21,7 @@ class ParserString : public IParserBase
 private:
 	String s;
 	bool word_boundary;
+	bool case_insensitive;
 
 	inline bool is_word(char c)
 	{
@@ -28,14 +29,15 @@ private:
 	}
 	
 public:
-	ParserString(const String & s_, bool word_boundary_ = false) : s(s_), word_boundary(word_boundary_) {}
+	ParserString(const String & s_, bool word_boundary_ = false, bool case_insensitive_ = false)
+		: s(s_), word_boundary(word_boundary_), case_insensitive(case_insensitive_) {}
 	
 protected:
 	String getName() { return s; }
 
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 	{
-		if (static_cast<ssize_t>(s.size()) > end - pos || std::strncmp(pos, s.data(), s.size()))
+		if (static_cast<ssize_t>(s.size()) > end - pos || (case_insensitive ? strncasecmp : strncmp)(pos, s.data(), s.size()))
 			return false;
 		else
 		{
