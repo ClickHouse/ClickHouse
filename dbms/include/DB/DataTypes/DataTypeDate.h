@@ -20,14 +20,14 @@ public:
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeDateText(boost::get<UInt64>(field), ostr);
+		writeDateText(Yandex::DayNum_t(boost::get<UInt64>(field)), ostr);
 	}
 	
 	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
 		Yandex::DayNum_t x;
 		readDateText(x, istr);
-		field = x;
+		field = static_cast<UInt64>(x);
 	}
 
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const

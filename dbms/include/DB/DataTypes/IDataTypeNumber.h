@@ -14,10 +14,12 @@ namespace DB
 /** Реализует часть интерфейса IDataType, общую для всяких чисел
   * - ввод и вывод в текстовом виде.
   */
-template <typename FieldType>
+template <typename FType>
 class IDataTypeNumber : public IDataType
 {
 public:
+	typedef FType FieldType;
+		
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
 		writeText(boost::get<typename NearestFieldType<FieldType>::Type>(field), ostr);

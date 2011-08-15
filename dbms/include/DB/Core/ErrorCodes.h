@@ -57,6 +57,7 @@ namespace ErrorCodes
 		UNKNOWN_IDENTIFIER,
 		NOT_IMPLEMENTED,
 		LOGICAL_ERROR,
+		UNKNOWN_TYPE,
 	};
 }
 

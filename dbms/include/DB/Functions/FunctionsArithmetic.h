@@ -3,6 +3,7 @@
 #include <Poco/NumberFormatter.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 
@@ -12,7 +13,7 @@ namespace DB
 
 /** Арифметические функции: +, -, *, /, %,
   * div (целочисленное деление),
-  * TODO: <<, >>, <<<, >>>, &, |, ^, &&, ||, ^^, !
+  * TODO: <<, >>, <<<, >>>, &, |, ^, ~
   */
 
 template<typename A, typename B>
@@ -215,9 +216,10 @@ private:
 	template <typename T0, typename T1>
 	bool checkRightType(const DataTypes & arguments, DataTypes & types_res) const
 	{
-		if (dynamic_cast<const typename DataTypeFromFieldType<T1>::Type *>(&*arguments[1]))
+		if (dynamic_cast<const T1 *>(&*arguments[1]))
 		{
-			types_res.push_back(new typename DataTypeFromFieldType<typename Impl<T0, T1>::ResultType>::Type);
+			types_res.push_back(new typename DataTypeFromFieldType<
+				typename Impl<typename T0::FieldType, typename T1::FieldType>::ResultType>::Type);
 			return true;
 		}
 		return false;
@@ -226,18 +228,20 @@ private:
 	template <typename T0>
 	bool checkLeftType(const DataTypes & arguments, DataTypes & types_res) const
 	{
-		if (dynamic_cast<const typename DataTypeFromFieldType<T0>::Type *>(&*arguments[0]))
+		if (dynamic_cast<const T0 *>(&*arguments[0]))
 		{
-			if (	checkRightType<T0, UInt8>(arguments, types_res)
-				||	checkRightType<T0, UInt16>(arguments, types_res)
-				||	checkRightType<T0, UInt32>(arguments, types_res)
-				||	checkRightType<T0, UInt64>(arguments, types_res)
-				||	checkRightType<T0, Int8>(arguments, types_res)
-				||	checkRightType<T0, Int16>(arguments, types_res)
-				||	checkRightType<T0, Int32>(arguments, types_res)
-				||	checkRightType<T0, Int64>(arguments, types_res)
-				||	checkRightType<T0, Float32>(arguments, types_res)
-				||	checkRightType<T0, Float64>(arguments, types_res))
+			if (	checkRightType<T0, DataTypeUInt8>(arguments, types_res)
+				||	checkRightType<T0, DataTypeUInt16>(arguments, types_res)
+				||	checkRightType<T0, DataTypeUInt32>(arguments, types_res)
+				||	checkRightType<T0, DataTypeUInt64>(arguments, types_res)
+				||	checkRightType<T0, DataTypeInt8>(arguments, types_res)
+				||	checkRightType<T0, DataTypeInt16>(arguments, types_res)
+				||	checkRightType<T0, DataTypeInt32>(arguments, types_res)
+				||	checkRightType<T0, DataTypeInt64>(arguments, types_res)
+				||	checkRightType<T0, DataTypeFloat32>(arguments, types_res)
+				||	checkRightType<T0, DataTypeFloat64>(arguments, types_res)
+				||	checkRightType<T0, DataTypeVarUInt>(arguments, types_res)
+				||	checkRightType<T0, DataTypeVarInt>(arguments, types_res))
 				return true;
 			else
 				throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
@@ -370,16 +374,18 @@ public:
 
 		DataTypes types_res;
 
-		if (!(	checkLeftType<UInt8>(arguments, types_res)
-			||	checkLeftType<UInt16>(arguments, types_res)
-			||	checkLeftType<UInt32>(arguments, types_res)
-			||	checkLeftType<UInt64>(arguments, types_res)
-			||	checkLeftType<Int8>(arguments, types_res)
-			||	checkLeftType<Int16>(arguments, types_res)
-			||	checkLeftType<Int32>(arguments, types_res)
-			||	checkLeftType<Int64>(arguments, types_res)
-			||	checkLeftType<Float32>(arguments, types_res)
-			||	checkLeftType<Float64>(arguments, types_res)))
+		if (!(	checkLeftType<DataTypeUInt8>(arguments, types_res)
+			||	checkLeftType<DataTypeUInt16>(arguments, types_res)
+			||	checkLeftType<DataTypeUInt32>(arguments, types_res)
+			||	checkLeftType<DataTypeUInt64>(arguments, types_res)
+			||	checkLeftType<DataTypeInt8>(arguments, types_res)
+			||	checkLeftType<DataTypeInt16>(arguments, types_res)
+			||	checkLeftType<DataTypeInt32>(arguments, types_res)
+			||	checkLeftType<DataTypeInt64>(arguments, types_res)
+			||	checkLeftType<DataTypeFloat32>(arguments, types_res)
+			||	checkLeftType<DataTypeFloat64>(arguments, types_res)
+			||	checkLeftType<DataTypeVarUInt>(arguments, types_res)
+			||	checkLeftType<DataTypeVarInt>(arguments, types_res)))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
