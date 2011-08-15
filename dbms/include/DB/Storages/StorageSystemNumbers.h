@@ -30,12 +30,20 @@ private:
 class StorageSystemNumbers : public IStorage
 {
 public:
+	StorageSystemNumbers();
+	
 	std::string getName() const { return "SystemNumbers"; }
+	std::string getTableName() const { return "Numbers"; }
+
+	const NamesAndTypes & getColumns() const { return columns; }
 
 	SharedPtr<IBlockInputStream> read(
 		const Names & column_names,
 		ASTPtr query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE);
+
+private:
+	NamesAndTypes columns;
 };
 
 }

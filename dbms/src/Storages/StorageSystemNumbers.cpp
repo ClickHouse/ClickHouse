@@ -39,16 +39,16 @@ Block NumbersBlockInputStream::read()
 }
 
 
+StorageSystemNumbers::StorageSystemNumbers()
+{
+	columns["number"] = new DataTypeUInt64;
+}
+
+
 SharedPtr<IBlockInputStream> StorageSystemNumbers::read(
 	const Names & column_names, ASTPtr query, size_t max_block_size)
 {
-	if (column_names.size() != 1)
-		throw Exception("Incorrect number of columns.", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-
-	if (column_names[0] != "number")
-		throw Exception("There is no column " + column_names[0] + " in table System.Numbers.",
-			ErrorCodes::THERE_IS_NO_COLUMN);
-
+	check(column_names);
 	return new NumbersBlockInputStream(max_block_size);
 }
 

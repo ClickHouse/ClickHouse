@@ -87,6 +87,9 @@ public:
 		const std::string & extension_ = ".bin");
 
 	std::string getName() const { return "Log"; }
+	std::string getTableName() const { return name; }
+
+	const NamesAndTypes & getColumns() const { return *columns; }
 
 	SharedPtr<IBlockInputStream> read(
 		const Names & column_names,

@@ -23,13 +23,7 @@ Block LogBlockInputStream::read()
 	Block res;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-	{
-		if (storage.columns->end() == storage.columns->find(*it))
-			throw Exception("There is no column with name " + *it + " in table.",
-				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
 		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].path())));
-	}
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
@@ -55,13 +49,11 @@ LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
 
 void LogBlockOutputStream::write(const Block & block)
 {
+	storage.check(block);
+	
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const std::string & name = block.getByPosition(i).name;
-		if (storage.columns->end() == storage.columns->find(name))
-			throw Exception("There is no column with name " + name + " in table.",
-				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
 		streams.insert(std::make_pair(name, new Stream(storage.files[name].path())));
 	}
 
@@ -97,6 +89,7 @@ SharedPtr<IBlockInputStream> StorageLog::read(
 	ASTPtr query,
 	size_t max_block_size)
 {
+	check(column_names);
 	return new LogBlockInputStream(max_block_size, column_names, *this);
 }
 
