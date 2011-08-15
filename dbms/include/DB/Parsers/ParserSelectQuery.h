@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_PARSERSELECTQUERY_H
-#define DBMS_PARSERS_PARSERSELECTQUERY_H
+#pragma once
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/IParserBase.h>
@@ -23,7 +22,7 @@ protected:
 		ASTPtr select_expression_list;
 
 		ParserWhiteSpaceOrComments ws;
-		ParserString s("SELECT", true);
+		ParserString s("SELECT", true, true);
 		ParserNotEmptyExpressionList exp_list;
 
 		ws.ignore(pos, end);
@@ -46,5 +45,3 @@ protected:
 };
 
 }
-
-#endif

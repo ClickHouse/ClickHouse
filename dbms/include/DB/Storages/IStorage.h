@@ -1,22 +1,20 @@
-#ifndef DBMS_STORAGES_ISTORAGE_H
-#define DBMS_STORAGES_ISTORAGE_H
-
-//#include <boost/property_tree/ptree.hpp>
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/Exception.h>
+
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+
+#include <DB/Parsers/IAST.h>
 
 
 namespace DB
 {
 
-typedef char ptree;	/// временная заглушка, вместо boost::property_tree::ptree
-//using boost::property_tree::ptree;
 using Poco::SharedPtr;
 
 /** Хранилище. Отвечает за:
@@ -40,7 +38,7 @@ public:
 	  */
 	virtual SharedPtr<IBlockInputStream> read(
 		const Names & column_names,
-		const ptree & query,
+		ASTPtr query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE)
 	{
 		throw Exception("Method read() is not supported by storage " + getName());
@@ -51,7 +49,7 @@ public:
 	  * Возвращает объект, с помощью которого можно последовательно писать данные.
 	  */
 	virtual SharedPtr<IBlockOutputStream> write(
-		const ptree & query)
+		ASTPtr query)
 	{
 		throw Exception("Method write() is not supported by storage " + getName());
 	}
@@ -59,6 +57,6 @@ public:
 	virtual ~IStorage() {}
 };
 
-}
+typedef SharedPtr<IStorage> StoragePtr;
 
-#endif
+}

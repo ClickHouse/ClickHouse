@@ -34,7 +34,7 @@ public:
 
 	SharedPtr<IBlockInputStream> read(
 		const Names & column_names,
-		const ptree & query,
+		ASTPtr query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE);
 };
 

@@ -40,7 +40,7 @@ Block NumbersBlockInputStream::read()
 
 
 SharedPtr<IBlockInputStream> StorageSystemNumbers::read(
-	const Names & column_names, const ptree & query, size_t max_block_size)
+	const Names & column_names, ASTPtr query, size_t max_block_size)
 {
 	if (column_names.size() != 1)
 		throw Exception("Incorrect number of columns.", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
