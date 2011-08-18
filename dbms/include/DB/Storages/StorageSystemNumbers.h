@@ -30,7 +30,7 @@ private:
 class StorageSystemNumbers : public IStorage
 {
 public:
-	StorageSystemNumbers();
+	StorageSystemNumbers(const std::string & name_);
 	
 	std::string getName() const { return "SystemNumbers"; }
 	std::string getTableName() const { return "Numbers"; }
@@ -43,6 +43,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE);
 
 private:
+	const std::string name;
 	NamesAndTypes columns;
 };
 

@@ -54,7 +54,7 @@ int main(int argc, char ** argv)
 
 		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
 
-		DB::StorageSystemNumbers table;
+		DB::StorageSystemNumbers table("Numbers");
 
 		DB::Names column_names;
 		column_names.push_back("number");

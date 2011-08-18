@@ -16,7 +16,7 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		DB::StorageSystemNumbers table;
+		DB::StorageSystemNumbers table("Numbers");
 
 		DB::Names column_names;
 		column_names.push_back("number");

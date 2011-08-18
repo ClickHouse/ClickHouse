@@ -2,12 +2,7 @@
 
 #include <Poco/RegularExpression.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/IDataType.h>
 
 
 namespace DB

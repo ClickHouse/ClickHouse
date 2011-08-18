@@ -39,7 +39,8 @@ Block NumbersBlockInputStream::read()
 }
 
 
-StorageSystemNumbers::StorageSystemNumbers()
+StorageSystemNumbers::StorageSystemNumbers(const std::string & name_)
+	: name(name_)
 {
 	columns["number"] = new DataTypeUInt64;
 }

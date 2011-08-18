@@ -19,8 +19,11 @@ using Poco::SharedPtr;
 class IDataType
 {
 public:
-	/// Основное имя типа (например, BIGINT UNSIGNED).
+	/// Основное имя типа (например, UInt64).
 	virtual std::string getName() const = 0;
+
+	/// Является ли тип числовым.
+	virtual bool isNumeric() const { return false; }
 
 	/// Клонировать
 	virtual SharedPtr<IDataType> clone() const = 0;

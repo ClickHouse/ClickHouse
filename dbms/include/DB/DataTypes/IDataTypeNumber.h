@@ -19,6 +19,8 @@ class IDataTypeNumber : public IDataType
 {
 public:
 	typedef FType FieldType;
+
+	bool isNumeric() const { return true; }
 		
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
