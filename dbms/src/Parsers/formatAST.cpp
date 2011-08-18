@@ -24,6 +24,13 @@ void formatAST(const IAST & ast, std::ostream & s)
 		formatAST(*select, s);
 		return;
 	}
+
+	const ASTCreateQuery * create = dynamic_cast<const ASTCreateQuery *>(&ast);
+	if (create)
+	{
+		formatAST(*create, s);
+		return;
+	}
 	
 	const ASTExpressionList * exp_list = dynamic_cast<const ASTExpressionList *>(&ast);
 	if (exp_list)
@@ -53,6 +60,13 @@ void formatAST(const IAST & ast, std::ostream & s)
 		return;
 	}
 
+	const ASTNameTypePair * ntp = dynamic_cast<const ASTNameTypePair *>(&ast);
+	if (ntp)
+	{
+		formatAST(*ntp, s);
+		return;
+	}
+
 	throw DB::Exception("Unknown element in AST", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 }
 
@@ -62,7 +76,15 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s)
 	formatAST(*ast.select, s);
 }
 
-void formatAST(const ASTExpressionList 	& ast, std::ostream & s)
+void formatAST(const ASTCreateQuery 		& ast, std::ostream & s)
+{
+	s << (ast.attach ? "ATTACH TABLE " : "CREATE TABLE ") << ast.name << " (";
+	formatAST(*ast.columns, s);
+	s << ") ENGINE = ";
+	formatAST(*ast.storage, s);
+}
+
+void formatAST(const ASTExpressionList 		& ast, std::ostream & s)
 {
 	for (ASTs::const_iterator it = ast.children.begin(); it != ast.children.end(); ++it)
 	{
@@ -74,12 +96,16 @@ void formatAST(const ASTExpressionList 	& ast, std::ostream & s)
 
 void formatAST(const ASTFunction 			& ast, std::ostream & s)
 {
-	s << ast.name << '(';
-	formatAST(*ast.arguments, s);
-	s << ')';
+	s << ast.name;
+	if (ast.arguments)
+	{
+		s << '(';
+		formatAST(*ast.arguments, s);
+		s << ')';
+	}
 }
 
-void formatAST(const ASTIdentifier 		& ast, std::ostream & s)
+void formatAST(const ASTIdentifier 			& ast, std::ostream & s)
 {
 	s << ast.name;
 }
@@ -87,6 +113,12 @@ void formatAST(const ASTIdentifier 		& ast, std::ostream & s)
 void formatAST(const ASTLiteral 			& ast, std::ostream & s)
 {
 	s << boost::apply_visitor(FieldVisitorToString(), ast.value);
+}
+
+void formatAST(const ASTNameTypePair		& ast, std::ostream & s)
+{
+	s << ast.name << " ";
+	formatAST(*ast.type, s);
 }
 
 }

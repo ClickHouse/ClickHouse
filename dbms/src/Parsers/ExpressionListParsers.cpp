@@ -11,6 +11,49 @@
 namespace DB
 {
 
+
+bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	bool first = true;
+	ParserWhiteSpaceOrComments ws;
+
+	ASTExpressionList * list = new ASTExpressionList;
+	node = list;
+
+	while (1)
+	{
+		if (first)
+		{
+			ASTPtr elem;
+			if (!elem_parser->parse(pos, end, elem, expected))
+				break;
+
+			list->children.push_back(elem);
+		}
+		else
+		{
+			ws.ignore(pos, end);
+			if (!separator_parser->ignore(pos, end, expected))
+				break;
+			ws.ignore(pos, end);
+
+			ASTPtr elem;
+			if (!elem_parser->parse(pos, end, elem, expected))
+				return false;
+
+			list->children.push_back(elem);
+		}
+
+		first = false;
+	}
+
+	if (!allow_empty && first)
+		return false;
+
+	return true;
+}
+	
+
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	bool first = true;
@@ -154,43 +197,7 @@ ParserAccessExpression::ParserAccessExpression()
 
 bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
-	bool first = true;
-	ParserLogicalOrExpression nested_parser;
-	ParserWhiteSpaceOrComments ws;
-	ParserString comma(",");
-
-	ASTExpressionList * p_expr_list = new ASTExpressionList;
-	ASTExpressionList & expr_list = *p_expr_list;
-	node = p_expr_list;
-
-	while (1)
-	{
-		if (first)
-		{
-			ASTPtr elem;
-			if (!nested_parser.parse(pos, end, elem, expected))
-				break;
-
-			expr_list.children.push_back(elem);
-		}
-		else
-		{
-			ws.ignore(pos, end);
-			if (!comma.ignore(pos, end, expected))
-				break;
-			ws.ignore(pos, end);
-
-			ASTPtr elem;
-			if (!nested_parser.parse(pos, end, elem, expected))
-				return false;
-
-			expr_list.children.push_back(elem);
-		}
-
-		first = false;
-	}
-
-	return true;
+	return ParserList(new ParserLogicalOrExpression, new ParserString(",")).parse(pos, end, node, expected);
 }
 
 

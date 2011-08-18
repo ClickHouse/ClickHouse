@@ -2,16 +2,16 @@
 
 #include <mysqlxx/mysqlxx.h>
 
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
 
 
 int main(int argc, char ** argv)
 {
-	DB::ParserSelectQuery parser;
+	DB::ParserCreateQuery parser;
 	DB::ASTPtr ast;
-	std::string input = "SELECT 18446744073709551615, f(1), '\\\\', [a, b, c], (a, b, c), 1 + 2 * -3, a = b OR c > d.1 + 2 * -g[0] AND NOT e < f * (x + y)";
+	std::string input = "CREATE TABLE hits (URL String, UserAgentMinor2 FixedString(2), EventTime DateTime) ENGINE = Log";
 	std::string expected;
 
 	const char * begin = input.data();

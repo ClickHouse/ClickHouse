@@ -37,7 +37,7 @@ protected:
 };
 
 
-/** Функция, например, f(x, y, z)
+/** Функция, например, f(x, y + 1, g(z))
   */
 class ParserFunction : public IParserBase
 {

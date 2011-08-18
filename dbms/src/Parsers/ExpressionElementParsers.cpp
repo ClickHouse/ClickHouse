@@ -113,7 +113,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	Pos begin = pos;
-	ASTPtr contents_node;
 
 	ParserIdentifier id_parser;
 	ParserString open("("), close(")");
@@ -140,7 +139,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expec
 
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
 	function_node->name = dynamic_cast<ASTIdentifier &>(*identifier).name;
-	function_node->arguments = contents_node;
+	function_node->arguments = expr_list;
 	function_node->children.push_back(expr_list);
 	node = function_node;
 	return true;

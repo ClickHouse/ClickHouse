@@ -18,6 +18,24 @@ namespace DB
 typedef std::list<std::pair<String, String> > Operators_t;
 
 
+/** Список элементов, разделённых чем-либо. */
+class ParserList : public IParserBase
+{
+public:
+	ParserList(ParserPtr elem_parser_, ParserPtr separator_parser_, bool allow_empty_ = true)
+		: elem_parser(elem_parser_), separator_parser(separator_parser_), allow_empty(allow_empty_)
+	{
+	}
+protected:
+	String getName() { return "list of elements (" + elem_parser->getName() + ")"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+private:
+	ParserPtr elem_parser;
+	ParserPtr separator_parser;
+	bool allow_empty;
+};
+
+
 /** Выражение с инфиксным бинарным лево-ассоциативным оператором.
   * Например, a + b - c + d.
   * NOTE: если оператор словесный (например, OR), то после него не требуется границы слова.
