@@ -46,7 +46,7 @@ DataTypePtr DataTypeFactory::get(const String & name)
 
 	Poco::RegularExpression::MatchVec matches;
 	if (fixed_string_regexp.match(name, 0, matches) && matches.size() == 2)
-		return new DataTypeFixedString(mysqlxx::String(name.data() + matches[0].offset, matches[0].length, NULL).getUInt());
+		return new DataTypeFixedString(mysqlxx::String(name.data() + matches[1].offset, matches[1].length, NULL).getUInt());
 
 	throw Exception("Unknown type " + name, ErrorCodes::UNKNOWN_TYPE);
 }
