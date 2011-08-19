@@ -97,13 +97,11 @@ int main(int argc, char ** argv)
 		;
 
 		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;
-		SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
 		DB::Names column_names;
 
 		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
 		{
 			names_and_types_map->insert(*it);
-			data_types->push_back(it->second);
 			column_names.push_back(it->first);
 		}
 
