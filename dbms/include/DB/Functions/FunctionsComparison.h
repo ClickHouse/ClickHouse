@@ -26,43 +26,105 @@ namespace DB
   */
 
 template<typename A, typename B>
-struct EqualsImpl
+struct EqualsNumImpl
 {
 	typedef UInt8 ResultType;
 
-	static void num_vector_num_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] == b[i];
 	}
 
-	static void num_vector_num_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] == b;
 	}
 
-	static void num_constant_num_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a == b[i];
-	}
-
-	static void num_constant_num_constant(A a, B b, ResultType & c)
+	static void constant_constant(A a, B b, ResultType & c)
 	{
 		c = a == b;
 	}
+};
 
-	static void str_vector_str_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+template<typename A, typename B>
+struct EqualsStringImpl
+{
+	typedef UInt8 ResultType;
+
+	static void string_vector_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<ResultType> & c)
 	{
-		size_t size = a.size();
+		size_t size = a_data.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] == b[i];
+			c[i] = (i == 0)
+				? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0]))
+				: (a_offsets[i] - a_offsets[i - 1] == b_offsets[i] - b_offsets[i - 1]
+					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1]));
+	}
+
+	static void string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<ResultType> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = (i == 0)
+				? (a_offsets[0] == b_n && !memcmp(&a_data[0], &b_data[0], b_n))
+				: (a_offsets[i] - a_offsets[i - 1] == b_n
+					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_n * i], b_n));
+	}
+
+	static void string_vector_constant(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::string & b,
+		std::vector<ResultType> & c)
+	{
+		size_t size = a_data.size();
+		size_t b_n = b.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data())
+		for (size_t i = 0; i < size; ++i)
+			c[i] = (i == 0)
+				? (a_offsets[0] == b_n && !memcmp(&a_data[0], b_data, b_n))
+				: (a_offsets[i] - a_offsets[i - 1] == b_n
+					&& !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n));
+	}
+
+	static void fixed_string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<ResultType> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; i += n)
+			c[i] = a_n == b_n && !memcmp(&a_data[i], &b_data[i], n);
+	}
+
+	static void fixed_string_vector_constant(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::string & b,
+		std::vector<ResultType> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; i += n)
+			c[i] = !memcmp(&a_data[i], &b_data[i], n);
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		std::string & c)
+	{
+		c = a == b;
 	}
 };
+
 
 
 template <template <typename, typename> class Impl, typename Name>
