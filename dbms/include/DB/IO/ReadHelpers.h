@@ -12,6 +12,9 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/VarInt.h>
+
+#define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
 
 namespace DB
@@ -64,6 +67,20 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
 {
 	readBinary(x, buf);
 }
+
+
+inline void readStringBinary(std::string & s, DB::ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
+{
+	size_t size = 0;
+	DB::readVarUInt(size, buf);
+
+	if (size > MAX_STRING_SIZE)
+		throw Poco::Exception("Too large string size.");
+
+	s.resize(size);
+	buf.readStrict(const_cast<char *>(s.data()), size);
+}
+
 
 inline void readChar(char & x, ReadBuffer & buf)
 {

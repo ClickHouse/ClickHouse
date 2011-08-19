@@ -15,8 +15,8 @@ void Expression::addSemantic(ASTPtr ast)
 {
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		Functions::const_iterator it = context.functions.find(node->name);
-		if (it == context.functions.end())
+		Functions::const_iterator it = context.functions->find(node->name);
+		if (it == context.functions->end())
 			throw Exception("Unknown function " + node->name, ErrorCodes::UNKNOWN_FUNCTION);
 
 		node->function = it->second;

@@ -49,7 +49,7 @@ public:
 		ASTPtr query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE)
 	{
-		throw Exception("Method read() is not supported by storage " + getName());
+		throw Exception("Method read() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Пишет данные в таблицу.
@@ -59,7 +59,22 @@ public:
 	virtual SharedPtr<IBlockOutputStream> write(
 		ASTPtr query)
 	{
-		throw Exception("Method write() is not supported by storage " + getName());
+		throw Exception("Method write() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	/** Удалить данные таблицы.
+	  */
+	virtual void drop()
+	{
+		throw Exception("Method drop() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
+	  * (ALTER, затрагивающий изменение движка, делается внешним кодом, путём копирования данных.)
+	  */
+	virtual void alter(SharedPtr<NamesAndTypes> columns)
+	{
+		throw Exception("Method alter() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	virtual ~IStorage() {}

@@ -14,6 +14,7 @@ class ASTCreateQuery : public IAST
 {
 public:
 	bool attach;	/// Запрос ATTACH TABLE, а не CREATE TABLE.
+	bool if_not_exists;
 	String name;
 	ASTPtr columns;
 	ASTPtr storage;

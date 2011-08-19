@@ -13,7 +13,7 @@ int main(int argc, char ** argv)
 	{
 		DB::ParserCreateQuery parser;
 		DB::ASTPtr ast;
-		std::string input = "CREATE TABLE hits (\n"
+		std::string input = "CREATE TABLE IF NOT EXISTS hits (\n"
 			"WatchID				UInt64,\n"
 			"JavaEnable 			UInt8,\n"
 			"Title 					String,\n"
@@ -95,7 +95,7 @@ int main(int argc, char ** argv)
 		DB::Context context;
 
 		context.path = "./";
-		context.databases["test"];
+		(*context.databases)["test"];
 		context.current_database = "test";
 
 		DB::InterpreterCreateQuery interpreter;

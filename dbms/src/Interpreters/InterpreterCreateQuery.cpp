@@ -18,12 +18,21 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	String database_name = context.current_database;
 	String table_name = create.name;
 	SharedPtr<NamesAndTypes> columns = new NamesAndTypes;
-	String data_path = context.path + "data/" + database_name + "/" + table_name + "/";	/// TODO: эскейпинг
+	String data_path = context.path + "data/" + database_name + "/";	/// TODO: эскейпинг
 	String metadata_path = context.path + "metadata/" + database_name + "/" + table_name + ".sql";
 
-	if (context.databases[database_name].end() != context.databases[database_name].find(table_name))
-		throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
+		
+		if ((*context.databases)[database_name].end() != (*context.databases)[database_name].find(table_name))
+		{
+			if (create.if_not_exists)
+				return (*context.databases)[database_name][table_name];
+			else
+				throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+		}
+	}
+	
 	ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*create.columns);
 	for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
 	{
@@ -57,18 +66,21 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	else
 		throw Exception("Unknown storage " + storage_str, ErrorCodes::UNKNOWN_STORAGE);
 
-	if (!create.attach)
+	/// Проверка наличия метаданных таблицы на диске и создание метаданных
+
+	if (Poco::File(metadata_path).exists())
+		throw Exception("Metadata for table " + database_name + "." + table_name + " already exists.",
+			ErrorCodes::TABLE_METADATA_ALREADY_EXISTS);
+
+	Poco::FileOutputStream metadata_file(metadata_path);
+	metadata_file << String(create.range.first, create.range.second - create.range.first) << std::endl;
+
 	{
-		/// Проверка наличия метаданных таблицы на диске и создание метаданных
+		Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
 
-		if (Poco::File(metadata_path).exists())
-			throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-
-		Poco::FileOutputStream metadata_file(metadata_path);
-		metadata_file << String(create.range.first, create.range.second - create.range.first) << std::endl;
+		(*context.databases)[database_name][table_name] = res;
 	}
-
-	context.databases[database_name][table_name] = res;
+	
 	return res;
 }
 

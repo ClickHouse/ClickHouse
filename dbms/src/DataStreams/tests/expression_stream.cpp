@@ -48,9 +48,9 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 		context.columns["number"] = new DB::DataTypeUInt64;
-		context.functions["plus"] = new DB::FunctionPlus;
-		context.functions["multiply"] = new DB::FunctionMultiply;
-		context.functions["divide"] = new DB::FunctionDivideFloating;
+		(*context.functions)["plus"] = new DB::FunctionPlus;
+		(*context.functions)["multiply"] = new DB::FunctionMultiply;
+		(*context.functions)["divide"] = new DB::FunctionDivideFloating;
 
 		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
 

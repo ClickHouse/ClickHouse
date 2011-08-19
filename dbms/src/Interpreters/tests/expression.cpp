@@ -100,8 +100,8 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 		context.columns["x"] = new DB::DataTypeInt16;
-		context.functions["plus"] = new DB::FunctionPlus;
-		context.functions["multiply"] = new DB::FunctionMultiply;
+		(*context.functions)["plus"] = new DB::FunctionPlus;
+		(*context.functions)["multiply"] = new DB::FunctionMultiply;
 
 		DB::Expression expression(ast, context);
 

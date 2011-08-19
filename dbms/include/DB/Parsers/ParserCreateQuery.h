@@ -28,7 +28,7 @@ protected:
 
 
 /** Запрос типа такого:
-  * CREATE TABLE name
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] name
   * (
   * 	name1 type1,
   * 	name2 type2,

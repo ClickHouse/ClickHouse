@@ -78,6 +78,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_rparen(")");
 	ParserString s_engine("ENGINE", true);
 	ParserString s_eq("=");
+	ParserString s_if("IF", true);
+	ParserString s_not("NOT", true);
+	ParserString s_exists("EXISTS", true);
 	ParserIdentifier name_p;
 	ParserList columns_p(new ParserNameTypePair, new ParserString(","), false);
 	ParserIdentifierWithOptionalParameters storage_p;
@@ -86,6 +89,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ASTPtr columns;
 	ASTPtr storage;
 	bool attach = false;
+	bool if_not_exists = false;
 
 	ws.ignore(pos, end);
 
@@ -97,12 +101,16 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			return false;
 	}
 
-	ws.ignore(pos, end);
-
-	if (!s_table.ignore(pos, end, expected))
+	if (!ws.ignore(pos, end) || !s_table.ignore(pos, end, expected) || !ws.ignore(pos, end))
 		return false;
 
-	ws.ignore(pos, end);
+	if (s_if.ignore(pos, end, expected)
+		&& ws.ignore(pos, end)
+		&& s_not.ignore(pos, end, expected)
+		&& ws.ignore(pos, end)
+		&& s_exists.ignore(pos, end, expected)
+		&& ws.ignore(pos, end))
+		if_not_exists = true;
 
 	if (!name_p.parse(pos, end, name, expected))
 		return false;
@@ -141,6 +149,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	node = query;
 
 	query->attach = attach;
+	query->if_not_exists = if_not_exists;
 	query->name = dynamic_cast<ASTIdentifier &>(*name).name;
 	query->columns = columns;
 	query->storage = storage;

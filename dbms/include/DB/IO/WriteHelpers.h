@@ -13,6 +13,7 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
+#include <DB/IO/VarInt.h>
 
 #define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
 /// 20 цифр и знак
@@ -49,6 +50,13 @@ template <typename T>
 inline void writeFloatBinary(T & x, WriteBuffer & buf)
 {
 	writeBinary(x, buf);
+}
+
+
+inline void writeStringBinary(const std::string & s, DB::WriteBuffer & buf)
+{
+	writeVarUInt(s.size(), buf);
+	buf.write(s.data(), s.size());
 }
 
 
