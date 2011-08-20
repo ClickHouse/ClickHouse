@@ -35,6 +35,13 @@ struct PlusImpl
 			c[i] = a[i] + b;
 	}
 
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a + b[i];
+	}
+
 	static void constant_constant(A a, B b, ResultType & c)
 	{
 		c = a + b;
@@ -58,6 +65,13 @@ struct MultiplyImpl
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] * b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a * b[i];
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
@@ -85,6 +99,13 @@ struct MinusImpl
 			c[i] = a[i] - b;
 	}
 
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a - b[i];
+	}
+
 	static void constant_constant(A a, B b, ResultType & c)
 	{
 		c = a - b;
@@ -108,6 +129,13 @@ struct DivideFloatingImpl
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = static_cast<ResultType>(a[i]) / b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = static_cast<ResultType>(a) / b[i];
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
@@ -135,6 +163,13 @@ struct DivideIntegralImpl
 			c[i] = a[i] / b;
 	}
 
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a / b[i];
+	}
+
 	static void constant_constant(A a, B b, ResultType & c)
 	{
 		c = a / b;
@@ -158,6 +193,13 @@ struct ModuloImpl
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] % b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a % b[i];
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
@@ -254,7 +296,7 @@ private:
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
-			Impl<T1, T0>::vector_constant(col_right->getData(), col_left->getData(), vec_res);
+			Impl<T0, T1>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
@@ -316,7 +358,7 @@ private:
 	}
 	
 public:
-	/// Получить все имена функции.
+	/// Получить имя функции.
 	String getName() const
 	{
 		return Name::get();
