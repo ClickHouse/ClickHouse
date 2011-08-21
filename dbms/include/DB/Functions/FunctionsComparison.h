@@ -77,9 +77,9 @@ struct EqualsStringImpl
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = (i == 0)
-				? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0]))
+				? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0] - 1))
 				: (a_offsets[i] - a_offsets[i - 1] == b_offsets[i] - b_offsets[i - 1]
-					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1]));
+					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1] - 1));
 	}
 
 	static void string_vector_fixed_string_vector(
@@ -180,6 +180,943 @@ struct EqualsStringImpl
 		c = a == b;
 	}
 };
+
+template<typename A, typename B>
+struct NotEqualsNumImpl
+{
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] != b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] != b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a != b[i];
+	}
+
+	static void constant_constant(A a, B b, UInt8 & c)
+	{
+		c = a != b;
+	}
+};
+
+struct NotEqualsStringImpl
+{
+	static void string_vector_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = !((i == 0)
+				? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0] - 1))
+				: (a_offsets[i] - a_offsets[i - 1] == b_offsets[i] - b_offsets[i - 1]
+					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1] - 1)));
+	}
+
+	static void string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = !((i == 0)
+				? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], &b_data[0], b_n))
+				: (a_offsets[i] - a_offsets[i - 1] == b_n + 1
+					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_n * i], b_n)));
+	}
+
+	static void string_vector_constant(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		size_t b_n = b.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		for (size_t i = 0; i < size; ++i)
+			c[i] = !((i == 0)
+				? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], b_data, b_n))
+				: (a_offsets[i] - a_offsets[i - 1] == b_n + 1
+					&& !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n)));
+	}
+
+	static void fixed_string_vector_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = !((i == 0)
+				? (b_offsets[0] == a_n + 1 && !memcmp(&b_data[0], &a_data[0], a_n))
+				: (b_offsets[i] - b_offsets[i - 1] == a_n + 1
+					&& !memcmp(&b_data[b_offsets[i - 1]], &a_data[a_n * i], a_n)));
+	}
+
+	static void fixed_string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; i += a_n)
+			c[i] = !(a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n));
+	}
+
+	static void fixed_string_vector_constant(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		size_t b_n = b.size();
+		for (size_t i = 0; i < size; i += a_n)
+			c[i] = !(a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
+	}
+
+	static void constant_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		size_t a_n = a.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		for (size_t i = 0; i < size; ++i)
+			c[i] = !((i == 0)
+				? (b_offsets[0] == a_n + 1 && !memcmp(&b_data[0], a_data, a_n))
+				: (b_offsets[i] - b_offsets[i - 1] == a_n + 1
+					&& !memcmp(&b_data[b_offsets[i - 1]], a_data, a_n)));
+	}
+
+	static void constant_fixed_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_data.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		size_t a_n = a.size();
+		for (size_t i = 0; i < size; i += b_n)
+			c[i] = !(a_n == b_n && !memcmp(&b_data[i], a_data, b_n));
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		UInt8 & c)
+	{
+		c = !(a == b);
+	}
+};
+
+template<typename A, typename B>
+struct LessNumImpl
+{
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] < b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] < b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a < b[i];
+	}
+
+	static void constant_constant(A a, B b, UInt8 & c)
+	{
+		c = a < b;
+	}
+};
+
+struct LessStringImpl
+{
+	static void string_vector_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
+				c[i] = res < 0 || (res == 0 && a_offsets[0] < b_offsets[0]);
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
+					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
+				c[i] = res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_offsets[i] - b_offsets[i - 1]);
+			}
+		}
+	}
+
+	static void string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
+				c[i] = res < 0 || (res == 0 && a_offsets[0] < b_n + 1);
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1);
+			}
+		}
+	}
+
+	static void string_vector_constant(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		size_t b_n = b.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
+				c[i] = res < 0 || (res == 0 && a_offsets[0] < b_n + 1);
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1);
+			}
+		}
+	}
+
+	static void fixed_string_vector_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[0]);
+			}
+			else
+			{
+				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]);
+			}
+		}
+	}
+
+	static void fixed_string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
+			c[i] = res < 0 || (res == 0 && a_n < b_n);
+		}
+	}
+
+	static void fixed_string_vector_constant(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		size_t b_n = b.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
+			c[i] = res < 0 || (res == 0 && a_n < b_n);
+		}
+	}
+
+	static void constant_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		size_t a_n = a.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[0]);
+			}
+			else
+			{
+				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]);
+			}
+		}
+	}
+
+	static void constant_fixed_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_data.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		size_t a_n = a.size();
+		for (size_t i = 0; i < size; i += b_n)
+		{
+			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
+			c[i] = res < 0 || (res == 0 && b_n < a_n);
+		}
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		UInt8 & c)
+	{
+		c = a < b;
+	}
+};
+
+template<typename A, typename B>
+struct GreaterNumImpl
+{
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] > b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] > b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a > b[i];
+	}
+
+	static void constant_constant(A a, B b, UInt8 & c)
+	{
+		c = a > b;
+	}
+};
+
+struct GreaterStringImpl
+{
+	static void string_vector_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
+				c[i] = res > 0 || (res == 0 && a_offsets[0] > b_offsets[0]);
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
+					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
+				c[i] = res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_offsets[i] - b_offsets[i - 1]);
+			}
+		}
+	}
+
+	static void string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
+				c[i] = res > 0 || (res == 0 && a_offsets[0] > b_n + 1);
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1);
+			}
+		}
+	}
+
+	static void string_vector_constant(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		size_t b_n = b.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
+				c[i] = res > 0 || (res == 0 && a_offsets[0] > b_n + 1);
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1);
+			}
+		}
+	}
+
+	static void fixed_string_vector_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[0]);
+			}
+			else
+			{
+				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]);
+			}
+		}
+	}
+
+	static void fixed_string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
+			c[i] = res > 0 || (res == 0 && a_n > b_n);
+		}
+	}
+
+	static void fixed_string_vector_constant(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		size_t b_n = b.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
+			c[i] = res > 0 || (res == 0 && a_n > b_n);
+		}
+	}
+
+	static void constant_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		size_t a_n = a.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[0]);
+			}
+			else
+			{
+				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]);
+			}
+		}
+	}
+
+	static void constant_fixed_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_data.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		size_t a_n = a.size();
+		for (size_t i = 0; i < size; i += b_n)
+		{
+			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
+			c[i] = res > 0 || (res == 0 && b_n > a_n);
+		}
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		UInt8 & c)
+	{
+		c = a > b;
+	}
+};
+
+template<typename A, typename B>
+struct LessOrEqualsNumImpl
+{
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] <= b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] <= b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a <= b[i];
+	}
+
+	static void constant_constant(A a, B b, UInt8 & c)
+	{
+		c = a <= b;
+	}
+};
+
+struct LessOrEqualsStringImpl
+{
+	static void string_vector_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
+				c[i] = !(res > 0 || (res == 0 && a_offsets[0] > b_offsets[0]));
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
+					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
+				c[i] = !(res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_offsets[i] - b_offsets[i - 1]));
+			}
+		}
+	}
+
+	static void string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
+				c[i] = !(res > 0 || (res == 0 && a_offsets[0] > b_n + 1));
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = !(res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1));
+			}
+		}
+	}
+
+	static void string_vector_constant(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		size_t b_n = b.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
+				c[i] = !(res > 0 || (res == 0 && a_offsets[0] > b_n + 1));
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = !(res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1));
+			}
+		}
+	}
+
+	static void fixed_string_vector_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[0]));
+			}
+			else
+			{
+				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]));
+			}
+		}
+	}
+
+	static void fixed_string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
+			c[i] = !(res > 0 || (res == 0 && a_n > b_n));
+		}
+	}
+
+	static void fixed_string_vector_constant(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		size_t b_n = b.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
+			c[i] = !(res > 0 || (res == 0 && a_n > b_n));
+		}
+	}
+
+	static void constant_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		size_t a_n = a.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[0]));
+			}
+			else
+			{
+				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]));
+			}
+		}
+	}
+
+	static void constant_fixed_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_data.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		size_t a_n = a.size();
+		for (size_t i = 0; i < size; i += b_n)
+		{
+			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
+			c[i] = !(res > 0 || (res == 0 && b_n > a_n));
+		}
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		UInt8 & c)
+	{
+		c = a <= b;
+	}
+};
+
+template<typename A, typename B>
+struct GreaterOrEqualsNumImpl
+{
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] >= b[i];
+	}
+
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] >= b;
+	}
+
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a >= b[i];
+	}
+
+	static void constant_constant(A a, B b, UInt8 & c)
+	{
+		c = a >= b;
+	}
+};
+
+struct GreaterOrEqualsStringImpl
+{
+	static void string_vector_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
+				c[i] = !(res < 0 || (res == 0 && a_offsets[0] < b_offsets[0]));
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
+					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
+				c[i] = !(res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_offsets[i] - b_offsets[i - 1]));
+			}
+		}
+	}
+
+	static void string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
+				c[i] = !(res < 0 || (res == 0 && a_offsets[0] < b_n + 1));
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = !(res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1));
+			}
+		}
+	}
+
+	static void string_vector_constant(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_offsets.size();
+		size_t b_n = b.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
+				c[i] = !(res < 0 || (res == 0 && a_offsets[0] < b_n + 1));
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = !(res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1));
+			}
+		}
+	}
+
+	static void fixed_string_vector_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[0]));
+			}
+			else
+			{
+				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]));
+			}
+		}
+	}
+
+	static void fixed_string_vector_fixed_string_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
+			c[i] = !(res < 0 || (res == 0 && a_n < b_n));
+		}
+	}
+
+	static void fixed_string_vector_constant(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::string & b,
+		std::vector<UInt8> & c)
+	{
+		size_t size = a_data.size();
+		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+		size_t b_n = b.size();
+		for (size_t i = 0; i < size; i += a_n)
+		{
+			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
+			c[i] = !(res < 0 || (res == 0 && a_n < b_n));
+		}
+	}
+
+	static void constant_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_offsets.size();
+		size_t a_n = a.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (i == 0)
+			{
+				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[0]));
+			}
+			else
+			{
+				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]));
+			}
+		}
+	}
+
+	static void constant_fixed_string_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c)
+	{
+		size_t size = b_data.size();
+		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
+		size_t a_n = a.size();
+		for (size_t i = 0; i < size; i += b_n)
+		{
+			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
+			c[i] = !(res < 0 || (res == 0 && b_n < a_n));
+		}
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		UInt8 & c)
+	{
+		c = a >= b;
+	}
+};
+
 
 #pragma GCC diagnostic pop
 
@@ -418,7 +1355,17 @@ public:
 
 
 struct NameEquals 			{ static const char * get() { return "equals"; } };
+struct NameNotEquals 		{ static const char * get() { return "notEquals"; } };
+struct NameLess 			{ static const char * get() { return "less"; } };
+struct NameGreater 			{ static const char * get() { return "greater"; } };
+struct NameLessOrEquals 	{ static const char * get() { return "lessOrEquals"; } };
+struct NameGreaterOrEquals 	{ static const char * get() { return "greaterOrEquals"; } };
 
-typedef FunctionComparison<EqualsNumImpl, 		EqualsStringImpl, 		NameEquals>			FunctionEquals;
+typedef FunctionComparison<EqualsNumImpl, 			EqualsStringImpl, 			NameEquals>				FunctionEquals;
+typedef FunctionComparison<NotEqualsNumImpl, 		NotEqualsStringImpl, 		NameNotEquals>			FunctionNotEquals;
+typedef FunctionComparison<LessNumImpl, 			LessStringImpl, 			NameLess>				FunctionLess;
+typedef FunctionComparison<GreaterNumImpl, 			GreaterStringImpl, 			NameGreater>			FunctionGreater;
+typedef FunctionComparison<LessOrEqualsNumImpl, 	LessOrEqualsStringImpl, 	NameLessOrEquals>		FunctionLessOrEquals;
+typedef FunctionComparison<GreaterOrEqualsNumImpl,	GreaterOrEqualsStringImpl, 	NameGreaterOrEquals>	FunctionGreaterOrEquals;
 
 }

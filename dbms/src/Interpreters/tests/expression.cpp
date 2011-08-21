@@ -79,7 +79,10 @@ int main(int argc, char ** argv)
 	{
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
-		std::string input = "SELECT x, s1, s2, 2 + x * 2, x * 2, x % 3 == 1, s1 == 'abc', s1 == s2";
+		std::string input = "SELECT x, s1, s2, 2 + x * 2, x * 2, x % 3 == 1, "
+			"s1 == 'abc', s1 == s2, s1 != 'abc', s1 != s2, "
+			"s1 <  'abc', s1 <  s2, s1 >  'abc', s1 >  s2, "
+			"s1 <= 'abc', s1 <= s2, s1 >= 'abc', s1 >= s2";
 		std::string expected;
 
 		const char * begin = input.data();
@@ -107,6 +110,11 @@ int main(int argc, char ** argv)
 		(*context.functions)["multiply"] = new DB::FunctionMultiply;
 		(*context.functions)["modulo"] = new DB::FunctionModulo;
 		(*context.functions)["equals"] = new DB::FunctionEquals;
+		(*context.functions)["notEquals"] = new DB::FunctionNotEquals;
+		(*context.functions)["less"] = new DB::FunctionLess;
+		(*context.functions)["greater"] = new DB::FunctionGreater;
+		(*context.functions)["lessOrEquals"] = new DB::FunctionLessOrEquals;
+		(*context.functions)["greaterOrEquals"] = new DB::FunctionGreaterOrEquals;
 
 		DB::Expression expression(ast, context);
 
@@ -129,13 +137,15 @@ int main(int argc, char ** argv)
 
 		block.insert(column_x);
 
+		const char * strings[] = {"abc", "def", "abcd", "defg", "ac"};
+
 		DB::ColumnWithNameAndType column_s1;
 		column_s1.name = "s1";
 		column_s1.type = new DB::DataTypeString;
 		column_s1.column = new DB::ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
-			column_s1.column->insert(i % 2 ? "abc" : "def");
+			column_s1.column->insert(strings[i % 5]);
 
 		block.insert(column_s1);
 
@@ -145,7 +155,7 @@ int main(int argc, char ** argv)
 		column_s2.column = new DB::ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
-			column_s2.column->insert(i % 3 ? "abc" : "def");
+			column_s2.column->insert(strings[i % 3]);
 
 		block.insert(column_s2);
 
@@ -167,7 +177,7 @@ int main(int argc, char ** argv)
 			data_types->push_back(block.getByPosition(i).type);
 
 		OneBlockInputStream * is = new OneBlockInputStream(block);
-		DB::LimitBlockInputStream lis(is, 10, std::max(0, static_cast<int>(n) - 10));
+		DB::LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
 		DB::WriteBufferFromOStream out_buf(std::cout);
 		DB::TabSeparatedRowOutputStream os(out_buf, data_types);
 
