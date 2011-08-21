@@ -57,23 +57,26 @@ public:
 
 	void cut(size_t start, size_t length)
 	{
-		if (start + length > offsets.size())
+		if (length == 0 || start + length > offsets.size())
 			throw Exception("Parameter out of bound in IColumnArray::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+		size_t nested_offset = start == 0 ? 0 : offsets[start - 1];
+		size_t nested_length = offsets[start + length - 1] - nested_offset;
+
+		data->cut(nested_offset, nested_length);
 
 		if (start == 0)
 			offsets.resize(length);
 		else
 		{
 			Offsets_t tmp(length);
-			memcpy(&tmp[0], &offsets[start], length * sizeof(offsets[0]));
+
+			for (size_t i = 0; i < length; ++i)
+				tmp[i] = offsets[start + i] - nested_offset;
+			
 			tmp.swap(offsets);
 		}
-
-		size_t nested_offset = start == 0 ? 0 : offsets[start - 1];
-		size_t nested_length = offsets[start + length] - nested_offset;
-		
-		data->cut(nested_offset, nested_length);
 	}
 
 	void insert(const Field & x)

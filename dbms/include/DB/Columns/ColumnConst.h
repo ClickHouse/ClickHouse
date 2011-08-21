@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_COLUMN_CONST_H
-#define DBMS_CORE_COLUMN_CONST_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
@@ -24,6 +23,7 @@ public:
 	
 	ColumnConst(size_t s_, const T & data_) : s(s_), data(data_) {}
 
+	bool isNumeric() const { return IsNumber<T>::value; }
 	ColumnPtr cloneEmpty() const { return new ColumnConst(0, data); }
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
@@ -48,6 +48,6 @@ private:
 };
 
 
-}
+typedef ColumnConst<String> ColumnConstString;
 
-#endif
+}

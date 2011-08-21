@@ -8,6 +8,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/Functions/FunctionsArithmetic.h>
+#include <DB/Functions/FunctionsComparison.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
@@ -78,7 +79,7 @@ int main(int argc, char ** argv)
 	{
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
-		std::string input = "SELECT 2 + x * 2, x * 2";
+		std::string input = "SELECT x, s1, s2, 2 + x * 2, x * 2, x % 3 == 1, s1 == 'abc', s1 == s2";
 		std::string expected;
 
 		const char * begin = input.data();
@@ -100,8 +101,12 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 		context.columns["x"] = new DB::DataTypeInt16;
+		context.columns["s1"] = new DB::DataTypeString;
+		context.columns["s2"] = new DB::DataTypeString;
 		(*context.functions)["plus"] = new DB::FunctionPlus;
 		(*context.functions)["multiply"] = new DB::FunctionMultiply;
+		(*context.functions)["modulo"] = new DB::FunctionModulo;
+		(*context.functions)["equals"] = new DB::FunctionEquals;
 
 		DB::Expression expression(ast, context);
 
@@ -110,18 +115,39 @@ int main(int argc, char ** argv)
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
 		DB::Block block;
+		
 		DB::ColumnWithNameAndType column_x;
 		column_x.name = "x";
 		column_x.type = new DB::DataTypeInt16;
 		DB::ColumnInt16 * x = new DB::ColumnInt16;
 		column_x.column = x;
-		std::vector<Int16> & vec = x->getData();
+		std::vector<Int16> & vec_x = x->getData();
 
-		vec.resize(n);
+		vec_x.resize(n);
 		for (size_t i = 0; i < n; ++i)
-			vec[i] = i;
+			vec_x[i] = i;
 
 		block.insert(column_x);
+
+		DB::ColumnWithNameAndType column_s1;
+		column_s1.name = "s1";
+		column_s1.type = new DB::DataTypeString;
+		column_s1.column = new DB::ColumnString;
+
+		for (size_t i = 0; i < n; ++i)
+			column_s1.column->insert(i % 2 ? "abc" : "def");
+
+		block.insert(column_s1);
+
+		DB::ColumnWithNameAndType column_s2;
+		column_s2.name = "s2";
+		column_s2.type = new DB::DataTypeString;
+		column_s2.column = new DB::ColumnString;
+
+		for (size_t i = 0; i < n; ++i)
+			column_s2.column->insert(i % 3 ? "abc" : "def");
+
+		block.insert(column_s2);
 
 		{
 			Poco::Stopwatch stopwatch;

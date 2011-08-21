@@ -24,6 +24,8 @@ public:
 	ColumnVector() {}
 	ColumnVector(size_t n) : data(n) {}
 
+	bool isNumeric() const { return IsNumber<T>::value; }
+
 	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnVector<T>;
@@ -41,8 +43,11 @@ public:
 	
 	void cut(size_t start, size_t length)
 	{
-		if (start + length > data.size())
-			throw Exception("Parameter out of bound in IColumnVector<T>::cut() method.",
+		if (length == 0 || start + length > data.size())
+			throw Exception("Parameters start = "
+				+ Poco::NumberFormatter::format(start) + ", length = "
+				+ Poco::NumberFormatter::format(length) + " are out of bound in IColumnVector<T>::cut() method"
+				" (data.size() = " + Poco::NumberFormatter::format(data.size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
 		if (start == 0)

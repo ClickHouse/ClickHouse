@@ -15,6 +15,10 @@ using Poco::SharedPtr;
 class IColumn
 {
 public:
+	/** Столбец представляет собой вектор чисел или числовую константу. 
+	  */
+	virtual bool isNumeric() const { return false; }
+	
 	/** Создать пустой столбец такого же типа */
 	virtual SharedPtr<IColumn> cloneEmpty() const = 0;
 

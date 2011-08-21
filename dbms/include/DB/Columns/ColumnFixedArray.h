@@ -82,6 +82,11 @@ public:
 		return *data;
 	}
 
+	size_t getN() const
+	{
+		return n;
+	}
+
 protected:
 	ColumnPtr data;
 	const size_t n;

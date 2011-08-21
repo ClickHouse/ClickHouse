@@ -20,6 +20,7 @@ Block & Block::operator= (const Block & other)
 {
 	data = other.data;
 	rebuildIndexByPosition();
+	index_by_name.clear();
 	
 	for (IndexByName_t::const_iterator it = other.index_by_name.begin(); it != other.index_by_name.end(); ++it)
 	{
@@ -76,19 +77,32 @@ void Block::erase(size_t position)
 
 ColumnWithNameAndType & Block::getByPosition(size_t position)
 {
+	if (position >= index_by_position.size())
+		throw Exception("Position out of bound in Block::getByPosition(), max position = "
+			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+		
 	return *index_by_position[position];
 }
 
 
 const ColumnWithNameAndType & Block::getByPosition(size_t position) const
 {
+	if (position >= index_by_position.size())
+		throw Exception("Position out of bound in Block::getByPosition(), max position = "
+			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+		
 	return *index_by_position[position];
 }
 
 
 ColumnWithNameAndType & Block::getByName(const std::string & name)
 {
-	return *index_by_name[name];
+	IndexByName_t::const_iterator it = index_by_name.find(name);
+	if (index_by_name.end() == it)
+		throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+			, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+
+	return *it->second;
 }
 
 

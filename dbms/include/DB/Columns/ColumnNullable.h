@@ -48,7 +48,7 @@ public:
 
 	void cut(size_t start, size_t length)
 	{
-		if (start + length > nulls.size())
+		if (length == 0 || start + length > nulls.size())
 			throw Exception("Parameter out of bound in IColumnNullable::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 

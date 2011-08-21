@@ -178,7 +178,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 		column.column = node->type->createConstColumn(block.rows(), node->value);
 		column.type = node->type;
 		column.name = node->getTreeID();
-		
+
 		block.insert(column);
 	}
 

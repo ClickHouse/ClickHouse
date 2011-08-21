@@ -139,20 +139,31 @@ public:
 
 template <typename T> struct NearestFieldType;
 
-template <> struct NearestFieldType<UInt8> { typedef UInt64 Type; };
-template <> struct NearestFieldType<UInt16> { typedef UInt64 Type; };
-template <> struct NearestFieldType<UInt32> { typedef UInt64 Type; };
-template <> struct NearestFieldType<UInt64> { typedef UInt64 Type; };
+template <> struct NearestFieldType<UInt8> 		{ typedef UInt64 	Type; };
+template <> struct NearestFieldType<UInt16> 	{ typedef UInt64 	Type; };
+template <> struct NearestFieldType<UInt32> 	{ typedef UInt64 	Type; };
+template <> struct NearestFieldType<UInt64> 	{ typedef UInt64 	Type; };
+template <> struct NearestFieldType<Int8> 		{ typedef Int64 	Type; };
+template <> struct NearestFieldType<Int16> 		{ typedef Int64 	Type; };
+template <> struct NearestFieldType<Int32> 		{ typedef Int64 	Type; };
+template <> struct NearestFieldType<Int64> 		{ typedef Int64 	Type; };
+template <> struct NearestFieldType<Float32> 	{ typedef Float64 	Type; };
+template <> struct NearestFieldType<Float64> 	{ typedef Float64 	Type; };
+template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
 
-template <> struct NearestFieldType<Int8> { typedef Int64 Type; };
-template <> struct NearestFieldType<Int16> { typedef Int64 Type; };
-template <> struct NearestFieldType<Int32> { typedef Int64 Type; };
-template <> struct NearestFieldType<Int64> { typedef Int64 Type; };
 
-template <> struct NearestFieldType<Float32> { typedef Float64 Type; };
-template <> struct NearestFieldType<Float64> { typedef Float64 Type; };
+template <typename T> struct IsNumber 	{ static const bool value = false; };
 
-template <> struct NearestFieldType<String> { typedef String Type; };
+template <> struct IsNumber<UInt8> 		{ static const bool value = true; };
+template <> struct IsNumber<UInt16> 	{ static const bool value = true; };
+template <> struct IsNumber<UInt32> 	{ static const bool value = true; };
+template <> struct IsNumber<UInt64> 	{ static const bool value = true; };
+template <> struct IsNumber<Int8> 		{ static const bool value = true; };
+template <> struct IsNumber<Int16> 		{ static const bool value = true; };
+template <> struct IsNumber<Int32> 		{ static const bool value = true; };
+template <> struct IsNumber<Int64> 		{ static const bool value = true; };
+template <> struct IsNumber<Float32> 	{ static const bool value = true; };
+template <> struct IsNumber<Float64> 	{ static const bool value = true; };
 
 }
 

@@ -134,8 +134,20 @@ namespace NumberTraits
 	{
 		typedef typename Construct<
 			typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
-			typename boost::mpl::or_<typename Traits<A>::Floatness, typename Traits<B>::Floatness>::type,
+			Integer,
 			typename Traits<B>::Bits>::Type Type;
+	};
+
+	/** Перед применением оператора %, операнды приводятся к целым числам. */
+	template <typename A> struct ToInteger
+	{
+		typedef typename Construct<
+			typename Traits<A>::Sign,
+			Integer,
+			typename boost::mpl::if_<
+				typename Traits<A>::Floatness,
+				Bits64,
+				typename Traits<A>::Bits>::type>::Type Type;
 	};
 }
 
