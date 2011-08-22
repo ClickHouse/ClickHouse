@@ -34,6 +34,7 @@ public:
 		throw Exception("Cannot insert element into constant column", ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 	}
 	void insertDefault() { ++s; }
+	void filter(const Filter & filt) {}
 
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }

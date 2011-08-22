@@ -77,6 +77,23 @@ public:
 		return *data;
 	}
 
+	void filter(const Filter & filt)
+	{
+		size_t size = this->size();
+		if (size != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return;
+
+		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
+		Filter nested_filt(size * n);
+		for (size_t i = 0; i < size; ++i)
+			if (filt[i])
+				memset(&nested_filt[i * n], 1, n);
+		data->filter(nested_filt);
+	}
+
 	const IColumn & getData() const
 	{
 		return *data;

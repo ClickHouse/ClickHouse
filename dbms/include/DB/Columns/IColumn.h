@@ -60,7 +60,7 @@ public:
 	  * Используется для операции WHERE / HAVING.
 	  */
 	typedef std::vector<UInt8> Filter;
-	//virtual void filter(const Filter & filter) = 0;
+	virtual void filter(const Filter & filt) = 0;
 
 	/** Очистить */
 	virtual void clear() = 0;

@@ -75,6 +75,27 @@ public:
 		data.clear();
 	}
 
+	void filter(const Filter & filt)
+	{
+		size_t size = data.size();
+		if (size != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+		
+		Container_t tmp;
+		tmp.reserve(size);
+		
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (filt[i])
+			{
+				tmp.push_back(T());
+				std::swap(tmp.back(), data[i]);
+			}
+		}
+
+		tmp.swap(data);
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{

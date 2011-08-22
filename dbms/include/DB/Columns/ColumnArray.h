@@ -45,8 +45,8 @@ public:
 	
 	Field operator[](size_t n) const
 	{
-		size_t offset = n == 0 ? 0 : offsets[n - 1];
-		size_t size = offsets[n] - offset;
+		size_t offset = offsetAt(n);
+		size_t size = sizeAt(n);
 		Array res(size);
 		
 		for (size_t i = 0; i < size; ++i)
@@ -61,7 +61,7 @@ public:
 			throw Exception("Parameter out of bound in IColumnArray::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		size_t nested_offset = start == 0 ? 0 : offsets[start - 1];
+		size_t nested_offset = offsetAt(start);
 		size_t nested_length = offsets[start + length - 1] - nested_offset;
 
 		data->cut(nested_offset, nested_length);
@@ -100,6 +100,38 @@ public:
 		offsets.clear();
 	}
 
+	void filter(const Filter & filt)
+	{
+		size_t size = offsets.size();
+		if (size != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return;
+
+		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
+		Filter nested_filt(offsets.back());
+		for (size_t i = 0; i < size; ++i)
+			if (filt[i])
+				memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
+		data->filter(nested_filt);
+				
+		Offsets_t tmp;
+		tmp.reserve(size);
+
+		size_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (filt[i])
+			{
+				current_offset += sizeAt(i);
+				tmp.push_back(current_offset);
+			}
+		}
+
+		tmp.swap(offsets);
+	}
+
 	/** Более эффективные методы манипуляции */
 	IColumn & getData()
 	{
@@ -124,6 +156,9 @@ public:
 protected:
 	ColumnPtr data;
 	Offsets_t offsets;
+
+	inline size_t offsetAt(size_t i) const 	{ return i == 0 ? 0 : offsets[i - 1]; }
+	inline size_t sizeAt(size_t i) const	{ return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
 };
 
 
