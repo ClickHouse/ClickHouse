@@ -9,6 +9,7 @@
 
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsComparison.h>
+#include <DB/Functions/FunctionsLogical.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
@@ -79,10 +80,14 @@ int main(int argc, char ** argv)
 	{
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
-		std::string input = "SELECT x, s1, s2, 2 + x * 2, x * 2, x % 3 == 1, "
+		std::string input = "SELECT x, s1, s2, "
+			"/*"
+			"2 + x * 2, x * 2, x % 3 == 1, "
 			"s1 == 'abc', s1 == s2, s1 != 'abc', s1 != s2, "
 			"s1 <  'abc', s1 <  s2, s1 >  'abc', s1 >  s2, "
-			"s1 <= 'abc', s1 <= s2, s1 >= 'abc', s1 >= s2";
+			"s1 <= 'abc', s1 <= s2, s1 >= 'abc', s1 >= s2, "
+			"*/"
+			"s1 < s2 AND x % 3 < x % 5";
 		std::string expected;
 
 		const char * begin = input.data();
@@ -106,15 +111,25 @@ int main(int argc, char ** argv)
 		context.columns["x"] = new DB::DataTypeInt16;
 		context.columns["s1"] = new DB::DataTypeString;
 		context.columns["s2"] = new DB::DataTypeString;
-		(*context.functions)["plus"] = new DB::FunctionPlus;
-		(*context.functions)["multiply"] = new DB::FunctionMultiply;
-		(*context.functions)["modulo"] = new DB::FunctionModulo;
-		(*context.functions)["equals"] = new DB::FunctionEquals;
-		(*context.functions)["notEquals"] = new DB::FunctionNotEquals;
-		(*context.functions)["less"] = new DB::FunctionLess;
-		(*context.functions)["greater"] = new DB::FunctionGreater;
-		(*context.functions)["lessOrEquals"] = new DB::FunctionLessOrEquals;
+
+		(*context.functions)["plus"] 			= new DB::FunctionPlus;
+		(*context.functions)["minus"] 			= new DB::FunctionMinus;
+		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
+		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
+		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
+		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
+		
+		(*context.functions)["equals"] 			= new DB::FunctionEquals;
+		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
+		(*context.functions)["less"] 			= new DB::FunctionLess;
+		(*context.functions)["greater"] 		= new DB::FunctionGreater;
+		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
 		(*context.functions)["greaterOrEquals"] = new DB::FunctionGreaterOrEquals;
+
+		(*context.functions)["and"] 			= new DB::FunctionAnd;
+		(*context.functions)["or"] 				= new DB::FunctionOr;
+		(*context.functions)["xor"] 			= new DB::FunctionXor;
+		(*context.functions)["not"] 			= new DB::FunctionNot;
 
 		DB::Expression expression(ast, context);
 
