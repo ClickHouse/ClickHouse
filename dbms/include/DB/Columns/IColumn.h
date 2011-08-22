@@ -1,14 +1,19 @@
-#ifndef DBMS_COLUMNS_ICOLUMN_H
-#define DBMS_COLUMNS_ICOLUMN_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Field.h>
 
+
 namespace DB
 {
 
 using Poco::SharedPtr;
+
+class IColumn;
+typedef SharedPtr<IColumn> ColumnPtr;
+typedef std::vector<ColumnPtr> Columns;
+
 
 /** Интерфейс для хранения столбцов значений в оперативке.
   */
@@ -46,6 +51,17 @@ public:
 	  */
 	virtual void insertDefault() = 0;
 
+	/** Соединить столбец с одним или несколькими другими.
+	  * Используется при склейке маленьких блоков.
+	  */
+	//virtual void merge(const Columns & columns) = 0;
+
+	/** Оставить только значения, соответствующие фильтру.
+	  * Используется для операции WHERE / HAVING.
+	  */
+	typedef std::vector<UInt8> Filter;
+	//virtual void filter(const Filter & filter) = 0;
+
 	/** Очистить */
 	virtual void clear() = 0;
 
@@ -53,9 +69,4 @@ public:
 };
 
 
-typedef SharedPtr<IColumn> ColumnPtr;
-typedef std::vector<ColumnPtr> Columns;
-
 }
-
-#endif
