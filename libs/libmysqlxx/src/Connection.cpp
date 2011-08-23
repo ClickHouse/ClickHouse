@@ -46,6 +46,12 @@ void Connection::connect(const char* db,
 	if (mysql_options(&driver, MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<const char *>(&timeout)))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
+	/** Включаем возможность использовать запрос LOAD DATA LOCAL INFILE с серверами,
+	  *  которые были скомпилированы без опции --enable-local-infile.
+	  */
+	if (mysql_options(&driver, MYSQL_OPT_LOCAL_INFILE, NULL))
+		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+
 	if (!mysql_real_connect(&driver, server, user, password, db, port, NULL, driver.client_flag))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
