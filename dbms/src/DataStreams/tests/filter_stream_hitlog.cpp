@@ -1,0 +1,189 @@
+#include <iostream>
+#include <iomanip>
+
+#include <boost/assign/list_inserter.hpp>
+
+#include <Poco/SharedPtr.h>
+#include <Poco/Stopwatch.h>
+#include <Poco/NumberParser.h>
+
+#include <DB/IO/WriteBufferFromOStream.h>
+
+#include <DB/Storages/StorageLog.h>
+
+#include <DB/DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/ExpressionBlockInputStream.h>
+#include <DB/DataStreams/FilterBlockInputStream.h>
+#include <DB/DataStreams/ProfilingBlockInputStream.h>
+#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/copyData.h>
+
+#include <DB/DataTypes/DataTypesNumberFixed.h>
+
+#include <DB/Functions/FunctionsArithmetic.h>
+#include <DB/Functions/FunctionsComparison.h>
+#include <DB/Functions/FunctionsLogical.h>
+
+#include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/formatAST.h>
+
+
+using Poco::SharedPtr;
+
+
+int main(int argc, char ** argv)
+{
+	try
+	{
+		typedef std::pair<std::string, SharedPtr<DB::IDataType> > NameAndTypePair;
+		typedef std::list<NameAndTypePair> NamesAndTypesList;
+
+		NamesAndTypesList names_and_types_list;
+
+		boost::assign::push_back(names_and_types_list)
+			("WatchID",				new DB::DataTypeUInt64)
+			("JavaEnable",			new DB::DataTypeUInt8)
+			("Title",				new DB::DataTypeString)
+			("GoodEvent",			new DB::DataTypeUInt32)
+			("EventTime",			new DB::DataTypeDateTime)
+			("CounterID",			new DB::DataTypeUInt32)
+			("ClientIP",			new DB::DataTypeUInt32)
+			("RegionID",			new DB::DataTypeUInt32)
+			("UniqID",				new DB::DataTypeUInt64)
+			("CounterClass",		new DB::DataTypeUInt8)
+			("OS",					new DB::DataTypeUInt8)
+			("UserAgent",			new DB::DataTypeUInt8)
+			("URL",					new DB::DataTypeString)
+			("Referer",				new DB::DataTypeString)
+			("Refresh",				new DB::DataTypeUInt8)
+			("ResolutionWidth",		new DB::DataTypeUInt16)
+			("ResolutionHeight",	new DB::DataTypeUInt16)
+			("ResolutionDepth",		new DB::DataTypeUInt8)
+			("FlashMajor",			new DB::DataTypeUInt8)
+			("FlashMinor",			new DB::DataTypeUInt8)
+			("FlashMinor2",			new DB::DataTypeString)
+			("NetMajor",			new DB::DataTypeUInt8)
+			("NetMinor",			new DB::DataTypeUInt8)
+			("UserAgentMajor",		new DB::DataTypeUInt16)
+			("UserAgentMinor",		new DB::DataTypeFixedString(2))
+			("CookieEnable",		new DB::DataTypeUInt8)
+			("JavascriptEnable",	new DB::DataTypeUInt8)
+			("IsMobile",			new DB::DataTypeUInt8)
+			("MobilePhone",			new DB::DataTypeUInt8)
+			("MobilePhoneModel",	new DB::DataTypeString)
+			("Params",				new DB::DataTypeString)
+			("IPNetworkID",			new DB::DataTypeUInt32)
+			("TraficSourceID",		new DB::DataTypeInt8)
+			("SearchEngineID",		new DB::DataTypeUInt16)
+			("SearchPhrase",		new DB::DataTypeString)
+			("AdvEngineID",			new DB::DataTypeUInt8)
+			("IsArtifical",			new DB::DataTypeUInt8)
+			("WindowClientWidth",	new DB::DataTypeUInt16)
+			("WindowClientHeight",	new DB::DataTypeUInt16)
+			("ClientTimeZone",		new DB::DataTypeInt16)
+			("ClientEventTime",		new DB::DataTypeDateTime)
+			("SilverlightVersion1",	new DB::DataTypeUInt8)
+			("SilverlightVersion2",	new DB::DataTypeUInt8)
+			("SilverlightVersion3",	new DB::DataTypeUInt32)
+			("SilverlightVersion4",	new DB::DataTypeUInt16)
+			("PageCharset",			new DB::DataTypeString)
+			("CodeVersion",			new DB::DataTypeUInt32)
+			("IsLink",				new DB::DataTypeUInt8)
+			("IsDownload",			new DB::DataTypeUInt8)
+			("IsNotBounce",			new DB::DataTypeUInt8)
+			("FUniqID",				new DB::DataTypeUInt64)
+			("OriginalURL",			new DB::DataTypeString)
+			("HID",					new DB::DataTypeUInt32)
+			("IsOldCounter",		new DB::DataTypeUInt8)
+			("IsEvent",				new DB::DataTypeUInt8)
+			("IsParameter",			new DB::DataTypeUInt8)
+			("DontCountHits",		new DB::DataTypeUInt8)
+			("WithHash",			new DB::DataTypeUInt8)
+		;
+
+		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;
+
+		DB::Context context;
+
+		(*context.functions)["plus"] 			= new DB::FunctionPlus;
+		(*context.functions)["minus"] 			= new DB::FunctionMinus;
+		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
+		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
+		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
+		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
+
+		(*context.functions)["equals"] 			= new DB::FunctionEquals;
+		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
+		(*context.functions)["less"] 			= new DB::FunctionLess;
+		(*context.functions)["greater"] 		= new DB::FunctionGreater;
+		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
+		(*context.functions)["greaterOrEquals"] = new DB::FunctionGreaterOrEquals;
+
+		(*context.functions)["and"] 			= new DB::FunctionAnd;
+		(*context.functions)["or"] 				= new DB::FunctionOr;
+		(*context.functions)["xor"] 			= new DB::FunctionXor;
+		(*context.functions)["not"] 			= new DB::FunctionNot;
+
+		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
+		{
+			names_and_types_map->insert(*it);
+			context.columns[it->first] = it->second;
+		}
+
+		DB::ParserSelectQuery parser;
+		DB::ASTPtr ast;
+		std::string input = "SELECT UniqID, URL, CounterID, IsLink, URL = 'http://mail.yandex.ru/neo2/#inbox'";
+		std::string expected;
+
+		const char * begin = input.data();
+		const char * end = begin + input.size();
+		const char * pos = begin;
+
+		if (!parser.parse(pos, end, ast, expected))
+		{
+			std::cout << "Failed at position " << (pos - begin) << ": "
+				<< mysqlxx::quote << input.substr(pos - begin, 10)
+				<< ", expected " << expected << "." << std::endl;
+		}
+
+		DB::formatAST(*ast, std::cerr);
+		std::cerr << std::endl;
+		std::cerr << ast->getTreeID() << std::endl;
+
+		/// создаём объект существующей таблицы хит лога
+
+		DB::StorageLog table("./", "HitLog", names_and_types_map, ".bin");
+
+		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
+
+		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
+
+		DB::Names column_names;
+		boost::assign::push_back(column_names)
+			("UniqID")
+			("URL")
+			("CounterID")
+			("IsLink")
+		;
+
+		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
+		Poco::SharedPtr<DB::ProfilingBlockInputStream> profiling = new DB::ProfilingBlockInputStream(in);
+		in = new DB::ExpressionBlockInputStream(profiling, expression);
+		in = new DB::FilterBlockInputStream(in, 4);
+		//in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
+		
+		DB::WriteBufferFromOStream ob(std::cout);
+		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(expression->getReturnTypes()));
+
+		DB::copyData(*in, out);
+
+		profiling->getInfo().print(std::cerr);
+	}
+	catch (const DB::Exception & e)
+	{
+		std::cerr << e.what() << ", " << e.message() << std::endl;
+		return 1;
+	}
+
+	return 0;
+}

@@ -1,5 +1,4 @@
-#ifndef DBMS_STORAGES_STORAGE_SYSTEM_NUMBERS_H
-#define DBMS_STORAGES_STORAGE_SYSTEM_NUMBERS_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
@@ -48,5 +47,3 @@ private:
 };
 
 }
-
-#endif

@@ -94,6 +94,11 @@ public:
 		data->filter(nested_filt);
 	}
 
+	size_t byteSize()
+	{
+		return data->byteSize() + sizeof(n);
+	}
+
 	const IColumn & getData() const
 	{
 		return *data;

@@ -36,6 +36,8 @@ public:
 	void insertDefault() { ++s; }
 	void filter(const Filter & filt) {}
 
+	size_t byteSize() { return sizeof(data) + sizeof(s); }
+
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }
 	const T & getData() const { return data; }

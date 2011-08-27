@@ -132,6 +132,11 @@ public:
 		tmp.swap(offsets);
 	}
 
+	size_t byteSize()
+	{
+		return data->byteSize() + offsets.size() * sizeof(offsets[0]);
+	}
+
 	/** Более эффективные методы манипуляции */
 	IColumn & getData()
 	{

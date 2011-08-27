@@ -96,6 +96,11 @@ public:
 		tmp.swap(data);
 	}
 
+	size_t byteSize()
+	{
+		return data.size() * sizeof(data[0]);
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{
