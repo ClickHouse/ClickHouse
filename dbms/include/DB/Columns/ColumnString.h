@@ -26,6 +26,8 @@ public:
 	{
 	}
 
+	std::string getName() const { return "ColumnString"; }
+
 	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnString;

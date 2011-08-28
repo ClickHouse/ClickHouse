@@ -336,7 +336,8 @@ private:
 				||	executeRightType<T0, Float64>(block, arguments, result, col_left))
 				return true;
 			else
-				throw Exception("Illegal column of second argument of function " + getName(),
+				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
 		else if (ColumnConst<T0> * col_left = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
@@ -353,7 +354,8 @@ private:
 				||	executeConstRightType<T0, Float64>(block, arguments, result, col_left))
 				return true;
 			else
-				throw Exception("Illegal column of second argument of function " + getName(),
+				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
 		
@@ -412,7 +414,8 @@ public:
 			||	executeLeftType<Int64>(block, arguments, result)
 			||	executeLeftType<Float32>(block, arguments, result)
 			||	executeLeftType<Float64>(block, arguments, result)))
-		   throw Exception("Illegal column of first argument of function " + getName(),
+		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };

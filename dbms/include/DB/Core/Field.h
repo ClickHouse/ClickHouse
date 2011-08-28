@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_FIELD_H
-#define DBMS_CORE_FIELD_H
+#pragma once
 
 #include <vector>
 #include <sstream>
@@ -151,20 +150,4 @@ template <> struct NearestFieldType<Float32> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<Float64> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
 
-
-template <typename T> struct IsNumber 	{ static const bool value = false; };
-
-template <> struct IsNumber<UInt8> 		{ static const bool value = true; };
-template <> struct IsNumber<UInt16> 	{ static const bool value = true; };
-template <> struct IsNumber<UInt32> 	{ static const bool value = true; };
-template <> struct IsNumber<UInt64> 	{ static const bool value = true; };
-template <> struct IsNumber<Int8> 		{ static const bool value = true; };
-template <> struct IsNumber<Int16> 		{ static const bool value = true; };
-template <> struct IsNumber<Int32> 		{ static const bool value = true; };
-template <> struct IsNumber<Int64> 		{ static const bool value = true; };
-template <> struct IsNumber<Float32> 	{ static const bool value = true; };
-template <> struct IsNumber<Float64> 	{ static const bool value = true; };
-
 }
-
-#endif

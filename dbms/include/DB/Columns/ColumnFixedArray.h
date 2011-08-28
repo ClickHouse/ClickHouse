@@ -26,6 +26,8 @@ public:
 		clear();
 	}
 
+	std::string getName() const { return "ColumnFixedArray(" + data->getName() + ")"; }
+
 	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnFixedArray(data->cloneEmpty(), n);

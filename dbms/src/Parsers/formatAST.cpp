@@ -73,7 +73,53 @@ void formatAST(const IAST & ast, std::ostream & s)
 void formatAST(const ASTSelectQuery 		& ast, std::ostream & s)
 {
 	s << "SELECT ";
-	formatAST(*ast.select, s);
+	formatAST(*ast.select_expression_list, s);
+
+	if (ast.table)
+	{
+		s << " FROM ";
+		if (ast.database)
+		{
+			formatAST(*ast.database, s);
+			s << ".";
+		}
+		formatAST(*ast.table, s);
+	}
+
+	if (ast.where_expression)
+	{
+		s << " WHERE ";
+		formatAST(*ast.where_expression, s);
+	}
+
+	if (ast.group_expression_list)
+	{
+		s << " GROUP BY ";
+		formatAST(*ast.group_expression_list, s);
+	}
+
+	if (ast.having_expression)
+	{
+		s << " HAVING ";
+		formatAST(*ast.having_expression, s);
+	}
+
+	if (ast.order_expression_list)
+	{
+		s << " ORDER BY ";
+		formatAST(*ast.order_expression_list, s);
+	}
+
+	if (ast.limit_length)
+	{
+		s << " LIMIT ";
+		if (ast.limit_offset)
+		{
+			formatAST(*ast.limit_offset, s);
+			s << ", ";
+		}
+		formatAST(*ast.limit_length, s);
+	}
 }
 
 void formatAST(const ASTCreateQuery 		& ast, std::ostream & s)

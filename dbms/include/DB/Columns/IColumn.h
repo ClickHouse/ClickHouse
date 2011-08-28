@@ -20,6 +20,10 @@ typedef std::vector<ColumnPtr> Columns;
 class IColumn
 {
 public:
+	/** Имя столбца. Для информационных сообщений.
+	  */
+	virtual std::string getName() const = 0;
+	
 	/** Столбец представляет собой вектор чисел или числовую константу. 
 	  */
 	virtual bool isNumeric() const { return false; }

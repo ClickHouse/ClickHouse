@@ -26,6 +26,8 @@ public:
 	{
 	}
 
+	std::string getName() const { return "ColumnFixedString"; }
+
 	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnFixedString(n);

@@ -33,6 +33,8 @@ public:
 		data->clear();
 	}
 
+	std::string getName() const { return "ColumnArray(" + data->getName() + ")"; }
+
 	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnArray(data->cloneEmpty());

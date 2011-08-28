@@ -24,6 +24,8 @@ public:
 	ColumnVector() {}
 	ColumnVector(size_t n) : data(n) {}
 
+ 	std::string getName() const { return "ColumnVector<" + TypeName<T>::get() + ">"; }
+
 	bool isNumeric() const { return IsNumber<T>::value; }
 
 	ColumnPtr cloneEmpty() const

@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_ASTSELECTQUERY_H
-#define DBMS_PARSERS_ASTSELECTQUERY_H
+#pragma once
 
 #include <DB/Parsers/IAST.h>
 
@@ -13,8 +12,16 @@ namespace DB
 class ASTSelectQuery : public IAST
 {
 public:
-	ASTPtr select, from, where, group, having, order, limit;
-
+	ASTPtr select_expression_list;
+	ASTPtr database;
+	ASTPtr table;
+	ASTPtr where_expression;
+	ASTPtr group_expression_list;
+	ASTPtr having_expression;
+	ASTPtr order_expression_list;
+	ASTPtr limit_offset;
+	ASTPtr limit_length;
+	
 	ASTSelectQuery() {}
 	ASTSelectQuery(StringRange range_) : IAST(range_) {}
 	
@@ -23,5 +30,3 @@ public:
 };
 
 }
-
-#endif
