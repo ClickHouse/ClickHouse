@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_ASTEXPRESSIONLIST_H
-#define DBMS_PARSERS_ASTEXPRESSIONLIST_H
+#pragma once
 
 #include <DB/Parsers/IAST.h>
 
@@ -23,5 +22,3 @@ public:
 };
 
 }
-
-#endif

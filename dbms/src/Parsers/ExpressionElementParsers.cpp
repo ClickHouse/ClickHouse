@@ -6,6 +6,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTAsterisk.h>
 
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
@@ -301,6 +302,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 	ParserLiteral lit_p;
 	ParserFunction fun_p;
 	ParserIdentifier id_p;
+	ParserString asterisk_p("*");
 
 	if (paren_p.parse(pos, end, node, expected))
 		return true;
@@ -322,7 +324,14 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 		return true;
 	pos = begin;
 
-	expected = "expression element: one of array, literal, function, identifier, parenthised expression";
+	if (asterisk_p.parse(pos, end, node, expected))
+	{
+		node = new ASTAsterisk(StringRange(begin, pos));
+		return true;
+	}
+	pos = begin;
+
+	expected = "expression element: one of array, literal, function, identifier, asterisk, parenthised expression";
 	return false;
 }
 

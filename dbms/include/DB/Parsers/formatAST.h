@@ -11,6 +11,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/Parsers/ASTAsterisk.h>
 
 
 namespace DB
@@ -27,6 +28,7 @@ void formatAST(const ASTFunction 		& ast, std::ostream & s);
 void formatAST(const ASTIdentifier 		& ast, std::ostream & s);
 void formatAST(const ASTLiteral 		& ast, std::ostream & s);
 void formatAST(const ASTNameTypePair	& ast, std::ostream & s);
+void formatAST(const ASTAsterisk		& ast, std::ostream & s);
 
 }
 

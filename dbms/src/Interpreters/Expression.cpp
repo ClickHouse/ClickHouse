@@ -3,6 +3,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTAsterisk.h>
 #include <DB/Parsers/ASTExpressionList.h>
 
 #include <DB/Interpreters/Expression.h>
@@ -11,9 +12,16 @@
 namespace DB
 {
 
-void Expression::addSemantic(ASTPtr ast)
+void Expression::addSemantic(ASTPtr & ast)
 {
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (dynamic_cast<ASTAsterisk *>(&*ast))
+	{
+		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
+		for (NamesAndTypes::const_iterator it = context.columns.begin(); it != context.columns.end(); ++it)
+			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
+		ast = all_columns;
+	}
+	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		Functions::const_iterator it = context.functions->find(node->name);
 		if (it == context.functions->end())

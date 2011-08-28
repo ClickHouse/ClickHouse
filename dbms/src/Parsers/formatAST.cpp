@@ -67,6 +67,13 @@ void formatAST(const IAST & ast, std::ostream & s)
 		return;
 	}
 
+	const ASTAsterisk * asterisk = dynamic_cast<const ASTAsterisk *>(&ast);
+	if (asterisk)
+	{
+		formatAST(*asterisk, s);
+		return;
+	}
+
 	throw DB::Exception("Unknown element in AST", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 }
 
@@ -165,6 +172,11 @@ void formatAST(const ASTNameTypePair		& ast, std::ostream & s)
 {
 	s << ast.name << " ";
 	formatAST(*ast.type, s);
+}
+
+void formatAST(const ASTAsterisk			& ast, std::ostream & s)
+{
+	s << "*";
 }
 
 }
