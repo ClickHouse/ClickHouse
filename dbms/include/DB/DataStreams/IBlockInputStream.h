@@ -1,11 +1,15 @@
-#ifndef DBMS_DATA_STREAMS_IBLOCKINPUTSTREAM_H
-#define DBMS_DATA_STREAMS_IBLOCKINPUTSTREAM_H
+#pragma once
+
+#include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
 
 
 namespace DB
 {
+
+using Poco::SharedPtr;
+
 
 /** Интерфейс потока для чтения данных по блокам из БД.
   * Реляционные операции предполагается делать также реализациями этого интерфейса.
@@ -22,6 +26,8 @@ public:
 	virtual ~IBlockInputStream() {}
 };
 
+
+typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
+
 }
 
-#endif

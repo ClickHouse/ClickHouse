@@ -17,11 +17,11 @@ using Poco::SharedPtr;
 class LimitBlockInputStream : public IBlockInputStream
 {
 public:
-	LimitBlockInputStream(SharedPtr<IBlockInputStream> input_, size_t limit_, size_t offset_ = 0);
+	LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_ = 0);
 	Block read();
 
 private:
-	SharedPtr<IBlockInputStream> input;
+	BlockInputStreamPtr input;
 	size_t limit;
 	size_t offset;
 	size_t pos;

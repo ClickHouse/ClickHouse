@@ -44,7 +44,7 @@ public:
 	  *  (индексы, блокировки и т. п.)
 	  * Возвращает объект, с помощью которого можно последовательно читать данные.
 	  */
-	virtual SharedPtr<IBlockInputStream> read(
+	virtual BlockInputStreamPtr read(
 		const Names & column_names,
 		ASTPtr query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE)
@@ -56,7 +56,7 @@ public:
 	  * Принимает описание запроса, в котором может содержаться информация о методе записи данных.
 	  * Возвращает объект, с помощью которого можно последовательно писать данные.
 	  */
-	virtual SharedPtr<IBlockOutputStream> write(
+	virtual BlockOutputStreamPtr write(
 		ASTPtr query)
 	{
 		throw Exception("Method write() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);

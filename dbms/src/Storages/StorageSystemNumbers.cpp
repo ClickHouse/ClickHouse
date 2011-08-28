@@ -46,7 +46,7 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_)
 }
 
 
-SharedPtr<IBlockInputStream> StorageSystemNumbers::read(
+BlockInputStreamPtr StorageSystemNumbers::read(
 	const Names & column_names, ASTPtr query, size_t max_block_size)
 {
 	check(column_names);

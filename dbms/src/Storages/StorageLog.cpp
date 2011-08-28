@@ -84,7 +84,7 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Sha
 }
 
 
-SharedPtr<IBlockInputStream> StorageLog::read(
+BlockInputStreamPtr StorageLog::read(
 	const Names & column_names,
 	ASTPtr query,
 	size_t max_block_size)
@@ -94,7 +94,7 @@ SharedPtr<IBlockInputStream> StorageLog::read(
 }
 
 	
-SharedPtr<IBlockOutputStream> StorageLog::write(
+BlockOutputStreamPtr StorageLog::write(
 	ASTPtr query)
 {
 	return new LogBlockOutputStream(*this);

@@ -179,6 +179,7 @@ int main(int argc, char ** argv)
 			stopwatch.start();
 
 			expression.execute(block);
+			block = expression.projectResult(block);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)

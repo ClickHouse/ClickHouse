@@ -19,11 +19,11 @@ class FilterBlockInputStream : public IBlockInputStream
 {
 public:
 	/// filter_column_ - номер столбца с условиями фильтрации
-	FilterBlockInputStream(SharedPtr<IBlockInputStream> input_, size_t filter_column_);
+	FilterBlockInputStream(BlockInputStreamPtr input_, size_t filter_column_);
 	Block read();
 
 private:
-	SharedPtr<IBlockInputStream> input;
+	BlockInputStreamPtr input;
 	size_t filter_column;
 };
 

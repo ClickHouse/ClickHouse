@@ -37,7 +37,7 @@ struct BlockStreamProfileInfo
 class ProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	ProfilingBlockInputStream(SharedPtr<IBlockInputStream> in_)
+	ProfilingBlockInputStream(BlockInputStreamPtr in_)
 		: in(in_) {}
 	
 	Block read();
@@ -45,7 +45,7 @@ public:
 	const BlockStreamProfileInfo & getInfo() const;
 
 private:
-	SharedPtr<IBlockInputStream> in;
+	BlockInputStreamPtr in;
 	BlockStreamProfileInfo info;
 };
 

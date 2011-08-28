@@ -91,12 +91,12 @@ public:
 
 	const NamesAndTypes & getColumns() const { return *columns; }
 
-	SharedPtr<IBlockInputStream> read(
+	BlockInputStreamPtr read(
 		const Names & column_names,
 		ASTPtr query,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE);
 
-	SharedPtr<IBlockOutputStream> write(
+	BlockOutputStreamPtr write(
 		ASTPtr query);
 
 private:

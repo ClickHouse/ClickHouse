@@ -20,7 +20,7 @@ using Poco::SharedPtr;
 class ExpressionBlockInputStream : public IBlockInputStream
 {
 public:
-	ExpressionBlockInputStream(SharedPtr<IBlockInputStream> input_, SharedPtr<Expression> expression_)
+	ExpressionBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression_)
 		: input(input_), expression(expression_) {}
 
 	Block read()
@@ -30,11 +30,11 @@ public:
 			return res;
 
 		expression->execute(res);
-		return res;
+		return expression->projectResult(res);
 	}
 
 private:
-	SharedPtr<IBlockInputStream> input;
+	BlockInputStreamPtr input;
 	SharedPtr<Expression> expression;
 };
 

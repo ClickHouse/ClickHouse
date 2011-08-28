@@ -23,12 +23,20 @@ public:
 	typedef std::list<SharedPtr<IAST> > ASTs;
 	ASTs children;
 	StringRange range;
-	/// Было ли соответствующее выражение вычислено.
+
+	/** Было ли соответствующее выражение вычислено.
+	  * Используется, чтобы при обходе графа выражения, не вычислять несколько раз одни и те же узлы.
+	  */
 	bool calculated;
 	
+	/** Идентификатор части выражения. Используется при интерпретации, чтобы вычислять не всё выражение сразу,
+	  *  а по частям (например, сначала WHERE, потом фильтрация, потом всё остальное).
+	  */
+	unsigned part_id;
+	
 
-	IAST() : range(NULL, NULL), calculated(false) {}
-	IAST(StringRange range_) : range(range_), calculated(false) {}
+	IAST() : range(NULL, NULL), calculated(false), part_id(0) {}
+	IAST(StringRange range_) : range(range_), calculated(false), part_id(0) {}
 	virtual ~IAST() {}
 		
 	/** Получить текст, который идентифицирует этот элемент. */

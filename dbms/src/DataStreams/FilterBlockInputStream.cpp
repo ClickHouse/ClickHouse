@@ -6,7 +6,7 @@
 namespace DB
 {
 
-FilterBlockInputStream::FilterBlockInputStream(SharedPtr<IBlockInputStream> input_, size_t filter_column_)
+FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, size_t filter_column_)
 	: input(input_), filter_column(filter_column_)
 {
 }

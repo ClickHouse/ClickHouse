@@ -1,7 +1,4 @@
-#ifndef DBMS_DATA_STREAMS_ROWINPUTSTREAMFROMBLOCKINPUTSTREAM_H
-#define DBMS_DATA_STREAMS_ROWINPUTSTREAMFROMBLOCKINPUTSTREAM_H
-
-#include <Poco/SharedPtr.h>
+#pragma once
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IRowInputStream.h>
@@ -9,8 +6,6 @@
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 
 /** Преобразует поток для чтения данных по блокам в поток для чтения данных по строкам.
@@ -30,5 +25,3 @@ private:
 };
 
 }
-
-#endif

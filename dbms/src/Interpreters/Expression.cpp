@@ -23,11 +23,14 @@ void Expression::addSemantic(ASTPtr ast)
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
-		NamesAndTypes::const_iterator it = context.columns.find(node->name);
-		if (it == context.columns.end())
-			throw Exception("Unknown identifier " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
+		if (node->kind == ASTIdentifier::Column)
+		{
+			NamesAndTypes::const_iterator it = context.columns.find(node->name);
+			if (it == context.columns.end())
+				throw Exception("Unknown identifier " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
-		node->type = it->second;
+			node->type = it->second;
+		}
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
 	{
@@ -104,30 +107,30 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 }
 
 
-void Expression::setNotCalculated(ASTPtr ast)
+void Expression::setNotCalculated(ASTPtr ast, unsigned part_id)
 {
-	ast->calculated = false;
+	if (ast->part_id == part_id)
+		ast->calculated = false;
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		setNotCalculated(*it);
+		setNotCalculated(*it, part_id);
 }
 
 
-void Expression::execute(Block & block)
+void Expression::execute(Block & block, unsigned part_id)
 {
-	setNotCalculated(ast);
-	executeImpl(ast, block);
-	block = projectResult(ast, block);
+	setNotCalculated(ast, part_id);
+	executeImpl(ast, block, part_id);
 }
 
 
-void Expression::executeImpl(ASTPtr ast, Block & block)
+void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 {
 	/// Обход в глубину
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		executeImpl(*it, block);
+		executeImpl(*it, block, part_id);
 
-	if (ast->calculated)
+	if (ast->calculated || ast->part_id != part_id)
 		return;
 
 	/** Столбцы из таблицы уже загружены в блок.
@@ -186,7 +189,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block)
 }
 
 
-Block Expression::projectResult(ASTPtr ast, Block & block)
+Block Expression::projectResult(Block & block)
 {
 	Block res;
 	collectFinalColumns(ast, block, res);
@@ -197,7 +200,10 @@ Block Expression::projectResult(ASTPtr ast, Block & block)
 void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst)
 {
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
-		dst.insert(src.getByName(ident->name));
+	{
+		if (ident->kind == ASTIdentifier::Column)
+			dst.insert(src.getByName(ident->name));
+	}
 	else if (dynamic_cast<ASTLiteral *>(&*ast))
 		dst.insert(src.getByName(ast->getTreeID()));
 	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))

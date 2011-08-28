@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_ERROR_CODES_H
-#define DBMS_CORE_ERROR_CODES_H
+#pragma once
 
 
 namespace DB
@@ -66,9 +65,8 @@ namespace ErrorCodes
 		TABLE_ALREADY_EXISTS,
 		TABLE_METADATA_ALREADY_EXISTS,
 		ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+		UNKNOWN_TABLE
 	};
 }
 
 }
-
-#endif

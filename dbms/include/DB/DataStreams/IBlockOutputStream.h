@@ -1,11 +1,15 @@
-#ifndef DBMS_DATA_STREAMS_IBLOCKOUTPUTSTREAM_H
-#define DBMS_DATA_STREAMS_IBLOCKOUTPUTSTREAM_H
+#pragma once
+
+#include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
 
 
 namespace DB
 {
+
+using Poco::SharedPtr;
+
 
 /** Интерфейс потока для записи данных в БД или в сеть, или в консоль и т. п.
   */
@@ -20,6 +24,6 @@ public:
 	virtual ~IBlockOutputStream() {}
 };
 
-}
+typedef SharedPtr<IBlockOutputStream> BlockOutputStreamPtr;
 
-#endif
+}

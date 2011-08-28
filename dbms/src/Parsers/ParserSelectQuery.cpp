@@ -1,4 +1,5 @@
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/IParserBase.h>
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
@@ -65,6 +66,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 
 			ws.ignore(pos, end);
 		}
+
+		dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
+		dynamic_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
 	}
 
 	/// WHERE expr

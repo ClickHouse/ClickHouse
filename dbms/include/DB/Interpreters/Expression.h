@@ -26,8 +26,14 @@ public:
 
 	/** Выполнить выражение над блоком. Блок должен содержать все столбцы - идентификаторы.
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.
+	  * part_id - какую часть выражения вычислять.
 	  */
-	void execute(Block & block);
+	void execute(Block & block, unsigned part_id = 0);
+
+	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
+	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
+	  */
+	Block projectResult(Block & block);
 
 	/** Получить список типов столбцов результата.
 	  */
@@ -61,14 +67,9 @@ private:
 
 	/** Прописать во всех узлах, что они ещё не вычислены.
 	  */
-	void setNotCalculated(ASTPtr ast);
+	void setNotCalculated(ASTPtr ast, unsigned part_id);
 
-	void executeImpl(ASTPtr ast, Block & block);
-
-	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
-	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
-	  */
-	Block projectResult(ASTPtr ast, Block & block);
+	void executeImpl(ASTPtr ast, Block & block, unsigned part_id);
 
 	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst);
 

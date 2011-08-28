@@ -8,7 +8,7 @@ namespace DB
 
 using Poco::SharedPtr;
 
-LimitBlockInputStream::LimitBlockInputStream(SharedPtr<IBlockInputStream> input_, size_t limit_, size_t offset_)
+LimitBlockInputStream::LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_)
 	: input(input_), limit(limit_), offset(offset_), pos(0)
 {
 }
