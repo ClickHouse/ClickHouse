@@ -5,6 +5,7 @@
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Expression.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -47,7 +48,7 @@ StoragePtr InterpreterSelectQuery::getTable()
 
 	if (context.databases->end() == context.databases->find(database_name)
 		|| (*context.databases)[database_name].end() == (*context.databases)[database_name].find(table_name))
-		throw Exception("Unknown table " + table_name + " in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
+		throw Exception("Unknown table '" + table_name + "' in database '" + database_name + "'", ErrorCodes::UNKNOWN_TABLE);
 
 	return (*context.databases)[database_name][table_name];
 }
@@ -71,7 +72,13 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	context.columns = table->getColumns();
 	Poco::SharedPtr<Expression> expression = new Expression(query_ptr, context);
-	BlockInputStreamPtr stream = table->read(expression->getRequiredColumns(), query_ptr, max_block_size);
+	Names required_columns = expression->getRequiredColumns();
+
+	/// Если не указан ни один столбец из таблицы, то будем читать первый попавшийся (чтобы хотя бы знать число строк).
+	if (required_columns.empty())
+		required_columns.push_back(table->getColumns().begin()->first);
+
+	BlockInputStreamPtr stream = table->read(required_columns, query_ptr, max_block_size);
 
 	/// Если есть условие WHERE - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.where_expression)
@@ -82,10 +89,20 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	}
 
 	/// Выполним оставшуюся часть выражения
-	stream = new ExpressionBlockInputStream(stream, expression);
-
 	setPartID(query.select_expression_list, PART_SELECT);
+	stream = new ExpressionBlockInputStream(stream, expression, PART_SELECT);
 	stream = new ProjectionBlockInputStream(stream, expression, PART_SELECT);
+
+	/// Если есть LIMIT
+	if (query.limit_length)
+	{
+		size_t limit_length = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
+		size_t limit_offset = 0;
+		if (query.limit_offset)
+			limit_offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
+
+		stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
+	}
 
 	return stream;
 }

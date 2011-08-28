@@ -27,7 +27,7 @@ Block OneValueBlockInputStream::read()
 	ColumnWithNameAndType col;
 	col.name = "dummy";
 	col.type = new DataTypeUInt8;
-	col.column = new ColumnConstUInt8(0, 1);
+	col.column = new ColumnConstUInt8(1, 0);
 	res.insert(col);
 	return res;
 }

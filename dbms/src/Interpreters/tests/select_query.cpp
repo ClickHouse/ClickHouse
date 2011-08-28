@@ -10,15 +10,17 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Storages/StorageLog.h>
+#include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/Storages/StorageSystemOne.h>
 
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-//#include <DB/Functions/FunctionsArithmetic.h>
+#include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsComparison.h>
-//#include <DB/Functions/FunctionsLogical.h>
+#include <DB/Functions/FunctionsLogical.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -108,15 +110,15 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 
-/*		(*context.functions)["plus"] 			= new DB::FunctionPlus;
+		(*context.functions)["plus"] 			= new DB::FunctionPlus;
 		(*context.functions)["minus"] 			= new DB::FunctionMinus;
 		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
 		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
 		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
 		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
-*/
+
 		(*context.functions)["equals"] 			= new DB::FunctionEquals;
-/*		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
+		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
 		(*context.functions)["less"] 			= new DB::FunctionLess;
 		(*context.functions)["greater"] 		= new DB::FunctionGreater;
 		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
@@ -126,29 +128,41 @@ int main(int argc, char ** argv)
 		(*context.functions)["or"] 				= new DB::FunctionOr;
 		(*context.functions)["xor"] 			= new DB::FunctionXor;
 		(*context.functions)["not"] 			= new DB::FunctionNot;
-*/
-		(*context.databases)["default"]["hits"] = new DB::StorageLog("./", "hits", names_and_types_map, ".bin");
+
+		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./", "hits", names_and_types_map, ".bin");
+		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
+		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");
 		context.current_database = "default";
 
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
-		std::string input = "SELECT UniqID, URL, CounterID, IsLink FROM hits WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
+		std::string input;/* =
+			"SELECT UniqID, URL, CounterID, IsLink "
+			"FROM hits "
+			"WHERE URL = 'http://mail.yandex.ru/neo2/#inbox' "
+			"LIMIT 10";*/
+		std::stringstream str;
+		str << std::cin.rdbuf();
+		input = str.str();
+		
 		std::string expected;
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();
 		const char * pos = begin;
 
-		if (!parser.parse(pos, end, ast, expected))
-		{
-			std::cout << "Failed at position " << (pos - begin) << ": "
-				<< mysqlxx::quote << input.substr(pos - begin, 10)
-				<< ", expected " << expected << "." << std::endl;
-		}
+		bool parse_res = parser.parse(pos, end, ast, expected);
 
-/*		DB::formatAST(*ast, std::cerr);
+		if (!parse_res || pos != end)
+			throw DB::Exception("Syntax error: failed at position "
+				+ Poco::NumberFormatter::format(pos - begin) + ": "
+				+ input.substr(pos - begin, 10)
+				+ ", expected " + (parse_res ? "end of data" : expected) + ".",
+				DB::ErrorCodes::SYNTAX_ERROR);
+
+		DB::formatAST(*ast, std::cerr);
 		std::cerr << std::endl;
-		std::cerr << ast->getTreeID() << std::endl;
+/*		std::cerr << ast->getTreeID() << std::endl;
 */
 		DB::InterpreterSelectQuery interpreter(ast, context);
 		DB::BlockInputStreamPtr in = interpreter.execute();

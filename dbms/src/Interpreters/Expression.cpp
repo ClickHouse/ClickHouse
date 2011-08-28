@@ -147,11 +147,8 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 	/** Столбцы из таблицы уже загружены в блок.
 	  * Вычисление состоит в добавлении в блок новых столбцов - констант и результатов вычислений функций.
 	  */
-
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		//std::cerr << node->getTreeID() << std::endl;
-		
 		/// Вставляем в блок столбцы - результаты вычисления функции
 		ColumnNumbers argument_numbers;
 		ColumnNumbers & result_numbers = node->return_column_numbers;
@@ -184,10 +181,6 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
 	{
-		//std::cerr << node->getTreeID() << std::endl;
-				
-		/// Вставляем в блок столбец - константу
-		
 		ColumnWithNameAndType column;
 		column.column = node->type->createConstColumn(block.rows(), node->value);
 		column.type = node->type;
@@ -210,6 +203,7 @@ Block Expression::projectResult(Block & block, unsigned part_id)
 
 void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, unsigned part_id)
 {
+	/// Обход в глубину, который не заходит внутрь функций.
 	if (ast->part_id != part_id)
 	{
 		if (!dynamic_cast<ASTFunction *>(&*ast))
@@ -244,21 +238,19 @@ DataTypes Expression::getReturnTypes()
 
 void Expression::getReturnTypesImpl(ASTPtr ast, DataTypes & res)
 {
-	if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
+	/// Обход в глубину, который не заходит внутрь функций.
+	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
-		for (ASTs::iterator it = node->children.begin(); it != node->children.end(); ++it)
-		{
-			if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
-				res.push_back(ident->type);
-			else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
-				res.insert(res.end(), func->return_types.begin(), func->return_types.end());
-			else if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&**it))
-				res.push_back(lit->type);
-		}
+		if (ident->kind == ASTIdentifier::Column)
+			res.push_back(ident->type);
 	}
+	else if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*ast))
+		res.push_back(lit->type);
+	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+		res.insert(res.end(), func->return_types.begin(), func->return_types.end());
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			 getReturnTypesImpl(*it, res);
+			getReturnTypesImpl(*it, res);
 }
 
 	

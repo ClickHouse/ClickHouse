@@ -21,9 +21,9 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-#include <DB/Functions/FunctionsArithmetic.h>
+//#include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsComparison.h>
-#include <DB/Functions/FunctionsLogical.h>
+//#include <DB/Functions/FunctionsLogical.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -106,15 +106,15 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 
-		(*context.functions)["plus"] 			= new DB::FunctionPlus;
+/*		(*context.functions)["plus"] 			= new DB::FunctionPlus;
 		(*context.functions)["minus"] 			= new DB::FunctionMinus;
 		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
 		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
 		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
 		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
-
+*/
 		(*context.functions)["equals"] 			= new DB::FunctionEquals;
-		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
+/*		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
 		(*context.functions)["less"] 			= new DB::FunctionLess;
 		(*context.functions)["greater"] 		= new DB::FunctionGreater;
 		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
@@ -124,7 +124,7 @@ int main(int argc, char ** argv)
 		(*context.functions)["or"] 				= new DB::FunctionOr;
 		(*context.functions)["xor"] 			= new DB::FunctionXor;
 		(*context.functions)["not"] 			= new DB::FunctionNot;
-
+*/
 		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
 		{
 			names_and_types_map->insert(*it);
@@ -172,7 +172,7 @@ int main(int argc, char ** argv)
 		in = new DB::ExpressionBlockInputStream(profiling, expression);
 		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 4);
-		//in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
+		//in = new DB::LimitBlockInputStream(in, 10);
 		
 		DB::WriteBufferFromOStream ob(std::cout);
 		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(expression->getReturnTypes()));
