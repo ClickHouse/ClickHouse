@@ -11,6 +11,7 @@
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
+#include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -59,10 +60,11 @@ int main(int argc, char ** argv)
 		DB::Names column_names;
 		column_names.push_back("number");
 
-		Poco::SharedPtr<DB::IBlockInputStream> in1(table.read(column_names, 0));
-
-		Poco::SharedPtr<DB::ExpressionBlockInputStream> in2 = new DB::ExpressionBlockInputStream(in1, expression);
-		DB::LimitBlockInputStream in3(in2, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
+		Poco::SharedPtr<DB::IBlockInputStream> in;
+		in = table.read(column_names, 0);
+		in = new DB::ExpressionBlockInputStream(in, expression);
+		in = new DB::ProjectionBlockInputStream(in, expression);
+		in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 		
 		DB::WriteBufferFromOStream out1(std::cout);
 		DB::TabSeparatedRowOutputStream out2(out1, new DB::DataTypes(expression->getReturnTypes()));
@@ -71,7 +73,7 @@ int main(int argc, char ** argv)
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 
-			DB::copyData(in3, out2);
+			DB::copyData(*in, out2);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)

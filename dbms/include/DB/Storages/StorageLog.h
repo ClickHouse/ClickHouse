@@ -28,7 +28,7 @@ public:
 	Block read();
 private:
 	size_t block_size;
-	const Names & column_names;
+	Names column_names;
 	StorageLog & storage;
 
 	struct Stream

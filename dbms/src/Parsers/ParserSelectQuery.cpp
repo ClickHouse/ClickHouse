@@ -67,7 +67,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			ws.ignore(pos, end);
 		}
 
-		dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
+		if (select_query->database)
+			dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
 		dynamic_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
 	}
 

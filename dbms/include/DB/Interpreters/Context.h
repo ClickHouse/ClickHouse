@@ -31,12 +31,12 @@ typedef std::map<String, Tables> Databases;
   */
 struct Context
 {
-	String path;						/// Путь к директории с данными, со слешем на конце.
-	SharedPtr<Databases> databases;		/// Список БД и таблиц в них.
-	String current_database;			/// Текущая БД.
-	SharedPtr<Functions> functions;		/// Обычные функции.
-	DataTypeFactory data_type_factory;	/// Типы данных.
-	NamesAndTypes columns;				/// Столбцы текущей обрабатываемой таблицы.
+	String path;									/// Путь к директории с данными, со слешем на конце.
+	SharedPtr<Databases> databases;					/// Список БД и таблиц в них.
+	String current_database;						/// Текущая БД.
+	SharedPtr<Functions> functions;					/// Обычные функции.
+	SharedPtr<DataTypeFactory> data_type_factory;	/// Типы данных.
+	NamesAndTypes columns;							/// Столбцы текущей обрабатываемой таблицы.
 
 	SharedPtr<Poco::FastMutex> mutex;	/// Для доступа и модификации разделяемых объектов.
 

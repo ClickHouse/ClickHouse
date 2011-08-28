@@ -6,7 +6,7 @@
 namespace DB
 {
 
-FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, size_t filter_column_)
+FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_)
 	: input(input_), filter_column(filter_column_)
 {
 }
@@ -16,6 +16,9 @@ Block FilterBlockInputStream::read()
 	Block res = input->read();
 	if (!res)
 		return res;
+
+	if (filter_column < 0)
+		filter_column = static_cast<ssize_t>(res.columns()) + filter_column;
 
 	size_t columns = res.columns();
 	ColumnPtr column = res.getByPosition(filter_column).column;
@@ -35,10 +38,9 @@ Block FilterBlockInputStream::read()
 	IColumn::Filter & filter = column_vec->getData();
 
 	for (size_t i = 0; i < columns; ++i)
-		if (i != filter_column)
+		if (i != static_cast<size_t>(filter_column))
 			res.getByPosition(i).column->filter(filter);
 
-	res.erase(filter_column);
 	return res;
 }
 

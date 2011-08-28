@@ -11,22 +11,19 @@
 
 #include <DB/Storages/StorageLog.h>
 
-#include <DB/DataStreams/LimitBlockInputStream.h>
-#include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/ProjectionBlockInputStream.h>
-#include <DB/DataStreams/FilterBlockInputStream.h>
-#include <DB/DataStreams/ProfilingBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-#include <DB/Functions/FunctionsArithmetic.h>
+//#include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsComparison.h>
-#include <DB/Functions/FunctionsLogical.h>
+//#include <DB/Functions/FunctionsLogical.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
+
+#include <DB/Interpreters/InterpreterSelectQuery.h>
 
 
 using Poco::SharedPtr;
@@ -104,17 +101,22 @@ int main(int argc, char ** argv)
 
 		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;
 
+		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
+		{
+			names_and_types_map->insert(*it);
+		}
+
 		DB::Context context;
 
-		(*context.functions)["plus"] 			= new DB::FunctionPlus;
+/*		(*context.functions)["plus"] 			= new DB::FunctionPlus;
 		(*context.functions)["minus"] 			= new DB::FunctionMinus;
 		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
 		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
 		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
 		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
-
+*/
 		(*context.functions)["equals"] 			= new DB::FunctionEquals;
-		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
+/*		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
 		(*context.functions)["less"] 			= new DB::FunctionLess;
 		(*context.functions)["greater"] 		= new DB::FunctionGreater;
 		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
@@ -124,16 +126,13 @@ int main(int argc, char ** argv)
 		(*context.functions)["or"] 				= new DB::FunctionOr;
 		(*context.functions)["xor"] 			= new DB::FunctionXor;
 		(*context.functions)["not"] 			= new DB::FunctionNot;
-
-		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
-		{
-			names_and_types_map->insert(*it);
-			context.columns[it->first] = it->second;
-		}
+*/
+		(*context.databases)["default"]["hits"] = new DB::StorageLog("./", "hits", names_and_types_map, ".bin");
+		context.current_database = "default";
 
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
-		std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
+		std::string input = "SELECT UniqID, URL, CounterID, IsLink FROM hits WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
 		std::string expected;
 
 		const char * begin = input.data();
@@ -147,39 +146,17 @@ int main(int argc, char ** argv)
 				<< ", expected " << expected << "." << std::endl;
 		}
 
-		DB::formatAST(*ast, std::cerr);
+/*		DB::formatAST(*ast, std::cerr);
 		std::cerr << std::endl;
 		std::cerr << ast->getTreeID() << std::endl;
-
-		/// создаём объект существующей таблицы хит лога
-
-		DB::StorageLog table("./", "HitLog", names_and_types_map, ".bin");
-
-		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
-
-		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
-
-		DB::Names column_names;
-		boost::assign::push_back(column_names)
-			("UniqID")
-			("URL")
-			("CounterID")
-			("IsLink")
-		;
-
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
-		Poco::SharedPtr<DB::ProfilingBlockInputStream> profiling = new DB::ProfilingBlockInputStream(in);
-		in = new DB::ExpressionBlockInputStream(profiling, expression);
-		in = new DB::ProjectionBlockInputStream(in, expression);
-		in = new DB::FilterBlockInputStream(in, 4);
-		//in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
+*/
+		DB::InterpreterSelectQuery interpreter(ast, context);
+		DB::BlockInputStreamPtr in = interpreter.execute();
 		
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(expression->getReturnTypes()));
+		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(interpreter.getReturnTypes()));
 
 		DB::copyData(*in, out);
-
-		profiling->getInfo().print(std::cerr);
 	}
 	catch (const DB::Exception & e)
 	{

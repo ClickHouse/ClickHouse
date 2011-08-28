@@ -38,7 +38,7 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	{
 		ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
 		StringRange type_range = name_and_type_pair.type->range;
-		(*columns)[name_and_type_pair.name] = context.data_type_factory.get(String(type_range.first, type_range.second - type_range.first));
+		(*columns)[name_and_type_pair.name] = context.data_type_factory->get(String(type_range.first, type_range.second - type_range.first));
 	}
 
 	ASTFunction & storage_expr = dynamic_cast<ASTFunction &>(*create.storage);

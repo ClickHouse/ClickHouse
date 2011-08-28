@@ -30,12 +30,22 @@ public:
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
 	void cut(size_t start, size_t length) { s = length; }
 	void clear() { s = 0; }
+	
 	void insert(const Field & x)
 	{
-		throw Exception("Cannot insert element into constant column", ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
+		throw Exception("Cannot insert element into constant column " + getName(), ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 	}
+	
 	void insertDefault() { ++s; }
-	void filter(const Filter & filt) {}
+
+	void filter(const Filter & filt)
+	{
+		size_t new_size = 0;
+		for (Filter::const_iterator it = filt.begin(); it != filt.end(); ++it)
+			if (*it)
+				++new_size;
+		s = new_size;
+	}
 
 	size_t byteSize() { return sizeof(data) + sizeof(s); }
 

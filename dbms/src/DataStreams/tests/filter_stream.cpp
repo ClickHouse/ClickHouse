@@ -11,6 +11,7 @@
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
+#include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -68,6 +69,7 @@ int main(int argc, char ** argv)
 
 		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
 		in = new DB::ExpressionBlockInputStream(in, expression);
+		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 1);
 		in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 		

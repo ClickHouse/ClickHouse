@@ -30,6 +30,7 @@ void Expression::addSemantic(ASTPtr ast)
 				throw Exception("Unknown identifier " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
 			node->type = it->second;
+			required_columns.insert(node->name);
 		}
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
@@ -104,6 +105,16 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 				*it = subtrees[tree_id];
 		}
 	}
+}
+
+
+Names Expression::getRequiredColumns()
+{
+	Names res;
+	res.reserve(required_columns.size());
+	for (NamesSet::const_iterator it = required_columns.begin(); it != required_columns.end(); ++it)
+		res.push_back(*it);
+	return res;
 }
 
 
@@ -189,16 +200,24 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 }
 
 
-Block Expression::projectResult(Block & block)
+Block Expression::projectResult(Block & block, unsigned part_id)
 {
 	Block res;
-	collectFinalColumns(ast, block, res);
+	collectFinalColumns(ast, block, res, part_id);
 	return res;
 }
 
 
-void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst)
+void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, unsigned part_id)
 {
+	if (ast->part_id != part_id)
+	{
+		if (!dynamic_cast<ASTFunction *>(&*ast))
+			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+				collectFinalColumns(*it, src, dst, part_id);
+		return;
+	}
+
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (ident->kind == ASTIdentifier::Column)
@@ -211,7 +230,7 @@ void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst)
 			dst.insert(src.getByPosition(*jt));
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			collectFinalColumns(*it, src, dst);
+			collectFinalColumns(*it, src, dst, part_id);
 }
 
 

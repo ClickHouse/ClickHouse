@@ -24,6 +24,10 @@ public:
 		glueTree(ast);
 	}
 
+	/** Получить список столбцов, которых необходимо прочитать из таблицы, чтобы выполнить выражение.
+	  */
+	Names getRequiredColumns();
+
 	/** Выполнить выражение над блоком. Блок должен содержать все столбцы - идентификаторы.
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.
 	  * part_id - какую часть выражения вычислять.
@@ -33,7 +37,7 @@ public:
 	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
 	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
 	  */
-	Block projectResult(Block & block);
+	Block projectResult(Block & block, unsigned part_id = 0);
 
 	/** Получить список типов столбцов результата.
 	  */
@@ -42,6 +46,9 @@ public:
 private:
 	ASTPtr ast;
 	const Context & context;
+
+	typedef std::set<String> NamesSet;
+	NamesSet required_columns;
 
 	
 	/** Для узлов - литералов - прописать их типы данных.
@@ -71,7 +78,7 @@ private:
 
 	void executeImpl(ASTPtr ast, Block & block, unsigned part_id);
 
-	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst);
+	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, unsigned part_id);
 
 	void getReturnTypesImpl(ASTPtr ast, DataTypes & res);
 };
