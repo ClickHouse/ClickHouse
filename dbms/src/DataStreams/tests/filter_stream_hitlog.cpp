@@ -132,7 +132,7 @@ int main(int argc, char ** argv)
 
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
-		std::string input = "SELECT UniqID, URL, CounterID, IsLink, URL = 'http://mail.yandex.ru/neo2/#inbox'";
+		std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
 		std::string expected;
 
 		const char * begin = input.data();

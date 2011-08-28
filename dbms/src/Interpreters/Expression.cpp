@@ -196,22 +196,16 @@ Block Expression::projectResult(ASTPtr ast, Block & block)
 
 void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst)
 {
-	if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
-	{
-		for (ASTs::iterator it = node->children.begin(); it != node->children.end(); ++it)
-		{
-			if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
-				dst.insert(src.getByName(ident->name));
-			else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
-				for (ColumnNumbers::const_iterator jt = func->return_column_numbers.begin(); jt != func->return_column_numbers.end(); ++jt)
-					dst.insert(src.getByPosition(*jt));
-			else
-				dst.insert(src.getByName((*it)->getTreeID()));
-		}
-	}
+	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
+		dst.insert(src.getByName(ident->name));
+	else if (dynamic_cast<ASTLiteral *>(&*ast))
+		dst.insert(src.getByName(ast->getTreeID()));
+	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+		for (ColumnNumbers::const_iterator jt = func->return_column_numbers.begin(); jt != func->return_column_numbers.end(); ++jt)
+			dst.insert(src.getByPosition(*jt));
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			 collectFinalColumns(*it, src, dst);
+			collectFinalColumns(*it, src, dst);
 }
 
 
