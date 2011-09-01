@@ -185,7 +185,7 @@ public:
 		 int MaxConn = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
 			const std::string & InitConnect_ = "")
 		: DefaultConnections(DefConn), MaxConnections(MaxConn), InitConnect(InitConnect_),
-		Initialized(false), CfgName(ConfigName)
+		Initialized(false), CfgName(ConfigName), was_successful(false)
 	{
 	}
 
@@ -267,6 +267,9 @@ private:
 	/** @brief Имя базы данных. */
 	std::string DBName;
 
+	/** @brief Хотя бы один раз было успешное соединение. */
+	bool was_successful;
+
 	/** @brief Выполняет инициализацию класса, если мы еще не инициализированы. */
 	inline void Initialize()
 	{
@@ -303,7 +306,8 @@ private:
 		}
 		catch (mysqlxx::ConnectionFailed & e)
 		{
-			if (e.errnum() == ER_ACCESS_DENIED_ERROR
+			if (!was_successful
+				|| e.errnum() == ER_ACCESS_DENIED_ERROR
 				|| e.errnum() == ER_DBACCESS_DENIED_ERROR
 				|| e.errnum() == ER_BAD_DB_ERROR)
 			{
@@ -322,6 +326,7 @@ private:
 			}
 		}
 
+		was_successful = true;
 		afterConnect(Conn->Conn);
 		Connections.push_back(Conn);
 		return Conn;
