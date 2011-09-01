@@ -55,7 +55,7 @@ public:
 	/// Создать соединение.
 	Connection(
 		const char* db,
-		const char* server = 0,
+		const char* server,
 		const char* user = 0,
 		const char* password = 0,
 		unsigned int port = 0);
