@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <boost/none.hpp>
+#include <boost/strong_typedef.hpp>
 #include <Poco/Types.h>
 #include <Poco/SharedPtr.h>
 
@@ -12,7 +12,7 @@ namespace DB
 /** Типы данных для представления значений из БД в оперативке.
   */
 
-typedef boost::none_t Null;
+BOOST_STRONG_TYPEDEF(char, Null);
 
 typedef Poco::UInt8 UInt8;
 typedef Poco::UInt16 UInt16;

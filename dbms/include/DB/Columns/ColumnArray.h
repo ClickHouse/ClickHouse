@@ -134,6 +134,51 @@ public:
 		tmp.swap(offsets);
 	}
 
+	void permute(const Permutation & perm)
+	{
+		size_t size = offsets.size();
+		if (size != perm.size())
+			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return;
+
+		Permutation nested_perm(offsets.back());
+
+		Offsets_t tmp_offsets(size);
+		size_t current_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			for (size_t j = 0; j < sizeAt(perm[i]); ++j)
+				nested_perm[current_offset + j] = offsetAt(perm[i]) + j;
+			current_offset += sizeAt(perm[i]);
+			tmp_offsets[i] = current_offset;
+		}
+
+		data->permute(nested_perm);
+		tmp_offsets.swap(offsets);
+	}
+
+	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	{
+		const ColumnArray & rhs = static_cast<const ColumnArray &>(rhs_);
+
+		/// Не оптимально
+		size_t lhs_size = sizeAt(n);
+		size_t rhs_size = rhs.sizeAt(m);
+		size_t min_size = std::min(lhs_size, rhs_size);
+		for (size_t i = 0; i < min_size; ++i)
+			if (int res = data->compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data))
+				return res;
+
+		return lhs_size < rhs_size
+			? -1
+			: (lhs_size == rhs_size
+				? 0
+				: 1);
+	}
+
 	size_t byteSize()
 	{
 		return data->byteSize() + offsets.size() * sizeof(offsets[0]);

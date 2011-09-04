@@ -96,6 +96,33 @@ public:
 		data->filter(nested_filt);
 	}
 
+	void permute(const Permutation & perm)
+	{
+		size_t size = this->size();
+		if (size != perm.size())
+			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return;
+
+		Permutation nested_perm(size * n);
+		for (size_t i = 0; i < size; ++i)
+			memset(&nested_perm[i * n], perm[i], n);
+		data->permute(nested_perm);
+	}
+
+	int compareAt(size_t p1, size_t p2, const IColumn & rhs_) const
+	{
+		const ColumnFixedArray & rhs = static_cast<const ColumnFixedArray &>(rhs_);
+
+		/// Не оптимально
+		for (size_t i = 0; i < n; ++i)
+			if (int res = data->compareAt(p1 * n + i, p2 * n + i, *rhs.data))
+				return res;
+
+		return 0;
+	}
+
 	size_t byteSize()
 	{
 		return data->byteSize() + sizeof(n);

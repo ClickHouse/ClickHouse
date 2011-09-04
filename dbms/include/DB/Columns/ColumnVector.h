@@ -103,6 +103,28 @@ public:
 		return data.size() * sizeof(data[0]);
 	}
 
+	void permute(const Permutation & perm)
+	{
+		size_t size = data.size();
+		if (size != perm.size())
+			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Container_t tmp(size);
+		for (size_t i = 0; i < size; ++i)
+			tmp[i] = data[perm[i]];
+		tmp.swap(data);
+	}
+
+	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	{
+		const ColumnVector<T> & rhs = static_cast<const ColumnVector<T> &>(rhs_);
+		return data[n] < rhs.data[m]
+			? -1
+			: (data[n] == rhs.data[m]
+				? 0
+				: 1);
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{

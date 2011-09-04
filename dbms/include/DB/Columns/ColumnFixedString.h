@@ -50,6 +50,12 @@ public:
 	{
 		char_data.resize(char_data.size() + n);
 	}
+
+	int compareAt(size_t p1, size_t p2, const IColumn & rhs_) const
+	{
+		const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
+		return memcmp(&char_data[p1 * n], &rhs.char_data[p2 * n], n);
+	}
 };
 
 

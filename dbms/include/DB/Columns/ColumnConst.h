@@ -49,6 +49,22 @@ public:
 
 	size_t byteSize() { return sizeof(data) + sizeof(s); }
 
+	void permute(const Permutation & perm)
+	{
+		if (s != perm.size())
+			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+	}
+
+	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	{
+		const ColumnConst<T> & rhs = static_cast<const ColumnConst<T> &>(rhs_);
+		return data < rhs.data
+			? -1
+			: (data == rhs.data
+				? 0
+				: 1);
+	}
+
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }
 	const T & getData() const { return data; }

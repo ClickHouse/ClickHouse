@@ -1,7 +1,6 @@
-#ifndef DBMS_CORE_COLUMN_STRING_H
-#define DBMS_CORE_COLUMN_STRING_H
+#pragma once
 
-#include <string.h> // memcpy
+#include <string.h>
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -56,9 +55,25 @@ public:
 		char_data.push_back(0);
 		offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
 	}
+
+	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	{
+		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
+
+		size_t lhs_size = sizeAt(n);
+		size_t rhs_size = rhs.sizeAt(m);
+		size_t min_size = std::min(lhs_size, rhs_size);
+		if (size_t res = memcmp(&char_data[offsetAt(n)], &rhs.char_data[rhs.offsetAt(m)], min_size))
+			return res;
+
+		return lhs_size < rhs_size
+			? -1
+			: (lhs_size == rhs_size
+				? 0
+				: 1);
+		return 0;
+	}
 };
 
 
 }
-
-#endif

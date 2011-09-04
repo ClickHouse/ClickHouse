@@ -68,6 +68,18 @@ public:
 	typedef std::vector<UInt8> Filter;
 	virtual void filter(const Filter & filt) = 0;
 
+	/** Переставить значения местами, используя указанную перестановку.
+	  * Используется при сортировке.
+	  */
+	typedef std::vector<size_t> Permutation;
+	virtual void permute(const Permutation & perm) = 0;
+
+	/** Сравнить (*this)[n] и rhs[m].
+	  * Вернуть отрицательное число, 0, или положительное число, если меньше, равно, или больше, соответственно.
+	  * Используется при сортировке.
+	  */
+	virtual int compareAt(size_t n, size_t m, const IColumn & rhs) const = 0;
+
 	/** Очистить */
 	virtual void clear() = 0;
 
