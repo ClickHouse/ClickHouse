@@ -10,10 +10,11 @@ namespace DB
 FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_)
 	: input(input_), filter_column(filter_column_)
 {
+	children.push_back(input);
 }
 
 
-Block FilterBlockInputStream::read()
+Block FilterBlockInputStream::readImpl()
 {
 	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
 	while (1)

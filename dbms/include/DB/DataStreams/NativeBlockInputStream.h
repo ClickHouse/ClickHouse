@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -10,7 +10,7 @@ namespace DB
 /** Десериализует поток блоков из родного бинарного формата (с именами и типами столбцов).
   * Предназначено для взаимодействия между серверами.
   */
-class NativeBlockInputStream : public IBlockInputStream
+class NativeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	NativeBlockInputStream(ReadBuffer & istr_, DataTypeFactory & data_type_factory_)
@@ -19,7 +19,9 @@ public:
 	/** Прочитать следующий блок.
 	  * Если блоков больше нет - вернуть пустой блок (для которого operator bool возвращает false).
 	  */
-	Block read();
+	Block readImpl();
+
+	String getName() const { return "NativeBlockInputStream"; }
 
 private:
 	ReadBuffer & istr;

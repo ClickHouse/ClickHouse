@@ -3,7 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Interpreters/Expression.h>
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -19,13 +19,16 @@ using Poco::SharedPtr;
   * part_id - идентификатор части выражения, которую надо вычислять.
   *  Например, может потребоваться вычислить только часть выражения в секции WHERE.
   */
-class ExpressionBlockInputStream : public IBlockInputStream
+class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	ExpressionBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression_, unsigned part_id_ = 0)
-		: input(input_), expression(expression_), part_id(part_id_) {}
+		: input(input_), expression(expression_), part_id(part_id_)
+	{
+		children.push_back(input);
+	}
 
-	Block read()
+	Block readImpl()
 	{
 		Block res = input->read();
 		if (!res)
@@ -34,6 +37,8 @@ public:
 		expression->execute(res, part_id);
 		return res;
 	}
+
+	String getName() const { return "ExpressionBlockInputStream"; }
 
 private:
 	BlockInputStreamPtr input;

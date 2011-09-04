@@ -34,7 +34,7 @@ struct PartialSortingLess
 };
 
 
-Block PartialSortingBlockInputStream::read()
+Block PartialSortingBlockInputStream::readImpl()
 {
 	Block res = input->read();
 	if (!res)

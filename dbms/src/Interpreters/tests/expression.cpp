@@ -71,6 +71,8 @@ public:
 		else
 			return DB::Block();
 	}
+
+	DB::String getName() const { return "OneBlockInputStream"; }
 };
 
 

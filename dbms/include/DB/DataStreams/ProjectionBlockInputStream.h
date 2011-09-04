@@ -3,7 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Interpreters/Expression.h>
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ using Poco::SharedPtr;
 /** Выбирает из блока только столбцы, являющиеся результатом вычисления выражения.
   * Следует применять после ExpressionBlockInputStream.
   */
-class ProjectionBlockInputStream : public IBlockInputStream
+class ProjectionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	ProjectionBlockInputStream(
@@ -23,9 +23,12 @@ public:
 		SharedPtr<Expression> expression_,
 		bool without_duplicates_ = false,
 		unsigned part_id_ = 0)
-		: input(input_), expression(expression_), without_duplicates(without_duplicates_), part_id(part_id_) {}
+		: input(input_), expression(expression_), without_duplicates(without_duplicates_), part_id(part_id_)
+	{
+		children.push_back(input);
+	}
 
-	Block read()
+	Block readImpl()
 	{
 		Block res = input->read();
 		if (!res)
@@ -33,6 +36,8 @@ public:
 
 		return expression->projectResult(res, without_duplicates, part_id);
 	}
+
+	String getName() const { return "ProjectionBlockInputStream"; }
 
 private:
 	BlockInputStreamPtr input;

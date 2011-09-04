@@ -30,22 +30,21 @@ struct BlockStreamProfileInfo
 };
 
 	
-/** Смотрит за тем, как работает другой поток блоков.
+/** Смотрит за тем, как работает поток блоков.
   * Позволяет получить информацию для профайлинга:
   *  строк в секунду, блоков в секунду, мегабайт в секунду и т. п.
   */
-class ProfilingBlockInputStream : public IBlockInputStream
+class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	ProfilingBlockInputStream(BlockInputStreamPtr in_)
-		: in(in_) {}
-	
 	Block read();
+
+	/// Наследники должны реализовать эту функцию.
+	virtual Block readImpl() = 0;
 	
 	const BlockStreamProfileInfo & getInfo() const;
 
 private:
-	BlockInputStreamPtr in;
 	BlockStreamProfileInfo info;
 };
 

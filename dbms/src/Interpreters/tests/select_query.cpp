@@ -166,11 +166,14 @@ int main(int argc, char ** argv)
 */
 		DB::InterpreterSelectQuery interpreter(ast, context);
 		DB::BlockInputStreamPtr in = interpreter.execute();
-		
+
 		DB::WriteBufferFromOStream ob(std::cout);
 		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(interpreter.getReturnTypes()));
 
 		DB::copyData(*in, out);
+
+		std::cerr << std::endl;
+		in->dumpTree(std::cerr);
 	}
 	catch (const DB::Exception & e)
 	{

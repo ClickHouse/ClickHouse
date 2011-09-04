@@ -18,7 +18,7 @@ LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & colum
 }
 
 
-Block LogBlockInputStream::read()
+Block LogBlockInputStream::readImpl()
 {
 	Block res;
 

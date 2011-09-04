@@ -1,17 +1,19 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
 {
 
 
-class OneValueBlockInputStream : public IBlockInputStream
+class OneValueBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	OneValueBlockInputStream();
-	Block read();
+	Block readImpl();
+	String getName() const { return "OneValueBlockInputStream"; }
 private:
 	bool has_been_read;
 };

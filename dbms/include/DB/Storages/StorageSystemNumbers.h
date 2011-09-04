@@ -3,6 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Storages/IStorage.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -11,11 +12,12 @@ namespace DB
 using Poco::SharedPtr;
 
 
-class NumbersBlockInputStream : public IBlockInputStream
+class NumbersBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	NumbersBlockInputStream(size_t block_size_);
-	Block read();
+	Block readImpl();
+	String getName() const { return "NumbersBlockInputStream"; }
 private:
 	size_t block_size;
 	UInt64 next;

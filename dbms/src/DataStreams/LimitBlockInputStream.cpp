@@ -11,10 +11,11 @@ using Poco::SharedPtr;
 LimitBlockInputStream::LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_)
 	: input(input_), limit(limit_), offset(offset_), pos(0)
 {
+	children.push_back(input);
 }
 
 
-Block LimitBlockInputStream::read()
+Block LimitBlockInputStream::readImpl()
 {
 	Block res;
 	size_t rows = 0;

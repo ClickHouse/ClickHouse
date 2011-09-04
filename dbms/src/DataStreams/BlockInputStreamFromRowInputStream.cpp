@@ -35,7 +35,7 @@ void BlockInputStreamFromRowInputStream::initBlock(Block & res)
 }
 
 
-Block BlockInputStreamFromRowInputStream::read()
+Block BlockInputStreamFromRowInputStream::readImpl()
 {
 	Block res;
 

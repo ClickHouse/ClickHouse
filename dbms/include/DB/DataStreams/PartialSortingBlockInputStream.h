@@ -2,7 +2,7 @@
 
 #include <DB/Core/SortDescription.h>
 
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -11,13 +11,18 @@ namespace DB
 /** Сортирует каждый блок по отдельности по значениям указанных столбцов.
   * На данный момент, используется не очень оптимальный алгоритм.
   */
-class PartialSortingBlockInputStream : public IBlockInputStream
+class PartialSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	PartialSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_)
-		: input(input_), description(description_) {}
+		: input(input_), description(description_)
+	{
+		children.push_back(input);
+	}
 
-	Block read();
+	Block readImpl();
+
+	String getName() const { return "PartialSortingBlockInputStream"; }
 
 private:
 	BlockInputStreamPtr input;

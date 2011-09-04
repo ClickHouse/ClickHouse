@@ -7,7 +7,7 @@
 namespace DB
 {
 
-Block NativeBlockInputStream::read()
+Block NativeBlockInputStream::readImpl()
 {
 	Block res;
 

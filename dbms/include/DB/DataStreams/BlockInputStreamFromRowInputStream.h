@@ -1,10 +1,9 @@
-#ifndef DBMS_DATA_STREAMS_BLOCKINPUTSTREAMFROMROWINPUTSTREAM_H
-#define DBMS_DATA_STREAMS_BLOCKINPUTSTREAMFROMROWINPUTSTREAM_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Defines.h>
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IRowInputStream.h>
 
 
@@ -17,7 +16,7 @@ using Poco::SharedPtr;
 /** Преобразует поток для чтения данных по строкам в поток для чтения данных по блокам.
   * Наример, для чтения текстового дампа.
   */
-class BlockInputStreamFromRowInputStream : public IBlockInputStream
+class BlockInputStreamFromRowInputStream : public IProfilingBlockInputStream
 {
 public:
 	/** sample_ - пустой блок, который описывает, как интерпретировать значения */
@@ -26,7 +25,9 @@ public:
 		const Block & sample_,
 		size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
 
-	Block read();
+	Block readImpl();
+
+	String getName() const { return "BlockInputStreamFromRowInputStream"; }
 
 private:
 
@@ -38,5 +39,3 @@ private:
 };
 
 }
-
-#endif

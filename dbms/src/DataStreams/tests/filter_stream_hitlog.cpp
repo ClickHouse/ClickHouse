@@ -15,7 +15,6 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
-#include <DB/DataStreams/ProfilingBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -168,8 +167,7 @@ int main(int argc, char ** argv)
 		;
 
 		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
-		Poco::SharedPtr<DB::ProfilingBlockInputStream> profiling = new DB::ProfilingBlockInputStream(in);
-		in = new DB::ExpressionBlockInputStream(profiling, expression);
+		in = new DB::ExpressionBlockInputStream(in, expression);
 		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 4);
 		//in = new DB::LimitBlockInputStream(in, 10);
@@ -179,7 +177,7 @@ int main(int argc, char ** argv)
 
 		DB::copyData(*in, out);
 
-		profiling->getInfo().print(std::cerr);
+		//profiling->getInfo().print(std::cerr);
 	}
 	catch (const DB::Exception & e)
 	{

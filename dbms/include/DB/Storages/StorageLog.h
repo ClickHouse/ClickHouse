@@ -13,6 +13,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -21,11 +22,12 @@ namespace DB
 using Poco::SharedPtr;
 class StorageLog;
 
-class LogBlockInputStream : public IBlockInputStream
+class LogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_);
-	Block read();
+	Block readImpl();
+	String getName() const { return "LogBlockInputStream"; }
 private:
 	size_t block_size;
 	Names column_names;

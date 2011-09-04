@@ -17,17 +17,30 @@ using Poco::SharedPtr;
 class IBlockInputStream
 {
 public:
-
+	typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
+	typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
+	
 	/** Прочитать следующий блок.
 	  * Если блоков больше нет - вернуть пустой блок (для которого operator bool возвращает false).
 	  */
 	virtual Block read() = 0;
 
 	virtual ~IBlockInputStream() {}
+
+	/** Для вывода дерева преобразований потока данных (плана выполнения запроса).
+	  */
+	virtual String getName() const = 0;
+
+	BlockInputStreams & getChildren() { return children; }
+	void dumpTree(std::ostream & ostr, size_t indent = 0);
+
+protected:
+	BlockInputStreams children;
 };
 
 
-typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
+typedef IBlockInputStream::BlockInputStreamPtr BlockInputStreamPtr;
+typedef IBlockInputStream::BlockInputStreams BlockInputStreams;
 
 }
 

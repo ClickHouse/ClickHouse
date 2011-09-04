@@ -1,9 +1,8 @@
-#ifndef DBMS_DATA_STREAMS_LIMITBLOCKINPUTSTREAM_H
-#define DBMS_DATA_STREAMS_LIMITBLOCKINPUTSTREAM_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -14,11 +13,13 @@ using Poco::SharedPtr;
 
 /** Реализует реляционную операцию LIMIT.
   */
-class LimitBlockInputStream : public IBlockInputStream
+class LimitBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_ = 0);
-	Block read();
+	Block readImpl();
+
+	String getName() const { return "LimitBlockInputStream"; }
 
 private:
 	BlockInputStreamPtr input;
@@ -28,5 +29,3 @@ private:
 };
 
 }
-
-#endif

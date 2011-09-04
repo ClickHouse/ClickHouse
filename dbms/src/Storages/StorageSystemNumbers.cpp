@@ -18,7 +18,7 @@ NumbersBlockInputStream::NumbersBlockInputStream(size_t block_size_) : block_siz
 }
 
 
-Block NumbersBlockInputStream::read()
+Block NumbersBlockInputStream::readImpl()
 {
 	Block res;
 	

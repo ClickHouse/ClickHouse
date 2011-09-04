@@ -17,7 +17,7 @@ OneValueBlockInputStream::OneValueBlockInputStream() : has_been_read(false)
 }
 
 
-Block OneValueBlockInputStream::read()
+Block OneValueBlockInputStream::readImpl()
 {
 	Block res;
 	if (has_been_read)

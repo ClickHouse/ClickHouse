@@ -4,7 +4,7 @@
 namespace DB
 {
 
-Block MergeSortingBlockInputStream::read()
+Block MergeSortingBlockInputStream::readImpl()
 {
 	/** На данный момент - очень простой алгоритм:
 	  * - прочитать в оперативку все блоки;

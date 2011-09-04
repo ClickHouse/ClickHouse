@@ -1,6 +1,6 @@
 #include <iomanip>
 
-#include <DB/DataStreams/ProfilingBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
@@ -28,13 +28,13 @@ void BlockStreamProfileInfo::print(std::ostream & ostr) const
 }
 
 	
-Block ProfilingBlockInputStream::read()
+Block IProfilingBlockInputStream::read()
 {
 	if (!info.started)
 		info.total_stopwatch.start();
 	
 	info.work_stopwatch.start();
-	Block res = in->read();
+	Block res = readImpl();
 	info.work_stopwatch.stop();
 
 	if (res)
@@ -44,7 +44,7 @@ Block ProfilingBlockInputStream::read()
 }
 	
 
-const BlockStreamProfileInfo & ProfilingBlockInputStream::getInfo() const
+const BlockStreamProfileInfo & IProfilingBlockInputStream::getInfo() const
 {
 	return info;
 }
