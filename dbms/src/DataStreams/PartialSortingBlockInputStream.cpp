@@ -6,20 +6,20 @@ namespace DB
 
 struct PartialSortingLess
 {
-	typedef std::vector<const IColumn *> Columns;
+	typedef std::vector<std::pair<const IColumn *, int> > Columns;
 	Columns columns;
 
-	PartialSortingLess(const Block & block, const ColumnNumbers & column_numbers)
+	PartialSortingLess(const Block & block, const SortDescription & description)
 	{
-		for (size_t i = 0, size = column_numbers.size(); i < size; ++i)
-			columns.push_back(&*block.getByPosition(column_numbers[i]).column);
+		for (size_t i = 0, size = description.size(); i < size; ++i)
+			columns.push_back(std::make_pair(&*block.getByPosition(description[i].column_number).column, description[i].direction));
 	}
 
 	bool operator() (size_t a, size_t b) const
 	{
 		for (Columns::const_iterator it = columns.begin(); it != columns.end(); ++it)
 		{
-			int res = (*it)->compareAt(a, b, **it);
+			int res = it->second * it->first->compareAt(a, b, *it->first);
 			if (res < 0)
 				return true;
 			else if (res > 0)
@@ -41,7 +41,7 @@ Block PartialSortingBlockInputStream::read()
 	for (size_t i = 0; i < size; ++i)
 		perm[i] = i;
 
-	PartialSortingLess less(res, column_numbers);
+	PartialSortingLess less(res, description);
 	std::sort(perm.begin(), perm.end(), less);
 
 	size_t columns = res.columns();

@@ -18,6 +18,7 @@
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
+#include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/ProfilingBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -148,16 +149,21 @@ int main(int argc, char ** argv)
 			((*names_and_types_map)["IsLink"])
 		;
 
-		DB::ColumnNumbers sort_columns;
-		sort_columns.push_back(1);
-		sort_columns.push_back(2);
+		DB::SortDescription sort_columns;
+	//	sort_columns.push_back(DB::SortColumnDescription(1, -1));
+	//	sort_columns.push_back(DB::SortColumnDescription(2, 1));
+		sort_columns.push_back(DB::SortColumnDescription(0, 1));
+	//	sort_columns.push_back(DB::SortColumnDescription(3, 1));
 
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
+		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, argc == 2 ? atoi(argv[1]) : 1048576);
 		Poco::SharedPtr<DB::ProfilingBlockInputStream> profiling1 = new DB::ProfilingBlockInputStream(in);
 		in = profiling1;
 		in = new DB::PartialSortingBlockInputStream(in, sort_columns);
 		Poco::SharedPtr<DB::ProfilingBlockInputStream> profiling2 = new DB::ProfilingBlockInputStream(in);
 		in = profiling2;
+		in = new DB::MergeSortingBlockInputStream(in, sort_columns);
+		Poco::SharedPtr<DB::ProfilingBlockInputStream> profiling3 = new DB::ProfilingBlockInputStream(in);
+		in = profiling3;
 		//in = new DB::LimitBlockInputStream(in, 10);
 
 		DB::WriteBufferFromOStream ob(std::cout);
@@ -169,6 +175,8 @@ int main(int argc, char ** argv)
 		profiling1->getInfo().print(std::cerr);
 		std::cerr << std::endl << "Sorting: " << std::endl;
 		profiling2->getInfo().print(std::cerr);
+		std::cerr << std::endl << "Merging: " << std::endl;
+		profiling3->getInfo().print(std::cerr);
 	}
 	catch (const DB::Exception & e)
 	{
