@@ -42,6 +42,8 @@ public:
 	void insert(size_t position, const ColumnWithNameAndType & elem);
 	/// вставить столбец в конец
 	void insert(const ColumnWithNameAndType & elem);
+	/// вставить столбец в конец, если столбца с таким именем ещё нет
+	void insertUnique(const ColumnWithNameAndType & elem);
 	/// удалить столбец в заданной позиции
 	void erase(size_t position);
 

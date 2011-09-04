@@ -76,8 +76,12 @@ void MergeSortingBlockInputStream::merge(Block & left, Block & right)
 
 	for (size_t i = 0, size = description.size(); i < size; ++i)
 	{
-		left_sort_columns.push_back(&*left.getByPosition(description[i].column_number).column);
-		right_sort_columns.push_back(&*right.getByPosition(description[i].column_number).column);
+		size_t column_number = !description[i].column_name.empty()
+			? left.getPositionByName(description[i].column_name)
+			: description[i].column_number;
+		
+		left_sort_columns.push_back(&*left.getByPosition(column_number).column);
+		right_sort_columns.push_back(&*right.getByPosition(column_number).column);
 	}
 
 	/// Объединяем.

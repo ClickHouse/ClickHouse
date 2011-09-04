@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
@@ -333,6 +334,35 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 
 	expected = "expression element: one of array, literal, function, identifier, asterisk, parenthised expression";
 	return false;
+}
+
+
+bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	Pos begin = pos;
+
+	ParserWhiteSpaceOrComments ws;
+	ParserLogicalOrExpression elem_p;
+	ParserString ascending("ASCENDING", true, true);
+	ParserString descending("DESCENDING", true, true);
+	ParserString asc("ASC", true, true);
+	ParserString desc("DESC", true, true);
+
+	ASTPtr expr_elem;
+	if (!elem_p.parse(pos, end, expr_elem, expected))
+		return false;
+
+	int direction = 1;
+	ws.ignore(pos, end);
+
+	if (descending.ignore(pos, end) || desc.ignore(pos, end))
+		direction = -1;
+	else
+		ascending.ignore(pos, end) || asc.ignore(pos, end);
+
+	node = new ASTOrderByElement(StringRange(begin, pos), direction);
+	node->children.push_back(expr_elem);
+	return true;
 }
 
 

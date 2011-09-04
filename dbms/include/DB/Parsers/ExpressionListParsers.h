@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_EXPRESSIONLISTPARSERS_H
-#define DBMS_PARSERS_EXPRESSIONLISTPARSERS_H
+#pragma once
 
 #include <list>
 
@@ -294,7 +293,12 @@ protected:
 };
 
 
+class ParserOrderByExpressionList : public IParserBase
+{
+protected:
+	String getName() { return "order by expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
 }
-
-
-#endif

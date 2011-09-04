@@ -58,7 +58,14 @@ void Block::insert(const ColumnWithNameAndType & elem)
 {
 	Container_t::iterator it = data.insert(data.end(), elem);
 	rebuildIndexByPosition();
-	index_by_name[elem.name] = it; 
+	index_by_name[elem.name] = it;
+}
+
+
+void Block::insertUnique(const ColumnWithNameAndType & elem)
+{
+	if (index_by_name.end() == index_by_name.find(elem.name))
+		insert(elem);
 }
 
 

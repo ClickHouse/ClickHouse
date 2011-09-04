@@ -29,6 +29,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_limit("LIMIT", true, true);
 	ParserNotEmptyExpressionList exp_list;
 	ParserLogicalOrExpression exp_elem;
+	ParserOrderByExpressionList order_list;
 
 	ws.ignore(pos, end);
 
@@ -107,14 +108,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ws.ignore(pos, end);
 	}
 
-	/// ORDER BY expr list TODO ASC, DESC
+	/// ORDER BY expr ASC|DESC list
 	if (s_order.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
 		if (!s_by.ignore(pos, end, expected))
 			return false;
 
-		if (!exp_list.parse(pos, end, select_query->order_expression_list, expected))
+		if (!order_list.parse(pos, end, select_query->order_expression_list, expected))
 			return false;
 
 		ws.ignore(pos, end);

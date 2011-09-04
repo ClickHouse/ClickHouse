@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_FORMATAST_H
-#define DBMS_PARSERS_FORMATAST_H
+#pragma once
 
 #include <ostream>
 
@@ -12,6 +11,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Parsers/ASTOrderByElement.h>
 
 
 namespace DB
@@ -29,8 +29,6 @@ void formatAST(const ASTIdentifier 		& ast, std::ostream & s);
 void formatAST(const ASTLiteral 		& ast, std::ostream & s);
 void formatAST(const ASTNameTypePair	& ast, std::ostream & s);
 void formatAST(const ASTAsterisk		& ast, std::ostream & s);
+void formatAST(const ASTOrderByElement	& ast, std::ostream & s);
 
 }
-
-
-#endif

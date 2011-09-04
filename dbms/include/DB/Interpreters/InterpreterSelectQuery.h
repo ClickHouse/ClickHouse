@@ -29,10 +29,11 @@ private:
 
 	enum PartID
 	{
-		PART_OTHER = 0,
-		PART_SELECT = 1,
-		PART_WHERE = 2,
-		PART_HAVING = 3,
+		PART_OTHER 	= 1,
+		PART_SELECT = 2,
+		PART_WHERE 	= 4,
+		PART_HAVING = 8,
+		PART_ORDER 	= 16,
 	};
 
 

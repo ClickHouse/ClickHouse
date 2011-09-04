@@ -128,7 +128,7 @@ Names Expression::getRequiredColumns()
 
 void Expression::setNotCalculated(ASTPtr ast, unsigned part_id)
 {
-	if (ast->part_id == part_id)
+	if ((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0))
 		ast->calculated = false;
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		setNotCalculated(*it, part_id);
@@ -149,7 +149,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		executeImpl(*it, block, part_id);
 
-	if (ast->calculated || ast->part_id != part_id)
+	if (ast->calculated || !((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
 		return;
 
 	/** Столбцы из таблицы уже загружены в блок.
@@ -201,38 +201,42 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 }
 
 
-Block Expression::projectResult(Block & block, unsigned part_id)
+Block Expression::projectResult(Block & block, bool without_duplicates, unsigned part_id)
 {
 	Block res;
-	collectFinalColumns(ast, block, res, part_id);
+	collectFinalColumns(ast, block, res, without_duplicates, part_id);
 	return res;
 }
 
 
-void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, unsigned part_id)
+void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id)
 {
 	/// Обход в глубину, который не заходит внутрь функций.
-	if (ast->part_id != part_id)
+	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
 	{
 		if (!dynamic_cast<ASTFunction *>(&*ast))
 			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-				collectFinalColumns(*it, src, dst, part_id);
+				collectFinalColumns(*it, src, dst, without_duplicates, part_id);
 		return;
 	}
 
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (ident->kind == ASTIdentifier::Column)
-			dst.insert(src.getByName(ident->name));
+			without_duplicates ? dst.insertUnique(src.getByName(ident->name)) : dst.insert(src.getByName(ident->name));
 	}
 	else if (dynamic_cast<ASTLiteral *>(&*ast))
-		dst.insert(src.getByName(ast->getTreeID()));
+		without_duplicates ? dst.insertUnique(src.getByName(ast->getTreeID())) : dst.insert(src.getByName(ast->getTreeID()));
 	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
-		for (ColumnNumbers::const_iterator jt = func->return_column_numbers.begin(); jt != func->return_column_numbers.end(); ++jt)
-			dst.insert(src.getByPosition(*jt));
+	{
+		for (size_t i = 0, size = func->return_types.size(); i != size; ++i)
+			without_duplicates
+				? dst.insertUnique(src.getByName(ast->getTreeID() + "_" + Poco::NumberFormatter::format(i)))
+				: dst.insert(src.getByName(ast->getTreeID() + "_" + Poco::NumberFormatter::format(i)));
+	}
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			collectFinalColumns(*it, src, dst, part_id);
+			collectFinalColumns(*it, src, dst, without_duplicates, part_id);
 }
 
 

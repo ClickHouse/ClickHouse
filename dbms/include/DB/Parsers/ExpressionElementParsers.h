@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_EXPRESSIONELEMENTPARSERS_H
-#define DBMS_PARSERS_EXPRESSIONELEMENTPARSERS_H
+#pragma once
 
 #include <DB/Parsers/IParserBase.h>
 
@@ -97,6 +96,14 @@ protected:
 };
 
 
-}
+/** Элемент выражения ORDER BY - то же самое, что и элемент выражения, но после него ещё может быть указано ASC[ENDING] | DESC[ENDING].
+  */
+class ParserOrderByElement : public IParserBase
+{
+protected:
+	String getName() { return "element of ORDER BY expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
 
-#endif
+
+}

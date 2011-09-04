@@ -2,10 +2,14 @@
 #include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/PartialSortingBlockInputStream.h>
+#include <DB/DataStreams/MergeSortingBlockInputStream.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/Interpreters/Expression.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -67,7 +71,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
 
 	StoragePtr table = getTable();
-
+	
 	/// Какие столбцы читать из этой таблицы
 
 	context.columns = table->getColumns();
@@ -78,7 +82,26 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (required_columns.empty())
 		required_columns.push_back(table->getColumns().begin()->first);
 
-	BlockInputStreamPtr stream = table->read(required_columns, query_ptr, max_block_size);
+	size_t limit_length = 0;
+	size_t limit_offset = 0;
+	if (query.limit_length)
+	{
+		limit_length = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
+		if (query.limit_offset)
+			limit_offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
+	}
+
+	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
+	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
+	  */
+	size_t block_size = max_block_size;
+	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
+		&& query.limit_length && limit_length + limit_offset < block_size)
+	{
+		block_size = limit_length + limit_offset;
+	}
+
+	BlockInputStreamPtr stream = table->read(required_columns, query_ptr, block_size);
 
 	/// Если есть условие WHERE - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.where_expression)
@@ -90,17 +113,41 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	/// Выполним оставшуюся часть выражения
 	setPartID(query.select_expression_list, PART_SELECT);
-	stream = new ExpressionBlockInputStream(stream, expression, PART_SELECT);
-	stream = new ProjectionBlockInputStream(stream, expression, PART_SELECT);
+	if (query.order_expression_list)
+		setPartID(query.order_expression_list, PART_ORDER);
+	stream = new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER);
+	stream = new ProjectionBlockInputStream(stream, expression, true, PART_SELECT | PART_ORDER);
+	
+	/// Если есть ORDER BY
+	if (query.order_expression_list)
+	{
+		SortDescription order_descr;
+		order_descr.reserve(query.order_expression_list->children.size());
+		for (ASTs::iterator it = query.order_expression_list->children.begin();
+			it != query.order_expression_list->children.end();
+			++it)
+		{
+			ASTPtr elem = (*it)->children.front();
+			ASTIdentifier * id_elem = dynamic_cast<ASTIdentifier *>(&*elem);
+			ASTFunction * id_func = dynamic_cast<ASTFunction *>(&*elem);
+
+			String name = id_elem ? id_elem->name : elem->getTreeID();
+			if (id_func)
+				name += "_0";
+			
+			order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
+		}
+
+		stream = new PartialSortingBlockInputStream(stream, order_descr);
+		stream = new MergeSortingBlockInputStream(stream, order_descr);
+	}
+	
+	/// Удалим ненужные больше столбцы
+	stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT);
 
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
-		size_t limit_length = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
-		size_t limit_offset = 0;
-		if (query.limit_offset)
-			limit_offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
-
 		stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
 	}
 
@@ -110,7 +157,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 void InterpreterSelectQuery::setPartID(ASTPtr ast, unsigned part_id)
 {
-	ast->part_id = part_id;
+	ast->part_id |= part_id;
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		setPartID(*it, part_id);

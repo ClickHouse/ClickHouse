@@ -18,8 +18,12 @@ using Poco::SharedPtr;
 class ProjectionBlockInputStream : public IBlockInputStream
 {
 public:
-	ProjectionBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression_, unsigned part_id_ = 0)
-		: input(input_), expression(expression_), part_id(part_id_) {}
+	ProjectionBlockInputStream(
+		BlockInputStreamPtr input_,
+		SharedPtr<Expression> expression_,
+		bool without_duplicates_ = false,
+		unsigned part_id_ = 0)
+		: input(input_), expression(expression_), without_duplicates(without_duplicates_), part_id(part_id_) {}
 
 	Block read()
 	{
@@ -27,12 +31,13 @@ public:
 		if (!res)
 			return res;
 
-		return expression->projectResult(res, part_id);
+		return expression->projectResult(res, without_duplicates, part_id);
 	}
 
 private:
 	BlockInputStreamPtr input;
 	SharedPtr<Expression> expression;
+	bool without_duplicates;
 	unsigned part_id;
 };
 

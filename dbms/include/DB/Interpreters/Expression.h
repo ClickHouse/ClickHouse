@@ -37,7 +37,7 @@ public:
 	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
 	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
 	  */
-	Block projectResult(Block & block, unsigned part_id = 0);
+	Block projectResult(Block & block, bool without_duplicates = false, unsigned part_id = 0);
 
 	/** Получить список типов столбцов результата.
 	  */
@@ -49,7 +49,7 @@ private:
 
 	typedef std::set<String> NamesSet;
 	NamesSet required_columns;
-
+	
 	
 	/** Для узлов - звёздочек - раскрыть их в список всех столбцов.
 	  * Для узлов - литералов - прописать их типы данных.
@@ -79,7 +79,7 @@ private:
 
 	void executeImpl(ASTPtr ast, Block & block, unsigned part_id);
 
-	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, unsigned part_id);
+	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id);
 
 	void getReturnTypesImpl(ASTPtr ast, DataTypes & res);
 };

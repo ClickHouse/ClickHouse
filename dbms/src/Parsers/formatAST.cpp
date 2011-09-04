@@ -74,6 +74,13 @@ void formatAST(const IAST & ast, std::ostream & s)
 		return;
 	}
 
+	const ASTOrderByElement * order_by_elem = dynamic_cast<const ASTOrderByElement *>(&ast);
+	if (order_by_elem)
+	{
+		formatAST(*order_by_elem, s);
+		return;
+	}
+
 	throw DB::Exception("Unknown element in AST", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 }
 
@@ -177,6 +184,12 @@ void formatAST(const ASTNameTypePair		& ast, std::ostream & s)
 void formatAST(const ASTAsterisk			& ast, std::ostream & s)
 {
 	s << "*";
+}
+
+void formatAST(const ASTOrderByElement		& ast, std::ostream & s)
+{
+	formatAST(*ast.children.front(), s);
+	s << (ast.direction == -1 ? " DESC" : " ASC");
 }
 
 }

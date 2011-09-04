@@ -12,7 +12,11 @@ struct PartialSortingLess
 	PartialSortingLess(const Block & block, const SortDescription & description)
 	{
 		for (size_t i = 0, size = description.size(); i < size; ++i)
-			columns.push_back(std::make_pair(&*block.getByPosition(description[i].column_number).column, description[i].direction));
+			columns.push_back(std::make_pair(
+				!description[i].column_name.empty()
+					? &*block.getByName(description[i].column_name).column
+					: &*block.getByPosition(description[i].column_number).column,
+				description[i].direction));
 	}
 
 	bool operator() (size_t a, size_t b) const
