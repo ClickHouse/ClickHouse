@@ -1,15 +1,14 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
+
+#include <DB/Core/Names.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
 
 namespace DB
 {
-
-using Poco::SharedPtr;
 
 
 /// Информация для профайлинга.
@@ -22,6 +21,8 @@ struct BlockStreamProfileInfo
 	size_t rows;
 	size_t blocks;
 	size_t bytes;
+
+	String column_names;
 
 	BlockStreamProfileInfo() : started(false), rows(0), blocks(0), bytes(0) {}
 

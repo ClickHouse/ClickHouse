@@ -13,12 +13,16 @@ void BlockStreamProfileInfo::update(Block & block)
 	rows += block.rows();
 	for (size_t i = 0; i < block.columns(); ++i)
 		bytes += block.getByPosition(i).column->byteSize();
+
+	if (column_names.empty())
+		column_names = block.dumpNames();
 }
 
 
 void BlockStreamProfileInfo::print(std::ostream & ostr) const
 {
 	ostr << std::fixed << std::setprecision(2)
+		<< "Columns: " << column_names << std::endl
 		<< "Elapsed: " << work_stopwatch.elapsed() / 1000000.0 << " sec. "
 		<< "(" << work_stopwatch.elapsed() * 100.0 / total_stopwatch.elapsed() << "%), " << std::endl
 		<< "Rows: " << rows << ", per second: " << rows * 1000000 / work_stopwatch.elapsed() << ", " << std::endl
