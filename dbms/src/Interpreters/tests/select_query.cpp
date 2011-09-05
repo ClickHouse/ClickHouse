@@ -116,6 +116,7 @@ int main(int argc, char ** argv)
 		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
 		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
 		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
+		(*context.functions)["negate"] 			= new DB::FunctionNegate;
 
 		(*context.functions)["equals"] 			= new DB::FunctionEquals;
 		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;

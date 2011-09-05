@@ -12,7 +12,7 @@ namespace DB
 {
 
 /** Арифметические функции: +, -, *, /, %,
-  * div (целочисленное деление),
+  * div (целочисленное деление), унарный минус.
   */
 
 template<typename A, typename B>
@@ -208,6 +208,24 @@ struct ModuloImpl
 	{
 		c = typename NumberTraits::ToInteger<A>::Type(a)
 			% typename NumberTraits::ToInteger<A>::Type(b);
+	}
+};
+
+template<typename A>
+struct NegateImpl
+{
+	typedef typename NumberTraits::ResultOfNegate<A>::Type ResultType;
+
+	static void vector(const std::vector<A> & a, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = -a[i];
+	}
+
+	static void constant(A a, ResultType & c)
+	{
+		c = -a;
 	}
 };
 
@@ -421,12 +439,120 @@ public:
 };
 
 
+template <template <typename> class Impl, typename Name>
+class FunctionUnaryArithmetic : public IFunction
+{
+private:
+	template <typename T0>
+	bool checkType(const DataTypes & arguments, DataTypes & types_res) const
+	{
+		if (dynamic_cast<const T0 *>(&*arguments[0]))
+		{
+			types_res.push_back(new typename DataTypeFromFieldType<
+				typename Impl<typename T0::FieldType>::ResultType>::Type);
+			return true;
+		}
+		return false;
+	}
+
+	template <typename T0>
+	bool executeType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	{
+		if (ColumnVector<T0> * col = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			typedef typename Impl<T0>::ResultType ResultType;
+
+			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			block.getByPosition(result[0]).column = col_res;
+
+			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			vec_res.resize(col->getData().size());
+			Impl<T0>::vector(col->getData(), vec_res);
+
+			return true;
+		}
+		else if (ColumnConst<T0> * col = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			typedef typename Impl<T0>::ResultType ResultType;
+
+			ResultType res = 0;
+			Impl<T0>::constant(col->getData(), res);
+
+			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
+			block.getByPosition(result[0]).column = col_res;
+
+			return true;
+		}
+
+		return false;
+	}
+
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return Name::get();
+	}
+
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypes getReturnTypes(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		DataTypes types_res;
+
+		if (!(	checkType<DataTypeUInt8>(arguments, types_res)
+			||	checkType<DataTypeUInt16>(arguments, types_res)
+			||	checkType<DataTypeUInt32>(arguments, types_res)
+			||	checkType<DataTypeUInt64>(arguments, types_res)
+			||	checkType<DataTypeInt8>(arguments, types_res)
+			||	checkType<DataTypeInt16>(arguments, types_res)
+			||	checkType<DataTypeInt32>(arguments, types_res)
+			||	checkType<DataTypeInt64>(arguments, types_res)
+			||	checkType<DataTypeFloat32>(arguments, types_res)
+			||	checkType<DataTypeFloat64>(arguments, types_res)
+			||	checkType<DataTypeVarUInt>(arguments, types_res)
+			||	checkType<DataTypeVarInt>(arguments, types_res)))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return types_res;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	{
+		if (result.size() != 1)
+			throw Exception("Wrong number of result columns in function " + getName() + ", should be 1.",
+				ErrorCodes::ILLEGAL_NUMBER_OF_RESULT_COLUMNS);
+
+		if (!(	executeType<UInt8>(block, arguments, result)
+			||	executeType<UInt16>(block, arguments, result)
+			||	executeType<UInt32>(block, arguments, result)
+			||	executeType<UInt64>(block, arguments, result)
+			||	executeType<Int8>(block, arguments, result)
+			||	executeType<Int16>(block, arguments, result)
+			||	executeType<Int32>(block, arguments, result)
+			||	executeType<Int64>(block, arguments, result)
+			||	executeType<Float32>(block, arguments, result)
+			||	executeType<Float64>(block, arguments, result)))
+		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
 struct NamePlus 			{ static const char * get() { return "plus"; } };
 struct NameMinus 			{ static const char * get() { return "minus"; } };
 struct NameMultiply 		{ static const char * get() { return "multiply"; } };
 struct NameDivideFloating	{ static const char * get() { return "divide"; } };
 struct NameDivideIntegral 	{ static const char * get() { return "div"; } };
 struct NameModulo 			{ static const char * get() { return "modulo"; } };
+struct NameNegate 			{ static const char * get() { return "negate"; } };
 
 typedef FunctionBinaryArithmetic<PlusImpl, 				NamePlus> 			FunctionPlus;
 typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 			FunctionMinus;
@@ -434,6 +560,7 @@ typedef FunctionBinaryArithmetic<MultiplyImpl, 			NameMultiply> 		FunctionMultip
 typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating> FunctionDivideFloating;
 typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> FunctionDivideIntegral;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 		FunctionModulo;
+typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 		FunctionNegate;
 
 
 }

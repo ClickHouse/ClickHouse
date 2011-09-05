@@ -12,6 +12,16 @@
 namespace DB
 {
 
+
+/** Если функция возвращает много аргументов, то в имена всех соответствующих столбцов,
+  *  кроме первого, будем добавлять _1, _2 и т. п.
+  */
+static std::string functionReturnValueSuffix(size_t i)
+{
+	return i == 0 ? "" : ("_" + Poco::NumberFormatter::format(i));
+}
+	
+
 void Expression::addSemantic(ASTPtr & ast)
 {
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
@@ -167,7 +177,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 		{
 			ColumnWithNameAndType column;
 			column.type = *it;
-			column.name = node->getTreeID() + "_" + Poco::NumberFormatter::format(res_num);
+			column.name = node->getTreeID() + functionReturnValueSuffix(res_num);
 
 			result_numbers.push_back(block.columns());
 			block.insert(column);
@@ -231,8 +241,8 @@ void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool 
 	{
 		for (size_t i = 0, size = func->return_types.size(); i != size; ++i)
 			without_duplicates
-				? dst.insertUnique(src.getByName(ast->getTreeID() + "_" + Poco::NumberFormatter::format(i)))
-				: dst.insert(src.getByName(ast->getTreeID() + "_" + Poco::NumberFormatter::format(i)));
+				? dst.insertUnique(src.getByName(ast->getTreeID() + functionReturnValueSuffix(i)))
+				: dst.insert(src.getByName(ast->getTreeID() + functionReturnValueSuffix(i)));
 	}
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)

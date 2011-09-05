@@ -138,6 +138,14 @@ namespace NumberTraits
 			typename Traits<B>::Bits>::Type Type;
 	};
 
+	template <typename A> struct ResultOfNegate
+	{
+		typedef typename Construct<
+			Signed,
+			typename Traits<A>::Floatness,
+			typename Traits<A>::Bits>::Type Type;
+	};
+
 	/** Перед применением оператора %, операнды приводятся к целым числам. */
 	template <typename A> struct ToInteger
 	{

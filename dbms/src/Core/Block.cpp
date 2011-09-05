@@ -85,8 +85,10 @@ void Block::erase(size_t position)
 ColumnWithNameAndType & Block::getByPosition(size_t position)
 {
 	if (position >= index_by_position.size())
-		throw Exception("Position out of bound in Block::getByPosition(), max position = "
-			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+		throw Exception("Position " + Poco::NumberFormatter::format(position)
+			+ " is out of bound in Block::getByPosition(), max position = "
+			+ Poco::NumberFormatter::format(index_by_position.size() - 1)
+			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 		
 	return *index_by_position[position];
 }
@@ -95,8 +97,10 @@ ColumnWithNameAndType & Block::getByPosition(size_t position)
 const ColumnWithNameAndType & Block::getByPosition(size_t position) const
 {
 	if (position >= index_by_position.size())
-		throw Exception("Position out of bound in Block::getByPosition(), max position = "
-			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+		throw Exception("Position " + Poco::NumberFormatter::format(position)
+			+ " is out of bound in Block::getByPosition(), max position = "
+			+ Poco::NumberFormatter::format(index_by_position.size() - 1)
+			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 		
 	return *index_by_position[position];
 }

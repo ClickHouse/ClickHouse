@@ -295,7 +295,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T> * col = dynamic_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[1]).column))
+		else if (ColumnConst<T> * col = dynamic_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			UInt8 res = 0;
 			Impl<T>::constant(col->getData(), res);

@@ -116,6 +116,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (query.order_expression_list)
 		setPartID(query.order_expression_list, PART_ORDER);
 	stream = new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER);
+
+	/// Оставим только столбцы, нужные для SELECT и ORDER BY части
 	stream = new ProjectionBlockInputStream(stream, expression, true, PART_SELECT | PART_ORDER);
 	
 	/// Если есть ORDER BY
@@ -132,19 +134,16 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			ASTFunction * id_func = dynamic_cast<ASTFunction *>(&*elem);
 
 			String name = id_elem ? id_elem->name : elem->getTreeID();
-			if (id_func)
-				name += "_0";
-			
 			order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
 		}
 
 		stream = new PartialSortingBlockInputStream(stream, order_descr);
 		stream = new MergeSortingBlockInputStream(stream, order_descr);
+
+		/// Оставим только столбцы, нужные для SELECT части
+		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT);
 	}
 	
-	/// Удалим ненужные больше столбцы
-	stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT);
-
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
