@@ -2,7 +2,6 @@
 #include <Yandex/daemon.h>
 
 #include <signal.h>
-#include <Yandex/Exception.h>
 #include <Yandex/logger_useful.h>
 #include <Yandex/mkdir.h>
 #include <Yandex/KillingErrorHandler.h>
