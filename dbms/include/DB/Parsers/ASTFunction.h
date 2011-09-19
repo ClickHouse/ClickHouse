@@ -1,8 +1,8 @@
-#ifndef DBMS_PARSERS_ASTFUNCTION_H
-#define DBMS_PARSERS_ASTFUNCTION_H
+#pragma once
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
@@ -20,6 +20,8 @@ public:
 
 	/// сама функция
 	FunctionPtr function;
+	/// или агрегатная функция
+	AggregateFunctionPtr aggregate_function;
 	/// типы возвращаемых значений
 	DataTypes return_types;
 	/// номера столбцов возвращаемых значений
@@ -33,5 +35,3 @@ public:
 };
 
 }
-
-#endif

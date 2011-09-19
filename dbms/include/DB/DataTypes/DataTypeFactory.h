@@ -8,6 +8,8 @@
 namespace DB
 {
 
+using Poco::SharedPtr;
+
 
 /** Позволяет создать тип данных по его имени. 
   */
@@ -15,7 +17,7 @@ class DataTypeFactory
 {
 public:
 	DataTypeFactory();
-	DataTypePtr get(const String & name);
+	DataTypePtr get(const String & name) const;
 
 private:
 	typedef std::map<String, DataTypePtr> NonParametricDataTypes;
@@ -23,6 +25,8 @@ private:
 
 	Poco::RegularExpression fixed_string_regexp;
 };
+
+typedef SharedPtr<DataTypeFactory> DataTypeFactoryPtr;
 
 
 }

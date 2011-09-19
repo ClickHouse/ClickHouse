@@ -2,6 +2,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace DB
@@ -39,7 +40,12 @@ public:
 	
 	DataTypePtr operator() (const String 	& x) const
 	{
-		return new DataTypeString;		
+		return new DataTypeString;
+	}
+
+	DataTypePtr operator() (const AggregateFunctionPtr 	& x) const
+	{
+		return new DataTypeAggregateFunction;
 	}
 	
 	DataTypePtr operator() (const Array 	& x) const

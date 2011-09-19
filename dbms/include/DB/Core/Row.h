@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_ROW_H
-#define DBMS_CORE_ROW_H
+#pragma once
 
 #include <vector>
 
@@ -16,5 +15,3 @@ namespace DB
 typedef std::vector<Field> Row;
 
 }
-
-#endif

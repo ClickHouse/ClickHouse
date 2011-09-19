@@ -34,10 +34,11 @@ void Expression::addSemantic(ASTPtr & ast)
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		Functions::const_iterator it = context.functions->find(node->name);
-		if (it == context.functions->end())
+		node->aggregate_function = context.aggregate_function_factory->tryGet(node->name);
+		if (it == context.functions->end() && node->aggregate_function.isNull())
 			throw Exception("Unknown function " + node->name, ErrorCodes::UNKNOWN_FUNCTION);
-
-		node->function = it->second;
+		if (it != context.functions->end())
+			node->function = it->second;
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
@@ -85,7 +86,10 @@ void Expression::checkTypes(ASTPtr ast)
 		}
 
 		/// Получаем типы результата
-		node->return_types = node->function->getReturnTypes(argument_types);
+		if (node->aggregate_function)
+			node->return_types.push_back(node->aggregate_function->getReturnType(argument_types));
+		else
+			node->return_types = node->function->getReturnTypes(argument_types);
 	}
 }
 
@@ -167,35 +171,38 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 	  */
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		/// Вставляем в блок столбцы - результаты вычисления функции
-		ColumnNumbers argument_numbers;
-		ColumnNumbers & result_numbers = node->return_column_numbers;
-		result_numbers.clear();
-				
-		size_t res_num = 0;
-		for (DataTypes::const_iterator it = node->return_types.begin(); it != node->return_types.end(); ++it)
+		if (node->function)
 		{
-			ColumnWithNameAndType column;
-			column.type = *it;
-			column.name = node->getTreeID() + functionReturnValueSuffix(res_num);
+			/// Вставляем в блок столбцы - результаты вычисления функции
+			ColumnNumbers argument_numbers;
+			ColumnNumbers & result_numbers = node->return_column_numbers;
+			result_numbers.clear();
 
-			result_numbers.push_back(block.columns());
-			block.insert(column);
-			++res_num;
+			size_t res_num = 0;
+			for (DataTypes::const_iterator it = node->return_types.begin(); it != node->return_types.end(); ++it)
+			{
+				ColumnWithNameAndType column;
+				column.type = *it;
+				column.name = node->getTreeID() + functionReturnValueSuffix(res_num);
+
+				result_numbers.push_back(block.columns());
+				block.insert(column);
+				++res_num;
+			}
+
+			ASTs arguments = node->arguments->children;
+			for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
+			{
+				if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
+					argument_numbers.push_back(block.getPositionByName(ident->name));
+				else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
+					argument_numbers.insert(argument_numbers.end(), func->return_column_numbers.begin(), func->return_column_numbers.end());
+				else
+					argument_numbers.push_back(block.getPositionByName((*it)->getTreeID()));
+			}
+
+			node->function->execute(block, argument_numbers, result_numbers);
 		}
-
-		ASTs arguments = node->arguments->children;
-		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
-		{
-			if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
-				argument_numbers.push_back(block.getPositionByName(ident->name));
-			else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
-				argument_numbers.insert(argument_numbers.end(), func->return_column_numbers.begin(), func->return_column_numbers.end());
-			else
-				argument_numbers.push_back(block.getPositionByName((*it)->getTreeID()));
-		}
-
-		node->function->execute(block, argument_numbers, result_numbers);
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
 	{

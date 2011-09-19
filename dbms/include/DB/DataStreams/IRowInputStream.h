@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_STREAMS_IROWINPUTSTREAM_H
-#define DBMS_DATA_STREAMS_IROWINPUTSTREAM_H
+#pragma once
 
 #include <DB/Core/Row.h>
 
@@ -22,5 +21,3 @@ public:
 };
 
 }
-
-#endif

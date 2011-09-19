@@ -17,6 +17,10 @@
 namespace DB
 {
 
+using Poco::SharedPtr;
+	
+class IAggregateFunction;
+
 /** Типы данных для представления единичного значения произвольного типа в оперативке.
   * Внимание! Предпочтительно вместо единичных значений хранить кусочки столбцов. См. Column.h
   */
@@ -27,6 +31,7 @@ typedef boost::make_recursive_variant<
 	Int64,
 	Float64,
 	String,
+	SharedPtr<IAggregateFunction>,
 	std::vector<boost::recursive_variant_>	/// Array, Tuple
 	>::type Field;
 
@@ -43,6 +48,7 @@ namespace FieldType
 		Int64,
 		Float64,
 		String,
+		AggregateFunction,
 		Array
 	};
 }
@@ -65,6 +71,7 @@ public:
 	FieldType::Enum operator() (const Int64 	& x) const { return FieldType::Int64; }
 	FieldType::Enum operator() (const Float64 	& x) const { return FieldType::Float64; }
 	FieldType::Enum operator() (const String 	& x) const { return FieldType::String; }
+	FieldType::Enum operator() (const SharedPtr<IAggregateFunction> & x) const { return FieldType::AggregateFunction; }
 	FieldType::Enum operator() (const Array 	& x) const { return FieldType::Array; }
 };
 
@@ -72,19 +79,20 @@ public:
 class FieldVisitorDump : public boost::static_visitor<std::string>
 {
 public:
-	std::string operator() (const Null 		& x) const { return "NULL"; }
-	std::string operator() (const UInt64 	& x) const { return "UInt64_" + Poco::NumberFormatter::format(x); }
-	std::string operator() (const Int64 	& x) const { return "Int64_" + Poco::NumberFormatter::format(x); }
-	std::string operator() (const Float64 	& x) const { return "Float64_" + Poco::NumberFormatter::format(x); }
+	String operator() (const Null 		& x) const { return "NULL"; }
+	String operator() (const UInt64 	& x) const { return "UInt64_" + Poco::NumberFormatter::format(x); }
+	String operator() (const Int64 		& x) const { return "Int64_" + Poco::NumberFormatter::format(x); }
+	String operator() (const Float64 	& x) const { return "Float64_" + Poco::NumberFormatter::format(x); }
+	String operator() (const SharedPtr<IAggregateFunction> & x) const { return "AggregateFunction"; }
 
-	std::string operator() (const String 	& x) const
+	String operator() (const String 	& x) const
 	{
 		std::stringstream s;
 		s << mysqlxx::quote << x;
 		return s.str();
 	}
 
-	std::string operator() (const Array 	& x) const
+	String operator() (const Array 	& x) const
 	{
 		std::stringstream s;
 
@@ -109,6 +117,7 @@ public:
 	String operator() (const UInt64 	& x) const { return Poco::NumberFormatter::format(x); }
 	String operator() (const Int64 		& x) const { return Poco::NumberFormatter::format(x); }
 	String operator() (const Float64 	& x) const { return Poco::NumberFormatter::format(x); }
+	String operator() (const SharedPtr<IAggregateFunction> & x) const { return "AggregateFunction"; }
 
 	String operator() (const String 	& x) const
 	{

@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_COLUMN_VECTOR_H
-#define DBMS_CORE_COLUMN_VECTOR_H
+#pragma once
 
 #include <string.h>
 
@@ -142,5 +141,3 @@ private:
 
 
 }
-
-#endif

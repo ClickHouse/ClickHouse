@@ -38,9 +38,9 @@ DataTypeFactory::DataTypeFactory()
 }
 
 
-DataTypePtr DataTypeFactory::get(const String & name)
+DataTypePtr DataTypeFactory::get(const String & name) const
 {
-	NonParametricDataTypes::iterator it = non_parametric_data_types.find(name);
+	NonParametricDataTypes::const_iterator it = non_parametric_data_types.find(name);
 	if (it != non_parametric_data_types.end())
 		return it->second;
 
