@@ -67,6 +67,9 @@ public:
 
 	/** Получить список имён столбцов через запятую. */
 	std::string dumpNames() const;
+
+	/** Получить такой же блок, но пустой. */
+	Block cloneEmpty() const;
 };
 
 }

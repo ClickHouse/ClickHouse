@@ -22,16 +22,21 @@ typedef std::map<Row, AggregateFunctions> AggregatedData;
 
 /** Агрегирует поток блоков.
   */
-class Aggregate
+class Aggregator
 {
 public:
-	Aggregate(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_) : keys(keys_), aggregates(aggregates_) {};
+	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_) : keys(keys_), aggregates(aggregates_) {};
 
 	AggregatedData execute(BlockInputStreamPtr stream);
+
+	/// Получить пример блока, описывающего результат. Следует вызывать только после execute.
+	Block getSampleBlock() { return sample; }
 
 private:
 	ColumnNumbers keys;
 	AggregateDescriptions aggregates;
+
+	Block sample;
 };
 
 

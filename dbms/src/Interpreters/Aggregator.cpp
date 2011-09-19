@@ -1,4 +1,7 @@
-#include <DB/Interpreters/Aggregate.h>
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
+#include <DB/Columns/ColumnAggregateFunction.h>
+
+#include <DB/Interpreters/Aggregator.h>
 
 
 namespace DB
@@ -10,7 +13,7 @@ namespace DB
   * Без оптимизации по количеству ключей.
   * Результат хранится в оперативке и должен полностью помещаться в оперативку.
   */
-AggregatedData Aggregate::execute(BlockInputStreamPtr stream)
+AggregatedData Aggregator::execute(BlockInputStreamPtr stream)
 {
 	AggregatedData res;
 
@@ -41,6 +44,31 @@ AggregatedData Aggregate::execute(BlockInputStreamPtr stream)
 		for (size_t i = 0; i < aggregates_size; ++i)
 			for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
 				aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
+
+		/// Создадим пример блока, описывающего результат
+		if (!sample)
+		{
+			for (size_t i = 0, size = keys_size; i < size; ++i)
+				sample.insert(block.getByPosition(keys[i]).cloneEmpty());
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+			{
+				ColumnWithNameAndType col;
+				col.name = aggregates[i].function->getName() + "(";
+				for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
+				{
+					if (j != 0)
+						col.name += ",";
+					col.name += block.getByPosition(aggregates[i].arguments[j]).name;
+				}
+				col.name += ")";
+				
+				col.type = new DataTypeAggregateFunction;
+				col.column = new ColumnAggregateFunction;
+
+				sample.insert(col);
+			}
+		}
 
 		size_t rows = block.rows();
 

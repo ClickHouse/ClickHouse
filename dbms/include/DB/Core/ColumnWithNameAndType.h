@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_COLUMN_WITH_NAME_AND_TYPE_H
-#define DBMS_CORE_COLUMN_WITH_NAME_AND_TYPE_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
@@ -20,8 +19,17 @@ struct ColumnWithNameAndType
 	ColumnPtr column;
 	DataTypePtr type;
 	String name;
+
+	ColumnWithNameAndType cloneEmpty() const
+	{
+		ColumnWithNameAndType res;
+
+		res.name = name;
+		res.type = type;
+		res.column = column->cloneEmpty();
+
+		return res;
+	}
 };
 
 }
-
-#endif

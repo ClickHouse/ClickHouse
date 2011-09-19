@@ -87,7 +87,10 @@ void Expression::checkTypes(ASTPtr ast)
 
 		/// Получаем типы результата
 		if (node->aggregate_function)
-			node->return_types.push_back(node->aggregate_function->getReturnType(argument_types));
+		{
+			node->aggregate_function->setArguments(argument_types);
+			node->return_types.push_back(node->aggregate_function->getReturnType());
+		}
 		else
 			node->return_types = node->function->getReturnTypes(argument_types);
 	}

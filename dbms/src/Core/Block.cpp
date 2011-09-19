@@ -181,4 +181,15 @@ std::string Block::dumpNames() const
 }
 
 
+Block Block::cloneEmpty() const
+{
+	Block res;
+
+	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+		res.insert(it->cloneEmpty());
+
+	return res;
+}
+
+
 }

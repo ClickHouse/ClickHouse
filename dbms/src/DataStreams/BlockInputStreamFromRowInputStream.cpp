@@ -19,22 +19,6 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
 }
 
 
-void BlockInputStreamFromRowInputStream::initBlock(Block & res)
-{
-	for (size_t i = 0; i < sample.columns(); ++i)
-	{
-		const ColumnWithNameAndType & sample_elem = sample.getByPosition(i);
-		ColumnWithNameAndType res_elem;
-
-		res_elem.column = sample_elem.column->cloneEmpty();
-		res_elem.type = sample_elem.type->clone();
-		res_elem.name = sample_elem.name;
-
-		res.insert(res_elem);
-	}
-}
-
-
 Block BlockInputStreamFromRowInputStream::readImpl()
 {
 	Block res;
@@ -47,7 +31,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 			return res;
 
 		if (!res)
-			initBlock(res);
+			res = sample.cloneEmpty();
 
 		if (row.size() != sample.columns())
 			throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);

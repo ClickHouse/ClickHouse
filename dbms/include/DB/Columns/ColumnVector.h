@@ -135,7 +135,7 @@ public:
 		return data;
 	}
 
-private:
+protected:
 	Container_t data;
 };
 

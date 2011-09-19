@@ -1,17 +1,24 @@
 #include <iostream>
 #include <iomanip>
 
+#include <boost/assign/list_inserter.hpp>
+
 #include <Poco/Stopwatch.h>
+
+#include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypesNumberVariable.h>
 
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
-
-#include <DB/Interpreters/Aggregator.h>
+#include <DB/DataStreams/AggregatingBlockInputStream.h>
+#include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
+#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/copyData.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -82,25 +89,34 @@ int main(int argc, char ** argv)
 
 		block.insert(column_s2);
 
-		DB::BlockInputStreamPtr stream = new OneBlockInputStream(block);
-		DB::AggregatedData aggregated_data;
-
 		DB::ColumnNumbers key_column_numbers;
 		key_column_numbers.push_back(0);
-		key_column_numbers.push_back(1);
+		//key_column_numbers.push_back(1);
 
 		DB::AggregateFunctionFactory factory;
 
 		DB::AggregateDescriptions aggregate_descriptions(1);
 		aggregate_descriptions[0].function = factory.get("count");
 
-		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions);
+		Poco::SharedPtr<DB::DataTypes> result_types = new DB::DataTypes;
+		boost::assign::push_back(*result_types)
+			(new DB::DataTypeInt16)
+		//	(new DB::DataTypeString)
+			(new DB::DataTypeVarUInt)
+			;
+
+		DB::BlockInputStreamPtr stream = new OneBlockInputStream(block);
+		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions);
+		stream = new DB::FinalizingAggregatedBlockInputStream(stream);
+
+		DB::WriteBufferFromOStream ob(std::cout);
+		DB::TabSeparatedRowOutputStream out(ob, result_types);
 		
 		{
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 
-			aggregated_data = aggregator.execute(stream);
+			DB::copyData(*stream, out);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
@@ -109,19 +125,9 @@ int main(int argc, char ** argv)
 				<< std::endl;
 		}
 
-		for (DB::AggregatedData::const_iterator it = aggregated_data.begin(); it != aggregated_data.end(); ++it)
-		{
-			for (DB::Row::const_iterator jt = it->first.begin(); jt != it->first.end(); ++jt)
-				std::cout << boost::apply_visitor(DB::FieldVisitorToString(), *jt) << '\t';
-
-			for (DB::AggregateFunctions::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
-			{
-				DB::Field result = (*jt)->getResult();
-				std::cout << boost::apply_visitor(DB::FieldVisitorToString(), result) << '\t';
-			}
-
-			std::cout << '\n';
-		}
+		std::cout << std::endl;
+		stream->dumpTree(std::cout);
+		std::cout << std::endl;
 	}
 	catch (const DB::Exception & e)
 	{
