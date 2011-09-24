@@ -28,14 +28,8 @@ void dump(DB::IAST & ast, int level = 0)
 	
 	if (DB::ASTFunction * node = dynamic_cast<DB::ASTFunction *>(&ast))
 	{
-		std::cout << prefix << node << " Function, name = " << node->function->getName() << ", return types: ";
-		for (DB::DataTypes::const_iterator it = node->return_types.begin(); it != node->return_types.end(); ++it)
-		{
-			if (it != node->return_types.begin())
-				std::cout << ", ";
-			std::cout << (*it)->getName();
-		}
-		std::cout << std::endl;
+		std::cout << prefix << node << " Function, name = " << node->function->getName()
+			<< ", return type: " << node->return_type->getName() << std::endl;
 	}
 	else if (DB::ASTIdentifier * node = dynamic_cast<DB::ASTIdentifier *>(&ast))
 	{

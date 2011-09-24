@@ -5,6 +5,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTAsterisk.h>
 #include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 
 #include <DB/Interpreters/Expression.h>
 
@@ -13,14 +14,14 @@ namespace DB
 {
 
 
-/** Если функция возвращает много аргументов, то в имена всех соответствующих столбцов,
-  *  кроме первого, будем добавлять _1, _2 и т. п.
-  */
-static std::string functionReturnValueSuffix(size_t i)
+static std::string getName(ASTPtr & ast)
 {
-	return i == 0 ? "" : ("_" + Poco::NumberFormatter::format(i));
+	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
+		return ident->name;
+	else
+		return ast->getTreeID();
 }
-	
+
 
 void Expression::addSemantic(ASTPtr & ast)
 {
@@ -78,7 +79,7 @@ void Expression::checkTypes(ASTPtr ast)
 		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
 		{
 			if (ASTFunction * arg = dynamic_cast<ASTFunction *>(&**it))
-				argument_types.insert(argument_types.end(), arg->return_types.begin(), arg->return_types.end());
+				argument_types.push_back(arg->return_type);
 			else if (ASTIdentifier * arg = dynamic_cast<ASTIdentifier *>(&**it))
 				argument_types.push_back(arg->type);
 			else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&**it))
@@ -89,10 +90,10 @@ void Expression::checkTypes(ASTPtr ast)
 		if (node->aggregate_function)
 		{
 			node->aggregate_function->setArguments(argument_types);
-			node->return_types.push_back(node->aggregate_function->getReturnType());
+			node->return_type = node->aggregate_function->getReturnType();
 		}
 		else
-			node->return_types = node->function->getReturnTypes(argument_types);
+			node->return_type = node->function->getReturnType(argument_types);
 	}
 }
 
@@ -178,33 +179,19 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 		{
 			/// Вставляем в блок столбцы - результаты вычисления функции
 			ColumnNumbers argument_numbers;
-			ColumnNumbers & result_numbers = node->return_column_numbers;
-			result_numbers.clear();
 
-			size_t res_num = 0;
-			for (DataTypes::const_iterator it = node->return_types.begin(); it != node->return_types.end(); ++it)
-			{
-				ColumnWithNameAndType column;
-				column.type = *it;
-				column.name = node->getTreeID() + functionReturnValueSuffix(res_num);
+			ColumnWithNameAndType column;
+			column.type = node->return_type;
+			column.name = getName(ast);
 
-				result_numbers.push_back(block.columns());
-				block.insert(column);
-				++res_num;
-			}
+			size_t result_number = block.columns();
+			block.insert(column);
 
 			ASTs arguments = node->arguments->children;
 			for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
-			{
-				if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
-					argument_numbers.push_back(block.getPositionByName(ident->name));
-				else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
-					argument_numbers.insert(argument_numbers.end(), func->return_column_numbers.begin(), func->return_column_numbers.end());
-				else
-					argument_numbers.push_back(block.getPositionByName((*it)->getTreeID()));
-			}
+				argument_numbers.push_back(block.getPositionByName(getName(*it)));
 
-			node->function->execute(block, argument_numbers, result_numbers);
+			node->function->execute(block, argument_numbers, result_number);
 		}
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
@@ -212,7 +199,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 		ColumnWithNameAndType column;
 		column.column = node->type->createConstColumn(block.rows(), node->value);
 		column.type = node->type;
-		column.name = node->getTreeID();
+		column.name = getName(ast);
 
 		block.insert(column);
 	}
@@ -243,17 +230,10 @@ void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool 
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (ident->kind == ASTIdentifier::Column)
-			without_duplicates ? dst.insertUnique(src.getByName(ident->name)) : dst.insert(src.getByName(ident->name));
+			without_duplicates ? dst.insertUnique(src.getByName(getName(ast))) : dst.insert(src.getByName(getName(ast)));
 	}
-	else if (dynamic_cast<ASTLiteral *>(&*ast))
-		without_duplicates ? dst.insertUnique(src.getByName(ast->getTreeID())) : dst.insert(src.getByName(ast->getTreeID()));
-	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
-	{
-		for (size_t i = 0, size = func->return_types.size(); i != size; ++i)
-			without_duplicates
-				? dst.insertUnique(src.getByName(ast->getTreeID() + functionReturnValueSuffix(i)))
-				: dst.insert(src.getByName(ast->getTreeID() + functionReturnValueSuffix(i)));
-	}
+	else if (dynamic_cast<ASTLiteral *>(&*ast) || dynamic_cast<ASTFunction *>(&*ast))
+		without_duplicates ? dst.insertUnique(src.getByName(getName(ast))) : dst.insert(src.getByName(getName(ast)));
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			collectFinalColumns(*it, src, dst, without_duplicates, part_id);
@@ -279,10 +259,55 @@ void Expression::getReturnTypesImpl(ASTPtr ast, DataTypes & res)
 	else if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*ast))
 		res.push_back(lit->type);
 	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
-		res.insert(res.end(), func->return_types.begin(), func->return_types.end());
+		res.push_back(func->return_type);
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			getReturnTypesImpl(*it, res);
+}
+
+
+void Expression::getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates)
+{
+	/// Обход в глубину
+	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
+	{
+		if (select->group_expression_list)
+		{
+			for (ASTs::iterator it = select->group_expression_list->children.begin(); it != select->group_expression_list->children.end(); ++it)
+			{
+				if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
+				{
+					if (ident->kind == ASTIdentifier::Column)
+						key_names.push_back(getName(*it));
+				}
+				else if (dynamic_cast<ASTLiteral *>(&**it) || dynamic_cast<ASTFunction *>(&**it))
+					key_names.push_back(getName(*it));
+			}
+		}
+	}
+
+	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (func->aggregate_function)
+		{
+			AggregateDescription desc;
+			desc.function = func->aggregate_function;
+
+			for (ASTs::iterator it = func->arguments->children.begin(); it != func->arguments->children.end(); ++it)
+				desc.argument_names.push_back(getName(*it));
+
+			aggregates.push_back(desc);
+		}
+	}
+
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		getAggregateInfoImpl(*it, key_names, aggregates);
+}
+
+
+void Expression::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates)
+{
+	getAggregateInfoImpl(ast, key_names, aggregates);
 }
 
 	

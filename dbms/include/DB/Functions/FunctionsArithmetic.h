@@ -235,34 +235,34 @@ class FunctionBinaryArithmetic : public IFunction
 {
 private:
 	template <typename T0, typename T1>
-	bool checkRightType(const DataTypes & arguments, DataTypes & types_res) const
+	bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
 	{
 		if (dynamic_cast<const T1 *>(&*arguments[1]))
 		{
-			types_res.push_back(new typename DataTypeFromFieldType<
-				typename Impl<typename T0::FieldType, typename T1::FieldType>::ResultType>::Type);
+			type_res = new typename DataTypeFromFieldType<
+				typename Impl<typename T0::FieldType, typename T1::FieldType>::ResultType>::Type;
 			return true;
 		}
 		return false;
 	}
 
 	template <typename T0>
-	bool checkLeftType(const DataTypes & arguments, DataTypes & types_res) const
+	bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
 	{
 		if (dynamic_cast<const T0 *>(&*arguments[0]))
 		{
-			if (	checkRightType<T0, DataTypeUInt8>(arguments, types_res)
-				||	checkRightType<T0, DataTypeUInt16>(arguments, types_res)
-				||	checkRightType<T0, DataTypeUInt32>(arguments, types_res)
-				||	checkRightType<T0, DataTypeUInt64>(arguments, types_res)
-				||	checkRightType<T0, DataTypeInt8>(arguments, types_res)
-				||	checkRightType<T0, DataTypeInt16>(arguments, types_res)
-				||	checkRightType<T0, DataTypeInt32>(arguments, types_res)
-				||	checkRightType<T0, DataTypeInt64>(arguments, types_res)
-				||	checkRightType<T0, DataTypeFloat32>(arguments, types_res)
-				||	checkRightType<T0, DataTypeFloat64>(arguments, types_res)
-				||	checkRightType<T0, DataTypeVarUInt>(arguments, types_res)
-				||	checkRightType<T0, DataTypeVarInt>(arguments, types_res))
+			if (	checkRightType<T0, DataTypeUInt8>(arguments, type_res)
+				||	checkRightType<T0, DataTypeUInt16>(arguments, type_res)
+				||	checkRightType<T0, DataTypeUInt32>(arguments, type_res)
+				||	checkRightType<T0, DataTypeUInt64>(arguments, type_res)
+				||	checkRightType<T0, DataTypeInt8>(arguments, type_res)
+				||	checkRightType<T0, DataTypeInt16>(arguments, type_res)
+				||	checkRightType<T0, DataTypeInt32>(arguments, type_res)
+				||	checkRightType<T0, DataTypeInt64>(arguments, type_res)
+				||	checkRightType<T0, DataTypeFloat32>(arguments, type_res)
+				||	checkRightType<T0, DataTypeFloat64>(arguments, type_res)
+				||	checkRightType<T0, DataTypeVarUInt>(arguments, type_res)
+				||	checkRightType<T0, DataTypeVarInt>(arguments, type_res))
 				return true;
 			else
 				throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
@@ -273,14 +273,14 @@ private:
 
 
 	template <typename T0, typename T1>
-	bool executeRightType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result, const ColumnVector<T0> * col_left)
+	bool executeRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
 	{
 		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			typedef typename Impl<T0, T1>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -293,7 +293,7 @@ private:
 			typedef typename Impl<T0, T1>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -306,14 +306,14 @@ private:
 	}
 
 	template <typename T0, typename T1>
-	bool executeConstRightType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result, const ColumnConst<T0> * col_left)
+	bool executeConstRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
 	{
 		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			typedef typename Impl<T0, T1>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
@@ -329,7 +329,7 @@ private:
 			Impl<T0, T1>::constant_constant(col_left->getData(), col_right->getData(), res);
 			
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_left->size(), res);
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			return true;
 		}
@@ -338,7 +338,7 @@ private:
 	}
 
 	template <typename T0>
-	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	bool executeLeftType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (ColumnVector<T0> * col_left = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -388,40 +388,36 @@ public:
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypes getReturnTypes(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		DataTypes types_res;
+		DataTypePtr type_res;
 
-		if (!(	checkLeftType<DataTypeUInt8>(arguments, types_res)
-			||	checkLeftType<DataTypeUInt16>(arguments, types_res)
-			||	checkLeftType<DataTypeUInt32>(arguments, types_res)
-			||	checkLeftType<DataTypeUInt64>(arguments, types_res)
-			||	checkLeftType<DataTypeInt8>(arguments, types_res)
-			||	checkLeftType<DataTypeInt16>(arguments, types_res)
-			||	checkLeftType<DataTypeInt32>(arguments, types_res)
-			||	checkLeftType<DataTypeInt64>(arguments, types_res)
-			||	checkLeftType<DataTypeFloat32>(arguments, types_res)
-			||	checkLeftType<DataTypeFloat64>(arguments, types_res)
-			||	checkLeftType<DataTypeVarUInt>(arguments, types_res)
-			||	checkLeftType<DataTypeVarInt>(arguments, types_res)))
+		if (!(	checkLeftType<DataTypeUInt8>(arguments, type_res)
+			||	checkLeftType<DataTypeUInt16>(arguments, type_res)
+			||	checkLeftType<DataTypeUInt32>(arguments, type_res)
+			||	checkLeftType<DataTypeUInt64>(arguments, type_res)
+			||	checkLeftType<DataTypeInt8>(arguments, type_res)
+			||	checkLeftType<DataTypeInt16>(arguments, type_res)
+			||	checkLeftType<DataTypeInt32>(arguments, type_res)
+			||	checkLeftType<DataTypeInt64>(arguments, type_res)
+			||	checkLeftType<DataTypeFloat32>(arguments, type_res)
+			||	checkLeftType<DataTypeFloat64>(arguments, type_res)
+			||	checkLeftType<DataTypeVarUInt>(arguments, type_res)
+			||	checkLeftType<DataTypeVarInt>(arguments, type_res)))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return types_res;
+		return type_res;
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (result.size() != 1)
-			throw Exception("Wrong number of result columns in function " + getName() + ", should be 1.",
-				ErrorCodes::ILLEGAL_NUMBER_OF_RESULT_COLUMNS);
-
 		if (!(	executeLeftType<UInt8>(block, arguments, result)
 			||	executeLeftType<UInt16>(block, arguments, result)
 			||	executeLeftType<UInt32>(block, arguments, result)
@@ -444,26 +440,26 @@ class FunctionUnaryArithmetic : public IFunction
 {
 private:
 	template <typename T0>
-	bool checkType(const DataTypes & arguments, DataTypes & types_res) const
+	bool checkType(const DataTypes & arguments, DataTypePtr result) const
 	{
 		if (dynamic_cast<const T0 *>(&*arguments[0]))
 		{
-			types_res.push_back(new typename DataTypeFromFieldType<
-				typename Impl<typename T0::FieldType>::ResultType>::Type);
+			result = new typename DataTypeFromFieldType<
+				typename Impl<typename T0::FieldType>::ResultType>::Type;
 			return true;
 		}
 		return false;
 	}
 
 	template <typename T0>
-	bool executeType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (ColumnVector<T0> * col = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			typedef typename Impl<T0>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->getData().size());
@@ -479,7 +475,7 @@ private:
 			Impl<T0>::constant(col->getData(), res);
 
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			return true;
 		}
@@ -495,40 +491,36 @@ public:
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypes getReturnTypes(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		DataTypes types_res;
+		DataTypePtr result;
 
-		if (!(	checkType<DataTypeUInt8>(arguments, types_res)
-			||	checkType<DataTypeUInt16>(arguments, types_res)
-			||	checkType<DataTypeUInt32>(arguments, types_res)
-			||	checkType<DataTypeUInt64>(arguments, types_res)
-			||	checkType<DataTypeInt8>(arguments, types_res)
-			||	checkType<DataTypeInt16>(arguments, types_res)
-			||	checkType<DataTypeInt32>(arguments, types_res)
-			||	checkType<DataTypeInt64>(arguments, types_res)
-			||	checkType<DataTypeFloat32>(arguments, types_res)
-			||	checkType<DataTypeFloat64>(arguments, types_res)
-			||	checkType<DataTypeVarUInt>(arguments, types_res)
-			||	checkType<DataTypeVarInt>(arguments, types_res)))
+		if (!(	checkType<DataTypeUInt8>(arguments, result)
+			||	checkType<DataTypeUInt16>(arguments, result)
+			||	checkType<DataTypeUInt32>(arguments, result)
+			||	checkType<DataTypeUInt64>(arguments, result)
+			||	checkType<DataTypeInt8>(arguments, result)
+			||	checkType<DataTypeInt16>(arguments, result)
+			||	checkType<DataTypeInt32>(arguments, result)
+			||	checkType<DataTypeInt64>(arguments, result)
+			||	checkType<DataTypeFloat32>(arguments, result)
+			||	checkType<DataTypeFloat64>(arguments, result)
+			||	checkType<DataTypeVarUInt>(arguments, result)
+			||	checkType<DataTypeVarInt>(arguments, result)))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return types_res;
+		return result;
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (result.size() != 1)
-			throw Exception("Wrong number of result columns in function " + getName() + ", should be 1.",
-				ErrorCodes::ILLEGAL_NUMBER_OF_RESULT_COLUMNS);
-
 		if (!(	executeType<UInt8>(block, arguments, result)
 			||	executeType<UInt16>(block, arguments, result)
 			||	executeType<UInt32>(block, arguments, result)

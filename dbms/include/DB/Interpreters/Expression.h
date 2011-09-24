@@ -6,6 +6,7 @@
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Aggregator.h>
 
 
 namespace DB
@@ -42,6 +43,10 @@ public:
 	/** Получить список типов столбцов результата.
 	  */
 	DataTypes getReturnTypes();
+
+	/** Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
+	  */
+	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
 
 private:
 	ASTPtr ast;
@@ -82,6 +87,8 @@ private:
 	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id);
 
 	void getReturnTypesImpl(ASTPtr ast, DataTypes & res);
+
+	void getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates);
 };
 
 

@@ -5,6 +5,16 @@ namespace DB
 {
 
 
+/*AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression)
+	: input(input_), has_been_read(false)
+{
+	children.push_back(input);
+
+	
+}*/
+
+
+
 Block AggregatingBlockInputStream::readImpl()
 {
 	if (has_been_read)

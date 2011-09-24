@@ -30,11 +30,11 @@ public:
 	/// Получить основное имя функции.
 	virtual String getName() const = 0;
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	virtual DataTypes getReturnTypes(const DataTypes & arguments) const = 0;
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	virtual DataTypePtr getReturnType(const DataTypes & arguments) const = 0;
 
 	/// Выполнить функцию над блоком.
-	virtual void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result) = 0;
+	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
 };
 
 

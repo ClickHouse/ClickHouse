@@ -22,10 +22,10 @@ public:
 	FunctionPtr function;
 	/// или агрегатная функция
 	AggregateFunctionPtr aggregate_function;
-	/// типы возвращаемых значений
-	DataTypes return_types;
-	/// номера столбцов возвращаемых значений
-	ColumnNumbers return_column_numbers;
+	/// тип возвращаемого значения
+	DataTypePtr return_type;
+	/// номер столбца возвращаемого значения
+	size_t return_column_number;
 
 	ASTFunction() {}
 	ASTFunction(StringRange range_) : IAST(range_) {}

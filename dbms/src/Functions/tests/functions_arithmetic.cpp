@@ -45,25 +45,19 @@ int main(int argc, char ** argv)
 		arg_nums.push_back(0);
 		arg_nums.push_back(1);
 
-		DB::ColumnNumbers res_nums;
-		res_nums.push_back(2);
+		size_t res_num = 2;
 
-		DB::DataTypes res_types = f.getReturnTypes(arg_types);
+		DB::DataTypePtr res_type = f.getReturnType(arg_types);
 
-		for (DB::DataTypes::const_iterator it = res_types.begin(); it != res_types.end(); ++it)
-		{
-			DB::ColumnWithNameAndType descr_res;
-			descr_res.type = *it;
-			descr_res.name = "z";
-
-			block.insert(descr_res);
-		}
+		DB::ColumnWithNameAndType descr_res;
+		descr_res.type = res_type;
+		descr_res.name = "z";
 
 		{
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 			
-			f.execute(block, arg_nums, res_nums);
+			f.execute(block, arg_nums, res_num);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)

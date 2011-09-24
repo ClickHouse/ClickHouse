@@ -37,6 +37,16 @@ AggregatedData Aggregator::execute(BlockInputStreamPtr stream)
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
+		/// Преобразуем имена столбцов в номера, если номера не заданы
+		if (keys.empty() && !key_names.empty())
+			for (Names::const_iterator it = key_names.begin(); it != key_names.end(); ++it)
+				keys.push_back(block.getPositionByName(*it));
+
+		for (AggregateDescriptions::iterator it = aggregates.begin(); it != aggregates.end(); ++it)
+			if (it->arguments.empty() && !it->argument_names.empty())
+				for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
+					it->arguments.push_back(block.getPositionByName(*jt));
+		
 		/// Запоминаем столбцы, с которыми будем работать
 		for (size_t i = 0, size = keys_size; i < size; ++i)
 			key_columns[i] = block.getByPosition(keys[i]).column;

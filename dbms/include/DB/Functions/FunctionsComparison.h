@@ -1130,12 +1130,12 @@ class FunctionComparison : public IFunction
 private:
 
 	template <typename T0, typename T1>
-	bool executeNumRightType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result, const ColumnVector<T0> * col_left)
+	bool executeNumRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
 	{
 		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -1146,7 +1146,7 @@ private:
 		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -1159,12 +1159,12 @@ private:
 	}
 
 	template <typename T0, typename T1>
-	bool executeNumConstRightType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result, const ColumnConst<T0> * col_left)
+	bool executeNumConstRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
 	{
 		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
@@ -1178,7 +1178,7 @@ private:
 			NumImpl<T0, T1>::constant_constant(col_left->getData(), col_right->getData(), res);
 			
 			ColumnConstUInt8 * col_res = new ColumnConstUInt8(col_left->size(), res);
-			block.getByPosition(result[0]).column = col_res;
+			block.getByPosition(result).column = col_res;
 
 			return true;
 		}
@@ -1187,7 +1187,7 @@ private:
 	}
 
 	template <typename T0>
-	bool executeNumLeftType(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	bool executeNumLeftType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (ColumnVector<T0> * col_left = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -1229,7 +1229,7 @@ private:
 		return false;
 	}
 
-	void executeString(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	void executeString(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IColumn * c0 = &*block.getByPosition(arguments[0]).column;
 		IColumn * c1 = &*block.getByPosition(arguments[1]).column;
@@ -1244,13 +1244,13 @@ private:
 		if (c0_const && c1_const)
 		{
 			ColumnConstUInt8 * c_res = new ColumnConstUInt8(c0_const->size(), 0);
-			block.getByPosition(result[0]).column = c_res;
+			block.getByPosition(result).column = c_res;
 			StringImpl::constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
 		}
 		else
 		{
 			ColumnUInt8 * c_res = new ColumnUInt8;
-			block.getByPosition(result[0]).column = c_res;
+			block.getByPosition(result).column = c_res;
 			ColumnUInt8::Container_t & vec_res = c_res->getData();
 			vec_res.resize(c0->size());
 
@@ -1311,7 +1311,7 @@ public:
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypes getReturnTypes(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1326,18 +1326,12 @@ public:
 			throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
 				" of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 			
-		DataTypes types_res;
-		types_res.push_back(new DataTypeUInt8);
-		return types_res;
+		return new DataTypeUInt8;
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (result.size() != 1)
-			throw Exception("Wrong number of result columns in function " + getName() + ", should be 1.",
-				ErrorCodes::ILLEGAL_NUMBER_OF_RESULT_COLUMNS);
-
 		if (block.getByPosition(arguments[0]).column->isNumeric())
 		{
 			if (!(	executeNumLeftType<UInt8>(block, arguments, result)
