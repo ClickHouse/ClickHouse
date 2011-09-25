@@ -16,7 +16,7 @@ using Poco::SharedPtr;
 void DataTypeAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
 	const AggregateFunctionPtr & value = boost::get<const AggregateFunctionPtr &>(field);
-	writeStringBinary(value->getName(), ostr);
+	writeStringBinary(value->getTypeID(), ostr);
 	value->serialize(ostr);
 }
 
@@ -24,7 +24,7 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
 {
 	String name;
 	readStringBinary(name, istr);
-	AggregateFunctionPtr value = factory->get(name);
+	AggregateFunctionPtr value = factory->getByTypeID(name);
 	value->deserializeMerge(istr);
 	field = value;
 }
@@ -36,7 +36,7 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 
 	String name;
 	if (!vec.empty())
-		name = vec[0]->getName();
+		name = vec[0]->getTypeID();
 	
 	for (ColumnAggregateFunction::Container_t::const_iterator it = vec.begin(); it != vec.end(); ++it)
 	{
@@ -59,7 +59,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 
 		String name;
 		readStringBinary(name, istr);
-		AggregateFunctionPtr value = factory->get(name);
+		AggregateFunctionPtr value = factory->getByTypeID(name);
 		value->deserializeMerge(istr);
 		vec.push_back(value);
 	}

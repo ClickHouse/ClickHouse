@@ -15,12 +15,9 @@ class AggregateFunctionFactory
 {
 public:
 	AggregateFunctionFactory();
-	AggregateFunctionPtr get(const String & name) const;
-	AggregateFunctionPtr tryGet(const String & name) const;
-
-private:
-	typedef std::map<String, AggregateFunctionPtr> NonParametricAggregateFunctions;
-	NonParametricAggregateFunctions non_parametric_aggregate_functions;
+	AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
+	AggregateFunctionPtr tryGet(const String & name, const DataTypes & argument_types) const;
+	AggregateFunctionPtr getByTypeID(const String & type_id) const;
 };
 
 using Poco::SharedPtr;

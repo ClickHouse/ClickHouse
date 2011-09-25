@@ -18,6 +18,9 @@ public:
 	/// Получить основное имя функции.
 	virtual String getName() const = 0;
 
+	/// Получить строку, по которой можно потом будет создать объект того же типа (с помощью AggregateFunctionFactory)
+	virtual String getTypeID() const = 0;
+
 	/// Создать новую агрегатную функцию того же типа.
 	virtual SharedPtr<IAggregateFunction> cloneEmpty() const = 0;
 

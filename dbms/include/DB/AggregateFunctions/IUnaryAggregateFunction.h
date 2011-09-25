@@ -19,6 +19,8 @@ public:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 	}
 
+	virtual void setArgument(const DataTypePtr & argument) = 0;
+
 	/// Добавить значение.
 	void add(const Row & row)
 	{

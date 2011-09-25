@@ -21,6 +21,7 @@ public:
 	AggregateFunctionCount() : count(0) {}
 
 	String getName() const { return "count"; }
+	String getTypeID() const { return "count"; }
 
 	AggregateFunctionPtr cloneEmpty() const
 	{

@@ -92,7 +92,9 @@ int main(int argc, char ** argv)
 		DB::AggregateFunctionFactory factory;
 
 		DB::AggregateDescriptions aggregate_descriptions(1);
-		aggregate_descriptions[0].function = factory.get("count");
+
+		DB::DataTypes empty_list_of_types;
+		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
 		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions);
 		

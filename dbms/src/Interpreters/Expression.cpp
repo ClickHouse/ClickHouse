@@ -16,6 +16,11 @@ namespace DB
 
 void Expression::addSemantic(ASTPtr & ast)
 {
+	/// Обход в глубину
+	
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		addSemantic(*it);
+	
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
 		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
@@ -26,11 +31,35 @@ void Expression::addSemantic(ASTPtr & ast)
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		Functions::const_iterator it = context.functions->find(node->name);
-		node->aggregate_function = context.aggregate_function_factory->tryGet(node->name);
+
+		/// Типы аргументов
+		DataTypes argument_types;
+		ASTs & arguments = dynamic_cast<ASTExpressionList &>(*node->arguments).children;
+
+		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
+		{
+			if (ASTFunction * arg = dynamic_cast<ASTFunction *>(&**it))
+				argument_types.push_back(arg->return_type);
+			else if (ASTIdentifier * arg = dynamic_cast<ASTIdentifier *>(&**it))
+				argument_types.push_back(arg->type);
+			else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&**it))
+				argument_types.push_back(arg->type);
+		}
+
+		node->aggregate_function = context.aggregate_function_factory->tryGet(node->name, argument_types);
 		if (it == context.functions->end() && node->aggregate_function.isNull())
 			throw Exception("Unknown function " + node->name, ErrorCodes::UNKNOWN_FUNCTION);
 		if (it != context.functions->end())
 			node->function = it->second;
+
+		/// Получаем типы результата
+		if (node->aggregate_function)
+		{
+			node->aggregate_function->setArguments(argument_types);
+			node->return_type = node->aggregate_function->getReturnType();
+		}
+		else
+			node->return_type = node->function->getReturnType(argument_types);
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
@@ -47,44 +76,6 @@ void Expression::addSemantic(ASTPtr & ast)
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
 	{
 		node->type = boost::apply_visitor(FieldToDataType(), node->value);
-	}
-
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		addSemantic(*it);
-}
-
-
-void Expression::checkTypes(ASTPtr ast)
-{
-	/// Обход в глубину
-	
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		checkTypes(*it);
-
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
-	{
-		/// Типы аргументов
-		DataTypes argument_types;
-		ASTs & arguments = dynamic_cast<ASTExpressionList &>(*node->arguments).children;
-
-		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
-		{
-			if (ASTFunction * arg = dynamic_cast<ASTFunction *>(&**it))
-				argument_types.push_back(arg->return_type);
-			else if (ASTIdentifier * arg = dynamic_cast<ASTIdentifier *>(&**it))
-				argument_types.push_back(arg->type);
-			else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&**it))
-				argument_types.push_back(arg->type);
-		}
-
-		/// Получаем типы результата
-		if (node->aggregate_function)
-		{
-			node->aggregate_function->setArguments(argument_types);
-			node->return_type = node->aggregate_function->getReturnType();
-		}
-		else
-			node->return_type = node->function->getReturnType(argument_types);
 	}
 }
 

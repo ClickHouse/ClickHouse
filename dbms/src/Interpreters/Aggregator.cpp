@@ -28,12 +28,6 @@ AggregatedData Aggregator::execute(BlockInputStreamPtr stream)
 	typedef std::vector<Row> Rows;
 	Rows aggregate_arguments(aggregates_size);
 
-	for (size_t i = 0; i < aggregates_size; ++i)
-	{
-		aggregate_arguments[i].resize(aggregates[i].arguments.size());
-		aggregate_columns[i].resize(aggregates[i].arguments.size());
-	}
-
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
@@ -46,6 +40,12 @@ AggregatedData Aggregator::execute(BlockInputStreamPtr stream)
 			if (it->arguments.empty() && !it->argument_names.empty())
 				for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
 					it->arguments.push_back(block.getPositionByName(*jt));
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+		{
+			aggregate_arguments[i].resize(aggregates[i].arguments.size());
+			aggregate_columns[i].resize(aggregates[i].arguments.size());
+		}
 		
 		/// Запоминаем столбцы, с которыми будем работать
 		for (size_t i = 0, size = keys_size; i < size; ++i)
