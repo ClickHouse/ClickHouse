@@ -130,6 +130,8 @@ void Expression::setNotCalculated(unsigned part_id, ASTPtr subtree)
 {
 	if (!subtree)
 		subtree = ast;
+
+	subtree->calculated = false;
 	
 	for (ASTs::iterator it = subtree->children.begin(); it != subtree->children.end(); ++it)
 		setNotCalculated(part_id, *it);
