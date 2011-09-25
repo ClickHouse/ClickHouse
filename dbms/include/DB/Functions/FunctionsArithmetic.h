@@ -440,7 +440,7 @@ class FunctionUnaryArithmetic : public IFunction
 {
 private:
 	template <typename T0>
-	bool checkType(const DataTypes & arguments, DataTypePtr result) const
+	bool checkType(const DataTypes & arguments, DataTypePtr & result) const
 	{
 		if (dynamic_cast<const T0 *>(&*arguments[0]))
 		{
