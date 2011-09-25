@@ -15,6 +15,7 @@ struct AggregateDescription
 	AggregateFunctionPtr function;
 	ColumnNumbers arguments;
 	Names argument_names;	/// Используются, если arguments не заданы.
+	String column_name;		/// Какое имя использовать для столбца со значениями агрегатной функции
 };
 
 typedef std::vector<AggregateDescription> AggregateDescriptions;

@@ -6,6 +6,8 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Types.h>
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
 #include <DB/Parsers/StringRange.h>
 
 
@@ -38,6 +40,9 @@ public:
 	IAST() : range(NULL, NULL), calculated(false), part_id(0) {}
 	IAST(StringRange range_) : range(range_), calculated(false), part_id(0) {}
 	virtual ~IAST() {}
+
+	/** Получить каноническое имя столбца, если элемент является столбцом */
+	virtual String getColumnName() { throw Exception("Trying to get name of not a column", ErrorCodes::NOT_A_COLUMN); }
 		
 	/** Получить текст, который идентифицирует этот элемент. */
 	virtual String getID() = 0;
@@ -63,6 +68,14 @@ public:
 		}
 
 		return s.str();
+	}
+
+	void dumpTree(std::ostream & ostr, size_t indent = 0)
+	{
+		String indent_str(indent, '-');
+		ostr << indent_str << getID() << ", " << this << ", part_id = " << part_id << ", calculated = " << calculated << std::endl;
+		for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+			(*it)->dumpTree(ostr, indent + 1);
 	}
 };
 

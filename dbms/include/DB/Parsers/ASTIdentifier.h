@@ -30,6 +30,8 @@ public:
 
 	ASTIdentifier() {}
 	ASTIdentifier(StringRange range_, const String & name_, Kind kind_ = Column) : IAST(range_), name(name_), kind(kind_) {}
+
+	String getColumnName() { return name; }
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Identifier_" + name; }

@@ -4,6 +4,8 @@
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
+#include <DB/DataStreams/AggregatingBlockInputStream.h>
+#include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -91,31 +93,56 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			limit_offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
 	}
 
+	bool has_aggregates = expression->hasAggregates();
+
 	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
 	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
 	  */
 	size_t block_size = max_block_size;
 	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
-		&& query.limit_length && limit_length + limit_offset < block_size)
+		&& query.limit_length && !has_aggregates && limit_length + limit_offset < block_size)
 	{
 		block_size = limit_length + limit_offset;
 	}
 
 	BlockInputStreamPtr stream = table->read(required_columns, query_ptr, block_size);
 
+	bool is_first_expression = true;
+
 	/// Если есть условие WHERE - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.where_expression)
 	{
 		setPartID(query.where_expression, PART_WHERE);
-		stream = new ExpressionBlockInputStream(stream, expression, PART_WHERE);
+		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_WHERE);
+		is_first_expression = false;
+	}
+
+	if (query.where_expression)
+	{
 		stream = new FilterBlockInputStream(stream);
+	}
+
+	/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
+	if (has_aggregates)
+	{
+		expression->markBeforeAndAfterAggregation(PART_BEFORE_AGGREGATING, PART_AFTER_AGGREGATING);
+
+		if (query.group_expression_list)
+			setPartID(query.group_expression_list, PART_GROUP);
+		
+		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_GROUP | PART_BEFORE_AGGREGATING);
+		stream = new AggregatingBlockInputStream(stream, expression);
+		stream = new FinalizingAggregatedBlockInputStream(stream);
+		
+		is_first_expression = false;
 	}
 
 	/// Выполним оставшуюся часть выражения
 	setPartID(query.select_expression_list, PART_SELECT);
 	if (query.order_expression_list)
 		setPartID(query.order_expression_list, PART_ORDER);
-	stream = new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER);
+	stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_SELECT | PART_ORDER);
+	is_first_expression = false;
 
 	/// Оставим только столбцы, нужные для SELECT и ORDER BY части
 	stream = new ProjectionBlockInputStream(stream, expression, true, PART_SELECT | PART_ORDER);
@@ -140,7 +167,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		stream = new MergeSortingBlockInputStream(stream, order_descr);
 
 		/// Оставим только столбцы, нужные для SELECT части
-		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT);
+		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT, query.select_expression_list);
 	}
 	
 	/// Если есть LIMIT

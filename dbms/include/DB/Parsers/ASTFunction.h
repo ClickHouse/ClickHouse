@@ -30,6 +30,8 @@ public:
 	ASTFunction() {}
 	ASTFunction(StringRange range_) : IAST(range_) {}
 
+	String getColumnName() { return getTreeID(); }
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Function_" + name; }
 };

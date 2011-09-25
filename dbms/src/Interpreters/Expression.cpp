@@ -14,15 +14,6 @@ namespace DB
 {
 
 
-static std::string getName(ASTPtr & ast)
-{
-	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
-		return ident->name;
-	else
-		return ast->getTreeID();
-}
-
-
 void Expression::addSemantic(ASTPtr & ast)
 {
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
@@ -144,18 +135,18 @@ Names Expression::getRequiredColumns()
 }
 
 
-void Expression::setNotCalculated(ASTPtr ast, unsigned part_id)
+void Expression::setNotCalculated(unsigned part_id, ASTPtr subtree)
 {
-	if ((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0))
-		ast->calculated = false;
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		setNotCalculated(*it, part_id);
+	if (!subtree)
+		subtree = ast;
+	
+	for (ASTs::iterator it = subtree->children.begin(); it != subtree->children.end(); ++it)
+		setNotCalculated(part_id, *it);
 }
 
 
 void Expression::execute(Block & block, unsigned part_id)
 {
-	setNotCalculated(ast, part_id);
 	executeImpl(ast, block, part_id);
 }
 
@@ -182,14 +173,14 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 
 			ColumnWithNameAndType column;
 			column.type = node->return_type;
-			column.name = getName(ast);
+			column.name = node->getColumnName();
 
 			size_t result_number = block.columns();
 			block.insert(column);
 
 			ASTs arguments = node->arguments->children;
 			for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
-				argument_numbers.push_back(block.getPositionByName(getName(*it)));
+				argument_numbers.push_back(block.getPositionByName((*it)->getColumnName()));
 
 			node->function->execute(block, argument_numbers, result_number);
 		}
@@ -199,7 +190,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 		ColumnWithNameAndType column;
 		column.column = node->type->createConstColumn(block.rows(), node->value);
 		column.type = node->type;
-		column.name = getName(ast);
+		column.name = node->getColumnName();
 
 		block.insert(column);
 	}
@@ -208,10 +199,10 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 }
 
 
-Block Expression::projectResult(Block & block, bool without_duplicates, unsigned part_id)
+Block Expression::projectResult(Block & block, bool without_duplicates, unsigned part_id, ASTPtr subtree)
 {
 	Block res;
-	collectFinalColumns(ast, block, res, without_duplicates, part_id);
+	collectFinalColumns(subtree ? subtree : ast, block, res, without_duplicates, part_id);
 	return res;
 }
 
@@ -230,10 +221,10 @@ void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool 
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (ident->kind == ASTIdentifier::Column)
-			without_duplicates ? dst.insertUnique(src.getByName(getName(ast))) : dst.insert(src.getByName(getName(ast)));
+			without_duplicates ? dst.insertUnique(src.getByName(ast->getColumnName())) : dst.insert(src.getByName(ast->getColumnName()));
 	}
 	else if (dynamic_cast<ASTLiteral *>(&*ast) || dynamic_cast<ASTFunction *>(&*ast))
-		without_duplicates ? dst.insertUnique(src.getByName(getName(ast))) : dst.insert(src.getByName(getName(ast)));
+		without_duplicates ? dst.insertUnique(src.getByName(ast->getColumnName())) : dst.insert(src.getByName(ast->getColumnName()));
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			collectFinalColumns(*it, src, dst, without_duplicates, part_id);
@@ -266,7 +257,7 @@ void Expression::getReturnTypesImpl(ASTPtr ast, DataTypes & res)
 }
 
 
-void Expression::getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates)
+void Expression::getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates, NamesSet & processed)
 {
 	/// Обход в глубину
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
@@ -278,37 +269,81 @@ void Expression::getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDe
 				if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&**it))
 				{
 					if (ident->kind == ASTIdentifier::Column)
-						key_names.push_back(getName(*it));
+						key_names.push_back((*it)->getColumnName());
 				}
 				else if (dynamic_cast<ASTLiteral *>(&**it) || dynamic_cast<ASTFunction *>(&**it))
-					key_names.push_back(getName(*it));
+					key_names.push_back((*it)->getColumnName());
 			}
 		}
 	}
 
 	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		if (func->aggregate_function)
+		if (func->aggregate_function && processed.end() == processed.find(ast->getColumnName()))
 		{
 			AggregateDescription desc;
 			desc.function = func->aggregate_function;
+			desc.column_name = ast->getColumnName();
 
 			for (ASTs::iterator it = func->arguments->children.begin(); it != func->arguments->children.end(); ++it)
-				desc.argument_names.push_back(getName(*it));
+				desc.argument_names.push_back((*it)->getColumnName());
 
 			aggregates.push_back(desc);
+			processed.insert(ast->getColumnName());
 		}
 	}
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		getAggregateInfoImpl(*it, key_names, aggregates);
+		getAggregateInfoImpl(*it, key_names, aggregates, processed);
 }
 
 
 void Expression::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates)
 {
-	getAggregateInfoImpl(ast, key_names, aggregates);
+	NamesSet processed;
+	getAggregateInfoImpl(ast, key_names, aggregates, processed);
 }
 
+
+bool Expression::hasAggregatesImpl(ASTPtr ast)
+{
+	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+		if (func->aggregate_function)
+			return true;
+
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (hasAggregatesImpl(*it))
+			return true;
+		
+	return false;
+}
+
+
+bool Expression::hasAggregates()
+{
+	return hasAggregatesImpl(ast);
+}
+
+
+void Expression::markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below)
+{
+	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+		if (func->aggregate_function)
+			below = true;
 	
+	if (below)
+		ast->part_id |= before_part_id;
+	else
+		ast->part_id |= after_part_id;
+
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		markBeforeAndAfterAggregationImpl(*it, before_part_id, after_part_id, below);
+}
+
+
+void Expression::markBeforeAndAfterAggregation(unsigned before_part_id, unsigned after_part_id)
+{
+	markBeforeAndAfterAggregationImpl(ast, before_part_id, after_part_id);
+}
+
 }

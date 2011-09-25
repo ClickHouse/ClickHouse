@@ -22,8 +22,9 @@ public:
 		BlockInputStreamPtr input_,
 		SharedPtr<Expression> expression_,
 		bool without_duplicates_ = false,
-		unsigned part_id_ = 0)
-		: input(input_), expression(expression_), without_duplicates(without_duplicates_), part_id(part_id_)
+		unsigned part_id_ = 0,
+		ASTPtr subtree_ = NULL)
+		: input(input_), expression(expression_), without_duplicates(without_duplicates_), part_id(part_id_), subtree(subtree_)
 	{
 		children.push_back(input);
 	}
@@ -34,7 +35,7 @@ public:
 		if (!res)
 			return res;
 
-		return expression->projectResult(res, without_duplicates, part_id);
+		return expression->projectResult(res, without_duplicates, part_id, subtree);
 	}
 
 	String getName() const { return "ProjectionBlockInputStream"; }
@@ -44,6 +45,7 @@ private:
 	SharedPtr<Expression> expression;
 	bool without_duplicates;
 	unsigned part_id;
+	ASTPtr subtree;
 };
 
 }

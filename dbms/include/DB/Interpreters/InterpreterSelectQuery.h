@@ -35,8 +35,8 @@ private:
 		PART_GROUP 	= 8,
 		PART_HAVING = 16,
 		PART_ORDER 	= 32,
-		PART_BELOW_AGGREGATE_FUNCTIONS = 64,
-		PART_ABOVE_AGGREGATE_FUNCTIONS = 128,
+		PART_BEFORE_AGGREGATING = 64,	/// Под агрегатной функцией, или в ветке, не содержащей агрегатных функций
+		PART_AFTER_AGGREGATING = 128,
 	};
 
 

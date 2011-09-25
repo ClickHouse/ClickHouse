@@ -29,6 +29,11 @@ public:
 	  */
 	Names getRequiredColumns();
 
+	/** Прописать во всех узлах, что они ещё не вычислены.
+	  * Вызывайте в начале серии вычислений, для каждого блока.
+	  */
+	void setNotCalculated(unsigned part_id = 0, ASTPtr subtree = NULL);
+
 	/** Выполнить выражение над блоком. Блок должен содержать все столбцы - идентификаторы.
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.
 	  * part_id - какую часть выражения вычислять.
@@ -38,7 +43,7 @@ public:
 	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
 	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
 	  */
-	Block projectResult(Block & block, bool without_duplicates = false, unsigned part_id = 0);
+	Block projectResult(Block & block, bool without_duplicates = false, unsigned part_id = 0, ASTPtr subtree = NULL);
 
 	/** Получить список типов столбцов результата.
 	  */
@@ -47,6 +52,15 @@ public:
 	/** Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
 	  */
 	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
+
+	/** Есть ли в выражении агрегатные функции.
+	  */
+	bool hasAggregates();
+
+	/** Пометить то, что должно быть вычислено до агрегирования одним part_id,
+	  * а то, что должно быть вычислено после агрегирования, а также сами агрегатные функции - другим part_id.
+	  */
+	void markBeforeAndAfterAggregation(unsigned before_part_id, unsigned after_part_id);
 
 private:
 	ASTPtr ast;
@@ -78,17 +92,17 @@ private:
 	
 	void glueTreeImpl(ASTPtr ast, Subtrees & Subtrees);
 
-	/** Прописать во всех узлах, что они ещё не вычислены.
-	  */
-	void setNotCalculated(ASTPtr ast, unsigned part_id);
-
 	void executeImpl(ASTPtr ast, Block & block, unsigned part_id);
 
 	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id);
 
 	void getReturnTypesImpl(ASTPtr ast, DataTypes & res);
 
-	void getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates);
+	void getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates, NamesSet & processed);
+
+	bool hasAggregatesImpl(ASTPtr ast);
+
+	void markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below = false);
 };
 
 

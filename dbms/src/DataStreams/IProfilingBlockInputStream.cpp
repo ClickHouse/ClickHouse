@@ -43,7 +43,14 @@ Block IProfilingBlockInputStream::read()
 
 	if (res)
 		info.update(res);
-	
+
+	if (res)
+	{
+		std::cerr << std::endl;
+		std::cerr << getName() << std::endl;
+		getInfo().print(std::cerr);
+	}
+
 	return res;
 }
 	

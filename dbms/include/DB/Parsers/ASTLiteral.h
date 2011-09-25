@@ -20,6 +20,8 @@ public:
 
 	ASTLiteral() {}
 	ASTLiteral(StringRange range_, const Field & value_) : IAST(range_), value(value_) {}
+
+	String getColumnName() { return getTreeID(); }
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Literal_" + boost::apply_visitor(FieldVisitorDump(), value); }

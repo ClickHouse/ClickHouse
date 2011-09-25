@@ -130,6 +130,8 @@ int main(int argc, char ** argv)
 		(*context.functions)["xor"] 			= new DB::FunctionXor;
 		(*context.functions)["not"] 			= new DB::FunctionNot;
 
+		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
+
 		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./", "hits", names_and_types_map, ".bin");
 		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
 		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");

@@ -5,13 +5,16 @@ namespace DB
 {
 
 
-/*AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression)
+AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression)
 	: input(input_), has_been_read(false)
 {
 	children.push_back(input);
 
-	
-}*/
+	Names key_names;
+	AggregateDescriptions aggregates;
+	expression->getAggregateInfo(key_names, aggregates);
+	aggregator = new Aggregator(key_names, aggregates);
+}
 
 
 
@@ -22,8 +25,8 @@ Block AggregatingBlockInputStream::readImpl()
 
 	has_been_read = true;
 	
-	AggregatedData data = aggregator.execute(input);
-	Block res = aggregator.getSampleBlock();
+	AggregatedData data = aggregator->execute(input);
+	Block res = aggregator->getSampleBlock();
 
 	for (AggregatedData::const_iterator it = data.begin(); it != data.end(); ++it)
 	{

@@ -17,7 +17,7 @@ AggregatedData Aggregator::execute(BlockInputStreamPtr stream)
 {
 	AggregatedData res;
 
-	size_t keys_size = keys.size();
+	size_t keys_size = keys.empty() ? key_names.size() : keys.size();
 	size_t aggregates_size = aggregates.size();
 	Row key(keys_size);
 	Columns key_columns(keys_size);
@@ -64,15 +64,7 @@ AggregatedData Aggregator::execute(BlockInputStreamPtr stream)
 			for (size_t i = 0; i < aggregates_size; ++i)
 			{
 				ColumnWithNameAndType col;
-				col.name = aggregates[i].function->getName() + "(";
-				for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
-				{
-					if (j != 0)
-						col.name += ",";
-					col.name += block.getByPosition(aggregates[i].arguments[j]).name;
-				}
-				col.name += ")";
-				
+				col.name = aggregates[i].column_name;
 				col.type = new DataTypeAggregateFunction;
 				col.column = new ColumnAggregateFunction;
 

@@ -20,16 +20,16 @@ class AggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
-		: input(input_), aggregator(keys_, aggregates_), has_been_read(false)
+		: input(input_), aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false)
 	{
 		children.push_back(input);
 	}
 
-	/** keys берутся из Expression::PART_GROUP
+	/** keys берутся из GROUP BY части запроса
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-//	AggregatingBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression);
+	AggregatingBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression);
 
 	Block readImpl();
 
@@ -37,7 +37,7 @@ public:
 
 private:
 	BlockInputStreamPtr input;
-	Aggregator aggregator;
+	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;
 };
 
