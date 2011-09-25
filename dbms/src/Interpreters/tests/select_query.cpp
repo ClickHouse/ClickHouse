@@ -140,10 +140,20 @@ int main(int argc, char ** argv)
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
 		std::string input;/* =
-			"SELECT UniqID, URL, CounterID, IsLink "
+			"SELECT "
+			"	count(),"
+			"	UniqID % 100,"
+			"	UniqID % 100 * 2,"
+			"	-1,"
+			"	count(),"
+			"	count() * count(),"
+			"	sum(-OS + UserAgent + TraficSourceID + SearchEngineID) + 101,"
+			"	SearchPhrase"
 			"FROM hits "
-			"WHERE URL = 'http://mail.yandex.ru/neo2/#inbox' "
-			"LIMIT 10";*/
+			"WHERE SearchPhrase != '' "
+			"GROUP BY UniqID % 100, SearchPhrase "
+			"ORDER BY count() DESC "
+			"LIMIT 20";*/
 		std::stringstream str;
 		str << std::cin.rdbuf();
 		input = str.str();
