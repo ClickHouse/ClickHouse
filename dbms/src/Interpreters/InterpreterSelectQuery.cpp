@@ -93,14 +93,14 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			limit_offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
 	}
 
-	bool has_aggregates = expression->hasAggregates();
+	bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
 
 	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
 	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
 	  */
 	size_t block_size = max_block_size;
 	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
-		&& query.limit_length && !has_aggregates && limit_length + limit_offset < block_size)
+		&& query.limit_length && !need_aggregate && limit_length + limit_offset < block_size)
 	{
 		block_size = limit_length + limit_offset;
 	}
@@ -123,7 +123,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	}
 
 	/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
-	if (has_aggregates)
+	if (need_aggregate)
 	{
 		expression->markBeforeAndAfterAggregation(PART_BEFORE_AGGREGATING, PART_AFTER_AGGREGATING);
 
