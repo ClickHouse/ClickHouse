@@ -47,6 +47,10 @@ Block PartialSortingBlockInputStream::readImpl()
 		IColumn::Permutation perm = (!description[0].column_name.empty()
 			? res.getByName(description[0].column_name).column
 			: res.getByPosition(description[0].column_number).column)->getPermutation();
+
+		if (description[0].direction == -1)
+			for (size_t i = 0, size = perm.size(); i < size / 2; ++i)
+				std::swap(perm[i], perm[size - 1 - i]);
 		
 		size_t columns = res.columns();
 		for (size_t i = 0; i < columns; ++i)
