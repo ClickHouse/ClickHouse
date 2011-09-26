@@ -25,6 +25,7 @@ public:
 
 	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const { return IsNumber<T>::value; }
+	bool isConst() const { return true; }
 	ColumnPtr cloneEmpty() const { return new ColumnConst(0, data); }
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }

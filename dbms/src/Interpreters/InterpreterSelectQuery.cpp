@@ -156,10 +156,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			it != query.order_expression_list->children.end();
 			++it)
 		{
-			ASTPtr elem = (*it)->children.front();
-			ASTIdentifier * id_elem = dynamic_cast<ASTIdentifier *>(&*elem);
-
-			String name = id_elem ? id_elem->name : elem->getTreeID();
+			String name = (*it)->children.front()->getColumnName();
 			order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
 		}
 

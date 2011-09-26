@@ -133,6 +133,7 @@ int main(int argc, char ** argv)
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
 		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./", "hits", names_and_types_map, ".bin");
+		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./", "hits2", names_and_types_map, ".bin");
 		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
 		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");
 		context.current_database = "default";

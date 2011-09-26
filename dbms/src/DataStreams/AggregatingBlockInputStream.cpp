@@ -38,6 +38,12 @@ Block AggregatingBlockInputStream::readImpl()
 			res.getByPosition(i).column->insert(*jt);
 	}
 
+	/// Изменяем размер столбцов-констант в блоке.
+	size_t columns = res.columns();
+	for (size_t i = 0; i < columns; ++i)
+		if (res.getByPosition(i).column->isConst())
+			res.getByPosition(i).column->cut(0, data.size());
+
 	return res;
 }
 

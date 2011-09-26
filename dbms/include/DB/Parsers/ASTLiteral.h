@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_ASTLITERAL_H
-#define DBMS_PARSERS_ASTLITERAL_H
+#pragma once
 
 #include <DB/Core/Field.h>
 #include <DB/DataTypes/IDataType.h>
@@ -21,12 +20,10 @@ public:
 	ASTLiteral() {}
 	ASTLiteral(StringRange range_, const Field & value_) : IAST(range_), value(value_) {}
 
-	String getColumnName() { return getTreeID(); }
+	String getColumnName() { return boost::apply_visitor(FieldVisitorToString(), value); }
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Literal_" + boost::apply_visitor(FieldVisitorDump(), value); }
 };
 
 }
-
-#endif

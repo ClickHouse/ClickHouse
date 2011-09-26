@@ -22,6 +22,10 @@ struct BlockStreamProfileInfo
 	size_t blocks;
 	size_t bytes;
 
+	/// Информация о вложенных потоках - для выделения чистого времени работы.
+	typedef std::vector<const BlockStreamProfileInfo *> BlockStreamProfileInfos;
+	BlockStreamProfileInfos nested_infos;
+
 	String column_names;
 
 	BlockStreamProfileInfo() : started(false), rows(0), blocks(0), bytes(0) {}
