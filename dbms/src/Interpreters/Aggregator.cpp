@@ -29,34 +29,34 @@ public:
 
 	void operator() (const Null 	& x)
 	{
-		int type = FieldType::Null;
+		char type = FieldType::Null;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
 	}
 	
 	void operator() (const UInt64 	& x)
 	{
-		int type = FieldType::UInt64;
+		char type = FieldType::UInt64;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
 		MD5_Update(&state, reinterpret_cast<const char *>(&x), sizeof(x));
 	}
 	
  	void operator() (const Int64 	& x)
 	{
-		int type = FieldType::Int64;
+		char type = FieldType::Int64;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
 		MD5_Update(&state, reinterpret_cast<const char *>(&x), sizeof(x));
 	}
 
 	void operator() (const Float64 	& x)
 	{
-		int type = FieldType::Float64;
+		char type = FieldType::Float64;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
 		MD5_Update(&state, reinterpret_cast<const char *>(&x), sizeof(x));
 	}
 
 	void operator() (const String 	& x)
 	{
-		int type = FieldType::String;
+		char type = FieldType::String;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
 		MD5_Update(&state, x.data(), x.size());
 	}
@@ -73,7 +73,7 @@ public:
 };
 
 
-/** Преобразование значения в 64 бита; если значение - строка, то используется относительно стойкая хэш-функция. */
+/** Преобразование значения в 64 бита. Для чисел - однозначное, для строк - некриптографический хэш. */
 class FieldVisitorToUInt64 : public boost::static_visitor<UInt64>
 {
 public:
@@ -87,10 +87,10 @@ public:
 		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<const char *>(&x), sizeof(x));
 		return res;
 	}
-	
+
 	UInt64 operator() (const String 	& x) const
 	{
-		throw Exception("Cannot aggregate by string", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
+		return std::tr1::hash<String>()(x);
 	}
 
 	UInt64 operator() (const Array 	& x) const
@@ -254,9 +254,41 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
+		else if (keys_size == 1
+			&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])))
+		{
+			/// Если есть один строковый ключ, то используем хэш-таблицу с ним
+			AggregatedDataWithStringKey & res = result.key_string;
+			IColumn & column = *key_columns[0];
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Строим ключ
+				String key = boost::get<String>(column[i]);
+
+				AggregatedDataWithStringKey::iterator it = res.find(key);
+				if (it == res.end())
+				{
+					it = res.insert(std::make_pair(key, AggregateFunctions(aggregates_size))).first;
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						it->second[j] = aggregates[j].function->cloneEmpty();
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+				{
+					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
+						aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+
+					it->second[j]->add(aggregate_arguments[j]);
+				}
+			}
+		}
 		else
 		{
-			/// Если есть строки - будем агрегировать по хэшу от них
+			/// Если много ключей - будем агрегировать по хэшу от них
 			AggregatedDataHashed & res = result.hashed;
 			const FieldVisitorToUInt64 to_uint64_visitor;
 

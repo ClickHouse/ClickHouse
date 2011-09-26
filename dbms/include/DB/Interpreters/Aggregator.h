@@ -43,6 +43,7 @@ struct UInt128Hash
 typedef std::map<Row, AggregateFunctions> AggregatedData;
 typedef AggregateFunctions AggregatedDataWithoutKey;
 typedef std::tr1::unordered_map<UInt64, AggregateFunctions> AggregatedDataWithUInt64Key;
+typedef std::tr1::unordered_map<String, AggregateFunctions> AggregatedDataWithStringKey;
 typedef std::tr1::unordered_map<UInt128, std::pair<Row, AggregateFunctions>, UInt128Hash> AggregatedDataHashed;
 
 
@@ -51,6 +52,7 @@ struct AggregatedDataVariants
 	AggregatedData generic;
 	AggregatedDataWithoutKey without_key;
 	AggregatedDataWithUInt64Key key64;
+	AggregatedDataWithStringKey key_string;
 	AggregatedDataHashed hashed;
 };
 

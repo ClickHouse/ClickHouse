@@ -62,6 +62,21 @@ Block AggregatingBlockInputStream::readImpl()
 				res.getByPosition(i).column->insert(*jt);
 		}
 	}
+	else if (!data_variants.key_string.empty())
+	{
+		AggregatedDataWithStringKey & data = data_variants.key_string;
+		rows = data.size();
+		IColumn & first_column = *res.getByPosition(0).column;
+
+		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it)
+		{
+			first_column.insert(it->first);
+
+			size_t i = 1;
+			for (AggregateFunctions::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+				res.getByPosition(i).column->insert(*jt);
+		}
+	}
 	else if (!data_variants.hashed.empty())
 	{
 		AggregatedDataHashed & data = data_variants.hashed;
