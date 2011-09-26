@@ -60,18 +60,36 @@ public:
 	{
 		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
 
-		size_t lhs_size = sizeAt(n);
-		size_t rhs_size = rhs.sizeAt(m);
-		size_t min_size = std::min(lhs_size, rhs_size);
-		if (size_t res = memcmp(&char_data[offsetAt(n)], &rhs.char_data[rhs.offsetAt(m)], min_size))
-			return res;
+		/** Для производительности, строки сравниваются до первого нулевого байта.
+		  * (если нулевой байт в середине строки, то то, что после него - игнорируется)
+		  * Замечу, что завершающий нулевой байт всегда есть.
+		  */
+		return strcmp(
+			reinterpret_cast<const char *>(&char_data[offsetAt(n)]),
+			reinterpret_cast<const char *>(&rhs.char_data[rhs.offsetAt(m)]));
+	}
 
-		return lhs_size < rhs_size
-			? -1
-			: (lhs_size == rhs_size
-				? 0
-				: 1);
-		return 0;
+	struct less
+	{
+		const ColumnString & parent;
+		less(const ColumnString & parent_) : parent(parent_) {}
+		bool operator()(size_t lhs, size_t rhs) const
+		{
+			return 0 > strcmp(
+				reinterpret_cast<const char *>(&parent.char_data[parent.offsetAt(lhs)]),
+				reinterpret_cast<const char *>(&parent.char_data[parent.offsetAt(rhs)]));
+		}
+	};
+
+	Permutation getPermutation() const
+	{
+		size_t s = offsets.size();
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+
+		std::sort(res.begin(), res.end(), less(*this));
+		return res;
 	}
 };
 

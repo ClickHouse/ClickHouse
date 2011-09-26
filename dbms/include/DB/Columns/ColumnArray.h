@@ -179,6 +179,40 @@ public:
 				: 1);
 	}
 
+	struct less
+	{
+		const ColumnArray & parent;
+		const Permutation & nested_perm;
+
+		less(const ColumnArray & parent_, const Permutation & nested_perm_) : parent(parent_), nested_perm(nested_perm_) {}
+		bool operator()(size_t lhs, size_t rhs) const
+		{
+			size_t lhs_size = parent.sizeAt(lhs);
+			size_t rhs_size = parent.sizeAt(rhs);
+			size_t min_size = std::min(lhs_size, rhs_size);
+			for (size_t i = 0; i < min_size; ++i)
+			{
+				if (nested_perm[parent.offsetAt(lhs) + i] < nested_perm[parent.offsetAt(rhs) + i])
+					return true;
+				else if (nested_perm[parent.offsetAt(lhs) + i] > nested_perm[parent.offsetAt(rhs) + i])
+					return false;
+			}
+			return lhs_size < rhs_size;
+		}
+	};
+
+	Permutation getPermutation() const
+	{
+		Permutation nested_perm = data->getPermutation();
+		size_t s = size();
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+
+		std::sort(res.begin(), res.end(), less(*this, nested_perm));
+		return res;
+	}
+
 	size_t byteSize()
 	{
 		return data->byteSize() + offsets.size() * sizeof(offsets[0]);

@@ -4,6 +4,7 @@
 namespace DB
 {
 
+
 struct PartialSortingLess
 {
 	typedef std::vector<std::pair<const IColumn *, int> > Columns;
@@ -40,19 +41,34 @@ Block PartialSortingBlockInputStream::readImpl()
 	if (!res)
 		return res;
 
-	size_t size = res.rows();
-	IColumn::Permutation perm(size);
-	for (size_t i = 0; i < size; ++i)
-		perm[i] = i;
+	/// Если столбец сортировки один
+	if (description.size() == 1)
+	{
+		IColumn::Permutation perm = (!description[0].column_name.empty()
+			? res.getByName(description[0].column_name).column
+			: res.getByPosition(description[0].column_number).column)->getPermutation();
+		
+		size_t columns = res.columns();
+		for (size_t i = 0; i < columns; ++i)
+			res.getByPosition(i).column->permute(perm);
+	}
+	else
+	{
+		size_t size = res.rows();
+		IColumn::Permutation perm(size);
+		for (size_t i = 0; i < size; ++i)
+			perm[i] = i;
 
-	PartialSortingLess less(res, description);
-	std::sort(perm.begin(), perm.end(), less);
+		PartialSortingLess less(res, description);
+		std::sort(perm.begin(), perm.end(), less);
 
-	size_t columns = res.columns();
-	for (size_t i = 0; i < columns; ++i)
-		res.getByPosition(i).column->permute(perm);
+		size_t columns = res.columns();
+		for (size_t i = 0; i < columns; ++i)
+			res.getByPosition(i).column->permute(perm);
+	}
 
 	return res;
 }
+
 
 }

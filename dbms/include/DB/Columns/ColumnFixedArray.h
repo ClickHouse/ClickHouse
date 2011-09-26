@@ -123,6 +123,37 @@ public:
 		return 0;
 	}
 
+	struct less
+	{
+		const ColumnFixedArray & parent;
+		const Permutation & nested_perm;
+		
+		less(const ColumnFixedArray & parent_, const Permutation & nested_perm_) : parent(parent_), nested_perm(nested_perm_) {}
+		bool operator()(size_t lhs, size_t rhs) const
+		{
+			for (size_t i = 0; i < parent.n; ++i)
+			{
+				if (nested_perm[lhs * parent.n + i] < nested_perm[rhs * parent.n + i])
+					return true;
+				else if (nested_perm[lhs * parent.n + i] > nested_perm[rhs * parent.n + i])
+					return false;
+			}
+			return false;
+		}
+	};
+
+	Permutation getPermutation() const
+	{
+		Permutation nested_perm = data->getPermutation();
+		size_t s = data->size() / n;
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+
+		std::sort(res.begin(), res.end(), less(*this, nested_perm));
+		return res;
+	}
+
 	size_t byteSize()
 	{
 		return data->byteSize() + sizeof(n);

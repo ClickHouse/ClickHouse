@@ -56,6 +56,27 @@ public:
 		const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
 		return memcmp(&char_data[p1 * n], &rhs.char_data[p2 * n], n);
 	}
+
+	struct less
+	{
+		const ColumnFixedString & parent;
+		less(const ColumnFixedString & parent_) : parent(parent_) {}
+		bool operator()(size_t lhs, size_t rhs) const
+		{
+			return 0 > memcmp(&parent.char_data[lhs * parent.n], &parent.char_data[rhs * parent.n], parent.n);
+		}
+	};
+
+	Permutation getPermutation() const
+	{
+		size_t s = size();
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+
+		std::sort(res.begin(), res.end(), less(*this));
+		return res;
+	}
 };
 
 

@@ -124,6 +124,25 @@ public:
 				: 1);
 	}
 
+	struct less
+	{
+		const ColumnVector<T> & parent;
+		less(const ColumnVector<T> & parent_) : parent(parent_) {}
+		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] < parent.data[rhs]; }
+	};
+
+	Permutation getPermutation() const
+	{
+		size_t s = data.size();
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+
+		std::sort(res.begin(), res.end(), less(*this));
+		
+		return res;
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{

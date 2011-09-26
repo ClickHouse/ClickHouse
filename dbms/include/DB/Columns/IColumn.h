@@ -84,6 +84,11 @@ public:
 	  */
 	virtual int compareAt(size_t n, size_t m, const IColumn & rhs) const = 0;
 
+	/** Получить перестановку чисел, такую, что их порядок соответствует порядку значений в столбце.
+	  * Используется при сортировке.
+	  */
+	virtual Permutation getPermutation() const = 0;
+
 	/** Очистить */
 	virtual void clear() = 0;
 

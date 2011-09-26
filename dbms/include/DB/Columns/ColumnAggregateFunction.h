@@ -49,6 +49,15 @@ public:
 	{
 		return 0;
 	}
+
+	Permutation getPermutation() const
+	{
+		size_t s = data.size();
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+		return res;
+	}
 };
 
 

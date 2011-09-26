@@ -10,10 +10,8 @@
 #include <DB/Interpreters/Aggregator.h>
 
 
-
 namespace DB
 {
-
 
 class FieldVisitorMD5 : public boost::static_visitor<>
 {
@@ -25,20 +23,20 @@ public:
 		MD5_Init(&state);
 	}
 
-	void operator() (const Null 		& x)
+	void operator() (const Null 	& x)
 	{
 		int type = FieldType::Null;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
 	}
 	
-	void operator() (const UInt64 		& x)
+	void operator() (const UInt64 	& x)
 	{
 		int type = FieldType::UInt64;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
 		MD5_Update(&state, reinterpret_cast<const char *>(&x), sizeof(x));
 	}
 	
-	void operator() (const Int64 		& x)
+ 	void operator() (const Int64 	& x)
 	{
 		int type = FieldType::Int64;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
@@ -69,7 +67,7 @@ public:
 		throw Exception("Cannot aggregate by state of aggregate function", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
 	}
 };
-	
+
 
 /** Преобразование значения в 64 бита; если значение - строка, то используется относительно стойкая хэш-функция. */
 class FieldVisitorHash64 : public boost::static_visitor<UInt64>

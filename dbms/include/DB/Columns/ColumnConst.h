@@ -66,6 +66,14 @@ public:
 				: 1);
 	}
 
+	Permutation getPermutation() const
+	{
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+		return res;
+	}
+
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }
 	const T & getData() const { return data; }
