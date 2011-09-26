@@ -11,12 +11,12 @@ namespace DB
 class IUnaryAggregateFunction : public IAggregateFunction
 {
 public:
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	void setArguments(const DataTypes & arguments)
 	{
 		if (arguments.size() != 1)
 			throw Exception("Passed " + Poco::NumberFormatter::format(arguments.size()) + " arguments to unary aggregate function " + getName(),
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		setArgument(arguments[0]);
 	}
 
 	virtual void setArgument(const DataTypePtr & argument) = 0;
