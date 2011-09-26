@@ -44,12 +44,18 @@ void BlockStreamProfileInfo::print(std::ostream & ostr) const
 			<< "(" << work_stopwatch.elapsed() * 100.0 / total_stopwatch.elapsed() << "%), " << std::endl;
 
 	if (!nested_infos.empty())
+	{
+		double self_percents = (work_stopwatch.elapsed() - nested_elapsed) * 100.0 / total_stopwatch.elapsed();
+		
 		ostr<< "Elapsed (self): " << (work_stopwatch.elapsed() - nested_elapsed) / 1000000.0 << " sec. "
-			<< "(" << (work_stopwatch.elapsed() - nested_elapsed) * 100.0 / total_stopwatch.elapsed() << "%), " << std::endl
+			<< "(" << (self_percents >= 50 ? "\033[1;31m" : (self_percents >= 10 ? "\033[1;33m" : ""))	/// Раскраска больших значений
+				<< self_percents << "%"
+				<< (self_percents >= 10 ? "\033[0m" : "") << "), " << std::endl
 			<< "Rows (in):      " << nested_rows << ", per second: " << nested_rows * 1000000 / work_stopwatch.elapsed() << ", " << std::endl
 			<< "Blocks (in):    " << nested_blocks << ", per second: " << nested_blocks * 1000000.0 / work_stopwatch.elapsed() << ", " << std::endl
 			<< "                " << nested_bytes / 1000000.0 << " MB (memory), "
 				<< nested_bytes / work_stopwatch.elapsed() << " MB/s (memory), " << std::endl;
+	}
 		
 	ostr 	<< "Rows (out):     " << rows << ", per second: " << rows * 1000000 / work_stopwatch.elapsed() << ", " << std::endl
 			<< "Blocks (out):   " << blocks << ", per second: " << blocks * 1000000.0 / work_stopwatch.elapsed() << ", " << std::endl
