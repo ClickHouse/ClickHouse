@@ -35,7 +35,7 @@ struct UInt128
 
 struct UInt128Hash
 {
-	size_t operator()(UInt128 x) const { return x.first; }
+	size_t operator()(UInt128 x) const { return x.first ^ x.second; }
 };
 
 

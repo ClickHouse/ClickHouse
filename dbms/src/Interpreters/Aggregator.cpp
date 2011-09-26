@@ -275,7 +275,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						key[j] = (*key_columns[j])[i];
 						UInt64 tmp = boost::apply_visitor(to_uint64_visitor, key[j]);
 						/// Работает только на little endian
-						memcpy(key_hash_union.bytes, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
+						memcpy(key_hash_union.bytes + offset, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
 						offset += key_sizes[j];
 					}
 				}
