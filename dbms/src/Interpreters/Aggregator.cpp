@@ -1,5 +1,4 @@
 #include <openssl/md5.h>
-#include <strconvert/hash64.h>
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
@@ -70,7 +69,7 @@ public:
 
 
 /** Преобразование значения в 64 бита; если значение - строка, то используется относительно стойкая хэш-функция. */
-class FieldVisitorHash64 : public boost::static_visitor<UInt64>
+class FieldVisitorToUInt64 : public boost::static_visitor<UInt64>
 {
 public:
 	UInt64 operator() (const Null 		& x) const { return 0; }
@@ -86,7 +85,7 @@ public:
 	
 	UInt64 operator() (const String 	& x) const
 	{
-		return strconvert::hash64(x);
+		throw Exception("Cannot aggregate by string", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
 	}
 
 	UInt64 operator() (const Array 	& x) const
@@ -175,7 +174,24 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		for (size_t j = 0; j < keys_size; ++j)
 			if (dynamic_cast<const ColumnString *>(&*key_columns[j]) || dynamic_cast<const ColumnFixedString *>(&*key_columns[j]))
 				has_strings = true;
-		
+
+		bool keys_fit_128_bits = true;
+		size_t keys_bytes = 0;
+		typedef std::vector<size_t> Sizes;
+		Sizes key_sizes(keys_size);
+		for (size_t j = 0; j < keys_size; ++j)
+		{
+			if (!key_columns[j]->isNumeric())
+			{
+				keys_fit_128_bits = false;
+				break;
+			}
+			key_sizes[j] = key_columns[j]->sizeOfField();
+			keys_bytes += key_sizes[j];
+		}
+		if (keys_bytes > 16)
+			keys_fit_128_bits = false;
+
 		if (keys_size == 0)
 		{
 			/// Если ключей нет
@@ -204,7 +220,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		{
 			/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
 			AggregatedDataWithUInt64Key & res = result.key64;
-			const FieldVisitorHash64 visitor;
+			const FieldVisitorToUInt64 visitor;
 			IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
@@ -233,30 +249,48 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-		else /*if (has_strings)*/
+		else
 		{
 			/// Если есть строки - будем агрегировать по хэшу от них
 			AggregatedDataHashed & res = result.hashed;
+			const FieldVisitorToUInt64 to_uint64_visitor;
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
-				FieldVisitorMD5 key_hash_visitor;
-				
 				/// Строим ключ
-				for (size_t j = 0; j < keys_size; ++j)
-				{
-					key[j] = (*key_columns[j])[i];
-					boost::apply_visitor(key_hash_visitor, key[j]);
-				}
-
 				union
 				{
 					UInt128 key_hash;
 					unsigned char bytes[16];
 				} key_hash_union;
 
-				MD5_Final(key_hash_union.bytes, &key_hash_visitor.state);
+				/// Если все ключи числовые и помещаются в 128 бит
+				if (keys_fit_128_bits)
+				{
+					memset(key_hash_union.bytes, 0, 16);
+					size_t offset = 0;
+					for (size_t j = 0; j < keys_size; ++j)
+					{
+						key[j] = (*key_columns[j])[i];
+						UInt64 tmp = boost::apply_visitor(to_uint64_visitor, key[j]);
+						/// Работает только на little endian
+						memcpy(key_hash_union.bytes, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
+						offset += key_sizes[j];
+					}
+				}
+				else	/// Иначе используем md5.
+				{
+					FieldVisitorMD5 key_hash_visitor;
+
+					for (size_t j = 0; j < keys_size; ++j)
+					{
+						key[j] = (*key_columns[j])[i];
+						boost::apply_visitor(key_hash_visitor, key[j]);
+					}
+
+					MD5_Final(key_hash_union.bytes, &key_hash_visitor.state);
+				}
 
 				AggregatedDataHashed::iterator it = res.find(key_hash_union.key_hash);
 				if (it == res.end())

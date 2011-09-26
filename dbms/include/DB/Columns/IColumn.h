@@ -3,6 +3,8 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Field.h>
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
 
 
 namespace DB
@@ -31,6 +33,10 @@ public:
 	/** Столбец представляет собой константу
 	  */
 	virtual bool isConst() const { return false; }
+
+	/** Для числовых столбцов - вернуть sizeof числового типа
+	  */
+	virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 	
 	/** Создать пустой столбец такого же типа */
 	virtual SharedPtr<IColumn> cloneEmpty() const = 0;

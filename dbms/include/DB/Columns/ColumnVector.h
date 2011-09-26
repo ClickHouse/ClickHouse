@@ -27,6 +27,8 @@ public:
 
 	bool isNumeric() const { return IsNumber<T>::value; }
 
+	size_t sizeOfField() const { return sizeof(T); }
+
 	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnVector<T>;
