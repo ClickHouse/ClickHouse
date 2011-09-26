@@ -27,6 +27,9 @@ void Expression::addSemantic(ASTPtr & ast)
 		for (NamesAndTypes::const_iterator it = context.columns.begin(); it != context.columns.end(); ++it)
 			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
 		ast = all_columns;
+
+		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+			addSemantic(*it);
 	}
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
