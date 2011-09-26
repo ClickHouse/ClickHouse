@@ -1,5 +1,7 @@
 #pragma once
 
+#include <city.h>
+
 #include <map>
 #include <tr1/unordered_map>
 
@@ -39,20 +41,39 @@ struct UInt128Hash
 };
 
 
+/// Немного быстрее стандартного
+struct StringHash
+{
+	size_t operator()(const String & x) const { return CityHash64(x.data(), x.size()); }
+};
+
+
 /// Разные структуры данных, которые могут использоваться для агрегации
 typedef std::map<Row, AggregateFunctions> AggregatedData;
 typedef AggregateFunctions AggregatedDataWithoutKey;
 typedef std::tr1::unordered_map<UInt64, AggregateFunctions> AggregatedDataWithUInt64Key;
-typedef std::tr1::unordered_map<String, AggregateFunctions> AggregatedDataWithStringKey;
+typedef std::tr1::unordered_map<String, AggregateFunctions, StringHash> AggregatedDataWithStringKey;
 typedef std::tr1::unordered_map<UInt128, std::pair<Row, AggregateFunctions>, UInt128Hash> AggregatedDataHashed;
 
 
 struct AggregatedDataVariants
 {
+	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
 	AggregatedData generic;
+
+	/// Специализация для случая, когда ключи отсутствуют.
 	AggregatedDataWithoutKey without_key;
+
+	/// Специализация для случая, когда есть один числовой ключ (не с плавающей запятой).
 	AggregatedDataWithUInt64Key key64;
+
+	/// Специализация для случая, когда есть один строковый ключ.
 	AggregatedDataWithStringKey key_string;
+
+	/** Агрегирует по 128 битному хэшу от ключа.
+	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
+	  * Иначе - вычисляет md5 от набора из всех ключей.
+	  */ 
 	AggregatedDataHashed hashed;
 };
 
