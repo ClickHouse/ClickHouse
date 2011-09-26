@@ -83,7 +83,7 @@ int main(int argc, char ** argv)
 		block.insert(column_s2);
 
 		DB::BlockInputStreamPtr stream = new OneBlockInputStream(block);
-		DB::AggregatedData aggregated_data;
+		DB::AggregatedDataVariants aggregated_data_variants;
 
 		DB::ColumnNumbers key_column_numbers;
 		key_column_numbers.push_back(0);
@@ -102,7 +102,7 @@ int main(int argc, char ** argv)
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 
-			aggregated_data = aggregator.execute(stream);
+			aggregator.execute(stream, aggregated_data_variants);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
@@ -110,6 +110,8 @@ int main(int argc, char ** argv)
 				<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
 				<< std::endl;
 		}
+
+		DB::AggregatedData & aggregated_data = aggregated_data_variants.generic;
 
 		for (DB::AggregatedData::const_iterator it = aggregated_data.begin(); it != aggregated_data.end(); ++it)
 		{
