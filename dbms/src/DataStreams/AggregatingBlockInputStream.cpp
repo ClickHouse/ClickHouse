@@ -1,3 +1,5 @@
+#include <DB/Columns/ColumnsNumber.h>
+
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 
 
@@ -45,9 +47,15 @@ Block AggregatingBlockInputStream::readImpl()
 		AggregatedDataWithUInt64Key & data = data_variants.key64;
 		rows = data.size();
 		IColumn & first_column = *res.getByPosition(0).column;
+		bool is_signed = dynamic_cast<ColumnInt8 *>(&first_column) || dynamic_cast<ColumnInt16 *>(&first_column)
+			|| dynamic_cast<ColumnInt32 *>(&first_column) || dynamic_cast<ColumnInt64 *>(&first_column);
+
 		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it)
 		{
-			first_column.insert(it->first);
+			if (is_signed)
+				first_column.insert(static_cast<Int64>(it->first));
+			else
+				first_column.insert(it->first);
 
 			size_t i = 1;
 			for (AggregateFunctions::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
