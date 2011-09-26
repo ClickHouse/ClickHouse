@@ -12,14 +12,19 @@
 namespace DB
 {
 
-class FieldVisitorMD5 : public boost::static_visitor<>
+class FieldVisitorHash : public boost::static_visitor<>
 {
 public:
 	MD5_CTX state;
 	
-	FieldVisitorMD5()
+	FieldVisitorHash()
 	{
 		MD5_Init(&state);
+	}
+
+	void finalize(unsigned char * place)
+	{
+		MD5_Final(place, &state);
 	}
 
 	void operator() (const Null 	& x)
@@ -281,7 +286,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 				else	/// Иначе используем md5.
 				{
-					FieldVisitorMD5 key_hash_visitor;
+					FieldVisitorHash key_hash_visitor;
 
 					for (size_t j = 0; j < keys_size; ++j)
 					{
@@ -289,7 +294,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						boost::apply_visitor(key_hash_visitor, key[j]);
 					}
 
-					MD5_Final(key_hash_union.bytes, &key_hash_visitor.state);
+					key_hash_visitor.finalize(key_hash_union.bytes);
 				}
 
 				AggregatedDataHashed::iterator it = res.find(key_hash_union.key_hash);
