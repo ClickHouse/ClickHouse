@@ -180,9 +180,12 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		{
 			/// Если ключей нет
 			AggregatedDataWithoutKey & res = result.without_key;
-			res.resize(aggregates_size);
-			for (size_t i = 0; i < aggregates_size; ++i)
-				res[i] = aggregates[i].function->cloneEmpty();
+			if (res.empty())
+			{
+				res.resize(aggregates_size);
+				for (size_t i = 0; i < aggregates_size; ++i)
+					res[i] = aggregates[i].function->cloneEmpty();
+			}
 			
 			for (size_t i = 0; i < rows; ++i)
 			{
