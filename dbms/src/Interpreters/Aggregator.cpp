@@ -58,7 +58,8 @@ public:
 	{
 		char type = FieldType::String;
 		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
-		MD5_Update(&state, x.data(), x.size());
+		/// Используем ноль на конце.
+		MD5_Update(&state, x.c_str(), x.size() + 1);
 	}
 
 	void operator() (const Array 	& x)
@@ -105,9 +106,7 @@ public:
 };
 
 
-/** Простой алгоритм (агрегация с помощью std::map).
-  * Без оптимизации для агрегатных функций, принимающих не более одного значения.
-  * Результат хранится в оперативке и должен полностью помещаться в оперативку.
+/** Результат хранится в оперативке и должен полностью помещаться в оперативку.
   */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
