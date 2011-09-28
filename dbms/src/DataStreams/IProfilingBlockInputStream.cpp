@@ -55,6 +55,10 @@ void BlockStreamProfileInfo::print(std::ostream & ostr) const
 			<< "Blocks (in):    " << nested_blocks << ", per second: " << nested_blocks * 1000000.0 / work_stopwatch.elapsed() << ", " << std::endl
 			<< "                " << nested_bytes / 1000000.0 << " MB (memory), "
 				<< nested_bytes / work_stopwatch.elapsed() << " MB/s (memory), " << std::endl;
+
+		if (self_percents > 0.1)
+			ostr << "Rows per second (in, self): " << (nested_rows * 1000000 / (work_stopwatch.elapsed() - nested_elapsed))
+				<< ", " << (work_stopwatch.elapsed() - nested_elapsed) * 1000 / nested_rows << " ns/row, " << std::endl;
 	}
 		
 	ostr 	<< "Rows (out):     " << rows << ", per second: " << rows * 1000000 / work_stopwatch.elapsed() << ", " << std::endl
