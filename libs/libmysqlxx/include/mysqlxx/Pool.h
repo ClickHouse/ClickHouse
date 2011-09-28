@@ -94,6 +94,11 @@ public:
 			return * this;
 		}
 
+		bool isNull() const
+		{
+			return Data == NULL;
+		}
+
 		/** @brief Оператор доступа к вложенному объекту. */
 		operator mysqlxx::Connection & ()
 		{
@@ -146,7 +151,7 @@ public:
 		/** @brief Указатель на пул, которому мы принадлежим. */
 		Pool * pool;
 
-		/** @brief Переподключается к базе данных в случае необходимости. */
+		/** Переподключается к базе данных в случае необходимости. Если не удалось - подождать и попробовать снова. */
 		void ForceConnected() const
 		{
 			Poco::Util::Application & app = Poco::Util::Application::instance();
@@ -171,6 +176,12 @@ public:
 
 			pool->afterConnect(Data->Conn);
 		}
+
+		/** Переподключается к базе данных в случае необходимости. Если не удалось - вернуть false. */
+		bool tryForceConnected() const
+		{
+			return Data->Conn.ping();
+		}
 	};
 
 	/**
@@ -181,8 +192,8 @@ public:
 	 * @param AllowMultiQueries	Не используется.
 	 */
 	Pool(const std::string & ConfigName,
-		 int DefConn = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
-		 int MaxConn = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+		 unsigned DefConn = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+		 unsigned MaxConn = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
 			const std::string & InitConnect_ = "")
 		: DefaultConnections(DefConn), MaxConnections(MaxConn), InitConnect(InitConnect_),
 		Initialized(false), CfgName(ConfigName), was_successful(false)
@@ -228,20 +239,50 @@ public:
 		}
 	}
 
-	/** @brief Возвращает имя базы данных. */
-	const std::string & DatabaseName()
+	/** Выделяет соединение для работы.
+	  * Если база недоступна - возвращает пустой объект Entry.
+	  * Если пул переполнен - кидает исключение.
+	  */
+	Entry tryGet()
 	{
 		Poco::ScopedLock<Poco::FastMutex> Locker(Lock);
 
 		Initialize();
-		return DBName;
+
+		/// Поиск уже установленного, но не использующегося сейчас соединения.
+		for (ConnList::iterator it = Connections.begin(); it != Connections.end(); ++it)
+		{
+			if ((*it)->RefCount == 0)
+			{
+				Entry res(*it, this);
+				return res.tryForceConnected() ? res : Entry();
+			}
+		}
+
+		/// Если пул переполнен.
+		if (Connections.size() >= MaxConnections)
+			throw Poco::Exception("mysqlxx::Pool is full");
+
+		/// Выделение нового соединения.
+		Connection * Conn = AllocConnection();
+		if (Conn)
+			return Entry(Conn, this);
+
+		return Entry();
+	}
+
+
+	/// Получить описание БД
+	std::string getDescription() const
+	{
+		return DBName + "@" + DBHost + ":" + Poco::NumberFormatter::format(DBPort) + ", user " + DBUser;
 	}
 
 protected:
 	/** @brief Количество соединений с MySQL, создаваемых при запуске. */
-	int DefaultConnections;
+	unsigned DefaultConnections;
 	/** @brief Максимально возможное количество соедиений. */
-	int MaxConnections;
+	unsigned MaxConnections;
 	/** @brief Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251". */
 	std::string InitConnect;
 
@@ -284,7 +325,7 @@ private:
 			DBPass = cfg.getString(CfgName + ".password");
 			DBName = cfg.getString(CfgName + ".db", "");
 
-			for (int i = 0; i < DefaultConnections; i++)
+			for (unsigned i = 0; i < DefaultConnections; i++)
 				AllocConnection();
 
 			Initialized = true;
