@@ -45,133 +45,88 @@ using Poco::Util::AbstractConfiguration;
 
 void Daemon::reloadConfiguration()
 {
+	/** Если программа запущена не в режиме демона, и не указан параметр config-file,
+	  *  то будем использовать параметры из файла config.xml в текущей директории,
+	  *  но игнорировать заданные в нём параметры логгирования.
+	  * (Чтобы при запуске с минимумом параметров, лог выводился в консоль.)
+	  * При этом, параметры логгирования, заданные в командной строке, не игнорируются.
+	  */
+	std::string log_command_line_option = config().getString("logger.log", "");
+	loadConfiguration(config().getString("config-file", "config.xml"));
+	log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
 
-	try
+	/// Сменим директорию для лога
+	if (config().hasProperty("logger.log") && !log_to_console)
 	{
-		loadConfiguration(config().getString("config-file", "config.xml"));
-
-		bool log_to_console = !config().getBool("application.runAsDaemon", false);
-
-		// Перейдём в каталожек, чтобы нормально писать логи и коры
-		if(config().hasProperty("logger.log") && !log_to_console)
-		{
-			std::string path = Yandex::mkdir( config().getString("logger.log") );
-			if (config().getBool("application.runAsDaemon", false)
-				&& chdir(path.c_str()) != 0)
-				throw Poco::Exception("Cannot change directory to " + path);
-		}
-		else
-		{
-			if (config().getBool("application.runAsDaemon", false)
-				&& chdir("/tmp") != 0)
-				throw Poco::Exception("Cannot change directory to /tmp");
-		}
-		
-		buildLoggers();
-		Logger *log = &Logger::get( "Daemon.reloadConfiguration()" );
-
-		// Виртуальная функция, чтобы пользователь мог обновить кеш конфигурации
-		try
-		{
-			refreshConfigCache();
-		}
-		catch(const Poco::Exception& ex)
-		{
-			LOG_ERROR(log, "PoCo error while refresh config: " << ex.displayText());
-			if( !is_Running ) throw;
-		}
-		catch (const std::exception& ex)
-		{
-			LOG_ERROR(log, "STD error while refresh config: " << ex.what());
-			if( !is_Running ) throw;
-		}
-		catch (...)
-		{
-			LOG_ERROR(log, "UNKNOWN error while refresh config");
-			if( !is_Running ) throw;
-		}
-
+		std::string path = Yandex::mkdir(config().getString("logger.log"));
+		if (config().getBool("application.runAsDaemon", false)
+			&& chdir(path.c_str()) != 0)
+			throw Poco::Exception("Cannot change directory to " + path);
 	}
-	catch(Poco::Exception& ex)
+	else
 	{
-		throw;
+		if (config().getBool("application.runAsDaemon", false)
+			&& chdir("/tmp") != 0)
+			throw Poco::Exception("Cannot change directory to /tmp");
 	}
 
-	// Если уже на работающем демоне, кто-то меняет конфиг так, что вываливается исключение - это его
-	// проблемы - будем всё равно работать	
-	is_Running = true;
+	if (config().hasProperty("logger.errorlog"))
+		Yandex::mkdir(config().getString("logger.errorlog"));
+
+	buildLoggers();
 }
 
 /// Строит необходимые логгеры
 void Daemon::buildLoggers()
 {
-	Poco::ScopedRWLock lock(*this);
 	std::string format("%Y.%m.%d %H:%M:%S [ %I ] <%p> %s: %t");
 
-	try
+	if (config().hasProperty("logger.log") && !log_to_console)
 	{
-		bool log_to_console = !config().getBool("application.runAsDaemon", false);
-		
-		if(config().hasProperty("logger.log") && !log_to_console)
+		std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
+
+		// splitter
+		SplitterChannel *split = new SplitterChannel();
+
+		// set up two channel chains
+		PatternFormatterWithOwnThreadNumber *pf = new PatternFormatterWithOwnThreadNumber(format);
+		pf->setProperty("times", "local");
+		FormattingChannel *log = new FormattingChannel(pf);
+		FileChannel *file = new FileChannel();
+		file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
+		file->setProperty("rotation", config().getRawString("logger.size", "100M"));
+		file->setProperty("archive", "number");
+		file->setProperty("compress", config().getRawString("logger.compress", "true"));
+		file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
+		log->setChannel(file);
+		split->addChannel(log);
+		file->open();
+
+		if (config().hasProperty("logger.errorlog"))
 		{
-			std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
-			
-			// splitter
-			SplitterChannel *split = new SplitterChannel();
-			
-			// set up two channel chains
+			std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
+			Poco::LevelFilterChannel *level = new Poco::LevelFilterChannel();
+			level->setLevel(Message::PRIO_NOTICE);
 			PatternFormatterWithOwnThreadNumber *pf = new PatternFormatterWithOwnThreadNumber(format);
 			pf->setProperty("times", "local");
-			FormattingChannel *log = new FormattingChannel(pf);
-			FileChannel *file = new FileChannel();
-			file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
-			file->setProperty("rotation", config().getRawString("logger.size", "100M"));
-			file->setProperty("archive", "number");
+			FormattingChannel *errorlog = new FormattingChannel(pf);
+			FileChannel *errorfile = new FileChannel();
+			errorfile->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
+			errorfile->setProperty("rotation", config().getRawString("logger.size", "100M"));
+			errorfile->setProperty("archive", "number");
 			file->setProperty("compress", config().getRawString("logger.compress", "true"));
-			file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
-			log->setChannel(file);
-			split->addChannel(log);
-			file->open();
-
-			if( config().hasProperty("logger.errorlog") )
-			{
-				std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
-				Poco::LevelFilterChannel *level = new Poco::LevelFilterChannel();
-				level->setLevel(Message::PRIO_NOTICE);
-				PatternFormatterWithOwnThreadNumber *pf = new PatternFormatterWithOwnThreadNumber(format);
-				pf->setProperty("times", "local");
-				FormattingChannel *errorlog = new FormattingChannel(pf);
-				FileChannel *errorfile = new FileChannel();
-				errorfile->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
-				errorfile->setProperty("rotation", config().getRawString("logger.size", "100M"));
-				errorfile->setProperty("archive", "number");
-				file->setProperty("compress", config().getRawString("logger.compress", "true"));
-				errorfile->setProperty("purgeCount", config().getRawString("logger.count", "1"));
-				errorlog->setChannel(errorfile);
-				level->setChannel(errorlog);
-				split->addChannel(level);
-				errorlog->open();
-			}
-
-			split->open();
-			logger().close();
-			logger().setChannel(split);
+			errorfile->setProperty("purgeCount", config().getRawString("logger.count", "1"));
+			errorlog->setChannel(errorfile);
+			level->setChannel(errorlog);
+			split->addChannel(level);
+			errorlog->open();
 		}
-		else
-		{
-			// Выводим на консоль
-			ConsoleChannel * file = new ConsoleChannel();
-			PatternFormatterWithOwnThreadNumber * pf = new PatternFormatterWithOwnThreadNumber(format);
-			pf->setProperty("times", "local");
-			FormattingChannel * log = new FormattingChannel(pf);
-			log->setChannel(file);
-			
-			logger().close();
-			logger().setChannel(log);
-			logger().warning("Logging to console");
-		}
+
+		split->open();
+		logger().close();
+		logger().setChannel(split);
 	}
-	catch(...)
+	else
 	{
 		// Выводим на консоль
 		ConsoleChannel * file = new ConsoleChannel();
@@ -182,27 +137,23 @@ void Daemon::buildLoggers()
 
 		logger().close();
 		logger().setChannel(log);
-		logger().warning("Can't log to file. Logging to console");
-		throw;
+		logger().warning("Logging to console");
 	}
 
 	// Уровни для всех
-	logger().setLevel( config().getString("logger.level", "information") );
+	logger().setLevel(config().getString("logger.level", "trace"));
 		
 	// Прикрутим к корневому логгеру
-	Logger::root().setLevel( logger().getLevel() );
-	Logger::root().setChannel( logger().getChannel() );
+	Logger::root().setLevel(logger().getLevel());
+	Logger::root().setChannel(logger().getChannel());
 	
 	// Уровни для явно указанных логгеров
 	AbstractConfiguration::Keys levels;
 	config().keys("logger.levels", levels);
-	if( !levels.empty() )
-	{
-		for(AbstractConfiguration::Keys::iterator it=levels.begin();it!=levels.end();++it)
-		{
-			Logger::get(*it).setLevel( config().getString("logger.levels." + *it, "info") );
-		}
-	}
+
+	if(!levels.empty())
+		for(AbstractConfiguration::Keys::iterator it = levels.begin(); it != levels.end(); ++it)
+			Logger::get(*it).setLevel(config().getString("logger.levels." + *it, "trace"));
 }
 
 void Daemon::initialize(Application& self)
@@ -219,9 +170,6 @@ void Daemon::initialize(Application& self)
 	
 	// Сбросим генератор случайных чисел
 	srandom(time(NULL));	
-
-	// Используется при загрузке конфигурации
-	is_Running = false;
 
 	p_TaskManager = new TaskManager();
 	ServerApplication::initialize(self);
