@@ -264,7 +264,7 @@ public:
 			throw Poco::Exception("mysqlxx::Pool is full");
 
 		/// Выделение нового соединения.
-		Connection * Conn = AllocConnection();
+		Connection * Conn = AllocConnection(true);
 		if (Conn)
 			return Entry(Conn, this);
 
@@ -333,7 +333,7 @@ private:
 	}
 
 	/** @brief Создает новое соединение. */
-	Connection * AllocConnection()
+	Connection * AllocConnection(bool dont_throw_if_failed_first_time = false)
 	{
 		Poco::Util::Application & app = Poco::Util::Application::instance();
 		Connection * Conn;
@@ -347,7 +347,7 @@ private:
 		}
 		catch (mysqlxx::ConnectionFailed & e)
 		{
-			if (!was_successful
+			if ((!was_successful && !dont_throw_if_failed_first_time)
 				|| e.errnum() == ER_ACCESS_DENIED_ERROR
 				|| e.errnum() == ER_DBACCESS_DENIED_ERROR
 				|| e.errnum() == ER_BAD_DB_ERROR)
