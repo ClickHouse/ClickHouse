@@ -11,6 +11,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
+#define DBMS_APPROX_STRING_SIZE 64
+
 
 namespace DB
 {
@@ -66,7 +68,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	ColumnUInt8::Container_t & data = dynamic_cast<ColumnUInt8 &>(column_array.getData()).getData();
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
-	data.reserve(limit);
+	data.reserve(limit * DBMS_APPROX_STRING_SIZE);
 	offsets.reserve(limit);
 
 	size_t offset = 0;
