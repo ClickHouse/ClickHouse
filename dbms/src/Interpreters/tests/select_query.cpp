@@ -133,6 +133,10 @@ int main(int argc, char ** argv)
 
 		(*context.functions)["length"] 			= new DB::FunctionLength;
 		(*context.functions)["lengthUTF8"] 		= new DB::FunctionLengthUTF8;
+		(*context.functions)["lower"] 			= new DB::FunctionLower;
+		(*context.functions)["upper"] 			= new DB::FunctionUpper;
+		(*context.functions)["lowerUTF8"]		= new DB::FunctionLowerUTF8;
+		(*context.functions)["upperUTF8"]		= new DB::FunctionUpperUTF8;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
