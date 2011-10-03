@@ -17,8 +17,8 @@ int main(int argc, char ** argv)
 	try
 	{
 		Poco::Stopwatch stopwatch;
-		size_t n = 10000000;
-		const char * s = "abcdefghi";
+		size_t n = 50000000;
+		const char * s = "";
 		size_t size = strlen(s) + 1;
 		DB::DataTypeString data_type;
 

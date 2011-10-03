@@ -21,6 +21,7 @@
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsComparison.h>
 #include <DB/Functions/FunctionsLogical.h>
+#include <DB/Functions/FunctionsString.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -129,6 +130,9 @@ int main(int argc, char ** argv)
 		(*context.functions)["or"] 				= new DB::FunctionOr;
 		(*context.functions)["xor"] 			= new DB::FunctionXor;
 		(*context.functions)["not"] 			= new DB::FunctionNot;
+
+		(*context.functions)["length"] 			= new DB::FunctionLength;
+		(*context.functions)["lengthUTF8"] 		= new DB::FunctionLengthUTF8;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
