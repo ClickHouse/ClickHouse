@@ -78,6 +78,8 @@ public:
 class FieldVisitorToUInt64 : public boost::static_visitor<UInt64>
 {
 public:
+	FieldVisitorToUInt64() {}
+	
 	UInt64 operator() (const Null 		& x) const { return 0; }
 	UInt64 operator() (const UInt64 	& x) const { return x; }
 	UInt64 operator() (const Int64 		& x) const { return x; }
