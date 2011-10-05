@@ -9,7 +9,7 @@
 
 #include <mysqlxx/Query.h>
 
-#define MYSQLXX_TIMEOUT 60
+#define MYSQLXX_DEFAULT_TIMEOUT 60
 
 
 namespace mysqlxx
@@ -36,7 +36,7 @@ private:
 		mysql_library_end();
 	}
 };
-	
+
 
 /** Соединение с MySQL.
   * Использование:
@@ -45,6 +45,10 @@ private:
   *
   * Или так, если вы используете конфигурацию из библиотеки Poco:
   *		mysqlxx::Connection connection("mysql_params");
+  *
+  * Внимание! Рекомендуется использовать соединение в том потоке, в котором оно создано.
+  * Если вы используете соединение, созданное в другом потоке, то вы должны перед использованием
+  *  вызвать функцию MySQL C API my_thread_init(), а после использования - my_thread_end().
   */
 class Connection : private boost::noncopyable
 {
@@ -58,7 +62,8 @@ public:
 		const char* server,
 		const char* user = 0,
 		const char* password = 0,
-		unsigned int port = 0);
+		unsigned port = 0,
+		unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT);
 
 	/** Конструктор-помошник. Создать соединение, считав все параметры из секции config_name конфигурации.
 	  * Можно использовать, если вы используете Poco::Util::Application из библиотеки Poco.
@@ -66,15 +71,7 @@ public:
 	Connection(const std::string & config_name)
 	{
 		is_connected = false;
-		Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
-
-		std::string db 			= cfg.getString(config_name + ".db");
-		std::string server 		= cfg.getString(config_name + ".host");
-		std::string user 		= cfg.getString(config_name + ".user");
-		std::string password	= cfg.getString(config_name + ".password");
-		unsigned port			= cfg.getInt(config_name + ".port");
-
-		connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port);
+		connect(config_name);
 	}
 
 	virtual ~Connection();
@@ -84,7 +81,26 @@ public:
 		const char * server,
 		const char * user,
 		const char * password,
-		unsigned int port);
+		unsigned port,
+		unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT);
+
+	void connect(const std::string & config_name)
+	{
+		Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
+
+		std::string db 			= cfg.getString(config_name + ".db");
+		std::string server 		= cfg.getString(config_name + ".host");
+		std::string user 		= cfg.getString(config_name + ".user");
+		std::string password	= cfg.getString(config_name + ".password");
+		unsigned port			= cfg.getInt(config_name + ".port");
+
+		unsigned timeout =
+			cfg.getInt(config_name + ".connect_timeout",
+				cfg.getInt("mysql_connect_timeout",
+					MYSQLXX_DEFAULT_TIMEOUT));
+
+		connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port, timeout);
+	}
 
 	/// Было ли произведено соединение с MySQL.
 	bool connected() const;

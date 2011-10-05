@@ -45,109 +45,100 @@ protected:
 	/** @brief Информация о соединении. */
 	struct Connection
 	{
-		/** @brief Конструктор. */
-		Connection()
-			: RefCount(0)
-		{
-		}
+		Connection() : ref_count(0) {}
 
-		mysqlxx::Connection		Conn;
-		int						RefCount;
+		mysqlxx::Connection conn;
+		int ref_count;
 	};
 
 public:
-
 	/** @brief Соединение с базой данных. */
 	class Entry
 	{
 	public:
-		/** @brief Конструктор по-умолчанию. */
-		Entry()
-			: Data(NULL), pool(NULL)
-		{
-		}
+		Entry() : data(NULL), pool(NULL) {}
 
 		/** @brief Конструктор копирования. */
 		Entry(const Entry & src)
-			: Data(src.Data), pool(src.pool)
+			: data(src.data), pool(src.pool)
 		{
-			if (Data)
-				Data->RefCount++;
+			if (data)
+				++data->ref_count;
 		}
 
 		/** @brief Деструктор. */
 		virtual ~Entry()
 		{
-			if (Data)
-				Data->RefCount--;
+			if (data)
+				--data->ref_count;
 		}
 
 		/** @brief Оператор присваивания. */
 		Entry & operator= (const Entry & src)
 		{
 			pool = src.pool;
-			if (Data)
-				Data->RefCount--;
-			Data = src.Data;
-			if (Data)
-				Data->RefCount++;
+			if (data)
+				--data->ref_count;
+			data = src.data;
+			if (data)
+				++data->ref_count;
 			return * this;
 		}
 
 		bool isNull() const
 		{
-			return Data == NULL;
+			return data == NULL;
 		}
 
 		/** @brief Оператор доступа к вложенному объекту. */
 		operator mysqlxx::Connection & ()
 		{
-			if (Data == NULL)
+			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			ForceConnected();
-			return Data->Conn;
+			return data->conn;
 		}
 
 		/** @brief Оператор доступа к вложенному объекту. */
 		operator const mysqlxx::Connection & () const
 		{
-			if (Data == NULL)
+			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			ForceConnected();
-			return Data->Conn;
+			return data->conn;
 		}
 
 		/** @brief Оператор доступа к вложенному объекту. */
 		const mysqlxx::Connection * operator->() const
 		{
-			if (Data == NULL)
+			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			ForceConnected();
-			return &Data->Conn;
+			return &data->conn;
 		}
 
 		/** @brief Оператор доступа к вложенному объекту. */
 		mysqlxx::Connection * operator->()
 		{
-			if (Data == NULL)
+			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			ForceConnected();
-			return &Data->Conn;
+			return &data->conn;
 		}
 
 		/** @brief Конструктор */
-		Entry(Pool::Connection * Conn, Pool * p)
-			: Data(Conn), pool(p)
+		Entry(Pool::Connection * conn, Pool * p)
+			: data(conn), pool(p)
 		{
-			if (Data)
-				Data->RefCount++;
+			if (data)
+				data->ref_count++;
 		}
 
 		friend class Pool;
 
 	private:
 		/** @brief Указатель на соединение. */
-		Connection * Data;
+		Connection * data;
 		/** @brief Указатель на пул, которому мы принадлежим. */
 		Pool * pool;
 
@@ -156,7 +147,7 @@ public:
 		{
 			Poco::Util::Application & app = Poco::Util::Application::instance();
 
-			if (Data->Conn.ping())
+			if (data->conn.ping())
 				return;
 
 			bool first = true;
@@ -167,20 +158,18 @@ public:
 				else
 					::sleep(5);
 
-				app.logger().information("MYSQL: Reconnecting to " + pool->DBName + "@" +
-					pool->DBHost + ":" + Poco::NumberFormatter::format(pool->DBPort) + " as user " + pool->DBUser);
-				Data->Conn.connect(pool->DBName.c_str(), pool->DBHost.c_str(), pool->DBUser.c_str(),
-					pool->DBPass.c_str(), pool->DBPort);
+				app.logger().information("MYSQL: Reconnecting to " + pool->description);
+				data->conn.connect(pool->config_name);
 			}
-			while (!Data->Conn.ping());
+			while (!data->conn.ping());
 
-			pool->afterConnect(Data->Conn);
+			pool->afterConnect(data->conn);
 		}
 
 		/** Переподключается к базе данных в случае необходимости. Если не удалось - вернуть false. */
 		bool tryForceConnected() const
 		{
-			return Data->Conn.ping();
+			return data->conn.ping();
 		}
 	};
 
@@ -191,19 +180,19 @@ public:
 	 * @param MaxConn			Максимальное количество подключений
 	 * @param AllowMultiQueries	Не используется.
 	 */
-	Pool(const std::string & ConfigName,
+	Pool(const std::string & config_name_,
 		 unsigned DefConn = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
 		 unsigned MaxConn = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
 			const std::string & InitConnect_ = "")
 		: DefaultConnections(DefConn), MaxConnections(MaxConn), InitConnect(InitConnect_),
-		Initialized(false), CfgName(ConfigName), was_successful(false)
+		Initialized(false), config_name(config_name_), was_successful(false)
 	{
 	}
 
 	/** @brief Деструктор. */
 	~Pool()
 	{
-		Poco::ScopedLock<Poco::FastMutex> Locker(Lock);
+		Poco::ScopedLock<Poco::FastMutex> Locker(lock);
 
 		for (ConnList::iterator it = Connections.begin(); it != Connections.end(); it++)
 			delete static_cast<Connection *>(*it);
@@ -212,30 +201,28 @@ public:
 	/** @brief Выделяет соединение для работы. */
 	Entry Get()
 	{
-		Poco::ScopedLock<Poco::FastMutex> Locker(Lock);
+		Poco::ScopedLock<Poco::FastMutex> Locker(lock);
 
 		Initialize();
 		for (;;)
 		{
 			for (ConnList::iterator it = Connections.begin(); it != Connections.end(); it++)
 			{
-				if ((*it)->RefCount == 0)
+				if ((*it)->ref_count == 0)
 					return Entry(*it, this);
 			}
 
 			if (Connections.size() < (size_t)MaxConnections)
 			{
-				Connection * Conn = AllocConnection();
-				if (Conn)
-				{
-					return Entry(Conn, this);
-				}
+				Connection * conn = AllocConnection();
+				if (conn)
+					return Entry(conn, this);
 			}
 
-			Lock.unlock();
+			lock.unlock();
 			sched_yield();
 			::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
-			Lock.lock();
+			lock.lock();
 		}
 	}
 
@@ -245,14 +232,14 @@ public:
 	  */
 	Entry tryGet()
 	{
-		Poco::ScopedLock<Poco::FastMutex> Locker(Lock);
+		Poco::ScopedLock<Poco::FastMutex> locker(lock);
 
 		Initialize();
 
 		/// Поиск уже установленного, но не использующегося сейчас соединения.
 		for (ConnList::iterator it = Connections.begin(); it != Connections.end(); ++it)
 		{
-			if ((*it)->RefCount == 0)
+			if ((*it)->ref_count == 0)
 			{
 				Entry res(*it, this);
 				return res.tryForceConnected() ? res : Entry();
@@ -264,9 +251,9 @@ public:
 			throw Poco::Exception("mysqlxx::Pool is full");
 
 		/// Выделение нового соединения.
-		Connection * Conn = AllocConnection(true);
-		if (Conn)
-			return Entry(Conn, this);
+		Connection * conn = AllocConnection(true);
+		if (conn)
+			return Entry(conn, this);
 
 		return Entry();
 	}
@@ -275,7 +262,7 @@ public:
 	/// Получить описание БД
 	std::string getDescription() const
 	{
-		return DBName + "@" + DBHost + ":" + Poco::NumberFormatter::format(DBPort) + ", user " + DBUser;
+		return description;
 	}
 
 protected:
@@ -294,19 +281,11 @@ private:
 	/** @brief Список соединений. */
 	ConnList Connections;
 	/** @brief Замок для доступа к списку соединений. */
-	Poco::FastMutex Lock;
+	Poco::FastMutex lock;
 	/** @brief Имя раздела в конфигурационном файле. */
-	std::string CfgName;
-	/** @brief Имя сервера базы данных. */
-	std::string DBHost;
-	/** @brief Порт сервера базы данных. */
-	int DBPort;
-	/** @brief Имя пользователя базы данных. */
-	std::string DBUser;
-	/** @brief Пароль пользователя базы данных. */
-	std::string DBPass;
-	/** @brief Имя базы данных. */
-	std::string DBName;
+	std::string config_name;
+	/** @brief Описание соединения. */
+	std::string description;
 
 	/** @brief Хотя бы один раз было успешное соединение. */
 	bool was_successful;
@@ -319,11 +298,10 @@ private:
 			Poco::Util::Application & app = Poco::Util::Application::instance();
 			Poco::Util::LayeredConfiguration & cfg = app.config();
 
-			DBHost = cfg.getString(CfgName + ".host");
-			DBPort = cfg.getInt(CfgName + ".port");
-			DBUser = cfg.getString(CfgName + ".user");
-			DBPass = cfg.getString(CfgName + ".password");
-			DBName = cfg.getString(CfgName + ".db", "");
+			description = cfg.getString(config_name + ".db", "")
+				+ "@" + cfg.getString(config_name + ".host")
+				+ ":" + cfg.getString(config_name + ".port")
+				+ " as user " + cfg.getString(config_name + ".user");
 
 			for (unsigned i = 0; i < DefaultConnections; i++)
 				AllocConnection();
@@ -341,9 +319,8 @@ private:
 		Conn = new Connection();
 		try
 		{
-			app.logger().information("MYSQL: Connecting to " + DBName + "@" +
-				DBHost + ":" + Poco::NumberFormatter::format(DBPort) + " as user " + DBUser);
-			Conn->Conn.connect(DBName.c_str(), DBHost.c_str(), DBUser.c_str(), DBPass.c_str(), DBPort);
+			app.logger().information("MYSQL: Connecting to " + description);
+			Conn->conn.connect(config_name);
 		}
 		catch (mysqlxx::ConnectionFailed & e)
 		{
@@ -368,7 +345,7 @@ private:
 		}
 
 		was_successful = true;
-		afterConnect(Conn->Conn);
+		afterConnect(Conn->conn);
 		Connections.push_back(Conn);
 		return Conn;
 	}

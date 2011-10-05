@@ -5,6 +5,13 @@
 namespace mysqlxx
 {
 
+
+/** Считаем количество соединений в потоке, чтобы после уничтожения последнего вызвать my_thread_end(),
+  *  как требует библиотека libmysqlclient_r или новая библиотека libmysqlclient (MySQL 5.5+).
+  */
+static __thread unsigned connections = 0;
+	
+
 Connection::Connection()
 {
 	is_connected = false;
@@ -15,7 +22,8 @@ Connection::Connection(
 	const char* server,
 	const char* user,
 	const char* password,
-	unsigned int port)
+	unsigned port,
+	unsigned timeout)
 {
 	is_connected = false;
 	connect(db, server, user, password, port);
@@ -30,7 +38,8 @@ void Connection::connect(const char* db,
 	const char* server,
 	const char* user,
 	const char* password,
-	unsigned int port)
+	unsigned port,
+	unsigned timeout)
 {
 	if (is_connected)
 		disconnect();
@@ -42,7 +51,6 @@ void Connection::connect(const char* db,
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	/// Установим таймауты
-	unsigned int timeout = MYSQLXX_TIMEOUT;
 	if (mysql_options(&driver, MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<const char *>(&timeout)))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
@@ -60,6 +68,7 @@ void Connection::connect(const char* db,
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	is_connected = true;
+	++connections;
 }
 
 bool Connection::connected() const
@@ -75,6 +84,10 @@ void Connection::disconnect()
 	mysql_close(&driver);
 	memset(&driver, 0, sizeof(driver));
 	is_connected = false;
+	--connections;
+
+	if (connections == 0)
+		my_thread_end();
 }
 
 bool Connection::ping()
