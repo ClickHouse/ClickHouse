@@ -148,7 +148,7 @@ public:
 				if (first)
 					first = false;
 				else
-					::sleep(5);
+					Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
 				app.logger().information("MYSQL: Reconnecting to " + pool->description);
 				data->conn.connect(pool->config_name);
@@ -211,7 +211,7 @@ public:
 
 			lock.unlock();
 			sched_yield();
-			::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+			Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 			lock.lock();
 		}
 	}
