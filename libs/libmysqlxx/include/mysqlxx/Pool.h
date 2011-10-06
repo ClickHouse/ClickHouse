@@ -28,7 +28,7 @@
 namespace mysqlxx
 {
 
-/** @brief Пул соединений с MySQL.
+/** Пул соединений с MySQL.
   * Этот класс имеет мало отношения в mysqlxx и сделан не в стиле библиотеки. (взят из старого кода)
   * Использование:
   * 	mysqlxx::Pool pool("mysql_params");
@@ -42,7 +42,7 @@ namespace mysqlxx
 class Pool
 {
 protected:
-	/** @brief Информация о соединении. */
+	/** Информация о соединении. */
 	struct Connection
 	{
 		Connection() : ref_count(0) {}
@@ -52,13 +52,12 @@ protected:
 	};
 
 public:
-	/** @brief Соединение с базой данных. */
+	/** Соединение с базой данных. */
 	class Entry
 	{
 	public:
 		Entry() : data(NULL), pool(NULL) {}
 
-		/** @brief Конструктор копирования. */
 		Entry(const Entry & src)
 			: data(src.data), pool(src.pool)
 		{
@@ -66,14 +65,12 @@ public:
 				++data->ref_count;
 		}
 
-		/** @brief Деструктор. */
-		virtual ~Entry()
+		~Entry()
 		{
 			if (data)
 				--data->ref_count;
 		}
 
-		/** @brief Оператор присваивания. */
 		Entry & operator= (const Entry & src)
 		{
 			pool = src.pool;
@@ -90,7 +87,6 @@ public:
 			return data == NULL;
 		}
 
-		/** @brief Оператор доступа к вложенному объекту. */
 		operator mysqlxx::Connection & ()
 		{
 			if (data == NULL)
@@ -99,7 +95,6 @@ public:
 			return data->conn;
 		}
 
-		/** @brief Оператор доступа к вложенному объекту. */
 		operator const mysqlxx::Connection & () const
 		{
 			if (data == NULL)
@@ -108,7 +103,6 @@ public:
 			return data->conn;
 		}
 
-		/** @brief Оператор доступа к вложенному объекту. */
 		const mysqlxx::Connection * operator->() const
 		{
 			if (data == NULL)
@@ -117,7 +111,6 @@ public:
 			return &data->conn;
 		}
 
-		/** @brief Оператор доступа к вложенному объекту. */
 		mysqlxx::Connection * operator->()
 		{
 			if (data == NULL)
@@ -126,7 +119,6 @@ public:
 			return &data->conn;
 		}
 
-		/** @brief Конструктор */
 		Entry(Pool::Connection * conn, Pool * p)
 			: data(conn), pool(p)
 		{
@@ -137,9 +129,9 @@ public:
 		friend class Pool;
 
 	private:
-		/** @brief Указатель на соединение. */
+		/** Указатель на соединение. */
 		Connection * data;
-		/** @brief Указатель на пул, которому мы принадлежим. */
+		/** Указатель на пул, которому мы принадлежим. */
 		Pool * pool;
 
 		/** Переподключается к базе данных в случае необходимости. Если не удалось - подождать и попробовать снова. */
@@ -174,45 +166,43 @@ public:
 	};
 
 	/**
-	 * @brief Конструктор.
 	 * @param ConfigName		Имя параметра в конфигурационном файле.
 	 * @param DefConn			Количество подключений по-умолчанию
 	 * @param MaxConn			Максимальное количество подключений
 	 * @param AllowMultiQueries	Не используется.
 	 */
 	Pool(const std::string & config_name_,
-		 unsigned DefConn = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
-		 unsigned MaxConn = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-			const std::string & InitConnect_ = "")
-		: DefaultConnections(DefConn), MaxConnections(MaxConn), InitConnect(InitConnect_),
-		Initialized(false), config_name(config_name_), was_successful(false)
+		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+			const std::string & init_connect_ = "")
+		: default_connections(default_connections_), max_connections(max_connections_), init_connect(init_connect_),
+		initialized(false), config_name(config_name_), was_successful(false)
 	{
 	}
 
-	/** @brief Деструктор. */
 	~Pool()
 	{
-		Poco::ScopedLock<Poco::FastMutex> Locker(lock);
+		Poco::ScopedLock<Poco::FastMutex> locker(lock);
 
-		for (ConnList::iterator it = Connections.begin(); it != Connections.end(); it++)
+		for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
 			delete static_cast<Connection *>(*it);
 	}
 
-	/** @brief Выделяет соединение для работы. */
+	/** Выделяет соединение для работы. */
 	Entry Get()
 	{
-		Poco::ScopedLock<Poco::FastMutex> Locker(lock);
+		Poco::ScopedLock<Poco::FastMutex> locker(lock);
 
 		Initialize();
 		for (;;)
 		{
-			for (ConnList::iterator it = Connections.begin(); it != Connections.end(); it++)
+			for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
 			{
 				if ((*it)->ref_count == 0)
 					return Entry(*it, this);
 			}
 
-			if (Connections.size() < (size_t)MaxConnections)
+			if (connections.size() < (size_t)max_connections)
 			{
 				Connection * conn = AllocConnection();
 				if (conn)
@@ -237,7 +227,7 @@ public:
 		Initialize();
 
 		/// Поиск уже установленного, но не использующегося сейчас соединения.
-		for (ConnList::iterator it = Connections.begin(); it != Connections.end(); ++it)
+		for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
 		{
 			if ((*it)->ref_count == 0)
 			{
@@ -247,7 +237,7 @@ public:
 		}
 
 		/// Если пул переполнен.
-		if (Connections.size() >= MaxConnections)
+		if (connections.size() >= max_connections)
 			throw Poco::Exception("mysqlxx::Pool is full");
 
 		/// Выделение нового соединения.
@@ -266,34 +256,34 @@ public:
 	}
 
 protected:
-	/** @brief Количество соединений с MySQL, создаваемых при запуске. */
-	unsigned DefaultConnections;
-	/** @brief Максимально возможное количество соедиений. */
-	unsigned MaxConnections;
-	/** @brief Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251". */
-	std::string InitConnect;
+	/** Количество соединений с MySQL, создаваемых при запуске. */
+	unsigned default_connections;
+	/** Максимально возможное количество соедиений. */
+	unsigned max_connections;
+	/** Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251". */
+	std::string init_connect;
 
 private:
-	/** @brief Признак того, что мы инициализированы. */
-	bool Initialized;
-	/** @brief Список соединений. */
-	typedef std::list<Connection *> ConnList;
-	/** @brief Список соединений. */
-	ConnList Connections;
-	/** @brief Замок для доступа к списку соединений. */
+	/** Признак того, что мы инициализированы. */
+	bool initialized;
+	/** Список соединений. */
+	typedef std::list<Connection *> Connections;
+	/** Список соединений. */
+	Connections connections;
+	/** Замок для доступа к списку соединений. */
 	Poco::FastMutex lock;
-	/** @brief Имя раздела в конфигурационном файле. */
+	/** Имя раздела в конфигурационном файле. */
 	std::string config_name;
-	/** @brief Описание соединения. */
+	/** Описание соединения. */
 	std::string description;
 
-	/** @brief Хотя бы один раз было успешное соединение. */
+	/** Хотя бы один раз было успешное соединение. */
 	bool was_successful;
 
-	/** @brief Выполняет инициализацию класса, если мы еще не инициализированы. */
+	/** Выполняет инициализацию класса, если мы еще не инициализированы. */
 	inline void Initialize()
 	{
-		if (!Initialized)
+		if (!initialized)
 		{
 			Poco::Util::Application & app = Poco::Util::Application::instance();
 			Poco::Util::LayeredConfiguration & cfg = app.config();
@@ -303,24 +293,24 @@ private:
 				+ ":" + cfg.getString(config_name + ".port")
 				+ " as user " + cfg.getString(config_name + ".user");
 
-			for (unsigned i = 0; i < DefaultConnections; i++)
+			for (unsigned i = 0; i < default_connections; i++)
 				AllocConnection();
 
-			Initialized = true;
+			initialized = true;
 		}
 	}
 
-	/** @brief Создает новое соединение. */
+	/** Создает новое соединение. */
 	Connection * AllocConnection(bool dont_throw_if_failed_first_time = false)
 	{
 		Poco::Util::Application & app = Poco::Util::Application::instance();
-		Connection * Conn;
+		Connection * conn;
 
-		Conn = new Connection();
+		conn = new Connection();
 		try
 		{
 			app.logger().information("MYSQL: Connecting to " + description);
-			Conn->conn.connect(config_name);
+			conn->conn.connect(config_name);
 		}
 		catch (mysqlxx::ConnectionFailed & e)
 		{
@@ -335,7 +325,7 @@ private:
 			else
 			{
 				app.logger().error(e.what());
-				delete Conn;
+				delete conn;
 
 				if (Daemon::instance().isCancelled())
 					throw Poco::Exception("Daemon is cancelled while trying to connect to MySQL server.");
@@ -345,24 +335,24 @@ private:
 		}
 
 		was_successful = true;
-		afterConnect(Conn->conn);
-		Connections.push_back(Conn);
-		return Conn;
+		afterConnect(conn->conn);
+		connections.push_back(conn);
+		return conn;
 	}
 
 
-	/** @brief Действия, выполняемые после соединения. */
-	void afterConnect(mysqlxx::Connection & Conn)
+	/** Действия, выполняемые после соединения. */
+	void afterConnect(mysqlxx::Connection & conn)
 	{
 		Poco::Util::Application & app = Poco::Util::Application::instance();
 
 		/// Инициализирующий запрос (например, установка другой кодировки)
-		if (!InitConnect.empty())
+		if (!init_connect.empty())
 		{
-			mysqlxx::Query Q = Conn.query();
-			Q << InitConnect;
-			app.logger().trace(Q.str());
-			Q.execute();
+			mysqlxx::Query q = conn.query();
+			q << init_connect;
+			app.logger().trace(q.str());
+			q.execute();
 		}
 	}
 };
