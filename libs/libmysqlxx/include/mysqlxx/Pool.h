@@ -91,7 +91,7 @@ public:
 		{
 			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
-			ForceConnected();
+			forceConnected();
 			return data->conn;
 		}
 
@@ -99,7 +99,7 @@ public:
 		{
 			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
-			ForceConnected();
+			forceConnected();
 			return data->conn;
 		}
 
@@ -107,7 +107,7 @@ public:
 		{
 			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
-			ForceConnected();
+			forceConnected();
 			return &data->conn;
 		}
 
@@ -115,7 +115,7 @@ public:
 		{
 			if (data == NULL)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
-			ForceConnected();
+			forceConnected();
 			return &data->conn;
 		}
 
@@ -135,7 +135,7 @@ public:
 		Pool * pool;
 
 		/** Переподключается к базе данных в случае необходимости. Если не удалось - подождать и попробовать снова. */
-		void ForceConnected() const
+		void forceConnected() const
 		{
 			Poco::Util::Application & app = Poco::Util::Application::instance();
 
@@ -193,7 +193,7 @@ public:
 	{
 		Poco::ScopedLock<Poco::FastMutex> locker(lock);
 
-		Initialize();
+		initialize();
 		for (;;)
 		{
 			for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
@@ -204,7 +204,7 @@ public:
 
 			if (connections.size() < (size_t)max_connections)
 			{
-				Connection * conn = AllocConnection();
+				Connection * conn = allocConnection();
 				if (conn)
 					return Entry(conn, this);
 			}
@@ -224,7 +224,7 @@ public:
 	{
 		Poco::ScopedLock<Poco::FastMutex> locker(lock);
 
-		Initialize();
+		initialize();
 
 		/// Поиск уже установленного, но не использующегося сейчас соединения.
 		for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
@@ -241,7 +241,7 @@ public:
 			throw Poco::Exception("mysqlxx::Pool is full");
 
 		/// Выделение нового соединения.
-		Connection * conn = AllocConnection(true);
+		Connection * conn = allocConnection(true);
 		if (conn)
 			return Entry(conn, this);
 
@@ -281,7 +281,7 @@ private:
 	bool was_successful;
 
 	/** Выполняет инициализацию класса, если мы еще не инициализированы. */
-	inline void Initialize()
+	inline void initialize()
 	{
 		if (!initialized)
 		{
@@ -294,14 +294,14 @@ private:
 				+ " as user " + cfg.getString(config_name + ".user");
 
 			for (unsigned i = 0; i < default_connections; i++)
-				AllocConnection();
+				allocConnection();
 
 			initialized = true;
 		}
 	}
 
 	/** Создает новое соединение. */
-	Connection * AllocConnection(bool dont_throw_if_failed_first_time = false)
+	Connection * allocConnection(bool dont_throw_if_failed_first_time = false)
 	{
 		Poco::Util::Application & app = Poco::Util::Application::instance();
 		Connection * conn;
