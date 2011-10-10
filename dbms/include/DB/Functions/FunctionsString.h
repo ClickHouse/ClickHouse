@@ -403,7 +403,7 @@ struct ConcatImpl
 		c_offsets = a_offsets;
 
 		for (size_t i = 0; i < size; ++i)
-			c_offsets[i] += b.size();
+			c_offsets[i] += b.size() + i;
 
 		size_t offset = 0;
 		size_t a_offset = 0;
@@ -487,7 +487,7 @@ struct ConcatImpl
 		c_offsets = b_offsets;
 
 		for (size_t i = 0; i < size; ++i)
-			c_offsets[i] += a.size();
+			c_offsets[i] += a.size() + i;
 
 		size_t offset = 0;
 		size_t b_offset = 0;
@@ -586,6 +586,114 @@ struct SubstringImpl
 			throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		
 		res_data = data.substr(start - 1, length);
+	}
+};
+
+
+/** Если строка в кодировке UTF-8, то выделяет в ней подстроку кодовых точек.
+  * Иначе - поведение не определено.
+  */
+struct SubstringUTF8Impl
+{
+	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+		size_t start, size_t length,
+		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	{
+		res_data.reserve(data.size());
+		size_t size = offsets.size();
+		res_offsets.resize(size);
+
+		size_t prev_offset = 0;
+		size_t res_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t j = prev_offset;
+			size_t pos = 1;
+			size_t bytes_start = 0;
+			size_t bytes_length = 0;
+			while (j < offsets[i] - 1)
+			{
+				if (pos == start)
+					bytes_start = j - prev_offset + 1;
+
+				if (data[j] < 0xBF)
+					j += 1;
+				else if (data[j] < 0xE0)
+					j += 2;
+				else if (data[j] < 0xF0)
+					j += 3;
+				else
+					j += 1;
+				
+				if (pos >= start && pos < start + length)
+					bytes_length = j - prev_offset + 1 - bytes_start;
+				else if (pos >= start + length)
+					break;
+
+				++pos;
+			}
+
+			if (bytes_start == 0)
+			{
+				res_data.resize(res_data.size() + 1);
+				res_data[res_offset] = 0;
+				++res_offset;
+			}
+			else
+			{
+				size_t bytes_to_copy = std::min(offsets[i] - prev_offset - bytes_start, bytes_length);
+				res_data.resize(res_data.size() + bytes_to_copy + 1);
+				memcpy(&res_data[res_offset], &data[prev_offset + bytes_start - 1], bytes_to_copy);
+				res_offset += bytes_to_copy + 1;
+				res_data[res_offset - 1] = 0;
+			}
+			res_offsets[i] = res_offset;
+			prev_offset = offsets[i];
+		}
+	}
+
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		size_t start, size_t length,
+		std::vector<UInt8> & res_data)
+	{
+		throw Exception("Cannot apply function substringUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	static void constant(const std::string & data,
+		size_t start, size_t length,
+		std::string & res_data)
+	{
+		if (start + length > data.size() + 1)
+			throw Exception("Index out of bound for function substring of constant value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		size_t j = 0;
+		size_t pos = 1;
+		size_t bytes_start = 0;
+		size_t bytes_length = 0;
+		while (j < data.size())
+		{
+			if (pos == start)
+				bytes_start = j + 1;
+
+			if (static_cast<unsigned char>(data[j]) < 0xBF)
+				j += 1;
+			else if (static_cast<unsigned char>(data[j]) < 0xE0)
+				j += 2;
+			else if (static_cast<unsigned char>(data[j]) < 0xF0)
+				j += 3;
+			else
+				j += 1;
+
+			if (pos >= start && pos < start + length)
+				bytes_length = j + 1 - bytes_start;
+			else if (pos >= start + length)
+				break;
+			
+			++pos;
+		}
+
+		if (bytes_start != 0)
+			res_data = data.substr(bytes_start - 1, bytes_length);
 	}
 };
 
@@ -946,6 +1054,7 @@ struct NameReverse			{ static const char * get() { return "reverse"; } };
 struct NameReverseUTF8		{ static const char * get() { return "reverseUTF8"; } };
 struct NameConcat			{ static const char * get() { return "concat"; } };
 struct NameSubstring		{ static const char * get() { return "substring"; } };
+struct NameSubstringUTF8	{ static const char * get() { return "substringUTF8"; } };
 
 typedef FunctionStringToUInt64<LengthImpl, 				NameLength> 			FunctionLength;
 typedef FunctionStringToUInt64<LengthUTF8Impl, 			NameLengthUTF8> 		FunctionLengthUTF8;
@@ -957,6 +1066,7 @@ typedef FunctionStringToString<ReverseImpl,				NameReverse>			FunctionReverse;
 typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
 typedef FunctionStringStringToString<ConcatImpl,		NameConcat>				FunctionConcat;
 typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
+typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		FunctionSubstringUTF8;
 
 
 }
