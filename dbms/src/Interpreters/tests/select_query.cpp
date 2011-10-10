@@ -140,6 +140,7 @@ int main(int argc, char ** argv)
 		(*context.functions)["reverse"]			= new DB::FunctionReverse;
 		(*context.functions)["reverseUTF8"]		= new DB::FunctionReverseUTF8;
 		(*context.functions)["concat"]			= new DB::FunctionConcat;
+		(*context.functions)["substring"]		= new DB::FunctionSubstring;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 

@@ -27,9 +27,9 @@ namespace DB
   * s 				-> UInt64: 	length, lengthUTF8
   * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8, escape, quote, unescape, unquote, trim, trimLeft, trimRight
   * s, s 			-> s: 		concat
-  * s, c1, c2 		-> s:		substring, substringUTF8, pad, padLeft, padUTF8, padLeftUTF8
-  * s, c1 			-> s:		substring, substringUTF8, left, right, leftUTF8, rightUTF8
-  * s, c1, s2		-> s:		insert, insertUTF8
+  * s, c1, c2 		-> s:		substring, substringUTF8
+  * s, c1 			-> s:		left, right, leftUTF8, rightUTF8
+  * s, c1, s2		-> s:		insert, insertUTF8, pad, padLeft, padUTF8, padLeftUTF8
   * s, c1, c2, s2	-> s:		replace, replaceUTF8
   * 
   * Функции поиска строк и регулярных выражений расположены отдельно.
@@ -529,6 +529,67 @@ struct ConcatImpl
 };
 
 
+/** Выделяет подстроку в строке, как последовательности байт.
+  */
+struct SubstringImpl
+{
+	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+		size_t start, size_t length,
+		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	{
+		res_data.reserve(data.size());
+		size_t size = offsets.size();
+		res_offsets.resize(size);
+
+		size_t prev_offset = 0;
+		size_t res_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (start + prev_offset >= offsets[i] + 1)
+			{
+				res_data.resize(res_data.size() + 1);
+				res_data[res_offset] = 0;
+				++res_offset;
+			}
+			else
+			{
+				size_t bytes_to_copy = std::min(offsets[i] - prev_offset - start, length);
+				res_data.resize(res_data.size() + bytes_to_copy + 1);
+				memcpy(&res_data[res_offset], &data[prev_offset + start - 1], bytes_to_copy);
+				res_offset += bytes_to_copy + 1;
+				res_data[res_offset - 1] = 0;
+			}
+			res_offsets[i] = res_offset;
+			prev_offset = offsets[i];
+		}
+	}
+
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		size_t start, size_t length,
+		std::vector<UInt8> & res_data)
+	{
+		if (length == 0 || start + length > n + 1)
+			throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		
+		size_t size = data.size() / n;
+		res_data.resize(length * size);
+
+		for (size_t i = 0; i < size; ++i)
+			memcpy(&res_data[i * length], &data[i * n + start - 1], length);
+	}
+
+	static void constant(const std::string & data,
+		size_t start, size_t length,
+		std::string & res_data)
+	{
+		if (start + length > data.size() + 1)
+			throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		
+		res_data = data.substr(start - 1, length);
+	}
+};
+
+
 template <typename Impl, typename Name>
 class FunctionStringToUInt64 : public IFunction
 {
@@ -590,7 +651,7 @@ public:
 				Impl::vector_fixed_to_vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(), vec_res);
 			}
 		}
-		else if (const ColumnConst<String> * col = dynamic_cast<const ColumnConst<String> *>(&*column))
+		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
 			ResultType res = 0;
 			Impl::constant(col->getData(), res);
@@ -649,7 +710,7 @@ public:
 			Impl::vector_fixed(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(),
 				dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData());
 		}
-		else if (const ColumnConst<String> * col = dynamic_cast<const ColumnConst<String> *>(&*column))
+		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
 			String res;
 			Impl::constant(col->getData(), res);
@@ -796,6 +857,85 @@ public:
 };
 
 
+template <typename Impl, typename Name>
+class FunctionStringNumNumToString : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return Name::get();
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 3)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 3.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (!arguments[1]->isNumeric() || !arguments[2]->isNumeric())
+			throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName()) + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeString;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
+		const ColumnPtr column_start = block.getByPosition(arguments[1]).column;
+		const ColumnPtr column_length = block.getByPosition(arguments[2]).column;
+
+		if (!column_start->isConst() || !column_length->isConst())
+			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
+
+		FieldVisitorConvertToNumber<UInt64> converter;
+		Field start_field = (*block.getByPosition(arguments[1]).column)[0];
+		Field length_field = (*block.getByPosition(arguments[2]).column)[0];
+		UInt64 start = boost::apply_visitor(converter, start_field);
+		UInt64 length = boost::apply_visitor(converter, length_field);
+
+		if (start == 0)
+			throw Exception("Second argument of function substring must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column_string))
+		{
+			ColumnString * col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+			Impl::vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(),
+				start, length,
+				dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData(), col_res->getOffsets());
+		}
+		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column_string))
+		{
+			ColumnFixedString * col_res = new ColumnFixedString(length);
+			block.getByPosition(result).column = col_res;
+			Impl::vector_fixed(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(),
+				start, length,
+				dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData());
+		}
+		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column_string))
+		{
+			String res;
+			Impl::constant(col->getData(), start, length, res);
+			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			block.getByPosition(result).column = col_res;
+		}
+		else
+		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
 struct NameLength 			{ static const char * get() { return "length"; } };
 struct NameLengthUTF8 		{ static const char * get() { return "lengthUTF8"; } };
 struct NameLower 			{ static const char * get() { return "lower"; } };
@@ -805,6 +945,7 @@ struct NameUpperUTF8		{ static const char * get() { return "upperUTF8"; } };
 struct NameReverse			{ static const char * get() { return "reverse"; } };
 struct NameReverseUTF8		{ static const char * get() { return "reverseUTF8"; } };
 struct NameConcat			{ static const char * get() { return "concat"; } };
+struct NameSubstring		{ static const char * get() { return "substring"; } };
 
 typedef FunctionStringToUInt64<LengthImpl, 				NameLength> 			FunctionLength;
 typedef FunctionStringToUInt64<LengthUTF8Impl, 			NameLengthUTF8> 		FunctionLengthUTF8;
@@ -815,6 +956,7 @@ typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toUpper>,	NameU
 typedef FunctionStringToString<ReverseImpl,				NameReverse>			FunctionReverse;
 typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
 typedef FunctionStringStringToString<ConcatImpl,		NameConcat>				FunctionConcat;
+typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
 
 
 }

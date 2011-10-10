@@ -12,26 +12,27 @@
 #include <mysqlxx/mysqlxx.h>
 
 #include <DB/Core/Types.h>
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
 
 
 namespace DB
 {
 
 using Poco::SharedPtr;
-	
-class IAggregateFunction;
 
+class IAggregateFunction;
+	
 /** Типы данных для представления единичного значения произвольного типа в оперативке.
   * Внимание! Предпочтительно вместо единичных значений хранить кусочки столбцов. См. Column.h
   */
-
 typedef boost::make_recursive_variant<
 	Null,
 	UInt64,
 	Int64,
 	Float64,
 	String,
-	SharedPtr<IAggregateFunction>,
+	SharedPtr<IAggregateFunction>,			/// Состояние агрегатной функции
 	std::vector<boost::recursive_variant_>	/// Array, Tuple
 	>::type Field;
 
@@ -142,6 +143,36 @@ public:
 
 		return s.str();
 	}
+};
+
+/** Числовой тип преобразует в указанный. */
+template <typename T>
+class FieldVisitorConvertToNumber : public boost::static_visitor<T>
+{
+public:
+	T operator() (const Null & x) const
+	{
+		throw Exception("Cannot convert NULL to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+	
+	T operator() (const String & x) const
+	{
+		throw Exception("Cannot convert String to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+	
+	T operator() (const Array & x) const
+	{
+		throw Exception("Cannot convert Array to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+
+	T operator() (const SharedPtr<IAggregateFunction> & x) const
+	{
+		throw Exception("Cannot convert AggregateFunctionPtr to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+
+	T operator() (const UInt64 	& x) const { return x; }
+	T operator() (const Int64 	& x) const { return x; }
+	T operator() (const Float64 & x) const { return x; }
 };
 
 
