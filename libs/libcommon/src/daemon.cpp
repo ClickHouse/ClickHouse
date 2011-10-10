@@ -11,7 +11,6 @@
 	      
 #include <iostream>
 #include <Poco/Observer.h>
-#include <Poco/RWLock.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Ext/PatternFormatterWithOwnThreadNumber.h>
@@ -42,6 +41,36 @@ using Poco::FileChannel;
 using Poco::Path;
 using Poco::Message;
 using Poco::Util::AbstractConfiguration;
+
+
+/** Слушает определённый порт по UDP
+  * При получении любой датаграммы, вызывает wakeup.
+  */
+class DatagramListener : public Poco::Runnable
+{
+private:
+	UInt16 port;
+	Logger * log;
+
+public:
+	DatagramListener(UInt16 port_) : port(port_), log(&Logger::get("DatagramListener")) {}
+
+	void run()
+	{
+		Poco::Net::DatagramSocket socket(Poco::Net::SocketAddress("[::]:" + Poco::NumberFormatter::format(port)));
+
+		UInt8 message;
+		while (1)
+		{
+			if (socket.receiveBytes(reinterpret_cast<void *>(&message), sizeof(message)))
+			{
+				LOG_DEBUG(log, "Received datagram. Waking up.");
+				Daemon::instance().wakeup();
+			}
+		}
+	}
+};
+
 
 void Daemon::reloadConfiguration()
 {
@@ -156,6 +185,7 @@ void Daemon::buildLoggers()
 			Logger::get(*it).setLevel(config().getString("logger.levels." + *it, "trace"));
 }
 
+
 void Daemon::initialize(Application& self)
 {
 	/// В случае падения - сохраняем коры
@@ -186,6 +216,24 @@ void Daemon::initialize(Application& self)
 	
 	// Выведем ревизию демона
 	Logger::root().information("Starting daemon with svn revision " + Poco::NumberFormatter::format(SVN_REVISION));
+
+	/// Порт, при получении датаграммы на котором, будить демон.
+	if (config().hasProperty("wakeup_port"))
+	{
+		listener = new DatagramListener(config().getInt("wakeup_port"));
+		listening_thread.start(*listener);
+	}
+
+	/// Список подписчиков на изменение состояния - адресов, на которые посылается датаграмма.
+	if (config().hasProperty("notify"))
+	{
+		AbstractConfiguration::Keys address_keys;
+		config().keys("notify", address_keys);
+
+		if (!address_keys.empty())
+			for (AbstractConfiguration::Keys::iterator it = address_keys.begin(); it != address_keys.end(); ++it)
+				subscribers.push_back(Poco::Net::SocketAddress(config().getString("notify." + *it)));
+	}
 }
 
 void Daemon::uninitialize()
@@ -246,4 +294,16 @@ void Daemon::defineOptions(Poco::Util::OptionSet& _options)
 			.argument ("<file>")
 			.binding("pid")
 			);
+}
+
+
+void Daemon::notifySubscribers()
+{
+	Poco::Net::DatagramSocket socket;
+	UInt8 message = 1;
+	for (Subscribers::iterator it = subscribers.begin(); it != subscribers.end(); ++it)
+	{
+		LOG_TRACE((&Logger::get("Daemon")), "Notifying " << it->toString());
+		socket.sendTo(&message, sizeof(message), *it);
+	}
 }
