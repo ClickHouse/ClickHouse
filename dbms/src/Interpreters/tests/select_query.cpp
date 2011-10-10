@@ -137,6 +137,9 @@ int main(int argc, char ** argv)
 		(*context.functions)["upper"] 			= new DB::FunctionUpper;
 		(*context.functions)["lowerUTF8"]		= new DB::FunctionLowerUTF8;
 		(*context.functions)["upperUTF8"]		= new DB::FunctionUpperUTF8;
+		(*context.functions)["reverse"]			= new DB::FunctionReverse;
+		(*context.functions)["reverseUTF8"]		= new DB::FunctionReverseUTF8;
+		(*context.functions)["concat"]			= new DB::FunctionConcat;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 

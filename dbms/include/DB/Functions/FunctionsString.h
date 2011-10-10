@@ -19,17 +19,16 @@ namespace DB
 
 /** Функции работы со строками:
   *
-  * length, concat, substring, left, right, insert, replace, lower, upper, repeat, reverse,
-  * escape, quote, strcmp, trim, trimLeft, trimRight, pad, padLeft
+  * length, concat, substring, left, right, insert, replace, lower, upper, reverse,
+  * escape, quote, unescape, unquote, trim, trimLeft, trimRight, pad, padLeft
   * lengthUTF8, substringUTF8, leftUTF8, rightUTF8, insertUTF8, replaceUTF8, lowerUTF8, upperUTF8, reverseUTF8,
   * padUTF8, padLeftUTF8.
   *
   * s 				-> UInt64: 	length, lengthUTF8
-  * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8, escape, quote, trim, trimLeft, trimRight
-  * s, s			-> Int8: 	strcmp
+  * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8, escape, quote, unescape, unquote, trim, trimLeft, trimRight
   * s, s 			-> s: 		concat
   * s, c1, c2 		-> s:		substring, substringUTF8, pad, padLeft, padUTF8, padLeftUTF8
-  * s, c1 			-> s:		substring, substringUTF8, left, right, leftUTF8, rightUTF8, repeat
+  * s, c1 			-> s:		substring, substringUTF8, left, right, leftUTF8, rightUTF8
   * s, c1, s2		-> s:		insert, insertUTF8
   * s, c1, c2, s2	-> s:		replace, replaceUTF8
   * 
@@ -211,6 +210,325 @@ private:
 };
 
 
+/** Разворачивает строку в байтах.
+  */
+struct ReverseImpl
+{
+	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	{
+		res_data.resize(data.size());
+		res_offsets = offsets;
+		size_t size = offsets.size();
+
+		size_t prev_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
+				res_data[j] = data[offsets[i] + prev_offset - 2 - j];
+			res_data[offsets[i] - 1] = 0;
+			prev_offset = offsets[i];
+		}
+	}
+
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res_data)
+	{
+		res_data.resize(data.size());
+		size_t size = data.size() / n;
+
+		for (size_t i = 0; i < size; ++i)
+			for (size_t j = i * n; j < (i + 1) * n; ++j)
+				res_data[j] = data[(i * 2 + 1) * n - j - 1];
+	}
+
+	static void constant(const std::string & data, std::string & res_data)
+	{
+		res_data.resize(data.size());
+		for (size_t j = 0; j < data.size(); ++j)
+			res_data[j] = data[data.size() - j - 1];
+	}
+};
+
+
+/** Разворачивает последовательность кодовых точек в строке в кодировке UTF-8.
+  * Результат может не соответствовать ожидаемому, так как модифицирующие кодовые точки (например, диакритика) могут примениться не к тем символам.
+  * Если строка не в кодировке UTF-8, то поведение не определено.
+  */
+struct ReverseUTF8Impl
+{
+	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	{
+		res_data.resize(data.size());
+		res_offsets = offsets;
+		size_t size = offsets.size();
+
+		size_t prev_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t j = prev_offset;
+			while (j < offsets[i] - 1)
+			{
+				if (data[j] < 0xBF)
+				{
+					res_data[offsets[i] + prev_offset - 2 - j] = data[j];
+					j += 1;
+				}
+				else if (data[j] < 0xE0)
+				{
+					memcpy(&res_data[offsets[i] + prev_offset - 2 - j - 1], &data[j], 2);
+					j += 2;
+				}
+				else if (data[j] < 0xF0)
+				{
+					memcpy(&res_data[offsets[i] + prev_offset - 2 - j - 2], &data[j], 3);
+					j += 3;
+				}
+				else
+				{
+					res_data[offsets[i] + prev_offset - 2 - j] = data[j];
+					j += 1;
+				}
+			}
+			
+			res_data[offsets[i] - 1] = 0;
+			prev_offset = offsets[i];
+		}
+	}
+
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res_data)
+	{
+		throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	static void constant(const std::string & data, std::string & res_data)
+	{
+		res_data.resize(data.size());
+
+		size_t j = 0;
+		while (j < data.size())
+		{
+			if (static_cast<unsigned char>(data[j]) < 0xBF)
+			{
+				res_data[data.size() - 1 - j] = data[j];
+				j += 1;
+			}
+			else if (static_cast<unsigned char>(data[j]) < 0xE0)
+			{
+				memcpy(&res_data[data.size() - 1 - j - 1], &data[j], 2);
+				j += 2;
+			}
+			else if (static_cast<unsigned char>(data[j]) < 0xF0)
+			{
+				memcpy(&res_data[data.size() - 1 - j - 2], &data[j], 3);
+				j += 3;
+			}
+			else
+			{
+				res_data[data.size() - 1 - j] = data[j];
+				j += 1;
+			}
+		}
+	}
+};
+
+
+/** Склеивает две строки.
+  */
+struct ConcatImpl
+{
+	static void vector_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+	{
+		size_t size = a_offsets.size();
+		c_data.resize(a_data.size() + b_data.size() - size);
+		c_offsets.resize(size);
+
+		size_t offset = 0;
+		size_t a_offset = 0;
+		size_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			offset += a_offsets[i] - a_offset - 1;
+			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			offset += b_offsets[i] - b_offset;
+			
+			a_offset = a_offsets[i];
+			b_offset = b_offsets[i];
+			
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void vector_fixed_vector(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+	{
+		size_t size = a_offsets.size();
+		c_data.resize(a_data.size() + b_data.size());
+		c_offsets.resize(size);
+
+		size_t offset = 0;
+		size_t a_offset = 0;
+		size_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			offset += a_offsets[i] - a_offset - 1;
+			memcpy(&c_data[offset], &b_data[b_offset], b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			offset += 1;
+
+			a_offset = a_offsets[i];
+			b_offset += b_n;
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void vector_constant(
+		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::string & b,
+		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+	{
+		size_t size = a_offsets.size();
+		c_data.resize(a_data.size() + b.size() * size);
+		c_offsets = a_offsets;
+
+		for (size_t i = 0; i < size; ++i)
+			c_offsets[i] += b.size();
+
+		size_t offset = 0;
+		size_t a_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			offset += a_offsets[i] - a_offset - 1;
+			memcpy(&c_data[offset], b.data(), b.size() + 1);
+			offset += b.size() + 1;
+
+			a_offset = a_offsets[i];
+		}
+	}
+
+	static void fixed_vector_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+	{
+		size_t size = b_offsets.size();
+		c_data.resize(a_data.size() + b_data.size());
+		c_offsets.resize(size);
+
+		size_t offset = 0;
+		size_t a_offset = 0;
+		size_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			offset += b_offsets[i] - b_offset;
+
+			a_offset = a_n;
+			b_offset += b_offsets[i];
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void fixed_vector_fixed_vector(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c_data)
+	{
+		size_t size = a_data.size() / a_n;
+		c_data.resize(a_data.size() + b_data.size());
+		size_t c_n = a_n + b_n;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[i * c_n], &a_data[i * a_n], a_n);
+			memcpy(&c_data[i * c_n + a_n], &b_data[i * b_n], b_n);
+		}
+	}
+
+	static void fixed_vector_constant(
+		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::string & b,
+		std::vector<UInt8> & c_data)
+	{
+		size_t size = a_data.size() / a_n;
+		size_t b_n = b.size();
+		size_t c_n = a_n + b_n;
+		c_data.resize(a_data.size() + size * b_n);
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[i * c_n], &a_data[i * a_n], a_n);
+			memcpy(&c_data[i * c_n + a_n], b.data(), b_n);
+		}
+	}
+
+	static void constant_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+	{
+		size_t size = b_offsets.size();
+		c_data.resize(b_data.size() + a.size() * size);
+		c_offsets = b_offsets;
+
+		for (size_t i = 0; i < size; ++i)
+			c_offsets[i] += a.size();
+
+		size_t offset = 0;
+		size_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], a.data(), a.size());
+			offset += a.size();
+			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			offset += b_offsets[i] - b_offset;
+
+			b_offset = b_offsets[i];
+		}
+	}
+
+	static void constant_fixed_vector(
+		const std::string & a,
+		const std::vector<UInt8> & b_data, size_t b_n,
+		std::vector<UInt8> & c_data)
+	{
+		size_t size = b_data.size() / b_n;
+		size_t a_n = a.size();
+		size_t c_n = a_n + b_n;
+		c_data.resize(size * a_n + b_data.size());
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[i * c_n], a.data(), a_n);
+			memcpy(&c_data[i * c_n + a_n], &b_data[i * b_n], b_n);
+		}
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		std::string & c)
+	{
+		c = a + b;
+	}
+};
+
+
 template <typename Impl, typename Name>
 class FunctionStringToUInt64 : public IFunction
 {
@@ -346,12 +664,147 @@ public:
 };
 
 
+template <typename Impl, typename Name>
+class FunctionStringStringToString : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return Name::get();
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[1]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[1]))
+			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeString;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		IColumn * c0 = &*block.getByPosition(arguments[0]).column;
+		IColumn * c1 = &*block.getByPosition(arguments[1]).column;
+
+		ColumnString * c0_string = dynamic_cast<ColumnString *>(c0);
+		ColumnString * c1_string = dynamic_cast<ColumnString *>(c1);
+		ColumnFixedString * c0_fixed_string = dynamic_cast<ColumnFixedString *>(c0);
+		ColumnFixedString * c1_fixed_string = dynamic_cast<ColumnFixedString *>(c1);
+		ColumnConstString * c0_const = dynamic_cast<ColumnConstString *>(c0);
+		ColumnConstString * c1_const = dynamic_cast<ColumnConstString *>(c1);
+
+		/// Результат - const string
+		if (c0_const && c1_const)
+		{
+			ColumnConstString * c_res = new ColumnConstString(c0_const->size(), "");
+			block.getByPosition(result).column = c_res;
+			Impl::constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
+		}
+		else
+		{
+			/// Результат - fixed string
+			if ((c0_fixed_string || c0_const) && (c1_fixed_string || c1_const))
+			{
+				if (c0_fixed_string && c1_fixed_string)
+				{
+					ColumnFixedString * c_res = new ColumnFixedString(c0_fixed_string->getN() + c1_fixed_string->getN());
+					block.getByPosition(result).column = c_res;
+					ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+					
+					Impl::fixed_vector_fixed_vector(
+						dynamic_cast<ColumnUInt8 &>(c0_fixed_string->getData()).getData(), c0_fixed_string->getN(),
+						dynamic_cast<ColumnUInt8 &>(c1_fixed_string->getData()).getData(), c1_fixed_string->getN(),
+						vec_res);
+				}
+				else if (c0_fixed_string && c1_const)
+				{
+					ColumnFixedString * c_res = new ColumnFixedString(c0_fixed_string->getN() + c1_const->getData().size());
+					block.getByPosition(result).column = c_res;
+					ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+					
+					Impl::fixed_vector_constant(
+						dynamic_cast<ColumnUInt8 &>(c0_fixed_string->getData()).getData(), c0_fixed_string->getN(),
+						c1_const->getData(),
+						vec_res);
+				}
+				else if (c0_const && c1_fixed_string)
+				{
+					ColumnFixedString * c_res = new ColumnFixedString(c1_fixed_string->getN() + c0_const->getData().size());
+					block.getByPosition(result).column = c_res;
+					ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+					
+					Impl::constant_fixed_vector(
+						c0_const->getData(),
+						dynamic_cast<ColumnUInt8 &>(c1_fixed_string->getData()).getData(), c1_fixed_string->getN(),
+						vec_res);
+				}
+			}
+			else /// Результат - string
+			{
+				ColumnString * c_res = new ColumnString;
+				block.getByPosition(result).column = c_res;
+				ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+				ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
+				
+				if (c0_string && c1_string)
+					Impl::vector_vector(
+						dynamic_cast<ColumnUInt8 &>(c0_string->getData()).getData(), c0_string->getOffsets(),
+						dynamic_cast<ColumnUInt8 &>(c1_string->getData()).getData(), c1_string->getOffsets(),
+						vec_res, offsets_res);
+				else if (c0_string && c1_fixed_string)
+					Impl::vector_fixed_vector(
+						dynamic_cast<ColumnUInt8 &>(c0_string->getData()).getData(), c0_string->getOffsets(),
+						dynamic_cast<ColumnUInt8 &>(c1_fixed_string->getData()).getData(), c1_fixed_string->getN(),
+						vec_res, offsets_res);
+				else if (c0_string && c1_const)
+					Impl::vector_constant(
+						dynamic_cast<ColumnUInt8 &>(c0_string->getData()).getData(), c0_string->getOffsets(),
+						c1_const->getData(),
+						vec_res, offsets_res);
+				else if (c0_fixed_string && c1_string)
+					Impl::fixed_vector_vector(
+						dynamic_cast<ColumnUInt8 &>(c0_fixed_string->getData()).getData(), c0_fixed_string->getN(),
+						dynamic_cast<ColumnUInt8 &>(c1_string->getData()).getData(), c1_string->getOffsets(),
+						vec_res, offsets_res);
+				else if (c0_const && c1_string)
+					Impl::constant_vector(
+						c0_const->getData(),
+						dynamic_cast<ColumnUInt8 &>(c1_string->getData()).getData(), c1_string->getOffsets(),
+						vec_res, offsets_res);
+				else
+					throw Exception("Illegal columns "
+						+ block.getByPosition(arguments[0]).column->getName() + " and "
+						+ block.getByPosition(arguments[1]).column->getName()
+						+ " of arguments of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+		}
+	}
+};
+
+
 struct NameLength 			{ static const char * get() { return "length"; } };
 struct NameLengthUTF8 		{ static const char * get() { return "lengthUTF8"; } };
 struct NameLower 			{ static const char * get() { return "lower"; } };
 struct NameUpper 			{ static const char * get() { return "upper"; } };
 struct NameLowerUTF8		{ static const char * get() { return "lowerUTF8"; } };
 struct NameUpperUTF8		{ static const char * get() { return "upperUTF8"; } };
+struct NameReverse			{ static const char * get() { return "reverse"; } };
+struct NameReverseUTF8		{ static const char * get() { return "reverseUTF8"; } };
+struct NameConcat			{ static const char * get() { return "concat"; } };
 
 typedef FunctionStringToUInt64<LengthImpl, 				NameLength> 			FunctionLength;
 typedef FunctionStringToUInt64<LengthUTF8Impl, 			NameLengthUTF8> 		FunctionLengthUTF8;
@@ -359,6 +812,9 @@ typedef FunctionStringToString<LowerUpperImpl<tolower>, NameLower>	 			FunctionL
 typedef FunctionStringToString<LowerUpperImpl<toupper>, NameUpper>	 			FunctionUpper;
 typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toLower>,	NameLowerUTF8>	FunctionLowerUTF8;
 typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toUpper>,	NameUpperUTF8>	FunctionUpperUTF8;
+typedef FunctionStringToString<ReverseImpl,				NameReverse>			FunctionReverse;
+typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
+typedef FunctionStringStringToString<ConcatImpl,		NameConcat>				FunctionConcat;
 
 
 }

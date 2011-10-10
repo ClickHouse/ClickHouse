@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_WRITEHELPERS_H
-#define DBMS_COMMON_WRITEHELPERS_H
+#pragma once
 
 #include <cstring>
 #include <cstdio>
@@ -204,5 +203,3 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 
 
 }
-
-#endif
