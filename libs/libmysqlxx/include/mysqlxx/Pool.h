@@ -28,6 +28,13 @@
 namespace mysqlxx
 {
 
+/** Устанавливаем при использовании соединения из другого потока.
+  * Это требуется, чтобы корректно вызвать функции my_thread_init() и my_thread_end(),
+  *  как требует библиотека libmysqlclient_r или новая библиотека libmysqlclient (MySQL 5.5+).
+  */
+static __thread bool using_connection_from_another_thread = false;
+	
+
 /** Пул соединений с MySQL.
   * Этот класс имеет мало отношения в mysqlxx и сделан не в стиле библиотеки. (взят из старого кода)
   * Использование:
@@ -61,24 +68,22 @@ public:
 		Entry(const Entry & src)
 			: data(src.data), pool(src.pool)
 		{
-			if (data)
-				++data->ref_count;
+			incrementRefCount();
 		}
 
 		~Entry()
 		{
-			if (data)
-				--data->ref_count;
+			decrementRefCount();
 		}
 
 		Entry & operator= (const Entry & src)
 		{
 			pool = src.pool;
 			if (data)
-				--data->ref_count;
+				decrementRefCount();
 			data = src.data;
 			if (data)
-				++data->ref_count;
+				incrementRefCount();
 			return * this;
 		}
 
@@ -122,8 +127,7 @@ public:
 		Entry(Pool::Connection * conn, Pool * p)
 			: data(conn), pool(p)
 		{
-			if (data)
-				data->ref_count++;
+			incrementRefCount();
 		}
 
 		friend class Pool;
@@ -162,6 +166,36 @@ public:
 		bool tryForceConnected() const
 		{
 			return data->conn.ping();
+		}
+
+
+		void incrementRefCount()
+		{
+			if (!data)
+				return;
+			++data->ref_count;
+			if (mysqlxx::connections == 0)
+			{
+				using_connection_from_another_thread = true;
+				++mysqlxx::connections;
+				my_thread_init();
+			}
+		}
+
+		void decrementRefCount()
+		{
+			if (!data)
+				return;
+			--data->ref_count;
+			if (using_connection_from_another_thread)
+			{
+				--mysqlxx::connections;
+				if (mysqlxx::connections == 0)
+				{
+					using_connection_from_another_thread = false;
+					my_thread_end();
+				}
+			}
 		}
 	};
 

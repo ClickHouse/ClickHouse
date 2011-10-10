@@ -15,6 +15,11 @@
 namespace mysqlxx
 {
 
+/** Считаем количество соединений в потоке, чтобы после уничтожения последнего вызвать my_thread_end(),
+  *  как требует библиотека libmysqlclient_r или новая библиотека libmysqlclient (MySQL 5.5+).
+  */
+static __thread unsigned connections = 0;
+
 
 /** Для корректной инициализации и деинициализации MySQL библиотеки.
   * Обеспечивает единственный и thread-safe вызов mysql_library_init().
