@@ -6,6 +6,9 @@ namespace mysqlxx
 {
 
 
+__thread unsigned connections = 0;
+
+
 Connection::Connection()
 {
 	is_connected = false;
