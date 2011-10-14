@@ -21,42 +21,39 @@ namespace mysqlxx
   *
   * packed - для memcmp (из-за того, что m_year - 2 байта, little endian, работает корректно только до 2047 года)
   */
-class Date
+class __attribute__ ((__packed__)) Date
 {
 private:
-	struct __attribute__ ((__packed__)) {
-		
-		unsigned short m_year;
-		unsigned char m_month;
-		unsigned char m_day;
-	} data;
+	unsigned short m_year;
+	unsigned char m_month;
+	unsigned char m_day;
 
 	void init(time_t time)
 	{
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 		const Yandex::DateLUT::Values & values = date_lut.getValues(time);
 
-		data.m_year = values.year;
-		data.m_month = values.month;
-		data.m_day = values.day_of_month;
+		m_year = values.year;
+		m_month = values.month;
+		m_day = values.day_of_month;
 	}
 
 	void init(const char * s, size_t length)
 	{
 		if(length < 8)
 			throw Exception("Cannot parse Date: " + std::string(s, length));
-		data.m_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+		m_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
 		if(s[4] == '-')
 		{
 			if(length < 10)
 				throw Exception("Cannot parse Date: " + std::string(s, length));
-			data.m_month = (s[5] - '0') * 10 + (s[6] - '0');
-			data.m_day = (s[8] - '0') * 10 + (s[9] - '0');
+			m_month = (s[5] - '0') * 10 + (s[6] - '0');
+			m_day = (s[8] - '0') * 10 + (s[9] - '0');
 		}
 		else
 		{
-			data.m_month = (s[4] -'0') * 10 + (s[5] -'0');
-			data.m_day = (s[6] - '0')* 10 + (s[7] -'0');
+			m_month = (s[4] -'0') * 10 + (s[5] -'0');
+			m_day = (s[6] - '0')* 10 + (s[7] -'0');
 		}
 	}
 
@@ -67,10 +64,8 @@ public:
 	}
 
 	Date(unsigned short year_, unsigned char month_, unsigned char day_)
+		: m_year(year_), m_month(month_), m_day(day_)
 	{
-		data.m_year = year_;
-		data.m_month = month_;
-		data.m_day = day_;
 	}
 
 	explicit Date(const std::string & s)
@@ -95,9 +90,9 @@ public:
 
 	Date & operator= (const Date & x)
 	{
-		data.m_year = x.data.m_year;
-		data.m_month = x.data.m_month;
-		data.m_day = x.data.m_day;
+		m_year = x.m_year;
+		m_month = x.m_month;
+		m_day = x.m_day;
 
 		return *this;
 	}
@@ -110,12 +105,12 @@ public:
 
 	operator time_t() const
 	{
-		return Yandex::DateLUTSingleton::instance().makeDate(data.m_year, data.m_month, data.m_day);
+		return Yandex::DateLUTSingleton::instance().makeDate(m_year, m_month, m_day);
 	}
 
 	Yandex::DayNum_t getDayNum() const
 	{
-		return Yandex::DateLUTSingleton::instance().makeDayNum(data.m_year, data.m_month, data.m_day);
+		return Yandex::DateLUTSingleton::instance().makeDayNum(m_year, m_month, m_day);
 	}
 
 	operator Yandex::DayNum_t() const
@@ -123,47 +118,37 @@ public:
 		return getDayNum();
 	}
 
-	unsigned short year() const { return data.m_year; }
-	unsigned char month() const { return data.m_month; }
-	unsigned char day() const { return data.m_day; }
+	unsigned short year() const { return m_year; }
+	unsigned char month() const { return m_month; }
+	unsigned char day() const { return m_day; }
 
-	void year(unsigned short x) { data.m_year = x; }
-	void month(unsigned char x) { data.m_month = x; }
-	void day(unsigned char x) { data.m_day = x; }
+	void year(unsigned short x) { m_year = x; }
+	void month(unsigned char x) { m_month = x; }
+	void day(unsigned char x) { m_day = x; }
 
 	bool operator< (const Date & other) const
 	{
-		if(memcmp( &data, &other.data, sizeof(data)) < 0)
-			return true;
-		return false;
+		return 0 > memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator> (const Date & other) const
 	{
-		if(memcmp( &data, &other.data, sizeof(data)) > 0)
-			return true;
-		return false;
+		return 0 < memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator<= (const Date & other) const
 	{
-		if(memcmp(&data, &other.data, sizeof(data)) <= 0)
-			return true;
-		return false;
+		return 0 >= memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator>= (const Date & other) const
 	{
-		if(memcmp(&data, &other.data, sizeof(data)) >= 0)
-			return true;
-		return false;
+		return 0 <= memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator== (const Date & other) const
 	{
-		if(memcmp(&data, &other.data, sizeof(data)) == 0)
-			return true;
-		return false;
+		return 0 == memcmp(this, &other, sizeof(*this));
 	}
 
 	bool operator!= (const Date & other) const
