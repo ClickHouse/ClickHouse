@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_WRITEBUFFER_FROM_OSTREAM_H
-#define DBMS_COMMON_WRITEBUFFER_FROM_OSTREAM_H
+#pragma once
 
 #include <iostream>
 
@@ -40,5 +39,3 @@ public:
 };
 
 }
-
-#endif

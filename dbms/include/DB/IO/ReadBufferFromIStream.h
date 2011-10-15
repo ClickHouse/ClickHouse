@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_READBUFFER_FROM_ISTREAM_H
-#define DBMS_COMMON_READBUFFER_FROM_ISTREAM_H
+#pragma once
 
 #include <iostream>
 
@@ -41,5 +40,3 @@ public:
 };
 
 }
-
-#endif

@@ -22,6 +22,7 @@
 #include <DB/Functions/FunctionsComparison.h>
 #include <DB/Functions/FunctionsLogical.h>
 #include <DB/Functions/FunctionsString.h>
+#include <DB/Functions/FunctionsConversion.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -36,6 +37,9 @@ int main(int argc, char ** argv)
 {
 	try
 	{
+		/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
+		Yandex::DateLUTSingleton::instance();
+		
 		typedef std::pair<std::string, SharedPtr<DB::IDataType> > NameAndTypePair;
 		typedef std::list<NameAndTypePair> NamesAndTypesList;
 
@@ -142,6 +146,21 @@ int main(int argc, char ** argv)
 		(*context.functions)["concat"]			= new DB::FunctionConcat;
 		(*context.functions)["substring"]		= new DB::FunctionSubstring;
 		(*context.functions)["substringUTF8"]	= new DB::FunctionSubstringUTF8;
+
+		(*context.functions)["toUInt8"]			= new DB::FunctionToUInt8;
+		(*context.functions)["toUInt16"]		= new DB::FunctionToUInt16;
+		(*context.functions)["toUInt32"]		= new DB::FunctionToUInt32;
+		(*context.functions)["toUInt64"]		= new DB::FunctionToUInt64;
+		(*context.functions)["toInt8"]			= new DB::FunctionToInt8;
+		(*context.functions)["toInt16"]			= new DB::FunctionToInt16;
+		(*context.functions)["toInt32"]			= new DB::FunctionToInt32;
+		(*context.functions)["toInt64"]			= new DB::FunctionToInt64;
+		(*context.functions)["toFloat32"]		= new DB::FunctionToFloat32;
+		(*context.functions)["toFloat64"]		= new DB::FunctionToFloat64;
+		(*context.functions)["toVarUInt"]		= new DB::FunctionToVarUInt;
+		(*context.functions)["toVarInt"]		= new DB::FunctionToVarInt;
+		(*context.functions)["toDate"]			= new DB::FunctionToDate;
+		(*context.functions)["toDateTime"]		= new DB::FunctionToDateTime;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
