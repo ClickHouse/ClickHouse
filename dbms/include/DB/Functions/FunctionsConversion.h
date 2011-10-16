@@ -1,11 +1,5 @@
 #pragma once
 
-#include <tr1/type_traits>
-
-#include <Poco/NumberFormatter.h>
-#include <Poco/UTF8Encoding.h>
-#include <Poco/Unicode.h>
-
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypesNumberVariable.h>

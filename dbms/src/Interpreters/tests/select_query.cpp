@@ -23,6 +23,7 @@
 #include <DB/Functions/FunctionsLogical.h>
 #include <DB/Functions/FunctionsString.h>
 #include <DB/Functions/FunctionsConversion.h>
+#include <DB/Functions/FunctionsDateTime.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -162,6 +163,17 @@ int main(int argc, char ** argv)
 		(*context.functions)["toDate"]			= new DB::FunctionToDate;
 		(*context.functions)["toDateTime"]		= new DB::FunctionToDateTime;
 		(*context.functions)["toString"]		= new DB::FunctionToString;
+
+		(*context.functions)["toYear"]			= new DB::FunctionToYear;
+		(*context.functions)["toMonth"]			= new DB::FunctionToMonth;
+		(*context.functions)["toDayOfMonth"]	= new DB::FunctionToDayOfMonth;
+		(*context.functions)["toDayOfWeek"]		= new DB::FunctionToDayOfWeek;
+		(*context.functions)["toHour"]			= new DB::FunctionToHour;
+		(*context.functions)["toMinute"]		= new DB::FunctionToMinute;
+		(*context.functions)["toSecond"]		= new DB::FunctionToSecond;
+		(*context.functions)["toMonday"]		= new DB::FunctionToMonday;
+		(*context.functions)["toStartOfMonth"]	= new DB::FunctionToStartOfMonth;
+		(*context.functions)["toTime"]			= new DB::FunctionToTime;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
