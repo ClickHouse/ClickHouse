@@ -24,6 +24,7 @@
 #include <DB/Functions/FunctionsString.h>
 #include <DB/Functions/FunctionsConversion.h>
 #include <DB/Functions/FunctionsDateTime.h>
+#include <DB/Functions/FunctionsStringSearch.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -174,6 +175,8 @@ int main(int argc, char ** argv)
 		(*context.functions)["toMonday"]		= new DB::FunctionToMonday;
 		(*context.functions)["toStartOfMonth"]	= new DB::FunctionToStartOfMonth;
 		(*context.functions)["toTime"]			= new DB::FunctionToTime;
+
+		(*context.functions)["position"]		= new DB::FunctionPosition;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
