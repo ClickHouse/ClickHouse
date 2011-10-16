@@ -161,6 +161,7 @@ int main(int argc, char ** argv)
 		(*context.functions)["toVarInt"]		= new DB::FunctionToVarInt;
 		(*context.functions)["toDate"]			= new DB::FunctionToDate;
 		(*context.functions)["toDateTime"]		= new DB::FunctionToDateTime;
+		(*context.functions)["toString"]		= new DB::FunctionToString;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
