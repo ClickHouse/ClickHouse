@@ -25,8 +25,8 @@ namespace DB
 /** Функции преобразования типов.
   *
   * Бывают двух видов:
-  * - toType - преобразование "естественным образом";
-  * - reinterpretAsType - преобразования чисел и дат в строки, содержащие тот же набор байт в машинном представлении, и наоборот.
+  * - toType - преобразование "естественным образом"; TODO: преобразования из/в FixedString.
+  * - TODO: reinterpretAsType - преобразования чисел и дат в строки, содержащие тот же набор байт в машинном представлении, и наоборот.
   */
 
 
@@ -141,8 +141,12 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 };
 
 
-/** Преобразование чисел в строки: через форматирование.
+/** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.
   */
+template <typename DataType> void formatImpl(typename DataType::FieldType x, WriteBuffer & wb) { writeText(x, wb); }
+template <> inline void formatImpl<DataTypeDate>(DataTypeDate::FieldType x, WriteBuffer & wb) { writeDateText(Yandex::DayNum_t(x), wb); }
+template <> inline void formatImpl<DataTypeDateTime>(DataTypeDateTime::FieldType x, WriteBuffer & wb) { writeDateTimeText(x, wb); }
+
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, DataTypeString, Name>
 {
@@ -166,7 +170,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				writeText<FromFieldType>(vec_from[i], write_buffer);
+				formatImpl<FromDataType>(vec_from[i], write_buffer);
 				writeChar(0, write_buffer);
 				offsets_to[i] = write_buffer.count();
 			}
@@ -176,7 +180,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 		{
 			std::vector<char> buf;
 			WriteBufferFromVector<char> write_buffer(buf);
-			writeText<FromFieldType>(col_from->getData(), write_buffer);
+			formatImpl<FromDataType>(col_from->getData(), write_buffer);
 			block.getByPosition(result).column = new ColumnConstString(col_from->size(), std::string(&buf[0], write_buffer.count()));
 		}
 		else
@@ -187,8 +191,24 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 };
 
 
-/** Преобразование строки в числа: через парсинг.
+/** Преобразование строк в числа, даты, даты-с-временем: через парсинг.
   */
+template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & wb) { readText(x, wb); }
+
+template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & wb)
+{
+	Yandex::DayNum_t tmp(0);
+	readDateText(tmp, wb);
+	x = tmp;
+}
+
+template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & wb)
+{
+	time_t tmp = 0;
+	readDateTimeText(tmp, wb);
+	x = tmp;
+}
+
 template <typename ToDataType, typename Name>
 struct ConvertImpl<DataTypeString, ToDataType, Name>
 {
@@ -196,14 +216,51 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		if (const ColumnString * col_from = dynamic_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			block.getByPosition(result).column = col_to;
+
+			const ColumnUInt8::Container_t & data_from = dynamic_cast<const ColumnUInt8 &>(col_from->getData()).getData();
+			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+			size_t size = col_from->size();
+			vec_to.resize(size);
+
+			ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&data_from[0])), data_from.size(), 0);
+
+			char zero = 0;
+			for (size_t i = 0; i < size; ++i)
+			{
+				parseImpl<ToDataType>(vec_to[i], read_buffer);
+				readChar(zero, read_buffer);
+				if (zero != 0)
+					throw Exception("Cannot parse number from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+			}
+		}
+		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			const String & s = col_from->getData();
+			ReadBuffer read_buffer(const_cast<char *>(s.data()), s.size(), 0);
+			ToFieldType x = 0;
+			parseImpl<ToDataType>(x, read_buffer);
+			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), x);
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + Name::get(),
+				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 
+
+/** Если типы совпадают - просто скопируем ссылку на столбец.
+  */
 template <typename Name>
 struct ConvertImpl<DataTypeString, DataTypeString, Name>
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
 	}
 };
 

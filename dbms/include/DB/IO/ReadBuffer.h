@@ -15,12 +15,25 @@ namespace DB
   * В отличие от std::istream, предоставляет доступ к внутреннему буферу,
   *  а также позволяет вручную управлять позицией внутри буфера.
   *
+  * Замечание! Используется char *, а не const char * (для того, чтобы можно было вынести общий код в BufferBase).
+  * Это вызывает неудобства - например, при использовании ReadBuffer для чтения из куска памяти const char *,
+  *  приходится использовать const_cast.
+  *
   * Наследники должны реализовать метод nextImpl().
   */
 class ReadBuffer : public BufferBase
 {
 public:
+	/** Создаёт буфер и устанавливает курсор на его конец,
+	  *  чтобы при первой попытке чтения вызвалась функция next() для загрузки в буфер новой порции данных.
+	  */
 	ReadBuffer(Position ptr, size_t size) : BufferBase(ptr, size, size) {}
+
+	/** Используется, если буфер уже заполнен данными, которые можно читать.
+	  *  (в этом случае, передайте 0 в качестве offset)
+	  */
+	ReadBuffer(Position ptr, size_t size, size_t offset) : BufferBase(ptr, size, offset) {}
+
 	void set(Position ptr, size_t size) { BufferBase::set(ptr, size, size); }
 
 	/** прочитать следующие данные и заполнить ими буфер; переместить позицию в начало;
