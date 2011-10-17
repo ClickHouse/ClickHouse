@@ -117,71 +117,74 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 
-		(*context.functions)["plus"] 			= new DB::FunctionPlus;
-		(*context.functions)["minus"] 			= new DB::FunctionMinus;
-		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
-		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
-		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
-		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
-		(*context.functions)["negate"] 			= new DB::FunctionNegate;
+		boost::assign::insert(*context.functions)
+			("plus",			new DB::FunctionPlus)
+			("minus",			new DB::FunctionMinus)
+			("multiply",		new DB::FunctionMultiply)
+			("divide",			new DB::FunctionDivideFloating)
+			("intDiv",			new DB::FunctionDivideIntegral)
+			("modulo",			new DB::FunctionModulo)
+			("negate",			new DB::FunctionNegate)
 
-		(*context.functions)["equals"] 			= new DB::FunctionEquals;
-		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
-		(*context.functions)["less"] 			= new DB::FunctionLess;
-		(*context.functions)["greater"] 		= new DB::FunctionGreater;
-		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
-		(*context.functions)["greaterOrEquals"] = new DB::FunctionGreaterOrEquals;
+			("equals",			new DB::FunctionEquals)
+			("notEquals",		new DB::FunctionNotEquals)
+			("less",			new DB::FunctionLess)
+			("greater",			new DB::FunctionGreater)
+			("lessOrEquals",	new DB::FunctionLessOrEquals)
+			("greaterOrEquals",	new DB::FunctionGreaterOrEquals)
 
-		(*context.functions)["and"] 			= new DB::FunctionAnd;
-		(*context.functions)["or"] 				= new DB::FunctionOr;
-		(*context.functions)["xor"] 			= new DB::FunctionXor;
-		(*context.functions)["not"] 			= new DB::FunctionNot;
+			("and",				new DB::FunctionAnd)
+			("or",				new DB::FunctionOr)
+			("xor",				new DB::FunctionXor)
+			("not",				new DB::FunctionNot)
 
-		(*context.functions)["length"] 			= new DB::FunctionLength;
-		(*context.functions)["lengthUTF8"] 		= new DB::FunctionLengthUTF8;
-		(*context.functions)["lower"] 			= new DB::FunctionLower;
-		(*context.functions)["upper"] 			= new DB::FunctionUpper;
-		(*context.functions)["lowerUTF8"]		= new DB::FunctionLowerUTF8;
-		(*context.functions)["upperUTF8"]		= new DB::FunctionUpperUTF8;
-		(*context.functions)["reverse"]			= new DB::FunctionReverse;
-		(*context.functions)["reverseUTF8"]		= new DB::FunctionReverseUTF8;
-		(*context.functions)["concat"]			= new DB::FunctionConcat;
-		(*context.functions)["substring"]		= new DB::FunctionSubstring;
-		(*context.functions)["substringUTF8"]	= new DB::FunctionSubstringUTF8;
+			("length",			new DB::FunctionLength)
+			("lengthUTF8",		new DB::FunctionLengthUTF8)
+			("lower",			new DB::FunctionLower)
+			("upper",			new DB::FunctionUpper)
+			("lowerUTF8",		new DB::FunctionLowerUTF8)
+			("upperUTF8",		new DB::FunctionUpperUTF8)
+			("reverse",			new DB::FunctionReverse)
+			("reverseUTF8",		new DB::FunctionReverseUTF8)
+			("concat",			new DB::FunctionConcat)
+			("substring",		new DB::FunctionSubstring)
+			("substringUTF8",	new DB::FunctionSubstringUTF8)
 
-		(*context.functions)["toUInt8"]			= new DB::FunctionToUInt8;
-		(*context.functions)["toUInt16"]		= new DB::FunctionToUInt16;
-		(*context.functions)["toUInt32"]		= new DB::FunctionToUInt32;
-		(*context.functions)["toUInt64"]		= new DB::FunctionToUInt64;
-		(*context.functions)["toInt8"]			= new DB::FunctionToInt8;
-		(*context.functions)["toInt16"]			= new DB::FunctionToInt16;
-		(*context.functions)["toInt32"]			= new DB::FunctionToInt32;
-		(*context.functions)["toInt64"]			= new DB::FunctionToInt64;
-		(*context.functions)["toFloat32"]		= new DB::FunctionToFloat32;
-		(*context.functions)["toFloat64"]		= new DB::FunctionToFloat64;
-		(*context.functions)["toVarUInt"]		= new DB::FunctionToVarUInt;
-		(*context.functions)["toVarInt"]		= new DB::FunctionToVarInt;
-		(*context.functions)["toDate"]			= new DB::FunctionToDate;
-		(*context.functions)["toDateTime"]		= new DB::FunctionToDateTime;
-		(*context.functions)["toString"]		= new DB::FunctionToString;
+			("toUInt8",			new DB::FunctionToUInt8)
+			("toUInt16",		new DB::FunctionToUInt16)
+			("toUInt32",		new DB::FunctionToUInt32)
+			("toUInt64",		new DB::FunctionToUInt64)
+			("toInt8",			new DB::FunctionToInt8)
+			("toInt16",			new DB::FunctionToInt16)
+			("toInt32",			new DB::FunctionToInt32)
+			("toInt64",			new DB::FunctionToInt64)
+			("toFloat32",		new DB::FunctionToFloat32)
+			("toFloat64",		new DB::FunctionToFloat64)
+			("toVarUInt",		new DB::FunctionToVarUInt)
+			("toVarInt",		new DB::FunctionToVarInt)
+			("toDate",			new DB::FunctionToDate)
+			("toDateTime",		new DB::FunctionToDateTime)
+			("toString",		new DB::FunctionToString)
 
-		(*context.functions)["toYear"]			= new DB::FunctionToYear;
-		(*context.functions)["toMonth"]			= new DB::FunctionToMonth;
-		(*context.functions)["toDayOfMonth"]	= new DB::FunctionToDayOfMonth;
-		(*context.functions)["toDayOfWeek"]		= new DB::FunctionToDayOfWeek;
-		(*context.functions)["toHour"]			= new DB::FunctionToHour;
-		(*context.functions)["toMinute"]		= new DB::FunctionToMinute;
-		(*context.functions)["toSecond"]		= new DB::FunctionToSecond;
-		(*context.functions)["toMonday"]		= new DB::FunctionToMonday;
-		(*context.functions)["toStartOfMonth"]	= new DB::FunctionToStartOfMonth;
-		(*context.functions)["toTime"]			= new DB::FunctionToTime;
+			("toYear",			new DB::FunctionToYear)
+			("toMonth",			new DB::FunctionToMonth)
+			("toDayOfMonth",	new DB::FunctionToDayOfMonth)
+			("toDayOfWeek",		new DB::FunctionToDayOfWeek)
+			("toHour",			new DB::FunctionToHour)
+			("toMinute",		new DB::FunctionToMinute)
+			("toSecond",		new DB::FunctionToSecond)
+			("toMonday",		new DB::FunctionToMonday)
+			("toStartOfMonth",	new DB::FunctionToStartOfMonth)
+			("toTime",			new DB::FunctionToTime)
 
-		(*context.functions)["position"]		= new DB::FunctionPosition;
+			("position",		new DB::FunctionPosition)
+		;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 
 		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./", "hits", names_and_types_map, ".bin");
 		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./", "hits2", names_and_types_map, ".bin");
+		(*context.databases)["default"]["hits3"] 	= new DB::StorageLog("./", "hits3", names_and_types_map, ".bin");
 		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
 		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");
 		context.current_database = "default";

@@ -57,8 +57,8 @@ struct PositionImpl
 			else
 				res[i] = 0;
 
+			pos = begin + offsets[i];
 			++i;
-			pos += needle.size() + 1;
 		}
 
 		for (size_t size = offsets.size(); i < size; ++i)
