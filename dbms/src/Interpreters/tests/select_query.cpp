@@ -178,6 +178,10 @@ int main(int argc, char ** argv)
 			("toTime",			new DB::FunctionToTime)
 
 			("position",		new DB::FunctionPosition)
+			("positionUTF8",	new DB::FunctionPositionUTF8)
+			("match",			new DB::FunctionMatch)
+			("like",			new DB::FunctionLike)
+			("notLike",			new DB::FunctionNotLike)
 		;
 
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;

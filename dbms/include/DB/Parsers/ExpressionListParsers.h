@@ -186,14 +186,16 @@ public:
 	ParserComparisonExpression()
 		: elem_parser(new ParserAdditiveExpression),
 		operator_parser(boost::assign::map_list_of
-				("==", 	"equals")
-				("!=", 	"notEquals")
-				("<>", 	"notEquals")
-				("<=", 	"lessOrEquals")
-				(">=", 	"greaterOrEquals")
-				("<", 	"less")
-				(">", 	"greater")
-				("=", 	"equals"),
+				("==", 			"equals")
+				("!=", 			"notEquals")
+				("<>", 			"notEquals")
+				("<=", 			"lessOrEquals")
+				(">=", 			"greaterOrEquals")
+				("<", 			"less")
+				(">", 			"greater")
+				("=", 			"equals")
+				("LIKE", 		"like")
+				("NOT LIKE",	"notLike"),
 			elem_parser)
 	{
 	}

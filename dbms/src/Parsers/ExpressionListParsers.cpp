@@ -78,7 +78,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			Operators_t::const_iterator it;
 			for (it = operators.begin(); it != operators.end(); ++it)
 			{
-				ParserString op(it->first, true);
+				ParserString op(it->first, true, true);
 				if (op.ignore(pos, end, expected))
 					break;
 			}
@@ -144,7 +144,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 	Operators_t::const_iterator it;
 	for (it = operators.begin(); it != operators.end(); ++it)
 	{
-		ParserString op(it->first, true);
+		ParserString op(it->first, true, true);
 		if (op.ignore(pos, end, expected))
 			break;
 	}
