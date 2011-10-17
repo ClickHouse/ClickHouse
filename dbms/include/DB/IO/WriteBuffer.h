@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/BufferBase.h>
 
 
@@ -72,7 +74,7 @@ private:
 	/** Записать данные, находящиеся в буфере (от начала буфера до текущей позиции).
 	  * Кинуть исключение, если что-то не так.
 	  */
-	virtual void nextImpl() = 0;
+	virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); };
 };
 
 
