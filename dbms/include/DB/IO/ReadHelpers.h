@@ -5,6 +5,8 @@
 #include <limits>
 #include <algorithm>
 
+#include <tr1/type_traits>
+
 #include <Yandex/DateLUT.h>
 
 #include <DB/Core/Types.h>
@@ -111,7 +113,10 @@ void readIntText(T & x, ReadBuffer & buf)
 			case '+':
 				break;
 			case '-':
-				negative = true;
+			    if (std::tr1::is_signed<T>::value)
+					negative = true;
+				else
+					return;
 				break;
 			case '0':
 			case '1':
