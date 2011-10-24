@@ -1,3 +1,5 @@
+#include <Poco/FileStream.h>
+
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 

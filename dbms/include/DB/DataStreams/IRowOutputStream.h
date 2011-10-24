@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_STREAMS_IROWOUTPUTSTREAM_H
-#define DBMS_DATA_STREAMS_IROWOUTPUTSTREAM_H
+#pragma once
 
 #include <DB/Core/Row.h>
 
@@ -26,9 +25,15 @@ public:
 	virtual void writeRowStartDelimiter() {};
 	virtual void writeRowEndDelimiter() {};
 
+	/** Создать копию объекта.
+	  * Предполагается, что функция вызывается только до использования объекта (сразу после создания, до вызова других методов),
+	  *  только для того, чтобы можно было преобразовать параметр, переданный по ссылке в shared ptr.
+	  */
+	virtual SharedPtr<IRowOutputStream> clone() = 0;
+
 	virtual ~IRowOutputStream() {}
 };
 
-}
+typedef SharedPtr<IRowOutputStream> RowOutputStreamPtr;
 
-#endif
+}

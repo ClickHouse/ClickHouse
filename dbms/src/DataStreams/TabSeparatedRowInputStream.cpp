@@ -11,7 +11,7 @@ namespace DB
 
 using Poco::SharedPtr;
 
-TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, SharedPtr<DataTypes> data_types_)
+TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, SharedPtr<DataTypes> & data_types_)
 	: istr(istr_), data_types(data_types_)
 {
 }

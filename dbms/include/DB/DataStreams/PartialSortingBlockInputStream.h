@@ -24,6 +24,8 @@ public:
 
 	String getName() const { return "PartialSortingBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new PartialSortingBlockInputStream(input, description); }
+
 private:
 	BlockInputStreamPtr input;
 	SortDescription description;

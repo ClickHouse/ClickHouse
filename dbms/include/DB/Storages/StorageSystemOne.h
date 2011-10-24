@@ -14,6 +14,7 @@ public:
 	OneValueBlockInputStream();
 	Block readImpl();
 	String getName() const { return "OneValueBlockInputStream"; }
+	BlockInputStreamPtr clone() { return new OneValueBlockInputStream(); }
 private:
 	bool has_been_read;
 };

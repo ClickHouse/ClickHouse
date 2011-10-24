@@ -7,7 +7,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-RowInputStreamFromBlockInputStream::RowInputStreamFromBlockInputStream(IBlockInputStream & block_input_)
+RowInputStreamFromBlockInputStream::RowInputStreamFromBlockInputStream(BlockInputStreamPtr block_input_)
 	: block_input(block_input_), pos(0), current_rows(0)
 {
 }
@@ -17,7 +17,7 @@ Row RowInputStreamFromBlockInputStream::read()
 {
 	if (pos >= current_rows)
 	{
-		current_block = block_input.read();
+		current_block = block_input->read();
 		current_rows = current_block.rows();
 		pos = 0;
 	}

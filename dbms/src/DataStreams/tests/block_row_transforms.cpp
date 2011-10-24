@@ -50,7 +50,7 @@ int main(int argc, char ** argv)
 		DB::WriteBufferFromOStream out_buf(ostr);
 
 		DB::TabSeparatedRowInputStream row_input(in_buf, data_types);
-		DB::BlockInputStreamFromRowInputStream block_input(row_input, sample);
+		DB::BlockInputStreamFromRowInputStream block_input(row_input.clone(), sample);
 		DB::TabSeparatedRowOutputStream row_output(out_buf, data_types);
 
 		DB::copyData(block_input, row_output);

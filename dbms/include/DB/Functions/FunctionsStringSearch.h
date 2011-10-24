@@ -124,6 +124,7 @@ struct PositionUTF8Impl
 };
 
 
+/// Переводит выражение LIKE в regexp re2. Например, abc%def -> ^abc.*def$
 inline String likePatternToRegexp(const String & pattern)
 {
 	String res = "^";
@@ -169,6 +170,46 @@ inline String likePatternToRegexp(const String & pattern)
 
 	res += '$';
 	return res;
+}
+
+
+/// Сводится ли выражение LIKE к поиску подстроки в строке?
+inline bool likePatternIsStrstr(const String & pattern, String & res)
+{
+	res = "";
+
+	if (pattern.size() < 2 || *pattern.begin() != '%' || *pattern.rbegin() != '%')
+		return false;
+
+	res.reserve(pattern.size() * 2);
+
+	const char * pos = pattern.data();
+	const char * end = pos + pattern.size();
+
+	++pos;
+	--end;
+
+	while (pos < end)
+	{
+		switch (*pos)
+		{
+			case '%': case '_':
+				return false;
+			case '\\':
+				++pos;
+				if (pos == end)
+					return false;
+				else
+					res += *pos;
+				break;
+			default:
+				res += *pos;
+				break;
+		}
+		++pos;
+	}
+
+	return true;
 }
 
 
@@ -220,11 +261,40 @@ struct MatchImpl
 		const std::string & pattern,
 		std::vector<UInt8> & res)
 	{
-		const OptimizedRegularExpression & regexp = like ? Regexps::getLike(pattern) : Regexps::get(pattern);
+		String strstr_pattern;
+		/// Простой случай, когда выражение LIKE сводится к поиску подстроки в строке
+		if (like && likePatternIsStrstr(pattern, strstr_pattern))
+		{
+			const UInt8 * begin = &data[0];
+			const UInt8 * pos = begin;
+			const UInt8 * end = pos + data.size();
 
-		size_t size = offsets.size();
-		for (size_t i = 0; i < size; ++i)
-			res[i] = revert ^ regexp.match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]);
+			/// Текущий индекс в массиве строк.
+			size_t i = 0;
+
+			/// Искать будем следующее вхождение сразу во всех строках.
+			while (pos < end && NULL != (pos = reinterpret_cast<UInt8 *>(memmem(pos, end - pos, strstr_pattern.data(), strstr_pattern.size()))))
+			{
+				/// Определим, к какому индексу оно относится.
+				while (begin + offsets[i] < pos)
+					++i;
+
+				/// Проверяем, что вхождение не переходит через границы строк.
+				if (pos + strstr_pattern.size() < begin + offsets[i])
+					res[i] = 1;
+
+				pos = begin + offsets[i];
+				++i;
+			}
+		}
+		else
+		{
+			const OptimizedRegularExpression & regexp = like ? Regexps::getLike(pattern) : Regexps::get(pattern);
+
+			size_t size = offsets.size();
+			for (size_t i = 0; i < size; ++i)
+				res[i] = revert ^ regexp.match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]);
+		}
 	}
 
 	static void constant(const std::string & data, const std::string & pattern, UInt8 & res)

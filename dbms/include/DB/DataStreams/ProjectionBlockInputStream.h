@@ -40,6 +40,8 @@ public:
 
 	String getName() const { return "ProjectionBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new ProjectionBlockInputStream(input, expression, without_duplicates, part_id, subtree); }
+
 private:
 	BlockInputStreamPtr input;
 	SharedPtr<Expression> expression;

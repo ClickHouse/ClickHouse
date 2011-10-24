@@ -23,6 +23,8 @@ public:
 
 	String getName() const { return "NativeBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new NativeBlockInputStream(istr, data_type_factory); }
+
 private:
 	ReadBuffer & istr;
 	DataTypeFactory & data_type_factory;

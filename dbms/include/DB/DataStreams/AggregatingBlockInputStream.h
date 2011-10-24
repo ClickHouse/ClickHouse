@@ -35,7 +35,12 @@ public:
 
 	String getName() const { return "AggregatingBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new AggregatingBlockInputStream(*this); }
+
 private:
+	AggregatingBlockInputStream(const AggregatingBlockInputStream & src)
+		: input(src.input), aggregator(src.aggregator), has_been_read(src.has_been_read) {}
+	
 	BlockInputStreamPtr input;
 	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;

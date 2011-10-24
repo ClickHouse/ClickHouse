@@ -1,0 +1,22 @@
+#pragma once
+
+#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
+
+
+namespace DB
+{
+
+/** Позволяет создать IBlockInputStream или IBlockOutputStream по названию формата.
+  */
+class FormatFactory
+{
+public:
+	BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
+		Block & sample, size_t max_block_size, DataTypeFactory & data_type_factory) const;
+		
+	BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
+		Block & sample) const;
+};
+
+}

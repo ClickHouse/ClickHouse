@@ -43,6 +43,8 @@ public:
 	}
 
 	DB::String getName() const { return "OneBlockInputStream"; }
+
+	DB::BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
 };
 
 

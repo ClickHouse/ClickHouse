@@ -24,6 +24,8 @@ public:
 
 	String getName() const { return "FilterBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new FilterBlockInputStream(input, filter_column); }
+
 private:
 	BlockInputStreamPtr input;
 	ssize_t filter_column;

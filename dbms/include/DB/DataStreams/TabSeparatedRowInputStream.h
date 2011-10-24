@@ -18,9 +18,11 @@ using Poco::SharedPtr;
 class TabSeparatedRowInputStream : public IRowInputStream
 {
 public:
-	TabSeparatedRowInputStream(ReadBuffer & istr_, SharedPtr<DataTypes> data_types_);
+	TabSeparatedRowInputStream(ReadBuffer & istr_, SharedPtr<DataTypes> & data_types_);
 
 	Row read();
+
+	RowInputStreamPtr clone() { return new TabSeparatedRowInputStream(istr, data_types); }
 
 private:
 	ReadBuffer & istr;

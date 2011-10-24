@@ -52,6 +52,8 @@ public:
 
 	String getName() const { return "FinalizingAggregatedBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new FinalizingAggregatedBlockInputStream(input); }
+
 private:
 	BlockInputStreamPtr input;
 };

@@ -23,6 +23,8 @@ public:
 
 	String getName() const { return "MergeSortingBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new MergeSortingBlockInputStream(input, description); }
+
 private:
 	BlockInputStreamPtr input;
 	SortDescription description;

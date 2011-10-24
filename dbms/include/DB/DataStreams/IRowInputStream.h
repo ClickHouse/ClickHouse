@@ -17,7 +17,15 @@ public:
 	  */
 	virtual Row read() = 0;
 
+	/** Создать копию объекта.
+	  * Предполагается, что функция вызывается только до использования объекта (сразу после создания, до вызова других методов),
+	  *  только для того, чтобы можно было преобразовать параметр, переданный по ссылке в shared ptr.
+	  */
+	virtual SharedPtr<IRowInputStream> clone() = 0;
+
 	virtual ~IRowInputStream() {}
 };
+
+typedef SharedPtr<IRowInputStream> RowInputStreamPtr;
 
 }

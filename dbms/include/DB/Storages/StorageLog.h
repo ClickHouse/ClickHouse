@@ -5,11 +5,10 @@
 
 #include <Poco/SharedPtr.h>
 #include <Poco/File.h>
-#include <Poco/FileStream.h>
 
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
@@ -28,6 +27,7 @@ public:
 	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_);
 	Block readImpl();
 	String getName() const { return "LogBlockInputStream"; }
+	BlockInputStreamPtr clone() { return new LogBlockInputStream(block_size, column_names, storage); }
 private:
 	size_t block_size;
 	Names column_names;
@@ -36,10 +36,9 @@ private:
 	struct Stream
 	{
 		Stream(const std::string & path)
-			: istr(path, std::ios::in | std::ios::binary), plain(istr), compressed(plain) {}
+			: plain(path), compressed(plain) {}
 		
-		Poco::FileInputStream istr;
-		ReadBufferFromIStream plain;
+		ReadBufferFromFile plain;
 		CompressedReadBuffer compressed;
 	};
 	
@@ -53,16 +52,16 @@ class LogBlockOutputStream : public IBlockOutputStream
 public:
 	LogBlockOutputStream(StorageLog & storage_);
 	void write(const Block & block);
+	BlockOutputStreamPtr clone() { return new LogBlockOutputStream(storage); }
 private:
 	StorageLog & storage;
 
 	struct Stream
 	{
 		Stream(const std::string & path)
-			: ostr(path, std::ios::out | std::ios::ate | std::ios::binary), plain(ostr), compressed(plain) {}
+			: plain(path), compressed(plain) {}
 		
-		Poco::FileOutputStream ostr;
-		WriteBufferFromOStream plain;
+		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
 	};
 

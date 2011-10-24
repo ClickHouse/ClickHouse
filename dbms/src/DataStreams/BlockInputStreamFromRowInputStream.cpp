@@ -11,7 +11,7 @@ using Poco::SharedPtr;
 
 
 BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
-	IRowInputStream & row_input_,
+	RowInputStreamPtr row_input_,
 	const Block & sample_,
 	size_t max_block_size_)
 	: row_input(row_input_), sample(sample_), max_block_size(max_block_size_)
@@ -25,7 +25,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
 	for (size_t rows = 0; rows < max_block_size; ++rows)
 	{
-		Row row = row_input.read();
+		Row row = row_input->read();
 
 		if (row.empty())
 			return res;

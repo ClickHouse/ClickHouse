@@ -31,6 +31,12 @@ public:
 	  */
 	virtual String getName() const = 0;
 
+	/** Создать копию объекта.
+	  * Предполагается, что функция вызывается только до использования объекта (сразу после создания, до вызова других методов),
+	  *  только для того, чтобы можно было преобразовать параметр, переданный по ссылке в shared ptr.
+	  */
+	virtual BlockInputStreamPtr clone() = 0;
+
 	BlockInputStreams & getChildren() { return children; }
 	void dumpTree(std::ostream & ostr, size_t indent = 0);
 

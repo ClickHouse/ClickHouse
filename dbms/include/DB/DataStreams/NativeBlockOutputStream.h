@@ -18,6 +18,8 @@ public:
 	  */
 	void write(const Block & block);
 
+	BlockOutputStreamPtr clone() { return new NativeBlockOutputStream(ostr); }
+
 private:
 	WriteBuffer & ostr;
 };

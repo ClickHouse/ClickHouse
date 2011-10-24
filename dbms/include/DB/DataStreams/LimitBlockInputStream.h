@@ -21,6 +21,8 @@ public:
 
 	String getName() const { return "LimitBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new LimitBlockInputStream(input, limit, offset); }
+
 private:
 	BlockInputStreamPtr input;
 	size_t limit;

@@ -18,6 +18,7 @@ public:
 	NumbersBlockInputStream(size_t block_size_);
 	Block readImpl();
 	String getName() const { return "NumbersBlockInputStream"; }
+	BlockInputStreamPtr clone() { return new NumbersBlockInputStream(block_size); }
 private:
 	size_t block_size;
 	UInt64 next;

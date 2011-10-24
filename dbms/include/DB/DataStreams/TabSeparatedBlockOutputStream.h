@@ -19,6 +19,8 @@ public:
 	  */
 	void write(const Block & block);
 
+	BlockOutputStreamPtr clone() { return new TabSeparatedBlockOutputStream(ostr); }
+
 private:
 	WriteBuffer & ostr;
 };

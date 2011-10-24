@@ -24,6 +24,8 @@ public:
 	void writeFieldDelimiter();
 	void writeRowEndDelimiter();
 
+	RowOutputStreamPtr clone() { return new TabSeparatedRowOutputStream(ostr, data_types); }
+
 private:
 	WriteBuffer & ostr;
 	SharedPtr<DataTypes> data_types;

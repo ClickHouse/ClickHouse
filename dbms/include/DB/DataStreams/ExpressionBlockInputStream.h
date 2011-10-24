@@ -47,6 +47,8 @@ public:
 
 	String getName() const { return "ExpressionBlockInputStream"; }
 
+	BlockInputStreamPtr clone() { return new ExpressionBlockInputStream(input, expression, is_first, part_id); }
+
 private:
 	BlockInputStreamPtr input;
 	SharedPtr<Expression> expression;

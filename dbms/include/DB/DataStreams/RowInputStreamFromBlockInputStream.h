@@ -13,11 +13,13 @@ namespace DB
 class RowInputStreamFromBlockInputStream : public IRowInputStream
 {
 public:
-	explicit RowInputStreamFromBlockInputStream(IBlockInputStream & block_input_);
+	explicit RowInputStreamFromBlockInputStream(BlockInputStreamPtr block_input_);
 	Row read();
 
+	RowInputStreamPtr clone() { return new RowInputStreamFromBlockInputStream(block_input); }
+
 private:
-	IBlockInputStream & block_input;
+	BlockInputStreamPtr block_input;
 
 	size_t pos;
 	size_t current_rows;
