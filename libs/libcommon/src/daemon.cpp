@@ -57,7 +57,7 @@ public:
 
 	void run()
 	{
-		Poco::Net::DatagramSocket socket(Poco::Net::SocketAddress("[::]:" + Poco::NumberFormatter::format(port)));
+		Poco::Net::DatagramSocket socket(Poco::Net::SocketAddress("[::]:" + Poco::NumberFormatter::format(port)), true);
 
 		UInt8 message;
 		while (1)
