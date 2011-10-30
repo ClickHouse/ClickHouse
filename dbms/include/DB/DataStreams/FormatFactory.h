@@ -8,6 +8,7 @@ namespace DB
 {
 
 /** Позволяет создать IBlockInputStream или IBlockOutputStream по названию формата.
+  * Замечание: формат и сжатие - независимые вещи.
   */
 class FormatFactory
 {

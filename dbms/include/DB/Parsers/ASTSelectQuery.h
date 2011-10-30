@@ -21,6 +21,7 @@ public:
 	ASTPtr order_expression_list;
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
+	ASTPtr format;
 	
 	ASTSelectQuery() {}
 	ASTSelectQuery(StringRange range_) : IAST(range_) {}

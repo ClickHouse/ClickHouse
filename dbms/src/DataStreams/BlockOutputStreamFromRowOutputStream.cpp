@@ -14,6 +14,9 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < rows; ++i)
 	{
+		if (i != 0)
+			row_output->writeRowBetweenDelimiter();
+		
 		row_output->writeRowStartDelimiter();
 
 		for (size_t j = 0; j < columns; ++j)

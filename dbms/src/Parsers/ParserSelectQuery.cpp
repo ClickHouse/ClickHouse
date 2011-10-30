@@ -27,6 +27,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_having("HAVING", true, true);
 	ParserString s_order("ORDER", true, true);
 	ParserString s_limit("LIMIT", true, true);
+	ParserString s_format("FORMAT", true, true);
 	ParserNotEmptyExpressionList exp_list;
 	ParserLogicalOrExpression exp_elem;
 	ParserOrderByExpressionList order_list;
@@ -144,6 +145,20 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		}
 	}
 
+	/// FORMAT format_name
+	if (s_format.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+
+		ParserIdentifier format_p;
+
+		if (!format_p.parse(pos, end, select_query->format, expected))
+			return false;
+		dynamic_cast<ASTIdentifier &>(*select_query->format).kind = ASTIdentifier::Format;
+
+		ws.ignore(pos, end);
+	}
+
 	select_query->children.push_back(select_query->select_expression_list);
 	if (select_query->database)
 		select_query->children.push_back(select_query->database);
@@ -161,6 +176,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		select_query->children.push_back(select_query->limit_offset);
 	if (select_query->limit_length)
 		select_query->children.push_back(select_query->limit_length);
+	if (select_query->format)
+		select_query->children.push_back(select_query->format);
 
 	return true;
 }

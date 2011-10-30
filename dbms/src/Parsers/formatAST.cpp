@@ -134,14 +134,49 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s)
 		}
 		formatAST(*ast.limit_length, s);
 	}
+
+	if (ast.format)
+	{
+		s << " FORMAT ";
+		formatAST(*ast.format, s);
+	}
 }
 
 void formatAST(const ASTCreateQuery 		& ast, std::ostream & s)
 {
-	s << (ast.attach ? "ATTACH TABLE " : "CREATE TABLE ") << ast.name << " (";
+	s << (ast.attach ? "ATTACH TABLE " : "CREATE TABLE ") << (!ast.database.empty() ? ast.database + "." : "") << ast.table << " (";
 	formatAST(*ast.columns, s);
 	s << ") ENGINE = ";
 	formatAST(*ast.storage, s);
+}
+
+void formatAST(const ASTInsertQuery 		& ast, std::ostream & s)
+{
+	s << "INSERT INTO " << (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+
+	if (ast.columns)
+	{
+		s << " (";
+		formatAST(*ast.columns, s);
+		s << ")";
+	}
+
+	if (ast.select)
+	{
+		s << " ";
+		formatAST(*ast.select, s);
+	}
+	else
+	{
+		if (!ast.format.empty())
+		{
+			s << " FORMAT " << ast.format;
+		}
+		else
+		{
+			s << " VALUES";
+		}
+	}
 }
 
 void formatAST(const ASTExpressionList 		& ast, std::ostream & s)

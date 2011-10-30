@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_READHELPERS_H
-#define DBMS_COMMON_READHELPERS_H
+#pragma once
 
 #include <cstring>
 #include <limits>
@@ -318,6 +317,16 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 }
 
 
+/// Пропустить пробельные символы.
+inline void skipWhitespaceIfAny(ReadBuffer & buf)
+{
+	while (!buf.eof()
+			&& (*buf.position() == ' '
+			|| *buf.position() == '\t'
+			|| *buf.position() == '\n'
+			|| *buf.position() == '\r'
+			|| *buf.position() == '\f'))
+		++buf.position();
 }
 
-#endif
+}

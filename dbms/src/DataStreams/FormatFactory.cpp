@@ -2,6 +2,8 @@
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/ValuesRowInputStream.h>
+#include <DB/DataStreams/ValuesRowOutputStream.h>
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
@@ -22,6 +24,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return new NativeBlockInputStream(buf, data_type_factory);
 	else if (name == "TabSeparated")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, data_types), sample, max_block_size);
+	else if (name == "Values")
+		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, data_types), sample, max_block_size);
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
@@ -39,6 +43,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new NativeBlockOutputStream(buf);
 	else if (name == "TabSeparated")
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, data_types));
+	else if (name == "Values")
+		return new BlockOutputStreamFromRowOutputStream(new ValuesRowOutputStream(buf, data_types));
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }

@@ -13,7 +13,8 @@ class IRowOutputStream
 public:
 
 	/** Записать строку.
-	  * Есть реализация по умолчанию, которая использует методы для записи одиночных значений и разделителей.
+	  * Есть реализация по умолчанию, которая использует методы для записи одиночных значений и разделителей
+	  * (кроме разделителя между строк (writeRowBetweenDelimiter())).
 	  */
 	virtual void write(const Row & row);
 
@@ -24,6 +25,7 @@ public:
 	virtual void writeFieldDelimiter() {};
 	virtual void writeRowStartDelimiter() {};
 	virtual void writeRowEndDelimiter() {};
+	virtual void writeRowBetweenDelimiter() {};
 
 	/** Создать копию объекта.
 	  * Предполагается, что функция вызывается только до использования объекта (сразу после создания, до вызова других методов),

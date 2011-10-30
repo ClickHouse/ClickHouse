@@ -6,6 +6,8 @@
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
+#include <DB/DataStreams/FormatFactory.h>
+#include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -65,6 +67,14 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 	context.columns = getTable()->getColumns();
 	Expression expression(dynamic_cast<ASTSelectQuery &>(*query_ptr).select_expression_list, context);
 	return expression.getReturnTypes();
+}
+
+
+Block InterpreterSelectQuery::getSampleBlock()
+{
+	context.columns = getTable()->getColumns();
+	Expression expression(dynamic_cast<ASTSelectQuery &>(*query_ptr).select_expression_list, context);
+	return expression.getSampleBlock();
 }
 
 
@@ -177,10 +187,26 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 }
 
 
+BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
+{
+	FormatFactory format_factory;
+	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
+	Block sample = getSampleBlock();
+	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : "TabSeparated";
+
+	BlockInputStreamPtr in = execute();
+	BlockOutputStreamPtr out = format_factory.getOutput(format_name, buf, sample);
+	
+	copyData(*in, *out);
+
+	return in;
+}
+
+
 void InterpreterSelectQuery::setPartID(ASTPtr ast, unsigned part_id)
 {
 	ast->part_id |= part_id;
-	
+
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		setPartID(*it, part_id);
 }

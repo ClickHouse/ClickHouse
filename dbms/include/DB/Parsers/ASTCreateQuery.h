@@ -15,7 +15,8 @@ class ASTCreateQuery : public IAST
 public:
 	bool attach;	/// Запрос ATTACH TABLE, а не CREATE TABLE.
 	bool if_not_exists;
-	String name;
+	String database;
+	String table;
 	ASTPtr columns;
 	ASTPtr storage;
 
@@ -23,7 +24,7 @@ public:
 	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return (attach ? "AttachQuery_" : "CreateQuery_") + name; };
+	String getID() { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
 };
 
 }

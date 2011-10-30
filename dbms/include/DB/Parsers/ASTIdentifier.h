@@ -17,6 +17,7 @@ public:
 		Column,
 		Database,
 		Table,
+		Format,
 	};
 	
 	/// имя

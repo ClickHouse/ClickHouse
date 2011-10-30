@@ -1,6 +1,3 @@
-#include <DB/Core/Exception.h>
-#include <DB/Core/ErrorCodes.h>
-
 #include <DB/IO/ReadHelpers.h>
 
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>

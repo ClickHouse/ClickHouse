@@ -15,9 +15,16 @@ class InterpreterSelectQuery
 public:
 	InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_, size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
 
+	/// Выполнить запрос, получить поток блоков для чтения
 	BlockInputStreamPtr execute();
 
+	/** Выполнить запрос, записать результат в нужном формате в buf.
+	  * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
+	  */
+	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf);
+
 	DataTypes getReturnTypes();
+	Block getSampleBlock();
 
 private:
 	StoragePtr getTable();

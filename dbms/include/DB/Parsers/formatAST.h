@@ -5,6 +5,7 @@
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -18,11 +19,13 @@ namespace DB
 {
 
 /** Берёт синтаксическое дерево и превращает его обратно в текст.
+  * В случае запроса INSERT, данные могут быть опущены.
   */
 void formatAST(const IAST 				& ast, std::ostream & s);
 
 void formatAST(const ASTSelectQuery 	& ast, std::ostream & s);
 void formatAST(const ASTCreateQuery 	& ast, std::ostream & s);
+void formatAST(const ASTInsertQuery 	& ast, std::ostream & s);
 void formatAST(const ASTExpressionList 	& ast, std::ostream & s);
 void formatAST(const ASTFunction 		& ast, std::ostream & s);
 void formatAST(const ASTIdentifier 		& ast, std::ostream & s);

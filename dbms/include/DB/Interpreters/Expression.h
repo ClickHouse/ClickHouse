@@ -48,6 +48,10 @@ public:
 	  */
 	DataTypes getReturnTypes();
 
+	/** Получить блок-образец, содержащий имена и типы столбцов результата.
+	  */
+	Block getSampleBlock();
+
 	/** Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
 	  */
 	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
@@ -93,6 +97,8 @@ private:
 	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id);
 
 	void getReturnTypesImpl(ASTPtr ast, DataTypes & res);
+
+	void getSampleBlockImpl(ASTPtr ast, Block & res);
 
 	void getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates, NamesSet & processed);
 

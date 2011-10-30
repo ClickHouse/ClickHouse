@@ -253,6 +253,46 @@ void Expression::getReturnTypesImpl(ASTPtr ast, DataTypes & res)
 }
 
 
+Block Expression::getSampleBlock()
+{
+	Block res;
+	getSampleBlockImpl(ast, res);
+	return res;
+}
+
+
+void Expression::getSampleBlockImpl(ASTPtr ast, Block & res)
+{
+	ColumnWithNameAndType col;
+
+	/// Обход в глубину, который не заходит внутрь функций.
+	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		if (ident->kind == ASTIdentifier::Column)
+		{
+			col.name = ident->name;
+			col.type = ident->type;
+			res.insert(col);
+		}
+	}
+	else if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*ast))
+	{
+		col.name = lit->getColumnName();
+		col.type = lit->type;
+		res.insert(col);
+	}
+	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		col.name = func->getColumnName();
+		col.type = func->return_type;
+		res.insert(col);
+	}
+	else
+		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+			getSampleBlockImpl(*it, res);
+}
+
+
 void Expression::getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates, NamesSet & processed)
 {
 	/// Обход в глубину

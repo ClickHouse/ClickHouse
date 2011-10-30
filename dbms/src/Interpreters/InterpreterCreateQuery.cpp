@@ -17,8 +17,8 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 {
 	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query);
 
-	String database_name = context.current_database;
-	String table_name = create.name;
+	String database_name = create.database.empty() ? context.current_database : create.database;
+	String table_name = create.table;
 	SharedPtr<NamesAndTypes> columns = new NamesAndTypes;
 	String data_path = context.path + "data/" + database_name + "/";	/// TODO: эскейпинг
 	String metadata_path = context.path + "metadata/" + database_name + "/" + table_name + ".sql";

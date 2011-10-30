@@ -233,16 +233,12 @@ int main(int argc, char ** argv)
 		std::cerr << std::endl;
 /*		std::cerr << ast->getTreeID() << std::endl;
 */
-		DB::InterpreterSelectQuery interpreter(ast, context);
-		DB::BlockInputStreamPtr in = interpreter.execute();
-
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(interpreter.getReturnTypes()));
-
-		DB::copyData(*in, out);
+		DB::InterpreterSelectQuery interpreter(ast, context);
+		DB::BlockInputStreamPtr stream = interpreter.executeAndFormat(ob);
 
 		std::cerr << std::endl;
-		in->dumpTree(std::cerr);
+		stream->dumpTree(std::cerr);
 	}
 	catch (const DB::Exception & e)
 	{
