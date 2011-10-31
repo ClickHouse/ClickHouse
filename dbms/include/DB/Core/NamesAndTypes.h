@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_NAMES_AND_TYPES_H
-#define DBMS_CORE_NAMES_AND_TYPES_H
+#pragma once
 
 #include <map>
 #include <string>
@@ -15,7 +14,6 @@ namespace DB
 using Poco::SharedPtr;
 
 typedef std::map<std::string, DataTypePtr> NamesAndTypes;
+typedef SharedPtr<NamesAndTypes> NamesAndTypesPtr;
 
 }
-
-#endif

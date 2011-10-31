@@ -22,7 +22,7 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	String as_database_name = create.as_database.empty() ? context.current_database : create.as_database;
 	String as_table_name = create.as_table;
 	
-	SharedPtr<NamesAndTypes> columns = new NamesAndTypes;
+	NamesAndTypesPtr columns = new NamesAndTypes;
 	String data_path = context.path + "data/" + database_name + "/";	/// TODO: эскейпинг
 	String metadata_path = context.path + "metadata/" + database_name + "/" + table_name + ".sql";
 
@@ -84,7 +84,7 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	else
 	{
 		Poco::FileOutputStream metadata_file(metadata_path);
-		metadata_file << "ATTACH TABLE " << database_name << "." << table_name << "\n"
+		metadata_file << "ATTACH TABLE " << table_name << "\n"
 			<< "(\n";
 
 		for (NamesAndTypes::const_iterator it = columns->begin(); it != columns->end(); ++it)

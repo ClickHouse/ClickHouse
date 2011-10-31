@@ -18,7 +18,7 @@ public:
 		const String & name,
 		const String & data_path,
 		const String & table_name,
-		SharedPtr<NamesAndTypes> columns) const;
+		NamesAndTypesPtr columns) const;
 };
 
 typedef SharedPtr<StorageFactory> StorageFactoryPtr;

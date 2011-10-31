@@ -1,4 +1,5 @@
 #include <DB/Storages/StorageLog.h>
+#include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
@@ -12,10 +13,12 @@ StoragePtr StorageFactory::get(
 	const String & name,
 	const String & data_path,
 	const String & table_name,
-	SharedPtr<NamesAndTypes> columns) const
+	NamesAndTypesPtr columns) const
 {
 	if (name == "Log")
 		return new StorageLog(data_path, table_name, columns);
+	else if (name == "Memory")
+		return new StorageMemory(table_name, columns);
 	else if (name == "SystemNumbers")
 	{
 		if (columns->size() != 1 || columns->begin()->first != "number" || columns->begin()->second->getName() != "UInt64")

@@ -1,9 +1,5 @@
-#ifndef DBMS_STORAGES_STORAGE_LOG_H
-#define DBMS_STORAGES_STORAGE_LOG_H
+#pragma once
 
-#include <map>
-
-#include <Poco/SharedPtr.h>
 #include <Poco/File.h>
 
 #include <DB/Core/NamesAndTypes.h>
@@ -18,7 +14,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
 class StorageLog;
 
 class LogBlockInputStream : public IProfilingBlockInputStream
@@ -84,7 +79,7 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов; создать файлы, если их нет.
 	  */
-	StorageLog(const std::string & path_, const std::string & name_, SharedPtr<NamesAndTypes> columns_,
+	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesPtr columns_,
 		const std::string & extension_ = ".bin");
 
 	std::string getName() const { return "Log"; }
@@ -103,7 +98,7 @@ public:
 private:
 	const std::string path;
 	const std::string name;
-	SharedPtr<NamesAndTypes> columns;
+	NamesAndTypesPtr columns;
 	const std::string extension;
 
 	typedef std::map<std::string, Poco::File> Files_t;
@@ -111,5 +106,3 @@ private:
 };
 
 }
-
-#endif

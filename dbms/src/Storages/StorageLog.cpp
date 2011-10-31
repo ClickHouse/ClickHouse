@@ -60,7 +60,7 @@ void LogBlockOutputStream::write(const Block & block)
 }
 
 
-StorageLog::StorageLog(const std::string & path_, const std::string & name_, SharedPtr<NamesAndTypes> columns_,
+StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesPtr columns_,
 	const std::string & extension_)
 	: path(path_), name(name_), columns(columns_), extension(extension_)
 {
