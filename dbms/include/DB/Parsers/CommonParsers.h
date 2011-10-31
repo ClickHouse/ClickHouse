@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_COMMONPARSERS_H
-#define DBMS_PARSERS_COMMONPARSERS_H
+#pragma once
 
 #include <string.h>		/// strncmp, strncasecmp
 
@@ -56,13 +55,18 @@ protected:
   */
 class ParserWhiteSpace : public IParserBase
 {
+public:
+	ParserWhiteSpace(bool allow_newlines_ = true) : allow_newlines(allow_newlines_) {}
+
 protected:
+	bool allow_newlines;
+	
 	String getName() { return "white space"; }
 
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 	{
 		Pos begin = pos;
-		while (*pos == ' ' || *pos == '\t' || *pos == '\n' || *pos == '\r' || *pos == '\f')
+		while (*pos == ' ' || *pos == '\t' || (allow_newlines && *pos == '\n') || *pos == '\r' || *pos == '\f')
 			++pos;
 
 		return pos != begin;
@@ -143,12 +147,17 @@ protected:
 
 class ParserWhiteSpaceOrComments : public IParserBase
 {
+public:
+	ParserWhiteSpaceOrComments(bool allow_newlines_outside_comments_ = true) : allow_newlines_outside_comments(allow_newlines_outside_comments_) {}
+	
 protected:
+	bool allow_newlines_outside_comments;
+	
 	String getName() { return "white space or comments"; }
 
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 	{
-		ParserWhiteSpace p1;
+		ParserWhiteSpace p1(allow_newlines_outside_comments);
 		ParserComment p2;
 	
 		bool res = false;
@@ -159,5 +168,3 @@ protected:
 };
 
 }
-
-#endif

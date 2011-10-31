@@ -9,20 +9,41 @@ namespace DB
 
 void copyData(IBlockInputStream & from, IBlockOutputStream & to)
 {
+	from.readPrefix();
+	to.writePrefix();
+
 	while (Block block = from.read())
 		to.write(block);
+
+	from.readSuffix();
+	to.writeSuffix();
 }
 
 
 void copyData(IRowInputStream & from, IRowOutputStream & to)
 {
+	from.readPrefix();
+	to.writePrefix();
+
+	bool first = true;
 	while (1)
 	{
+		if (first)
+			first = false;
+		else
+		{
+			from.readRowBetweenDelimiter();
+			to.writeRowBetweenDelimiter();
+		}
+		
 		Row row = from.read();
 		if (row.empty())
 			break;
 		to.write(row);
 	}
+
+	from.readSuffix();
+	to.writeSuffix();
 }
 
 

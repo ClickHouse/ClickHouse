@@ -25,6 +25,11 @@ public:
 	  */
 	virtual Block read() = 0;
 
+	/** Прочитать что-нибудь перед началом всех данных или после конца всех данных.
+	  */
+	virtual void readPrefix() {}
+	virtual void readSuffix() {}
+
 	virtual ~IBlockInputStream() {}
 
 	/** Для вывода дерева преобразований потока данных (плана выполнения запроса).

@@ -71,11 +71,19 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	/// Проверка наличия метаданных таблицы на диске и создание метаданных
 
 	if (Poco::File(metadata_path).exists())
-		throw Exception("Metadata for table " + database_name + "." + table_name + " already exists.",
-			ErrorCodes::TABLE_METADATA_ALREADY_EXISTS);
-
-	Poco::FileOutputStream metadata_file(metadata_path);
-	metadata_file << String(create.range.first, create.range.second - create.range.first) << std::endl;
+	{
+		/** Запрос ATTACH TABLE может использоваться, чтобы создать в оперативке ссылку на уже существующую таблицу.
+		  * Это используется, например, при загрузке сервера.
+		  */
+		if (!create.attach)
+			throw Exception("Metadata for table " + database_name + "." + table_name + " already exists.",
+				ErrorCodes::TABLE_METADATA_ALREADY_EXISTS);
+	}
+	else
+	{
+		Poco::FileOutputStream metadata_file(metadata_path);
+		metadata_file << String(create.range.first, create.range.second - create.range.first) << std::endl;
+	}
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);

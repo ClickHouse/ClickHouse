@@ -19,6 +19,24 @@ static std::string listOfColumns(const NamesAndTypes & available_columns)
 }
 
 
+Block IStorage::getSampleBlock() const
+{
+	Block res;
+	const NamesAndTypes & names_and_types = getColumns();
+
+	for (NamesAndTypes::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
+	{
+		ColumnWithNameAndType col;
+		col.name = it->first;
+		col.type = it->second;
+		col.column = col.type->createColumn();
+		res.insert(col);
+	}
+	
+	return res;
+}
+
+
 void IStorage::check(const Names & column_names) const
 {
 	const NamesAndTypes & available_columns = getColumns();

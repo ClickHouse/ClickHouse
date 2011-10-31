@@ -22,10 +22,12 @@ public:
 	virtual void writeField(const Field & field) = 0;
 
 	/** Записать разделитель. */
-	virtual void writeFieldDelimiter() {};
-	virtual void writeRowStartDelimiter() {};
-	virtual void writeRowEndDelimiter() {};
-	virtual void writeRowBetweenDelimiter() {};
+	virtual void writeFieldDelimiter() {};		/// разделитель между значениями
+	virtual void writeRowStartDelimiter() {};	/// разделитель перед каждой строкой
+	virtual void writeRowEndDelimiter() {};		/// разделитель после каждой строки
+	virtual void writeRowBetweenDelimiter() {};	/// разделитель между строками
+	virtual void writePrefix() {};				/// разделитель перед началом результата
+	virtual void writeSuffix() {};				/// разделитель после конца результата
 
 	/** Создать копию объекта.
 	  * Предполагается, что функция вызывается только до использования объекта (сразу после создания, до вызова других методов),

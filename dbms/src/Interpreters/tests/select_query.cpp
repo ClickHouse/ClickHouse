@@ -7,6 +7,7 @@
 #include <Poco/Stopwatch.h>
 #include <Poco/NumberParser.h>
 
+#include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -17,6 +18,7 @@
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsComparison.h>
@@ -26,10 +28,8 @@
 #include <DB/Functions/FunctionsDateTime.h>
 #include <DB/Functions/FunctionsStringSearch.h>
 
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/formatAST.h>
-
-#include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Interpreters/loadMetadata.h>
+#include <DB/Interpreters/executeQuery.h>
 
 
 using Poco::SharedPtr;
@@ -184,61 +184,31 @@ int main(int argc, char ** argv)
 			("notLike",			new DB::FunctionNotLike)
 		;
 
+		context.path = "./";
+		
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
+		context.data_type_factory				= new DB::DataTypeFactory;
 
-		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./", "hits", names_and_types_map, ".bin");
-		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./", "hits2", names_and_types_map, ".bin");
-		(*context.databases)["default"]["hits3"] 	= new DB::StorageLog("./", "hits3", names_and_types_map, ".bin");
+		DB::loadMetadata(context);
+
+		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./data/default/", "hits", names_and_types_map, ".bin");
+		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./data/default/", "hits2", names_and_types_map, ".bin");
+		(*context.databases)["default"]["hits3"] 	= new DB::StorageLog("./data/default/", "hits3", names_and_types_map, ".bin");
 		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
 		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");
 		context.current_database = "default";
 
-		DB::ParserSelectQuery parser;
-		DB::ASTPtr ast;
-		std::string input;/* =
-			"SELECT "
-			"	count(),"
-			"	UniqID % 100,"
-			"	UniqID % 100 * 2,"
-			"	-1,"
-			"	count(),"
-			"	count() * count(),"
-			"	sum(-OS + UserAgent + TraficSourceID + SearchEngineID) + 101,"
-			"	SearchPhrase"
-			"FROM hits "
-			"WHERE SearchPhrase != '' "
-			"GROUP BY UniqID % 100, SearchPhrase "
-			"ORDER BY count() DESC "
-			"LIMIT 20";*/
-		std::stringstream str;
-		str << std::cin.rdbuf();
-		input = str.str();
+		DB::ReadBufferFromIStream in(std::cin);
+		DB::WriteBufferFromOStream out(std::cout);
+		DB::BlockInputStreamPtr query_plan;
 		
-		std::string expected;
+		DB::executeQuery(in, out, context, query_plan);
 
-		const char * begin = input.data();
-		const char * end = begin + input.size();
-		const char * pos = begin;
-
-		bool parse_res = parser.parse(pos, end, ast, expected);
-
-		if (!parse_res || pos != end)
-			throw DB::Exception("Syntax error: failed at position "
-				+ Poco::NumberFormatter::format(pos - begin) + ": "
-				+ input.substr(pos - begin, 10)
-				+ ", expected " + (parse_res ? "end of data" : expected) + ".",
-				DB::ErrorCodes::SYNTAX_ERROR);
-
-		DB::formatAST(*ast, std::cerr);
-		std::cerr << std::endl;
-/*		std::cerr << ast->getTreeID() << std::endl;
-*/
-		DB::WriteBufferFromOStream ob(std::cout);
-		DB::InterpreterSelectQuery interpreter(ast, context);
-		DB::BlockInputStreamPtr stream = interpreter.executeAndFormat(ob);
-
-		std::cerr << std::endl;
-		stream->dumpTree(std::cerr);
+		if (query_plan)
+		{
+			std::cerr << std::endl;
+			query_plan->dumpTree(std::cerr);
+		}
 	}
 	catch (const DB::Exception & e)
 	{

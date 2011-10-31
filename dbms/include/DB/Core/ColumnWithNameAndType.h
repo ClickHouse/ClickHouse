@@ -26,7 +26,8 @@ struct ColumnWithNameAndType
 
 		res.name = name;
 		res.type = type;
-		res.column = column->cloneEmpty();
+		if (column)
+			res.column = column->cloneEmpty();
 
 		return res;
 	}

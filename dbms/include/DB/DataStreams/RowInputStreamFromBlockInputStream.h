@@ -16,6 +16,9 @@ public:
 	explicit RowInputStreamFromBlockInputStream(BlockInputStreamPtr block_input_);
 	Row read();
 
+	void readPrefix() { block_input->readPrefix(); };
+	void readSuffix() { block_input->readSuffix(); };
+
 	RowInputStreamPtr clone() { return new RowInputStreamFromBlockInputStream(block_input); }
 
 private:

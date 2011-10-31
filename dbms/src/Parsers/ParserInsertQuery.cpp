@@ -79,14 +79,24 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	{
 		ws.ignore(pos, end);
 		data = pos;
+		pos = end;
 	}
 	else if (s_format.ignore(pos, end, expected))
 	{
+		ws.ignore(pos, end);
+		
 		if (!name_p.parse(pos, end, format, expected))
 			return false;
 
-		ws.ignore(pos, end);
+		/// Данные начинаются после первого перевода строки, если такой есть, или после всех пробельных символов, иначе.
+		ParserWhiteSpaceOrComments ws_without_nl(false);
+
+		ws_without_nl.ignore(pos, end);
+		if (pos != end && *pos == '\n')
+			++pos;
+		
 		data = pos;
+		pos = end;
 	}
 	else if (s_select.ignore(pos, end, expected))
 	{
@@ -99,13 +109,18 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		expected = "VALUES or FORMAT or SELECT";
 		return false;
 	}
-		
+
 	ASTInsertQuery * query = new ASTInsertQuery(StringRange(begin, pos));
 	node = query;
 
-	query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+	if (database)
+		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+	
 	query->table = dynamic_cast<ASTIdentifier &>(*table).name;
-	query->format = dynamic_cast<ASTIdentifier &>(*format).name;
+
+	if (format)
+		query->format = dynamic_cast<ASTIdentifier &>(*format).name;
+	
 	query->columns = columns;
 	query->select = select;
 	query->data = data;

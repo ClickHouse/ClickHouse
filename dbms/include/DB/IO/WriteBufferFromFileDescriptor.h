@@ -26,7 +26,7 @@ protected:
 	{
 		if (!offset())
 			return;
-
+		
 		ssize_t bytes_written = ::write(fd, working_buffer.begin(), offset());
 		if (-1 == bytes_written || 0 == bytes_written)
 			throwFromErrno("Cannot write to file " + getFileName(), ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);

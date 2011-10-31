@@ -156,12 +156,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	if (!storage_p.parse(pos, end, storage, expected))
 		return false;
 
+	ws.ignore(pos, end);
+
 	ASTCreateQuery * query = new ASTCreateQuery(StringRange(begin, pos));
 	node = query;
 
 	query->attach = attach;
 	query->if_not_exists = if_not_exists;
-	query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+	if (database)
+		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
 	query->table = dynamic_cast<ASTIdentifier &>(*table).name;
 	query->columns = columns;
 	query->storage = storage;

@@ -36,7 +36,7 @@ void ValuesRowOutputStream::writeRowStartDelimiter()
 
 void ValuesRowOutputStream::writeRowEndDelimiter()
 {
-	writeString(")\n", ostr);
+	writeChar(')', ostr);
 }
 
 

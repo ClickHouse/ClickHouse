@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <DB/IO/ReadBuffer.h>
 
 
@@ -10,13 +12,25 @@ namespace DB
   */
 class ConcatReadBuffer : public ReadBuffer
 {
-protected:
+public:
 	typedef std::vector<ReadBuffer *> ReadBuffers;
+	
+protected:
 	ReadBuffers buffers;
 	ReadBuffers::iterator current;
 	
 	bool nextImpl()
 	{
+		if (buffers.end() == current)
+			return false;
+		
+		/// Первое чтение
+		if (working_buffer.size() == 0 && (*current)->position() != (*current)->buffer().end())
+		{
+			working_buffer = (*current)->buffer();
+			return true;
+		}
+		
 		if (!(*current)->next())
 		{
 			++current;
@@ -24,19 +38,17 @@ protected:
 				return false;
 		}
 		
-		internal_buffer = (*current)->internal_buffer;
-		working_buffer = (*current)->working_buffer;
-
+		working_buffer = (*current)->buffer();
 		return true;
 	}
 
 public:
-	ConcatReadBuffer(const ReadBuffers & buffers_) : buffers(buffers_), current(buffers.begin()) {}
+	ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(NULL, 0), buffers(buffers_), current(buffers.begin()) {}
 
-	ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2)
+	ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(NULL, 0)
 	{
-		buffers.push_bask(&buf1);
-		buffers.push_bask(&buf2);
+		buffers.push_back(&buf1);
+		buffers.push_back(&buf2);
 		current = buffers.begin();
 	}
 };

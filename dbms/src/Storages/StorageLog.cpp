@@ -15,15 +15,14 @@ using Poco::SharedPtr;
 LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_)
 	: block_size(block_size_), column_names(column_names_), storage(storage_)
 {
+	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].path())));
 }
 
 
 Block LogBlockInputStream::readImpl()
 {
 	Block res;
-
-	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].path())));
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
@@ -44,18 +43,14 @@ Block LogBlockInputStream::readImpl()
 LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
 	: storage(storage_)
 {
+	for (NamesAndTypes::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+		streams.insert(std::make_pair(it->first, new Stream(storage.files[it->first].path())));
 }
 
 
 void LogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block);
-	
-	for (size_t i = 0; i < block.columns(); ++i)
-	{
-		const std::string & name = block.getByPosition(i).name;
-		streams.insert(std::make_pair(name, new Stream(storage.files[name].path())));
-	}
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{

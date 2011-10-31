@@ -28,12 +28,15 @@ protected:
 
 
 /** Запрос типа такого:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] name
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name
   * (
   * 	name1 type1,
   * 	name2 type2,
   * 	...
   * ) ENGINE = engine
+  *
+  * Или:
+  * CREATE TABLE [db.]name AS [db2.]name2
   */
 class ParserCreateQuery : public IParserBase
 {

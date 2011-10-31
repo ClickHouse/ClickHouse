@@ -28,6 +28,7 @@ public:
 
     virtual ~WriteBufferFromFile()
 	{
+		next();
 		if (0 != close(fd))
 			throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 	}

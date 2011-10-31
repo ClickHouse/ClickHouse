@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DB/DataTypes/DataTypeFactory.h>
+
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
