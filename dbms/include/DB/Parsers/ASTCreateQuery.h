@@ -19,6 +19,8 @@ public:
 	String table;
 	ASTPtr columns;
 	ASTPtr storage;
+	String as_database;
+	String as_table;
 
 	ASTCreateQuery() {}
 	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false) {}

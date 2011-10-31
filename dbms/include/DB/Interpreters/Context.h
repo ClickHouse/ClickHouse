@@ -11,6 +11,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/Storages/StorageFactory.h>
 
 
 namespace DB
@@ -38,6 +39,7 @@ struct Context
 	SharedPtr<Functions> functions;							/// Обычные функции.
 	AggregateFunctionFactoryPtr aggregate_function_factory; /// Агрегатные функции.
 	DataTypeFactoryPtr data_type_factory;					/// Типы данных.
+	StorageFactoryPtr storage_factory;						/// Движки таблиц.
 	NamesAndTypes columns;									/// Столбцы текущей обрабатываемой таблицы.
 
 	SharedPtr<Poco::FastMutex> mutex;	/// Для доступа и модификации разделяемых объектов.

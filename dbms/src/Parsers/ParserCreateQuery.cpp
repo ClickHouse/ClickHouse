@@ -82,6 +82,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_if("IF", true);
 	ParserString s_not("NOT", true);
 	ParserString s_exists("EXISTS", true);
+	ParserString s_as("AS", true);
 	ParserIdentifier name_p;
 	ParserList columns_p(new ParserNameTypePair, new ParserString(","), false);
 	ParserIdentifierWithOptionalParameters storage_p;
@@ -90,6 +91,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ASTPtr table;
 	ASTPtr columns;
 	ASTPtr storage;
+	ASTPtr as_database;
+	ASTPtr as_table;
 	bool attach = false;
 	bool if_not_exists = false;
 
@@ -128,35 +131,58 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ws.ignore(pos, end);
 	}
 
-	if (!s_lparen.ignore(pos, end, expected))
+	/// Список столбцов
+	if (s_lparen.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+
+		if (!columns_p.parse(pos, end, columns, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (!s_rparen.ignore(pos, end, expected))
+			return false;
+
+		ws.ignore(pos, end);
+	}
+	else if (s_as.ignore(pos, end, expected))
+	{
+		/// Или AS другая таблица
+		ws.ignore(pos, end);
+
+		if (!name_p.parse(pos, end, as_table, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (s_dot.ignore(pos, end, expected))
+		{
+			as_database = as_table;
+			if (!name_p.parse(pos, end, as_table, expected))
+				return false;
+
+			ws.ignore(pos, end);
+		}
+	}
+	else
 		return false;
 
-	ws.ignore(pos, end);
+	/// ENGINE
+	if (s_engine.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
 
-	if (!columns_p.parse(pos, end, columns, expected))
-		return false;
+		if (!s_eq.ignore(pos, end, expected))
+			return false;
 
-	ws.ignore(pos, end);
+		ws.ignore(pos, end);
 
-	if (!s_rparen.ignore(pos, end, expected))
-		return false;
+		if (!storage_p.parse(pos, end, storage, expected))
+			return false;
 
-	ws.ignore(pos, end);
-
-	if (!s_engine.ignore(pos, end, expected))
-		return false;
-
-	ws.ignore(pos, end);
-
-	if (!s_eq.ignore(pos, end, expected))
-		return false;
-
-	ws.ignore(pos, end);
-
-	if (!storage_p.parse(pos, end, storage, expected))
-		return false;
-
-	ws.ignore(pos, end);
+		ws.ignore(pos, end);
+	}
 
 	ASTCreateQuery * query = new ASTCreateQuery(StringRange(begin, pos));
 	node = query;
@@ -168,6 +194,10 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	query->table = dynamic_cast<ASTIdentifier &>(*table).name;
 	query->columns = columns;
 	query->storage = storage;
+	if (as_database)
+		query->as_database = dynamic_cast<ASTIdentifier &>(*as_database).name;
+	if (as_table)
+		query->as_table = dynamic_cast<ASTIdentifier &>(*as_table).name;
 
 	query->children.push_back(columns);
 	query->children.push_back(storage);

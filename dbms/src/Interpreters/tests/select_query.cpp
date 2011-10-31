@@ -13,6 +13,7 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemOne.h>
+#include <DB/Storages/StorageFactory.h>
 
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -188,6 +189,7 @@ int main(int argc, char ** argv)
 		
 		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
 		context.data_type_factory				= new DB::DataTypeFactory;
+		context.storage_factory					= new DB::StorageFactory;
 
 		DB::loadMetadata(context);
 

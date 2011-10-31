@@ -19,6 +19,9 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 
 	String database_name = create.database.empty() ? context.current_database : create.database;
 	String table_name = create.table;
+	String as_database_name = create.as_database.empty() ? context.current_database : create.as_database;
+	String as_table_name = create.as_table;
+	
 	SharedPtr<NamesAndTypes> columns = new NamesAndTypes;
 	String data_path = context.path + "data/" + database_name + "/";	/// TODO: эскейпинг
 	String metadata_path = context.path + "metadata/" + database_name + "/" + table_name + ".sql";
@@ -34,39 +37,38 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 				throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
 	}
-	
-	ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*create.columns);
-	for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
-	{
-		ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
-		StringRange type_range = name_and_type_pair.type->range;
-		(*columns)[name_and_type_pair.name] = context.data_type_factory->get(String(type_range.first, type_range.second - type_range.first));
-	}
 
-	ASTFunction & storage_expr = dynamic_cast<ASTFunction &>(*create.storage);
-	String storage_str(storage_expr.range.first, storage_expr.range.second - storage_expr.range.first);
-	StoragePtr res;
+	if (!create.as_table.empty()
+		&& ((*context.databases).end() == (*context.databases).find(as_database_name)
+			|| (*context.databases)[as_database_name].end() == (*context.databases)[as_database_name].find(as_table_name)))
+		throw Exception("Table " + as_database_name + "." + as_table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+
+	if (create.columns)
+	{
+		ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*create.columns);
+		for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
+		{
+			ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
+			StringRange type_range = name_and_type_pair.type->range;
+			(*columns)[name_and_type_pair.name] = context.data_type_factory->get(String(type_range.first, type_range.second - type_range.first));
+		}
+	}
+	else if (!create.as_table.empty())
+		columns = new NamesAndTypes((*context.databases)[as_database_name][as_table_name]->getColumns());
+	else
+		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section.", ErrorCodes::INCORRECT_QUERY);
 
 	/// Выбор нужного движка таблицы
 
-	if (storage_expr.name == "Log")
-	{
-		if (storage_expr.arguments)
-			throw Exception("Storage Log doesn't allow parameters", ErrorCodes::STORAGE_DOESNT_ALLOW_PARAMETERS);
-
-		res = new StorageLog(data_path, table_name, columns);
-	}
-	else if (storage_expr.name == "SystemNumbers")
-	{
-		if (storage_expr.arguments)
-			throw Exception("Storage SystemNumbers doesn't allow parameters", ErrorCodes::STORAGE_DOESNT_ALLOW_PARAMETERS);
-		if (columns->size() != 1 || columns->begin()->first != "number" || columns->begin()->second->getName() != "UInt64")
-			throw Exception("Storage SystemNumbers only allows one column with name 'number' and type 'UInt64'", ErrorCodes::ILLEGAL_COLUMN);
-
-		res = new StorageSystemNumbers(table_name);
-	}
+	String storage_name;
+	if (create.storage)
+		storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
+	else if (!create.as_table.empty())
+		storage_name = (*context.databases)[as_database_name][as_table_name]->getName();
 	else
-		throw Exception("Unknown storage " + storage_str, ErrorCodes::UNKNOWN_STORAGE);
+		throw Exception("Incorrect CREATE query: required ENGINE or AS section.", ErrorCodes::INCORRECT_QUERY);
+		
+	StoragePtr res = context.storage_factory->get(storage_name, data_path, table_name, columns);
 
 	/// Проверка наличия метаданных таблицы на диске и создание метаданных
 
@@ -82,7 +84,13 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	else
 	{
 		Poco::FileOutputStream metadata_file(metadata_path);
-		metadata_file << String(create.range.first, create.range.second - create.range.first) << std::endl;
+		metadata_file << "ATTACH TABLE " << database_name << "." << table_name << "\n"
+			<< "(\n";
+
+		for (NamesAndTypes::const_iterator it = columns->begin(); it != columns->end(); ++it)
+			metadata_file << (it != columns->begin() ? ",\n" : "") << "\t" << it->first << " " << it->second->getName();
+			
+		metadata_file << "\n) ENGINE = " << storage_name << "\n";
 	}
 
 	{
