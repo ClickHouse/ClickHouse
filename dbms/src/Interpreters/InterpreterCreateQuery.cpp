@@ -87,7 +87,7 @@ StoragePtr InterpreterCreateQuery::execute()
 	else if (!create.as_table.empty())
 		storage_name = (*context.databases)[as_database_name][as_table_name]->getName();
 	else
-		throw Exception("Incorrect CREATE query: required ENGINE or AS section.", ErrorCodes::INCORRECT_QUERY);
+		throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::INCORRECT_QUERY);
 		
 	StoragePtr res = context.storage_factory->get(storage_name, data_path, table_name, columns);
 

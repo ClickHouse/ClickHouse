@@ -76,7 +76,6 @@ bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, String & expe
 
 	ws.ignore(pos, end);
 	
-	/// ENGINE
 	if (s_engine.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
@@ -179,9 +178,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		if (!engine_p.parse(pos, end, storage, expected))
 			return false;
 	}
-	else if (s_as.ignore(pos, end, expected))
+	else
 	{
-		if (!engine_p.parse(pos, end, storage, expected))
+		engine_p.parse(pos, end, storage, expected);
+
+		if (!s_as.ignore(pos, end, expected))
 			return false;
 		
 		ws.ignore(pos, end);
@@ -212,8 +213,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			}
 		}
 	}
-	else
-		return false;
 
 	ASTCreateQuery * query = new ASTCreateQuery(StringRange(begin, pos));
 	node = query;
