@@ -40,7 +40,7 @@ void MemoryBlockOutputStream::write(const Block & block)
 }
 
 
-StorageMemory::StorageMemory(const std::string & name_, NamesAndTypesPtr columns_)
+StorageMemory::StorageMemory(const std::string & name_, NamesAndTypesListPtr columns_)
 	: name(name_), columns(columns_)
 {
 }

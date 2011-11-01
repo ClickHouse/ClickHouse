@@ -79,13 +79,13 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов; создать файлы, если их нет.
 	  */
-	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesPtr columns_,
+	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_,
 		const std::string & extension_ = ".bin");
 
 	std::string getName() const { return "Log"; }
 	std::string getTableName() const { return name; }
 
-	const NamesAndTypes & getColumns() const { return *columns; }
+	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
 	BlockInputStreamPtr read(
 		const Names & column_names,
@@ -98,7 +98,7 @@ public:
 private:
 	const std::string path;
 	const std::string name;
-	NamesAndTypesPtr columns;
+	NamesAndTypesListPtr columns;
 	const std::string extension;
 
 	typedef std::map<std::string, Poco::File> Files_t;

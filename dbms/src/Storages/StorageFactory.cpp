@@ -13,7 +13,7 @@ StoragePtr StorageFactory::get(
 	const String & name,
 	const String & data_path,
 	const String & table_name,
-	NamesAndTypesPtr columns) const
+	NamesAndTypesListPtr columns) const
 {
 	if (name == "Log")
 		return new StorageLog(data_path, table_name, columns);

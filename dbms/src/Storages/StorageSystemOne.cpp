@@ -36,7 +36,7 @@ Block OneValueBlockInputStream::readImpl()
 StorageSystemOne::StorageSystemOne(const std::string & name_)
 	: name(name_)
 {
-	columns["dummy"] = new DataTypeUInt8;
+	columns.push_back(NameAndTypePair("dummy", new DataTypeUInt8));
 }
 
 

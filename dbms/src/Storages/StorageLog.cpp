@@ -28,7 +28,7 @@ Block LogBlockInputStream::readImpl()
 	{
 		ColumnWithNameAndType column;
 		column.name = *it;
-		column.type = (*storage.columns)[*it];
+		column.type = storage.getDataTypeByName(*it);
 		column.column = column.type->createColumn();
 		column.type->deserializeBinary(*column.column, streams[column.name]->compressed, block_size);
 
@@ -43,7 +43,7 @@ Block LogBlockInputStream::readImpl()
 LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
 	: storage(storage_)
 {
-	for (NamesAndTypes::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		streams.insert(std::make_pair(it->first, new Stream(storage.files[it->first].path())));
 }
 
@@ -60,7 +60,7 @@ void LogBlockOutputStream::write(const Block & block)
 }
 
 
-StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesPtr columns_,
+StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_,
 	const std::string & extension_)
 	: path(path_), name(name_), columns(columns_), extension(extension_)
 {
@@ -68,7 +68,7 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 	Poco::File dir(path + name + '/');
 	dir.createDirectories();
 	
-	for (NamesAndTypes::const_iterator it = columns->begin(); it != columns->end(); ++it)
+	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 	{
 		if (files.end() != files.find(it->first))
 			throw Exception("Duplicate column with name " + it->first + " in constructor of StorageLog.",

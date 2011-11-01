@@ -6,10 +6,10 @@
 namespace DB
 {
 
-static std::string listOfColumns(const NamesAndTypes & available_columns)
+static std::string listOfColumns(const NamesAndTypesMap & available_columns)
 {
 	std::stringstream s;
-	for (NamesAndTypes::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
+	for (NamesAndTypesMap::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
 	{
 		if (it != available_columns.begin())
 			s << ", ";
@@ -19,12 +19,35 @@ static std::string listOfColumns(const NamesAndTypes & available_columns)
 }
 
 
+NamesAndTypesMap IStorage::getColumnsMap() const
+{
+	NamesAndTypesMap res;
+
+	const NamesAndTypesList & names_and_types = getColumnsList();
+	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
+		res.insert(*it);
+	
+	return res;
+}
+
+
+const DataTypePtr IStorage::getDataTypeByName(const String & column_name) const
+{
+	const NamesAndTypesList & names_and_types = getColumnsList();
+	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
+		if (it->first == column_name)
+			return it->second;
+		
+	throw Exception("There is no column " + column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+}
+
+
 Block IStorage::getSampleBlock() const
 {
 	Block res;
-	const NamesAndTypes & names_and_types = getColumns();
+	const NamesAndTypesList & names_and_types = getColumnsList();
 
-	for (NamesAndTypes::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
+	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
 	{
 		ColumnWithNameAndType col;
 		col.name = it->first;
@@ -39,7 +62,7 @@ Block IStorage::getSampleBlock() const
 
 void IStorage::check(const Names & column_names) const
 {
-	const NamesAndTypes & available_columns = getColumns();
+	const NamesAndTypesMap & available_columns = getColumnsMap();
 	
 	if (column_names.empty())
 		throw Exception("Empty list of columns queried for table " + getTableName()
@@ -66,13 +89,13 @@ void IStorage::check(const Names & column_names) const
 
 void IStorage::check(const Block & block) const
 {
-	const NamesAndTypes & available_columns = getColumns();
+	const NamesAndTypesMap & available_columns = getColumnsMap();
 	
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
 
-		NamesAndTypes::const_iterator it = available_columns.find(column.name);
+		NamesAndTypesMap::const_iterator it = available_columns.find(column.name);
 		if (available_columns.end() == it)
 			throw Exception("There is no column with name " + column.name + " in table " + getTableName()
 				+ ". There are columns: " + listOfColumns(available_columns),

@@ -47,12 +47,12 @@ friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 
 public:
-	StorageMemory(const std::string & name_, NamesAndTypesPtr columns_);
+	StorageMemory(const std::string & name_, NamesAndTypesListPtr columns_);
 
 	std::string getName() const { return "Memory"; }
 	std::string getTableName() const { return name; }
 
-	const NamesAndTypes & getColumns() const { return *columns; }
+	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
 	BlockInputStreamPtr read(
 		const Names & column_names,
@@ -64,7 +64,7 @@ public:
 
 private:
 	const std::string name;
-	NamesAndTypesPtr columns;
+	NamesAndTypesListPtr columns;
 
 	/// Сами данные
 	Blocks data;

@@ -31,7 +31,7 @@ StoragePtr InterpreterCreateQuery::execute()
 	String as_database_name = create.as_database.empty() ? context.current_database : create.as_database;
 	String as_table_name = create.as_table;
 	
-	NamesAndTypesPtr columns = new NamesAndTypes;
+	NamesAndTypesListPtr columns = new NamesAndTypesList;
 	String data_path = context.path + "data/" + database_name + "/";	/// TODO: эскейпинг
 	String metadata_path = context.path + "metadata/" + database_name + "/" + table_name + ".sql";
 
@@ -64,17 +64,19 @@ StoragePtr InterpreterCreateQuery::execute()
 		{
 			ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
 			StringRange type_range = name_and_type_pair.type->range;
-			(*columns)[name_and_type_pair.name] = context.data_type_factory->get(String(type_range.first, type_range.second - type_range.first));
+			columns->push_back(NameAndTypePair(
+				name_and_type_pair.name,
+				context.data_type_factory->get(String(type_range.first, type_range.second - type_range.first))));
 		}
 	}
 	else if (!create.as_table.empty())
-		columns = new NamesAndTypes((*context.databases)[as_database_name][as_table_name]->getColumns());
+		columns = new NamesAndTypesList((*context.databases)[as_database_name][as_table_name]->getColumnsList());
 	else if (create.select)
 	{
 		Block sample = interpreter_select->getSampleBlock();
-		columns = new NamesAndTypes;
+		columns = new NamesAndTypesList;
 		for (size_t i = 0; i < sample.columns(); ++i)
-			(*columns)[sample.getByPosition(i).name] = sample.getByPosition(i).type;
+			columns->push_back(NameAndTypePair(sample.getByPosition(i).name, sample.getByPosition(i).type));
 	}
 	else
 		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
@@ -108,7 +110,7 @@ StoragePtr InterpreterCreateQuery::execute()
 		metadata_file << "ATTACH TABLE " << table_name << "\n"
 			<< "(\n";
 
-		for (NamesAndTypes::const_iterator it = columns->begin(); it != columns->end(); ++it)
+		for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 			metadata_file << (it != columns->begin() ? ",\n" : "") << "\t" << it->first << " " << it->second->getName();
 			
 		metadata_file << "\n) ENGINE = " << storage_name << "\n";

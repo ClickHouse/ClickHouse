@@ -42,7 +42,7 @@ Block NumbersBlockInputStream::readImpl()
 StorageSystemNumbers::StorageSystemNumbers(const std::string & name_)
 	: name(name_)
 {
-	columns["number"] = new DataTypeUInt64;
+	columns.push_back(NameAndTypePair("number", new DataTypeUInt64));
 }
 
 

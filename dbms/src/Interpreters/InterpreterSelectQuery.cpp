@@ -64,7 +64,7 @@ StoragePtr InterpreterSelectQuery::getTable()
 
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
-	context.columns = getTable()->getColumns();
+	context.columns = getTable()->getColumnsMap();
 	Expression expression(dynamic_cast<ASTSelectQuery &>(*query_ptr).select_expression_list, context);
 	return expression.getReturnTypes();
 }
@@ -72,7 +72,7 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 
 Block InterpreterSelectQuery::getSampleBlock()
 {
-	context.columns = getTable()->getColumns();
+	context.columns = getTable()->getColumnsMap();
 	Expression expression(dynamic_cast<ASTSelectQuery &>(*query_ptr).select_expression_list, context);
 	return expression.getSampleBlock();
 }
@@ -86,13 +86,13 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	
 	/// Какие столбцы читать из этой таблицы
 
-	context.columns = table->getColumns();
+	context.columns = table->getColumnsMap();
 	Poco::SharedPtr<Expression> expression = new Expression(query_ptr, context);
 	Names required_columns = expression->getRequiredColumns();
 
 	/// Если не указан ни один столбец из таблицы, то будем читать первый попавшийся (чтобы хотя бы знать число строк).
 	if (required_columns.empty())
-		required_columns.push_back(table->getColumns().begin()->first);
+		required_columns.push_back(table->getColumnsMap().begin()->first);
 
 	size_t limit_length = 0;
 	size_t limit_offset = 0;

@@ -35,12 +35,9 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		typedef std::pair<std::string, SharedPtr<DB::IDataType> > NameAndTypePair;
-		typedef std::list<NameAndTypePair> NamesAndTypesList;
+		DB::NamesAndTypesListPtr names_and_types_list = new DB::NamesAndTypesList;
 
-		NamesAndTypesList names_and_types_list;
-
-		boost::assign::push_back(names_and_types_list)
+		boost::assign::push_back(*names_and_types_list)
 			("WatchID",				new DB::DataTypeUInt64)
 			("JavaEnable",			new DB::DataTypeUInt8)
 			("Title",				new DB::DataTypeString)
@@ -101,8 +98,6 @@ int main(int argc, char ** argv)
 			("WithHash",			new DB::DataTypeUInt8)
 		;
 
-		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;
-
 		DB::Context context;
 
 /*		(*context.functions)["plus"] 			= new DB::FunctionPlus;
@@ -124,11 +119,8 @@ int main(int argc, char ** argv)
 		(*context.functions)["xor"] 			= new DB::FunctionXor;
 		(*context.functions)["not"] 			= new DB::FunctionNot;
 */
-		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
-		{
-			names_and_types_map->insert(*it);
+		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 			context.columns[it->first] = it->second;
-		}
 
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
@@ -152,7 +144,7 @@ int main(int argc, char ** argv)
 
 		/// создаём объект существующей таблицы хит лога
 
-		DB::StorageLog table("./", "HitLog", names_and_types_map, ".bin");
+		DB::StorageLog table("./", "HitLog", names_and_types_list, ".bin");
 
 		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
 

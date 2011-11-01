@@ -37,7 +37,7 @@ public:
 	std::string getName() const { return "SystemNumbers"; }
 	std::string getTableName() const { return "Numbers"; }
 
-	const NamesAndTypes & getColumns() const { return columns; }
+	const NamesAndTypesList & getColumnsList() const { return columns; }
 
 	BlockInputStreamPtr read(
 		const Names & column_names,
@@ -46,7 +46,7 @@ public:
 
 private:
 	const std::string name;
-	NamesAndTypes columns;
+	NamesAndTypesList columns;
 };
 
 }

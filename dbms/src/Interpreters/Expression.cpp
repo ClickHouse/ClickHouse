@@ -24,7 +24,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
 		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
-		for (NamesAndTypes::const_iterator it = context.columns.begin(); it != context.columns.end(); ++it)
+		for (NamesAndTypesMap::const_iterator it = context.columns.begin(); it != context.columns.end(); ++it)
 			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
 		ast = all_columns;
 
@@ -68,7 +68,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	{
 		if (node->kind == ASTIdentifier::Column)
 		{
-			NamesAndTypes::const_iterator it = context.columns.find(node->name);
+			NamesAndTypesMap::const_iterator it = context.columns.find(node->name);
 			if (it == context.columns.end())
 				throw Exception("Unknown identifier " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
 

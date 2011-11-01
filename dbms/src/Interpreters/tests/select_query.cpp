@@ -43,12 +43,9 @@ int main(int argc, char ** argv)
 		/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 		Yandex::DateLUTSingleton::instance();
 		
-		typedef std::pair<std::string, SharedPtr<DB::IDataType> > NameAndTypePair;
-		typedef std::list<NameAndTypePair> NamesAndTypesList;
+		DB::NamesAndTypesListPtr names_and_types_list = new DB::NamesAndTypesList;
 
-		NamesAndTypesList names_and_types_list;
-
-		boost::assign::push_back(names_and_types_list)
+		boost::assign::push_back(*names_and_types_list)
 			("WatchID",				new DB::DataTypeUInt64)
 			("JavaEnable",			new DB::DataTypeUInt8)
 			("Title",				new DB::DataTypeString)
@@ -108,13 +105,6 @@ int main(int argc, char ** argv)
 			("DontCountHits",		new DB::DataTypeUInt8)
 			("WithHash",			new DB::DataTypeUInt8)
 		;
-
-		SharedPtr<DB::NamesAndTypes> names_and_types_map = new DB::NamesAndTypes;
-
-		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
-		{
-			names_and_types_map->insert(*it);
-		}
 
 		DB::Context context;
 
@@ -193,9 +183,9 @@ int main(int argc, char ** argv)
 
 		DB::loadMetadata(context);
 
-		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./data/default/", "hits", names_and_types_map, ".bin");
-		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./data/default/", "hits2", names_and_types_map, ".bin");
-		(*context.databases)["default"]["hits3"] 	= new DB::StorageLog("./data/default/", "hits3", names_and_types_map, ".bin");
+		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./data/default/", "hits", names_and_types_list, ".bin");
+		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./data/default/", "hits2", names_and_types_list, ".bin");
+		(*context.databases)["default"]["hits3"] 	= new DB::StorageLog("./data/default/", "hits3", names_and_types_list, ".bin");
 		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
 		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");
 		context.current_database = "default";

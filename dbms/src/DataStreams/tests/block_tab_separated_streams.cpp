@@ -28,12 +28,9 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		typedef std::pair<std::string, SharedPtr<DB::IDataType> > NameAndTypePair;
-		typedef std::list<NameAndTypePair> NamesAndTypesList;
+		DB::NamesAndTypesListPtr names_and_types_list = new DB::NamesAndTypesList;
 
-		NamesAndTypesList names_and_types_list;
-
-		boost::assign::push_back(names_and_types_list)
+		boost::assign::push_back(*names_and_types_list)
 			("WatchID",				new DB::DataTypeUInt64)
 			("JavaEnable",			new DB::DataTypeUInt8)
 			("Title",				new DB::DataTypeString)
@@ -96,13 +93,13 @@ int main(int argc, char ** argv)
 
 		SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
 
-		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
+		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 			data_types->push_back(it->second);
 
 		/// создаём описание, как читать данные из tab separated дампа
 
 		DB::Block sample;
-		for (NamesAndTypesList::const_iterator it = names_and_types_list.begin(); it != names_and_types_list.end(); ++it)
+		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 		{
 			DB::ColumnWithNameAndType elem;
 			elem.name = it->first;

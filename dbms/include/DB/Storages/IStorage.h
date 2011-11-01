@@ -36,7 +36,10 @@ public:
 
 	/** Получить список имён и типов столбцов таблицы.
 	  */
-	virtual const NamesAndTypes & getColumns() const = 0;
+	virtual const NamesAndTypesList & getColumnsList() const = 0;
+
+	NamesAndTypesMap getColumnsMap() const;
+	const DataTypePtr getDataTypeByName(const String & column_name) const;
 
 	/** То же самое, но в виде блока-образца.
 	  */
@@ -76,7 +79,7 @@ public:
 	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
 	  * (ALTER, затрагивающий изменение движка, делается внешним кодом, путём копирования данных.)
 	  */
-	virtual void alter(NamesAndTypesPtr columns)
+	virtual void alter(NamesAndTypesListPtr columns)
 	{
 		throw Exception("Method alter() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
