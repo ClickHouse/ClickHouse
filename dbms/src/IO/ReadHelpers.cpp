@@ -110,4 +110,9 @@ void readDoubleQuotedString(String & s, ReadBuffer & buf)
 	readAnyQuotedString<'"'>(s, buf);
 }
 
+void readBackQuotedString(String & s, ReadBuffer & buf)
+{
+	readAnyQuotedString<'`'>(s, buf);
+}
+
 }

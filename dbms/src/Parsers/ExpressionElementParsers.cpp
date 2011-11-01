@@ -1,6 +1,8 @@
 #include <errno.h>
 #include <cstdlib>
 
+#include <DB/IO/ReadHelpers.h>
+
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
@@ -95,20 +97,33 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 {
 	Pos begin = pos;
 
-	while (pos != end
-		&& ((*pos >= 'a' && *pos <= 'z')
-			|| (*pos >= 'A' && *pos <= 'Z')
-			|| (*pos == '_')
-			|| (pos != begin && *pos >= '0' && *pos <= '9')))
-		++pos;
-
-	if (pos != begin)
+	/// Идентификатор в обратных кавычках
+	if (pos != end && *pos == '`')
 	{
-		node = new ASTIdentifier(StringRange(begin, pos), String(begin, pos - begin));
+		ReadBuffer buf(const_cast<char *>(pos), end - pos, 0);
+		String s;
+		readBackQuotedString(s, buf);
+		pos += buf.count();
+		node = new ASTIdentifier(StringRange(begin, pos), s);
 		return true;
 	}
 	else
-		return false;
+	{
+		while (pos != end
+			&& ((*pos >= 'a' && *pos <= 'z')
+				|| (*pos >= 'A' && *pos <= 'Z')
+				|| (*pos == '_')
+				|| (pos != begin && *pos >= '0' && *pos <= '9')))
+			++pos;
+
+		if (pos != begin)
+		{
+			node = new ASTIdentifier(StringRange(begin, pos), String(begin, pos - begin));
+			return true;
+		}
+		else
+			return false;
+	}
 }
 
 
@@ -196,28 +211,6 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expecte
 
 	node = new ASTLiteral(StringRange(begin, pos), res);
 	return true;
-}
-
-
-static inline char parseEscapeSequence(char c)
-{
-	switch(c)
-	{
-		case 'b':
-			return '\b';
-		case 'f':
-			return '\f';
-		case 'n':
-			return '\n';
-		case 'r':
-			return '\r';
-		case 't':
-			return '\t';
-		case '0':
-			return '\0';
-		default:
-			return c;
-	}
 }
 
 

@@ -1,5 +1,8 @@
 #include <Poco/FileStream.h>
 
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
+
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
@@ -111,7 +114,13 @@ StoragePtr InterpreterCreateQuery::execute()
 			<< "(\n";
 
 		for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-			metadata_file << (it != columns->begin() ? ",\n" : "") << "\t" << it->first << " " << it->second->getName();
+		{
+			String quoted_column_name;
+			WriteBufferFromString buf(quoted_column_name);
+			writeBackQuotedString(it->first, buf);
+			
+			metadata_file << (it != columns->begin() ? ",\n" : "") << "\t" << quoted_column_name << " " << it->second->getName();
+		}
 			
 		metadata_file << "\n) ENGINE = " << storage_name << "\n";
 	}

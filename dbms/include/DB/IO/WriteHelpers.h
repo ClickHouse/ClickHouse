@@ -124,18 +124,84 @@ inline void writeString(const String & s, WriteBuffer & buf)
 	buf.write(s.data(), s.size());
 }
 
-/// предполагается, что строка в оперативке хранится непрерывно, и \0-terminated.
-void writeEscapedString(const String & s, WriteBuffer & buf);
+
+template <char c>
+void writeAnyEscapedString(const String & s, WriteBuffer & buf)
+{
+	for (String::const_iterator it = s.begin(); it != s.end(); ++it)
+	{
+		switch (*it)
+		{
+			case '\b':
+				writeChar('\\', buf);
+				writeChar('b', buf);
+				break;
+			case '\f':
+				writeChar('\\', buf);
+				writeChar('f', buf);
+				break;
+			case '\n':
+				writeChar('\\', buf);
+				writeChar('n', buf);
+				break;
+			case '\r':
+				writeChar('\\', buf);
+				writeChar('r', buf);
+				break;
+			case '\t':
+				writeChar('\\', buf);
+				writeChar('t', buf);
+				break;
+			case '\0':
+				writeChar('\\', buf);
+				writeChar('0', buf);
+				break;
+			case '\\':
+				writeChar('\\', buf);
+				writeChar('\\', buf);
+				break;
+			case c:
+				writeChar('\\', buf);
+				writeChar(c, buf);
+				break;
+			default:
+				writeChar(*it, buf);
+		}
+	}
+}
+
+
+inline void writeEscapedString(const String & s, WriteBuffer & buf)
+{
+	writeAnyEscapedString<'\''>(s, buf);
+}
+
+
+template <char c>
+void writeAnyQuotedString(const String & s, WriteBuffer & buf)
+{
+	writeChar(c, buf);
+	writeAnyEscapedString<c>(s, buf);
+	writeChar(c, buf);
+}
+
 
 inline void writeQuotedString(const String & s, WriteBuffer & buf)
 {
-	writeChar('\'', buf);
-	writeEscapedString(s, buf);
-	writeChar('\'', buf);
+	writeAnyQuotedString<'\''>(s, buf);
 }
 
 /// Совместимо с JSON.
-void writeDoubleQuotedString(const String & s, WriteBuffer & buf);
+inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
+{
+	writeAnyQuotedString<'"'>(s, buf);
+}
+
+/// Совместимо с JSON.
+inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
+{
+	writeAnyQuotedString<'`'>(s, buf);
+}
 
 
 /// в формате YYYY-MM-DD

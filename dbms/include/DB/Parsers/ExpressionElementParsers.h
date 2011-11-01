@@ -26,7 +26,7 @@ protected:
 };
 
 
-/** Идентификатор, например, x_yz123
+/** Идентификатор, например, x_yz123 или `something special`
   */
 class ParserIdentifier : public IParserBase
 {
