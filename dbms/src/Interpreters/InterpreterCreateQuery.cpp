@@ -1,11 +1,14 @@
 #include <Poco/FileStream.h>
 
+#include <DB/DataStreams/copyData.h>
+
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 
+#include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 
 
@@ -13,9 +16,15 @@ namespace DB
 {
 
 
-StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
+InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_, size_t max_block_size_)
+	: query_ptr(query_ptr_), context(context_), max_block_size(max_block_size_)
 {
-	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query);
+}
+	
+
+StoragePtr InterpreterCreateQuery::execute()
+{
+	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_ptr);
 
 	String database_name = create.database.empty() ? context.current_database : create.database;
 	String table_name = create.table;
@@ -43,6 +52,11 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 			|| (*context.databases)[as_database_name].end() == (*context.databases)[as_database_name].find(as_table_name)))
 		throw Exception("Table " + as_database_name + "." + as_table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
+	SharedPtr<InterpreterSelectQuery> interpreter_select;
+	if (create.select)
+		interpreter_select = new InterpreterSelectQuery(create.select, context, max_block_size);
+
+	/// Получаем список столбцов
 	if (create.columns)
 	{
 		ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*create.columns);
@@ -55,8 +69,15 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 	}
 	else if (!create.as_table.empty())
 		columns = new NamesAndTypes((*context.databases)[as_database_name][as_table_name]->getColumns());
+	else if (create.select)
+	{
+		Block sample = interpreter_select->getSampleBlock();
+		columns = new NamesAndTypes;
+		for (size_t i = 0; i < sample.columns(); ++i)
+			(*columns)[sample.getByPosition(i).name] = sample.getByPosition(i).type;
+	}
 	else
-		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section.", ErrorCodes::INCORRECT_QUERY);
+		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
 	/// Выбор нужного движка таблицы
 
@@ -98,6 +119,10 @@ StoragePtr InterpreterCreateQuery::execute(ASTPtr query, Context & context)
 
 		(*context.databases)[database_name][table_name] = res;
 	}
+
+	/// Если запрос CREATE SELECT, то вставим в таблицу данные
+	if (create.select)
+		copyData(*interpreter_select->execute(), *res->write(query_ptr));
 	
 	return res;
 }

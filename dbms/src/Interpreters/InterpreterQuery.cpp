@@ -32,8 +32,8 @@ void InterpreterQuery::execute(WriteBuffer & ostr, SharedPtr<ReadBuffer> remaini
 	}
 	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
 	{
-		InterpreterCreateQuery interpreter;
-		interpreter.execute(query_ptr, context);
+		InterpreterCreateQuery interpreter(query_ptr, context, max_block_size);
+		interpreter.execute();
 	}
 	else
 		throw Exception("Unknown type of query: " + query_ptr->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

@@ -13,8 +13,15 @@ namespace DB
 class InterpreterCreateQuery
 {
 public:
+	InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_, size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
+	
 	/// Добавляет созданную таблицу в контекст, а также возвращает её.
-	StoragePtr execute(ASTPtr query, Context & context);
+	StoragePtr execute();
+
+private:
+	ASTPtr query_ptr;
+	Context context;
+	size_t max_block_size;
 };
 
 

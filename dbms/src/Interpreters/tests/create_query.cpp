@@ -98,8 +98,8 @@ int main(int argc, char ** argv)
 		(*context.databases)["test"];
 		context.current_database = "test";
 
-		DB::InterpreterCreateQuery interpreter;
-		interpreter.execute(ast, context);
+		DB::InterpreterCreateQuery interpreter(ast, context);
+		interpreter.execute();
 	}
 	catch (const DB::Exception & e)
 	{

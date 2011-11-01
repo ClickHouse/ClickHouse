@@ -27,6 +27,15 @@ protected:
 };
 
 
+/** ENGINE = name. */
+class ParserEngine : public IParserBase
+{
+protected:
+	String getName() { return "ENGINE"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
 /** Запрос типа такого:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name
   * (
@@ -36,7 +45,10 @@ protected:
   * ) ENGINE = engine
   *
   * Или:
-  * CREATE TABLE [db.]name AS [db2.]name2
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2
+  *
+  * Или:
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {
