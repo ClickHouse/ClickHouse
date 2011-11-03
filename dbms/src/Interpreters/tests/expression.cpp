@@ -106,9 +106,9 @@ int main(int argc, char ** argv)
 		}
 
 		DB::Context context;
-		context.columns["x"] = new DB::DataTypeInt16;
-		context.columns["s1"] = new DB::DataTypeString;
-		context.columns["s2"] = new DB::DataTypeString;
+		context.columns.push_back(DB::NameAndTypePair("x", new DB::DataTypeInt16));
+		context.columns.push_back(DB::NameAndTypePair("s1", new DB::DataTypeString));
+		context.columns.push_back(DB::NameAndTypePair("s2", new DB::DataTypeString));
 
 		(*context.functions)["plus"] 			= new DB::FunctionPlus;
 		(*context.functions)["minus"] 			= new DB::FunctionMinus;

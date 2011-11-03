@@ -116,8 +116,10 @@ StoragePtr InterpreterCreateQuery::execute()
 		for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 		{
 			String quoted_column_name;
-			WriteBufferFromString buf(quoted_column_name);
-			writeBackQuotedString(it->first, buf);
+			{
+				WriteBufferFromString buf(quoted_column_name);
+				writeBackQuotedString(it->first, buf);
+			}
 			
 			metadata_file << (it != columns->begin() ? ",\n" : "") << "\t" << quoted_column_name << " " << it->second->getName();
 		}

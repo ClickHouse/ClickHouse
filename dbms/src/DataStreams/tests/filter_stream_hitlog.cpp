@@ -119,8 +119,7 @@ int main(int argc, char ** argv)
 		(*context.functions)["xor"] 			= new DB::FunctionXor;
 		(*context.functions)["not"] 			= new DB::FunctionNot;
 */
-		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
-			context.columns[it->first] = it->second;
+		context.columns = names_and_types_list;
 
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;

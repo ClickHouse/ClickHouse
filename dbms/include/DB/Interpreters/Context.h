@@ -40,7 +40,7 @@ struct Context
 	AggregateFunctionFactoryPtr aggregate_function_factory; /// Агрегатные функции.
 	DataTypeFactoryPtr data_type_factory;					/// Типы данных.
 	StorageFactoryPtr storage_factory;						/// Движки таблиц.
-	NamesAndTypesMap columns;								/// Столбцы текущей обрабатываемой таблицы.
+	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
 
 	SharedPtr<Poco::FastMutex> mutex;	/// Для доступа и модификации разделяемых объектов.
 

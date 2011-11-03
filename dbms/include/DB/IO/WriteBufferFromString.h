@@ -4,6 +4,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 
+#define WRITE_BUFFER_FROM_STRING_INITIAL_SIZE_IF_EMPTY 32
 
 namespace DB
 {
@@ -27,6 +28,16 @@ public:
 	WriteBufferFromString(std::string & s_)
 		: WriteBuffer(reinterpret_cast<Position>(&s_[0]), s_.size()), s(s_)
 	{
+		if (s.empty())
+		{
+			s.resize(WRITE_BUFFER_FROM_STRING_INITIAL_SIZE_IF_EMPTY);
+			set(reinterpret_cast<Position>(&s[0]), s.size());
+		}
+	}
+
+    virtual ~WriteBufferFromString()
+	{
+		s.resize(count());
 	}
 };
 

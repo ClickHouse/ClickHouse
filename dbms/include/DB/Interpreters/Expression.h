@@ -71,6 +71,9 @@ private:
 
 	typedef std::set<String> NamesSet;
 	NamesSet required_columns;
+
+
+	NamesAndTypesList::const_iterator findColumn(const String & name);
 	
 	
 	/** Для узлов - звёздочек - раскрыть их в список всех столбцов.

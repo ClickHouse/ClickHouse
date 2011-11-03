@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
 		std::cerr << ast->getTreeID() << std::endl;
 
 		DB::Context context;
-		context.columns["number"] = new DB::DataTypeUInt64;
+		context.columns.push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
 		(*context.functions)["modulo"] = new DB::FunctionModulo;
 		(*context.functions)["equals"] = new DB::FunctionEquals;
 		(*context.functions)["notEquals"] = new DB::FunctionNotEquals;

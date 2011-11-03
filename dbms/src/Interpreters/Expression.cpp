@@ -14,6 +14,16 @@ namespace DB
 {
 
 
+NamesAndTypesList::const_iterator Expression::findColumn(const String & name)
+{
+	NamesAndTypesList::const_iterator it;
+	for (it = context.columns.begin(); it != context.columns.end(); ++it)
+		if (it->first == name)
+			break;
+	return it;
+}
+	
+
 void Expression::addSemantic(ASTPtr & ast)
 {
 	/// Обход в глубину
@@ -24,7 +34,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
 		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
-		for (NamesAndTypesMap::const_iterator it = context.columns.begin(); it != context.columns.end(); ++it)
+		for (NamesAndTypesList::const_iterator it = context.columns.begin(); it != context.columns.end(); ++it)
 			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
 		ast = all_columns;
 
@@ -37,7 +47,7 @@ void Expression::addSemantic(ASTPtr & ast)
 		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
 		  */
 		String function_string = node->getColumnName();
-		NamesAndTypesMap::const_iterator it = context.columns.find(function_string);
+		NamesAndTypesList::const_iterator it = findColumn(function_string);
 		if (context.columns.end() != it)
 		{
 			ASTIdentifier * ast_id = new ASTIdentifier(node->range, node->name);
@@ -83,7 +93,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	{
 		if (node->kind == ASTIdentifier::Column)
 		{
-			NamesAndTypesMap::const_iterator it = context.columns.find(node->name);
+			NamesAndTypesList::const_iterator it = findColumn(node->name);
 			if (it == context.columns.end())
 				throw Exception("Unknown identifier " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
