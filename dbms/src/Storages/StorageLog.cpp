@@ -1,5 +1,7 @@
 #include <map>
 
+#include <DB/Common/escapeForFileName.h>
+
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -65,8 +67,7 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 	: path(path_), name(name_), columns(columns_), extension(extension_)
 {
 	/// создаём файлы, если их нет
-	Poco::File dir(path + name + '/');
-	dir.createDirectories();
+	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 	
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 	{
@@ -74,7 +75,7 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 			throw Exception("Duplicate column with name " + it->first + " in constructor of StorageLog.",
 				ErrorCodes::DUPLICATE_COLUMN);
 
-		files.insert(std::make_pair(it->first, Poco::File(path + name + '/' + it->first + extension)));
+		files.insert(std::make_pair(it->first, Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + extension)));
 	}
 }
 
@@ -93,6 +94,13 @@ BlockOutputStreamPtr StorageLog::write(
 	ASTPtr query)
 {
 	return new LogBlockOutputStream(*this);
+}
+
+
+void StorageLog::drop()
+{
+	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
+		it->second.remove();
 }
 
 }

@@ -1,10 +1,12 @@
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTDropQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
+#include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
 
 
@@ -33,6 +35,11 @@ void InterpreterQuery::execute(WriteBuffer & ostr, SharedPtr<ReadBuffer> remaini
 	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
 	{
 		InterpreterCreateQuery interpreter(query_ptr, context, max_block_size);
+		interpreter.execute();
+	}
+	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
+	{
+		InterpreterDropQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else

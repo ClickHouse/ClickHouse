@@ -49,6 +49,9 @@ protected:
   *
   * Или:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS SELECT ...
+  *
+  * Или:
+  * CREATE|ATTACH DATABASE db
   */
 class ParserCreateQuery : public IParserBase
 {

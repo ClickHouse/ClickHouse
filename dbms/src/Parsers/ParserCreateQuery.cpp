@@ -70,7 +70,7 @@ bool ParserNameTypePair::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & e
 bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, String & expected)
 {
 	ParserWhiteSpaceOrComments ws;
-	ParserString s_engine("ENGINE", true);
+	ParserString s_engine("ENGINE", true, true);
 	ParserString s_eq("=");
 	ParserIdentifierWithOptionalParameters storage_p;
 
@@ -103,14 +103,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_create("CREATE", true, true);
 	ParserString s_attach("ATTACH", true, true);
 	ParserString s_table("TABLE", true, true);
+	ParserString s_database("DATABASE", true, true);
 	ParserString s_dot(".");
 	ParserString s_lparen("(");
 	ParserString s_rparen(")");
-	ParserString s_if("IF", true);
-	ParserString s_not("NOT", true);
-	ParserString s_exists("EXISTS", true);
-	ParserString s_as("AS", true);
-	ParserString s_select("SELECT", true);
+	ParserString s_if("IF", true, true);
+	ParserString s_not("NOT", true, true);
+	ParserString s_exists("EXISTS", true, true);
+	ParserString s_as("AS", true, true);
+	ParserString s_select("SELECT", true, true);
 	ParserEngine engine_p;
 	ParserIdentifier name_p;
 	ParserList columns_p(new ParserNameTypePair, new ParserString(","), false);
@@ -135,84 +136,108 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			return false;
 	}
 
-	if (!ws.ignore(pos, end) || !s_table.ignore(pos, end, expected) || !ws.ignore(pos, end))
-		return false;
-
-	if (s_if.ignore(pos, end, expected)
-		&& ws.ignore(pos, end)
-		&& s_not.ignore(pos, end, expected)
-		&& ws.ignore(pos, end)
-		&& s_exists.ignore(pos, end, expected)
-		&& ws.ignore(pos, end))
-		if_not_exists = true;
-
-	if (!name_p.parse(pos, end, table, expected))
-		return false;
-
 	ws.ignore(pos, end);
 
-	if (s_dot.ignore(pos, end, expected))
-	{
-		database = table;
-		if (!name_p.parse(pos, end, table, expected))
-			return false;
-
-		ws.ignore(pos, end);
-	}
-
-	/// Список столбцов
-	if (s_lparen.ignore(pos, end, expected))
+	if (s_database.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!columns_p.parse(pos, end, columns, expected))
-			return false;
+		if (s_if.ignore(pos, end, expected)
+			&& ws.ignore(pos, end)
+			&& s_not.ignore(pos, end, expected)
+			&& ws.ignore(pos, end)
+			&& s_exists.ignore(pos, end, expected)
+			&& ws.ignore(pos, end))
+			if_not_exists = true;
 
-		ws.ignore(pos, end);
-
-		if (!s_rparen.ignore(pos, end, expected))
-			return false;
-
-		ws.ignore(pos, end);
-
-		if (!engine_p.parse(pos, end, storage, expected))
+		if (!name_p.parse(pos, end, database, expected))
 			return false;
 	}
 	else
 	{
-		engine_p.parse(pos, end, storage, expected);
-
-		if (!s_as.ignore(pos, end, expected))
+		if (!s_table.ignore(pos, end, expected))
 			return false;
-		
+
 		ws.ignore(pos, end);
 
-		/// AS SELECT ...
-		Pos before_select = pos;
-		if (s_select.ignore(pos, end, expected))
+		if (s_if.ignore(pos, end, expected)
+			&& ws.ignore(pos, end)
+			&& s_not.ignore(pos, end, expected)
+			&& ws.ignore(pos, end)
+			&& s_exists.ignore(pos, end, expected)
+			&& ws.ignore(pos, end))
+			if_not_exists = true;
+
+		if (!name_p.parse(pos, end, table, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (s_dot.ignore(pos, end, expected))
 		{
-			pos = before_select;
-			ParserSelectQuery select_p;
-			select_p.parse(pos, end, select, expected);
+			database = table;
+			if (!name_p.parse(pos, end, table, expected))
+				return false;
+
+			ws.ignore(pos, end);
 		}
-		else
+
+		/// Список столбцов
+		if (s_lparen.ignore(pos, end, expected))
 		{
-			/// AS [db.]table
-			if (!name_p.parse(pos, end, as_table, expected))
+			ws.ignore(pos, end);
+
+			if (!columns_p.parse(pos, end, columns, expected))
 				return false;
 
 			ws.ignore(pos, end);
 
-			if (s_dot.ignore(pos, end, expected))
+			if (!s_rparen.ignore(pos, end, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!engine_p.parse(pos, end, storage, expected))
+				return false;
+		}
+		else
+		{
+			engine_p.parse(pos, end, storage, expected);
+
+			if (!s_as.ignore(pos, end, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			/// AS SELECT ...
+			Pos before_select = pos;
+			if (s_select.ignore(pos, end, expected))
 			{
-				as_database = as_table;
+				pos = before_select;
+				ParserSelectQuery select_p;
+				select_p.parse(pos, end, select, expected);
+			}
+			else
+			{
+				/// AS [db.]table
 				if (!name_p.parse(pos, end, as_table, expected))
 					return false;
 
 				ws.ignore(pos, end);
+
+				if (s_dot.ignore(pos, end, expected))
+				{
+					as_database = as_table;
+					if (!name_p.parse(pos, end, as_table, expected))
+						return false;
+
+					ws.ignore(pos, end);
+				}
 			}
 		}
 	}
+
+	ws.ignore(pos, end);
 
 	ASTCreateQuery * query = new ASTCreateQuery(StringRange(begin, pos));
 	node = query;
@@ -221,7 +246,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	query->if_not_exists = if_not_exists;
 	if (database)
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
-	query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+	if (table)
+		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
 	query->columns = columns;
 	query->storage = storage;
 	if (as_database)

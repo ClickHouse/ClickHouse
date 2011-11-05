@@ -62,6 +62,8 @@ public:
 	BlockOutputStreamPtr write(
 		ASTPtr query);
 
+	void drop();
+
 private:
 	const std::string name;
 	NamesAndTypesListPtr columns;

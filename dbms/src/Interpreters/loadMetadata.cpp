@@ -52,6 +52,8 @@ void loadMetadata(Context & context)
 		if (!it->isDirectory())
 			continue;
 
+		executeCreateQuery("ATTACH DATABASE " + it.name(), context, it.name(), it->path());
+
 		/// Цикл по таблицам
 		for (Poco::DirectoryIterator jt(it->path()); jt != dir_end; ++jt)
 		{

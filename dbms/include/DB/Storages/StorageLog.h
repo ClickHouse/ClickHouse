@@ -95,6 +95,8 @@ public:
 	BlockOutputStreamPtr write(
 		ASTPtr query);
 
+	void drop();
+
 private:
 	const std::string path;
 	const std::string name;

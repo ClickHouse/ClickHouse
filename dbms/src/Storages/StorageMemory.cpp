@@ -62,4 +62,10 @@ BlockOutputStreamPtr StorageMemory::write(
 	return new MemoryBlockOutputStream(*this);
 }
 
+
+void StorageMemory::drop()
+{
+	data.clear();
+}
+
 }

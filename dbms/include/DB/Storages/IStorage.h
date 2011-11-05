@@ -69,7 +69,7 @@ public:
 		throw Exception("Method write() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	/** Удалить данные таблицы.
+	/** Удалить данные таблицы. После вызова этого метода, использование объекта некорректно (его можно лишь уничтожить).
 	  */
 	virtual void drop()
 	{

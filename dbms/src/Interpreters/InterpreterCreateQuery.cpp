@@ -1,4 +1,7 @@
+#include <Poco/File.h>
 #include <Poco/FileStream.h>
+
+#include <DB/Common/escapeForFileName.h>
 
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
@@ -27,27 +30,60 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 
 StoragePtr InterpreterCreateQuery::execute()
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
+	
 	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_ptr);
 
 	String database_name = create.database.empty() ? context.current_database : create.database;
+	String database_name_escaped = escapeForFileName(database_name);
 	String table_name = create.table;
+	String table_name_escaped = escapeForFileName(table_name);
 	String as_database_name = create.as_database.empty() ? context.current_database : create.as_database;
 	String as_table_name = create.as_table;
 	
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
-	String data_path = context.path + "data/" + database_name + "/";	/// TODO: эскейпинг
-	String metadata_path = context.path + "metadata/" + database_name + "/" + table_name + ".sql";
+	String data_path = context.path + "data/" + database_name_escaped + "/";	/// TODO: эскейпинг
+	String metadata_path = context.path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
 
+	/// CREATE|ATTACH DATABASE
+	if (!database_name.empty() && table_name.empty())
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
-		
-		if ((*context.databases)[database_name].end() != (*context.databases)[database_name].find(table_name))
+		if (context.databases->end() != context.databases->find(database_name))
 		{
-			if (create.if_not_exists)
-				return (*context.databases)[database_name][table_name];
-			else
-				throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+			if (!create.if_not_exists)
+				throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+			return NULL;
 		}
+
+		if (create.attach)
+		{
+			if (!Poco::File(data_path).exists())
+				throw Exception("Directory " + data_path + " doesn't exist.", ErrorCodes::DIRECTORY_DOESNT_EXIST);
+		}
+		else
+		{
+			if (!create.if_not_exists && Poco::File(metadata_path).exists())
+				throw Exception("Directory " + metadata_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+			if (!create.if_not_exists && Poco::File(data_path).exists())
+				throw Exception("Directory " + data_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+			
+			Poco::File(metadata_path).createDirectory();
+			Poco::File(data_path).createDirectory();
+		}
+
+		(*context.databases)[database_name];
+		return NULL;
+	}
+
+	if (context.databases->end() == context.databases->find(database_name))
+		throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+		
+	if ((*context.databases)[database_name].end() != (*context.databases)[database_name].find(table_name))
+	{
+		if (create.if_not_exists)
+			return (*context.databases)[database_name][table_name];
+		else
+			throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 	}
 
 	if (!create.as_table.empty()
@@ -127,11 +163,7 @@ StoragePtr InterpreterCreateQuery::execute()
 		metadata_file << "\n) ENGINE = " << storage_name << "\n";
 	}
 
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
-
-		(*context.databases)[database_name][table_name] = res;
-	}
+	(*context.databases)[database_name][table_name] = res;
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
 	if (create.select)
