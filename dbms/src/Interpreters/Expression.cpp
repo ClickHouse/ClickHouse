@@ -26,7 +26,24 @@ NamesAndTypesList::const_iterator Expression::findColumn(const String & name)
 
 void Expression::addSemantic(ASTPtr & ast)
 {
-	/// Обход в глубину
+	/// rewrite правила, которые действуют при обходе сверху-вниз.
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
+		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
+		  */
+		String function_string = node->getColumnName();
+		NamesAndTypesList::const_iterator it = findColumn(function_string);
+		if (context.columns.end() != it)
+		{
+			ASTIdentifier * ast_id = new ASTIdentifier(node->range, std::string(node->range.first, node->range.second));
+			ast_id->type = it->second;
+			required_columns.insert(function_string);
+			ast = ast_id;
+		}
+	}
+	
+	/// Обход снизу-вверх.
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		addSemantic(*it);
@@ -43,51 +60,36 @@ void Expression::addSemantic(ASTPtr & ast)
 	}
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
-		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
-		  */
-		String function_string = node->getColumnName();
-		NamesAndTypesList::const_iterator it = findColumn(function_string);
-		if (context.columns.end() != it)
+		Functions::const_iterator it = context.functions->find(node->name);
+
+		/// Типы аргументов
+		DataTypes argument_types;
+		ASTs & arguments = dynamic_cast<ASTExpressionList &>(*node->arguments).children;
+
+		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
 		{
-			ASTIdentifier * ast_id = new ASTIdentifier(node->range, node->name);
-			ast_id->type = it->second;
-			required_columns.insert(function_string);
-			ast = ast_id;
+			if (ASTFunction * arg = dynamic_cast<ASTFunction *>(&**it))
+				argument_types.push_back(arg->return_type);
+			else if (ASTIdentifier * arg = dynamic_cast<ASTIdentifier *>(&**it))
+				argument_types.push_back(arg->type);
+			else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&**it))
+				argument_types.push_back(arg->type);
+		}
+
+		node->aggregate_function = context.aggregate_function_factory->tryGet(node->name, argument_types);
+		if (it == context.functions->end() && node->aggregate_function.isNull())
+			throw Exception("Unknown function " + node->name, ErrorCodes::UNKNOWN_FUNCTION);
+		if (it != context.functions->end())
+			node->function = it->second;
+
+		/// Получаем типы результата
+		if (node->aggregate_function)
+		{
+			node->aggregate_function->setArguments(argument_types);
+			node->return_type = node->aggregate_function->getReturnType();
 		}
 		else
-		{
-			Functions::const_iterator it = context.functions->find(node->name);
-
-			/// Типы аргументов
-			DataTypes argument_types;
-			ASTs & arguments = dynamic_cast<ASTExpressionList &>(*node->arguments).children;
-
-			for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
-			{
-				if (ASTFunction * arg = dynamic_cast<ASTFunction *>(&**it))
-					argument_types.push_back(arg->return_type);
-				else if (ASTIdentifier * arg = dynamic_cast<ASTIdentifier *>(&**it))
-					argument_types.push_back(arg->type);
-				else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&**it))
-					argument_types.push_back(arg->type);
-			}
-
-			node->aggregate_function = context.aggregate_function_factory->tryGet(node->name, argument_types);
-			if (it == context.functions->end() && node->aggregate_function.isNull())
-				throw Exception("Unknown function " + node->name, ErrorCodes::UNKNOWN_FUNCTION);
-			if (it != context.functions->end())
-				node->function = it->second;
-
-			/// Получаем типы результата
-			if (node->aggregate_function)
-			{
-				node->aggregate_function->setArguments(argument_types);
-				node->return_type = node->aggregate_function->getReturnType();
-			}
-			else
-				node->return_type = node->function->getReturnType(argument_types);
-		}
+			node->return_type = node->function->getReturnType(argument_types);
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
