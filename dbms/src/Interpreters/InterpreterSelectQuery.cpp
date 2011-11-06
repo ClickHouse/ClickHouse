@@ -66,7 +66,7 @@ void InterpreterSelectQuery::setColumns()
 {
 	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
 
-	context.columns = dynamic_cast<ASTIdentifier *>(&*query.table)
+	context.columns = !query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
 		? getTable()->getColumnsList()
 		: InterpreterSelectQuery(query.table, context, max_block_size).getSampleBlock().getColumnsList();
 
@@ -103,7 +103,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	/// Добавляем в контекст список доступных столбцов.
 	setColumns();
 	
-	if (dynamic_cast<ASTIdentifier *>(&*query.table))
+	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
 		table = getTable();
 	else
 		interpreter_subquery = new InterpreterSelectQuery(query.table, context, max_block_size);
@@ -143,7 +143,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	BlockInputStreamPtr stream;
 
 	/// Инициализируем изначальный поток данных, на который накладываются преобразования запроса. Таблица или подзапрос?
-	if (dynamic_cast<ASTIdentifier *>(&*query.table))
+	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
 		stream = table->read(required_columns, query_ptr, block_size);
 	else
 		stream = interpreter_subquery->execute();
@@ -155,12 +155,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	{
 		setPartID(query.where_expression, PART_WHERE);
 		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_WHERE);
-		is_first_expression = false;
-	}
-
-	if (query.where_expression)
-	{
 		stream = new FilterBlockInputStream(stream);
+		is_first_expression = false;
 	}
 
 	/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
@@ -174,7 +170,15 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_GROUP | PART_BEFORE_AGGREGATING);
 		stream = new AggregatingBlockInputStream(stream, expression);
 		stream = new FinalizingAggregatedBlockInputStream(stream);
-		
+		is_first_expression = false;
+	}
+
+	/// Если есть условие HAVING - сначала выполним часть выражения, необходимую для его вычисления
+	if (query.having_expression)
+	{
+		setPartID(query.having_expression, PART_HAVING);
+		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_HAVING);
+		stream = new FilterBlockInputStream(stream);
 		is_first_expression = false;
 	}
 
