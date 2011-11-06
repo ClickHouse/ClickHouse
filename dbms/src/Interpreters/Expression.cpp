@@ -238,7 +238,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 
 			ColumnWithNameAndType column;
 			column.type = node->return_type;
-			column.name = node->getAlias();
+			column.name = node->getColumnName();
 
 			size_t result_number = block.columns();
 			block.insert(column);
@@ -255,7 +255,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 		ColumnWithNameAndType column;
 		column.column = node->type->createConstColumn(block.rows(), node->value);
 		column.type = node->type;
-		column.name = node->getAlias();
+		column.name = node->getColumnName();
 
 		block.insert(column);
 	}
