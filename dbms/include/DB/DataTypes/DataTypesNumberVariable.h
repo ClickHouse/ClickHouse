@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_TYPES_NUMBER_VARIABLE_H
-#define DBMS_DATA_TYPES_NUMBER_VARIABLE_H
+#pragma once
 
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/IDataTypeNumberVariable.h>
@@ -25,5 +24,3 @@ public:
 };
 
 }
-
-#endif

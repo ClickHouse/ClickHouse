@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_TYPES_IDATATYPE_NUMBER_VARIABLE_H
-#define DBMS_DATA_TYPES_IDATATYPE_NUMBER_VARIABLE_H
+#pragma once
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -48,16 +47,13 @@ public:
 	{
 		typename ColumnType::Container_t & x =  dynamic_cast<ColumnType &>(column).getData();
 		x.resize(limit);
-		for (size_t i = 0; i < limit; ++i)
+		size_t i = 0;
+		while (i < limit && !istr.eof())
 		{
 			readVarT(x[i], istr);
-
-			if (istr.eof())
-			{
-				x.resize(i);
-				break;
-			}
+			++i;
 		}
+		x.resize(i);
 	}
 
 	ColumnPtr createColumn() const
@@ -72,5 +68,3 @@ public:
 };
 
 }
-
-#endif
