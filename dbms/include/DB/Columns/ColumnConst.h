@@ -5,6 +5,7 @@
 #include <DB/Core/Field.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/IColumn.h>
 
 
@@ -13,10 +14,19 @@ namespace DB
 
 using Poco::SharedPtr;
 
+
+class IColumnConst : public IColumn
+{
+public:
+	bool isConst() const { return true; }
+	virtual ColumnPtr convertToFullColumn() const = 0;
+};
+
+
 /** шаблон для столбцов-констант (столбцов одинаковых значений).
   */
 template <typename T>
-class ColumnConst : public IColumn
+class ColumnConst : public IColumnConst
 {
 public:
 	typedef T Type;
@@ -26,7 +36,6 @@ public:
 	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const { return IsNumber<T>::value; }
 	size_t sizeOfField() const { return sizeof(T); }
-	bool isConst() const { return true; }
 	ColumnPtr cloneEmpty() const { return new ColumnConst(0, data); }
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
@@ -80,7 +89,7 @@ public:
 	const T & getData() const { return data; }
 
 	/** Преобразование из константы в полноценный столбец */
-//	virtual ColumnPtr convertToFullColumn() const = 0;
+	ColumnPtr convertToFullColumn() const;
 
 private:
 	size_t s;
@@ -89,5 +98,13 @@ private:
 
 
 typedef ColumnConst<String> ColumnConstString;
+
+
+template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
+{
+	ColumnVector<T> * res = new ColumnVector<T>;
+	res->getData().assign(s, data);
+	return res;
+}
 
 }

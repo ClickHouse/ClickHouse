@@ -12,7 +12,6 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 	size_t rows = block.rows();
 	size_t columns = block.columns();
 
-	row_output->writePrefix();
 	for (size_t i = 0; i < rows; ++i)
 	{
 		if (i != 0)
@@ -29,7 +28,6 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 		
 		row_output->writeRowEndDelimiter();
 	}
-	row_output->writeSuffix();
 }
 
 }

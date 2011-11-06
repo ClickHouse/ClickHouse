@@ -21,6 +21,8 @@ public:
 		size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
 
 	Block readImpl();
+	void readPrefix() { row_input->readPrefix(); }
+	void readSuffix() { row_input->readSuffix(); }
 
 	String getName() const { return "BlockInputStreamFromRowInputStream"; }
 

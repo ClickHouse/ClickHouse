@@ -6,6 +6,7 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
@@ -167,7 +168,10 @@ StoragePtr InterpreterCreateQuery::execute()
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
 	if (create.select)
-		copyData(*interpreter_select->execute(), *res->write(query_ptr));
+	{
+		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
+		copyData(*from, *res->write(query_ptr));
+	}
 	
 	return res;
 }

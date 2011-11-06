@@ -18,15 +18,21 @@ using Poco::SharedPtr;
 class TabSeparatedRowInputStream : public IRowInputStream
 {
 public:
-	TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_);
+	/** with_names - в первой строке заголовок с именами столбцов
+	  * with_types - на следующей строке заголовок с именами типов
+	  */
+	TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 
 	Row read();
+	void readPrefix();
 
 	RowInputStreamPtr clone() { return new TabSeparatedRowInputStream(istr, sample); }
 
 private:
 	ReadBuffer & istr;
 	const Block & sample;
+	bool with_names;
+	bool with_types;
 	DataTypes data_types;
 };
 

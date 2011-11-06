@@ -18,17 +18,23 @@ using Poco::SharedPtr;
 class TabSeparatedRowOutputStream : public IRowOutputStream
 {
 public:
-	TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
+	/** with_names - выводить в первой строке заголовок с именами столбцов
+	  * with_types - выводить на следующей строке заголовок с именами типов
+	  */
+	TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 
 	void writeField(const Field & field);
 	void writeFieldDelimiter();
 	void writeRowEndDelimiter();
+	void writePrefix();
 
 	RowOutputStreamPtr clone() { return new TabSeparatedRowOutputStream(ostr, sample); }
 
 private:
 	WriteBuffer & ostr;
 	const Block & sample;
+	bool with_names;
+	bool with_types;
 	DataTypes data_types;
 	size_t field_number;
 };

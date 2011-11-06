@@ -1,5 +1,6 @@
 #include <DB/IO/ConcatReadBuffer.h>
 
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -79,6 +80,7 @@ void InterpreterInsertQuery::execute(SharedPtr<ReadBuffer> remaining_data_istr)
 	{
 		InterpreterSelectQuery interpreter_select(query.select, context, max_block_size);
 		in = interpreter_select.execute();
+		in = new MaterializingBlockInputStream(in);
 		copyData(*in, *out);
 	}
 }

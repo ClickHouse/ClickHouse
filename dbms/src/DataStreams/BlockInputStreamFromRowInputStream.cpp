@@ -23,7 +23,6 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 {
 	Block res;
 
-	row_input->readPrefix();
 	for (size_t rows = 0; rows < max_block_size; ++rows)
 	{
 		if (rows != 0)
@@ -43,7 +42,6 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 		for (size_t i = 0; i < row.size(); ++i)
 			res.getByPosition(i).column->insert(row[i]);
 	}
-	row_input->readSuffix();
 
 	return res;
 }

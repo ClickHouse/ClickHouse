@@ -15,6 +15,8 @@ class BlockOutputStreamFromRowOutputStream : public IBlockOutputStream
 public:
 	BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_);
 	void write(const Block & block);
+	void writePrefix() { row_output->writePrefix(); }
+	void writeSuffix() { row_output->writeSuffix(); }
 
 	BlockOutputStreamPtr clone() { return new BlockOutputStreamFromRowOutputStream(row_output); }
 

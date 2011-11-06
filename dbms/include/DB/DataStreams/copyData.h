@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_STREAMS_COPY_DATA_H
-#define DBMS_DATA_STREAMS_COPY_DATA_H
+#pragma once
 
 #include <DB/Core/Block.h>
 #include <DB/DataStreams/IBlockInputStream.h>
@@ -20,5 +19,3 @@ void copyData(IBlockInputStream & from, IRowOutputStream & to);
 void copyData(IRowInputStream & from, IBlockOutputStream & to, const Block & sample);
 
 }
-
-#endif
