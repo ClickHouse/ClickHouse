@@ -42,7 +42,7 @@ StoragePtr InterpreterCreateQuery::execute()
 	String as_table_name = create.as_table;
 	
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
-	String data_path = context.path + "data/" + database_name_escaped + "/";	/// TODO: эскейпинг
+	String data_path = context.path + "data/" + database_name_escaped + "/";
 	String metadata_path = context.path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
 
 	/// CREATE|ATTACH DATABASE

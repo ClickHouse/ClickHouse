@@ -14,7 +14,7 @@ class ASTSelectQuery : public IAST
 public:
 	ASTPtr select_expression_list;
 	ASTPtr database;
-	ASTPtr table;
+	ASTPtr table;	/// Идентификатор или подзапрос (рекурсивно ASTSelectQuery)
 	ASTPtr where_expression;
 	ASTPtr group_expression_list;
 	ASTPtr having_expression;

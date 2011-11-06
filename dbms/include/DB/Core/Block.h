@@ -5,6 +5,7 @@
 #include <list>
 
 #include <DB/Core/ColumnWithNameAndType.h>
+#include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -54,6 +55,8 @@ public:
 	const ColumnWithNameAndType & getByName(const std::string & name) const;
 
 	size_t getPositionByName(const std::string & name) const;
+
+	NamesAndTypesList getColumnsList() const;
 
 	/** Возвращает количество строк в блоке.
 	  * Заодно проверяет, что все столбцы кроме констант (которые содержат единственное значение),

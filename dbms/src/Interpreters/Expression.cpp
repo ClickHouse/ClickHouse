@@ -43,10 +43,11 @@ void Expression::addSemantic(ASTPtr & ast)
 		}
 	}
 	
-	/// Обход снизу-вверх.
+	/// Обход снизу-вверх. Не опускаемся в подзапросы.
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		addSemantic(*it);
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			addSemantic(*it);
 	
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
@@ -119,10 +120,11 @@ void Expression::glueTree(ASTPtr ast)
 
 void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 {
-	/// Обход в глубину
+	/// Обход в глубину. Не опускаемся в подзапросы.
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		glueTreeImpl(*it, subtrees);
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			glueTreeImpl(*it, subtrees);
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
@@ -164,7 +166,8 @@ void Expression::setNotCalculated(unsigned part_id, ASTPtr subtree)
 	subtree->calculated = false;
 	
 	for (ASTs::iterator it = subtree->children.begin(); it != subtree->children.end(); ++it)
-		setNotCalculated(part_id, *it);
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			setNotCalculated(part_id, *it);
 }
 
 
@@ -176,10 +179,11 @@ void Expression::execute(Block & block, unsigned part_id)
 
 void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 {
-	/// Обход в глубину
+	/// Обход в глубину. Не опускаемся в подзапросы.
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		executeImpl(*it, block, part_id);
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			executeImpl(*it, block, part_id);
 
 	if (ast->calculated || !((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
 		return;
@@ -232,12 +236,13 @@ Block Expression::projectResult(Block & block, bool without_duplicates, unsigned
 
 void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id)
 {
-	/// Обход в глубину, который не заходит внутрь функций.
+	/// Обход в глубину, который не заходит внутрь функций и подзапросов.
 	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
 	{
 		if (!dynamic_cast<ASTFunction *>(&*ast))
 			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-				collectFinalColumns(*it, src, dst, without_duplicates, part_id);
+				if (!dynamic_cast<ASTSelectQuery *>(&**it))
+					collectFinalColumns(*it, src, dst, without_duplicates, part_id);
 		return;
 	}
 
@@ -250,7 +255,8 @@ void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool 
 		without_duplicates ? dst.insertUnique(src.getByName(ast->getColumnName())) : dst.insert(src.getByName(ast->getColumnName()));
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			collectFinalColumns(*it, src, dst, without_duplicates, part_id);
+			if (!dynamic_cast<ASTSelectQuery *>(&**it))
+				collectFinalColumns(*it, src, dst, without_duplicates, part_id);
 }
 
 
@@ -264,7 +270,7 @@ DataTypes Expression::getReturnTypes()
 
 void Expression::getReturnTypesImpl(ASTPtr ast, DataTypes & res)
 {
-	/// Обход в глубину, который не заходит внутрь функций.
+	/// Обход в глубину, который не заходит внутрь функций и подзапросов.
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (ident->kind == ASTIdentifier::Column)
@@ -276,7 +282,8 @@ void Expression::getReturnTypesImpl(ASTPtr ast, DataTypes & res)
 		res.push_back(func->return_type);
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			getReturnTypesImpl(*it, res);
+			if (!dynamic_cast<ASTSelectQuery *>(&**it))
+				getReturnTypesImpl(*it, res);
 }
 
 
@@ -292,7 +299,7 @@ void Expression::getSampleBlockImpl(ASTPtr ast, Block & res)
 {
 	ColumnWithNameAndType col;
 
-	/// Обход в глубину, который не заходит внутрь функций.
+	/// Обход в глубину, который не заходит внутрь функций и подзапросов.
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (ident->kind == ASTIdentifier::Column)
@@ -316,13 +323,13 @@ void Expression::getSampleBlockImpl(ASTPtr ast, Block & res)
 	}
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			getSampleBlockImpl(*it, res);
+			if (!dynamic_cast<ASTSelectQuery *>(&**it))
+				getSampleBlockImpl(*it, res);
 }
 
 
 void Expression::getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDescriptions & aggregates, NamesSet & processed)
 {
-	/// Обход в глубину
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
 		if (select->group_expression_list)
@@ -356,8 +363,10 @@ void Expression::getAggregateInfoImpl(ASTPtr ast, Names & key_names, AggregateDe
 		}
 	}
 
+	/// Обход в глубину. Не опускаемся в подзапросы.
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		getAggregateInfoImpl(*it, key_names, aggregates, processed);
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			getAggregateInfoImpl(*it, key_names, aggregates, processed);
 }
 
 
@@ -375,7 +384,7 @@ bool Expression::hasAggregatesImpl(ASTPtr ast)
 			return true;
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		if (hasAggregatesImpl(*it))
+		if (!dynamic_cast<ASTSelectQuery *>(&**it) && hasAggregatesImpl(*it))
 			return true;
 		
 	return false;
@@ -400,7 +409,8 @@ void Expression::markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_p
 		ast->part_id |= after_part_id;
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		markBeforeAndAfterAggregationImpl(*it, before_part_id, after_part_id, below);
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			markBeforeAndAfterAggregationImpl(*it, before_part_id, after_part_id, below);
 }
 
 

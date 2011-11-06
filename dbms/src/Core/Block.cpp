@@ -192,4 +192,15 @@ Block Block::cloneEmpty() const
 }
 
 
+NamesAndTypesList Block::getColumnsList() const
+{
+	NamesAndTypesList res;
+
+	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+		res.push_back(NameAndTypePair(it->name, it->type));
+
+	return res;
+}
+
+
 }

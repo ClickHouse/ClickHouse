@@ -62,9 +62,22 @@ StoragePtr InterpreterSelectQuery::getTable()
 }
 
 
+void InterpreterSelectQuery::setColumns()
+{
+	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
+
+	context.columns = dynamic_cast<ASTIdentifier *>(&*query.table)
+		? getTable()->getColumnsList()
+		: InterpreterSelectQuery(query.table, context, max_block_size).getSampleBlock().getColumnsList();
+
+	if (context.columns.empty())
+		throw Exception("There is no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
+}
+
+
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
-	context.columns = getTable()->getColumnsList();
+	setColumns();
 	Expression expression(dynamic_cast<ASTSelectQuery &>(*query_ptr).select_expression_list, context);
 	return expression.getReturnTypes();
 }
@@ -72,7 +85,7 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 
 Block InterpreterSelectQuery::getSampleBlock()
 {
-	context.columns = getTable()->getColumnsList();
+	setColumns();
 	Expression expression(dynamic_cast<ASTSelectQuery &>(*query_ptr).select_expression_list, context);
 	return expression.getSampleBlock();
 }
@@ -82,17 +95,30 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 {
 	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
 
-	StoragePtr table = getTable();
-	
-	/// Какие столбцы читать из этой таблицы
+	/// Таблица, откуда читать данные, если не подзапрос.
+	StoragePtr table;
+	/// Интерпретатор подзапроса, если подзапрос
+	SharedPtr<InterpreterSelectQuery> interpreter_subquery;
 
-	context.columns = table->getColumnsList();
+	/// Добавляем в контекст список доступных столбцов.
+	setColumns();
+	
+	if (dynamic_cast<ASTIdentifier *>(&*query.table))
+		table = getTable();
+	else
+		interpreter_subquery = new InterpreterSelectQuery(query.table, context, max_block_size);
+	
+	/// Выражение, с помощью которого анализируется SELECT часть запроса.
 	Poco::SharedPtr<Expression> expression = new Expression(query_ptr, context);
+	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = expression->getRequiredColumns();
 
 	/// Если не указан ни один столбец из таблицы, то будем читать первый попавшийся (чтобы хотя бы знать число строк).
 	if (required_columns.empty())
-		required_columns.push_back(table->getColumnsMap().begin()->first);
+		required_columns.push_back(context.columns.front().first);
+
+	/// Нужно ли агрегировать.
+	bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
 
 	size_t limit_length = 0;
 	size_t limit_offset = 0;
@@ -102,8 +128,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		if (query.limit_offset)
 			limit_offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
 	}
-
-	bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
 
 	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
 	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
@@ -115,7 +139,14 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		block_size = limit_length + limit_offset;
 	}
 
-	BlockInputStreamPtr stream = table->read(required_columns, query_ptr, block_size);
+	/// Поток данных.
+	BlockInputStreamPtr stream;
+
+	/// Инициализируем изначальный поток данных, на который накладываются преобразования запроса. Таблица или подзапрос?
+	if (dynamic_cast<ASTIdentifier *>(&*query.table))
+		stream = table->read(required_columns, query_ptr, block_size);
+	else
+		stream = interpreter_subquery->execute();
 
 	bool is_first_expression = true;
 

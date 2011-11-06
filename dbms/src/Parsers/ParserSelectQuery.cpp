@@ -47,31 +47,50 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ws.ignore(pos, end);
 	}
 
-	/// FROM database.table или FROM table TODO subquery
+	/// FROM database.table или FROM table или FROM (subquery)
 	if (s_from.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
 
+		ParserString s_lparen("(");
+		ParserString s_rparen(")");
 		ParserString s_dot(".");
 		ParserIdentifier ident;
 
-		if (!ident.parse(pos, end, select_query->table, expected))
-			return false;
-
-		ws.ignore(pos, end);
-		
-		if (s_dot.ignore(pos, end, expected))
+		if (s_lparen.ignore(pos, end, expected))
 		{
-			select_query->database = select_query->table;
-			if (!ident.parse(pos, end, select_query->table, expected))
+			ws.ignore(pos, end);
+
+			ParserSelectQuery select_p;
+			if (!select_p.parse(pos, end, select_query->table, expected))
 				return false;
 
 			ws.ignore(pos, end);
-		}
 
-		if (select_query->database)
-			dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
-		dynamic_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
+			if (!s_rparen.ignore(pos, end, expected))
+				return false;
+			
+			ws.ignore(pos, end);
+		}
+		else if (ident.parse(pos, end, select_query->table, expected))
+		{
+			ws.ignore(pos, end);
+		
+			if (s_dot.ignore(pos, end, expected))
+			{
+				select_query->database = select_query->table;
+				if (!ident.parse(pos, end, select_query->table, expected))
+					return false;
+
+				ws.ignore(pos, end);
+			}
+
+			if (select_query->database)
+				dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
+			dynamic_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
+		}
+		else
+			return false;
 	}
 
 	/// WHERE expr
