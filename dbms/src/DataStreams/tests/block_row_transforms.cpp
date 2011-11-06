@@ -25,21 +25,17 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		Poco::SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
-		data_types->push_back(new DB::DataTypeUInt64);
-		data_types->push_back(new DB::DataTypeString);
-
 		DB::Block sample;
 
 		DB::ColumnWithNameAndType col1;
 		col1.name = "col1";
-		col1.type = data_types->at(0);
+		col1.type = new DB::DataTypeUInt64;
 		col1.column = col1.type->createColumn();
 		sample.insert(col1);
 
 		DB::ColumnWithNameAndType col2;
 		col2.name = "col2";
-		col2.type = data_types->at(1);
+		col2.type = new DB::DataTypeString;
 		col2.column = col2.type->createColumn();
 		sample.insert(col2);
 
@@ -49,9 +45,9 @@ int main(int argc, char ** argv)
 		DB::ReadBufferFromIStream in_buf(istr);
 		DB::WriteBufferFromOStream out_buf(ostr);
 
-		DB::TabSeparatedRowInputStream row_input(in_buf, data_types);
+		DB::TabSeparatedRowInputStream row_input(in_buf, sample);
 		DB::BlockInputStreamFromRowInputStream block_input(row_input.clone(), sample);
-		DB::TabSeparatedRowOutputStream row_output(out_buf, data_types);
+		DB::TabSeparatedRowOutputStream row_output(out_buf, sample);
 
 		DB::copyData(block_input, row_output);
 	}

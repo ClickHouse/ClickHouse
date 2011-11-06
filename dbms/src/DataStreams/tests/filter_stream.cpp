@@ -74,7 +74,7 @@ int main(int argc, char ** argv)
 		in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 		
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(expression->getReturnTypes()));
+		DB::TabSeparatedRowOutputStream out(ob, expression->getSampleBlock());
 
 		{
 			Poco::Stopwatch stopwatch;

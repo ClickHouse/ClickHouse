@@ -9,15 +9,19 @@ namespace DB
 using Poco::SharedPtr;
 
 
-ValuesRowOutputStream::ValuesRowOutputStream(WriteBuffer & ostr_, SharedPtr<DataTypes> data_types_)
-	: ostr(ostr_), data_types(data_types_), field_number(0)
+ValuesRowOutputStream::ValuesRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
+	: ostr(ostr_), sample(sample_), field_number(0)
 {
+	size_t columns = sample.columns();
+	data_types.resize(columns);
+	for (size_t i = 0; i < columns; ++i)
+		data_types[i] = sample.getByPosition(i).type;
 }
 
 
 void ValuesRowOutputStream::writeField(const Field & field)
 {
-	data_types->at(field_number)->serializeTextQuoted(field, ostr);
+	data_types[field_number]->serializeTextQuoted(field, ostr);
 	++field_number;
 }
 

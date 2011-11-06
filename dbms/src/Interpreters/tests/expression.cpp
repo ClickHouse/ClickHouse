@@ -186,14 +186,10 @@ int main(int argc, char ** argv)
 				<< std::endl;
 		}
 		
-		DB::DataTypes * data_types = new DB::DataTypes;
-		for (size_t i = 0; i < block.columns(); ++i)
-			data_types->push_back(block.getByPosition(i).type);
-
 		OneBlockInputStream * is = new OneBlockInputStream(block);
 		DB::LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
 		DB::WriteBufferFromOStream out_buf(std::cout);
-		DB::TabSeparatedRowOutputStream os(out_buf, data_types);
+		DB::TabSeparatedRowOutputStream os(out_buf, block);
 
 		DB::copyData(lis, os);
 	}

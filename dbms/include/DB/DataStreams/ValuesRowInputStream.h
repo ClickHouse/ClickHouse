@@ -2,8 +2,8 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/Core/Block.h>
 #include <DB/IO/ReadBuffer.h>
-#include <DB/DataTypes/IDataType.h>
 #include <DB/DataStreams/IRowInputStream.h>
 
 
@@ -18,15 +18,16 @@ using Poco::SharedPtr;
 class ValuesRowInputStream : public IRowInputStream
 {
 public:
-	ValuesRowInputStream(ReadBuffer & istr_, SharedPtr<DataTypes> & data_types_);
+	ValuesRowInputStream(ReadBuffer & istr_, const Block & sample_);
 
 	Row read();
 
-	RowInputStreamPtr clone() { return new ValuesRowInputStream(istr, data_types); }
+	RowInputStreamPtr clone() { return new ValuesRowInputStream(istr, sample); }
 
 private:
 	ReadBuffer & istr;
-	SharedPtr<DataTypes> data_types;
+	const Block & sample;
+	DataTypes data_types;
 };
 
 }

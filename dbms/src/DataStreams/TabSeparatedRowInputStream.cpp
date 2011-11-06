@@ -8,16 +8,20 @@ namespace DB
 
 using Poco::SharedPtr;
 
-TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, SharedPtr<DataTypes> & data_types_)
-	: istr(istr_), data_types(data_types_)
+TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_)
+	: istr(istr_), sample(sample_)
 {
+	size_t columns = sample.columns();
+	data_types.resize(columns);
+	for (size_t i = 0; i < columns; ++i)
+		data_types[i] = sample.getByPosition(i).type;
 }
 
 
 Row TabSeparatedRowInputStream::read()
 {
 	Row res;
-	size_t size = data_types->size();
+	size_t size = data_types.size();
 	res.resize(size);
 	
 	for (size_t i = 0; i < size; ++i)
@@ -28,7 +32,7 @@ Row TabSeparatedRowInputStream::read()
 			return res;
 		}
 		
-		(*data_types)[i]->deserializeTextEscaped(res[i], istr);
+		data_types[i]->deserializeTextEscaped(res[i], istr);
 
 		/// пропускаем разделители
 		if (i + 1 == size)

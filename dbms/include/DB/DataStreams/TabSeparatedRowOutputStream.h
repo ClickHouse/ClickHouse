@@ -2,8 +2,8 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/Core/Block.h>
 #include <DB/IO/WriteBuffer.h>
-#include <DB/DataTypes/IDataType.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
 
@@ -18,17 +18,18 @@ using Poco::SharedPtr;
 class TabSeparatedRowOutputStream : public IRowOutputStream
 {
 public:
-	TabSeparatedRowOutputStream(WriteBuffer & ostr_, SharedPtr<DataTypes> data_types_);
+	TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
 	void writeField(const Field & field);
 	void writeFieldDelimiter();
 	void writeRowEndDelimiter();
 
-	RowOutputStreamPtr clone() { return new TabSeparatedRowOutputStream(ostr, data_types); }
+	RowOutputStreamPtr clone() { return new TabSeparatedRowOutputStream(ostr, sample); }
 
 private:
 	WriteBuffer & ostr;
-	SharedPtr<DataTypes> data_types;
+	const Block & sample;
+	DataTypes data_types;
 	size_t field_number;
 };
 

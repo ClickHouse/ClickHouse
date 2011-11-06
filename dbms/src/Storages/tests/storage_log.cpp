@@ -67,14 +67,22 @@ int main(int argc, char ** argv)
 
 			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
 
-			Poco::SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
-			data_types->push_back(new DB::DataTypeUInt64);
-			data_types->push_back(new DB::DataTypeUInt8);
+			DB::Block sample;
+			{
+				DB::ColumnWithNameAndType col;
+				col.type = new DB::DataTypeUInt64;
+				sample.insert(col);
+			}
+			{
+				DB::ColumnWithNameAndType col;
+				col.type = new DB::DataTypeUInt8;
+				sample.insert(col);
+			}
 
 			DB::WriteBufferFromOStream out_buf(std::cout);
 			
 			DB::LimitBlockInputStream in_limit(in, 10);
-			DB::TabSeparatedRowOutputStream output(out_buf, data_types);
+			DB::TabSeparatedRowOutputStream output(out_buf, sample);
 			
 			DB::copyData(in_limit, output);
 		}

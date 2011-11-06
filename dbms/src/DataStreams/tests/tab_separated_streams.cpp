@@ -19,9 +19,17 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		Poco::SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
-		data_types->push_back(new DB::DataTypeUInt64);
-		data_types->push_back(new DB::DataTypeString);
+		DB::Block sample;
+		{
+			DB::ColumnWithNameAndType col;
+			col.type = new DB::DataTypeUInt64;
+			sample.insert(col);
+		}
+		{
+			DB::ColumnWithNameAndType col;
+			col.type = new DB::DataTypeString;
+			sample.insert(col);
+		}
 
 		std::ifstream istr("test_in");
 		std::ofstream ostr("test_out");
@@ -29,8 +37,8 @@ int main(int argc, char ** argv)
 		DB::ReadBufferFromIStream in_buf(istr);
 		DB::WriteBufferFromOStream out_buf(ostr);
 
-		DB::TabSeparatedRowInputStream row_input(in_buf, data_types);
-		DB::TabSeparatedRowOutputStream row_output(out_buf, data_types);
+		DB::TabSeparatedRowInputStream row_input(in_buf, sample);
+		DB::TabSeparatedRowOutputStream row_output(out_buf, sample);
 
 		DB::copyData(row_input, row_output);
 	}

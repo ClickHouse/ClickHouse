@@ -164,7 +164,7 @@ int main(int argc, char ** argv)
 		//in = new DB::LimitBlockInputStream(in, 10);
 		
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, new DB::DataTypes(expression->getReturnTypes()));
+		DB::TabSeparatedRowOutputStream out(ob, expression->getSampleBlock());
 
 		DB::copyData(*in, out);
 

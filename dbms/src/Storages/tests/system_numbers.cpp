@@ -21,13 +21,15 @@ int main(int argc, char ** argv)
 		DB::Names column_names;
 		column_names.push_back("number");
 
-		Poco::SharedPtr<DB::DataTypes> column_types = new DB::DataTypes;
-		column_types->push_back(new DB::DataTypeUInt64);
+		DB::Block sample;
+		DB::ColumnWithNameAndType col;
+		col.type = new DB::DataTypeUInt64;
+		sample.insert(col);
 
 		DB::WriteBufferFromOStream out_buf(std::cout);
 		
 		DB::LimitBlockInputStream input(table.read(column_names, 0, 10), 10, 96);
-		DB::TabSeparatedRowOutputStream output(out_buf, column_types);
+		DB::TabSeparatedRowOutputStream output(out_buf, sample);
 		
 		DB::copyData(input, output);
 	}

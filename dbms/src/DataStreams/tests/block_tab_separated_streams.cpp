@@ -113,7 +113,7 @@ int main(int argc, char ** argv)
 			DB::ReadBufferFromIStream in_buf(std::cin);
 			DB::WriteBufferFromOStream out_buf(std::cout);
 		
-			DB::TabSeparatedRowInputStream in(in_buf, data_types);
+			DB::TabSeparatedRowInputStream in(in_buf, sample);
 			DB::TabSeparatedBlockOutputStream out(out_buf);
 			DB::copyData(in, out, sample);
 		}

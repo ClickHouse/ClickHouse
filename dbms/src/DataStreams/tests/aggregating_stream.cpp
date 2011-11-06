@@ -109,12 +109,20 @@ int main(int argc, char ** argv)
 			(new DB::DataTypeVarUInt)
 			;
 
+		DB::Block sample;
+		for (DB::DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
+		{
+			DB::ColumnWithNameAndType col;
+			col.type = *it;
+			sample.insert(col);
+		}
+
 		DB::BlockInputStreamPtr stream = new OneBlockInputStream(block);
 		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions);
 		stream = new DB::FinalizingAggregatedBlockInputStream(stream);
 
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, result_types);
+		DB::TabSeparatedRowOutputStream out(ob, sample);
 		
 		{
 			Poco::Stopwatch stopwatch;

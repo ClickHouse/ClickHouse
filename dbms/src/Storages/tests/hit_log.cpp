@@ -121,7 +121,7 @@ int main(int argc, char ** argv)
 		{
 			DB::ReadBufferFromIStream in_buf(std::cin);
 		
-			DB::TabSeparatedRowInputStream in(in_buf, data_types);
+			DB::TabSeparatedRowInputStream in(in_buf, sample);
 			SharedPtr<DB::IBlockOutputStream> out = table.write(0);
 			DB::copyData(in, *out, sample);
 		}
@@ -141,7 +141,7 @@ int main(int argc, char ** argv)
 			DB::WriteBufferFromOStream out_buf(std::cout);
 
 			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
-			DB::TabSeparatedRowOutputStream out(out_buf, data_types);
+			DB::TabSeparatedRowOutputStream out(out_buf, sample);
 			DB::copyData(*in, out);
 		}
 	}

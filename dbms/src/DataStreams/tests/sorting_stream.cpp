@@ -145,6 +145,14 @@ int main(int argc, char ** argv)
 			((*names_and_types_map)["IsLink"])
 		;
 
+		DB::Block sample;
+		for (DB::DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
+		{
+			DB::ColumnWithNameAndType col;
+			col.type = *it;
+			sample.insert(col);
+		}
+
 		DB::SortDescription sort_columns;
 		sort_columns.push_back(DB::SortColumnDescription(1, -1));
 		sort_columns.push_back(DB::SortColumnDescription(2, 1));
@@ -157,7 +165,7 @@ int main(int argc, char ** argv)
 		//in = new DB::LimitBlockInputStream(in, 10);
 
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, result_types);
+		DB::TabSeparatedRowOutputStream out(ob, sample);
 
 		DB::copyData(*in, out);
 
