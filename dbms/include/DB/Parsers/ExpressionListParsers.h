@@ -276,6 +276,22 @@ protected:
 };
 
 
+class ParserExpressionWithOptionalAlias : public IParserBase
+{
+public:
+	ParserExpressionWithOptionalAlias();
+protected:
+	ParserPtr impl;
+
+	String getName() { return "expression with optional alias"; }
+	
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	{
+		return impl->parse(pos, end, node, expected);
+	}
+};
+
+
 /** Список выражений, разделённых запятыми, возможно пустой. */
 class ParserExpressionList : public IParserBase
 {

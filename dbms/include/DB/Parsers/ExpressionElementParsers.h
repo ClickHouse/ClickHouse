@@ -108,9 +108,13 @@ protected:
 
 /** Элемент выражения, возможно, с алиасом, если уместно.
   */
-class ParserExpressionElementWithOptionalAlias : public IParserBase
+class ParserWithOptionalAlias : public IParserBase
 {
+public:
+	ParserWithOptionalAlias(ParserPtr elem_parser_) : elem_parser(elem_parser_) {}
 protected:
+	ParserPtr elem_parser;
+	
 	String getName() { return "element of expression with optional alias"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
 };

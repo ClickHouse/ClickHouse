@@ -155,7 +155,7 @@ StoragePtr InterpreterCreateQuery::execute()
 			String quoted_column_name;
 			{
 				WriteBufferFromString buf(quoted_column_name);
-				writeBackQuotedString(it->first, buf);
+				writeProbablyBackQuotedString(it->first, buf);
 			}
 			
 			metadata_file << (it != columns->begin() ? ",\n" : "") << "\t" << quoted_column_name << " " << it->second->getName();

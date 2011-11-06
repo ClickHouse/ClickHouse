@@ -348,13 +348,12 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 }
 
 
-bool ParserExpressionElementWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	ParserWhiteSpaceOrComments ws;
-	ParserExpressionElement elem_p;
 	ParserAlias alias_p;
 
-	if (!elem_p.parse(pos, end, node, expected))
+	if (!elem_parser->parse(pos, end, node, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -386,7 +385,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String &
 	Pos begin = pos;
 
 	ParserWhiteSpaceOrComments ws;
-	ParserLogicalOrExpression elem_p;
+	ParserExpressionWithOptionalAlias elem_p;
 	ParserString ascending("ASCENDING", true, true);
 	ParserString descending("DESCENDING", true, true);
 	ParserString asc("ASC", true, true);

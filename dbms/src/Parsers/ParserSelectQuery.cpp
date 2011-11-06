@@ -29,7 +29,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_limit("LIMIT", true, true);
 	ParserString s_format("FORMAT", true, true);
 	ParserNotEmptyExpressionList exp_list;
-	ParserLogicalOrExpression exp_elem;
+	ParserExpressionWithOptionalAlias exp_elem;
 	ParserOrderByExpressionList order_list;
 
 	ws.ignore(pos, end);

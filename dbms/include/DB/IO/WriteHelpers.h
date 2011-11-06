@@ -197,10 +197,29 @@ inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 	writeAnyQuotedString<'"'>(s, buf);
 }
 
-/// Совместимо с JSON.
+/// Выводит строку в обратных кавычках, как идентификатор в MySQL.
 inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 {
 	writeAnyQuotedString<'`'>(s, buf);
+}
+
+/// То же самое, но обратные кавычки применяются только при наличии символов, не подходящих для идентификатора без обратных кавычек.
+inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+{
+	if (s.empty() || !((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z') || s[0] == '_'))
+		writeBackQuotedString(s, buf);
+	else
+	{
+		const char * pos = s.data() + 1;
+		const char * end = s.data() + s.size();
+		for (; pos < end; ++pos)
+			if (!((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z') || (*pos >= '0' && *pos <= '9') || *pos == '_'))
+				break;
+		if (pos != end)
+			writeBackQuotedString(s, buf);
+		else
+			writeString(s, buf);
+	}
 }
 
 

@@ -6,6 +6,9 @@
 
 #include <mysqlxx/Manip.h>
 
+#include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteHelpers.h>
+
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -189,6 +192,13 @@ void formatAST(const ASTExpressionList 		& ast, std::ostream & s)
 	}
 }
 
+static void writeAlias(const String & name, std::ostream & s)
+{
+	s << " AS ";
+	WriteBufferFromOStream wb(s);
+	writeProbablyBackQuotedString(name, wb);
+}
+
 void formatAST(const ASTFunction 			& ast, std::ostream & s)
 {
 	s << ast.name;
@@ -198,16 +208,28 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s)
 		formatAST(*ast.arguments, s);
 		s << ')';
 	}
+
+	if (!ast.alias.empty())
+		writeAlias(ast.alias, s);
 }
 
 void formatAST(const ASTIdentifier 			& ast, std::ostream & s)
 {
-	s << ast.name;
+	{
+		WriteBufferFromOStream wb(s);
+		writeProbablyBackQuotedString(ast.name, wb);
+	}
+
+	if (!ast.alias.empty())
+		writeAlias(ast.alias, s);
 }
 
 void formatAST(const ASTLiteral 			& ast, std::ostream & s)
 {
 	s << boost::apply_visitor(FieldVisitorToString(), ast.value);
+
+	if (!ast.alias.empty())
+		writeAlias(ast.alias, s);
 }
 
 void formatAST(const ASTNameTypePair		& ast, std::ostream & s)
