@@ -16,11 +16,15 @@ public:
 	Field value;
 	/// тип
 	DataTypePtr type;
+	/// алиас, если есть
+	String alias;
 
 	ASTLiteral() {}
 	ASTLiteral(StringRange range_, const Field & value_) : IAST(range_), value(value_) {}
 
 	String getColumnName() { return boost::apply_visitor(FieldVisitorToString(), value); }
+
+	String getAlias() { return alias.empty() ? getColumnName() : alias; }
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Literal_" + boost::apply_visitor(FieldVisitorDump(), value); }

@@ -108,7 +108,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	else
 		interpreter_subquery = new InterpreterSelectQuery(query.table, context, max_block_size);
 	
-	/// Выражение, с помощью которого анализируется SELECT часть запроса.
+	/// Объект, с помощью которого анализируется запрос.
 	Poco::SharedPtr<Expression> expression = new Expression(query_ptr, context);
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = expression->getRequiredColumns();
@@ -186,7 +186,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	is_first_expression = false;
 
 	/// Оставим только столбцы, нужные для SELECT и ORDER BY части
-	stream = new ProjectionBlockInputStream(stream, expression, true, PART_SELECT | PART_ORDER);
+	stream = new ProjectionBlockInputStream(stream, expression, query.order_expression_list ? true : false, PART_SELECT | PART_ORDER);
 	
 	/// Если есть ORDER BY
 	if (query.order_expression_list)

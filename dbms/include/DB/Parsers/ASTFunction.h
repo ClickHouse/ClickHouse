@@ -17,6 +17,8 @@ public:
 	String name;
 	/// аргументы
 	ASTPtr arguments;
+	/// алиас, если есть
+	String alias;
 
 	/// сама функция
 	FunctionPtr function;
@@ -43,6 +45,8 @@ public:
 		s << ")";
 		return s.str();
 	}
+
+	String getAlias() { return alias.empty() ? getColumnName() : alias; }
 
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Function_" + name; }

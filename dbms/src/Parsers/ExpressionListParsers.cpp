@@ -186,7 +186,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 
 
 ParserAccessExpression::ParserAccessExpression()
-	: elem_parser(new ParserExpressionElement),
+	: elem_parser(new ParserExpressionElementWithOptionalAlias),
 	operator_parser(boost::assign::map_list_of
 			(".", 	"tupleElement")
 			("[", 	"arrayElement"),

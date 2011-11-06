@@ -287,6 +287,24 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expect
 }
 
 
+bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	ParserWhiteSpaceOrComments ws;
+	ParserString s_as("AS", true, true);
+	ParserIdentifier id_p;
+
+	if (!s_as.parse(pos, end, node, expected))
+		return false;
+
+	ws.ignore(pos, end);
+
+	if (!id_p.parse(pos, end, node, expected))
+		return false;
+
+	return true;
+}
+
+
 bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	Pos begin = pos;
@@ -327,6 +345,39 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 
 	expected = "expression element: one of array, literal, function, identifier, asterisk, parenthised expression";
 	return false;
+}
+
+
+bool ParserExpressionElementWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	ParserWhiteSpaceOrComments ws;
+	ParserExpressionElement elem_p;
+	ParserAlias alias_p;
+
+	if (!elem_p.parse(pos, end, node, expected))
+		return false;
+
+	ws.ignore(pos, end);
+
+	ASTPtr alias_node;
+	if (alias_p.parse(pos, end, alias_node, expected))
+	{
+		String alias_name = dynamic_cast<ASTIdentifier &>(*alias_node).name;
+		
+		if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
+			func->alias = alias_name;
+		else if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*node))
+			ident->alias = alias_name;
+		else if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*node))
+			lit->alias = alias_name;
+		else
+		{
+			expected = "alias cannot be here";
+			return false;
+		}
+	}
+
+	return true;
 }
 
 

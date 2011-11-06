@@ -22,7 +22,32 @@ NamesAndTypesList::const_iterator Expression::findColumn(const String & name)
 			break;
 	return it;
 }
+
+
+void Expression::createAliasesDict(ASTPtr & ast)
+{
+	/// Обход снизу-вверх. Не опускаемся в подзапросы.
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			createAliasesDict(*it);
 	
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (!node->alias.empty())
+			aliases[node->alias] = ast;
+	}
+	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		if (!node->alias.empty())
+			aliases[node->alias] = ast;
+	}
+	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
+	{
+		if (!node->alias.empty())
+			aliases[node->alias] = ast;
+	}
+}
+
 
 void Expression::addSemantic(ASTPtr & ast)
 {
@@ -98,10 +123,23 @@ void Expression::addSemantic(ASTPtr & ast)
 		{
 			NamesAndTypesList::const_iterator it = findColumn(node->name);
 			if (it == context.columns.end())
-				throw Exception("Unknown identifier " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
+			{
+				/// Если это алиас
+				Aliases::const_iterator jt = aliases.find(node->name);
+				if (jt == aliases.end())
+					throw Exception("Unknown identifier " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
-			node->type = it->second;
-			required_columns.insert(node->name);
+				/// Заменим его на соответствующий узел дерева
+				ast = jt->second;
+
+				for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+					addSemantic(*it);
+			}
+			else
+			{
+				node->type = it->second;
+				required_columns.insert(node->name);
+			}
 		}
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
@@ -200,7 +238,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 
 			ColumnWithNameAndType column;
 			column.type = node->return_type;
-			column.name = node->getColumnName();
+			column.name = node->getAlias();
 
 			size_t result_number = block.columns();
 			block.insert(column);
@@ -217,7 +255,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 		ColumnWithNameAndType column;
 		column.column = node->type->createConstColumn(block.rows(), node->value);
 		column.type = node->type;
-		column.name = node->getColumnName();
+		column.name = node->getAlias();
 
 		block.insert(column);
 	}
@@ -226,15 +264,15 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 }
 
 
-Block Expression::projectResult(Block & block, bool without_duplicates, unsigned part_id, ASTPtr subtree)
+Block Expression::projectResult(Block & block, bool without_duplicates_and_aliases, unsigned part_id, ASTPtr subtree)
 {
 	Block res;
-	collectFinalColumns(subtree ? subtree : ast, block, res, without_duplicates, part_id);
+	collectFinalColumns(subtree ? subtree : ast, block, res, without_duplicates_and_aliases, part_id);
 	return res;
 }
 
 
-void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id)
+void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates_and_aliases, unsigned part_id)
 {
 	/// Обход в глубину, который не заходит внутрь функций и подзапросов.
 	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
@@ -242,21 +280,29 @@ void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool 
 		if (!dynamic_cast<ASTFunction *>(&*ast))
 			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 				if (!dynamic_cast<ASTSelectQuery *>(&**it))
-					collectFinalColumns(*it, src, dst, without_duplicates, part_id);
+					collectFinalColumns(*it, src, dst, without_duplicates_and_aliases, part_id);
 		return;
 	}
 
 	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (ident->kind == ASTIdentifier::Column)
-			without_duplicates ? dst.insertUnique(src.getByName(ast->getColumnName())) : dst.insert(src.getByName(ast->getColumnName()));
+		{
+			ColumnWithNameAndType col = src.getByName(ast->getColumnName());
+			col.name = without_duplicates_and_aliases ? ast->getColumnName() : ast->getAlias();
+			without_duplicates_and_aliases ? dst.insertUnique(col) : dst.insert(col);
+		}
 	}
 	else if (dynamic_cast<ASTLiteral *>(&*ast) || dynamic_cast<ASTFunction *>(&*ast))
-		without_duplicates ? dst.insertUnique(src.getByName(ast->getColumnName())) : dst.insert(src.getByName(ast->getColumnName()));
+	{
+		ColumnWithNameAndType col = src.getByName(ast->getColumnName());
+		col.name = without_duplicates_and_aliases ? ast->getColumnName() : ast->getAlias();
+		without_duplicates_and_aliases ? dst.insertUnique(col) : dst.insert(col);
+	}
 	else
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			if (!dynamic_cast<ASTSelectQuery *>(&**it))
-				collectFinalColumns(*it, src, dst, without_duplicates, part_id);
+				collectFinalColumns(*it, src, dst, without_duplicates_and_aliases, part_id);
 }
 
 
@@ -311,13 +357,13 @@ void Expression::getSampleBlockImpl(ASTPtr ast, Block & res)
 	}
 	else if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*ast))
 	{
-		col.name = lit->getColumnName();
+		col.name = lit->getAlias();
 		col.type = lit->type;
 		res.insert(col);
 	}
 	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		col.name = func->getColumnName();
+		col.name = func->getAlias();
 		col.type = func->return_type;
 		res.insert(col);
 	}

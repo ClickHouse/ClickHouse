@@ -43,6 +43,9 @@ public:
 
 	/** Получить каноническое имя столбца, если элемент является столбцом */
 	virtual String getColumnName() { throw Exception("Trying to get name of not a column", ErrorCodes::NOT_A_COLUMN); }
+
+	/** Получить алиас, если он есть, или каноническое имя столбца; если элемент является столбцом */
+	virtual String getAlias() { return getColumnName(); }
 		
 	/** Получить текст, который идентифицирует этот элемент. */
 	virtual String getID() = 0;

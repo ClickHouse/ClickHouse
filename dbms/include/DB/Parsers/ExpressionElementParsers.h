@@ -86,12 +86,32 @@ protected:
 };
 
 
+/** Алиас - идентификатор, перед которым идёт AS. Например: AS x_yz123.
+  */
+class ParserAlias : public IParserBase
+{
+protected:
+	String getName() { return "alias"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
 /** Элемент выражения - одно из: выражение в круглых скобках, массив, литерал, функция, идентификатор, звёздочка.
   */
 class ParserExpressionElement : public IParserBase
 {
 protected:
 	String getName() { return "element of expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
+/** Элемент выражения, возможно, с алиасом, если уместно.
+  */
+class ParserExpressionElementWithOptionalAlias : public IParserBase
+{
+protected:
+	String getName() { return "element of expression with optional alias"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
 };
 

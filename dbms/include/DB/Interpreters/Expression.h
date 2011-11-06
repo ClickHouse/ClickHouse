@@ -20,6 +20,7 @@ class Expression
 public:
 	Expression(ASTPtr ast_, const Context & context_) : ast(ast_), context(context_)
 	{
+		createAliasesDict(ast);
 		addSemantic(ast);
 		glueTree(ast);
 	}
@@ -40,9 +41,10 @@ public:
 	void execute(Block & block, unsigned part_id = 0);
 
 	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
+	  * Переименовать их в алиасы, если они заданы и если параметр without_duplicates_and_aliases = false.
 	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
 	  */
-	Block projectResult(Block & block, bool without_duplicates = false, unsigned part_id = 0, ASTPtr subtree = NULL);
+	Block projectResult(Block & block, bool without_duplicates_and_aliases = false, unsigned part_id = 0, ASTPtr subtree = NULL);
 
 	/** Получить список типов столбцов результата.
 	  */
@@ -72,10 +74,16 @@ private:
 	typedef std::set<String> NamesSet;
 	NamesSet required_columns;
 
+	typedef std::map<String, ASTPtr> Aliases;
+	Aliases aliases;
+
 
 	NamesAndTypesList::const_iterator findColumn(const String & name);
-	
-	
+
+	/** Создать словарь алиасов.
+	  */
+	void createAliasesDict(ASTPtr & ast);
+		
 	/** Для узлов - звёздочек - раскрыть их в список всех столбцов.
 	  * Для узлов - литералов - прописать их типы данных.
 	  * Для узлов - функций - прописать ссылки на функции, заменить имена на канонические, прописать и проверить типы.
