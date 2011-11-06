@@ -185,8 +185,13 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_SELECT | PART_ORDER);
 	is_first_expression = false;
 
-	/// Оставим только столбцы, нужные для SELECT и ORDER BY части
-	stream = new ProjectionBlockInputStream(stream, expression, query.order_expression_list ? true : false, PART_SELECT | PART_ORDER);
+	/** Оставим только столбцы, нужные для SELECT и ORDER BY части.
+	  * Если нет ORDER BY - то это последняя проекция, и нужно брать только столбцы из SELECT части.
+	  */
+	stream = new ProjectionBlockInputStream(stream, expression,
+		query.order_expression_list ? true : false,
+		PART_SELECT | PART_ORDER,
+		query.order_expression_list ? NULL : query.select_expression_list);
 	
 	/// Если есть ORDER BY
 	if (query.order_expression_list)
