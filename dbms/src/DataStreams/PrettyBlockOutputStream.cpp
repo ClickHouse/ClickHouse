@@ -1,3 +1,6 @@
+#include <sys/ioctl.h>
+#include <unistd.h>
+
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/DataStreams/PrettyBlockOutputStream.h>
@@ -6,15 +9,25 @@
 namespace DB
 {
 
+PrettyBlockOutputStream::PrettyBlockOutputStream(WriteBuffer & ostr_, size_t max_rows_)
+	 : ostr(ostr_), max_rows(max_rows_), total_rows(0), terminal_width(0)
+{
+	struct winsize w;
+	if (0 != ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
+		terminal_width = w.ws_col;
+}
+
+
 void PrettyBlockOutputStream::write(const Block & block_)
 {
+	if (total_rows >= max_rows)
+		return;
+	
 	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
 	Block block = block_;
 	
 	size_t rows = block.rows();
 	size_t columns = block.columns();
-
-	total_rows += rows;
 
 	/// Вычислим ширину всех значений
 	FunctionVisibleWidth visible_width_func;
@@ -134,7 +147,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 
 	writeString(middle_names_separator_s, ostr);
 
-	for (size_t i = 0; i < rows; ++i)
+	for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
 	{
 		if (i != 0)
 			writeString(middle_values_separator_s, ostr);
@@ -171,9 +184,24 @@ void PrettyBlockOutputStream::write(const Block & block_)
 	
 	writeString(bottom_separator_s, ostr);
 
+	total_rows += rows;
+}
+
+
+void PrettyBlockOutputStream::writeSuffix()
+{
 	writeString("  ", ostr);
 	writeIntText(total_rows, ostr);
-	writeString(" rows in set.\n", ostr);
+	writeString(" rows in set.", ostr);
+
+	if (total_rows >= max_rows)
+	{
+		writeString(" Showed first ", ostr);
+		writeIntText(max_rows, ostr);
+		writeString(".", ostr);
+	}
+	writeString("\n", ostr);
 }
+
 
 }
