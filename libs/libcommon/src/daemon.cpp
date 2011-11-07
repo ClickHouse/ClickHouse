@@ -30,6 +30,13 @@
 #include "revision.h"
 
 
+/** Ждать столько то секунд перед тем, как начать слушать уведомления.
+  * - простое исправление для ошибки address already in use, которая возникает при перезапуске.
+  * (ошибка возникает, так как сокет не закрывается)
+  */
+#define SLEEP_BEFORE_LISTEN_TO_NOTIFICATIONS 10
+
+
 using Poco::Logger;
 using Poco::AutoPtr;
 using Poco::Observer;
@@ -57,6 +64,7 @@ public:
 
 	void run()
 	{
+		::sleep(SLEEP_BEFORE_LISTEN_TO_NOTIFICATIONS);
 		Poco::Net::DatagramSocket socket(Poco::Net::SocketAddress("[::]:" + Poco::NumberFormatter::format(port)), true);
 
 		UInt8 message;
