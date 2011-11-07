@@ -44,6 +44,38 @@ static void numWidthConstant(T a, UInt64 & c)
 		c = 2 + log10(-a);
 }
 
+inline UInt64 floatWidth(double x)
+{
+	/// Не быстро.
+	unsigned size = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION + 10;
+	char tmp[size];	/// знаки, +0.0e+123\0
+	int res = std::snprintf(tmp, size, "%.*g", WRITE_HELPERS_DEFAULT_FLOAT_PRECISION, x);
+
+	if (res >= static_cast<int>(size) || res <= 0)
+		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+	
+	return res;
+}
+
+template <typename T>
+static void floatWidthVector(const std::vector<T> & a, std::vector<UInt64> & c)
+{
+	size_t size = a.size();
+	for (size_t i = 0; i < size; ++i)
+		c[i] = floatWidth(a[i]);
+}
+
+template <typename T>
+static void floatWidthConstant(T a, UInt64 & c)
+{
+	c = floatWidth(a);
+}
+
+template <> inline void numWidthVector<Float64>(const std::vector<Float64> & a, std::vector<UInt64> & c) { floatWidthVector(a, c); }
+template <> inline void numWidthVector<Float32>(const std::vector<Float32> & a, std::vector<UInt64> & c) { floatWidthVector(a, c); }
+template <> inline void numWidthConstant<Float64>(Float64 a, UInt64 & c) { floatWidthConstant(a, c); }
+template <> inline void numWidthConstant<Float32>(Float32 a, UInt64 & c) { floatWidthConstant(a, c); }
+
 static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
 {
 	UInt64 res = 0;
