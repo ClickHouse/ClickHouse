@@ -25,6 +25,7 @@
 #include <DB/Functions/FunctionsConversion.h>
 #include <DB/Functions/FunctionsDateTime.h>
 #include <DB/Functions/FunctionsStringSearch.h>
+#include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/executeQuery.h>
@@ -170,6 +171,8 @@ int main(int argc, char ** argv)
 			("match",			new DB::FunctionMatch)
 			("like",			new DB::FunctionLike)
 			("notLike",			new DB::FunctionNotLike)
+
+			("visibleWidth",	new DB::FunctionVisibleWidth)
 		;
 
 		context.path = "./";
