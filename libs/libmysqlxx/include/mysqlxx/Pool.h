@@ -36,7 +36,7 @@ static __thread bool using_connection_from_another_thread = false;
 	
 
 /** Пул соединений с MySQL.
-  * Этот класс имеет мало отношения в mysqlxx и сделан не в стиле библиотеки. (взят из старого кода)
+  * Этот класс имеет мало отношения к mysqlxx и сделан не в стиле библиотеки. (взят из старого кода)
   * Использование:
   * 	mysqlxx::Pool pool("mysql_params");
   *

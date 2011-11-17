@@ -93,7 +93,7 @@ public:
 	{
 		Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
 
-		std::string db 			= cfg.getString(config_name + ".db");
+		std::string db 			= cfg.getString(config_name + ".db", "");
 		std::string server 		= cfg.getString(config_name + ".host");
 		std::string user 		= cfg.getString(config_name + ".user");
 		std::string password	= cfg.getString(config_name + ".password");
