@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_COMPRESSED_READBUFFER_H
-#define DBMS_COMMON_COMPRESSED_READBUFFER_H
+#pragma once
 
 #include <vector>
 
@@ -64,5 +63,3 @@ public:
 };
 
 }
-
-#endif

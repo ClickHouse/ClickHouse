@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iostream>
+#include <vector>
 
 #include <DB/IO/WriteBuffer.h>
 
