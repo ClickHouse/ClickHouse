@@ -115,17 +115,16 @@ struct EscapeManipResult
 
 		return ostr;
 	}
+
+	
 	template <typename T>
 	std::ostream & operator<< (const Null<T> & value)
 	{
 		if(value.is_null)
-		{
 			ostr << "\\N";
-		}
 		else
-		{
 			*this << value.data;
-		}
+		
 		return ostr ;
 	}
 
