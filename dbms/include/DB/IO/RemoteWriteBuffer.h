@@ -53,7 +53,8 @@ public:
 		Poco::URI::encode(tmp_path, "&#", encoded_tmp_path);
 		
 		std::stringstream uri;
-		uri << "http://" << host << ":" << port << "/?action=write"
+		uri << "http://" << host << ":" << port
+			<< "/?action=" << (tmp_path.empty() ? "write" : "create_and_write")
 			<< "&path=" << encoded_path
 			<< "&tmp_path=" << encoded_tmp_path
 			<< "&if_exists=" << if_exists
@@ -74,19 +75,19 @@ public:
 		ostr = &session.sendRequest(request);
 		impl = new WriteBufferFromOStream(*ostr);
 
-		internal_buffer = impl->buffer();
-		working_buffer = internal_buffer;
+		set(impl->buffer().begin(), impl->buffer().size());
 	}
 
 	void nextImpl()
 	{
 		if (!offset())
 			return;
-		
+
+		impl->position() = pos;
 		impl->next();
 	}
 
-    virtual ~RemoteWriteBuffer()
+	virtual ~RemoteWriteBuffer()
 	{
 		nextImpl();
 
