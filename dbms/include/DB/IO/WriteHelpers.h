@@ -7,6 +7,8 @@
 
 #include <Yandex/DateLUT.h>
 
+#include <mysqlxx/Row.h>
+
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -59,6 +61,12 @@ inline void writeStringBinary(const std::string & s, DB::WriteBuffer & buf)
 }
 
 
+inline void writeBoolText(bool x, WriteBuffer & buf)
+{
+	writeChar(x ? '1' : '0', buf);
+}
+
+
 template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
 {
@@ -105,19 +113,6 @@ void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_D
 	buf.write(tmp, res);
 }
 
-template <typename T>
-void writeText(T x, WriteBuffer & buf);
-
-template <> inline void writeText<UInt8>	(UInt8 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<UInt16>	(UInt16 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<UInt32>	(UInt32 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<UInt64>	(UInt64 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<Int8>		(Int8 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<Int16>	(Int16 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<Int32>	(Int32 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<Int64>	(Int64 x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-template <> inline void writeText<Float32>	(Float32 x, WriteBuffer & buf) { writeFloatText(x, buf); }
-template <> inline void writeText<Float64>	(Float64 x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeString(const String & s, WriteBuffer & buf)
 {
@@ -126,9 +121,9 @@ inline void writeString(const String & s, WriteBuffer & buf)
 
 
 template <char c>
-void writeAnyEscapedString(const String & s, WriteBuffer & buf)
+void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
-	for (String::const_iterator it = s.begin(); it != s.end(); ++it)
+	for (const char * it = begin; it != end; ++it)
 	{
 		switch (*it)
 		{
@@ -168,6 +163,13 @@ void writeAnyEscapedString(const String & s, WriteBuffer & buf)
 				writeChar(*it, buf);
 		}
 	}
+}
+
+
+template <char c>
+void writeAnyEscapedString(const String & s, WriteBuffer & buf)
+{
+	writeAnyEscapedString<c>(s.data(), s.data() + s.size(), buf);
 }
 
 
@@ -248,6 +250,22 @@ inline void writeDateText(Yandex::DayNum_t date, WriteBuffer & buf)
 	buf.write(s, 10);
 }
 
+inline void writeDateText(mysqlxx::Date date, WriteBuffer & buf)
+{
+	char s[10] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0'};
+
+	s[0] += date.year() / 1000;
+	s[1] += (date.year() / 100) % 10;
+	s[2] += (date.year() / 10) % 10;
+	s[3] += date.year() % 10;
+	s[5] += date.month() / 10;
+	s[6] += date.month() % 10;
+	s[8] += date.day() / 10;
+	s[9] += date.day() % 10;
+
+	buf.write(s, 10);
+}
+
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
 inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
@@ -285,6 +303,72 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 
 	buf.write(s, 19);
 }
+
+inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf)
+{
+	char s[19] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0', ' ', '0', '0', ':', '0', '0', ':', '0', '0'};
+
+	s[0] += datetime.year() / 1000;
+	s[1] += (datetime.year() / 100) % 10;
+	s[2] += (datetime.year() / 10) % 10;
+	s[3] += datetime.year() % 10;
+	s[5] += datetime.month() / 10;
+	s[6] += datetime.month() % 10;
+	s[8] += datetime.day() / 10;
+	s[9] += datetime.day() % 10;
+
+	s[11] += datetime.hour() / 10;
+	s[12] += datetime.hour() % 10;
+	s[14] += datetime.minute() / 10;
+	s[15] += datetime.minute() % 10;
+	s[17] += datetime.second() / 10;
+	s[18] += datetime.second() % 10;
+
+	buf.write(s, 19);
+}
+
+
+/// Вывести mysqlxx::Row в tab-separated виде
+inline void writeEscapedRow(const mysqlxx::Row & row, WriteBuffer & buf)
+{
+	for (size_t i = 0; i < row.size(); ++i)
+	{
+		if (i != 0)
+			buf.write('\t');
+
+		if (unlikely(row[i].isNull()))
+		{
+			buf.write("\\N", 2);
+			continue;
+		}
+
+		writeAnyEscapedString<'\''>(row[i].data(), row[i].data() + row[i].length(), buf);
+	}
+}
+
+
+template <typename T>
+void writeText(const T & x, WriteBuffer & buf)
+{
+	/// Переношу ошибку в рантайм, так как метод требуется для компиляции DBObject-ов
+	throw Exception("Method writeText is not implemented for this type.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+template <> inline void writeText<UInt8>	(const UInt8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<UInt16>	(const UInt16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<UInt32>	(const UInt32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<UInt64>	(const UInt64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int8>		(const Int8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int16>	(const Int16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int32>	(const Int32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Int64>	(const Int64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeText<Float32>	(const Float32 & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+template <> inline void writeText<Float64>	(const Float64 & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+template <> inline void writeText<String>	(const String & x,	WriteBuffer & buf) { writeEscapedString(x, buf); }
+template <> inline void writeText<bool>		(const bool & x, 	WriteBuffer & buf) { writeBoolText(x, buf); }
+
+template <> inline void writeText<mysqlxx::Date>		(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }
+template <> inline void writeText<mysqlxx::DateTime>	(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
 
 }

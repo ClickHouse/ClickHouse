@@ -8,6 +8,9 @@
 
 #include <Yandex/DateLUT.h>
 
+#include <mysqlxx/Date.h>
+#include <mysqlxx/DateTime.h>
+
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -96,7 +99,15 @@ inline void readChar(char & x, ReadBuffer & buf)
 
 void assertString(const char * s, ReadBuffer & buf);
 
-/// грубо
+
+inline void readBoolText(bool & x, ReadBuffer & buf)
+{
+	char tmp = '0';
+	readChar(tmp, buf);
+	x = tmp != '0';
+}
+
+
 template <typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
@@ -250,20 +261,6 @@ void readFloatText(T & x, ReadBuffer & buf)
 		x = -x;
 }
 
-template <typename T>
-void readText(T & x, ReadBuffer & buf);
-
-template <> inline void readText<UInt8>		(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<UInt16>	(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<UInt32>	(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<UInt64>	(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int8>		(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int16>		(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int32>		(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int64>		(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Float32>	(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-template <> inline void readText<Float64>	(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-
 
 /// грубо; всё до '\n' или '\t'
 void readString(String & s, ReadBuffer & buf);
@@ -295,6 +292,21 @@ inline void readDateText(Yandex::DayNum_t & date, ReadBuffer & buf)
 	date = Yandex::DateLUTSingleton::instance().makeDayNum(year, month, day);
 }
 
+inline void readDateText(mysqlxx::Date & date, ReadBuffer & buf)
+{
+	char s[10];
+	size_t size = buf.read(s, 10);
+	if (10 != size)
+	{
+		s[size] = 0;
+		throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
+	}
+
+	date.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
+	date.month((s[5] - '0') * 10 + (s[6] - '0'));
+	date.day((s[8] - '0') * 10 + (s[9] - '0'));
+}
+
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
@@ -317,6 +329,49 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 
 	datetime = Yandex::DateLUTSingleton::instance().makeDateTime(year, month, day, hour, minute, second);
 }
+
+inline void readDateTimeText(mysqlxx::DateTime & datetime, ReadBuffer & buf)
+{
+	char s[19];
+	size_t size = buf.read(s, 19);
+	if (19 != size)
+	{
+		s[size] = 0;
+		throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+	}
+
+	datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
+	datetime.month((s[5] - '0') * 10 + (s[6] - '0'));
+	datetime.day((s[8] - '0') * 10 + (s[9] - '0'));
+
+	datetime.hour((s[11] - '0') * 10 + (s[12] - '0'));
+	datetime.minute((s[14] - '0') * 10 + (s[15] - '0'));
+	datetime.second((s[17] - '0') * 10 + (s[18] - '0'));
+}
+
+
+template <typename T>
+void readText(T & x, ReadBuffer & buf)
+{
+	/// Переношу ошибку в рантайм, так как метод требуется для компиляции DBObject-ов
+	throw Exception("Method readText is not implemented for this type.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+template <> inline void readText<UInt8>		(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<UInt16>	(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<UInt32>	(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<UInt64>	(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int8>		(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int16>		(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int32>		(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Int64>		(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+template <> inline void readText<Float32>	(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+template <> inline void readText<Float64>	(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+template <> inline void readText<String>	(String & x, 	ReadBuffer & buf) { readEscapedString(x, buf); }
+template <> inline void readText<bool>		(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
+
+template <> inline void readText<mysqlxx::Date>			(mysqlxx::Date & x, 		ReadBuffer & buf) { readDateText(x, buf); }
+template <> inline void readText<mysqlxx::DateTime>		(mysqlxx::DateTime & x, 	ReadBuffer & buf) { readDateTimeText(x, buf); }
 
 
 /// Пропустить пробельные символы.
