@@ -85,6 +85,8 @@ inline void readStringBinary(std::string & s, DB::ReadBuffer & buf, size_t MAX_S
 	buf.readStrict(const_cast<char *>(s.data()), size);
 }
 
+template <> inline void readBinary(std::string & s, DB::ReadBuffer & buf) { readStringBinary(s, buf); }
+
 
 inline void readChar(char & x, ReadBuffer & buf)
 {

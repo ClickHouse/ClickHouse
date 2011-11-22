@@ -60,6 +60,8 @@ inline void writeStringBinary(const std::string & s, DB::WriteBuffer & buf)
 	buf.write(s.data(), s.size());
 }
 
+template <> inline void writeBinary(const std::string & s, DB::WriteBuffer & buf) { writeStringBinary(s, buf); }
+
 
 inline void writeBoolText(bool x, WriteBuffer & buf)
 {
