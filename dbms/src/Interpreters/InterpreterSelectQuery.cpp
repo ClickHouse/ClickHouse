@@ -145,9 +145,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	/// Инициализируем изначальный поток данных, на который накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-		stream = table->read(required_columns, query_ptr, block_size);
+		stream = new AsynchronousBlockInputStream(table->read(required_columns, query_ptr, block_size));
 	else
-		stream = interpreter_subquery->execute();
+		stream = new AsynchronousBlockInputStream(interpreter_subquery->execute());
 
 	bool is_first_expression = true;
 
