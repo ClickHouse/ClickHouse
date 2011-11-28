@@ -1,0 +1,21 @@
+#pragma once
+
+#include <DB/DataStreams/PrettyBlockOutputStream.h>
+
+
+namespace DB
+{
+
+/** Выводит результат в виде красивых таблиц, но с меньшим количеством строк-разделителей.
+  */
+class PrettyCompactBlockOutputStream : public PrettyBlockOutputStream
+{
+public:
+	PrettyCompactBlockOutputStream(WriteBuffer & ostr_, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS)
+		: PrettyBlockOutputStream(ostr_, max_rows_) {}
+
+	void write(const Block & block);
+	BlockOutputStreamPtr clone() { return new PrettyCompactBlockOutputStream(ostr); }
+};
+
+}

@@ -1,0 +1,73 @@
+#include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/IO/WriteHelpers.h>
+
+#include <DB/DataStreams/VerticalRowOutputStream.h>
+
+
+namespace DB
+{
+
+using Poco::SharedPtr;
+
+
+VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
+	: ostr(ostr_), sample(sample_), field_number(0), row_number(0)
+{
+	size_t columns = sample.columns();
+	data_types.resize(columns);
+	names.resize(columns);
+
+	typedef std::vector<size_t> Widths_t;
+	Widths_t name_widths(columns);
+	size_t max_name_width = 0;
+	
+	for (size_t i = 0; i < columns; ++i)
+	{
+		data_types[i] = sample.getByPosition(i).type;
+		names[i] = sample.getByPosition(i).name;
+		stringWidthConstant(names[i], name_widths[i]);
+		if (name_widths[i] > max_name_width)
+			max_name_width = name_widths[i];
+	}
+
+	pads.resize(columns);
+	for (size_t i = 0; i < columns; ++i)
+		pads[i] = String(max_name_width - name_widths[i], ' ');
+}
+
+
+void VerticalRowOutputStream::writeField(const Field & field)
+{
+	writeEscapedString(names[field_number], ostr);
+	writeString(": ", ostr);
+	writeString(pads[field_number], ostr);
+	
+	data_types[field_number]->serializeTextEscaped(field, ostr);
+
+	writeChar('\n', ostr);
+	++field_number;
+}
+
+
+void VerticalRowOutputStream::writeRowStartDelimiter()
+{
+	++row_number;
+	writeString("Row ", ostr);
+	writeIntText(row_number, ostr);
+	writeString(":\n", ostr);
+
+	size_t width = log10(row_number + 1) + 1 + strlen("Row :");
+	for (size_t i = 0; i < width; ++i)
+		writeString("─", ostr);
+	writeChar('\n', ostr);
+}
+
+
+void VerticalRowOutputStream::writeRowBetweenDelimiter()
+{
+	writeString("\n", ostr);
+	field_number = 0;
+}
+
+
+}

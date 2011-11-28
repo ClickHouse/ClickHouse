@@ -13,30 +13,23 @@ PrettyBlockOutputStream::PrettyBlockOutputStream(WriteBuffer & ostr_, size_t max
 	 : ostr(ostr_), max_rows(max_rows_), total_rows(0), terminal_width(0)
 {
 	struct winsize w;
-	if (0 != ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
+	if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
 		terminal_width = w.ws_col;
 }
 
 
-void PrettyBlockOutputStream::write(const Block & block_)
+void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widths, Widths_t & name_widths)
 {
-	if (total_rows >= max_rows)
-		return;
-	
-	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
-	Block block = block_;
-	
 	size_t rows = block.rows();
 	size_t columns = block.columns();
+	
+	max_widths.resize(columns);
+	name_widths.resize(columns);
 
-	/// Вычислим ширину всех значений
 	FunctionVisibleWidth visible_width_func;
 	DataTypePtr visible_width_type = new DataTypeUInt64;
 
-	typedef std::vector<size_t> Widths_t;
-	Widths_t max_widths(columns);
-	Widths_t name_widths(columns);
-
+	/// Вычислим ширину всех значений
 	for (size_t i = 0; i < columns; ++i)
 	{
 		ColumnWithNameAndType column;
@@ -66,7 +59,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 			max_widths[i] = res;
 		}
 		else
-			throw Exception("Illegal column " + column.column->getName() 
+			throw Exception("Illegal column " + column.column->getName()
 				+ " of result of function " + visible_width_func.getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 
@@ -75,6 +68,23 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		if (name_widths[i] > max_widths[i])
 			max_widths[i] = name_widths[i];
 	}
+}
+
+
+void PrettyBlockOutputStream::write(const Block & block_)
+{
+	if (total_rows >= max_rows)
+		return;
+	
+	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
+	Block block = block_;
+	
+	size_t rows = block.rows();
+	size_t columns = block.columns();
+
+	Widths_t max_widths;
+	Widths_t name_widths;
+	calculateWidths(block, max_widths, name_widths);
 
 	/// Создадим разделители
 	std::stringstream top_separator;
