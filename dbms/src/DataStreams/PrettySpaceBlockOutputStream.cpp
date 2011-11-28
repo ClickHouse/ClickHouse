@@ -41,7 +41,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 
 		if (col.type->isNumeric())
 		{
-			for (size_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
+			for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
 				writeChar(' ', ostr);
 
 			writeString("\033[1;37m", ostr);
@@ -54,7 +54,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 			writeEscapedString(col.name, ostr);
 			writeString("\033[0m", ostr);
 
-			for (size_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
+			for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
 				writeChar(' ', ostr);
 		}
 	}
@@ -72,7 +72,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 			if (col.type->isNumeric())
 			{
 				size_t width = boost::get<UInt64>((*block.getByPosition(columns + j).column)[i]);
-				for (size_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
+				for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
 					writeChar(' ', ostr);
 					
 				col.type->serializeTextEscaped((*col.column)[i], ostr);
@@ -82,7 +82,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 				col.type->serializeTextEscaped((*col.column)[i], ostr);
 
 				size_t width = boost::get<UInt64>((*block.getByPosition(columns + j).column)[i]);
-				for (size_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
+				for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
 					writeChar(' ', ostr);
 			}
 		}

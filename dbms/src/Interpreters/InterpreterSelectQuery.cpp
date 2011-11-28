@@ -6,6 +6,7 @@
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
+#include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -154,8 +155,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (query.where_expression)
 	{
 		setPartID(query.where_expression, PART_WHERE);
-		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_WHERE);
-		stream = new FilterBlockInputStream(stream);
+		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_WHERE));
+		stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
 		is_first_expression = false;
 	}
 
@@ -167,9 +168,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		if (query.group_expression_list)
 			setPartID(query.group_expression_list, PART_GROUP);
 		
-		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_GROUP | PART_BEFORE_AGGREGATING);
-		stream = new AggregatingBlockInputStream(stream, expression);
-		stream = new FinalizingAggregatedBlockInputStream(stream);
+		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_GROUP | PART_BEFORE_AGGREGATING));
+		stream = new AsynchronousBlockInputStream(new AggregatingBlockInputStream(stream, expression));
+		stream = new AsynchronousBlockInputStream(new FinalizingAggregatedBlockInputStream(stream));
 		is_first_expression = false;
 	}
 
@@ -177,8 +178,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (query.having_expression)
 	{
 		setPartID(query.having_expression, PART_HAVING);
-		stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_HAVING);
-		stream = new FilterBlockInputStream(stream);
+		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_HAVING));
+		stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
 		is_first_expression = false;
 	}
 
@@ -186,7 +187,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	setPartID(query.select_expression_list, PART_SELECT);
 	if (query.order_expression_list)
 		setPartID(query.order_expression_list, PART_ORDER);
-	stream = new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_SELECT | PART_ORDER);
+	stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_SELECT | PART_ORDER));
 	is_first_expression = false;
 
 	/** Оставим только столбцы, нужные для SELECT и ORDER BY части.
@@ -210,8 +211,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
 		}
 
-		stream = new PartialSortingBlockInputStream(stream, order_descr);
-		stream = new MergeSortingBlockInputStream(stream, order_descr);
+		stream = new AsynchronousBlockInputStream(new PartialSortingBlockInputStream(stream, order_descr));
+		stream = new AsynchronousBlockInputStream(new MergeSortingBlockInputStream(stream, order_descr));
 
 		/// Оставим только столбцы, нужные для SELECT части
 		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT, query.select_expression_list);
