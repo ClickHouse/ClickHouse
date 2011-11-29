@@ -30,7 +30,8 @@ private:
 	}
 
 public:
-	WriteBufferFromOStream(std::ostream & ostr_) : ostr(ostr_) {}
+	WriteBufferFromOStream(std::ostream & ostr_, size_t size = DBMS_DEFAULT_BUFFER_SIZE)
+		: BufferWithOwnMemory<WriteBuffer>(size), ostr(ostr_) {}
 
 	~WriteBufferFromOStream()
 	{

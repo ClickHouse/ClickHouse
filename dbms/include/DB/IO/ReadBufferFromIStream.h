@@ -36,7 +36,8 @@ private:
 	}
 
 public:
-	ReadBufferFromIStream(std::istream & istr_) : istr(istr_) {}
+	ReadBufferFromIStream(std::istream & istr_, size_t size = DBMS_DEFAULT_BUFFER_SIZE)
+		: BufferWithOwnMemory<ReadBuffer>(size), istr(istr_) {}
 };
 
 }
