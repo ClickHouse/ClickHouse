@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/IO/WriteBufferFromVector.h>
+#include <DB/IO/ReadBufferFromString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -234,7 +235,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			const String & s = col_from->getData();
-			ReadBuffer read_buffer(const_cast<char *>(s.data()), s.size(), 0);
+			ReadBufferFromString read_buffer(s);
 			ToFieldType x = 0;
 			parseImpl<ToDataType>(x, read_buffer);
 			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), x);

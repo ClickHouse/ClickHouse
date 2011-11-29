@@ -4,7 +4,7 @@
 #include <DB/IO/WriteBuffer.h>
 
 
-/// Так как HexWriteBuffer может создаваться во внутреннем цикле, сделаем у него размер буфера маленьким.
+/// Так как HexWriteBuffer часто создаётся во внутреннем цикле, сделаем у него размер буфера маленьким.
 #define DBMS_HEX_WRITE_BUFFER_SIZE 32
 
 

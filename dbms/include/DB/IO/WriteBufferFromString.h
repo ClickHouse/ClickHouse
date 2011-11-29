@@ -10,6 +10,7 @@ namespace DB
 {
 
 /** Пишет данные в строку.
+  * Замечение: перед использованием полученной строки, уничтожте этот объект.
   */
 class WriteBufferFromString : public WriteBuffer
 {

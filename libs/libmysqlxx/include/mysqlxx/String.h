@@ -129,6 +129,7 @@ public:
 	const char * data() const 	{ return m_data; }
 	size_t length() const 		{ return m_length; }
 	size_t size() const 		{ return m_length; }
+	bool empty() const 			{ return 0 == m_length; }
 
 private:
 	const char * m_data;
