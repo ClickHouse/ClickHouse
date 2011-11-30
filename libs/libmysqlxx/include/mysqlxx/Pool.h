@@ -28,13 +28,6 @@
 namespace mysqlxx
 {
 
-/** Устанавливаем при использовании соединения из другого потока.
-  * Это требуется, чтобы корректно вызвать функции my_thread_init() и my_thread_end(),
-  *  как требует библиотека libmysqlclient_r или новая библиотека libmysqlclient (MySQL 5.5+).
-  */
-static __thread bool using_connection_from_another_thread = false;
-	
-
 /** Пул соединений с MySQL.
   * Этот класс имеет мало отношения к mysqlxx и сделан не в стиле библиотеки. (взят из старого кода)
   * Использование:
@@ -174,12 +167,7 @@ public:
 			if (!data)
 				return;
 			++data->ref_count;
-			if (mysqlxx::connections == 0)
-			{
-				using_connection_from_another_thread = true;
-				++mysqlxx::connections;
-				my_thread_init();
-			}
+			my_thread_init();
 		}
 
 		void decrementRefCount()
@@ -187,15 +175,7 @@ public:
 			if (!data)
 				return;
 			--data->ref_count;
-			if (using_connection_from_another_thread)
-			{
-				--mysqlxx::connections;
-				if (mysqlxx::connections == 0)
-				{
-					using_connection_from_another_thread = false;
-					my_thread_end();
-				}
-			}
+			my_thread_end();
 		}
 	};
 

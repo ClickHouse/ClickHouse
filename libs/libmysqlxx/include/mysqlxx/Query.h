@@ -26,6 +26,8 @@ namespace mysqlxx
   *
   * В отличие от библиотеки mysql++, запрос можно копировать.
   * (то есть, запрос можно класть в контейнеры STL и ничего с ним не будет)
+  *
+  * Внимание! Один объект запроса можно использовать только из одного потока.
   */
 class Query : public std::ostream
 {
@@ -33,6 +35,7 @@ public:
 	Query(Connection * conn_, const std::string & query_string = "");
 	Query(const Query & other);
 	Query & operator= (const Query & other);
+	~Query();
 
 	/** Сбросить текст запроса. Это используется, если нужно написать новый запрос в том же объекте. */
 	void reset();

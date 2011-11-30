@@ -6,12 +6,12 @@ namespace mysqlxx
 {
 
 
-__thread unsigned connections = 0;
-
-
 Connection::Connection()
 {
 	is_connected = false;
+
+	/// Инициализация библиотеки.
+	LibrarySingleton::instance();
 }
 
 Connection::Connection(
@@ -29,6 +29,7 @@ Connection::Connection(
 Connection::~Connection()
 {
 	disconnect();
+	my_thread_end();
 }
 
 void Connection::connect(const char* db,
@@ -65,7 +66,6 @@ void Connection::connect(const char* db,
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	is_connected = true;
-	++connections;
 }
 
 bool Connection::connected() const
@@ -81,10 +81,6 @@ void Connection::disconnect()
 	mysql_close(&driver);
 	memset(&driver, 0, sizeof(driver));
 	is_connected = false;
-	--connections;
-
-	if (connections == 0)
-		my_thread_end();
 }
 
 bool Connection::ping()
