@@ -42,7 +42,7 @@ public:
 	  */
 	RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
 		const std::string & tmp_path_ = "", const std::string & if_exists_ = "append",
-		bool decompress_ = true, size_t timeout_ = 0)
+		bool decompress_ = false, size_t timeout_ = 0)
 		: WriteBuffer(NULL, 0), host(host_), port(port_), path(path_),
 		tmp_path(tmp_path_), if_exists(if_exists_),
 		decompress(decompress_)
