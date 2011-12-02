@@ -36,19 +36,19 @@ inline void writeChar(char x, WriteBuffer & buf)
 
 /// Запись числа в native формате
 template <typename T>
-inline void writeBinary(T & x, WriteBuffer & buf)
+inline void writeBinary(const T & x, WriteBuffer & buf)
 {
 	buf.write(reinterpret_cast<const char *>(&x), sizeof(x));
 }
 
 template <typename T>
-inline void writeIntBinary(T & x, WriteBuffer & buf)
+inline void writeIntBinary(const T & x, WriteBuffer & buf)
 {
 	writeBinary(x, buf);
 }
 
 template <typename T>
-inline void writeFloatBinary(T & x, WriteBuffer & buf)
+inline void writeFloatBinary(const T & x, WriteBuffer & buf)
 {
 	writeBinary(x, buf);
 }
