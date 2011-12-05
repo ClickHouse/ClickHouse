@@ -21,12 +21,6 @@ typedef unsigned long MYSQL_LENGTH;
 typedef MYSQL_LENGTH * MYSQL_LENGTHS;
 typedef MYSQL_FIELD * MYSQL_FIELDS;
 
-/// Для совместимости с mysql++. Не используйте эти typedef-ы.
-typedef DateTime sql_datetime;
-typedef DateTime sql_timestamp;
-typedef Date sql_date;
-typedef std::string sql_char;
-
 }
 
 #endif
