@@ -41,10 +41,10 @@ struct EscapeManipResult
 
 	EscapeManipResult(std::ostream & ostr_) : ostr(ostr_) {}
 
-	std::ostream & operator<< (bool value) 					{ return ostr << value; }
-	std::ostream & operator<< (char value) 					{ return ostr << value; }
-	std::ostream & operator<< (unsigned char value) 		{ return ostr << value; }
-	std::ostream & operator<< (signed char value)			{ return ostr << value; }
+	std::ostream & operator<< (bool value) 					{ return ostr << static_cast<int>(value); }
+	std::ostream & operator<< (char value) 					{ return ostr << static_cast<int>(value); }
+	std::ostream & operator<< (unsigned char value) 		{ return ostr << static_cast<int>(value); }
+	std::ostream & operator<< (signed char value)			{ return ostr << static_cast<int>(value); }
 	std::ostream & operator<< (short value)					{ return ostr << value; }
 	std::ostream & operator<< (unsigned short value)		{ return ostr << value; }
 	std::ostream & operator<< (int value)					{ return ostr << value; }
@@ -161,10 +161,10 @@ public:
 
 	QuoteManipResult(std::ostream & ostr_) : ostr(ostr_) {}
 
-	std::ostream & operator<< (bool value) 					{ return ostr << value; }
-	std::ostream & operator<< (char value) 					{ return ostr << value; }
-	std::ostream & operator<< (unsigned char value) 		{ return ostr << value; }
-	std::ostream & operator<< (signed char value)			{ return ostr << value; }
+	std::ostream & operator<< (bool value) 					{ return ostr << static_cast<int>(value); }
+	std::ostream & operator<< (char value) 					{ return ostr << static_cast<int>(value); }
+	std::ostream & operator<< (unsigned char value) 		{ return ostr << static_cast<int>(value); }
+	std::ostream & operator<< (signed char value)			{ return ostr << static_cast<int>(value); }
 	std::ostream & operator<< (short value)					{ return ostr << value; }
 	std::ostream & operator<< (unsigned short value)		{ return ostr << value; }
 	std::ostream & operator<< (int value)					{ return ostr << value; }
@@ -313,10 +313,10 @@ struct UnEscapeManipResult
 
 	UnEscapeManipResult(std::istream & istr_) : istr(istr_) {}
 
-	std::istream & operator>> (bool 				& value) { return istr >> value; }
-	std::istream & operator>> (char 				& value) { return istr >> value; }
-	std::istream & operator>> (unsigned char 		& value) { return istr >> value; }
-	std::istream & operator>> (signed char 			& value) { return istr >> value; }
+	std::istream & operator>> (bool 				& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+	std::istream & operator>> (char 				& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+	std::istream & operator>> (unsigned char 		& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+	std::istream & operator>> (signed char 			& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 	std::istream & operator>> (short 				& value) { return istr >> value; }
 	std::istream & operator>> (unsigned short 		& value) { return istr >> value; }
 	std::istream & operator>> (int 					& value) { return istr >> value; }
@@ -413,10 +413,10 @@ public:
 
 	UnQuoteManipResult(std::istream & istr_) : istr(istr_) {}
 
-	std::istream & operator>> (bool 				& value) { return istr >> value; }
-	std::istream & operator>> (char 				& value) { return istr >> value; }
-	std::istream & operator>> (unsigned char 		& value) { return istr >> value; }
-	std::istream & operator>> (signed char 			& value) { return istr >> value; }
+	std::istream & operator>> (bool 				& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+	std::istream & operator>> (char 				& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+	std::istream & operator>> (unsigned char 		& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+	std::istream & operator>> (signed char 			& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 	std::istream & operator>> (short 				& value) { return istr >> value; }
 	std::istream & operator>> (unsigned short 		& value) { return istr >> value; }
 	std::istream & operator>> (int 					& value) { return istr >> value; }
