@@ -206,15 +206,24 @@ void Daemon::initialize(Application& self)
 			throw Poco::Exception("Cannot setrlimit");
 	}
 	
-	// Сбросим генератор случайных чисел
-	srandom(time(NULL));	
-
 	p_TaskManager = new TaskManager();
 	ServerApplication::initialize(self);
 
-	// Создадим pid-file, если запущен, как демон
-	if (config().getBool("application.runAsDaemon", false))
-		m_Pid.seed(config().getString("pid", "pid"));
+	bool is_daemon = config().getBool("application.runAsDaemon", false);
+
+	if (is_daemon)
+	{
+		/** При создании pid файла и поиске конфигурации, будем интерпретировать относительные пути
+		  * от директории запуска программы.
+		  */
+		std::string path = config().getString("application.path");
+		if (0 != chdir(path.c_str()))
+			throw Poco::Exception("Cannot change directory to " + path);
+
+		/// Создадим pid-file.
+		if (is_daemon)
+			m_Pid.seed(config().getString("pid", "pid"));
+	}
 
 	// Считаем конфигурацию
 	reloadConfiguration();
@@ -242,12 +251,13 @@ void Daemon::initialize(Application& self)
 			for (AbstractConfiguration::Keys::iterator it = address_keys.begin(); it != address_keys.end(); ++it)
 				subscribers.push_back(Poco::Net::SocketAddress(config().getString("notify." + *it)));
 	}
-}
 
-void Daemon::uninitialize()
-{
-	ServerApplication::uninitialize();
-	delete p_TaskManager;
+	if (is_daemon)
+	{
+		/// Сменим директорию обратно в корень.
+		if (0 != chdir("/"))
+			throw Poco::Exception("Cannot change directory to /");
+	}
 }
 
 /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
