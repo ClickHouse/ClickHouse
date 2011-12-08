@@ -307,11 +307,10 @@ void Daemon::defineOptions(Poco::Util::OptionSet& _options)
 
 void Daemon::notifySubscribers()
 {
-	Poco::Net::DatagramSocket socket;
 	UInt8 message = 1;
 	for (Subscribers::iterator it = subscribers.begin(); it != subscribers.end(); ++it)
 	{
 		LOG_TRACE((&Logger::get("Daemon")), "Notifying " << it->toString());
-		socket.sendTo(&message, sizeof(message), *it);
+		Poco::Net::DatagramSocket(it->family()).sendTo(&message, sizeof(message), *it);
 	}
 }
