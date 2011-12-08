@@ -217,7 +217,7 @@ void Daemon::initialize(Application& self)
 		  * от директории запуска программы.
 		  */
 		std::string path = config().getString("application.path");
-		if (0 != chdir(path.c_str()))
+		if (0 != chdir(Poco::Path(path).setFileName("").toString().c_str()))
 			throw Poco::Exception("Cannot change directory to " + path);
 
 		/// Создадим pid-file.
