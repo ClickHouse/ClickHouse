@@ -9,6 +9,7 @@
 #include <DB/Core/Names.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/Interpreters/HashMap.h>
 
 
 namespace DB
@@ -33,11 +34,18 @@ struct UInt128
 	UInt64 second;
 
 	bool operator== (const UInt128 rhs) const { return first == rhs.first && second == rhs.second; }
+	bool operator!= (const UInt128 rhs) const { return first != rhs.first || second != rhs.second; }
 };
 
 struct UInt128Hash
 {
 	size_t operator()(UInt128 x) const { return x.first ^ x.second; }
+};
+
+struct UInt128ZeroTraits
+{
+	static inline bool check(UInt128 x) { return x.first == 0 && x.second == 0; }
+	static inline void set(UInt128 & x) { x.first = 0; x.second = 0; }
 };
 
 
@@ -51,9 +59,9 @@ struct StringHash
 /// Разные структуры данных, которые могут использоваться для агрегации
 typedef std::map<Row, AggregateFunctions> AggregatedData;
 typedef AggregateFunctions AggregatedDataWithoutKey;
-typedef std::tr1::unordered_map<UInt64, AggregateFunctions> AggregatedDataWithUInt64Key;
+typedef HashMap<UInt64, AggregateFunctions> AggregatedDataWithUInt64Key;
 typedef std::tr1::unordered_map<String, AggregateFunctions, StringHash> AggregatedDataWithStringKey;
-typedef std::tr1::unordered_map<UInt128, std::pair<Row, AggregateFunctions>, UInt128Hash> AggregatedDataHashed;
+typedef HashMap<UInt128, std::pair<Row, AggregateFunctions>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
 
 
 struct AggregatedDataVariants

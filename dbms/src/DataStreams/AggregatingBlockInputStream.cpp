@@ -46,6 +46,7 @@ Block AggregatingBlockInputStream::readImpl()
 	{
 		AggregatedDataWithUInt64Key & data = data_variants.key64;
 		rows = data.size();
+		
 		IColumn & first_column = *res.getByPosition(0).column;
 		bool is_signed = dynamic_cast<ColumnInt8 *>(&first_column) || dynamic_cast<ColumnInt16 *>(&first_column)
 			|| dynamic_cast<ColumnInt32 *>(&first_column) || dynamic_cast<ColumnInt64 *>(&first_column);
