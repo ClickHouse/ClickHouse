@@ -67,7 +67,18 @@ public:
 
 	~CompressedWriteBuffer()
 	{
-		nextImpl();
+		bool uncaught_exception = std::uncaught_exception();
+
+		try
+		{
+			nextImpl();
+		}
+		catch (...)
+		{
+			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
+			if (!uncaught_exception)
+				throw;
+		}
 	}
 };
 

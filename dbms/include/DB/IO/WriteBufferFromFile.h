@@ -28,9 +28,20 @@ public:
 
     virtual ~WriteBufferFromFile()
 	{
-		next();
-		if (0 != close(fd))
-			throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+		bool uncaught_exception = std::uncaught_exception();
+
+		try
+		{
+			next();
+			if (0 != close(fd))
+				throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+		}
+		catch (...)
+		{
+			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
+			if (!uncaught_exception)
+				throw;
+		}
 	}
 
 	virtual std::string getFileName()

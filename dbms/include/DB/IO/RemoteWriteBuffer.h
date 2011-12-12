@@ -89,19 +89,30 @@ public:
 
 	virtual ~RemoteWriteBuffer()
 	{
-		nextImpl();
+		bool uncaught_exception = std::uncaught_exception();
 
-		Poco::Net::HTTPResponse response;
-		std::istream & istr = session.receiveResponse(response);
-		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
-
-		if (status != Poco::Net::HTTPResponse::HTTP_OK)
+		try
 		{
-			std::stringstream error_message;
-			error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
-				<< status << ", body: " << istr.rdbuf();
+			nextImpl();
 
-			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+			Poco::Net::HTTPResponse response;
+			std::istream & istr = session.receiveResponse(response);
+			Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+
+			if (status != Poco::Net::HTTPResponse::HTTP_OK)
+			{
+				std::stringstream error_message;
+				error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
+					<< status << ", body: " << istr.rdbuf();
+
+				throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+			}
+		}
+		catch (...)
+		{
+			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
+			if (!uncaught_exception)
+				throw;
 		}
 	}
 };
