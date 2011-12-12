@@ -93,7 +93,7 @@ public:
 
 		try
 		{
-			nextImpl();
+			next();
 
 			Poco::Net::HTTPResponse response;
 			std::istream & istr = session.receiveResponse(response);

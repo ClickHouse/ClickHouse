@@ -53,7 +53,7 @@ public:
 
 		try
 		{
-			nextImpl();
+			next();
 		}
 		catch (...)
 		{
