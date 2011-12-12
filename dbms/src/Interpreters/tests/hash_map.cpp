@@ -4,9 +4,6 @@
 
 #include <tr1/unordered_map>
 
-#include <google/dense_hash_map>
-#include <google/sparse_hash_map>
-
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/Types.h>
@@ -66,7 +63,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	{
+	/*{
 		Stopwatch watch;
 
 		google::dense_hash_map<DB::UInt64, DB::UInt64> map;
@@ -80,7 +77,7 @@ int main(int argc, char ** argv)
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
-	}
+ 	}*/
 
 	/*{
 		Stopwatch watch;

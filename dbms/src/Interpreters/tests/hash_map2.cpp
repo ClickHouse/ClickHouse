@@ -4,8 +4,6 @@
 
 #include <tr1/unordered_map>
 
-#include <google/dense_hash_map>
-#include <google/sparse_hash_map>
 #include <city.h>
 
 #include <statdaemons/Stopwatch.h>
