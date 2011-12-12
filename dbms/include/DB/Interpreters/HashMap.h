@@ -19,7 +19,7 @@ namespace DB
   * - проитерироваться по имеющимся в ней значениям.
   *
   * Open addressing.
-  * Linear probing.
+  * Quadratic probing.
   * Значение с нулевым ключём хранится отдельно.
   * Удаления элементов нет.
   */
@@ -108,9 +108,11 @@ private:
 	void reinsert(const Value & x)
 	{
 		size_t place_value = place(hash(x.first));
+		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first))
 		{
-			++place_value;
+			place_value += increment;
+			++increment;
 			place_value &= mask();
 		}
 		buf[place_value] = x;
@@ -241,9 +243,11 @@ public:
 		}
 
 		size_t place_value = place(hash(x.first));
+		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x.first)
 		{
-			++place_value;
+			place_value += increment;
+			++increment;
 			place_value &= mask();
 		}
 
@@ -271,9 +275,11 @@ public:
 			return has_zero ? begin() : end();
 
 		size_t place_value = place(hash(x));
+		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
 		{
-			++place_value;
+			place_value += increment;
+			++increment;
 			place_value &= mask();
 		}
 
@@ -287,9 +293,11 @@ public:
 			return has_zero ? begin() : end();
 
 		size_t place_value = place(hash(x.first));
+		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
 		{
-			++place_value;
+			place_value += increment;
+			++increment;
 			place_value &= mask();
 		}
 
