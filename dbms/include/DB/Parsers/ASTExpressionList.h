@@ -19,6 +19,17 @@ public:
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "ExpressionList"; }
+
+	ASTPtr clone() const
+	{
+		ASTExpressionList * res = new ASTExpressionList(*this);
+		res->children.clear();
+		
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			res->children.push_back((*it)->clone());
+
+		return res;
+	}
 };
 
 }

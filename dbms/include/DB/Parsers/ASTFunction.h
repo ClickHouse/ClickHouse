@@ -50,6 +50,16 @@ public:
 
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Function_" + name; }
+
+	ASTPtr clone() const
+	{
+		ASTFunction * res = new ASTFunction(*this);
+		res->children.clear();
+
+		if (arguments) 	{ res->arguments = arguments->clone(); 	res->children.push_back(res->arguments); }
+
+		return res;
+	}
 };
 
 }

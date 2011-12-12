@@ -40,6 +40,8 @@ public:
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Identifier_" + name; }
+
+	ASTPtr clone() const { return new ASTIdentifier(*this); }
 };
 
 }

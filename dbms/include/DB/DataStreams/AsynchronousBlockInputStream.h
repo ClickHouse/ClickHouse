@@ -30,7 +30,7 @@ public:
 			pool.wait();
 
 		if (exception)
-			throw *exception;
+			exception->rethrow();
 
 		Block res = block;
 		if (!res)

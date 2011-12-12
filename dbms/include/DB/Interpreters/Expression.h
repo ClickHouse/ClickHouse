@@ -18,7 +18,7 @@ namespace DB
 class Expression
 {
 public:
-	Expression(ASTPtr ast_, const Context & context_) : ast(ast_), context(context_)
+	Expression(const ASTPtr & ast_, const Context & context_) : ast(ast_), context(context_)
 	{
 		createAliasesDict(ast);
 		addSemantic(ast);
@@ -28,11 +28,6 @@ public:
 	/** Получить список столбцов, которых необходимо прочитать из таблицы, чтобы выполнить выражение.
 	  */
 	Names getRequiredColumns();
-
-	/** Прописать во всех узлах, что они ещё не вычислены.
-	  * Вызывайте в начале серии вычислений, для каждого блока.
-	  */
-	void setNotCalculated(unsigned part_id = 0, ASTPtr subtree = NULL);
 
 	/** Выполнить выражение над блоком. Блок должен содержать все столбцы - идентификаторы.
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.

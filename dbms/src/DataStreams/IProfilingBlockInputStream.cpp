@@ -92,7 +92,7 @@ Block IProfilingBlockInputStream::read()
 	{
 		std::cerr << std::endl;
 		std::cerr << getName() << std::endl;
-		getInfo().print(std::cerr);
+		std::cerr << res.dumpNames() << std::endl;
 	}*/
 
 	return res;

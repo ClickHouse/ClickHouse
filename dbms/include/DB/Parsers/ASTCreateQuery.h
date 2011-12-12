@@ -28,6 +28,18 @@ public:
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
+
+	ASTPtr clone() const
+	{
+		ASTCreateQuery * res = new ASTCreateQuery(*this);
+		res->children.clear();
+
+		if (columns) 	{ res->columns = columns->clone(); 	res->children.push_back(res->columns); }
+		if (storage) 	{ res->storage = storage->clone(); 	res->children.push_back(res->storage); }
+		if (select) 	{ res->select = select->clone(); 	res->children.push_back(res->select); }
+
+		return res;
+	}
 };
 
 }

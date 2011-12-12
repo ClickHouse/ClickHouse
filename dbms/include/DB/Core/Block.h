@@ -54,6 +54,8 @@ public:
 	ColumnWithNameAndType & getByName(const std::string & name);
 	const ColumnWithNameAndType & getByName(const std::string & name) const;
 
+	bool has(const std::string & name) const;
+
 	size_t getPositionByName(const std::string & name) const;
 
 	NamesAndTypesList getColumnsList() const;

@@ -149,15 +149,12 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	else
 		stream = new AsynchronousBlockInputStream(interpreter_subquery->execute());
 
-	bool is_first_expression = true;
-
 	/// Если есть условие WHERE - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.where_expression)
 	{
 		setPartID(query.where_expression, PART_WHERE);
-		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_WHERE));
+		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_WHERE));
 		stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
-		is_first_expression = false;
 	}
 
 	/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
@@ -168,27 +165,24 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		if (query.group_expression_list)
 			setPartID(query.group_expression_list, PART_GROUP);
 		
-		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_GROUP | PART_BEFORE_AGGREGATING));
+		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_GROUP | PART_BEFORE_AGGREGATING));
 		stream = new AsynchronousBlockInputStream(new AggregatingBlockInputStream(stream, expression));
 		stream = new AsynchronousBlockInputStream(new FinalizingAggregatedBlockInputStream(stream));
-		is_first_expression = false;
 	}
 
 	/// Если есть условие HAVING - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.having_expression)
 	{
 		setPartID(query.having_expression, PART_HAVING);
-		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_HAVING));
+		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_HAVING));
 		stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
-		is_first_expression = false;
 	}
 
 	/// Выполним оставшуюся часть выражения
 	setPartID(query.select_expression_list, PART_SELECT);
 	if (query.order_expression_list)
 		setPartID(query.order_expression_list, PART_ORDER);
-	stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, is_first_expression, PART_SELECT | PART_ORDER));
-	is_first_expression = false;
+	stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER));
 
 	/** Оставим только столбцы, нужные для SELECT и ORDER BY части.
 	  * Если нет ORDER BY - то это последняя проекция, и нужно брать только столбцы из SELECT части.

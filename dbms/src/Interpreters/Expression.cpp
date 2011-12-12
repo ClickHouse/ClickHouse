@@ -196,19 +196,6 @@ Names Expression::getRequiredColumns()
 }
 
 
-void Expression::setNotCalculated(unsigned part_id, ASTPtr subtree)
-{
-	if (!subtree)
-		subtree = ast;
-
-	subtree->calculated = false;
-	
-	for (ASTs::iterator it = subtree->children.begin(); it != subtree->children.end(); ++it)
-		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			setNotCalculated(part_id, *it);
-}
-
-
 void Expression::execute(Block & block, unsigned part_id)
 {
 	executeImpl(ast, block, part_id);
@@ -217,13 +204,17 @@ void Expression::execute(Block & block, unsigned part_id)
 
 void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 {
-	/// Обход в глубину. Не опускаемся в подзапросы.
+	/// Если результат вычисления уже есть в блоке.
+	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast)) && block.has(ast->getColumnName()))
+		return;
 
+	/// Обход в глубину. Не опускаемся в подзапросы.
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
 			executeImpl(*it, block, part_id);
 
-	if (ast->calculated || !((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
+	/// Если это - не указанная часть дерева.
+	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
 		return;
 
 	/** Столбцы из таблицы уже загружены в блок.
@@ -259,8 +250,6 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 
 		block.insert(column);
 	}
-
-	ast->calculated = true;
 }
 
 

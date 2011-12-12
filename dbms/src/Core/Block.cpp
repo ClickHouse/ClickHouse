@@ -128,6 +128,12 @@ const ColumnWithNameAndType & Block::getByName(const std::string & name) const
 }
 
 
+bool Block::has(const std::string & name) const
+{
+	return index_by_name.end() != index_by_name.find(name);
+}
+
+
 size_t Block::getPositionByName(const std::string & name) const
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);

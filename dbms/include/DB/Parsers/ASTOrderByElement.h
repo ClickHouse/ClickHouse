@@ -21,6 +21,8 @@ public:
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "OrderByElement"; }
+
+	ASTPtr clone() const { return new ASTOrderByElement(*this); }
 };
 
 }

@@ -28,6 +28,8 @@ public:
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return "Literal_" + boost::apply_visitor(FieldVisitorDump(), value); }
+
+	ASTPtr clone() const { return new ASTLiteral(*this); }
 };
 
 }

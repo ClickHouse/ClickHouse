@@ -14,6 +14,7 @@ public:
 	ASTAsterisk() {}
 	ASTAsterisk(StringRange range_) : IAST(range_) {}
 	String getID() { return "Asterisk"; }
+	ASTPtr clone() const { return new ASTAsterisk(*this); }
 };
 
 }

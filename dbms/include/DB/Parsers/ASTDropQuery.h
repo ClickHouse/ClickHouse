@@ -22,6 +22,8 @@ public:
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; };
+
+	ASTPtr clone() const { return new ASTDropQuery(*this); }
 };
 
 }
