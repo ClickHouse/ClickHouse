@@ -4,17 +4,37 @@
 
 #include <tr1/unordered_map>
 
+#include <google/dense_hash_map>
+#include <google/sparse_hash_map>
+
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Interpreters/HashMap.h>
+#include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 
 int main(int argc, char ** argv)
 {
+	typedef DB::UInt64 Key;
+	typedef DB::AggregateFunctions Value;
+	
 	size_t n = atoi(argv[1]);
 	size_t m = atoi(argv[2]);
-	std::vector<DB::UInt64> data(n);
+
+	DB::AggregateFunctionFactory factory;
+	DB::DataTypes data_types_empty;
+	DB::DataTypes data_types_uint64;
+	data_types_uint64.push_back(new DB::DataTypeUInt64);
+	
+	std::vector<Key> data(n);
+	Value value;
+
+	value.push_back(factory.get("count", data_types_empty));
+	value.push_back(factory.get("avg", data_types_uint64));
+	value.push_back(factory.get("uniq", data_types_uint64));
 
 	{
 		Stopwatch watch;
@@ -27,7 +47,7 @@ int main(int argc, char ** argv)
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "Size: " << n
+			<< "Vector. Size: " << n
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
@@ -36,13 +56,13 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		DB::HashMap<DB::UInt64, DB::UInt64> map;
+		DB::HashMap<Key, Value> map;
 		for (size_t i = 0; i < n; ++i)
-			map.insert(std::make_pair(data[i], 0));
+			map.insert(std::make_pair(data[i], value));
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "Size: " << map.size()
+			<< "DB::HashMap. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
@@ -51,44 +71,44 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		std::tr1::unordered_map<DB::UInt64, DB::UInt64> map;
+		std::tr1::unordered_map<Key, Value> map;
 		for (size_t i = 0; i < n; ++i)
-			map.insert(std::make_pair(data[i], 0));
+			map.insert(std::make_pair(data[i], value));
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "Size: " << map.size()
+			<< "std::tr1::unordered_map. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
 	}
 
-	/*{
+	{
 		Stopwatch watch;
 
-		google::dense_hash_map<DB::UInt64, DB::UInt64> map;
+		google::dense_hash_map<Key, Value> map;
 		map.set_empty_key(0);
 		for (size_t i = 0; i < n; ++i)
-			map.insert(std::make_pair(data[i], 0));
+			map.insert(std::make_pair(data[i], value));
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "Size: " << map.size()
+			<< "google::dense_hash_map. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
- 	}*/
+	}
 
 	/*{
 		Stopwatch watch;
 
-		google::sparse_hash_map<DB::UInt64, DB::UInt64> map;
+		google::sparse_hash_map<Key, Value> map;
 		for (size_t i = 0; i < n; ++i)
-			map.insert(std::make_pair(data[i], 0));
+			map.insert(std::make_pair(data[i], value));
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "Size: " << map.size()
+			<< "google::sparse_hash_map. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
