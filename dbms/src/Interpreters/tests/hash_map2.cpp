@@ -32,21 +32,50 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 
-struct StringZeroTraits
+struct SimpleString
 {
-	static char empty[sizeof(std::string)];
+	char * data;
 
-	static inline bool check(const std::string & x) { return 0 == memcmp(&x, &empty, sizeof(x)); }
-	static inline void set(std::string & x) { memset(&x, 0, sizeof(x)); }
+	SimpleString() : data(NULL) {}
+
+	SimpleString(const std::string & s)
+	{
+		data = reinterpret_cast<char *>(malloc(s.size()));
+		memcpy(data, s.data(), s.size());
+	}
+
+ 	SimpleString(const SimpleString & s)
+	{
+		/// move
+		data = s.data;
+		const_cast<char *&>(s.data) = NULL;
+	}
+
+	~SimpleString()
+	{
+		free(data);
+	}
+
+	bool operator== (const SimpleString & s)
+	{
+		return 0 == strcmp(data, s.data);
+	}
+
+	bool operator!= (const SimpleString & s)
+	{
+		return !operator==(s);
+	}
 };
 
-char StringZeroTraits::empty[sizeof(std::string)];
-
-
-/// Немного быстрее стандартного
-struct StringHash
+struct SimpleStringZeroTraits
 {
-    size_t operator()(const std::string & x) const { return CityHash64(x.data(), x.size()); }
+	static inline bool check(const SimpleString & x) { return 0 == x.data; }
+	static inline void set(SimpleString & x) { x.data = 0; }
+};
+
+struct SimpleStringHash
+{
+    size_t operator()(const SimpleString & x) const { return CityHash64(x.data, strlen(x.data)); }
 };
 
 
@@ -60,7 +89,7 @@ int main(int argc, char ** argv)
 	DB::DataTypes data_types_uint64;
 	data_types_uint64.push_back(new DB::DataTypeUInt64);
 
-	size_t n = 100000;
+	size_t n = 1000000;
 	std::vector<Key> data(n);
 	Value value;
 
@@ -90,7 +119,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef DB::HashMap<Key, Value, StringHash, StringZeroTraits> Map;
+		typedef DB::HashMap<SimpleString, Value, SimpleStringHash, SimpleStringZeroTraits> Map;
 		Map map;
 		Map::iterator it;
 		bool inserted;

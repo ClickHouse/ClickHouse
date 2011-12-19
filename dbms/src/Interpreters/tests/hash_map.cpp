@@ -43,9 +43,8 @@ int main(int argc, char ** argv)
 		for (size_t i = 0; i < n; ++i)
 			data[i] = rand() % m;
 
-		for (size_t i = 0; i < n; ++i)
-			if (data[i] == 0)
-				data[i] = 1;
+		for (size_t i = 0; i < n; i += 10)
+			data[i] = 0;
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
@@ -96,7 +95,7 @@ int main(int argc, char ** argv)
 		Stopwatch watch;
 
 		google::dense_hash_map<Key, Value> map;
-		map.set_empty_key(0);
+		map.set_empty_key(-1ULL);
 		for (size_t i = 0; i < n; ++i)
 			map.insert(std::make_pair(data[i], value));
 

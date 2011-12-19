@@ -9,6 +9,8 @@
 
 #include <Yandex/optimization.h>
 
+#include <DB/Core/Types.h>
+
 
 namespace DB
 {
@@ -65,8 +67,8 @@ private:
 	size_t m_size;			/// Количество элементов
 	UInt8 size_degree;		/// Размер таблицы в виде степени двух
 	bool has_zero;			/// Хэш-таблица содержит элемент со значением ключа = 0.
-	Value zero_value;
-	Value * buf;
+	Value * buf;			/// Кусок памяти для всех элементов кроме элемента с ключём 0.
+	char zero_value_storage[sizeof(Value)];	/// Кусок памяти для элемента с ключём 0.
 
 	Hash hash;
 
@@ -75,6 +77,8 @@ private:
 	inline size_t max_fill() const				{ return 1 << (size_degree - 1); }
 	inline size_t mask() const					{ return buf_size() - 1; }
 	inline size_t place(HashValue x) const 		{ return x & mask(); }
+
+	inline Value * zero_value()					{ return reinterpret_cast<Value*>(zero_value_storage); }
 
 
 	/// Увеличить размер буфера в 2 ^ GROWTH_DEGREE раз
@@ -123,7 +127,7 @@ public:
 		size_degree(INITIAL_SIZE_DEGREE),
 		has_zero(false)
 	{
-		ZeroTraits::set(zero_value.first);
+		ZeroTraits::set(zero_value()->first);
 		buf = reinterpret_cast<Value*>(calloc(buf_size(), sizeof(Value)));
 	}
 
@@ -205,7 +209,7 @@ public:
 	const_iterator begin() const
 	{
 		if (has_zero)
-			return const_iterator(this, &zero_value);
+			return const_iterator(this, zero_value());
 
 		const Value * ptr = buf;
 		while (ZeroTraits::check(ptr->first) && ptr < buf + buf_size())
@@ -217,7 +221,7 @@ public:
 	iterator begin()
 	{
 		if (has_zero)
-			return iterator(this, &zero_value);
+			return iterator(this, zero_value());
 
 		Value * ptr = buf;
 		while (ZeroTraits::check(ptr->first) && ptr < buf + buf_size())
@@ -239,7 +243,7 @@ public:
 			{
 				++m_size;
 				has_zero = true;
-				zero_value.second = x.second;
+				zero_value()->second = x.second;
 				return std::make_pair(begin(), true);
 			}
 			return std::make_pair(begin(), false);
@@ -256,7 +260,7 @@ public:
 
 		iterator res(this, &buf[place_value]);
 
-		if (buf[place_value].first == x.first)
+		if (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first == x.first)
 			return std::make_pair(res, false);
 
 		buf[place_value] = x;
@@ -276,6 +280,9 @@ public:
 	  * вернуть итератор на позицию, которую можно использовать для placement new значения,
 	  * а также флаг - был ли вставлен новый ключ.
 	  *
+	  * Вы обязаны сделать placement new значения, если был вставлен новый ключ,
+	  * так как при уничтожении хэш-таблицы для него будет вызываться деструктор!
+	  *
 	  * Пример использования:
 	  *
 	  * Map::iterator it;
@@ -288,8 +295,6 @@ public:
 	{
 		if (ZeroTraits::check(x))
 		{
-			it = begin();
-			
 			if (!has_zero)
 			{
 				++m_size;
@@ -298,7 +303,8 @@ public:
 			}
 			else
 				inserted = false;
-			
+
+			it = begin();
 			return;
 		}
 
@@ -313,13 +319,13 @@ public:
 
 		it = iterator(this, &buf[place_value]);
 
-		if (buf[place_value].first == x)
+		if (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first == x)
 		{
 			inserted = false;
 			return;
 		}
 
-		buf[place_value].first = x;
+		new(&buf[place_value].first) Key(x);
 		inserted = true;
 		++m_size;
 
