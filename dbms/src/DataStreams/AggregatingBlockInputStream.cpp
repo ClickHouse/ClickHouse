@@ -32,14 +32,14 @@ Block AggregatingBlockInputStream::readImpl()
 	Block res = aggregator->getSampleBlock();
 	size_t rows = 0;
 
-	/// В какой структуре данных, агрегированы данные?
+	/// В какой структуре данных агрегированы данные?
 	if (!data_variants.without_key.empty())
 	{
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 		rows = 1;
 
 		size_t i = 0;
-		for (AggregateFunctions::const_iterator jt = data.begin(); jt != data.end(); ++jt, ++i)
+		for (AggregateFunctionsPlainPtrs::const_iterator jt = data.begin(); jt != data.end(); ++jt, ++i)
 			res.getByPosition(i).column->insert(*jt);
 	}
 	else if (!data_variants.key64.empty())
@@ -59,7 +59,7 @@ Block AggregatingBlockInputStream::readImpl()
 				first_column.insert(it->first);
 
 			size_t i = 1;
-			for (AggregateFunctions::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
 				res.getByPosition(i).column->insert(*jt);
 		}
 	}
@@ -74,7 +74,7 @@ Block AggregatingBlockInputStream::readImpl()
 			first_column.insert(it->first);
 
 			size_t i = 1;
-			for (AggregateFunctions::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
 				res.getByPosition(i).column->insert(*jt);
 		}
 	}
@@ -88,7 +88,7 @@ Block AggregatingBlockInputStream::readImpl()
 			for (Row::const_iterator jt = it->second.first.begin(); jt != it->second.first.end(); ++jt, ++i)
 				res.getByPosition(i).column->insert(*jt);
 
-			for (AggregateFunctions::const_iterator jt = it->second.second.begin(); jt != it->second.second.end(); ++jt, ++i)
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.second.begin(); jt != it->second.second.end(); ++jt, ++i)
 				res.getByPosition(i).column->insert(*jt);
 		}
 	}
@@ -102,7 +102,7 @@ Block AggregatingBlockInputStream::readImpl()
 			for (Row::const_iterator jt = it->first.begin(); jt != it->first.end(); ++jt, ++i)
 				res.getByPosition(i).column->insert(*jt);
 
-			for (AggregateFunctions::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
 				res.getByPosition(i).column->insert(*jt);
 		}
 	}

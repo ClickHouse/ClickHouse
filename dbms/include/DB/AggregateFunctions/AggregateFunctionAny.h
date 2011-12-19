@@ -23,7 +23,7 @@ public:
 	String getName() const { return "any"; }
 	String getTypeID() const { return "any"; }
 
-	AggregateFunctionPtr cloneEmpty() const
+	AggregateFunctionPlainPtr cloneEmpty() const
 	{
 		AggregateFunctionAny * res = new AggregateFunctionAny;
 		res->type = type;

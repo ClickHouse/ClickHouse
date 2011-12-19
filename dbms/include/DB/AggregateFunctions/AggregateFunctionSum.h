@@ -49,7 +49,7 @@ public:
 	String getName() const { return "sum"; }
 	String getTypeID() const { return "sum_" + TypeName<T>::get(); }
 
-	AggregateFunctionPtr cloneEmpty() const
+	AggregateFunctionPlainPtr cloneEmpty() const
 	{
 		return new AggregateFunctionSum<T>;
 	}

@@ -26,7 +26,7 @@ public:
 	String getName() const { return "avg"; }
 	String getTypeID() const { return "avg_" + TypeName<T>::get(); }
 
-	AggregateFunctionPtr cloneEmpty() const
+	AggregateFunctionPlainPtr cloneEmpty() const
 	{
 		return new AggregateFunctionAvg<T>;
 	}

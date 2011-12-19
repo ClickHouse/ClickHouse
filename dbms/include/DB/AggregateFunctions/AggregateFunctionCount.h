@@ -23,7 +23,7 @@ public:
 	String getName() const { return "count"; }
 	String getTypeID() const { return "count"; }
 
-	AggregateFunctionPtr cloneEmpty() const
+	AggregateFunctionPlainPtr cloneEmpty() const
 	{
 		return new AggregateFunctionCount;
 	}

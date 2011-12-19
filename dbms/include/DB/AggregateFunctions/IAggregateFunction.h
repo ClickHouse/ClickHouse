@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Row.h>
@@ -23,7 +25,7 @@ public:
 	virtual String getTypeID() const = 0;
 
 	/// Создать новую агрегатную функцию того же типа.
-	virtual SharedPtr<IAggregateFunction> cloneEmpty() const = 0;
+	virtual IAggregateFunction* cloneEmpty() const = 0;
 
 	/** Указать типы аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	  * Необходимо вызывать перед остальными вызовами.
@@ -53,7 +55,8 @@ public:
 using Poco::SharedPtr;
 
 typedef SharedPtr<IAggregateFunction> AggregateFunctionPtr;
-typedef std::vector<AggregateFunctionPtr> AggregateFunctions;
+typedef IAggregateFunction* AggregateFunctionPlainPtr;
+typedef std::vector<AggregateFunctionPlainPtr> AggregateFunctionsPlainPtrs;
 
 template <> struct TypeName<AggregateFunctionPtr> { static std::string get() { return "AggregateFunctionPtr"; } };
 template <> struct NearestFieldType<AggregateFunctionPtr> { typedef AggregateFunctionPtr Type; };

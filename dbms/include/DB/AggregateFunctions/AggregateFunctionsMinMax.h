@@ -38,7 +38,7 @@ public:
 	String getName() const { return Traits::name(); }
 	String getTypeID() const { return Traits::name(); }
 
-	AggregateFunctionPtr cloneEmpty() const
+	AggregateFunctionPlainPtr cloneEmpty() const
 	{
 		AggregateFunctionsMinMax * res = new AggregateFunctionsMinMax;
 		res->type = type;

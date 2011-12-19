@@ -120,7 +120,7 @@ int main(int argc, char ** argv)
 			for (DB::Row::const_iterator jt = it->first.begin(); jt != it->first.end(); ++jt)
 				std::cout << boost::apply_visitor(DB::FieldVisitorToString(), *jt) << '\t';
 
-			for (DB::AggregateFunctions::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
+			for (DB::AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
 			{
 				DB::Field result = (*jt)->getResult();
 				std::cout << boost::apply_visitor(DB::FieldVisitorToString(), result) << '\t';

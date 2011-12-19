@@ -23,7 +23,7 @@
 int main(int argc, char ** argv)
 {
 	typedef DB::UInt64 Key;
-	typedef DB::AggregateFunctions Value;
+	typedef DB::AggregateFunctionsPlainPtrs Value;
 	
 	size_t n = atoi(argv[1]);
 	//size_t m = atoi(argv[2]);

@@ -57,12 +57,15 @@ struct StringHash
 };
 
 
-/// Разные структуры данных, которые могут использоваться для агрегации
-typedef std::map<Row, AggregateFunctions> AggregatedData;
-typedef AggregateFunctions AggregatedDataWithoutKey;
-typedef HashMap<UInt64, AggregateFunctions> AggregatedDataWithUInt64Key;
-typedef std::tr1::unordered_map<String, AggregateFunctions, StringHash> AggregatedDataWithStringKey;
-typedef HashMap<UInt128, std::pair<Row, AggregateFunctions>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
+/** Разные структуры данных, которые могут использоваться для агрегации
+  * Для эффективности используются "голые" указатели на IAggregateFunction,
+  *  владение будет захвачено после агрегации (в AggregatingBlockInputStream).
+  */
+typedef std::map<Row, AggregateFunctionsPlainPtrs> AggregatedData;
+typedef AggregateFunctionsPlainPtrs AggregatedDataWithoutKey;
+typedef HashMap<UInt64, AggregateFunctionsPlainPtrs> AggregatedDataWithUInt64Key;
+typedef std::tr1::unordered_map<String, AggregateFunctionsPlainPtrs, StringHash> AggregatedDataWithStringKey;
+typedef HashMap<UInt128, std::pair<Row, AggregateFunctionsPlainPtrs>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
 
 
 struct AggregatedDataVariants

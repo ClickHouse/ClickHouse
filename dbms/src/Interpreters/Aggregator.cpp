@@ -242,7 +242,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				
 				if (inserted)
 				{
-					new(&it->second) AggregateFunctions(aggregates_size);
+					new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
 					
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second[j] = aggregates[j].function->cloneEmpty();
@@ -274,7 +274,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				AggregatedDataWithStringKey::iterator it = res.find(key);
 				if (it == res.end())
 				{
-					it = res.insert(std::make_pair(key, AggregateFunctions(aggregates_size))).first;
+					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second[j] = aggregates[j].function->cloneEmpty();
@@ -339,7 +339,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				if (inserted)
 				{
-					new(&it->second) AggregatedDataHashed::mapped_type(key, AggregateFunctions(aggregates_size));
+					new(&it->second) AggregatedDataHashed::mapped_type(key, AggregateFunctionsPlainPtrs(aggregates_size));
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second.second[j] = aggregates[j].function->cloneEmpty();
@@ -370,7 +370,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				AggregatedData::iterator it = res.find(key);
 				if (it == res.end())
 				{
-					it = res.insert(std::make_pair(key, AggregateFunctions(aggregates_size))).first;
+					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second[j] = aggregates[j].function->cloneEmpty();

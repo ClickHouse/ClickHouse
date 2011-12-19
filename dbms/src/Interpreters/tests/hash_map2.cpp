@@ -82,7 +82,7 @@ struct SimpleStringHash
 int main(int argc, char ** argv)
 {
 	typedef DB::String Key;
-	typedef DB::AggregateFunctions Value;
+	typedef DB::AggregateFunctionsPlainPtrs Value;
 
 	DB::AggregateFunctionFactory factory;
 	DB::DataTypes data_types_empty;

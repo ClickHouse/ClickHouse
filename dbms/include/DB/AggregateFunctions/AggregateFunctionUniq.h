@@ -59,7 +59,7 @@ public:
 	String getName() const { return "uniq"; }
 	String getTypeID() const { return "uniq_" + TypeName<T>::get(); }
 
-	AggregateFunctionPtr cloneEmpty() const
+	AggregateFunctionPlainPtr cloneEmpty() const
 	{
 		return new AggregateFunctionUniq<T>;
 	}
