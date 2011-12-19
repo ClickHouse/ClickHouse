@@ -39,7 +39,8 @@ struct UInt128
 
 struct UInt128Hash
 {
-	size_t operator()(UInt128 x) const { return x.first ^ x.second; }
+	default_hash<UInt64> hash64;
+	size_t operator()(UInt128 x) const { return hash64(x.first ^ 0xB15652B8790A0D36ULL) ^ hash64(x.second); }
 };
 
 struct UInt128ZeroTraits

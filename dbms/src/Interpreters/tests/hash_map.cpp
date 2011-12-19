@@ -9,6 +9,8 @@
 
 #include <statdaemons/Stopwatch.h>
 
+#define DBMS_HASH_MAP_COUNT_COLLISIONS
+
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
@@ -80,6 +82,7 @@ int main(int argc, char ** argv)
 			<< "DB::HashMap. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+			<< ", collisions: " << map.getCollisions()
 			<< std::endl;
 	}
 

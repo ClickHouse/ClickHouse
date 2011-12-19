@@ -27,10 +27,29 @@ namespace DB
   * - проитерироваться по имеющимся в ней значениям.
   *
   * Open addressing.
-  * Quadratic probing (пока ещё не уверен, что оно не может зациклиться).
+  * Linear probing (подходит, если хэш функция хорошая!).
   * Значение с нулевым ключём хранится отдельно.
   * Удаления элементов нет.
   */
+
+
+/** Хэш функции, которые лучше чем тривиальная функция std::tr1::hash.
+  */
+template <typename T> struct default_hash;
+
+template <> struct default_hash<UInt64>
+{
+	size_t operator() (UInt64 key) const
+	{
+		key = (~key) + (key << 18);
+		key = key ^ ((key >> 31) | (key << 33));
+		key = key * 21;
+		key = key ^ ((key >> 11) | (key << 53));
+		key = key + (key << 6);
+		key = key ^ ((key >> 22) | (key << 42));
+		return key;
+	}
+};
 
 
 /** Способ проверить, что ключ нулевой,
@@ -47,7 +66,7 @@ template
 <
 	typename Key,
 	typename Mapped,
-	typename Hash = std::tr1::hash<Key>,
+	typename Hash = default_hash<Key>,
 	typename ZeroTraits = default_zero_traits<Key>,
 	int INITIAL_SIZE_DEGREE = 16,	/** Изначально выделить кусок памяти для 64K элементов.
 									  * Уменьшите значение для лучшей кэш-локальности в случае маленького количества уникальных ключей.
@@ -72,6 +91,9 @@ private:
 
 	Hash hash;
 
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+	mutable size_t collisions;
+#endif
 
 	inline size_t buf_size() const				{ return 1 << size_degree; }
 	inline size_t max_fill() const				{ return 1 << (size_degree - 1); }
@@ -105,12 +127,13 @@ private:
 	void reinsert(const Value & x)
 	{
 		size_t place_value = place(hash(x.first));
-		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first))
 		{
-			place_value += increment;
-			++increment;
+			++place_value;
 			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
 		}
 		memcpy(&buf[place_value], &x, sizeof(x));
 	}
@@ -129,6 +152,9 @@ public:
 	{
 		ZeroTraits::set(zero_value()->first);
 		buf = reinterpret_cast<Value*>(calloc(buf_size(), sizeof(Value)));
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+		collisions = 0;
+#endif
 	}
 
 	~HashMap()
@@ -250,12 +276,13 @@ public:
 		}
 
 		size_t place_value = place(hash(x.first));
-		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x.first)
 		{
-			place_value += increment;
-			++increment;
+			++place_value;
 			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
 		}
 
 		iterator res(this, &buf[place_value]);
@@ -309,12 +336,13 @@ public:
 		}
 
 		size_t place_value = place(hash(x));
-		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
 		{
-			place_value += increment;
-			++increment;
+			++place_value;
 			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
 		}
 
 		it = iterator(this, &buf[place_value]);
@@ -343,12 +371,13 @@ public:
 			return has_zero ? begin() : end();
 
 		size_t place_value = place(hash(x));
-		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
 		{
-			place_value += increment;
-			++increment;
+			++place_value;
 			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
 		}
 
 		return !ZeroTraits::check(buf[place_value].first) ? iterator(this, &buf[place_value]) : end();
@@ -361,12 +390,13 @@ public:
 			return has_zero ? begin() : end();
 
 		size_t place_value = place(hash(x.first));
-		unsigned increment = 1;
 		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
 		{
-			place_value += increment;
-			++increment;
+			++place_value;
 			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
 		}
 
 		return !ZeroTraits::check(buf[place_value].first) ? const_iterator(this, &buf[place_value]) : end();
@@ -382,6 +412,13 @@ public:
 	{
 	    return 0 == m_size;
 	}
+
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+	size_t getCollisions() const
+	{
+		return collisions;
+	}
+#endif
 };
 
 }
