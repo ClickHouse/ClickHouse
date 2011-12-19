@@ -10,6 +10,8 @@
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/Types.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
 #include <DB/Interpreters/HashMap.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
@@ -22,7 +24,7 @@ int main(int argc, char ** argv)
 	typedef DB::AggregateFunctions Value;
 	
 	size_t n = atoi(argv[1]);
-	size_t m = atoi(argv[2]);
+	//size_t m = atoi(argv[2]);
 
 	DB::AggregateFunctionFactory factory;
 	DB::DataTypes data_types_empty;
@@ -40,11 +42,16 @@ int main(int argc, char ** argv)
 
 	{
 		Stopwatch watch;
-		for (size_t i = 0; i < n; ++i)
+	/*	for (size_t i = 0; i < n; ++i)
 			data[i] = rand() % m;
 
 		for (size_t i = 0; i < n; i += 10)
-			data[i] = 0;
+			data[i] = 0;*/
+
+		DB::ReadBufferFromFile in1("UniqID.bin");
+		DB::CompressedReadBuffer in2(in1);
+
+		size_t size = in2.read(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
