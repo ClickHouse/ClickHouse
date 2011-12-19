@@ -53,7 +53,7 @@ int main(int argc, char ** argv)
 		DB::ReadBufferFromFile in1("UniqID.bin");
 		DB::CompressedReadBuffer in2(in1);
 
-		size_t size = in2.read(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
+		in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
