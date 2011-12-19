@@ -236,11 +236,14 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				Field field = column[i];
 				UInt64 key = boost::apply_visitor(visitor, field);
 
-				AggregatedDataWithUInt64Key::iterator it = res.find(key);
-				if (it == res.end())
+				AggregatedDataWithUInt64Key::iterator it;
+				bool inserted;
+				res.emplace(key, it, inserted);
+				
+				if (inserted)
 				{
-					it = res.insert(std::make_pair(key, AggregateFunctions(aggregates_size))).first;
-
+					new(&it->second) AggregateFunctions(aggregates_size);
+					
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second[j] = aggregates[j].function->cloneEmpty();
 				}
@@ -330,10 +333,13 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					key_hash_visitor.finalize(key_hash_union.bytes);
 				}
 
-				AggregatedDataHashed::iterator it = res.find(key_hash_union.key_hash);
-				if (it == res.end())
+				AggregatedDataHashed::iterator it;
+				bool inserted;
+				res.emplace(key_hash_union.key_hash, it, inserted);
+
+				if (inserted)
 				{
-					it = res.insert(std::make_pair(key_hash_union.key_hash, std::make_pair(key, AggregateFunctions(aggregates_size)))).first;
+					new(&it->second) AggregatedDataHashed::mapped_type(key, AggregateFunctions(aggregates_size));
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second.second[j] = aggregates[j].function->cloneEmpty();

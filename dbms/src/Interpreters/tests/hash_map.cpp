@@ -36,6 +36,8 @@ int main(int argc, char ** argv)
 	value.push_back(factory.get("avg", data_types_uint64));
 	value.push_back(factory.get("uniq", data_types_uint64));
 
+	std::cerr << "sizeof(Key) = " << sizeof(Key) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+
 	{
 		Stopwatch watch;
 		for (size_t i = 0; i < n; ++i)
@@ -57,8 +59,15 @@ int main(int argc, char ** argv)
 		Stopwatch watch;
 
 		DB::HashMap<Key, Value> map;
+		DB::HashMap<Key, Value>::iterator it;
+		bool inserted;
+		
 		for (size_t i = 0; i < n; ++i)
-			map.insert(std::make_pair(data[i], value));
+		{
+			map.emplace(data[i], it, inserted);
+			if (inserted)
+				new(&it->second) Value(value);
+		}
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
