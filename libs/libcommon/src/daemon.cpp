@@ -27,6 +27,8 @@
 #include <Poco/ErrorHandler.h>
 #include <Poco/NumberFormatter.h>
 
+#include <DB/Core/Exception.h>
+
 #include "revision.h"
 
 
@@ -273,6 +275,11 @@ void Daemon::handleNotification(TaskFailedNotification *_tfn)
 	AutoPtr<TaskFailedNotification> fn(_tfn);
 	Logger *lg = &(logger());
 	LOG_ERROR(lg, "Task '" << fn->task()->name() << "' failed. Daemon is shutting down. Reason - " << fn->reason().displayText());
+
+	if (const DB::Exception * e = dynamic_cast<const DB::Exception *>(&fn->reason()))
+	{
+		LOG_ERROR(lg, "Stack trace:\n" << e->getStackTrace().toString());
+	}
 
 	ServerApplication::terminate();
 }
