@@ -44,6 +44,9 @@ void readEscapedString(String & s, ReadBuffer & buf)
 		s.append(buf.position(), bytes);
 		buf.position() += bytes;
 
+		if (buf.position() == buf.buffer().end())
+			continue;
+
 		if (*buf.position() == '\t' || *buf.position() == '\n')
 			return;
 
@@ -78,6 +81,9 @@ static void readAnyQuotedString(String & s, ReadBuffer & buf)
 
 		s.append(buf.position(), bytes);
 		buf.position() += bytes;
+
+		if (buf.position() == buf.buffer().end())
+			continue;
 
 		if (*buf.position() == quote)
 		{
