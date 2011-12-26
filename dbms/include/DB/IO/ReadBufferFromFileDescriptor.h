@@ -24,14 +24,24 @@ protected:
 	
 	bool nextImpl()
 	{
-		ssize_t bytes_read = ::read(fd, working_buffer.begin(), working_buffer.size());
-		if (-1 == bytes_read)
-			throwFromErrno("Cannot read from file " + getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
-		
-		if (!bytes_read)
-			return false;
-		else
+		size_t bytes_read = 0;
+		while (!bytes_read)
+		{
+			ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
+			if (!res)
+				break;
+			
+			if (-1 == res && errno != EINTR)
+				throwFromErrno("Cannot read from file " + getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+
+			if (res > 0)
+				bytes_read += res;
+		}
+
+		if (bytes_read)
 			working_buffer.resize(bytes_read);
+		else
+			return false;
 
 		return true;
 	}

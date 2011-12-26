@@ -26,10 +26,18 @@ protected:
 	{
 		if (!offset())
 			return;
-		
-		ssize_t bytes_written = ::write(fd, working_buffer.begin(), offset());
-		if (-1 == bytes_written || 0 == bytes_written)
-			throwFromErrno("Cannot write to file " + getFileName(), ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+
+		size_t bytes_written = 0;
+		while (bytes_written != offset())
+		{
+			ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+
+			if ((-1 == res || 0 == res) && errno != EINTR)
+				throwFromErrno("Cannot write to file " + getFileName(), ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+
+			if (res > 0)
+				bytes_written += res;
+		}
 	}
 
 	void throwFromErrno(const std::string & s, int code)

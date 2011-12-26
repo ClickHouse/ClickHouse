@@ -164,10 +164,40 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent)
 
 void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent)
 {
-	s << hilite_keyword << (ast.attach ? "ATTACH TABLE " : "CREATE TABLE ") << hilite_none << (!ast.database.empty() ? ast.database + "." : "") << ast.table << " (";
-	formatAST(*ast.columns, s, indent);
-	s << ") " << hilite_keyword << "ENGINE" << hilite_none << " = ";
-	formatAST(*ast.storage, s, indent);
+	if (!ast.database.empty() && ast.table.empty())
+	{
+		s << hilite_keyword << (ast.attach ? "ATTACH DATABASE " : "CREATE DATABASE ") << (ast.if_not_exists ? "IF NOT EXISTS " : "") << hilite_none
+			<< ast.database;
+		return;
+	}
+	
+	s << hilite_keyword << (ast.attach ? "ATTACH TABLE " : "CREATE TABLE ") << (ast.if_not_exists ? "IF NOT EXISTS " : "") << hilite_none
+		<< (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+
+	if (!ast.as_table.empty())
+	{
+		s << hilite_keyword << " AS" << hilite_none
+			<< (!ast.as_database.empty() ? ast.as_database + "." : "") << ast.as_table;
+	}
+
+	if (ast.columns)
+	{
+		s << "\n(";
+		formatAST(*ast.columns, s, indent + 1);
+		s << ")";
+	}
+
+	if (ast.storage)
+	{
+		s << hilite_keyword << " ENGINE" << hilite_none << " = ";
+		formatAST(*ast.storage, s, indent);
+	}
+
+	if (ast.select)
+	{
+		s << hilite_keyword << " AS\n" << hilite_none;
+		formatAST(*ast.select, s, indent);
+	}
 }
 
 void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent)
@@ -256,8 +286,10 @@ void formatAST(const ASTLiteral 			& ast, std::ostream & s, size_t indent)
 
 void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent)
 {
-	s << ast.name << " ";
+	std::string indent_str(4 * indent, ' ');
+	s << indent_str << ast.name << " ";
 	formatAST(*ast.type, s, indent);
+	s << "\n";
 }
 
 void formatAST(const ASTAsterisk			& ast, std::ostream & s, size_t indent)
