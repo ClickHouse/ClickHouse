@@ -2,8 +2,8 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/IO/WriteBufferFromOStream.h>
-#include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/copyData.h>
@@ -17,8 +17,8 @@ int main(int argc, char ** argv)
 		return 1;
 	}
 
-	Poco::SharedPtr<DB::ReadBuffer> rb = new DB::ReadBufferFromIStream(std::cin);
-	Poco::SharedPtr<DB::WriteBuffer> wb = new DB::WriteBufferFromOStream(std::cout);
+	Poco::SharedPtr<DB::ReadBuffer> rb = new DB::ReadBufferFromFileDescriptor(STDIN_FILENO);
+	Poco::SharedPtr<DB::WriteBuffer> wb = new DB::WriteBufferFromFileDescriptor(STDOUT_FILENO);
 	Poco::SharedPtr<DB::ReadBuffer> from;
 	Poco::SharedPtr<DB::WriteBuffer> to;
 
