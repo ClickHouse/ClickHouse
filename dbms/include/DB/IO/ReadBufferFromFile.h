@@ -16,7 +16,8 @@ private:
 	std::string file_name;
 	
 public:
-	ReadBufferFromFile(const std::string & file_name_) : ReadBufferFromFileDescriptor(-1), file_name(file_name_)
+	ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+		: ReadBufferFromFileDescriptor(-1, buf_size), file_name(file_name_)
 	{
 		fd = open(file_name.c_str(), O_RDONLY);
 		

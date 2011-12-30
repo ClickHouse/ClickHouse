@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_BUFFERWITHOWNMEMORY_H
-#define DBMS_COMMON_BUFFERWITHOWNMEMORY_H
+#pragma once
 
 #include <vector>
 
@@ -27,5 +26,3 @@ public:
 
 
 }
-
-#endif

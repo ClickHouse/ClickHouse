@@ -53,7 +53,8 @@ protected:
 	}
 
 public:
-	WriteBufferFromFileDescriptor(int fd_) : fd(fd_) {}
+	WriteBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+		: BufferWithOwnMemory<WriteBuffer>(buf_size), fd(fd_) {}
 
     virtual ~WriteBufferFromFileDescriptor()
 	{
@@ -82,6 +83,13 @@ public:
 		if (-1 == res)
 			throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 		return res;
+	}
+
+	void truncate(off_t length = 0)
+	{
+		int res = ftruncate(fd, length);
+		if (-1 == res)
+			throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
 	}
 };
 
