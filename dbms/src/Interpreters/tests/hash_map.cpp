@@ -36,9 +36,16 @@ int main(int argc, char ** argv)
 	std::vector<Key> data(n);
 	Value value;
 
-	value.push_back(factory.get("count", data_types_empty));
-	value.push_back(factory.get("avg", data_types_uint64));
-	value.push_back(factory.get("uniq", data_types_uint64));
+	DB::AggregateFunctionPtr func_count = factory.get("count", data_types_empty);
+	DB::AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64);
+	DB::AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64);
+
+	value.push_back(func_count);
+	value.push_back(func_avg);
+	value.push_back(func_uniq);
+
+	DB::Row row(1);
+	row[0] = DB::UInt64(0);
 
 	std::cerr << "sizeof(Key) = " << sizeof(Key) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
@@ -69,12 +76,16 @@ int main(int argc, char ** argv)
 		DB::HashMap<Key, Value> map;
 		DB::HashMap<Key, Value>::iterator it;
 		bool inserted;
-		
+
 		for (size_t i = 0; i < n; ++i)
 		{
 			map.emplace(data[i], it, inserted);
 			if (inserted)
 				new(&it->second) Value(value);
+
+			it->second[0]->add(row);
+			it->second[1]->add(row);
+			it->second[2]->add(row);
 		}
 
 		watch.stop();
@@ -90,8 +101,15 @@ int main(int argc, char ** argv)
 		Stopwatch watch;
 
 		std::tr1::unordered_map<Key, Value> map;
+		std::tr1::unordered_map<Key, Value>::iterator it;
 		for (size_t i = 0; i < n; ++i)
-			map.insert(std::make_pair(data[i], value));
+		{
+			it = map.insert(std::make_pair(data[i], value)).first;
+
+			it->second[0]->add(row);
+			it->second[1]->add(row);
+			it->second[2]->add(row);
+		}
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
@@ -100,7 +118,7 @@ int main(int argc, char ** argv)
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
 	}
-
+/*
 	{
 		Stopwatch watch;
 
@@ -115,7 +133,7 @@ int main(int argc, char ** argv)
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
-	}
+	}*/
 
 	/*{
 		Stopwatch watch;

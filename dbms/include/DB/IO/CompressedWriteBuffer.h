@@ -1,5 +1,4 @@
-#ifndef DBMS_COMMON_COMPRESSED_WRITEBUFFER_H
-#define DBMS_COMMON_COMPRESSED_WRITEBUFFER_H
+#pragma once
 
 #include <vector>
 
@@ -83,5 +82,3 @@ public:
 };
 
 }
-
-#endif
