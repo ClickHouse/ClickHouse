@@ -54,7 +54,7 @@ private:
 	struct Stream
 	{
 		Stream(const std::string & path)
-			: plain(path), compressed(plain) {}
+			: plain(path), compressed(plain, CompressionMethod::LZ4) {}
 		
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;

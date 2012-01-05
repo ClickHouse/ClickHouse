@@ -4,6 +4,7 @@
 
 #include <city.h>
 #include <quicklz/quicklz_level1.h>
+#include <lz4/lz4.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -49,7 +50,11 @@ private:
 		if (checksum != CityHash128(&compressed_buffer[0], size_compressed))
 			throw Exception("Checksum doesnt match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
-		qlz_decompress(&compressed_buffer[0], working_buffer.begin(), scratch);
+		/// Старший бит первого байта определяет использованный метод сжатия.
+		if ((compressed_buffer[0] & 0x80) == 0)
+			qlz_decompress(&compressed_buffer[0], working_buffer.begin(), scratch);
+		else
+			LZ4_uncompress(&compressed_buffer[QUICKLZ_HEADER_SIZE], working_buffer.begin(), size_decompressed);
 
 		return true;
 	}
