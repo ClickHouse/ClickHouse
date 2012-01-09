@@ -49,12 +49,16 @@ public:
 	  * Принимает список столбцов, которых нужно прочитать, а также описание запроса,
 	  *  из которого может быть извлечена информация о том, каким способом извлекать данные
 	  *  (индексы, блокировки и т. п.)
-	  * Возвращает объект, с помощью которого можно последовательно читать данные.
+	  * Возвращает поток с помощью которого можно последовательно читать данные
+	  *  или несколько потоков для параллельного чтения данных.
+	  *
+	  * BlockInputStreams будет содержать по крайней мере один элемент и не больше max_threads элементов.
 	  */
-	virtual BlockInputStreamPtr read(
+	virtual BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
-		size_t max_block_size = DEFAULT_BLOCK_SIZE)
+		size_t max_block_size = DEFAULT_BLOCK_SIZE,
+		unsigned max_threads = 1)
 	{
 		throw Exception("Method read() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

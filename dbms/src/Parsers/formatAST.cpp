@@ -35,10 +35,24 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent)
 		return;
 	}
 
+	const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&ast);
+	if (insert)
+	{
+		formatAST(*insert, s, indent);
+		return;
+	}
+
 	const ASTCreateQuery * create = dynamic_cast<const ASTCreateQuery *>(&ast);
 	if (create)
 	{
 		formatAST(*create, s, indent);
+		return;
+	}
+
+	const ASTDropQuery * drop = dynamic_cast<const ASTDropQuery *>(&ast);
+	if (drop)
+	{
+		formatAST(*drop, s, indent);
 		return;
 	}
 	
@@ -91,7 +105,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent)
 		return;
 	}
 
-	throw DB::Exception("Unknown element in AST", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+	throw DB::Exception("Unknown element in AST: " + std::string(ast.range.first, ast.range.second - ast.range.first), ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 }
 
 void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent)
@@ -176,7 +190,7 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent)
 
 	if (!ast.as_table.empty())
 	{
-		s << hilite_keyword << " AS" << hilite_none
+		s << hilite_keyword << " AS " << hilite_none
 			<< (!ast.as_database.empty() ? ast.as_database + "." : "") << ast.as_table;
 	}
 
@@ -198,6 +212,17 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent)
 		s << hilite_keyword << " AS\n" << hilite_none;
 		formatAST(*ast.select, s, indent);
 	}
+}
+
+void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent)
+{
+	if (!ast.database.empty())
+	{
+		s << hilite_keyword << (ast.detach ? "DETACH DATABASE " : "DROP DATABASE ") << (ast.if_exists ? "IF EXISTS " : "") << hilite_none << ast.database;
+		return;
+	}
+
+	s << hilite_keyword << (ast.detach ? "DETACH TABLE " : "DROP TABLE ") << (ast.if_exists ? "IF EXISTS " : "") << hilite_none << ast.table;
 }
 
 void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent)
@@ -256,8 +281,9 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent)
 	{
 		s << '(' << hilite_none;
 		formatAST(*ast.arguments, s, indent);
-		s << hilite_function << ')' << hilite_none;
+		s << hilite_function << ')';
 	}
+	s << hilite_none;
 
 	if (!ast.alias.empty())
 		writeAlias(ast.alias, s);

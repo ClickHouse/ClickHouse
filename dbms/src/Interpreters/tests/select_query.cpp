@@ -183,9 +183,9 @@ int main(int argc, char ** argv)
 
 		DB::loadMetadata(context);
 
-		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./data/default/", "hits", names_and_types_list, ".bin");
-		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./data/default/", "hits2", names_and_types_list, ".bin");
-		(*context.databases)["default"]["hits3"] 	= new DB::StorageLog("./data/default/", "hits3", names_and_types_list, ".bin");
+		(*context.databases)["default"]["hits"] 	= new DB::StorageLog("./data/default/", "hits", names_and_types_list);
+		(*context.databases)["default"]["hits2"] 	= new DB::StorageLog("./data/default/", "hits2", names_and_types_list);
+		(*context.databases)["default"]["hits3"] 	= new DB::StorageLog("./data/default/", "hits3", names_and_types_list);
 		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
 		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");
 		context.current_database = "default";

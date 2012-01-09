@@ -20,7 +20,7 @@ InterpreterQuery::InterpreterQuery(ASTPtr query_ptr_, Context & context_, size_t
 }
 
 
-void InterpreterQuery::execute(WriteBuffer & ostr, SharedPtr<ReadBuffer> remaining_data_istr, BlockInputStreamPtr & query_plan)
+void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_istr, BlockInputStreamPtr & query_plan)
 {
 	if (dynamic_cast<ASTSelectQuery *>(&*query_ptr))
 	{

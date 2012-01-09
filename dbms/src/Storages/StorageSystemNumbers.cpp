@@ -46,11 +46,11 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_)
 }
 
 
-BlockInputStreamPtr StorageSystemNumbers::read(
-	const Names & column_names, ASTPtr query, size_t max_block_size)
+BlockInputStreams StorageSystemNumbers::read(
+	const Names & column_names, ASTPtr query, size_t max_block_size, unsigned max_threads)
 {
 	check(column_names);
-	return new NumbersBlockInputStream(max_block_size);
+	return BlockInputStreams(1, new NumbersBlockInputStream(max_block_size));
 }
 
 }

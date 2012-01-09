@@ -39,10 +39,11 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return columns; }
 
-	BlockInputStreamPtr read(
+	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
-		size_t max_block_size = DEFAULT_BLOCK_SIZE);
+		size_t max_block_size = DEFAULT_BLOCK_SIZE,
+		unsigned max_threads = 1);
 
 private:
 	const std::string name;

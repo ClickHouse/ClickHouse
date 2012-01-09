@@ -46,13 +46,14 @@ StorageMemory::StorageMemory(const std::string & name_, NamesAndTypesListPtr col
 }
 
 
-BlockInputStreamPtr StorageMemory::read(
+BlockInputStreams StorageMemory::read(
 	const Names & column_names,
 	ASTPtr query,
-	size_t max_block_size)
+	size_t max_block_size,
+	unsigned max_threads)
 {
 	check(column_names);
-	return new MemoryBlockInputStream(column_names, *this);
+	return BlockInputStreams(1, new MemoryBlockInputStream(column_names, *this));
 }
 
 	

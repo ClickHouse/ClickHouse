@@ -18,7 +18,7 @@ public:
 	  * remaining_data_istr, если не NULL, может содержать нераспарсенные данные для вставки.
 	  * (заранее может быть считан в оперативку для парсинга лишь небольшой кусок запроса, который содержит не все данные)
 	  */
-	void execute(SharedPtr<ReadBuffer> remaining_data_istr);
+	void execute(ReadBuffer * remaining_data_istr);
 
 private:
 	StoragePtr getTable();

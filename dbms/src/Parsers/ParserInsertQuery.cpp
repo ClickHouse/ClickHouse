@@ -110,7 +110,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		return false;
 	}
 
-	ASTInsertQuery * query = new ASTInsertQuery(StringRange(begin, pos));
+	ASTInsertQuery * query = new ASTInsertQuery(StringRange(begin, data ? data : pos));
 	node = query;
 
 	if (database)

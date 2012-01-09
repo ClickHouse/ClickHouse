@@ -100,12 +100,12 @@ int main(int argc, char ** argv)
 
 		/// создаём объект существующей таблицы хит лога
 
-		DB::StorageLog table("./", "HitLog", names_and_types_list, ".bin");
+		DB::StorageLog table("./", "HitLog", names_and_types_list);
 
 		/// читаем из неё
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
+			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0)[0];
 			DB::WriteBufferFromOStream out1(std::cout);
 			DB::CompressedWriteBuffer out2(out1);
 			DB::NativeBlockOutputStream out3(out2);

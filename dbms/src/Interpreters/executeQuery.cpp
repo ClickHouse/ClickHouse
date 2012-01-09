@@ -59,7 +59,7 @@ void executeQuery(
 	std::cerr << std::endl;
 
 	InterpreterQuery interpreter(ast, context, max_block_size);
-	interpreter.execute(ostr, new ReadBuffer(istr), query_plan);
+	interpreter.execute(ostr, &istr, query_plan);
 }
 
 

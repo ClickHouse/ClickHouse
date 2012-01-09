@@ -40,11 +40,11 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 }
 
 
-BlockInputStreamPtr StorageSystemOne::read(
-	const Names & column_names, ASTPtr query, size_t max_block_size)
+BlockInputStreams StorageSystemOne::read(
+	const Names & column_names, ASTPtr query, size_t max_block_size, unsigned max_threads)
 {
 	check(column_names);
-	return new OneValueBlockInputStream();
+	return BlockInputStreams(1, new OneValueBlockInputStream());
 }
 
 

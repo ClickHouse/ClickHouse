@@ -67,7 +67,7 @@ int main(int argc, char ** argv)
 		DB::Names column_names;
 		column_names.push_back("number");
 
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
+		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0)[0];
 		in = new DB::ExpressionBlockInputStream(in, expression);
 		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 1);

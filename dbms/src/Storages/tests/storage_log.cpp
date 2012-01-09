@@ -25,7 +25,7 @@ int main(int argc, char ** argv)
 		names_and_types->push_back(DB::NameAndTypePair("a", new DB::DataTypeUInt64));
 		names_and_types->push_back(DB::NameAndTypePair("b", new DB::DataTypeUInt8));
 		
-		DB::StorageLog table("./", "test", names_and_types, ".bin");
+		DB::StorageLog table("./", "test", names_and_types);
 
 		/// пишем в неё
 		{
@@ -65,7 +65,7 @@ int main(int argc, char ** argv)
 			column_names.push_back("a");
 			column_names.push_back("b");
 
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0);
+			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0)[0];
 
 			DB::Block sample;
 			{

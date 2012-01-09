@@ -44,7 +44,7 @@ StoragePtr InterpreterInsertQuery::getTable()
 }
 
 
-void InterpreterInsertQuery::execute(SharedPtr<ReadBuffer> remaining_data_istr)
+void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 {
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
@@ -68,7 +68,7 @@ void InterpreterInsertQuery::execute(SharedPtr<ReadBuffer> remaining_data_istr)
 
 		buffers.push_back(&buf1);
 		if (remaining_data_istr)
-			buffers.push_back(&*remaining_data_istr);
+			buffers.push_back(remaining_data_istr);
 
 		ConcatReadBuffer istr(buffers);
 		Block sample = table->getSampleBlock();

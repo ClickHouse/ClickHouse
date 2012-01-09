@@ -5,6 +5,7 @@
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
@@ -25,6 +26,7 @@ void formatAST(const IAST 				& ast, std::ostream & s, size_t indent = 0);
 
 void formatAST(const ASTSelectQuery 	& ast, std::ostream & s, size_t indent = 0);
 void formatAST(const ASTCreateQuery 	& ast, std::ostream & s, size_t indent = 0);
+void formatAST(const ASTDropQuery 		& ast, std::ostream & s, size_t indent = 0);
 void formatAST(const ASTInsertQuery 	& ast, std::ostream & s, size_t indent = 0);
 void formatAST(const ASTExpressionList 	& ast, std::ostream & s, size_t indent = 0);
 void formatAST(const ASTFunction 		& ast, std::ostream & s, size_t indent = 0);

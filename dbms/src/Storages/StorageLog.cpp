@@ -5,7 +5,13 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
+#include <DB/IO/WriteHelpers.h>
+
 #include <DB/Storages/StorageLog.h>
+
+
+#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION 	".bin"
+#define DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION 	".mrk"
 
 
 namespace DB
@@ -18,7 +24,7 @@ LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & colum
 	: block_size(block_size_), column_names(column_names_), storage(storage_)
 {
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].path())));
+		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].first.path(), storage.files[*it].second.path())));
 }
 
 
@@ -46,7 +52,7 @@ LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
 	: storage(storage_)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		streams.insert(std::make_pair(it->first, new Stream(storage.files[it->first].path())));
+		streams.insert(std::make_pair(it->first, new Stream(storage.files[it->first].first.path(), storage.files[it->first].second.path())));
 }
 
 
@@ -57,14 +63,15 @@ void LogBlockOutputStream::write(const Block & block)
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
+		writeIntBinary(streams[column.name]->plain.count(), streams[column.name]->marks);
 		column.type->serializeBinary(*column.column, streams[column.name]->compressed);
+		streams[column.name]->compressed.next();
 	}
 }
 
 
-StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_,
-	const std::string & extension_)
-	: path(path_), name(name_), columns(columns_), extension(extension_)
+StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_)
+	: path(path_), name(name_), columns(columns_)
 {
 	/// создаём файлы, если их нет
 	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
@@ -75,18 +82,21 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 			throw Exception("Duplicate column with name " + it->first + " in constructor of StorageLog.",
 				ErrorCodes::DUPLICATE_COLUMN);
 
-		files.insert(std::make_pair(it->first, Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + extension)));
+		files.insert(std::make_pair(it->first, std::make_pair(
+			Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION),
+			Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION))));
 	}
 }
 
 
-BlockInputStreamPtr StorageLog::read(
+BlockInputStreams StorageLog::read(
 	const Names & column_names,
 	ASTPtr query,
-	size_t max_block_size)
+	size_t max_block_size,
+	unsigned max_threads)
 {
 	check(column_names);
-	return new LogBlockInputStream(max_block_size, column_names, *this);
+	return BlockInputStreams(1, new LogBlockInputStream(max_block_size, column_names, *this));
 }
 
 	
@@ -100,7 +110,10 @@ BlockOutputStreamPtr StorageLog::write(
 void StorageLog::drop()
 {
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-		it->second.remove();
+	{
+		it->second.first.remove();
+		it->second.second.remove();
+	}
 }
 
 }

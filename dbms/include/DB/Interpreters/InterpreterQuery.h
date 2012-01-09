@@ -26,7 +26,7 @@ public:
 	  *  использовавшийся при выполнении запроса,
 	  *  чтобы можно было получить информацию о том, как выполнялся запрос.
 	  */
-	void execute(WriteBuffer & ostr, SharedPtr<ReadBuffer> remaining_data_istr, BlockInputStreamPtr & query_plan);
+	void execute(WriteBuffer & ostr, ReadBuffer * remaining_data_istr, BlockInputStreamPtr & query_plan);
 
 private:
 	ASTPtr query_ptr;
