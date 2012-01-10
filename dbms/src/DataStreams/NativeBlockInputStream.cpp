@@ -20,8 +20,6 @@ Block NativeBlockInputStream::readImpl()
 	readVarUInt(columns, istr);
 	readVarUInt(rows, istr);
 
-	std::cerr << "columns: " << columns << ", rows: " << rows << std::endl;
-
 	for (size_t i = 0; i < columns; ++i)
 	{
 		ColumnWithNameAndType column;

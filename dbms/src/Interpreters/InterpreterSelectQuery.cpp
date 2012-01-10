@@ -7,6 +7,7 @@
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
+#include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -145,7 +146,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	/// Инициализируем изначальный поток данных, на который накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-		stream = new AsynchronousBlockInputStream(table->read(required_columns, query_ptr, block_size)[0]);
+		stream = new AsynchronousBlockInputStream(new UnionBlockInputStream(table->read(required_columns, query_ptr, block_size, 10), 10));
 	else
 		stream = new AsynchronousBlockInputStream(interpreter_subquery->execute());
 

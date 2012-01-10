@@ -16,31 +16,45 @@ namespace DB
 
 class StorageLog;
 
+
+/** Смещение до каждой некоторой пачки значений.
+  * Эти пачки имеют одинаковый размер в разных столбцах.
+  * Они нужны, чтобы можно было читать данные в несколько потоков.
+  */
+struct Mark
+{
+	size_t rows;	/// Сколько строк содержится в этой пачке и всех предыдущих.
+	size_t offset;	/// Смещение до пачки в сжатом файле.
+};
+typedef std::vector<Mark> Marks;
+
+
 class LogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_);
+	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_);
 	Block readImpl();
 	String getName() const { return "LogBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new LogBlockInputStream(block_size, column_names, storage); }
+	BlockInputStreamPtr clone() { return new LogBlockInputStream(block_size, column_names, storage, mark_number, rows_limit); }
 private:
 	size_t block_size;
 	Names column_names;
 	StorageLog & storage;
+	size_t mark_number;		/// С какой засечки читать данные
+	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
+
+	size_t rows_read;
 
 	struct Stream
 	{
-		Stream(const std::string & data_path, const std::string & marks_path)
-			: plain(data_path), compressed(plain)/*, marks(marks_path)*/ {}
+		Stream(const std::string & data_path, size_t offset)
+			: plain(data_path), compressed(plain)
+		{
+			plain.seek(offset);
+		}
 		
 		ReadBufferFromFile plain;
 		CompressedReadBuffer compressed;
-
-		/** В отдельный файл пишутся смещения до каждой некоторой пачки значений.
-		  * Эти пачки имеют одинаковый размер в разных столбцах.
-		  * Они нужны, чтобы можно было читать данные в несколько потоков.
-		  */
-		//ReadBufferFromFile marks;
 	};
 	
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
@@ -109,9 +123,14 @@ private:
 	const std::string name;
 	NamesAndTypesListPtr columns;
 
-	/// Пара файлов .bin и .mrk
-	typedef std::pair<Poco::File, Poco::File> FilePair_t;
-	typedef std::map<std::string, FilePair_t> Files_t;
+	/// Данные столбца
+	struct ColumnData
+	{
+		Poco::File data_file;
+		Poco::File marks_file;
+		Marks marks;
+	};
+	typedef std::map<std::string, ColumnData> Files_t;
 	Files_t files;
 };
 
