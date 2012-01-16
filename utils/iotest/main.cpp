@@ -1,6 +1,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <iostream>
 #include <iomanip>
@@ -39,6 +40,10 @@ void thread(int fd, Mode mode, size_t min_offset, size_t max_offset, size_t bloc
 	{
 		std::vector<char> buf(block_size);
 		drand48_data rand_data;
+
+		timespec times;
+		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
+		srand48_r(times.tv_nsec, &rand_data);
 
 		for (size_t i = 0; i < count; ++i)
 		{
