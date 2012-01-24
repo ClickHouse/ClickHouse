@@ -353,6 +353,7 @@ inline void writeEscapedRow(const mysqlxx::Row & row, WriteBuffer & buf)
 }
 
 
+/// Общие методы для вывода значения в текстовом виде для tab-separated формата.
 template <typename T>
 void writeText(const T & x, WriteBuffer & buf)
 {
@@ -375,6 +376,42 @@ template <> inline void writeText<bool>		(const bool & x, 	WriteBuffer & buf) { 
 
 template <> inline void writeText<mysqlxx::Date>		(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }
 template <> inline void writeText<mysqlxx::DateTime>	(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
+
+
+/// Общие методы для вывода значения в текстовом виде, при необходимости, в кавычках.
+template <typename T>
+void writeQuoted(const T & x, WriteBuffer & buf)
+{
+	/// Переношу ошибку в рантайм, так как метод требуется для компиляции DBObject-ов
+	throw Exception("Method writeQuoted is not implemented for this type.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+template <> inline void writeQuoted<UInt8>		(const UInt8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<UInt16>		(const UInt16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<UInt32>		(const UInt32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<UInt64>		(const UInt64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<Int8>		(const Int8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<Int16>		(const Int16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<Int32>		(const Int32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<Int64>		(const Int64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+template <> inline void writeQuoted<Float32>	(const Float32 & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+template <> inline void writeQuoted<Float64>	(const Float64 & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+template <> inline void writeQuoted<String>		(const String & x,	WriteBuffer & buf) { writeQuotedString(x, buf); }
+template <> inline void writeQuoted<bool>		(const bool & x, 	WriteBuffer & buf) { writeBoolText(x, buf); }
+
+template <> inline void writeQuoted<mysqlxx::Date>		(const mysqlxx::Date & x,		WriteBuffer & buf)
+{
+	writeChar('\'', buf);
+	writeDateText(x, buf);
+	writeChar('\'', buf);
+}
+
+template <> inline void writeQuoted<mysqlxx::DateTime>	(const mysqlxx::DateTime & x,	WriteBuffer & buf)
+{
+	writeChar('\'', buf);
+	writeDateTimeText(x, buf);
+	writeChar('\'', buf);
+}
 
 
 }
