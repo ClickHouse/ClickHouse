@@ -32,7 +32,13 @@ private:
 	Poco::SharedPtr<ReadBufferFromIStream> impl;
 	
 public:
-	RemoteReadBuffer(const std::string & host_, int port_, const std::string & path_, bool compress_ = true, size_t timeout_ = 0)
+	RemoteReadBuffer(
+		const std::string & host_,
+		int port_,
+		const std::string & path_,
+		bool compress_ = true,
+		size_t timeout_ = 0,
+		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
 		: ReadBuffer(NULL, 0), host(host_), port(port_), path(path_), compress(compress_)
 	{
 		std::string encoded_path;
@@ -66,7 +72,7 @@ public:
 			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
 		}
 
-		impl = new ReadBufferFromIStream(*istr);
+		impl = new ReadBufferFromIStream(*istr, buffer_size_);
 	}
 
 	bool nextImpl()

@@ -1,5 +1,6 @@
-#ifndef DBMS_COMMON_BUFFERBASE_H
-#define DBMS_COMMON_BUFFERBASE_H
+#pragma once
+
+#include <algorithm>
 
 
 namespace DB
@@ -38,6 +39,12 @@ public:
 		inline Position end() { return end_pos; }
 		inline size_t size() { return end_pos - begin_pos; }
 		inline void resize(size_t size) { end_pos = begin_pos + size; }
+
+		inline void swap(Buffer & other)
+		{
+			std::swap(begin_pos, other.begin_pos);
+			std::swap(end_pos, other.end_pos);
+		}
 
 	private:
 		Position begin_pos;
@@ -95,5 +102,3 @@ protected:
 
 
 }
-
-#endif

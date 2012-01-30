@@ -42,7 +42,7 @@ public:
 	  */
 	RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
 		const std::string & tmp_path_ = "", const std::string & if_exists_ = "append",
-		bool decompress_ = false, size_t timeout_ = 0)
+		bool decompress_ = false, size_t timeout_ = 0, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
 		: WriteBuffer(NULL, 0), host(host_), port(port_), path(path_),
 		tmp_path(tmp_path_), if_exists(if_exists_),
 		decompress(decompress_)
@@ -70,10 +70,10 @@ public:
 		
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str);
 		
-		LOG_TRACE((&Logger::get("RemoteReadBuffer")), "Sending request to " << uri_str);
+		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending request to " << uri_str);
 
 		ostr = &session.sendRequest(request);
-		impl = new WriteBufferFromOStream(*ostr);
+		impl = new WriteBufferFromOStream(*ostr, buffer_size_);
 
 		set(impl->buffer().begin(), impl->buffer().size());
 	}
