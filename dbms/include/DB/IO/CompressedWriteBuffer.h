@@ -92,7 +92,11 @@ private:
 	}
 
 public:
-	CompressedWriteBuffer(WriteBuffer & out_, CompressionMethod::Enum method_ = CompressionMethod::QuickLZ) : out(out_), method(method_) {}
+	CompressedWriteBuffer(
+		WriteBuffer & out_,
+		CompressionMethod::Enum method_ = CompressionMethod::QuickLZ,
+		size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+		: BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_) {}
 
 	/// Объём сжатых данных
 	size_t getCompressedBytes()
