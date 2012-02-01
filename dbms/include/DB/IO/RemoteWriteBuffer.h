@@ -25,6 +25,8 @@ private:
 	std::string host;
 	int port;
 	std::string path;
+	std::string encoded_path;
+	std::string encoded_tmp_path;
 	std::string tmp_path;
 	std::string if_exists;
 	bool decompress;
@@ -34,6 +36,9 @@ private:
 	Poco::Net::HTTPClientSession session;
 	std::ostream * ostr;	/// этим владеет session
 	Poco::SharedPtr<WriteBufferFromOStream> impl;
+
+	/// Отправили все данные и переименовали файл
+	bool finalized;
 	
 public:
 	/** Если tmp_path не пустой, то записывает сначала временный файл, а затем переименовывает,
@@ -41,22 +46,19 @@ public:
 	  * Иначе используется параметр if_exists.
 	  */
 	RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
-		const std::string & tmp_path_ = "", const std::string & if_exists_ = "append",
+		const std::string & tmp_path_ = "", const std::string & if_exists_ = "truncate",
 		bool decompress_ = false, size_t timeout_ = 0, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
 		: WriteBuffer(NULL, 0), host(host_), port(port_), path(path_),
 		tmp_path(tmp_path_), if_exists(if_exists_),
-		decompress(decompress_)
+		decompress(decompress_), finalized(false)
 	{
-		std::string encoded_path;
 		Poco::URI::encode(path, "&#", encoded_path);
-		std::string encoded_tmp_path;
 		Poco::URI::encode(tmp_path, "&#", encoded_tmp_path);
 		
 		std::stringstream uri;
 		uri << "http://" << host << ":" << port
-			<< "/?action=" << (tmp_path.empty() ? "write" : "create_and_write")
-			<< "&path=" << encoded_path
-			<< "&tmp_path=" << encoded_tmp_path
+			<< "/?action=write"
+			<< "&path=" << (tmp_path.empty() ? encoded_path : encoded_tmp_path)
 			<< "&if_exists=" << if_exists
 			<< "&decompress=" << (decompress ? "true" : "false");
 
@@ -70,7 +72,7 @@ public:
 		
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str);
 		
-		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending request to " << uri_str);
+		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending write request to " << uri_str);
 
 		ostr = &session.sendRequest(request);
 		impl = new WriteBufferFromOStream(*ostr, buffer_size_);
@@ -87,32 +89,68 @@ public:
 		impl->next();
 	}
 
+	void finalize()
+	{
+		if (finalized)
+			return;
+		
+		next();
+
+		Poco::Net::HTTPResponse response;
+		std::istream & istr = session.receiveResponse(response);
+		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+
+		if (status != Poco::Net::HTTPResponse::HTTP_OK)
+		{
+			std::stringstream error_message;
+			error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
+				<< status << ", body: " << istr.rdbuf();
+
+			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+		}
+
+		/// Переименовываем файл, если нужно.
+		if (!tmp_path.empty())
+			rename();
+
+		finalized = true;
+	}
+
 	virtual ~RemoteWriteBuffer()
 	{
-		bool uncaught_exception = std::uncaught_exception();
+		/// Если объект уничтожается из-за эксепшена - то не отправляем последние данные (если они ещё не были отправлены).
+		if (!std::uncaught_exception())
+			finalize();
+	}
 
-		try
+
+private:
+	
+	void rename()
+	{
+		std::stringstream uri;
+		uri << "http://" << host << ":" << port
+			<< "/?action=rename"
+			<< "&from=" << encoded_tmp_path
+			<< "&to=" << encoded_path;
+
+		uri_str = uri.str();
+
+		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str);
+		Poco::Net::HTTPResponse response;
+
+		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << uri_str);
+		session.sendRequest(request);
+		std::istream & istr = session.receiveResponse(response);
+		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+
+		if (status != Poco::Net::HTTPResponse::HTTP_OK)
 		{
-			next();
+			std::stringstream error_message;
+			error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
+				<< status << ", body: " << istr.rdbuf();
 
-			Poco::Net::HTTPResponse response;
-			std::istream & istr = session.receiveResponse(response);
-			Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
-
-			if (status != Poco::Net::HTTPResponse::HTTP_OK)
-			{
-				std::stringstream error_message;
-				error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
-					<< status << ", body: " << istr.rdbuf();
-
-				throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
-			}
-		}
-		catch (...)
-		{
-			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
-			if (!uncaught_exception)
-				throw;
+			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
 		}
 	}
 };
