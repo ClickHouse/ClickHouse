@@ -130,11 +130,13 @@ private:
 		std::istream & istr = session.receiveResponse(response);
 		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
 
-		if (status != Poco::Net::HTTPResponse::HTTP_OK)
+		std::stringstream message;
+		message << istr.rdbuf();
+
+		if (status != Poco::Net::HTTPResponse::HTTP_OK || message.str() != "Ok.\n")
 		{
 			std::stringstream error_message;
-			error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
-				<< status << ", body: " << istr.rdbuf();
+			error_message << "Received error from remote server " << uri_str << ", body: " << message.str();
 
 			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
 		}
