@@ -36,31 +36,21 @@ private:
 
 	void nextImpl()
 	{
-	//	std::cerr << "!" << std::endl;
-		
 		if (!offset())
 			return;
-
-	//	std::cerr << "!!" << std::endl;
 
 		if (started)
 			pool.wait();
 		else
 			started = true;
 
-	//	std::cerr << "!!!" << std::endl;
-
 		if (exception)
 			exception->rethrow();
 
 		swapBuffers();
-		
-	//	std::cerr << "!!!!" << std::endl;
 
 		/// Данные будут записываться в отельном потоке.
 		pool.schedule(boost::bind(&AsynchronousWriteBuffer::thread, this));
-
-	//	std::cerr << "!!!!!" << std::endl;
 	}
 
 public:
@@ -99,9 +89,7 @@ public:
 	{
 		try
 		{
-		//	std::cerr << "?" << std::endl;
 			out.next();
-		//	std::cerr << "??" << std::endl;
 		}
 		catch (const Exception & e)
 		{

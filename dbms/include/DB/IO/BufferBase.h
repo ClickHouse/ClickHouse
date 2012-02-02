@@ -62,7 +62,6 @@ public:
 		internal_buffer = Buffer(ptr, ptr + size);
 		working_buffer = Buffer(ptr, ptr + size);
 		pos = ptr + offset;
-		bytes = 0;
 	}
 
 	/// получить часть буфера, из которого можно читать / в который можно писать данные
