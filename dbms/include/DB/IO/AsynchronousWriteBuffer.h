@@ -62,24 +62,16 @@ public:
 
 	~AsynchronousWriteBuffer()
 	{
-		bool uncaught_exception = std::uncaught_exception();
+		if (std::uncaught_exception())
+			return;
 
-		try
-		{
-			if (started)
-				pool.wait();
-			if (exception)
-				exception->rethrow();
+		if (started)
+			pool.wait();
+		if (exception)
+			exception->rethrow();
 
-			swapBuffers();
-			out.next();
-		}
-		catch (...)
-		{
-			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
-			if (!uncaught_exception)
-				throw;
-		}
+		swapBuffers();
+		out.next();
 	}
 
 	SharedPtr<Exception> exception;

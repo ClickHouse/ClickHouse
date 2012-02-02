@@ -27,22 +27,15 @@ public:
 			throwFromErrno("Cannot open file " + file_name, ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
-    virtual ~WriteBufferFromFile()
+    ~WriteBufferFromFile()
 	{
 		bool uncaught_exception = std::uncaught_exception();
 
-		try
-		{
+		if (!uncaught_exception)
 			next();
-			if (0 != close(fd))
-				throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
-		}
-		catch (...)
-		{
-			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
-			if (!uncaught_exception)
-				throw;
-		}
+
+		if (0 != close(fd) && !uncaught_exception)
+			throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 	}
 
 	virtual std::string getFileName()

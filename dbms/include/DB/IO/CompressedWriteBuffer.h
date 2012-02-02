@@ -120,18 +120,8 @@ public:
 
 	~CompressedWriteBuffer()
 	{
-		bool uncaught_exception = std::uncaught_exception();
-
-		try
-		{
+		if (!std::uncaught_exception())
 			next();
-		}
-		catch (...)
-		{
-			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
-			if (!uncaught_exception)
-				throw;
-		}
 	}
 };
 

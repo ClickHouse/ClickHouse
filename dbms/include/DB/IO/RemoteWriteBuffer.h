@@ -117,7 +117,7 @@ public:
 		finalized = true;
 	}
 
-	virtual ~RemoteWriteBuffer()
+	~RemoteWriteBuffer()
 	{
 		/// Если объект уничтожается из-за эксепшена - то не отправляем последние данные (если они ещё не были отправлены).
 		if (!std::uncaught_exception())

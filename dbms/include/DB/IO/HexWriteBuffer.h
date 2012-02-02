@@ -35,9 +35,10 @@ protected:
 public:
 	HexWriteBuffer(WriteBuffer & out_) : WriteBuffer(buf, sizeof(buf)), out(out_) {}
 
-    virtual ~HexWriteBuffer()
+    ~HexWriteBuffer()
 	{
-		nextImpl();
+		if (!std::uncaught_exception())
+			nextImpl();
 	}
 };
 

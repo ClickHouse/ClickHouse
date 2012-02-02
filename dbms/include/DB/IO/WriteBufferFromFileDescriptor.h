@@ -56,20 +56,10 @@ public:
 	WriteBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<WriteBuffer>(buf_size), fd(fd_) {}
 
-    virtual ~WriteBufferFromFileDescriptor()
+    ~WriteBufferFromFileDescriptor()
 	{
-		bool uncaught_exception = std::uncaught_exception();
-
-		try
-		{
+		if (!std::uncaught_exception())
 			next();
-		}
-		catch (...)
-		{
-			/// Если до этого уже было какое-то исключение, то второе исключение проигнорируем.
-			if (!uncaught_exception)
-				throw;
-		}
 	}
 
 	int getFD()
