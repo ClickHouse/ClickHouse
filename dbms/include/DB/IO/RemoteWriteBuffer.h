@@ -86,7 +86,17 @@ public:
 			return;
 
 		impl->position() = pos;
-		impl->next();
+
+		try
+		{
+			impl->next();
+		}
+		catch (const DB::Exception & e)
+		{
+			if (e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
+				checkStatus();	/// Меняем сообщение об ошибке на более ясное.
+			throw;
+		}
 	}
 
 	void finalize()
@@ -95,19 +105,7 @@ public:
 			return;
 		
 		next();
-
-		Poco::Net::HTTPResponse response;
-		std::istream & istr = session.receiveResponse(response);
-		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
-
-		if (status != Poco::Net::HTTPResponse::HTTP_OK)
-		{
-			std::stringstream error_message;
-			error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
-				<< status << ", body: " << istr.rdbuf();
-
-			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
-		}
+		checkStatus();
 
 		/// Переименовываем файл, если нужно.
 		if (!tmp_path.empty())
@@ -125,6 +123,22 @@ public:
 
 
 private:
+
+	void checkStatus()
+	{
+		Poco::Net::HTTPResponse response;
+		std::istream & istr = session.receiveResponse(response);
+		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+
+		if (status != Poco::Net::HTTPResponse::HTTP_OK)
+		{
+			std::stringstream error_message;
+			error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
+				<< status << ", body: " << istr.rdbuf();
+
+			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+		}
+	}
 	
 	void rename()
 	{
@@ -137,21 +151,11 @@ private:
 		uri_str = uri.str();
 
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str);
-		Poco::Net::HTTPResponse response;
 
 		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << uri_str);
 		session.sendRequest(request);
-		std::istream & istr = session.receiveResponse(response);
-		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
 
-		if (status != Poco::Net::HTTPResponse::HTTP_OK)
-		{
-			std::stringstream error_message;
-			error_message << "Received error from remote server " << uri_str << ". HTTP status code: "
-				<< status << ", body: " << istr.rdbuf();
-
-			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
-		}
+		checkStatus();
 	}
 };
 
