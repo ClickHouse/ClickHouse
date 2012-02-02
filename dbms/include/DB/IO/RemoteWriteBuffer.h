@@ -85,6 +85,9 @@ public:
 		if (!offset())
 			return;
 
+		/// Для корректной работы с AsynchronousWriteBuffer, который подменяет буферы.
+		impl->set(buffer().begin(), buffer().size());
+		
 		impl->position() = pos;
 
 		try
