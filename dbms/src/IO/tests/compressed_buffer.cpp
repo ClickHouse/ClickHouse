@@ -8,8 +8,8 @@
 #include <Poco/Stopwatch.h>
 
 #include <DB/Core/Types.h>
-#include <DB/IO/WriteBufferFromOStream.h>
-#include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/WriteHelpers.h>
@@ -26,10 +26,8 @@ int main(int argc, char ** argv)
 		Poco::Stopwatch stopwatch;
 	
 		{
-			std::ofstream ostr("test1");
-			
-			DB::WriteBufferFromOStream buf(ostr);
-			DB::CompressedWriteBuffer compressed_buf(buf);
+			DB::WriteBufferFromFile buf("test1");
+			DB::CompressedWriteBuffer compressed_buf(buf, DB::CompressionMethod::LZ4);
 
 			stopwatch.restart();
 			for (size_t i = 0; i < n; ++i)
@@ -44,8 +42,7 @@ int main(int argc, char ** argv)
 		}
 
 		{
-			std::ifstream istr("test1");
-			DB::ReadBufferFromIStream buf(istr);
+			DB::ReadBufferFromFile buf("test1");
 			DB::CompressedReadBuffer compressed_buf(buf);
 			std::string s;
 
