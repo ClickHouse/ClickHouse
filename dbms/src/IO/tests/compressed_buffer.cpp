@@ -26,8 +26,8 @@ int main(int argc, char ** argv)
 		Poco::Stopwatch stopwatch;
 	
 		{
-			DB::WriteBufferFromFile buf("test1");
-			DB::CompressedWriteBuffer compressed_buf(buf, DB::CompressionMethod::LZ4);
+			DB::WriteBufferFromFile buf("test1", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+			DB::CompressedWriteBuffer compressed_buf(buf);
 
 			stopwatch.restart();
 			for (size_t i = 0; i < n; ++i)

@@ -19,7 +19,7 @@ private:
 
 	bool nextImpl()
 	{
-		istr.read(working_buffer.begin(), working_buffer.size());
+		istr.read(internal_buffer.begin(), internal_buffer.size());
 		size_t gcount = istr.gcount();
 
 		if (!gcount)

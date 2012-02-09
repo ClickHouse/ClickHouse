@@ -32,6 +32,7 @@ int main(int argc, char ** argv)
 		DB::readQuotedString(d, in);
 
 		std::cout << a << ' ' << b << ' ' << c << '\t' << '\'' << d << '\'' << std::endl;
+		std::cout << in.count() << std::endl;
 	}
 	catch (const DB::Exception & e)
 	{
