@@ -48,7 +48,7 @@ public:
 	  * Иначе используется параметр if_exists.
 	  */
 	RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
-		const std::string & tmp_path_ = "", const std::string & if_exists_ = "truncate",
+		const std::string & tmp_path_ = "", const std::string & if_exists_ = "remove",
 		bool decompress_ = false, size_t timeout_ = 0, unsigned connection_retries_ = 3,
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
 		: WriteBuffer(NULL, 0), host(host_), port(port_), path(path_),
