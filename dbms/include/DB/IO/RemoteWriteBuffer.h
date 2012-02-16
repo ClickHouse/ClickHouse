@@ -199,7 +199,8 @@ private:
 				if (i + 1 == connection_retries)
 					throw;
 				
-				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.message() << ", URL: " << uri_str << ", try No " << i + 1 << ".");
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.what() << ", message: " << e.message()
+					<< ", URL: " << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;
 			}
