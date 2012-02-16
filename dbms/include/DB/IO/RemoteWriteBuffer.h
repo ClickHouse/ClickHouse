@@ -5,6 +5,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/NetException.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -30,6 +31,7 @@ private:
 	std::string tmp_path;
 	std::string if_exists;
 	bool decompress;
+	unsigned connection_retries;
 
 	std::string uri_str;
 
@@ -47,10 +49,11 @@ public:
 	  */
 	RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
 		const std::string & tmp_path_ = "", const std::string & if_exists_ = "truncate",
-		bool decompress_ = false, size_t timeout_ = 0, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		bool decompress_ = false, size_t timeout_ = 0, unsigned connection_retries_ = 3,
+		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
 		: WriteBuffer(NULL, 0), host(host_), port(port_), path(path_),
 		tmp_path(tmp_path_), if_exists(if_exists_),
-		decompress(decompress_), finalized(false)
+		decompress(decompress_), connection_retries(connection_retries_), finalized(false)
 	{
 		Poco::URI::encode(path, "&#", encoded_path);
 		Poco::URI::encode(tmp_path, "&#", encoded_tmp_path);
@@ -72,11 +75,37 @@ public:
 		
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str);
 		
-		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending write request to " << uri_str);
+		for (unsigned i = 0; i < connection_retries; ++i)
+		{
+			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending write request to " << uri_str);
 
-		ostr = &session.sendRequest(request);
+			try
+			{
+				ostr = &session.sendRequest(request);
+			}
+			catch (const Poco::Net::NetException & e)
+			{
+				if (i + 1 == connection_retries)
+					throw;
+
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.message() << ", URL: " << uri_str << ", try No " << i + 1 << ".");
+				session.reset();
+				continue;
+			}
+			catch (const Poco::TimeoutException & e)
+			{
+				if (i + 1 == connection_retries)
+					throw;
+
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), "Connection timeout from " << uri_str << ", try No " << i + 1 << ".");
+				session.reset();
+				continue;
+			}
+
+			break;
+		}
+
 		impl = new WriteBufferFromOStream(*ostr, buffer_size_);
-
 		set(impl->buffer().begin(), impl->buffer().size());
 	}
 
@@ -154,13 +183,38 @@ private:
 			<< "&to=" << encoded_path;
 
 		uri_str = uri.str();
-
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri_str);
 
-		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << uri_str);
-		session.sendRequest(request);
+		for (unsigned i = 0; i < connection_retries; ++i)
+		{
+			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << uri_str);
 
-		checkStatus();
+			try
+			{
+				session.sendRequest(request);
+				checkStatus();
+			}
+			catch (const Poco::Net::NetException & e)
+			{
+				if (i + 1 == connection_retries)
+					throw;
+				
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.message() << ", URL: " << uri_str << ", try No " << i + 1 << ".");
+				session.reset();
+				continue;
+			}
+			catch (const Poco::TimeoutException & e)
+			{
+				if (i + 1 == connection_retries)
+					throw;
+				
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), "Connection timeout from " << uri_str << ", try No " << i + 1 << ".");
+				session.reset();
+				continue;
+			}
+
+			break;
+		}
 	}
 };
 
