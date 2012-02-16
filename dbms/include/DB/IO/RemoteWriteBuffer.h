@@ -155,7 +155,7 @@ private:
 
 		uri_str = uri.str();
 
-		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str);
+		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri_str);
 
 		LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << uri_str);
 		session.sendRequest(request);
