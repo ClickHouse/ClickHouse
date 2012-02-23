@@ -21,7 +21,7 @@ public:
 	WriteBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1, mode_t mode = 0666)
 		: WriteBufferFromFileDescriptor(-1, buf_size), file_name(file_name_)
 	{
-		fd = open(file_name.c_str(), flags == -1 ? O_WRONLY | O_APPEND | O_CREAT : flags, mode);
+		fd = open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
 		
 		if (-1 == fd)
 			throwFromErrno("Cannot open file " + file_name, ErrorCodes::CANNOT_OPEN_FILE);

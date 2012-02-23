@@ -73,8 +73,10 @@ private:
 
 	struct Stream
 	{
-		Stream(const std::string & data_path, const std::string & marks_path)
-			: plain(data_path), compressed(plain, CompressionMethod::LZ4), marks(marks_path) {}
+		Stream(const std::string & data_path, const std::string & marks_path) :
+			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY),
+			compressed(plain, CompressionMethod::LZ4),
+			marks(marks_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY) {}
 		
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
