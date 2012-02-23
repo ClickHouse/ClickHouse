@@ -22,7 +22,7 @@ private:
 	ReadBuffer & in;
 
 	std::vector<char> compressed_buffer;
-	char scratch[QLZ_SCRATCH_DECOMPRESS];
+	qlz_state_decompress * qlz_state;
 
 	bool nextImpl()
 	{
@@ -52,7 +52,7 @@ private:
 
 		/// Старший бит первого байта определяет использованный метод сжатия.
 		if ((compressed_buffer[0] & 0x80) == 0)
-			qlz_decompress(&compressed_buffer[0], working_buffer.begin(), scratch);
+			qlz_decompress(&compressed_buffer[0], working_buffer.begin(), qlz_state);
 		else
 			LZ4_uncompress(&compressed_buffer[QUICKLZ_HEADER_SIZE], working_buffer.begin(), size_decompressed);
 
@@ -62,8 +62,14 @@ private:
 public:
 	CompressedReadBuffer(ReadBuffer & in_)
 		: in(in_),
-		compressed_buffer(QUICKLZ_HEADER_SIZE)
+		compressed_buffer(QUICKLZ_HEADER_SIZE),
+		qlz_state(new qlz_state_decompress)
 	{
+	}
+
+    ~CompressedReadBuffer()
+	{
+		delete qlz_state;
 	}
 };
 

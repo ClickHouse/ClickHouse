@@ -25,7 +25,7 @@ private:
 	CompressionMethod::Enum method;
 
 	std::vector<char> compressed_buffer;
-	char scratch[QLZ_SCRATCH_COMPRESS];
+	qlz_state_compress * qlz_state;
 
 	void nextImpl()
 	{
@@ -51,7 +51,7 @@ private:
 					working_buffer.begin(),
 					&compressed_buffer[0],
 					uncompressed_size,
-					scratch);
+					qlz_state);
 
 				compressed_buffer_ptr = &compressed_buffer[0];
 				break;
@@ -96,7 +96,7 @@ public:
 		WriteBuffer & out_,
 		CompressionMethod::Enum method_ = CompressionMethod::QuickLZ,
 		size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_) {}
+		: BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_), qlz_state(new qlz_state_compress) {}
 
 	/// Объём сжатых данных
 	size_t getCompressedBytes()
@@ -122,6 +122,8 @@ public:
 	{
 		if (!std::uncaught_exception())
 			next();
+
+		delete qlz_state;
 	}
 };
 
