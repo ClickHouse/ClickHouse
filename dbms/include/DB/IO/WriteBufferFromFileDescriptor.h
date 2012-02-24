@@ -53,8 +53,16 @@ protected:
 	}
 
 public:
-	WriteBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+	WriteBufferFromFileDescriptor(int fd_ = -1, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<WriteBuffer>(buf_size), fd(fd_) {}
+
+	/** Можно вызывать для инициализации, если нужный fd не был передан в конструктор.
+	  * Менять fd во время работы нельзя.
+	  */
+	void setFD(int fd_)
+	{
+		fd = fd_;
+	}
 
     ~WriteBufferFromFileDescriptor()
 	{
