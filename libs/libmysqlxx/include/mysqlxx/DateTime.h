@@ -76,9 +76,8 @@ public:
 		init(s.data(), s.size());
 	}
 
-	DateTime()
+	DateTime() : m_year(0), m_month(0), m_day(0), m_hour(0), m_minute(0), m_second(0)
 	{
-		init(time(0));
 	}
 
 	DateTime(const char * data, size_t length)

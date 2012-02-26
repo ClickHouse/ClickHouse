@@ -78,9 +78,8 @@ public:
 		init(data, length);
 	}
 
-	Date()
+	Date() : m_year(0), m_month(0), m_day(0)
 	{
-		init(time(0));
 	}
 
 	Date(const Date & x)
