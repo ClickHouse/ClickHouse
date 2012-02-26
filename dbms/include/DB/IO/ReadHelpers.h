@@ -6,6 +6,7 @@
 
 #include <tr1/type_traits>
 
+#include <Yandex/Common.h>
 #include <Yandex/DateLUT.h>
 
 #include <mysqlxx/Date.h>
@@ -53,9 +54,9 @@ static inline void throwReadAfterEOF()
 }
 
 
-/// Чтение числа в native формате
+/// Чтение POD-типа в native формате
 template <typename T>
-inline void readBinary(T & x, ReadBuffer & buf)
+inline void readPODBinary(T & x, ReadBuffer & buf)
 {
 	buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
 }
@@ -63,13 +64,13 @@ inline void readBinary(T & x, ReadBuffer & buf)
 template <typename T>
 inline void readIntBinary(T & x, ReadBuffer & buf)
 {
-	readBinary(x, buf);
+	readPODBinary(x, buf);
 }
 
 template <typename T>
 inline void readFloatBinary(T & x, ReadBuffer & buf)
 {
-	readBinary(x, buf);
+	readPODBinary(x, buf);
 }
 
 
@@ -84,8 +85,6 @@ inline void readStringBinary(std::string & s, DB::ReadBuffer & buf, size_t MAX_S
 	s.resize(size);
 	buf.readStrict(const_cast<char *>(s.data()), size);
 }
-
-template <> inline void readBinary(std::string & s, DB::ReadBuffer & buf) { readStringBinary(s, buf); }
 
 
 inline void readChar(char & x, ReadBuffer & buf)
@@ -352,60 +351,68 @@ inline void readDateTimeText(mysqlxx::DateTime & datetime, ReadBuffer & buf)
 }
 
 
+/// Общие методы для чтения значения в бинарном формате.
+inline void readBinary(UInt8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(UInt16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(UInt32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(UInt64 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Int8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Int16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Int32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Int64 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Float32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Float64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(String & x, 	ReadBuffer & buf) { readStringBinary(x, buf); }
+inline void readBinary(bool & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+
+inline void readBinary(Yandex::VisitID_t & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(mysqlxx::Date & x, 	ReadBuffer & buf) 	{ readPODBinary(x, buf); }
+inline void readBinary(mysqlxx::DateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+
+
 /// Общие методы для чтения значения в текстовом виде из tab-separated формата.
-template <typename T>
-void readText(T & x, ReadBuffer & buf)
-{
-	/// Переношу ошибку в рантайм, так как метод требуется для компиляции DBObject-ов
-	throw Exception("Method readText is not implemented for this type.", ErrorCodes::NOT_IMPLEMENTED);
-}
+inline void readText(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(String & x, 	ReadBuffer & buf) { readEscapedString(x, buf); }
+inline void readText(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
 
-template <> inline void readText<UInt8>		(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<UInt16>	(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<UInt32>	(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<UInt64>	(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int8>		(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int16>		(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int32>		(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Int64>		(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readText<Float32>	(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-template <> inline void readText<Float64>	(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-template <> inline void readText<String>	(String & x, 	ReadBuffer & buf) { readEscapedString(x, buf); }
-template <> inline void readText<bool>		(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
-
-template <> inline void readText<mysqlxx::Date>			(mysqlxx::Date & x, 		ReadBuffer & buf) { readDateText(x, buf); }
-template <> inline void readText<mysqlxx::DateTime>		(mysqlxx::DateTime & x, 	ReadBuffer & buf) { readDateTimeText(x, buf); }
+inline void readText(Yandex::VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(mysqlxx::Date & x, 	ReadBuffer & buf) { readDateText(x, buf); }
+inline void readText(mysqlxx::DateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 
 
 /// Общие методы для чтения значения в текстовом виде, при необходимости, в кавычках.
-template <typename T>
-void readQuoted(T & x, ReadBuffer & buf)
-{
-	/// Переношу ошибку в рантайм, так как метод требуется для компиляции DBObject-ов
-	throw Exception("Method readQuoted is not implemented for this type.", ErrorCodes::NOT_IMPLEMENTED);
-}
+inline void readQuoted(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(Int8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(Float32 & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readQuoted(Float64 & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readQuoted(String & x, 	ReadBuffer & buf) { readQuotedString(x, buf); }
+inline void readQuoted(bool & x, 	ReadBuffer & buf) { readBoolText(x, buf); }
 
-template <> inline void readQuoted<UInt8>	(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<UInt16>	(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<UInt32>	(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<UInt64>	(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<Int8>	(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<Int16>	(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<Int32>	(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<Int64>	(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-template <> inline void readQuoted<Float32>	(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-template <> inline void readQuoted<Float64>	(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-template <> inline void readQuoted<String>	(String & x, 	ReadBuffer & buf) { readQuotedString(x, buf); }
-template <> inline void readQuoted<bool>	(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
+inline void readQuoted(Yandex::VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
 
-template <> inline void readQuoted<mysqlxx::Date>		(mysqlxx::Date & x, 	ReadBuffer & buf)
+inline void readQuoted(mysqlxx::Date & x, ReadBuffer & buf)
 {
 	assertString("'", buf);
 	readDateText(x, buf);
 	assertString("'", buf);
 }
 
-template <> inline void readQuoted<mysqlxx::DateTime>	(mysqlxx::DateTime & x, ReadBuffer & buf)
+inline void readQuoted(mysqlxx::DateTime & x, ReadBuffer & buf)
 {
 	assertString("'", buf);
 	readDateTimeText(x, buf);
