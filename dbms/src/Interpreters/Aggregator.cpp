@@ -201,6 +201,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		if (keys_size == 0)
 		{
 			/// Если ключей нет
+			result.type = AggregatedDataVariants::WITHOUT_KEY;
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (res.empty())
 			{
@@ -225,6 +226,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			&& !dynamic_cast<ColumnFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnFloat64 *>(&*key_columns[0]))
 		{
 			/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
+			result.type = AggregatedDataVariants::KEY_64;
 			AggregatedDataWithUInt64Key & res = result.key64;
 			const FieldVisitorToUInt64 visitor;
 			IColumn & column = *key_columns[0];
@@ -262,6 +264,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])))
 		{
 			/// Если есть один строковый ключ, то используем хэш-таблицу с ним
+			result.type = AggregatedDataVariants::KEY_STRING;
 			AggregatedDataWithStringKey & res = result.key_string;
 			IColumn & column = *key_columns[0];
 
@@ -293,6 +296,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		else
 		{
 			/// Если много ключей - будем агрегировать по хэшу от них
+			result.type = AggregatedDataVariants::HASHED;
 			AggregatedDataHashed & res = result.hashed;
 			const FieldVisitorToUInt64 to_uint64_visitor;
 
@@ -358,6 +362,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 /*		else
 		{
 			/// Общий способ
+			result.type = AggregatedDataVariants::GENERIC;
 			AggregatedData & res = result.generic;
 			
 			/// Для всех строчек
@@ -387,6 +392,224 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			}
 		}*/
 	}
+}
+
+
+Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
+{
+	Block res = getSampleBlock();
+	size_t rows = 0;
+
+	/// В какой структуре данных агрегированы данные?
+	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY)
+	{
+		AggregatedDataWithoutKey & data = data_variants.without_key;
+		rows = 1;
+
+		size_t i = 0;
+		for (AggregateFunctionsPlainPtrs::const_iterator jt = data.begin(); jt != data.end(); ++jt, ++i)
+			res.getByPosition(i).column->insert(*jt);
+	}
+	else if (data_variants.type == AggregatedDataVariants::KEY_64)
+	{
+		AggregatedDataWithUInt64Key & data = data_variants.key64;
+		rows = data.size();
+
+		IColumn & first_column = *res.getByPosition(0).column;
+		bool is_signed = dynamic_cast<ColumnInt8 *>(&first_column) || dynamic_cast<ColumnInt16 *>(&first_column)
+			|| dynamic_cast<ColumnInt32 *>(&first_column) || dynamic_cast<ColumnInt64 *>(&first_column);
+
+		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it)
+		{
+			if (is_signed)
+				first_column.insert(static_cast<Int64>(it->first));
+			else
+				first_column.insert(it->first);
+
+			size_t i = 1;
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+				res.getByPosition(i).column->insert(*jt);
+		}
+	}
+	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
+	{
+		AggregatedDataWithStringKey & data = data_variants.key_string;
+		rows = data.size();
+		IColumn & first_column = *res.getByPosition(0).column;
+
+		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it)
+		{
+			first_column.insert(it->first);
+
+			size_t i = 1;
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+				res.getByPosition(i).column->insert(*jt);
+		}
+	}
+	else if (data_variants.type == AggregatedDataVariants::HASHED)
+	{
+		AggregatedDataHashed & data = data_variants.hashed;
+		rows = data.size();
+		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it)
+		{
+			size_t i = 0;
+			for (Row::const_iterator jt = it->second.first.begin(); jt != it->second.first.end(); ++jt, ++i)
+				res.getByPosition(i).column->insert(*jt);
+
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.second.begin(); jt != it->second.second.end(); ++jt, ++i)
+				res.getByPosition(i).column->insert(*jt);
+		}
+	}
+	else if (data_variants.type == AggregatedDataVariants::GENERIC)
+	{
+		AggregatedData & data = data_variants.generic;
+		rows = data.size();
+		for (AggregatedData::const_iterator it = data.begin(); it != data.end(); ++it)
+		{
+			size_t i = 0;
+			for (Row::const_iterator jt = it->first.begin(); jt != it->first.end(); ++jt, ++i)
+				res.getByPosition(i).column->insert(*jt);
+
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+				res.getByPosition(i).column->insert(*jt);
+		}
+	}
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	/// Изменяем размер столбцов-констант в блоке.
+	size_t columns = res.columns();
+	for (size_t i = 0; i < columns; ++i)
+		if (res.getByPosition(i).column->isConst())
+			res.getByPosition(i).column->cut(0, rows);
+
+	return res;
+}
+
+
+AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_variants)
+{
+	if (data_variants.empty())
+		throw Exception("Empty data passed to Aggregator::merge().", ErrorCodes::EMPTY_DATA_PASSED);
+
+	AggregatedDataVariants & res = *data_variants[0];
+
+	/// Все результаты агрегации соединяем с первым.
+	for (size_t i = 1, size = data_variants.size(); i < size; ++i)
+	{
+		AggregatedDataVariants & current = *data_variants[i];
+
+		if (res.type != current.type)
+			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
+
+		/// В какой структуре данных агрегированы данные?
+		if (res.type == AggregatedDataVariants::WITHOUT_KEY)
+		{
+			AggregatedDataWithoutKey & res_data = res.without_key;
+			AggregatedDataWithoutKey & current_data = current.without_key;
+
+			size_t i = 0;
+			for (AggregateFunctionsPlainPtrs::const_iterator jt = current_data.begin(); jt != current_data.end(); ++jt, ++i)
+			{
+				res_data[i]->merge(**jt);
+				delete *jt;
+			}
+		}
+		else if (res.type == AggregatedDataVariants::KEY_64)
+		{
+			AggregatedDataWithUInt64Key & res_data = res.key64;
+			AggregatedDataWithUInt64Key & current_data = current.key64;
+
+			for (typename AggregatedDataWithUInt64Key::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			{
+				AggregatedDataWithUInt64Key::iterator res_it;
+				bool inserted;
+				res_data.emplace(it->first, res_it, inserted);
+
+				if (!inserted)
+				{
+					size_t i = 1;
+					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+					{
+						res_it->second[i]->merge(**jt);
+						delete *jt;
+					}
+				}
+				else
+					res_it->second = it->second;
+			}
+		}
+		else if (res.type == AggregatedDataVariants::KEY_STRING)
+		{
+			AggregatedDataWithStringKey & res_data = res.key_string;
+			AggregatedDataWithStringKey & current_data = current.key_string;
+			
+			for (typename AggregatedDataWithStringKey::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			{
+				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
+				if (!res_row.empty())
+				{
+					size_t i = 1;
+					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+					{
+						res_row[i]->merge(**jt);
+						delete *jt;
+					}
+				}
+				else
+					res_row = it->second;
+			}
+		}
+		else if (res.type == AggregatedDataVariants::HASHED)
+		{
+			AggregatedDataHashed & res_data = res.hashed;
+			AggregatedDataHashed & current_data = current.hashed;
+
+			for (typename AggregatedDataHashed::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			{
+				AggregatedDataHashed::iterator res_it;
+				bool inserted;
+				res_data.emplace(it->first, res_it, inserted);
+
+				if (!inserted)
+				{
+					size_t i = 1;
+					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.second.begin(); jt != it->second.second.end(); ++jt, ++i)
+					{
+						res_it->second.second[i]->merge(**jt);
+						delete *jt;
+					}
+				}
+				else
+					res_it->second = it->second;
+			}
+		}
+		else if (res.type == AggregatedDataVariants::GENERIC)
+		{
+			AggregatedData & res_data = res.generic;
+			AggregatedData & current_data = current.generic;
+
+			for (typename AggregatedData::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			{
+				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
+				if (!res_row.empty())
+				{
+					size_t i = 1;
+					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+					{
+						res_row[i]->merge(**jt);
+						delete *jt;
+					}
+				}
+				else
+					res_row = it->second;
+			}
+		}
+		else
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
+
+	return data_variants[0];
 }
 
 

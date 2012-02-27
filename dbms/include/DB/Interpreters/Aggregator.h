@@ -88,7 +88,20 @@ struct AggregatedDataVariants
 	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 	  */ 
 	AggregatedDataHashed hashed;
+
+	enum Type
+	{
+		GENERIC,
+		WITHOUT_KEY,
+		KEY_64,
+		KEY_STRING,
+		HASHED,
+	};
+	Type type;
 };
+
+typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
+typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 
 
 /** Агрегирует поток блоков.
@@ -99,10 +112,17 @@ public:
 	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_) : keys(keys_), aggregates(aggregates_) {};
 	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_) : key_names(key_names_), aggregates(aggregates_) {};
 
+	/// Агрегировать поток. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
 	/// Получить пример блока, описывающего результат. Следует вызывать только после execute.
 	Block getSampleBlock() { return sample; }
+
+	/// Преобразовать структуру данных агрегации в блок.
+	Block convertToBlock(AggregatedDataVariants & data_variants);
+
+	/// Объединить несколько структуру данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
+	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants);
 
 private:
 	ColumnNumbers keys;

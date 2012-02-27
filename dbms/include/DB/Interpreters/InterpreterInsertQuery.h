@@ -12,7 +12,7 @@ namespace DB
 class InterpreterInsertQuery
 {
 public:
-	InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_, size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
+	InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_, size_t max_threads_ = DEFAULT_MAX_THREADS, size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
 
 	/** Выполнить запрос.
 	  * remaining_data_istr, если не NULL, может содержать нераспарсенные данные для вставки.
@@ -25,6 +25,7 @@ private:
 	
 	ASTPtr query_ptr;
 	Context context;
+	size_t max_threads;
 	size_t max_block_size;
 };
 

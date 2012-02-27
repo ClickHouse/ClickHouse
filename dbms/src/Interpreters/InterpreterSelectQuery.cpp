@@ -8,6 +8,7 @@
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
+#include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -25,8 +26,8 @@ namespace DB
 {
 
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_, size_t max_block_size_)
-	: query_ptr(query_ptr_), context(context_), max_block_size(max_block_size_)
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_, size_t max_threads_, size_t max_block_size_)
+	: query_ptr(query_ptr_), context(context_), max_threads(max_threads_), max_block_size(max_block_size_)
 {
 }
 
@@ -70,7 +71,7 @@ void InterpreterSelectQuery::setColumns()
 
 	context.columns = !query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
 		? getTable()->getColumnsList()
-		: InterpreterSelectQuery(query.table, context, max_block_size).getSampleBlock().getColumnsList();
+		: InterpreterSelectQuery(query.table, context, max_threads, max_block_size).getSampleBlock().getColumnsList();
 
 	if (context.columns.empty())
 		throw Exception("There is no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
@@ -108,7 +109,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
 		table = getTable();
 	else
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context, max_block_size);
+		interpreter_subquery = new InterpreterSelectQuery(query.table, context, max_threads, max_block_size);
 	
 	/// Объект, с помощью которого анализируется запрос.
 	Poco::SharedPtr<Expression> expression = new Expression(query_ptr, context);
@@ -141,21 +142,37 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		block_size = limit_length + limit_offset;
 	}
 
-	/// Поток данных.
-	BlockInputStreamPtr stream;
+	/** Потоки данных. При параллельном выполнении запроса, имеем несколько потоков данных.
+	  * Если нет GROUP BY, то выполним все операции до ORDER BY и LIMIT параллельно, затем
+	  *  если есть ORDER BY, то склеим потоки с помощью UnionBlockInputStream, а затем MergеSortingBlockInputStream,
+	  *  если нет, то склеим с помощью UnionBlockInputStream,
+	  *  затем применим LIMIT.
+	  * Если есть GROUP BY, то выполним все операции до GROUP BY, включительно, параллельно;
+	  *  параллельный GROUP BY склеит потоки в один,
+	  *  затем выполним остальные операции с одним получившимся потоком.
+	  */
+	BlockInputStreams streams(max_threads);
 
-	/// Инициализируем изначальный поток данных, на который накладываются преобразования запроса. Таблица или подзапрос?
+	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-		stream = new AsynchronousBlockInputStream(new UnionBlockInputStream(table->read(required_columns, query_ptr, block_size, 10), 10));
+		streams = table->read(required_columns, query_ptr, block_size, max_threads);
 	else
-		stream = new AsynchronousBlockInputStream(interpreter_subquery->execute());
+	{
+		streams[0] = new AsynchronousBlockInputStream(interpreter_subquery->execute());
+		streams.resize(1);
+	}
 
 	/// Если есть условие WHERE - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.where_expression)
 	{
 		setPartID(query.where_expression, PART_WHERE);
-		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_WHERE));
-		stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
+
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
+			BlockInputStreamPtr & stream = *it;
+			stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_WHERE));
+			stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
+		}
 	}
 
 	/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
@@ -165,9 +182,25 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 		if (query.group_expression_list)
 			setPartID(query.group_expression_list, PART_GROUP);
-		
-		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_GROUP | PART_BEFORE_AGGREGATING));
-		stream = new AsynchronousBlockInputStream(new AggregatingBlockInputStream(stream, expression));
+
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
+			BlockInputStreamPtr & stream = *it;
+			stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_GROUP | PART_BEFORE_AGGREGATING));
+		}
+
+		BlockInputStreamPtr & stream = streams[0];
+
+		/// Если потоков несколько, то выполняем параллельную агрегацию
+		if (streams.size() > 1)
+		{
+			stream = new AsynchronousBlockInputStream(new ParallelAggregatingBlockInputStream(streams, expression, max_threads));
+			streams.resize(1);
+		}
+		else
+			stream = new AsynchronousBlockInputStream(new AggregatingBlockInputStream(stream, expression));
+
+		/// Финализируем агрегатные функции - заменяем их состояния вычислений на готовые значения
 		stream = new AsynchronousBlockInputStream(new FinalizingAggregatedBlockInputStream(stream));
 	}
 
@@ -175,23 +208,33 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (query.having_expression)
 	{
 		setPartID(query.having_expression, PART_HAVING);
-		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_HAVING));
-		stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
+
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
+			BlockInputStreamPtr & stream = *it;
+			stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_HAVING));
+			stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
+		}
 	}
 
 	/// Выполним оставшуюся часть выражения
 	setPartID(query.select_expression_list, PART_SELECT);
 	if (query.order_expression_list)
 		setPartID(query.order_expression_list, PART_ORDER);
-	stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER));
 
-	/** Оставим только столбцы, нужные для SELECT и ORDER BY части.
-	  * Если нет ORDER BY - то это последняя проекция, и нужно брать только столбцы из SELECT части.
-	  */
-	stream = new ProjectionBlockInputStream(stream, expression,
-		query.order_expression_list ? true : false,
-		PART_SELECT | PART_ORDER,
-		query.order_expression_list ? NULL : query.select_expression_list);
+	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	{
+		BlockInputStreamPtr & stream = *it;
+		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER));
+
+		/** Оставим только столбцы, нужные для SELECT и ORDER BY части.
+		  * Если нет ORDER BY - то это последняя проекция, и нужно брать только столбцы из SELECT части.
+		  */
+		stream = new ProjectionBlockInputStream(stream, expression,
+			query.order_expression_list ? true : false,
+			PART_SELECT | PART_ORDER,
+			query.order_expression_list ? NULL : query.select_expression_list);
+	}
 	
 	/// Если есть ORDER BY
 	if (query.order_expression_list)
@@ -206,12 +249,36 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
 		}
 
-		stream = new AsynchronousBlockInputStream(new PartialSortingBlockInputStream(stream, order_descr));
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
+			BlockInputStreamPtr & stream = *it;
+			stream = new AsynchronousBlockInputStream(new PartialSortingBlockInputStream(stream, order_descr));
+		}
+
+		BlockInputStreamPtr & stream = streams[0];
+
+		/// Если потоков несколько, то объединяем их в один
+		if (streams.size() > 1)
+		{
+			stream = new UnionBlockInputStream(streams, max_threads);
+			streams.resize(1);
+		}
+
+		/// Сливаем сортированные блоки
 		stream = new AsynchronousBlockInputStream(new MergeSortingBlockInputStream(stream, order_descr));
 
 		/// Оставим только столбцы, нужные для SELECT части
 		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT, query.select_expression_list);
 	}
+
+	/// Если до сих пор есть несколько потоков, то объединяем их в один
+	if (streams.size() > 1)
+	{
+		streams[0] = new UnionBlockInputStream(streams, max_threads);
+		streams.resize(1);
+	}
+
+	BlockInputStreamPtr & stream = streams[0];
 	
 	/// Если есть LIMIT
 	if (query.limit_length)

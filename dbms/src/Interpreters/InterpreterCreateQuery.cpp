@@ -23,8 +23,8 @@ namespace DB
 {
 
 
-InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_, size_t max_block_size_)
-	: query_ptr(query_ptr_), context(context_), max_block_size(max_block_size_)
+InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_, size_t max_threads_, size_t max_block_size_)
+	: query_ptr(query_ptr_), context(context_), max_threads(max_threads_), max_block_size(max_block_size_)
 {
 }
 	
@@ -94,7 +94,7 @@ StoragePtr InterpreterCreateQuery::execute()
 
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
 	if (create.select)
-		interpreter_select = new InterpreterSelectQuery(create.select, context, max_block_size);
+		interpreter_select = new InterpreterSelectQuery(create.select, context, max_threads, max_block_size);
 
 	/// Получаем список столбцов
 	if (create.columns)

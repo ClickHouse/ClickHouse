@@ -1,6 +1,10 @@
 #pragma once
 
+#include <vector>
+
 #include <Poco/Exception.h>
+#include <Poco/SharedPtr.h>
+
 #include <DB/Core/StackTrace.h>
 
 
@@ -27,5 +31,10 @@ public:
 private:
 	StackTrace trace;
 };
+
+using Poco::SharedPtr;
+
+typedef SharedPtr<Exception> ExceptionPtr;
+typedef std::vector<ExceptionPtr> Exceptions;
 
 }

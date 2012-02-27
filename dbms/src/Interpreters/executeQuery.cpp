@@ -13,6 +13,7 @@ void executeQuery(
 	Context & context,
 	BlockInputStreamPtr & query_plan,
 	size_t max_query_size,
+	size_t max_threads,
 	size_t max_block_size)
 {
 	DB::ParserQuery parser;
@@ -58,7 +59,7 @@ void executeQuery(
 	formatAST(*ast, std::cerr);
 	std::cerr << std::endl;
 
-	InterpreterQuery interpreter(ast, context, max_block_size);
+	InterpreterQuery interpreter(ast, context, max_threads, max_block_size);
 	interpreter.execute(ostr, &istr, query_plan);
 }
 
