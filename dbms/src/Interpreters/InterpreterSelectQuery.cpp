@@ -151,16 +151,16 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	  *  параллельный GROUP BY склеит потоки в один,
 	  *  затем выполним остальные операции с одним получившимся потоком.
 	  */
-	BlockInputStreams streams(max_threads);
+	BlockInputStreams streams;
 
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
 		streams = table->read(required_columns, query_ptr, block_size, max_threads);
 	else
-	{
-		streams[0] = new AsynchronousBlockInputStream(interpreter_subquery->execute());
-		streams.resize(1);
-	}
+		streams.push_back(new AsynchronousBlockInputStream(interpreter_subquery->execute()));
+
+	if (streams.empty())
+		throw Exception("No streams returned from table.", ErrorCodes::NO_STREAMS_RETURNED_FROM_TABLE);
 
 	/// Если есть условие WHERE - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.where_expression)

@@ -1,5 +1,8 @@
 #include <iomanip>
 
+/*#include <Poco/Mutex.h>
+#include <Poco/Ext/ThreadNumber.h>*/
+
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
@@ -90,9 +93,12 @@ Block IProfilingBlockInputStream::read()
 
 /*	if (res)
 	{
+		static Poco::FastMutex mutex;
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		
 		std::cerr << std::endl;
-		std::cerr << getName() << std::endl;
-		std::cerr << res.dumpNames() << std::endl;
+		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getName() << std::endl;
+		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << res.dumpNames() << std::endl;
 	}*/
 
 	return res;

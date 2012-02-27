@@ -43,9 +43,9 @@ Block LogBlockInputStream::readImpl()
 
 		if (column.column->size())
 			res.insert(column);
-
-		rows_read += column.column->size();
 	}
+
+	rows_read += res.getByPosition(0).column->size();
 
 	return res;
 }
@@ -148,10 +148,10 @@ BlockInputStreams StorageLog::read(
 
 	for (size_t thread = 0; thread < max_threads; ++thread)
 	{
-		std::cerr << "Thread " << thread << ", mark " << thread * marks_size / max_threads
+/*		std::cerr << "Thread " << thread << ", mark " << thread * marks_size / max_threads
 			<< ", rows " << (thread == 0
 				? marks[marks_size / max_threads - 1].rows
-				: (marks[(thread + 1) * marks_size / max_threads - 1].rows - marks[thread * marks_size / max_threads - 1].rows)) << std::endl;
+				: (marks[(thread + 1) * marks_size / max_threads - 1].rows - marks[thread * marks_size / max_threads - 1].rows)) << std::endl;*/
 		
 		res.push_back(new LogBlockInputStream(
 			max_block_size,

@@ -490,7 +490,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_variants)
 {
 	if (data_variants.empty())
-		throw Exception("Empty data passed to Aggregator::merge().", ErrorCodes::EMPTY_DATA_PASSED);
+ 		throw Exception("Empty data passed to Aggregator::merge().", ErrorCodes::EMPTY_DATA_PASSED);
 
 	AggregatedDataVariants & res = *data_variants[0];
 
@@ -528,7 +528,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 				if (!inserted)
 				{
-					size_t i = 1;
+					size_t i = 0;
 					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
 					{
 						res_it->second[i]->merge(**jt);
@@ -549,7 +549,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
 				if (!res_row.empty())
 				{
-					size_t i = 1;
+					size_t i = 0;
 					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
 					{
 						res_row[i]->merge(**jt);
@@ -573,7 +573,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 				if (!inserted)
 				{
-					size_t i = 1;
+					size_t i = 0;
 					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.second.begin(); jt != it->second.second.end(); ++jt, ++i)
 					{
 						res_it->second.second[i]->merge(**jt);
@@ -594,7 +594,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
 				if (!res_row.empty())
 				{
-					size_t i = 1;
+					size_t i = 0;
 					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
 					{
 						res_row[i]->merge(**jt);
