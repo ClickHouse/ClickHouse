@@ -520,7 +520,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			AggregatedDataWithUInt64Key & res_data = res.key64;
 			AggregatedDataWithUInt64Key & current_data = current.key64;
 
-			for (typename AggregatedDataWithUInt64Key::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			for (AggregatedDataWithUInt64Key::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
 				AggregatedDataWithUInt64Key::iterator res_it;
 				bool inserted;
@@ -544,7 +544,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			AggregatedDataWithStringKey & res_data = res.key_string;
 			AggregatedDataWithStringKey & current_data = current.key_string;
 			
-			for (typename AggregatedDataWithStringKey::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			for (AggregatedDataWithStringKey::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
 				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
 				if (!res_row.empty())
@@ -565,7 +565,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			AggregatedDataHashed & res_data = res.hashed;
 			AggregatedDataHashed & current_data = current.hashed;
 
-			for (typename AggregatedDataHashed::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			for (AggregatedDataHashed::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
 				AggregatedDataHashed::iterator res_it;
 				bool inserted;
@@ -589,7 +589,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			AggregatedData & res_data = res.generic;
 			AggregatedData & current_data = current.generic;
 
-			for (typename AggregatedData::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			for (AggregatedData::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
 				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
 				if (!res_row.empty())
