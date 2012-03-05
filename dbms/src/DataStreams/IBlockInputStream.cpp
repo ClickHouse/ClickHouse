@@ -38,7 +38,7 @@ void IBlockInputStream::dumpTreeWithProfile(std::ostream & ostr, size_t indent)
 	}
 	
 	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		(*it)->dumpTree(ostr, indent + 1);
+		(*it)->dumpTreeWithProfile(ostr, indent + 1);
 }
 
 
