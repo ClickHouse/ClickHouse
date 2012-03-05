@@ -188,7 +188,7 @@ public:
 			else
 				++ptr;
 
-			while (ZeroTraits::check(ptr->first) && ptr < container->buf + container->buf_size())
+			while (ptr < container->buf + container->buf_size() && ZeroTraits::check(ptr->first))
 				++ptr;
 
 			return *this;
@@ -222,7 +222,7 @@ public:
 			else
 				++ptr;
 
-			while (ZeroTraits::check(ptr->first) && ptr < container->buf + container->buf_size())
+			while (ptr < container->buf + container->buf_size() && ZeroTraits::check(ptr->first))
 				++ptr;
 
 			return *this;
@@ -239,7 +239,7 @@ public:
 			return const_iterator(this, zero_value());
 
 		const Value * ptr = buf;
-		while (ZeroTraits::check(ptr->first) && ptr < buf + buf_size())
+		while (ptr < buf + buf_size() && ZeroTraits::check(ptr->first))
 			++ptr;
 
 		return const_iterator(this, ptr);
@@ -251,7 +251,7 @@ public:
 			return iterator(this, zero_value());
 
 		Value * ptr = buf;
-		while (ZeroTraits::check(ptr->first) && ptr < buf + buf_size())
+		while (ptr < buf + buf_size() && ZeroTraits::check(ptr->first))
 			++ptr;
 
 		return iterator(this, ptr);

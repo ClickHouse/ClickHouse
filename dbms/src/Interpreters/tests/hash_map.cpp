@@ -118,7 +118,7 @@ int main(int argc, char ** argv)
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
 	}
-/*
+
 	{
 		Stopwatch watch;
 
@@ -133,9 +133,9 @@ int main(int argc, char ** argv)
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
-	}*/
+	}
 
-	/*{
+	{
 		Stopwatch watch;
 
 		google::sparse_hash_map<Key, Value> map;
@@ -148,7 +148,7 @@ int main(int argc, char ** argv)
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
-	}*/
+	}
 	
 	return 0;
 }
