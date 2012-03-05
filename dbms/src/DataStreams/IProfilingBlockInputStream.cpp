@@ -88,18 +88,27 @@ Block IProfilingBlockInputStream::read()
 	Block res = readImpl();
 	info.work_stopwatch.stop();
 
-	if (res)
-		info.update(res);
-
 /*	if (res)
 	{
 		static Poco::FastMutex mutex;
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		
+
 		std::cerr << std::endl;
 		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getName() << std::endl;
-		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << res.dumpNames() << std::endl;
+		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t";
+
+		for (size_t i = 0; i < res.columns(); ++i)
+		{
+			if (i != 0)
+				std::cerr << ", ";
+			std::cerr << res.getByPosition(i).name << " (" << res.getByPosition(i).column->size() << ")";
+		}
+		
+		std::cerr << std::endl;
 	}*/
+	
+	if (res)
+		info.update(res);
 
 	return res;
 }

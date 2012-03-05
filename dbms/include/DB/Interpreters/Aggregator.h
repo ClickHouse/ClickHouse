@@ -5,6 +5,8 @@
 #include <map>
 #include <tr1/unordered_map>
 
+#include <Poco/Mutex.h>
+
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/Core/Names.h>
 #include <DB/DataStreams/IBlockInputStream.h>
@@ -104,15 +106,15 @@ typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
 typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 
 
-/** Агрегирует поток блоков.
+/** Агрегирует источник блоков.
   */
 class Aggregator
 {
 public:
-	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_) : keys(keys_), aggregates(aggregates_) {};
-	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_) : key_names(key_names_), aggregates(aggregates_) {};
+	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_) : keys(keys_), aggregates(aggregates_), initialized(false) {};
+	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_) : key_names(key_names_), aggregates(aggregates_), initialized(false) {};
 
-	/// Агрегировать поток. Получить результат в виде одной из структур данных.
+	/// Агрегировать источник. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
 	/// Получить пример блока, описывающего результат. Следует вызывать только после execute.
@@ -129,7 +131,16 @@ private:
 	Names key_names;
 	AggregateDescriptions aggregates;
 
+	/// Для инициализации от первого блока при конкуррентном использовании.
+	bool initialized;
+	Poco::FastMutex mutex;
+
 	Block sample;
+
+	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
+	  * Сформировать блок - пример результата.
+	  */
+	void initialize(Block & block);
 };
 
 

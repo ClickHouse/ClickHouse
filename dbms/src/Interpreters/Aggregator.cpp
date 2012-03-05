@@ -108,6 +108,50 @@ public:
 };
 
 
+void Aggregator::initialize(Block & block)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
+	if (initialized)
+		return;
+
+	initialized = true;
+	
+	/// Преобразуем имена столбцов в номера, если номера не заданы
+	if (keys.empty() && !key_names.empty())
+		for (Names::const_iterator it = key_names.begin(); it != key_names.end(); ++it)
+			keys.push_back(block.getPositionByName(*it));
+
+	for (AggregateDescriptions::iterator it = aggregates.begin(); it != aggregates.end(); ++it)
+		if (it->arguments.empty() && !it->argument_names.empty())
+			for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
+				it->arguments.push_back(block.getPositionByName(*jt));
+
+	/// Создадим пример блока, описывающего результат
+	if (!sample)
+	{
+		for (size_t i = 0, size = keys.size(); i < size; ++i)
+			sample.insert(block.getByPosition(keys[i]).cloneEmpty());
+
+		for (size_t i = 0, size = aggregates.size(); i < size; ++i)
+		{
+			ColumnWithNameAndType col;
+			col.name = aggregates[i].column_name;
+			col.type = new DataTypeAggregateFunction;
+			col.column = new ColumnAggregateFunction;
+
+			sample.insert(col);
+		}
+
+		/// Вставим в блок результата все столбцы-константы из исходного блока, так как они могут ещё пригодиться.
+		size_t columns = block.columns();
+		for (size_t i = 0; i < columns; ++i)
+			if (block.getByPosition(i).column->isConst())
+				sample.insert(block.getByPosition(i).cloneEmpty());
+	}
+}
+
+
 /** Результат хранится в оперативке и должен полностью помещаться в оперативку.
   */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
@@ -126,15 +170,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
-		/// Преобразуем имена столбцов в номера, если номера не заданы
-		if (keys.empty() && !key_names.empty())
-			for (Names::const_iterator it = key_names.begin(); it != key_names.end(); ++it)
-				keys.push_back(block.getPositionByName(*it));
-
-		for (AggregateDescriptions::iterator it = aggregates.begin(); it != aggregates.end(); ++it)
-			if (it->arguments.empty() && !it->argument_names.empty())
-				for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
-					it->arguments.push_back(block.getPositionByName(*jt));
+		initialize(block);
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 		{
@@ -149,29 +185,6 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		for (size_t i = 0; i < aggregates_size; ++i)
 			for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
 				aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
-
-		/// Создадим пример блока, описывающего результат
-		if (!sample)
-		{
-			for (size_t i = 0, size = keys_size; i < size; ++i)
-				sample.insert(block.getByPosition(keys[i]).cloneEmpty());
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-			{
-				ColumnWithNameAndType col;
-				col.name = aggregates[i].column_name;
-				col.type = new DataTypeAggregateFunction;
-				col.column = new ColumnAggregateFunction;
-
-				sample.insert(col);
-			}
-
-			/// Вставим в блок результата все столбцы-константы из исходного блока, так как они могут ещё пригодиться.
-			size_t columns = block.columns();
-			for (size_t i = 0; i < columns; ++i)
-				if (block.getByPosition(i).column->isConst())
-					sample.insert(block.getByPosition(i).cloneEmpty());
-		}
 
 		size_t rows = block.rows();
 
