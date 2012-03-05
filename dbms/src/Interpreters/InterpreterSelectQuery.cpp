@@ -164,7 +164,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-		streams = table->read(required_columns, query_ptr, block_size, context.settings.max_threads);
+ 		streams = table->read(required_columns, query_ptr, block_size, context.settings.max_threads);
 	else
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), context.settings.asynchronous));
 

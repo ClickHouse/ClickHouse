@@ -10,6 +10,11 @@ Block MergeSortingBlockInputStream::readImpl()
 	  * - прочитать в оперативку все блоки;
 	  * - объединять по два соседних блока;
 	  */
+
+	if (has_been_read)
+		return Block();
+	
+	has_been_read = true;
 	
 	typedef std::list<Block> Blocks;
 	Blocks blocks;

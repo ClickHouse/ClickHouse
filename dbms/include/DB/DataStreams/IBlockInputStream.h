@@ -35,6 +35,7 @@ public:
 	/** Для вывода дерева преобразований потока данных (плана выполнения запроса).
 	  */
 	virtual String getName() const = 0;
+	virtual String getShortName() const;	/// То же самое, но без BlockInputStream на конце.
 
 	/** Создать копию объекта.
 	  * Предполагается, что функция вызывается только до использования объекта (сразу после создания, до вызова других методов),
@@ -43,7 +44,9 @@ public:
 	virtual BlockInputStreamPtr clone() = 0;
 
 	BlockInputStreams & getChildren() { return children; }
+	
 	void dumpTree(std::ostream & ostr, size_t indent = 0);
+	void dumpTreeWithProfile(std::ostream & ostr, size_t indent = 0);
 
 protected:
 	BlockInputStreams children;

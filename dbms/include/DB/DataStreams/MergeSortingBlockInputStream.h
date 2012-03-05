@@ -14,7 +14,7 @@ class MergeSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_)
-		: input(input_), description(description_)
+		: input(input_), description(description_), has_been_read(false)
 	{
 		children.push_back(input);
 	}
@@ -28,6 +28,9 @@ public:
 private:
 	BlockInputStreamPtr input;
 	SortDescription description;
+
+	/// Всё было прочитано
+	bool has_been_read;
 
 	void merge(Block & left, Block & right);
 };

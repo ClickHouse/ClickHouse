@@ -47,6 +47,12 @@ public:
 
 	BlockInputStreamPtr clone() { return new AsynchronousBlockInputStream(in); }
 
+    ~AsynchronousBlockInputStream()
+	{
+		if (started)
+			pool.wait();
+	}
+
 protected:
 	BlockInputStreamPtr in;
 	boost::threadpool::pool pool;

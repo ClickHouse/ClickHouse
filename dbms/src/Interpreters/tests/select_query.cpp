@@ -199,7 +199,10 @@ int main(int argc, char ** argv)
 		if (query_plan)
 		{
 			std::cerr << std::endl;
+			query_plan->dumpTreeWithProfile(std::cerr);
+			std::cerr << std::endl;
 			query_plan->dumpTree(std::cerr);
+			std::cerr << std::endl;
 		}
 	}
 	catch (const DB::Exception & e)

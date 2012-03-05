@@ -45,7 +45,8 @@ Block LogBlockInputStream::readImpl()
 			res.insert(column);
 	}
 
-	rows_read += res.getByPosition(0).column->size();
+	if (res)
+		rows_read += res.getByPosition(0).column->size();
 
 	return res;
 }
