@@ -16,8 +16,8 @@ namespace DB
 {
 
 
-InterpreterInsertQuery::InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_, size_t max_threads_, size_t max_block_size_)
-	: query_ptr(query_ptr_), context(context_), max_threads(max_threads_), max_block_size(max_block_size_)
+InterpreterInsertQuery::InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_)
+	: query_ptr(query_ptr_), context(context_)
 {
 }
 
@@ -73,12 +73,12 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		ConcatReadBuffer istr(buffers);
 		Block sample = table->getSampleBlock();
 
-		in = format_factory.getInput(format, istr, sample, max_block_size, *context.data_type_factory);
+		in = format_factory.getInput(format, istr, sample, context.settings.max_block_size, *context.data_type_factory);
 		copyData(*in, *out);
 	}
 	else
 	{
-		InterpreterSelectQuery interpreter_select(query.select, context, max_threads, max_block_size);
+		InterpreterSelectQuery interpreter_select(query.select, context);
 		in = interpreter_select.execute();
 		in = new MaterializingBlockInputStream(in);
 		copyData(*in, *out);

@@ -12,6 +12,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
+#include <DB/Interpreters/Settings.h>
 
 
 namespace DB
@@ -41,6 +42,7 @@ struct Context
 	DataTypeFactoryPtr data_type_factory;					/// Типы данных.
 	StorageFactoryPtr storage_factory;						/// Движки таблиц.
 	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
+	Settings settings;										/// Настройки выполнения запроса.
 
 	SharedPtr<Poco::FastMutex> mutex;	/// Для доступа и модификации разделяемых объектов.
 

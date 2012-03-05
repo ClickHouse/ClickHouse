@@ -13,7 +13,7 @@ namespace DB
 class InterpreterSelectQuery
 {
 public:
-	InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_, size_t max_threads_ = DEFAULT_MAX_THREADS, size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
+	InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_);
 
 	/// Выполнить запрос, получить поток блоков для чтения
 	BlockInputStreamPtr execute();
@@ -51,8 +51,6 @@ private:
 
 	ASTPtr query_ptr;
 	Context context;
-	size_t max_threads;
-	size_t max_block_size;
 };
 
 

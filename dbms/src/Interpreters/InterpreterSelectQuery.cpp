@@ -26,8 +26,8 @@ namespace DB
 {
 
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_, size_t max_threads_, size_t max_block_size_)
-	: query_ptr(query_ptr_), context(context_), max_threads(max_threads_), max_block_size(max_block_size_)
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_)
+	: query_ptr(query_ptr_), context(context_)
 {
 }
 
@@ -71,7 +71,7 @@ void InterpreterSelectQuery::setColumns()
 
 	context.columns = !query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
 		? getTable()->getColumnsList()
-		: InterpreterSelectQuery(query.table, context, max_threads, max_block_size).getSampleBlock().getColumnsList();
+		: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList();
 
 	if (context.columns.empty())
 		throw Exception("There is no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
@@ -94,6 +94,15 @@ Block InterpreterSelectQuery::getSampleBlock()
 }
 
 
+/// Превращает источник в асинхронный, если это указано.
+static inline BlockInputStreamPtr maybeAsynchronous(BlockInputStreamPtr in, bool is_async)
+{
+	return is_async
+		? new AsynchronousBlockInputStream(in)
+		: in;
+}
+
+
 BlockInputStreamPtr InterpreterSelectQuery::execute()
 {
 	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
@@ -109,7 +118,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
 		table = getTable();
 	else
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context, max_threads, max_block_size);
+		interpreter_subquery = new InterpreterSelectQuery(query.table, context);
 	
 	/// Объект, с помощью которого анализируется запрос.
 	Poco::SharedPtr<Expression> expression = new Expression(query_ptr, context);
@@ -135,7 +144,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
 	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
 	  */
-	size_t block_size = max_block_size;
+	size_t block_size = context.settings.max_block_size;
 	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
 		&& query.limit_length && !need_aggregate && limit_length + limit_offset < block_size)
 	{
@@ -155,9 +164,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-		streams = table->read(required_columns, query_ptr, block_size, max_threads);
+		streams = table->read(required_columns, query_ptr, block_size, context.settings.max_threads);
 	else
-		streams.push_back(new AsynchronousBlockInputStream(interpreter_subquery->execute()));
+		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), context.settings.asynchronous));
 
 	if (streams.empty())
 		throw Exception("No streams returned from table.", ErrorCodes::NO_STREAMS_RETURNED_FROM_TABLE);
@@ -170,8 +179,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_WHERE));
-			stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
+			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_WHERE), context.settings.asynchronous);
+			stream = maybeAsynchronous(new FilterBlockInputStream(stream), context.settings.asynchronous);
 		}
 	}
 
@@ -186,7 +195,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_GROUP | PART_BEFORE_AGGREGATING));
+			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_GROUP | PART_BEFORE_AGGREGATING), context.settings.asynchronous);
 		}
 
 		BlockInputStreamPtr & stream = streams[0];
@@ -194,14 +203,14 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		/// Если потоков несколько, то выполняем параллельную агрегацию
 		if (streams.size() > 1)
 		{
-			stream = new AsynchronousBlockInputStream(new ParallelAggregatingBlockInputStream(streams, expression, max_threads));
+			stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, context.settings.max_threads), context.settings.asynchronous);
 			streams.resize(1);
 		}
 		else
-			stream = new AsynchronousBlockInputStream(new AggregatingBlockInputStream(stream, expression));
+			stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, expression), context.settings.asynchronous);
 
 		/// Финализируем агрегатные функции - заменяем их состояния вычислений на готовые значения
-		stream = new AsynchronousBlockInputStream(new FinalizingAggregatedBlockInputStream(stream));
+		stream = maybeAsynchronous(new FinalizingAggregatedBlockInputStream(stream), context.settings.asynchronous);
 	}
 
 	/// Если есть условие HAVING - сначала выполним часть выражения, необходимую для его вычисления
@@ -212,8 +221,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_HAVING));
-			stream = new AsynchronousBlockInputStream(new FilterBlockInputStream(stream));
+			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_HAVING), context.settings.asynchronous);
+			stream = maybeAsynchronous(new FilterBlockInputStream(stream), context.settings.asynchronous);
 		}
 	}
 
@@ -225,7 +234,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 	{
 		BlockInputStreamPtr & stream = *it;
-		stream = new AsynchronousBlockInputStream(new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER));
+		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_SELECT | PART_ORDER), context.settings.asynchronous);
 
 		/** Оставим только столбцы, нужные для SELECT и ORDER BY части.
 		  * Если нет ORDER BY - то это последняя проекция, и нужно брать только столбцы из SELECT части.
@@ -252,7 +261,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = new AsynchronousBlockInputStream(new PartialSortingBlockInputStream(stream, order_descr));
+			stream = maybeAsynchronous(new PartialSortingBlockInputStream(stream, order_descr), context.settings.asynchronous);
 		}
 
 		BlockInputStreamPtr & stream = streams[0];
@@ -260,12 +269,12 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		/// Если потоков несколько, то объединяем их в один
 		if (streams.size() > 1)
 		{
-			stream = new UnionBlockInputStream(streams, max_threads);
+			stream = new UnionBlockInputStream(streams, context.settings.max_threads);
 			streams.resize(1);
 		}
 
 		/// Сливаем сортированные блоки
-		stream = new AsynchronousBlockInputStream(new MergeSortingBlockInputStream(stream, order_descr));
+		stream = maybeAsynchronous(new MergeSortingBlockInputStream(stream, order_descr), context.settings.asynchronous);
 
 		/// Оставим только столбцы, нужные для SELECT части
 		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT, query.select_expression_list);
@@ -274,7 +283,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (streams.size() > 1)
 	{
-		streams[0] = new UnionBlockInputStream(streams, max_threads);
+		streams[0] = new UnionBlockInputStream(streams, context.settings.max_threads);
 		streams.resize(1);
 	}
 

@@ -11,10 +11,7 @@ void executeQuery(
 	ReadBuffer & istr,
 	WriteBuffer & ostr,
 	Context & context,
-	BlockInputStreamPtr & query_plan,
-	size_t max_query_size,
-	size_t max_threads,
-	size_t max_block_size)
+	BlockInputStreamPtr & query_plan)
 {
 	DB::ParserQuery parser;
 	DB::ASTPtr ast;
@@ -28,7 +25,7 @@ void executeQuery(
 	if (istr.buffer().size() == 0)
 		istr.next();
 
-	if (istr.buffer().end() - istr.position() >= static_cast<ssize_t>(max_query_size))
+	if (istr.buffer().end() - istr.position() >= static_cast<ssize_t>(context.settings.max_query_size))
 	{
 		/// Если оставшийся размер буфера istr достаточен, чтобы распарсить запрос до max_query_size, то парсим прямо в нём
 		begin = istr.position();
@@ -38,8 +35,8 @@ void executeQuery(
 	else
 	{
 		/// Если нет - считываем достаточное количество данных в parse_buf
-		parse_buf.resize(max_query_size);
-		parse_buf.resize(istr.read(&parse_buf[0], max_query_size));
+		parse_buf.resize(context.settings.max_query_size);
+		parse_buf.resize(istr.read(&parse_buf[0], context.settings.max_query_size));
 		begin = &parse_buf[0];
 		end = begin + parse_buf.size();
 	}
@@ -59,7 +56,7 @@ void executeQuery(
 	formatAST(*ast, std::cerr);
 	std::cerr << std::endl;
 
-	InterpreterQuery interpreter(ast, context, max_threads, max_block_size);
+	InterpreterQuery interpreter(ast, context);
 	interpreter.execute(ostr, &istr, query_plan);
 }
 

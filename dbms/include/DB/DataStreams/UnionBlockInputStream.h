@@ -121,6 +121,11 @@ public:
 
 	BlockInputStreamPtr clone() { return new UnionBlockInputStream(children, max_threads); }
 
+    ~UnionBlockInputStream()
+	{
+		pool.wait();
+	}
+
 private:
 	unsigned max_threads;
 
@@ -175,6 +180,7 @@ private:
 		}
 		catch (const Poco::Exception & e)
 		{
+			std::cerr << e.message() << std::endl;
 			data.exception = new Exception(e.message(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const std::exception & e)

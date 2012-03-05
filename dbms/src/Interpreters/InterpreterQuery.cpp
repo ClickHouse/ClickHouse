@@ -14,8 +14,8 @@ namespace DB
 {
 
 
-InterpreterQuery::InterpreterQuery(ASTPtr query_ptr_, Context & context_, size_t max_threads_, size_t max_block_size_)
-	: query_ptr(query_ptr_), context(context_), max_threads(max_threads_), max_block_size(max_block_size_)
+InterpreterQuery::InterpreterQuery(ASTPtr query_ptr_, Context & context_)
+	: query_ptr(query_ptr_), context(context_)
 {
 }
 
@@ -24,17 +24,17 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 {
 	if (dynamic_cast<ASTSelectQuery *>(&*query_ptr))
 	{
-		InterpreterSelectQuery interpreter(query_ptr, context, max_threads, max_block_size);
+		InterpreterSelectQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
 	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))
 	{
-		InterpreterInsertQuery interpreter(query_ptr, context, max_threads, max_block_size);
+		InterpreterInsertQuery interpreter(query_ptr, context);
 		interpreter.execute(remaining_data_istr);
 	}
 	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
 	{
-		InterpreterCreateQuery interpreter(query_ptr, context, max_threads, max_block_size);
+		InterpreterCreateQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
