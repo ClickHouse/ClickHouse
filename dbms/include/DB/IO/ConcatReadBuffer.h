@@ -36,6 +36,14 @@ protected:
 			++current;
 			if (buffers.end() == current)
 				return false;
+
+			/// Пропускаем закончившиеся буферы; если буфер не закончился, но курсор на конце, то прочитаем следующую порцию данных.
+			while ((*current)->eof())
+			{
+				++current;
+				if (buffers.end() == current)
+					return false;
+			}
 		}
 		
 		working_buffer = (*current)->buffer();
