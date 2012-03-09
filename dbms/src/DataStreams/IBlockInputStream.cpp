@@ -50,5 +50,27 @@ String IBlockInputStream::getShortName() const
 	return res;
 }
 
+
+BlockInputStreams IBlockInputStream::getLeaves()
+{
+	BlockInputStreams res;
+	getLeavesImpl(res);
+	return res;
+}
+
+
+void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr)
+{
+	if (children.empty())
+	{
+		if (this_shared_ptr)
+			res.push_back(this_shared_ptr);
+	}
+	else
+		for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+			(*it)->getLeavesImpl(res, *it);
+}
+
+
 }
 

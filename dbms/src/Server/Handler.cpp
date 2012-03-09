@@ -1,5 +1,9 @@
+#include <iomanip>
+
 #include <Poco/URI.h>
 #include <Poco/NumberParser.h>
+
+#include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/ErrorCodes.h>
 
@@ -7,6 +11,8 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
+
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 #include <DB/Interpreters/executeQuery.h>
 
@@ -45,7 +51,9 @@ void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, s
 	if (params.has("max_threads"))
 		context.settings.max_threads = Poco::NumberParser::parseUnsigned(params.get("max_threads"));
 
+	Stopwatch watch;
 	executeQuery(in, out, context, query_plan);
+	watch.stop();
 
 	if (query_plan)
 	{
@@ -53,6 +61,28 @@ void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, s
 		log_str << "Query plan:\n";
 		query_plan->dumpTree(log_str);
 		LOG_DEBUG(log, log_str.str());
+
+		/// Выведем информацию о том, сколько считано строк и байт.
+		BlockInputStreams leaves = query_plan->getLeaves();
+		size_t rows = 0;
+		size_t bytes = 0;
+
+		for (BlockInputStreams::const_iterator it = leaves.begin(); it != leaves.end(); ++it)
+		{
+			if (const IProfilingBlockInputStream * profiling = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+			{
+				const BlockStreamProfileInfo & info = profiling->getInfo();
+				rows += info.rows;
+				bytes += info.bytes;
+			}
+		}
+
+		if (rows != 0)
+		{
+			LOG_INFO(log, std::fixed << std::setprecision(3)
+				<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MB in " << watch.elapsedSeconds() << " sec., "
+				<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MB/sec.");
+		}
 	}
 }
 

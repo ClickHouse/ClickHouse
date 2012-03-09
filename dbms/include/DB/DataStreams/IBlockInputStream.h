@@ -48,8 +48,14 @@ public:
 	void dumpTree(std::ostream & ostr, size_t indent = 0);
 	void dumpTreeWithProfile(std::ostream & ostr, size_t indent = 0);
 
+	/// Получить листовые источники (не считая этот).
+	BlockInputStreams getLeaves();
+
 protected:
 	BlockInputStreams children;
+
+private:
+	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = NULL);
 };
 
 
