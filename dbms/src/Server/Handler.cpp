@@ -1,4 +1,5 @@
 #include <Poco/URI.h>
+#include <Poco/NumberParser.h>
 
 #include <DB/Core/ErrorCodes.h>
 
@@ -33,6 +34,16 @@ void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, s
 	ReadBufferFromIStream in(istr);
 	WriteBufferFromOStream out(ostr);
 	Context context = server.global_context;
+
+	/// Некоторые настройки могут быть переопределены в запросе.
+	if (params.has("asynchronous"))
+		context.settings.asynchronous = 0 != Poco::NumberParser::parseUnsigned(params.get("asynchronous"));
+	if (params.has("max_block_size"))
+		context.settings.max_block_size = Poco::NumberParser::parseUnsigned(params.get("max_block_size"));
+	if (params.has("max_query_size"))
+		context.settings.max_query_size = Poco::NumberParser::parseUnsigned(params.get("max_query_size"));
+	if (params.has("max_threads"))
+		context.settings.max_threads = Poco::NumberParser::parseUnsigned(params.get("max_threads"));
 
 	executeQuery(in, out, context, query_plan);
 

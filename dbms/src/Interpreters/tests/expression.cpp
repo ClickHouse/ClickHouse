@@ -5,7 +5,10 @@
 
 #include <DB/IO/WriteBufferFromOStream.h>
 
+#include <DB/Columns/ColumnString.h>
+
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Functions/FunctionsLibrary.h>
 

@@ -18,8 +18,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-#include <DB/Functions/FunctionsArithmetic.h>
-#include <DB/Functions/FunctionsComparison.h>
+#include <DB/Functions/FunctionsLibrary.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -56,9 +55,7 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 		context.columns.push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
-		(*context.functions)["modulo"] = new DB::FunctionModulo;
-		(*context.functions)["equals"] = new DB::FunctionEquals;
-		(*context.functions)["notEquals"] = new DB::FunctionNotEquals;
+		context.functions = DB::FunctionsLibrary::get();
 
 		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
 

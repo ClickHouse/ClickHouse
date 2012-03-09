@@ -40,10 +40,11 @@ struct Context
 	StorageFactoryPtr storage_factory;						/// Движки таблиц.
 	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;										/// Настройки выполнения запроса.
+	Logger * log;											/// Логгер.
 
 	mutable SharedPtr<Poco::FastMutex> mutex;				/// Для доступа и модификации разделяемых объектов.
 
-	Context() : databases(new Databases), functions(new Functions), mutex(new Poco::FastMutex) {}
+	Context() : databases(new Databases), functions(new Functions), log(&Logger::get("Context")), mutex(new Poco::FastMutex) {}
 
 	/** В сервере есть глобальный контекст.
 	  * При соединении, он копируется в контекст сессии.
@@ -63,6 +64,7 @@ struct Context
 		storage_factory				= rhs.storage_factory;
 		columns						= rhs.columns;
 		settings					= rhs.settings;
+		log							= rhs.log;
 		mutex						= rhs.mutex;
 	}
 };
