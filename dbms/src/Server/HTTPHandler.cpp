@@ -10,6 +10,8 @@
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ConcatReadBuffer.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
@@ -18,7 +20,8 @@
 
 #include <DB/Interpreters/executeQuery.h>
 
-#include "Handler.h"
+#include "HTTPHandler.h"
+
 
 
 namespace DB
@@ -37,7 +40,7 @@ struct HTMLForm : public Poco::Net::HTMLForm
 };
 
 
-void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, std::ostream & ostr, std::istream & istr)
+void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ostream & ostr, std::istream & istr)
 {
 	BlockInputStreamPtr query_plan;
 	
@@ -49,10 +52,26 @@ void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, s
 		query_param += '\n';
 	
 	ReadBufferFromString in_param(query_param);
-	ReadBufferFromIStream in_post(istr);
+	SharedPtr<ReadBuffer> in_post = new ReadBufferFromIStream(istr);
+	SharedPtr<ReadBuffer> in_post_maybe_compressed;
 
-	ConcatReadBuffer in(in_param, in_post);
-	WriteBufferFromOStream out(ostr);
+	/// Если указано decompress, то будем разжимать то, что передано POST-ом.
+	if (0 != Poco::NumberParser::parseUnsigned(params.get("decompress", "0")))
+		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
+	else
+		in_post_maybe_compressed = in_post;
+
+	ConcatReadBuffer in(in_param, *in_post_maybe_compressed);
+
+	/// Если указано compress, то будем сжимать результат.
+	SharedPtr<WriteBuffer> out = new WriteBufferFromOStream(ostr);
+	SharedPtr<WriteBuffer> out_maybe_compressed;
+
+	if (0 != Poco::NumberParser::parseUnsigned(params.get("compress", "0")))
+		out_maybe_compressed = new CompressedWriteBuffer(*out);
+	else
+		out_maybe_compressed = out;
+	
 	Context context = server.global_context;
 
 	/// Некоторые настройки могут быть переопределены в запросе.
@@ -66,7 +85,7 @@ void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, s
 		context.settings.max_threads = Poco::NumberParser::parseUnsigned(params.get("max_threads"));
 
 	Stopwatch watch;
-	executeQuery(in, out, context, query_plan);
+	executeQuery(in, *out_maybe_compressed, context, query_plan);
 	watch.stop();
 
 	if (query_plan)
@@ -101,7 +120,7 @@ void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, s
 }
 
 
-void HTTPRequestHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
 	std::ostream & ostr = response.send();
 	try

@@ -8,7 +8,8 @@
 #include <DB/Storages/StorageSystemOne.h>
 
 #include "Server.h"
-#include "Handler.h"
+#include "HTTPHandler.h"
+#include "TCPHandler.h"
 
 
 namespace DB
@@ -39,11 +40,19 @@ Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactory::createRequestHandler(
 		<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
 	if (request.getURI().find('?') != std::string::npos)
-		return new HTTPRequestHandler(server);
+		return new HTTPHandler(server);
 	else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
 		return new PingRequestHandler();
 	else
 		return 0;
+}
+
+
+Poco::Net::TCPServerConnection * TCPConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket)
+{
+	LOG_TRACE(log, "TCP Request. " << "Address: " << socket.address().toString());
+
+	return new TCPHandler(server, socket);
 }
 
 
@@ -73,19 +82,31 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.settings.max_query_size 	= config.getInt("max_query_size", 	global_context.settings.max_query_size);
 	global_context.settings.max_threads 	= config.getInt("max_threads", 		global_context.settings.max_threads);
 	
-	Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
+	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
+	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
 
 	Poco::ThreadPool server_pool(2, config.getInt("max_threads", 128));
 
-	Poco::Net::HTTPServer server(
+	Poco::Net::HTTPServer http_server(
 		new HTTPRequestHandlerFactory(*this),
 		server_pool,
-		socket,
+		http_socket,
 		new Poco::Net::HTTPServerParams);
 
-	server.start();
+	Poco::Net::TCPServer tcp_server(
+		new TCPConnectionFactory(*this),
+		server_pool,
+		tcp_socket,
+		new Poco::Net::TCPServerParams);
+
+	http_server.start();
+	tcp_server.start();
+
 	waitForTerminationRequest();
-	server.stop();
+
+	http_server.stop();
+	tcp_server.stop();
+	
 	return Application::EXIT_OK;
 }
 

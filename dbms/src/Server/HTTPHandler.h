@@ -8,12 +8,12 @@
 namespace DB
 {
 
-class HTTPRequestHandler : public Poco::Net::HTTPRequestHandler
+class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	HTTPRequestHandler(Server & server_)
+	HTTPHandler(Server & server_)
 		: server(server_)
-		, log(&Logger::get("HTTPRequestHandler"))
+		, log(&Logger::get("HTTPHandler"))
 	{
 	    LOG_TRACE(log, "In constructor.");
 	}

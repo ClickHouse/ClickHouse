@@ -10,6 +10,10 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 
+#include <Poco/Net/TCPServer.h>
+#include <Poco/Net/TCPServerConnectionFactory.h>
+#include <Poco/Net/TCPServerConnection.h>
+
 #include <Yandex/logger_useful.h>
 #include <Yandex/daemon.h>
 
@@ -32,6 +36,7 @@ namespace DB
 
 class Server;
 
+
 class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 private:
@@ -39,8 +44,20 @@ private:
 	Logger * log;
 
 public:
-	HTTPRequestHandlerFactory(Server & server_) : server(server_), log(&Logger::get("RequestHandlerFactory")) {}
+	HTTPRequestHandlerFactory(Server & server_) : server(server_), log(&Logger::get("HTTPRequestHandlerFactory")) {}
 	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request);
+};
+
+
+class TCPConnectionFactory : public Poco::Net::TCPServerConnectionFactory
+{
+private:
+	Server & server;
+	Logger * log;
+
+public:
+	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
+	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket);
 };
 
 
