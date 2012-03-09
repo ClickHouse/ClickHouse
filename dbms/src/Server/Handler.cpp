@@ -8,6 +8,8 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/ConcatReadBuffer.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
@@ -23,6 +25,7 @@ namespace DB
 {
 
 
+/// Позволяет получать параметры URL даже если запрос POST.
 struct HTMLForm : public Poco::Net::HTMLForm
 {
 	HTMLForm(Poco::Net::HTTPRequest & request)
@@ -37,7 +40,18 @@ struct HTMLForm : public Poco::Net::HTMLForm
 void HTTPRequestHandler::processQuery(Poco::Net::NameValueCollection & params, std::ostream & ostr, std::istream & istr)
 {
 	BlockInputStreamPtr query_plan;
-	ReadBufferFromIStream in(istr);
+	
+	/** Часть запроса может быть передана в параметре query, а часть - POST-ом.
+	  * В таком случае, считается, что запрос - параметр query, затем перевод строки, а затем - данные POST-а.
+	  */
+	std::string query_param = params.get("query", "");
+	if (!query_param.empty())
+		query_param += '\n';
+	
+	ReadBufferFromString in_param(query_param);
+	ReadBufferFromIStream in_post(istr);
+
+	ConcatReadBuffer in(in_param, in_post);
 	WriteBufferFromOStream out(ostr);
 	Context context = server.global_context;
 
