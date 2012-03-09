@@ -10,10 +10,15 @@ namespace DB
 
 void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent)
 {
-	ostr << String(indent, ' ') << getShortName() << std::endl;
+	/// Не будем отображать в дереве обёртку потока блоков в AsynchronousBlockInputStream.
+	if (getShortName() != "Asynchronous")
+	{
+		ostr << String(indent, ' ') << getShortName() << std::endl;
+		++indent;
+	}
 
 	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		(*it)->dumpTree(ostr, indent + 1);
+		(*it)->dumpTree(ostr, indent);
 }
 
 
