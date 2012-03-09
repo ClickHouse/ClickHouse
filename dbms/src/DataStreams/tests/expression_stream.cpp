@@ -17,7 +17,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-#include <DB/Functions/FunctionsArithmetic.h>
+#include <DB/Functions/FunctionsLibrary.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 
@@ -49,9 +49,7 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 		context.columns.push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
-		(*context.functions)["plus"] = new DB::FunctionPlus;
-		(*context.functions)["multiply"] = new DB::FunctionMultiply;
-		(*context.functions)["divide"] = new DB::FunctionDivideFloating;
+		context.functions = DB::FunctionsLibrary::get();
 
 		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
 

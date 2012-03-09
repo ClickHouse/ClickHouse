@@ -34,7 +34,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = true;
 	ast_create_query.database = database;
-	
+
 	InterpreterCreateQuery interpreter(ast, context);
 	interpreter.execute();
 }

@@ -7,9 +7,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-#include <DB/Functions/FunctionsArithmetic.h>
-#include <DB/Functions/FunctionsComparison.h>
-#include <DB/Functions/FunctionsLogical.h>
+#include <DB/Functions/FunctionsLibrary.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
@@ -110,25 +108,8 @@ int main(int argc, char ** argv)
 		context.columns.push_back(DB::NameAndTypePair("s1", new DB::DataTypeString));
 		context.columns.push_back(DB::NameAndTypePair("s2", new DB::DataTypeString));
 
-		(*context.functions)["plus"] 			= new DB::FunctionPlus;
-		(*context.functions)["minus"] 			= new DB::FunctionMinus;
-		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
-		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
-		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
-		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
+		context.functions = DB::FunctionsLibrary::get();
 		
-		(*context.functions)["equals"] 			= new DB::FunctionEquals;
-		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
-		(*context.functions)["less"] 			= new DB::FunctionLess;
-		(*context.functions)["greater"] 		= new DB::FunctionGreater;
-		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
-		(*context.functions)["greaterOrEquals"] = new DB::FunctionGreaterOrEquals;
-
-		(*context.functions)["and"] 			= new DB::FunctionAnd;
-		(*context.functions)["or"] 				= new DB::FunctionOr;
-		(*context.functions)["xor"] 			= new DB::FunctionXor;
-		(*context.functions)["not"] 			= new DB::FunctionNot;
-
 		DB::Expression expression(ast, context);
 
 		dump(*ast);

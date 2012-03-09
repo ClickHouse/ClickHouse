@@ -19,10 +19,12 @@
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
-//#include <DB/Functions/FunctionsArithmetic.h>
-#include <DB/Functions/FunctionsComparison.h>
-//#include <DB/Functions/FunctionsLogical.h>
+#include <DB/Functions/FunctionsLibrary.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
@@ -100,25 +102,8 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 
-/*		(*context.functions)["plus"] 			= new DB::FunctionPlus;
-		(*context.functions)["minus"] 			= new DB::FunctionMinus;
-		(*context.functions)["multiply"] 		= new DB::FunctionMultiply;
-		(*context.functions)["divide"] 			= new DB::FunctionDivideFloating;
-		(*context.functions)["intDiv"] 			= new DB::FunctionDivideIntegral;
-		(*context.functions)["modulo"] 			= new DB::FunctionModulo;
-*/
-		(*context.functions)["equals"] 			= new DB::FunctionEquals;
-/*		(*context.functions)["notEquals"] 		= new DB::FunctionNotEquals;
-		(*context.functions)["less"] 			= new DB::FunctionLess;
-		(*context.functions)["greater"] 		= new DB::FunctionGreater;
-		(*context.functions)["lessOrEquals"] 	= new DB::FunctionLessOrEquals;
-		(*context.functions)["greaterOrEquals"] = new DB::FunctionGreaterOrEquals;
+		context.functions = DB::FunctionsLibrary::get();
 
-		(*context.functions)["and"] 			= new DB::FunctionAnd;
-		(*context.functions)["or"] 				= new DB::FunctionOr;
-		(*context.functions)["xor"] 			= new DB::FunctionXor;
-		(*context.functions)["not"] 			= new DB::FunctionNot;
-*/
 		context.columns = *names_and_types_list;
 
 		DB::ParserSelectQuery parser;

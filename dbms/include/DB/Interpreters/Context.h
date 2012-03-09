@@ -8,7 +8,7 @@
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/Functions/IFunction.h>
+#include <DB/Functions/FunctionsLibrary.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
@@ -19,9 +19,6 @@ namespace DB
 {
 
 using Poco::SharedPtr;
-
-/// имя функции -> функция
-typedef std::map<String, FunctionPtr> Functions;
 
 /// имя таблицы -> таблица
 typedef std::map<String, StoragePtr> Tables;
@@ -44,9 +41,30 @@ struct Context
 	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;										/// Настройки выполнения запроса.
 
-	SharedPtr<Poco::FastMutex> mutex;	/// Для доступа и модификации разделяемых объектов.
+	mutable SharedPtr<Poco::FastMutex> mutex;				/// Для доступа и модификации разделяемых объектов.
 
 	Context() : databases(new Databases), functions(new Functions), mutex(new Poco::FastMutex) {}
+
+	/** В сервере есть глобальный контекст.
+	  * При соединении, он копируется в контекст сессии.
+	  * Для каждого запроса, контекст сессии копируется в контекст запроса.
+	  * Блокировка нужна, так как запрос может модифицировать глобальный контекст (SET GLOBAL ...).
+	  */
+	Context(const Context & rhs)
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(*rhs.mutex);
+
+		path 						= rhs.path;
+		databases 					= rhs.databases;
+		current_database 			= rhs.current_database;
+		functions 					= rhs.functions;
+		aggregate_function_factory 	= rhs.aggregate_function_factory;
+		data_type_factory			= rhs.data_type_factory;
+		storage_factory				= rhs.storage_factory;
+		columns						= rhs.columns;
+		settings					= rhs.settings;
+		mutex						= rhs.mutex;
+	}
 };
 
 
