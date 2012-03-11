@@ -47,4 +47,35 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 }
 
 
+BlockIO InterpreterQuery::execute()
+{
+	BlockIO res;
+	
+	if (dynamic_cast<ASTSelectQuery *>(&*query_ptr))
+	{
+		InterpreterSelectQuery interpreter(query_ptr, context);
+		res.in = interpreter.execute();
+	}
+	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))
+	{
+		InterpreterInsertQuery interpreter(query_ptr, context);
+		res.out = interpreter.execute();
+	}
+	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
+	{
+		InterpreterCreateQuery interpreter(query_ptr, context);
+		interpreter.execute();
+	}
+	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
+	{
+		InterpreterDropQuery interpreter(query_ptr, context);
+		interpreter.execute();
+	}
+	else
+		throw Exception("Unknown type of query: " + query_ptr->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+
+	return res;
+}
+
+
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Interpreters/Context.h>
 
 
@@ -19,6 +20,11 @@ public:
 	  * (заранее может быть считан в оперативку для парсинга лишь небольшой кусок запроса, который содержит не все данные)
 	  */
 	void execute(ReadBuffer * remaining_data_istr);
+
+	/** Подготовить запрос к выполнению. Вернуть поток блоков, в который можно писать данные для выполнения запроса.
+	  * Или вернуть NULL, если запрос INSERT SELECT (самодостаточный запрос - не принимает входные данные).
+	  */
+	BlockOutputStreamPtr execute();
 
 private:
 	StoragePtr getTable();

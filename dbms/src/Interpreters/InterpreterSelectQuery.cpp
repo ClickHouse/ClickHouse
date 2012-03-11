@@ -9,7 +9,6 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -301,13 +300,12 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 {
-	FormatFactory format_factory;
 	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
 	Block sample = getSampleBlock();
 	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : "TabSeparated";
 
 	BlockInputStreamPtr in = execute();
-	BlockOutputStreamPtr out = format_factory.getOutput(format_name, buf, sample);
+	BlockOutputStreamPtr out = context.format_factory->getOutput(format_name, buf, sample);
 	
 	copyData(*in, *out);
 

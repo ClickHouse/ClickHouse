@@ -1,5 +1,6 @@
 #include <DB/Parsers/formatAST.h>
 
+#include <DB/DataStreams/BlockIO.h>
 #include <DB/Interpreters/executeQuery.h>
 
 
@@ -58,6 +59,36 @@ void executeQuery(
 
 	InterpreterQuery interpreter(ast, context);
 	interpreter.execute(ostr, &istr, query_plan);
+}
+
+
+BlockIO executeQuery(
+	const String & query,
+	Context & context)
+{
+	DB::ParserQuery parser;
+	DB::ASTPtr ast;
+	std::string expected;
+
+	const char * begin = query.data();
+	const char * end = begin + query.size();
+	const char * pos = begin;
+
+	bool parse_res = parser.parse(pos, end, ast, expected);
+
+	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
+	if (!parse_res || (pos != end && *pos != ';'))
+		throw DB::Exception("Syntax error: failed at position "
+			+ Poco::NumberFormatter::format(pos - begin) + ": "
+			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
+			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+			DB::ErrorCodes::SYNTAX_ERROR);
+
+	formatAST(*ast, std::cerr);
+	std::cerr << std::endl;
+
+	InterpreterQuery interpreter(ast, context);
+	return interpreter.execute();
 }
 
 

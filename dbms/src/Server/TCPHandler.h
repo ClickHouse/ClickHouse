@@ -1,10 +1,53 @@
 #pragma once
 
+#include <DB/Core/Protocol.h>
+
+#include <DB/DataStreams/BlockIO.h>
+
 #include "Server.h"
 
 
 namespace DB
 {
+
+
+/// Состояние обработки запроса.
+struct QueryState
+{
+	/// Идентификатор запроса.
+	UInt64 query_id;
+
+	Protocol::QueryProcessingStage::Enum stage;
+	Protocol::Compression::Enum compression;
+	String in_format;
+	String out_format;
+
+	/// Текст запроса.
+	String query;
+	/// Потоки блоков, с помощью которых выполнять запрос.
+	BlockIO io;
+
+	Context context;
+
+	QueryState() : query_id(0), stage(Protocol::QueryProcessingStage::Complete), compression(Protocol::Compression::Disable) {}
+	
+	void reset()
+	{
+		query_id = 0;
+		stage = Protocol::QueryProcessingStage::Complete;
+		compression = Protocol::Compression::Disable;
+		in_format.clear();
+		out_format.clear();
+		query.clear();
+		io = BlockIO();
+	}
+
+	bool empty()
+	{
+		return query_id == 0;
+	}
+};
+
 
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
@@ -22,7 +65,20 @@ private:
 	Server & server;
 	Logger * log;
 
+	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
+	QueryState state;
+
 	void runImpl();
+
+	void sendHello(WriteBuffer & out);
+	void sendData(WriteBuffer & out);
+	void sendException(WriteBuffer & out);
+	void sendProgress(WriteBuffer & out);
+
+	void receivePacket(ReadBuffer & in);
+	void receiveQuery(ReadBuffer & in);
+	void receiveData(ReadBuffer & in);
 };
+
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/DataStreams/BlockIO.h>
 #include <DB/Interpreters/Context.h>
 
 
@@ -27,6 +28,10 @@ public:
 	  *  чтобы можно было получить информацию о том, как выполнялся запрос.
 	  */
 	void execute(WriteBuffer & ostr, ReadBuffer * remaining_data_istr, BlockInputStreamPtr & query_plan);
+
+	/** Подготовить запрос к выполнению. Вернуть потоки блоков, используя которые можно выполнить запрос.
+	  */
+	BlockIO execute();
 
 private:
 	ASTPtr query_ptr;

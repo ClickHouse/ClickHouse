@@ -1,7 +1,6 @@
 #include <DB/IO/ConcatReadBuffer.h>
 
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -57,7 +56,6 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
 	{
-		FormatFactory format_factory;
 		String format = query.format;
 		if (format.empty())
 			format = "Values";
@@ -73,7 +71,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		ConcatReadBuffer istr(buffers);
 		Block sample = table->getSampleBlock();
 
-		in = format_factory.getInput(format, istr, sample, context.settings.max_block_size, *context.data_type_factory);
+		in = context.format_factory->getInput(format, istr, sample, context.settings.max_block_size, *context.data_type_factory);
 		copyData(*in, *out);
 	}
 	else
@@ -82,6 +80,29 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		in = interpreter_select.execute();
 		in = new MaterializingBlockInputStream(in);
 		copyData(*in, *out);
+	}
+}
+
+
+BlockOutputStreamPtr InterpreterInsertQuery::execute()
+{
+	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
+	StoragePtr table = getTable();
+
+	/// TODO - если указаны не все столбцы, то дополнить поток недостающими столбцами со значениями по-умолчанию.
+	BlockOutputStreamPtr out = table->write(query_ptr);
+
+	/// Какой тип запроса: INSERT или INSERT SELECT?
+	if (!query.select)
+		return out;
+	else
+	{
+		InterpreterSelectQuery interpreter_select(query.select, context);
+		BlockInputStreamPtr in = interpreter_select.execute();
+		in = new MaterializingBlockInputStream(in);
+		copyData(*in, *out);
+
+		return NULL;
 	}
 }
 

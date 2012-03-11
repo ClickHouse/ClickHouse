@@ -22,4 +22,6 @@ public:
 		Block & sample) const;
 };
 
+typedef SharedPtr<FormatFactory> FormatFactoryPtr;
+
 }

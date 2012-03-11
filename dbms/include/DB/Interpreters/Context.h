@@ -7,6 +7,7 @@
 #include <Poco/Mutex.h>
 
 #include <DB/Core/NamesAndTypes.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Functions/FunctionsLibrary.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
@@ -38,6 +39,7 @@ struct Context
 	AggregateFunctionFactoryPtr aggregate_function_factory; /// Агрегатные функции.
 	DataTypeFactoryPtr data_type_factory;					/// Типы данных.
 	StorageFactoryPtr storage_factory;						/// Движки таблиц.
+	FormatFactoryPtr format_factory;						/// Форматы.
 	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;										/// Настройки выполнения запроса.
 	Logger * log;											/// Логгер.
