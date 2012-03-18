@@ -1,6 +1,8 @@
 #include <iostream>
 #include <iomanip>
 
+#include <boost/type_traits.hpp>
+
 #include <Poco/NumberParser.h>
 
 #include <Yandex/Common.h>
@@ -1050,36 +1052,48 @@ const UInt8 length_table[10000] =
 template <typename T>
 void writeUIntTextTable(T x, DB::WriteBuffer & buf)
 {
-	char tmp[20];
+	union
+	{
+		char chars[20];
+		struct
+		{
+			UInt32 x0;
+			UInt32 x1;
+			UInt32 x2;
+			UInt32 x3;
+			UInt32 x4;
+		};
+	} data;
+	
 	UInt8 len = 4;
 
 	if (x >= 10000000000000000UL)
 	{
-		reinterpret_cast<UInt32*>(tmp)[4] = decimal_table[x % 10000];
+		data.x4 = decimal_table[x % 10000];
 		x /= 10000;
 		len += 4;
 	}
 	if (x >= 1000000000000UL)
 	{
-		reinterpret_cast<UInt32*>(tmp)[3] = decimal_table[x % 10000];
+		data.x3 = decimal_table[x % 10000];
 		x /= 10000;
 		len += 4;
 	}
 	if (x >= 100000000UL)
 	{
-		reinterpret_cast<UInt32*>(tmp)[2] = decimal_table[x % 10000];
+		data.x2 = decimal_table[x % 10000];
 		x /= 10000;
 		len += 4;
 	}
 	if (x >= 10000UL)
 	{
-		reinterpret_cast<UInt32*>(tmp)[1] = decimal_table[x % 10000];
+		data.x1 = decimal_table[x % 10000];
 		x /= 10000;
 		len += 4;
 	}
-	reinterpret_cast<UInt32*>(tmp)[0] = decimal_table[x];
+	data.x0 = decimal_table[x];
 
-	buf.write(tmp + length_table[x], len - length_table[x]);
+	buf.write(data.chars + length_table[x], len - length_table[x]);
 }
 
 
@@ -1092,11 +1106,26 @@ void writeIntTextTable(T x, DB::WriteBuffer & buf)
 	}
 	else if (x < 0)
 	{
-		writeChar('-', buf);
-		writeUIntTextTable(-x, buf);
+		/// Особый случай для самого маленького отрицательного числа
+		if (unlikely(x == std::numeric_limits<T>::min()))
+		{
+			if (sizeof(x) == 1)
+				buf.write("-128", 4);
+			else if (sizeof(x) == 2)
+				buf.write("-32768", 6);
+			else if (sizeof(x) == 4)
+				buf.write("-2147483648", 11);
+			else
+				buf.write("-9223372036854775808", 20);
+		}
+		else
+		{
+			writeChar('-', buf);
+			writeUIntTextTable(static_cast<typename boost::make_unsigned<T>::type>(-x), buf);
+		}
 	}
 	else
-		writeUIntTextTable(x, buf);
+		writeUIntTextTable(static_cast<typename boost::make_unsigned<T>::type>(x), buf);
 }
 
 
@@ -1117,7 +1146,7 @@ int main(int argc, char ** argv)
 	
 	try
 	{
-		typedef UInt64 T;
+		typedef Int64 T;
 		
 		size_t n = atoi(argv[1]);
 		std::vector<T> data(n);

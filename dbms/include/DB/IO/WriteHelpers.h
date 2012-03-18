@@ -84,6 +84,20 @@ void writeIntText(T x, WriteBuffer & buf)
 	{
 		x = -x;
 		negative = true;
+
+		/// Особый случай для самого маленького отрицательного числа
+		if (unlikely(x < 0))
+		{
+			if (sizeof(x) == 1)
+				buf.write("-128", 4);
+			else if (sizeof(x) == 2)
+				buf.write("-32768", 6);
+			else if (sizeof(x) == 4)
+				buf.write("-2147483648", 11);
+			else
+				buf.write("-9223372036854775808", 20);
+			return;
+		}
 	}
 
 	char * pos;
