@@ -69,6 +69,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.aggregate_function_factory	= new AggregateFunctionFactory;
 	global_context.data_type_factory			= new DataTypeFactory;
 	global_context.storage_factory				= new StorageFactory;
+	global_context.format_factory				= new FormatFactory;
 
 	loadMetadata(global_context);
 

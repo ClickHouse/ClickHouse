@@ -1,6 +1,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
+#include <DB/Columns/ColumnConst.h>
+
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 
 
@@ -26,7 +28,16 @@ void NativeBlockOutputStream::write(const Block & block)
 		writeStringBinary(column.type->getName(), ostr);
 
 		/// Данные
-		column.type->serializeBinary(*column.column, ostr);
+		if (column.column->isConst())
+		{
+			/** Перед сериализацией константного столбца, материализуем его.
+			  * Так как тип данных не умеет сериализовывать/десериализовывать константы.
+			  */ 
+			ColumnPtr materialized = dynamic_cast<const IColumnConst &>(*column.column).convertToFullColumn();
+			column.type->serializeBinary(*materialized, ostr);
+		}
+		else
+			column.type->serializeBinary(*column.column, ostr);
 	}
 }
 

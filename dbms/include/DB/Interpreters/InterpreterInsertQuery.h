@@ -26,9 +26,11 @@ public:
 	  */
 	BlockOutputStreamPtr execute();
 
+	Block getSampleBlock();
+
 private:
 	StoragePtr getTable();
-	
+
 	ASTPtr query_ptr;
 	Context context;
 };

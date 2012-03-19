@@ -43,6 +43,12 @@ StoragePtr InterpreterInsertQuery::getTable()
 }
 
 
+Block InterpreterInsertQuery::getSampleBlock()
+{
+	return getTable()->getSampleBlock();
+}
+
+
 void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 {
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);

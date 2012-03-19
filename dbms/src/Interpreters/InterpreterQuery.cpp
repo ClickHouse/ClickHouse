@@ -55,11 +55,13 @@ BlockIO InterpreterQuery::execute()
 	{
 		InterpreterSelectQuery interpreter(query_ptr, context);
 		res.in = interpreter.execute();
+		res.in_sample = interpreter.getSampleBlock();
 	}
 	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))
 	{
 		InterpreterInsertQuery interpreter(query_ptr, context);
 		res.out = interpreter.execute();
+		res.out_sample = interpreter.getSampleBlock();
 	}
 	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
 	{
