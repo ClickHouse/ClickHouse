@@ -18,7 +18,7 @@
 #include <DB/IO/VarInt.h>
 
 #define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
-/// 20 цифр и знак
+/// 20 цифр или 19 цифр и знак
 #define WRITE_HELPERS_MAX_INT_WIDTH 20U
 
 
