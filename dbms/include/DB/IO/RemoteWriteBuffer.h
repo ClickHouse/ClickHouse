@@ -221,7 +221,7 @@ private:
 			catch (const DB::Exception & e)
 			{
 				/// Если в прошлую попытку от сервера не пришло ответа, но файл всё же был переименован.
-				if (NULL != strstr(e.what(), "File not found"))
+				if (i != 0 && NULL != strstr(e.what(), "File not found"))
 				{
 					LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "File already renamed");
 				}
