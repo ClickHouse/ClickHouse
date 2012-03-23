@@ -111,7 +111,7 @@ public:
 
 	void nextImpl()
 	{
-		if (!offset())
+		if (!offset() || finalized)
 			return;
 
 		/// Для корректной работы с AsynchronousWriteBuffer, который подменяет буферы.
@@ -143,6 +143,11 @@ public:
 		if (!tmp_path.empty())
 			rename();
 
+		finalized = true;
+	}
+
+	void cancel()
+	{
 		finalized = true;
 	}
 
