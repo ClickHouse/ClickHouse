@@ -92,7 +92,7 @@ public:
 	{
 		size_t bytes_copied = 0;
 
-		while (!eof() && bytes_copied < n)
+		while (bytes_copied < n && !eof())
 		{
 			size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_copied);
 			std::memcpy(to + bytes_copied, pos, bytes_to_copy);

@@ -172,11 +172,15 @@ bool TCPHandler::sendData(WriteBuffer & out, WriteBuffer & out_for_chunks)
 	if (block)
 	{
 		state.block_out->write(block);
+		state.maybe_compressed_out->next();
+		state.chunked_out->next();
+		out_for_chunks.next();
 		return true;
 	}
 	else
 	{
 		dynamic_cast<ChunkedWriteBuffer &>(*state.chunked_out).finish();
+		out_for_chunks.next();
 		return false;
 	}
 }

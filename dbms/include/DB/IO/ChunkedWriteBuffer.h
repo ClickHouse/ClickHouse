@@ -3,6 +3,8 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 
+#include <iostream>
+
 
 namespace DB
 {
@@ -28,11 +30,17 @@ protected:
 
 	void nextImpl()
 	{
+		std::cerr << out.offset() << std::endl;
+		std::cerr << query_id << std::endl;
+		std::cerr << offset() << std::endl;
+		
 		checkBufferSize();
 
 		writeIntBinary(query_id, out);
 		writeIntBinary(false, out);
 		writeIntBinary(offset(), out);
+
+		std::cerr << out.offset() << std::endl;
 
 		out.position() = position();
 		out.next();

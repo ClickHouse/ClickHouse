@@ -44,6 +44,7 @@ protected:
 
 			UInt64 query_id = 0;
 			readIntBinary(query_id, in);
+
 			if (query_id != assert_query_id)
 				throw Exception("Received data for wrong query id", ErrorCodes::RECEIVED_DATA_FOR_WRONG_QUERY_ID);
 
@@ -55,6 +56,9 @@ protected:
 			read_in_chunk = std::min(chunk_size, in.buffer().size() - in.offset());
 			working_buffer = Buffer(in.position(), in.position() + read_in_chunk);
 			in.position() += read_in_chunk;
+
+			if (all_read)
+				return false;
 		}
 
 		return true;
