@@ -1,9 +1,12 @@
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
 
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 
 #include <tr1/unordered_set>
 
@@ -15,6 +18,8 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Yandex/Revision.h>
+
+#include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/Types.h>
@@ -80,6 +85,11 @@ private:
 	/// Вывод в консоль
 	WriteBufferFromFileDescriptor std_out;
 	BlockOutputStreamPtr block_std_out;
+
+	String home_path;
+	
+	/// Путь к файлу истории команд.
+	String history_file;
 	
 
 	void initialize(Poco::Util::Application & self)
@@ -93,19 +103,66 @@ private:
 			("учше;")("йгше;")("дщпщге;")
 			("q")("й");
 
+		const char * home_path_cstr = getenv("HOME");
+		if (!home_path_cstr)
+			throw DB::Exception("Cannot get HOME environment variable");
+		else
+			home_path = home_path_cstr;
+
 		if (config().has("config-file"))
 			loadConfiguration(config().getString("config-file"));
 		else if (Poco::File("./clickhouse-client.xml").exists())
 			loadConfiguration("./clickhouse-client.xml");
-		else if (Poco::File("~/.clickhouse-client/config.xml").exists())
-			loadConfiguration("~/.clickhouse-client/config.xml");
+		else if (Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
+			loadConfiguration(home_path + "/.clickhouse-client/config.xml");
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
 	}
-	
+
+
+	void throwFromErrno(const std::string & s, int code)
+	{
+		char buf[128];
+		throw Exception(s + ", errno: " + Poco::NumberFormatter::format(errno) + ", strerror: " + std::string(strerror_r(errno, buf, sizeof(buf))), code);
+	}
+
 
 	int main(const std::vector<std::string> & args)
 	{
+		try
+		{
+			return mainImpl(args);
+		}
+		catch (const DB::Exception & e)
+		{
+ 			std::cerr << "Code: " << e.code() << ". " << e.displayText() << std::endl
+				<< std::endl
+				<< "Stack trace:" << std::endl
+				<< e.getStackTrace().toString();
+			return 1;
+		}
+		catch (const Poco::Exception & e)
+		{
+			std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
+			return 1;
+		}
+		catch (const std::exception & e)
+		{
+			std::cerr << "std::exception: " << e.what() << std::endl;
+			return 1;
+		}
+		catch (...)
+		{
+			std::cerr << "Unknown exception" << std::endl;
+			return 1;
+		}
+	}
+	
+
+	int mainImpl(const std::vector<std::string> & args)
+	{
+		std::cout << std::fixed << std::setprecision(3) << std::endl;
+		
 		std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
 			<< "." << DBMS_VERSION_MINOR
 			<< "." << Revision::get()
@@ -148,6 +205,20 @@ private:
 
 		context.format_factory = new FormatFactory();
 		context.data_type_factory = new DataTypeFactory();
+
+		/// Отключаем tab completion.
+		rl_bind_key('\t', rl_insert);
+
+		/// Загружаем историю команд, если есть.
+		history_file = config().getString("history_file", home_path + "/.clickhouse-client-history");
+		if (Poco::File(history_file).exists())
+		{
+			int res = read_history(history_file.c_str());
+			if (res)
+				throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+		}
+		else	/// Создаём файл с историей.
+			Poco::File(history_file).createFile();
 		
 		loop();
 
@@ -166,6 +237,10 @@ private:
 			if (!process(line))
 				break;
 			add_history(line.c_str());
+
+			int res = append_history(1, history_file.c_str());
+			if (res)
+				throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 		}
 	}
 
@@ -178,9 +253,13 @@ private:
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
+		Stopwatch watch;
+
 		query = line;
 		sendQuery();
 		receiveResult();
+
+		std::cout << "Total elapsed: " << watch.elapsedSeconds() << " sec." << std::endl << std::endl;
 
 		block_in = NULL;
 		maybe_compressed_in = NULL;
@@ -297,35 +376,7 @@ private:
 
 int main(int argc, char ** argv)
 {
-	try
-	{
-		DB::Client client;
-		client.init(argc, argv);
-		client.run();
-	}
-	catch (const DB::Exception & e)
-	{
-		std::cerr << "DB::Exception: " << e.what() << ", " << e.message() << std::endl
-			<< std::endl
-			<< "Stack trace:" << std::endl
-			<< e.getStackTrace().toString();
-		return 1;
-	}
-	catch (const Poco::Exception & e)
-	{
-		std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-		return 1;
-	}
-	catch (const std::exception & e)
-	{
-		std::cerr << "std::exception: " << e.what() << std::endl;
-		return 1;
-	}
-	catch (...)
-	{
-		std::cerr << "Unknown exception" << std::endl;
-		return 1;
-	}
-
-	return 0;
+	DB::Client client;
+	client.init(argc, argv);
+	return client.run();
 }
