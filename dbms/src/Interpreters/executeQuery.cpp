@@ -14,8 +14,8 @@ void executeQuery(
 	Context & context,
 	BlockInputStreamPtr & query_plan)
 {
-	DB::ParserQuery parser;
-	DB::ASTPtr ast;
+	ParserQuery parser;
+	ASTPtr ast;
 	std::string expected;
 
 	std::vector<char> parse_buf;
@@ -48,11 +48,11 @@ void executeQuery(
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw DB::Exception("Syntax error: failed at position "
+		throw Exception("Syntax error: failed at position "
 			+ Poco::NumberFormatter::format(pos - begin) + ": "
 			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
-			DB::ErrorCodes::SYNTAX_ERROR);
+			ErrorCodes::SYNTAX_ERROR);
 
 	formatAST(*ast, std::cerr);
 	std::cerr << std::endl;
@@ -66,8 +66,8 @@ BlockIO executeQuery(
 	const String & query,
 	Context & context)
 {
-	DB::ParserQuery parser;
-	DB::ASTPtr ast;
+	ParserQuery parser;
+	ASTPtr ast;
 	std::string expected;
 
 	const char * begin = query.data();
@@ -78,11 +78,11 @@ BlockIO executeQuery(
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw DB::Exception("Syntax error: failed at position "
+		throw Exception("Syntax error: failed at position "
 			+ Poco::NumberFormatter::format(pos - begin) + ": "
 			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
-			DB::ErrorCodes::SYNTAX_ERROR);
+			ErrorCodes::SYNTAX_ERROR);
 
 	formatAST(*ast, std::cerr);
 	std::cerr << std::endl;

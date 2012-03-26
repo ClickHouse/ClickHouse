@@ -35,6 +35,9 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
+#include <DB/Parsers/ParserQuery.h>
+#include <DB/Parsers/formatAST.h>
+
 #include <DB/Interpreters/Context.h>
 
 
@@ -51,7 +54,8 @@ using Poco::SharedPtr;
 class Client : public Poco::Util::Application
 {
 public:
-	Client() : socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable), format_max_block_size(0), std_out(STDOUT_FILENO) {}
+	Client() : socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
+		format_max_block_size(0), std_out(STDOUT_FILENO), received_rows(0) {}
 	
 private:
 	typedef std::tr1::unordered_set<String> StringSet;
@@ -90,6 +94,12 @@ private:
 	
 	/// Путь к файлу истории команд.
 	String history_file;
+
+	/// Строк прочитано.
+	size_t received_rows;
+
+	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
+	ASTPtr parsed_query;
 	
 
 	void initialize(Poco::Util::Application & self)
@@ -161,7 +171,7 @@ private:
 
 	int mainImpl(const std::vector<std::string> & args)
 	{
-		std::cout << std::fixed << std::setprecision(3) << std::endl;
+		std::cout << std::fixed << std::setprecision(3);
 		
 		std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
 			<< "." << DBMS_VERSION_MINOR
@@ -201,7 +211,7 @@ private:
 			<< " server version " << server_version_major
 			<< "." << server_version_minor
 			<< "." << server_revision
-			<< "." << std::endl;
+			<< "." << std::endl << std::endl;
 
 		context.format_factory = new FormatFactory();
 		context.data_type_factory = new DataTypeFactory();
@@ -234,8 +244,13 @@ private:
 		{
 			String line(line_);
 			free(line_);
+
+			if (line.empty())
+				continue;
+			
 			if (!process(line))
 				break;
+			
 			add_history(line.c_str());
 
 			int res = append_history(1, history_file.c_str());
@@ -247,24 +262,59 @@ private:
 
 	bool process(const String & line)
 	{
-		if (line.empty())
-			return true;
-		
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
 		Stopwatch watch;
 
 		query = line;
+
+		/// Некоторые части запроса выполняются на стороне клиента (форматирование результата). Поэтому, распарсим запрос.
+		if (!parseQuery())
+			return true;
+		
 		sendQuery();
 		receiveResult();
 
-		std::cout << "Total elapsed: " << watch.elapsedSeconds() << " sec." << std::endl << std::endl;
+		std::cout << std::endl
+			<< received_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec."
+			<< std::endl << std::endl;
 
 		block_in = NULL;
 		maybe_compressed_in = NULL;
 		chunked_in = NULL;
 
+		return true;
+	}
+
+
+	bool parseQuery()
+	{
+		ParserQuery parser;
+		std::string expected;
+
+		const char * begin = query.data();
+		const char * end = begin + query.size();
+		const char * pos = begin;
+
+		bool parse_res = parser.parse(pos, end, parsed_query, expected);
+
+		/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
+		if (!parse_res || (pos != end && *pos != ';'))
+		{
+			std::cout << "Syntax error: failed at position "
+				<< (pos - begin) << ": "
+				<< std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
+				<< ", expected " << (parse_res ? "end of query" : expected) << "."
+				<< std::endl << std::endl;
+
+			return false;
+		}
+
+		std::cout << std::endl;
+		formatAST(*parsed_query, std::cout);
+		std::cout << std::endl << std::endl;
+		
 		return true;
 	}
 
@@ -287,6 +337,7 @@ private:
 
 	void receiveResult()
 	{
+		received_rows = 0;
 		while (receivePacket())
 			;
 
@@ -332,8 +383,19 @@ private:
 		Block block = block_in->read();
 		if (block)
 		{
+			received_rows += block.rows();
 			if (!block_std_out)
-				block_std_out = context.format_factory->getOutput(format, std_out, block);
+			{
+				String current_format = format;
+
+				/// Формат может быть указан в SELECT запросе.
+				if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*parsed_query))
+					if (select->format)
+						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*select->format))
+							current_format = id->name;
+				
+				block_std_out = context.format_factory->getOutput(current_format, std_out, block);
+			}
 			
 			block_std_out->write(block);
 			std_out.next();
