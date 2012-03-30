@@ -138,7 +138,7 @@ private:
 		unsigned count;	/// Сколько блоков было вычислено
 		bool ready;		/// Блок уже вычислен
 		Block block;
-		SharedPtr<Exception> exception;
+		ExceptionPtr exception;
 
 		void reset()
 		{
@@ -183,12 +183,12 @@ private:
 		}
 		catch (const Exception & e)
 		{
-			data.exception = new Exception(e);
+			data.exception = e.clone();
 		}
 		catch (const Poco::Exception & e)
 		{
 			//std::cerr << e.message() << std::endl;
-			data.exception = new Exception(e.message(), ErrorCodes::POCO_EXCEPTION);
+			data.exception = e.clone();
 		}
 		catch (const std::exception & e)
 		{

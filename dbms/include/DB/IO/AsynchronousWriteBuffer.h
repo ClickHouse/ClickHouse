@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <Poco/SharedPtr.h>
+#include <Poco/Net/NetException.h>
 
 #include <statdaemons/threadpool.hpp>
 
@@ -74,7 +75,7 @@ public:
 		out.next();
 	}
 
-	SharedPtr<Exception> exception;
+	ExceptionPtr exception;
 
 	/// То, что выполняется в отдельном потоке
 	void thread()
@@ -85,11 +86,11 @@ public:
 		}
 		catch (const Exception & e)
 		{
-			exception = new Exception(e);
+			exception = e.clone();
 		}
 		catch (const Poco::Exception & e)
 		{
-			exception = new Exception(e.message(), ErrorCodes::POCO_EXCEPTION);
+			exception = e.clone();
 		}
 		catch (const std::exception & e)
 		{

@@ -86,11 +86,11 @@ private:
 		}
 		catch (const Exception & e)
 		{
-			exception = new Exception(e);
+			exception = e.clone();
 		}
 		catch (const Poco::Exception & e)
 		{
-			exception = new Exception(e.message(), ErrorCodes::POCO_EXCEPTION);
+			exception = e.clone();
 		}
 		catch (const std::exception & e)
 		{

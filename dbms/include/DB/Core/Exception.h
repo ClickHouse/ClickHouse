@@ -34,7 +34,7 @@ private:
 
 using Poco::SharedPtr;
 
-typedef SharedPtr<Exception> ExceptionPtr;
+typedef SharedPtr<Poco::Exception> ExceptionPtr;
 typedef std::vector<ExceptionPtr> Exceptions;
 
 }

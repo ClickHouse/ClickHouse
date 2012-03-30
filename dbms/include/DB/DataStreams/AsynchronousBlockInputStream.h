@@ -59,7 +59,7 @@ protected:
 	bool started;
 
 	Block block;
-	SharedPtr<Exception> exception;
+	ExceptionPtr exception;
 
 	/// Вычисления, которые могут выполняться в отдельном потоке
 	void calculate()
@@ -70,11 +70,11 @@ protected:
 		}
 		catch (const Exception & e)
 		{
-			exception = new Exception(e);
+			exception = e.clone();
 		}
 		catch (const Poco::Exception & e)
 		{
-			exception = new Exception(e.message(), ErrorCodes::POCO_EXCEPTION);
+			exception = e.clone();
 		}
 		catch (const std::exception & e)
 		{
