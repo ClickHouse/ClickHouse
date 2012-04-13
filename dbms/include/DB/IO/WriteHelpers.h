@@ -118,11 +118,10 @@ void writeIntText(T x, WriteBuffer & buf)
 template <typename T>
 void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION)
 {
-	unsigned size = precision + 10;
-	char tmp[size];	/// знаки, +0.0e+123\0
-	int res = std::snprintf(tmp, size, "%.*g", precision, x);
+	char tmp[24];
+	int res = std::snprintf(tmp, 24, "%.*g", precision, x);
 
-	if (res >= static_cast<int>(size) || res <= 0)
+	if (res >= 24 || res <= 0)
 		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
 	buf.write(tmp, res);
