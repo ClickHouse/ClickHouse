@@ -14,21 +14,21 @@ int main(int argc, char ** argv)
 	try
 	{
 		bool decompress = false;
-		bool use_lz4 = false;
+		bool use_qlz = false;
 
 		if (argc == 2)
 		{
 			decompress = 0 == strcmp(argv[1], "-d");
-			use_lz4 = 0 == strcmp(argv[1], "--lz4");
+			use_qlz = 0 == strcmp(argv[1], "--qlz");
 		}
 		
-		if (argc > 2 || (argc == 2 && !decompress && !use_lz4))
+		if (argc > 2 || (argc == 2 && !decompress && !use_qlz))
 		{
-			std::cerr << "Usage: " << argv[0] << " [-d|--lz4] < in > out" << std::endl;
+			std::cerr << "Usage: " << argv[0] << " [-d|--qlz] < in > out" << std::endl;
 			return 1;
 		}
 
-		DB::CompressionMethod::Enum method = use_lz4 ? DB::CompressionMethod::LZ4 : DB::CompressionMethod::QuickLZ;
+		DB::CompressionMethod::Enum method = use_qlz ? DB::CompressionMethod::QuickLZ : DB::CompressionMethod::LZ4;
 
 		Poco::SharedPtr<DB::ReadBuffer> rb = new DB::ReadBufferFromFileDescriptor(STDIN_FILENO);
 		Poco::SharedPtr<DB::WriteBuffer> wb = new DB::WriteBufferFromFileDescriptor(STDOUT_FILENO);

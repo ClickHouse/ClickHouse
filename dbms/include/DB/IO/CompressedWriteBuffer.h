@@ -94,7 +94,7 @@ private:
 public:
 	CompressedWriteBuffer(
 		WriteBuffer & out_,
-		CompressionMethod::Enum method_ = CompressionMethod::QuickLZ,
+		CompressionMethod::Enum method_ = CompressionMethod::LZ4,
 		size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_), qlz_state(new qlz_state_compress) {}
 

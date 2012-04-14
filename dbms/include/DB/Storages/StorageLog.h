@@ -75,7 +75,7 @@ private:
 	{
 		Stream(const std::string & data_path, const std::string & marks_path) :
 			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY),
-			compressed(plain, CompressionMethod::LZ4),
+			compressed(plain),
 			marks(marks_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY) {}
 		
 		WriteBufferFromFile plain;
