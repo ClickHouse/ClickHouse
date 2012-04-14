@@ -24,7 +24,7 @@ public:
 		fd = open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
 		
 		if (-1 == fd)
-			throwFromErrno("Cannot open file " + file_name, ErrorCodes::CANNOT_OPEN_FILE);
+			throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
     ~WriteBufferFromFile()

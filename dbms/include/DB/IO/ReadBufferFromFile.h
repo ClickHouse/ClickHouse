@@ -22,7 +22,7 @@ public:
 		fd = open(file_name.c_str(), O_RDONLY);
 		
 		if (-1 == fd)
-			throwFromErrno("Cannot open file " + file_name, ErrorCodes::CANNOT_OPEN_FILE);
+			throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
     virtual ~ReadBufferFromFile()
