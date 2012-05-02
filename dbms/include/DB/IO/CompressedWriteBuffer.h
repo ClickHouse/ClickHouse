@@ -63,7 +63,7 @@ private:
 				  * 4 байта - размер сжатых данных
 				  * 4 байта - размер несжатых данных.
 				  */
-				compressed_buffer.resize(QUICKLZ_HEADER_SIZE + uncompressed_size + std::max(LZ4_ADDITIONAL_SPACE_MIN, ceil(uncompressed_size * LZ4_ADDITIONAL_SPACE_K)));
+				compressed_buffer.resize(QUICKLZ_HEADER_SIZE + LZ4_compressBound(uncompressed_size));
 
 				compressed_buffer[0] = 0x82;	/// Второй бит - для совместимости с QuickLZ - обозначает, что размеры записываются 4 байтами.
 
