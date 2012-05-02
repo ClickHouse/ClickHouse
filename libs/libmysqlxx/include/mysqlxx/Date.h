@@ -40,12 +40,14 @@ private:
 
 	void init(const char * s, size_t length)
 	{
-		if(length < 8)
+		if (length < 8)
 			throw Exception("Cannot parse Date: " + std::string(s, length));
+
 		m_year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-		if(s[4] == '-')
+
+		if (s[4] == '-')
 		{
-			if(length < 10)
+			if (length < 10)
 				throw Exception("Cannot parse Date: " + std::string(s, length));
 			m_month = (s[5] - '0') * 10 + (s[6] - '0');
 			m_day = (s[8] - '0') * 10 + (s[9] - '0');
@@ -61,6 +63,14 @@ public:
 	explicit Date(time_t time)
 	{
 		init(time);
+	}
+
+	Date(Yandex::DayNum_t day_num)
+	{
+		const Yandex::DateLUT::Values & values = Yandex::DateLUTSingleton::instance().getValues(day_num);
+		m_year 	= values.year;
+		m_month = values.month;
+		m_day 	= values.day_of_month;
 	}
 
 	Date(unsigned short year_, unsigned char month_, unsigned char day_)
