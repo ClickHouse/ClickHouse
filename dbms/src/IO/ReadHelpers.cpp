@@ -1,4 +1,7 @@
+#include <sstream>
+
 #include <DB/IO/ReadHelpers.h>
+
 
 namespace DB
 {
@@ -119,6 +122,49 @@ void readDoubleQuotedString(String & s, ReadBuffer & buf)
 void readBackQuotedString(String & s, ReadBuffer & buf)
 {
 	readAnyQuotedString<'`'>(s, buf);
+}
+
+
+void readException(Exception & e, ReadBuffer & buf, const String & additional_message)
+{
+	int code = 0;
+	String name;
+	String message;
+	String stack_trace;
+	bool has_nested = false;
+	
+	readBinary(code, buf);
+	readBinary(name, buf);
+	readBinary(message, buf);
+	readBinary(stack_trace, buf);
+	readBinary(has_nested, buf);
+
+	std::stringstream message_stream;
+
+	if (!additional_message.empty())
+		message_stream << additional_message << ". ";
+
+	if (name != "DB::Exception")
+		message_stream << name << ". ";
+
+	message_stream << message
+		<< ". Stack trace:\n\n" << stack_trace;
+
+	if (has_nested)
+	{
+		Exception nested;
+		readException(nested, buf);
+		e = Exception(message_stream.str(), nested, code);
+	}
+	else
+		e = Exception(message_stream.str(), code);
+}
+
+void readAndThrowException(ReadBuffer & buf, const String & additional_message)
+{
+	Exception e;
+	readException(e, buf, additional_message);
+	e.rethrow();
 }
 
 }

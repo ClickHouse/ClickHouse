@@ -432,4 +432,13 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
 		++buf.position();
 }
 
+
+/** Прочитать сериализованный эксепшен.
+  * При сериализации/десериализации часть информации теряется
+  * (тип обрезается до базового, message заменяется на displayText, и stack trace дописывается в message)
+  * К нему может быть добавлено дополнительное сообщение (например, вы можете указать, откуда оно было прочитано).
+  */
+void readException(Exception & e, ReadBuffer & buf, const String & additional_message = "");
+void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
+
 }

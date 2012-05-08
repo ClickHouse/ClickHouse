@@ -437,4 +437,8 @@ inline void writeQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
 }
 
 
+/// Сериализация эксепшена (чтобы его можно было передать по сети)
+void writeException(const Exception & e, WriteBuffer & buf);
+
+
 }

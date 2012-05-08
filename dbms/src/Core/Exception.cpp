@@ -9,6 +9,7 @@ Exception::Exception(const std::string & msg, int code) : Poco::Exception(msg, c
 Exception::Exception(const std::string & msg, const std::string & arg, int code): Poco::Exception(msg, arg, code) {}
 Exception::Exception(const std::string & msg, const Exception & exc, int code): Poco::Exception(msg, exc, code), trace(exc.trace) {}
 Exception::Exception(const Exception & exc) : Poco::Exception(exc), trace(exc.trace) {}
+Exception::Exception(const Poco::Exception & exc) : Poco::Exception(exc) {}
 Exception::~Exception() throw() {}
 
 Exception & Exception::operator=(const Exception& exc)

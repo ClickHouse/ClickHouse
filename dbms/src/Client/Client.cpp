@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 
@@ -54,12 +55,15 @@ using Poco::SharedPtr;
 class Client : public Poco::Util::Application
 {
 public:
-	Client() : socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
+	Client() : is_interactive(true), stdin_is_not_tty(false), socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
 		format_max_block_size(0), std_out(STDOUT_FILENO), received_rows(0) {}
 	
 private:
 	typedef std::tr1::unordered_set<String> StringSet;
 	StringSet exit_strings;
+
+	bool is_interactive;				/// Использовать readline интерфейс или batch режим.
+	bool stdin_is_not_tty;				/// stdin - не терминал.
 
 	Poco::Net::StreamSocket socket;
 	ReadBufferFromPocoSocket in;
@@ -115,7 +119,7 @@ private:
 
 		const char * home_path_cstr = getenv("HOME");
 		if (!home_path_cstr)
-			throw DB::Exception("Cannot get HOME environment variable");
+			throw Exception("Cannot get HOME environment variable");
 		else
 			home_path = home_path_cstr;
 
@@ -171,23 +175,36 @@ private:
 
 	int mainImpl(const std::vector<std::string> & args)
 	{
-		std::cout << std::fixed << std::setprecision(3);
+		/** Будем работать в batch режиме, если выполнено одно из следующих условий:
+		  * - задан параметр -e (--query)
+		  *   (в этом случае - запрос или несколько запросов берём оттуда;
+		  *    а если при этом stdin не терминал, то берём оттуда данные для INSERT-а первого запроса).
+		  * - stdin - не терминал (в этом случае, считываем оттуда запросы);
+		  */
+		stdin_is_not_tty = !isatty(STDIN_FILENO);
+		if (stdin_is_not_tty || config().has("query"))
+			is_interactive = false;
 		
-		std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-			<< "." << DBMS_VERSION_MINOR
-			<< "." << Revision::get()
-			<< "." << std::endl;
+		std::cout << std::fixed << std::setprecision(3);
+		std::cerr << std::fixed << std::setprecision(3);
+		
+		if (is_interactive)
+			std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
+				<< "." << DBMS_VERSION_MINOR
+				<< "." << Revision::get()
+				<< "." << std::endl;
 
 		compression = config().getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 		in_format 	= config().getString("in_format", 	"Native");
 		out_format 	= config().getString("out_format", 	"Native");
-		format 		= config().getString("format", 		"Pretty");
+		format 		= config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
 
 		String host = config().getString("host", "localhost");
 		UInt16 port = config().getInt("port", 9000);
-		
-		std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
+
+		if (is_interactive)
+			std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
 
 		socket.connect(Poco::Net::SocketAddress(host, port));
 
@@ -207,33 +224,39 @@ private:
 		readVarUInt(server_version_minor, in);
 		readVarUInt(server_revision, in);
 
-		std::cout << "Connected to " << server_name
-			<< " server version " << server_version_major
-			<< "." << server_version_minor
-			<< "." << server_revision
-			<< "." << std::endl << std::endl;
+		if (is_interactive)
+			std::cout << "Connected to " << server_name
+				<< " server version " << server_version_major
+				<< "." << server_version_minor
+				<< "." << server_revision
+				<< "." << std::endl << std::endl;
 
 		context.format_factory = new FormatFactory();
 		context.data_type_factory = new DataTypeFactory();
 
-		/// Отключаем tab completion.
-		rl_bind_key('\t', rl_insert);
-
-		/// Загружаем историю команд, если есть.
-		history_file = config().getString("history_file", home_path + "/.clickhouse-client-history");
-		if (Poco::File(history_file).exists())
+		if (is_interactive)
 		{
-			int res = read_history(history_file.c_str());
-			if (res)
-				throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
-		}
-		else	/// Создаём файл с историей.
-			Poco::File(history_file).createFile();
-		
-		loop();
+			/// Отключаем tab completion.
+			rl_bind_key('\t', rl_insert);
 
-		std::cout << "Bye." << std::endl;
-		
+			/// Загружаем историю команд, если есть.
+			history_file = config().getString("history_file", home_path + "/.clickhouse-client-history");
+			if (Poco::File(history_file).exists())
+			{
+				int res = read_history(history_file.c_str());
+				if (res)
+					throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+			}
+			else	/// Создаём файл с историей.
+				Poco::File(history_file).createFile();
+
+			loop();
+
+			std::cout << "Bye." << std::endl;
+		}
+		else
+			nonInteractive();
+
 		return 0;
 	}
 
@@ -260,6 +283,17 @@ private:
 	}
 
 
+	void nonInteractive()
+	{
+		if (config().has("query"))
+			process(config().getString("query"));
+		else
+		{
+			
+		}
+	}
+
+
 	bool process(const String & line)
 	{
 		if (exit_strings.end() != exit_strings.find(line))
@@ -276,9 +310,10 @@ private:
 		sendQuery();
 		receiveResult();
 
-		std::cout << std::endl
-			<< received_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec."
-			<< std::endl << std::endl;
+		if (is_interactive)
+			std::cout << std::endl
+				<< received_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec."
+				<< std::endl << std::endl;
 
 		block_in = NULL;
 		maybe_compressed_in = NULL;
@@ -302,7 +337,7 @@ private:
 		/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 		if (!parse_res || (pos != end && *pos != ';'))
 		{
-			std::cout << "Syntax error: failed at position "
+			std::cerr << "Syntax error: failed at position "
 				<< (pos - begin) << ": "
 				<< std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
 				<< ", expected " << (parse_res ? "end of query" : expected) << "."
@@ -311,9 +346,12 @@ private:
 			return false;
 		}
 
-		std::cout << std::endl;
-		formatAST(*parsed_query, std::cout);
-		std::cout << std::endl << std::endl;
+		if (is_interactive)
+		{
+			std::cout << std::endl;
+			formatAST(*parsed_query, std::cout);
+			std::cout << std::endl << std::endl;
+		}
 		
 		return true;
 	}
@@ -355,6 +393,10 @@ private:
 		{
 			case Protocol::Server::Data:
 				return receiveData();
+
+			case Protocol::Server::Exception:
+				receiveException();
+				return false;
 
 			default:
 				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
@@ -404,6 +446,16 @@ private:
 		else
 			return false;
 	}
+
+
+	void receiveException()
+	{
+		Exception e;
+		readException(e, in);
+
+		std::cerr << "Received exception from server:" << std::endl
+			<< "Code: " << e.code() << ". " << e.displayText();
+	}
 	
 
 	void defineOptions(Poco::Util::OptionSet & options)
@@ -430,6 +482,13 @@ private:
 				.repeatable(false)
 				.argument("<number>")
 				.binding("port"));
+
+		options.addOption(
+			Poco::Util::Option("query", "e")
+				.required(false)
+				.repeatable(false)
+				.argument("<string>")
+				.binding("query"));
 	}
 };
 

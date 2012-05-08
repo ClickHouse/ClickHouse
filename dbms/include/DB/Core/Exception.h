@@ -19,6 +19,7 @@ public:
 	Exception(const std::string & msg, const std::string & arg, int code = 0);
 	Exception(const std::string & msg, const Exception & exc, int code = 0);
 	Exception(const Exception & exc);
+	explicit Exception(const Poco::Exception & exc);
 	~Exception() throw();
 	Exception & operator = (const Exception & exc);
 	const char * name() const throw();

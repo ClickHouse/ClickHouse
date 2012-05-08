@@ -44,6 +44,12 @@ struct QueryState
 
 	Context context;
 
+	/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
+	  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета.
+	  */
+	SharedPtr<Exception> exception;
+	
+
 	QueryState() : query_id(0), stage(Protocol::QueryProcessingStage::Complete), compression(Protocol::Compression::Disable) {}
 	
 	void reset()

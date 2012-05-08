@@ -32,29 +32,58 @@ void TCPHandler::runImpl()
 
 	while (!in.eof())
 	{
-		/// Пакет с запросом.
-		receivePacket(in);
-
-		LOG_DEBUG(log, "Query ID: " << state.query_id);
-		LOG_DEBUG(log, "Query: " << state.query);
-		LOG_DEBUG(log, "In format: " << state.in_format);
-		LOG_DEBUG(log, "Out format: " << state.out_format);
-
 		Stopwatch watch;
-
-		/// Читаем из сети данные для INSERT-а, если надо, и вставляем их.
-		if (state.io.out)
+		
+		try
 		{
-			while (receivePacket(in))
-				;
+			/// Пакет с запросом.
+			receivePacket(in);
+
+			LOG_DEBUG(log, "Query ID: " << state.query_id);
+			LOG_DEBUG(log, "Query: " << state.query);
+			LOG_DEBUG(log, "In format: " << state.in_format);
+			LOG_DEBUG(log, "Out format: " << state.out_format);
+
+			state.exception = NULL;
+		
+			/// Читаем из сети данные для INSERT-а, если надо, и вставляем их.
+			if (state.io.out)
+			{
+				while (receivePacket(in))
+					;
+			}
+
+			/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
+			if (state.io.in)
+			{
+				while (sendData(out, out_for_chunks))
+					;
+			}
+		}
+		catch (DB::Exception & e)
+		{
+			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
+				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
+			state.exception = e.clone();
+		}
+		catch (Poco::Exception & e)
+		{
+			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code() << ", e.displayText() = " << e.displayText());
+			state.exception = new Exception(e.message(), e.code());
+		}
+		catch (std::exception & e)
+		{
+			LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
+			state.exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+		}
+		catch (...)
+		{
+			LOG_ERROR(log, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
+			state.exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 
-		/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
-		if (state.io.in)
-		{
-			while (sendData(out, out_for_chunks))
-				;
-		}
+		if (state.exception)
+			sendException(out);
 
 		watch.stop();
 
@@ -187,7 +216,9 @@ bool TCPHandler::sendData(WriteBuffer & out, WriteBuffer & out_for_chunks)
 
 void TCPHandler::sendException(WriteBuffer & out)
 {
-	/// TODO
+	writeVarUInt(Protocol::Server::Exception, out);
+	writeException(*state.exception, out);
+	out.next();
 }
 
 void TCPHandler::sendProgress(WriteBuffer & out)
