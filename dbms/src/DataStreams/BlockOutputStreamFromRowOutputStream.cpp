@@ -4,7 +4,7 @@ namespace DB
 {
 
 BlockOutputStreamFromRowOutputStream::BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_)
-	: row_output(row_output_) {}
+	: row_output(row_output_), first_row(true) {}
 
 
 void BlockOutputStreamFromRowOutputStream::write(const Block & block)
@@ -14,8 +14,9 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < rows; ++i)
 	{
-		if (i != 0)
+		if (!first_row)
 			row_output->writeRowBetweenDelimiter();
+		first_row = false;
 		
 		row_output->writeRowStartDelimiter();
 

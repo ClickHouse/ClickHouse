@@ -22,6 +22,7 @@ public:
 
 private:
 	RowOutputStreamPtr row_output;
+	bool first_row;
 };
 
 }
