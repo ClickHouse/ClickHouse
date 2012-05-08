@@ -14,7 +14,7 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
 	RowInputStreamPtr row_input_,
 	const Block & sample_,
 	size_t max_block_size_)
-	: row_input(row_input_), sample(sample_), max_block_size(max_block_size_)
+	: row_input(row_input_), sample(sample_), max_block_size(max_block_size_), first_row(true)
 {
 }
 
@@ -25,8 +25,9 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
 	for (size_t rows = 0; rows < max_block_size; ++rows)
 	{
-		if (rows != 0)
+		if (!first_row)
 			row_input->readRowBetweenDelimiter();
+		first_row = false;
 		
 		Row row = row_input->read();
 
