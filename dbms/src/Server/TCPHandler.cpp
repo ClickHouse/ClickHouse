@@ -59,6 +59,8 @@ void TCPHandler::runImpl()
 				while (sendData(out, out_for_chunks))
 					;
 			}
+			else
+				sendOk(out);
 		}
 		catch (DB::Exception & e)
 		{
@@ -218,6 +220,12 @@ void TCPHandler::sendException(WriteBuffer & out)
 {
 	writeVarUInt(Protocol::Server::Exception, out);
 	writeException(*state.exception, out);
+	out.next();
+}
+
+void TCPHandler::sendOk(WriteBuffer & out)
+{
+	writeVarUInt(Protocol::Server::Ok, out);
 	out.next();
 }
 

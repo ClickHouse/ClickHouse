@@ -1,23 +1,10 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
 {
-
-
-class OneValueBlockInputStream : public IProfilingBlockInputStream
-{
-public:
-	OneValueBlockInputStream();
-	Block readImpl();
-	String getName() const { return "OneValueBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new OneValueBlockInputStream(); }
-private:
-	bool has_been_read;
-};
 
 
 /** Реализует хранилище для системной таблицы One.
@@ -31,7 +18,7 @@ public:
 	StorageSystemOne(const std::string & name_);
 	
 	std::string getName() const { return "SystemOne"; }
-	std::string getTableName() const { return "One"; }
+	std::string getTableName() const { return name; }
 
 	const NamesAndTypesList & getColumnsList() const { return columns; }
 

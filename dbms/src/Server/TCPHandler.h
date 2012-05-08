@@ -95,6 +95,7 @@ private:
 	bool sendData(WriteBuffer & out, WriteBuffer & out_for_chunks);
 	void sendException(WriteBuffer & out);
 	void sendProgress(WriteBuffer & out);
+	void sendOk(WriteBuffer & out);
 
 	bool receivePacket(ReadBuffer & in);
 	void receiveQuery(ReadBuffer & in);

@@ -74,8 +74,11 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 void PrettyBlockOutputStream::write(const Block & block_)
 {
 	if (total_rows >= max_rows)
+	{
+		total_rows += block_.rows();
 		return;
-	
+	}
+		
 	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
 	Block block = block_;
 	
@@ -200,17 +203,12 @@ void PrettyBlockOutputStream::write(const Block & block_)
 
 void PrettyBlockOutputStream::writeSuffix()
 {
-	writeString("  ", ostr);
-	writeIntText(total_rows, ostr);
-	writeString(" rows in set.", ostr);
-
 	if (total_rows >= max_rows)
 	{
-		writeString(" Showed first ", ostr);
+		writeString("  Showed first ", ostr);
 		writeIntText(max_rows, ostr);
-		writeString(".", ostr);
+		writeString(".\n", ostr);
 	}
-	writeString("\n", ostr);
 }
 
 

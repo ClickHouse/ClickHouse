@@ -32,6 +32,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/ChunkedReadBuffer.h>
 #include <DB/IO/ChunkedWriteBuffer.h>
+#include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -56,7 +57,7 @@ class Client : public Poco::Util::Application
 {
 public:
 	Client() : is_interactive(true), stdin_is_not_tty(false), socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
-		format_max_block_size(0), std_out(STDOUT_FILENO), received_rows(0) {}
+		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0) {}
 	
 private:
 	typedef std::tr1::unordered_set<String> StringSet;
@@ -76,6 +77,8 @@ private:
 	String out_format;					/// Формат приёма данных (результата) от сервера.
 	String format;						/// Формат вывода результата в консоль.
 	size_t format_max_block_size;		/// Максимальный размер блока при выводе в консоль.
+	String insert_format;				/// Формат данных для INSERT-а при чтении их из stdin в batch режиме
+	size_t insert_format_max_block_size; /// Максимальный размер блока при чтении данных INSERT-а.
 
 	Context context;
 	Block empty_block;
@@ -89,6 +92,10 @@ private:
 	SharedPtr<WriteBuffer> chunked_out;
 	SharedPtr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
+
+	/// Чтение из stdin для batch режима
+	ReadBufferFromFileDescriptor std_in;
+	BlockInputStreamPtr block_std_in;
 
 	/// Вывод в консоль
 	WriteBufferFromFileDescriptor std_out;
@@ -104,6 +111,7 @@ private:
 
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
+	bool expect_result;		/// Запрос предполагает получение результата.
 	
 
 	void initialize(Poco::Util::Application & self)
@@ -289,7 +297,7 @@ private:
 			process(config().getString("query"));
 		else
 		{
-			
+			// TODO
 		}
 	}
 
@@ -308,6 +316,7 @@ private:
 			return true;
 		
 		sendQuery();
+		sendData();
 		receiveResult();
 
 		if (is_interactive)
@@ -373,6 +382,73 @@ private:
 	}
 
 
+	void sendData()
+	{
+		/// Если нужно отправить данные INSERT-а.
+		const ASTInsertQuery * parsed_insert_query = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
+		if (!parsed_insert_query)
+			return;
+		
+		if (parsed_insert_query->data)
+		{
+			/// Отправляем данные из запроса.
+			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data);
+			sendDataFrom(data_in);
+		}
+		else if (!is_interactive)
+		{
+			/// Отправляем данные из stdin.
+			sendDataFrom(std_in);
+		}
+		else
+			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+	}
+
+
+	void sendDataFrom(ReadBuffer & buf)
+	{
+/*		if (!block_out)
+		{
+			chunked_out = new ChunkedWriteBuffer(out, query_id);
+			maybe_compressed_out = compression == Protocol::Compression::Enable
+				? new CompressedWriteBuffer(*chunked_out)
+				: chunked_out;
+
+			block_out = context.format_factory->getOutput(
+				in_format,
+				*maybe_compressed_out,
+				empty_block,
+				insert_format_max_block_size,
+				*context.data_type_factory);
+		}
+
+		/// Прочитать из сети один блок и вывести его в консоль
+		Block block = block_in->read();
+		if (block)
+		{
+			received_rows += block.rows();
+			if (!block_std_out)
+			{
+				String current_format = format;
+
+				/// Формат может быть указан в SELECT запросе.
+				if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*parsed_query))
+					if (select->format)
+						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*select->format))
+							current_format = id->name;
+
+				block_std_out = context.format_factory->getOutput(current_format, std_out, block);
+			}
+
+			block_std_out->write(block);
+			std_out.next();
+			return true;
+		}
+		else
+			return false;*/
+	}
+
+
 	void receiveResult()
 	{
 		received_rows = 0;
@@ -396,6 +472,10 @@ private:
 
 			case Protocol::Server::Exception:
 				receiveException();
+				return false;
+
+			case Protocol::Server::Ok:
+				receiveOk();
 				return false;
 
 			default:
@@ -437,6 +517,7 @@ private:
 							current_format = id->name;
 				
 				block_std_out = context.format_factory->getOutput(current_format, std_out, block);
+				block_std_out->writePrefix();
 			}
 			
 			block_std_out->write(block);
@@ -444,7 +525,13 @@ private:
 			return true;
 		}
 		else
+		{
+			if (block_std_out)
+				block_std_out->writeSuffix();
+			
+			std_out.next();
 			return false;
+		}
 	}
 
 
@@ -455,6 +542,13 @@ private:
 
 		std::cerr << "Received exception from server:" << std::endl
 			<< "Code: " << e.code() << ". " << e.displayText();
+	}
+
+
+	void receiveOk()
+	{
+		if (is_interactive)
+			std::cout << "Ok." << std::endl;
 	}
 	
 

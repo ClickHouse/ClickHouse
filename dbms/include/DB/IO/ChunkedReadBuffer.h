@@ -3,6 +3,8 @@
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 
+#include <iostream>
+
 
 namespace DB
 {
@@ -26,7 +28,7 @@ protected:
 		if (read_in_chunk < chunk_size)
 		{
 			if (!in.next())
-				throw Exception("Cannot read all query", ErrorCodes::CANNOT_READ_ALL_DATA_FROM_CHUNKED_INPUT);
+				throw Exception("Cannot read all data from chunked input", ErrorCodes::CANNOT_READ_ALL_DATA_FROM_CHUNKED_INPUT);
 
 			working_buffer = in.buffer();
 			if (chunk_size - read_in_chunk < working_buffer.size())
@@ -36,6 +38,8 @@ protected:
 			}
 			else
 				read_in_chunk += working_buffer.size();
+
+			in.position() += working_buffer.size();
 		}
 		else
 		{

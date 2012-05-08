@@ -2,35 +2,13 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/Columns/ColumnsNumber.h>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-
+#include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Storages/StorageSystemOne.h>
 
 
 namespace DB
 {
-
-
-OneValueBlockInputStream::OneValueBlockInputStream() : has_been_read(false)
-{
-}
-
-
-Block OneValueBlockInputStream::readImpl()
-{
-	Block res;
-	if (has_been_read)
-		return res;
-
-	has_been_read = true;
-	ColumnWithNameAndType col;
-	col.name = "dummy";
-	col.type = new DataTypeUInt8;
-	col.column = new ColumnConstUInt8(1, 0);
-	res.insert(col);
-	return res;
-}
 
 
 StorageSystemOne::StorageSystemOne(const std::string & name_)
@@ -44,7 +22,15 @@ BlockInputStreams StorageSystemOne::read(
 	const Names & column_names, ASTPtr query, size_t max_block_size, unsigned max_threads)
 {
 	check(column_names);
-	return BlockInputStreams(1, new OneValueBlockInputStream());
+
+	Block block;
+	ColumnWithNameAndType col;
+	col.name = "dummy";
+	col.type = new DataTypeUInt8;
+	col.column = new ColumnConstUInt8(1, 0);
+	block.insert(col);
+	
+	return BlockInputStreams(1, new OneBlockInputStream(block));
 }
 
 

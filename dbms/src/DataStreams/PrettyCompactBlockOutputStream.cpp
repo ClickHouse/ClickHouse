@@ -13,7 +13,10 @@ namespace DB
 void PrettyCompactBlockOutputStream::write(const Block & block_)
 {
 	if (total_rows >= max_rows)
+	{
+		total_rows += block_.rows();
 		return;
+	}
 	
 	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
 	Block block = block_;

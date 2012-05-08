@@ -35,7 +35,7 @@ public:
 	StorageSystemNumbers(const std::string & name_);
 	
 	std::string getName() const { return "SystemNumbers"; }
-	std::string getTableName() const { return "Numbers"; }
+	std::string getTableName() const { return name; }
 
 	const NamesAndTypesList & getColumnsList() const { return columns; }
 

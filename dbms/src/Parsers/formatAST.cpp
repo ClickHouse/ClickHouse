@@ -196,7 +196,7 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent)
 
 	if (ast.columns)
 	{
-		s << "\n(";
+		s << "\n(\n";
 		formatAST(*ast.columns, s, indent + 1);
 		s << ")";
 	}

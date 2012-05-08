@@ -13,7 +13,10 @@ namespace DB
 void PrettySpaceBlockOutputStream::write(const Block & block_)
 {
 	if (total_rows >= max_rows)
+	{
+		total_rows += block_.rows();
 		return;
+	}
 	
 	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
 	Block block = block_;
@@ -96,17 +99,12 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 
 void PrettySpaceBlockOutputStream::writeSuffix()
 {
-	writeChar('\n', ostr);
-	writeIntText(total_rows, ostr);
-	writeString(" rows in set.", ostr);
-
 	if (total_rows >= max_rows)
 	{
-		writeString(" Showed first ", ostr);
+		writeString("\nShowed first ", ostr);
 		writeIntText(max_rows, ostr);
 		writeString(".", ostr);
 	}
-	writeChar('\n', ostr);
 }
 
 }
