@@ -1,5 +1,7 @@
 #include <iomanip>
 
+#include <boost/bind.hpp>
+
 #include <Yandex/Revision.h>
 
 #include <statdaemons/Stopwatch.h>
@@ -12,6 +14,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/copyData.h>
 
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 
 #include "TCPHandler.h"
@@ -33,6 +36,7 @@ void TCPHandler::runImpl()
 	while (!in.eof())
 	{
 		Stopwatch watch;
+		state.reset();
 		
 		try
 		{
@@ -56,6 +60,9 @@ void TCPHandler::runImpl()
 			/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
 			if (state.io.in)
 			{
+				if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
+					profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this, boost::ref(in)));
+				
 				while (sendData(out, out_for_chunks))
 					;
 			}
@@ -180,13 +187,47 @@ bool TCPHandler::receiveData(ReadBuffer & in)
 		return false;
 }
 
+bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
+{
+	/// Во время выполнения запроса, единственный пакет, который может прийти от клиента - это остановка выполнения запроса.
+	std::cerr << "checking cancelled" << std::endl;
+	if (in.poll(0))
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(is_cancelled_mutex);
+		
+		std::cerr << "checking cancelled; socket has data" << std::endl;
+		
+		UInt64 packet_type = 0;
+		readVarUInt(packet_type, in);
+
+		switch (packet_type)
+		{
+			case Protocol::Client::Cancel:
+				if (state.empty())
+					throw Exception("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+				LOG_INFO(log, "Query was cancelled.");
+				return true;
+
+			default:
+				throw Exception("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+		}
+	}
+
+	return false;
+}
+
 bool TCPHandler::sendData(WriteBuffer & out, WriteBuffer & out_for_chunks)
 {
+	/// Получить один блок результата выполнения запроса из state.io.in.
+	Block block = state.io.in->read();
+	
 	writeVarUInt(Protocol::Server::Data, out);
 	out.next();
 
 	if (!state.block_out)
 	{
+		std::cerr << "query_id: " << state.query_id << std::endl;
+		
 		state.chunked_out = new ChunkedWriteBuffer(out_for_chunks, state.query_id);
 		state.maybe_compressed_out = state.compression == Protocol::Compression::Enable
 			? new CompressedWriteBuffer(*state.chunked_out)
@@ -198,8 +239,7 @@ bool TCPHandler::sendData(WriteBuffer & out, WriteBuffer & out_for_chunks)
 			state.io.in_sample);
 	}
 
-	/// Получить один блок результата выполнения запроса из state.io.in и записать его в сеть.
-	Block block = state.io.in->read();
+	/// Если блок есть - записать его в сеть. Иначе записать в сеть признак конца данных.
 	if (block)
 	{
 		state.block_out->write(block);

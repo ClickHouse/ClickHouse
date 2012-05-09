@@ -6,6 +6,7 @@
 #include <DB/IO/ChunkedWriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/ReadBufferFromPocoSocket.h>
 
 #include <DB/DataStreams/BlockIO.h>
 
@@ -54,13 +55,7 @@ struct QueryState
 	
 	void reset()
 	{
-		query_id = 0;
-		stage = Protocol::QueryProcessingStage::Complete;
-		compression = Protocol::Compression::Disable;
-		in_format.clear();
-		out_format.clear();
-		query.clear();
-		io = BlockIO();
+		*this = QueryState();
 	}
 
 	bool empty()
@@ -89,6 +84,9 @@ private:
 	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
 	QueryState state;
 
+	Poco::FastMutex is_cancelled_mutex;
+	
+
 	void runImpl();
 
 	void sendHello(WriteBuffer & out);
@@ -100,6 +98,8 @@ private:
 	bool receivePacket(ReadBuffer & in);
 	void receiveQuery(ReadBuffer & in);
 	bool receiveData(ReadBuffer & in);
+
+	bool isQueryCancelled(ReadBufferFromPocoSocket & in);
 };
 
 

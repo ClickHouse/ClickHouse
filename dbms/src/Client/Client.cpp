@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -11,6 +12,7 @@
 
 #include <tr1/unordered_set>
 
+#include <boost/thread/thread.hpp>
 #include <boost/assign/list_inserter.hpp>
 
 #include <Poco/File.h>
@@ -51,6 +53,62 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+
+void throwFromErrno(const std::string & s, int code)
+{
+	char buf[128];
+	throw Exception(s + ", errno: " + Poco::NumberFormatter::format(errno) + ", strerror: " + std::string(strerror_r(errno, buf, sizeof(buf))), code);
+}
+
+
+/** Пока существует объект этого класса - блокирует сигнал INT, при этом позволяет узнать, не пришёл ли он.
+  * В один момент времени используйте только один экземпляр этого класса.
+  */
+class InterruptListener
+{
+public:
+	InterruptListener() : is_interrupted(false)
+	{
+		sigset_t sig_set;
+		if (sigemptyset(&sig_set)
+			|| sigaddset(&sig_set, SIGINT)
+			|| pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
+			throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+
+		boost::thread waiting_thread(&InterruptListener::wait, this);
+	}
+
+	~InterruptListener()
+	{
+		sigset_t sig_set;
+		if (sigemptyset(&sig_set)
+			|| sigaddset(&sig_set, SIGINT)
+			|| pthread_sigmask(SIG_UNBLOCK, &sig_set, NULL))
+			throwFromErrno("Cannot unblock signal.", ErrorCodes::CANNOT_UNBLOCK_SIGNAL);
+	}
+
+	bool check() { return is_interrupted; }
+
+private:
+	bool is_interrupted;
+
+	void wait()
+	{
+		sigset_t sig_set;
+		int sig = 0;
+
+		if (sigemptyset(&sig_set)
+			|| sigaddset(&sig_set, SIGINT)
+			|| sigwait(&sig_set, &sig))
+		{
+			std::cerr << "Cannot wait for signal." << std::endl;
+			return;
+		}
+
+		is_interrupted = true;
+	}
+};
 
 
 class Client : public Poco::Util::Application
@@ -112,7 +170,7 @@ private:
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
 	bool expect_result;		/// Запрос предполагает получение результата.
-	
+
 
 	void initialize(Poco::Util::Application & self)
 	{
@@ -139,13 +197,6 @@ private:
 			loadConfiguration(home_path + "/.clickhouse-client/config.xml");
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
-	}
-
-
-	void throwFromErrno(const std::string & s, int code)
-	{
-		char buf[128];
-		throw Exception(s + ", errno: " + Poco::NumberFormatter::format(errno) + ", strerror: " + std::string(strerror_r(errno, buf, sizeof(buf))), code);
 	}
 
 
@@ -192,7 +243,7 @@ private:
 		stdin_is_not_tty = !isatty(STDIN_FILENO);
 		if (stdin_is_not_tty || config().has("query"))
 			is_interactive = false;
-		
+
 		std::cout << std::fixed << std::setprecision(3);
 		std::cerr << std::fixed << std::setprecision(3);
 		
@@ -314,6 +365,8 @@ private:
 		/// Некоторые части запроса выполняются на стороне клиента (форматирование результата). Поэтому, распарсим запрос.
 		if (!parseQuery())
 			return true;
+
+		++query_id;
 		
 		sendQuery();
 		sendData();
@@ -370,14 +423,21 @@ private:
 	{
 		UInt64 stage = Protocol::QueryProcessingStage::Complete;
 
-		writeVarInt(Protocol::Client::Query, out);
+		writeVarUInt(Protocol::Client::Query, out);
 		writeIntBinary(query_id, out);
-		writeVarInt(stage, out);
-		writeVarInt(compression, out);
+		writeVarUInt(stage, out);
+		writeVarUInt(compression, out);
 		writeStringBinary(in_format, out);
 		writeStringBinary(out_format, out);
 
 		writeStringBinary(query, out);
+		out.next();
+	}
+
+
+	void sendCancel()
+	{
+		writeVarUInt(Protocol::Client::Cancel, out);
 		out.next();
 	}
 
@@ -451,10 +511,36 @@ private:
 
 	void receiveResult()
 	{
-		received_rows = 0;
-		while (receivePacket())
-			;
+		InterruptListener interrupt_listener;
+		bool cancelled = false;
 
+		received_rows = 0;
+		while (true)
+		{
+			/** Проверим, не требуется ли остановить выполнение запроса (Ctrl+C).
+			  * Если требуется - отправим об этом информацию на сервер.
+			  * После чего, получим оставшиеся пакеты с сервера (чтобы не было рассинхронизации).
+			  */
+			if (!cancelled)
+			{
+				if (interrupt_listener.check())
+				{
+					sendCancel();
+					cancelled = true;
+					if (is_interactive)
+						std::cout << "Cancelling query." << std::endl;
+				}
+				else if (!in.poll(1000000))
+					continue;	/// Если новых данных в ещё нет, то после таймаута продолжим проверять, не остановлено ли выполнение запроса.
+			}
+
+			if (!receivePacket())
+				break;
+		}
+
+		if (cancelled && is_interactive)
+			std::cout << "Query was cancelled." << std::endl;
+		
 		block_std_out = NULL;
 	}
 

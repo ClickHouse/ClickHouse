@@ -36,6 +36,11 @@ protected:
 public:
 	ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<ReadBuffer>(buf_size), socket(socket_) {}
+
+	bool poll(size_t timeout_microseconds)
+	{
+		return offset() != buffer().size() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+	}
 };
 
 }

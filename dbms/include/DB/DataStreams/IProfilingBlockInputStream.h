@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/function.hpp>
+
 #include <Poco/Stopwatch.h>
 
 #include <DB/Core/Names.h>
@@ -35,9 +37,10 @@ struct BlockStreamProfileInfo
 };
 
 	
-/** Смотрит за тем, как работает поток блоков.
+/** Смотрит за тем, как работает источник блоков.
   * Позволяет получить информацию для профайлинга:
   *  строк в секунду, блоков в секунду, мегабайт в секунду и т. п.
+  * Позволяет остановить чтение данных (во вложенных источниках).
   */
 class IProfilingBlockInputStream : public IBlockInputStream
 {
@@ -49,8 +52,16 @@ public:
 	
 	const BlockStreamProfileInfo & getInfo() const;
 
+	/** Установить колбэк, который вызывается, чтобы проверить, не был ли запрос остановлен.
+	  * Колбэк пробрасывается во все дочерние источники и вызывается там перед чтением данных.
+	  * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
+	  */
+	typedef boost::function<bool()> IsCancelledCallback;
+	void setIsCancelledCallback(IsCancelledCallback callback);
+
 private:
 	BlockStreamProfileInfo info;
+	IsCancelledCallback is_cancelled_callback;
 };
 
 }

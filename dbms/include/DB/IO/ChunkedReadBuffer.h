@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/NumberFormatter.h>
+
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 
@@ -50,7 +52,9 @@ protected:
 			readIntBinary(query_id, in);
 
 			if (query_id != assert_query_id)
-				throw Exception("Received data for wrong query id", ErrorCodes::RECEIVED_DATA_FOR_WRONG_QUERY_ID);
+				throw Exception("Received data for wrong query id (expected "
+					+ Poco::NumberFormatter::format(assert_query_id) + ", got "
+					+ Poco::NumberFormatter::format(query_id) + ")", ErrorCodes::RECEIVED_DATA_FOR_WRONG_QUERY_ID);
 
 			/// Флаг конца.
 			readIntBinary(all_read, in);

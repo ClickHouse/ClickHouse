@@ -78,11 +78,14 @@ Block IProfilingBlockInputStream::read()
 		info.total_stopwatch.start();
 
 		for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
-		if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
-			info.nested_infos.push_back(&child->info);
+			if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+				info.nested_infos.push_back(&child->info);
 		
 		info.started = true;
 	}
+
+	if (is_cancelled_callback && is_cancelled_callback())
+		return Block();
 	
 	info.work_stopwatch.start();
 	Block res = readImpl();
@@ -117,6 +120,16 @@ Block IProfilingBlockInputStream::read()
 const BlockStreamProfileInfo & IProfilingBlockInputStream::getInfo() const
 {
 	return info;
+}
+
+
+void IProfilingBlockInputStream::setIsCancelledCallback(IsCancelledCallback callback)
+{
+	is_cancelled_callback = callback;
+
+	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			child->setIsCancelledCallback(callback);
 }
 
 
