@@ -117,7 +117,7 @@ class Client : public Poco::Util::Application
 {
 public:
 	Client() : is_interactive(true), stdin_is_not_tty(false), socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
-		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0) {}
+		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0), written_progress_chars(0) {}
 	
 private:
 	typedef std::tr1::unordered_set<String> StringSet;
@@ -172,6 +172,8 @@ private:
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
 	bool expect_result;		/// Запрос предполагает получение результата.
+
+	size_t written_progress_chars;
 
 
 	void initialize(Poco::Util::Application & self)
@@ -613,6 +615,10 @@ private:
 				receiveOk();
 				return false;
 
+			case Protocol::Server::Progress:
+				receiveProgress();
+				return true;
+
 			default:
 				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 		}
@@ -634,6 +640,12 @@ private:
 				empty_block,
 				format_max_block_size,
 				*context.data_type_factory);
+		}
+
+		if (written_progress_chars)
+		{
+			std::cerr << std::string(written_progress_chars, '\b');
+			written_progress_chars = 0;
 		}
 
 		/// Прочитать из сети один блок и вывести его в консоль
@@ -684,6 +696,36 @@ private:
 	{
 		if (is_interactive)
 			std::cout << "Ok." << std::endl;
+	}
+
+
+	void receiveProgress()
+	{
+		size_t rows = 0;
+		size_t bytes = 0;
+		readVarUInt(rows, in);
+		readVarUInt(bytes, in);
+
+		static size_t increment = 0;
+		static const char * indicators[8] =
+		{
+			"\033[1;30m.\033[0m",
+			"\033[1;31m.\033[0m",
+			"\033[1;32m.\033[0m",
+			"\033[1;33m.\033[0m",
+			"\033[1;34m.\033[0m",
+			"\033[1;35m.\033[0m",
+			"\033[1;36m.\033[0m",
+			"\033[1;37m.\033[0m",
+		};
+		
+		if (is_interactive)
+		{
+			//std::cout << "Progress: " << rows << " rows, " << bytes << " bytes." << std::endl;
+			std::cerr << indicators[increment % 8];
+			++increment;
+			++written_progress_chars;
+		}
 	}
 	
 

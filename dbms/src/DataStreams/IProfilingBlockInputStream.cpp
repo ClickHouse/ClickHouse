@@ -10,12 +10,11 @@ namespace DB
 {
 
 
-void BlockStreamProfileInfo::update(Block & block)
+void BlockStreamProfileInfo::update(Block & block, size_t bytes_)
 {
 	++blocks;
 	rows += block.rows();
-	for (size_t i = 0; i < block.columns(); ++i)
-		bytes += block.getByPosition(i).column->byteSize();
+	bytes += bytes_;
 
 	if (column_names.empty())
 		column_names = block.dumpNames();
@@ -109,9 +108,16 @@ Block IProfilingBlockInputStream::read()
 		
 		std::cerr << std::endl;
 	}*/
+
+	size_t bytes = 0;
+	for (size_t i = 0; i < res.columns(); ++i)
+		bytes += res.getByPosition(i).column->byteSize();
 	
 	if (res)
-		info.update(res);
+		info.update(res, bytes);
+
+	if (progress_callback)
+		progress_callback(res.rows(), bytes);
 
 	return res;
 }
@@ -125,12 +131,19 @@ const BlockStreamProfileInfo & IProfilingBlockInputStream::getInfo() const
 
 void IProfilingBlockInputStream::setIsCancelledCallback(IsCancelledCallback callback)
 {
-	is_cancelled_callback = callback;
-
 	BlockInputStreams leaves = getLeaves();
 	for (BlockInputStreams::iterator it = leaves.begin(); it != leaves.end(); ++it)
 		if (IProfilingBlockInputStream * leaf = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-			leaf->setIsCancelledCallback(callback);
+			leaf->is_cancelled_callback = callback;
+}
+
+
+void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
+{
+	BlockInputStreams leaves = getLeaves();
+	for (BlockInputStreams::iterator it = leaves.begin(); it != leaves.end(); ++it)
+		if (IProfilingBlockInputStream * leaf = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			leaf->progress_callback = callback;
 }
 
 

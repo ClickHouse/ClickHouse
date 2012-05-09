@@ -32,7 +32,7 @@ struct BlockStreamProfileInfo
 
 	BlockStreamProfileInfo() : started(false), rows(0), blocks(0), bytes(0) {}
 
-	void update(Block & block);
+	void update(Block & block, size_t bytes_);
 	void print(std::ostream & ostr) const;
 };
 
@@ -59,9 +59,18 @@ public:
 	typedef boost::function<bool()> IsCancelledCallback;
 	void setIsCancelledCallback(IsCancelledCallback callback);
 
+	/** Установить колбэк прогресса выполнения.
+	  * Колбэк пробрасывается во все листовые источники и вызывается там после каждого блока.
+	  * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
+	  * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
+	  */
+	typedef boost::function<void(size_t, size_t)> ProgressCallback;
+	void setProgressCallback(ProgressCallback callback);
+
 private:
 	BlockStreamProfileInfo info;
 	IsCancelledCallback is_cancelled_callback;
+	ProgressCallback progress_callback;
 };
 
 }

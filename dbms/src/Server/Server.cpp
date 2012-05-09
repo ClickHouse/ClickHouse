@@ -84,6 +84,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.settings.max_block_size 	= config.getInt("max_block_size", 	global_context.settings.max_block_size);
 	global_context.settings.max_query_size 	= config.getInt("max_query_size", 	global_context.settings.max_query_size);
 	global_context.settings.max_threads 	= config.getInt("max_threads", 		global_context.settings.max_threads);
+	global_context.settings.interactive_delay = config.getInt("interactive_delay", global_context.settings.interactive_delay);
 	
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
 	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));

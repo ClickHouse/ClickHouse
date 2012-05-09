@@ -8,8 +8,6 @@
 
 #include <DB/Core/ErrorCodes.h>
 
-#include <DB/IO/ReadBufferFromPocoSocket.h>
-#include <DB/IO/WriteBufferFromPocoSocket.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/copyData.h>
@@ -39,17 +37,18 @@ void TCPHandler::runImpl()
 		state.reset();
 		
 		try
-		{
+		{	
 			/// Пакет с запросом.
 			receivePacket(in, out);
+
+			after_check_cancelled.restart();
+			after_send_progress.restart();
 
 			LOG_DEBUG(log, "Query ID: " << state.query_id);
 			LOG_DEBUG(log, "Query: " << state.query);
 			LOG_DEBUG(log, "In format: " << state.in_format);
 			LOG_DEBUG(log, "Out format: " << state.out_format);
 
-			state.exception = NULL;
-		
 			/// Читаем из сети данные для INSERT-а, если надо, и вставляем их.
 			if (state.io.out)
 			{
@@ -61,8 +60,11 @@ void TCPHandler::runImpl()
 			if (state.io.in)
 			{
 				if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
+				{
 					profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this, boost::ref(in)));
-				
+					profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, boost::ref(out), 0, 0));
+				}
+
 				while (sendData(out, out_for_chunks))
 					;
 			}
@@ -197,12 +199,17 @@ bool TCPHandler::receiveData(ReadBuffer & in)
 
 bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(is_cancelled_mutex);
+	
+	if (after_check_cancelled.elapsed() / 1000 < state.context.settings.interactive_delay)
+		return false;
+
+	after_check_cancelled.restart();
+	
 	/// Во время выполнения запроса, единственный пакет, который может прийти от клиента - это остановка выполнения запроса.
 	std::cerr << "checking cancelled" << std::endl;
 	if (in.poll(0))
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(is_cancelled_mutex);
-		
 		std::cerr << "checking cancelled; socket has data" << std::endl;
 		
 		UInt64 packet_type = 0;
@@ -228,6 +235,8 @@ bool TCPHandler::sendData(WriteBuffer & out, WriteBuffer & out_for_chunks)
 {
 	/// Получить один блок результата выполнения запроса из state.io.in.
 	Block block = state.io.in->read();
+
+	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 	
 	writeVarUInt(Protocol::Server::Data, out);
 	out.next();
@@ -260,12 +269,15 @@ bool TCPHandler::sendData(WriteBuffer & out, WriteBuffer & out_for_chunks)
 	{
 		dynamic_cast<ChunkedWriteBuffer &>(*state.chunked_out).finish();
 		out_for_chunks.next();
+		state.sent_all_data = true;
 		return false;
 	}
 }
 
 void TCPHandler::sendException(WriteBuffer & out)
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
+	
 	writeVarUInt(Protocol::Server::Exception, out);
 	writeException(*state.exception, out);
 	out.next();
@@ -273,13 +285,29 @@ void TCPHandler::sendException(WriteBuffer & out)
 
 void TCPHandler::sendOk(WriteBuffer & out)
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
+
 	writeVarUInt(Protocol::Server::Ok, out);
 	out.next();
 }
 
-void TCPHandler::sendProgress(WriteBuffer & out)
+void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
 {
-	/// TODO
+	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
+
+	/// Не будем отправлять прогресс после того, как отправлены все данные.
+	if (state.sent_all_data)
+		return;
+
+	if (after_send_progress.elapsed() / 1000 < state.context.settings.interactive_delay)
+		return;
+
+	after_send_progress.restart();
+	
+	writeVarUInt(Protocol::Server::Progress, out);
+	writeVarUInt(rows, out);
+	writeVarUInt(bytes, out);
+	out.next();
 }
 
 
