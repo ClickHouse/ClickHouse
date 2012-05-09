@@ -29,7 +29,7 @@ public:
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression);
+	AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
 
 	Block readImpl();
 

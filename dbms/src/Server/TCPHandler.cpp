@@ -41,7 +41,7 @@ void TCPHandler::runImpl()
 		try
 		{
 			/// Пакет с запросом.
-			receivePacket(in);
+			receivePacket(in, out);
 
 			LOG_DEBUG(log, "Query ID: " << state.query_id);
 			LOG_DEBUG(log, "Query: " << state.query);
@@ -53,7 +53,7 @@ void TCPHandler::runImpl()
 			/// Читаем из сети данные для INSERT-а, если надо, и вставляем их.
 			if (state.io.out)
 			{
-				while (receivePacket(in))
+				while (receivePacket(in, out))
 					;
 			}
 
@@ -112,28 +112,36 @@ void TCPHandler::sendHello(WriteBuffer & out)
 	out.next();
 }
 
-bool TCPHandler::receivePacket(ReadBuffer & in)
+bool TCPHandler::receivePacket(ReadBuffer & in, WriteBuffer & out)
 {
-	UInt64 packet_type = 0;
-	readVarUInt(packet_type, in);
-
-	std::cerr << "Packet: " << packet_type << std::endl;
-
-	switch (packet_type)
+	while (true)	/// Если пришёл пакет типа Ping, то игнорируем его и получаем следующий пакет.
 	{
-		case Protocol::Client::Query:
-			if (!state.empty())
-				throw Exception("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-			receiveQuery(in);
-			return true;
-			
-		case Protocol::Client::Data:
-			if (state.empty())
-				throw Exception("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-			return receiveData(in);
-						
-		default:
-			throw Exception("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+		UInt64 packet_type = 0;
+		readVarUInt(packet_type, in);
+
+		std::cerr << "Packet: " << packet_type << std::endl;
+
+		switch (packet_type)
+		{
+			case Protocol::Client::Query:
+				if (!state.empty())
+					throw Exception("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+				receiveQuery(in);
+				return true;
+
+			case Protocol::Client::Data:
+				if (state.empty())
+					throw Exception("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+				return receiveData(in);
+
+			case Protocol::Client::Ping:
+				writeVarUInt(Protocol::Server::Pong, out);
+				out.next();
+				break;
+
+			default:
+				throw Exception("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+		}
 	}
 }
 
@@ -145,7 +153,7 @@ void TCPHandler::receiveQuery(ReadBuffer & in)
 	readIntBinary(state.query_id, in);
 
 	readVarUInt(stage, in);
-	state.stage = Protocol::QueryProcessingStage::Enum(stage);
+	state.stage = QueryProcessingStage::Enum(stage);
 
 	readVarUInt(compression, in);
 	state.compression = Protocol::Compression::Enum(compression);

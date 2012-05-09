@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_TYPES_IDATATYPE_NUMBER_H
-#define DBMS_DATA_TYPES_IDATATYPE_NUMBER_H
+#pragma once
 
 #include <DB/DataTypes/IDataType.h>
 
@@ -53,8 +52,8 @@ public:
 	{
 		deserializeText(field, istr);
 	}
+
+	size_t getSizeOfField() const { return sizeof(FieldType); }
 };
 
 }
-
-#endif

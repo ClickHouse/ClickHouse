@@ -22,7 +22,7 @@ using Poco::SharedPtr;
 class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	ExpressionBlockInputStream(BlockInputStreamPtr input_, SharedPtr<Expression> expression_, unsigned part_id_ = 0)
+	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression_, unsigned part_id_ = 0)
 		: input(input_), expression(expression_), part_id(part_id_)
 	{
 		children.push_back(input);
@@ -44,7 +44,7 @@ public:
 
 private:
 	BlockInputStreamPtr input;
-	SharedPtr<Expression> expression;
+	ExpressionPtr expression;
 	unsigned part_id;
 };
 

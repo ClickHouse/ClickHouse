@@ -64,6 +64,12 @@ public:
 	  */
 	virtual SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const = 0;
 
+	/// Вернуть приблизительный (оценочный) размер значения.
+	virtual size_t getSizeOfField() const
+	{
+		throw Exception("getSizeOfField() method is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	virtual ~IDataType() {}
 };
 

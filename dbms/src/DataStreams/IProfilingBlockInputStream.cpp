@@ -127,9 +127,10 @@ void IProfilingBlockInputStream::setIsCancelledCallback(IsCancelledCallback call
 {
 	is_cancelled_callback = callback;
 
-	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-			child->setIsCancelledCallback(callback);
+	BlockInputStreams leaves = getLeaves();
+	for (BlockInputStreams::iterator it = leaves.begin(); it != leaves.end(); ++it)
+		if (IProfilingBlockInputStream * leaf = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			leaf->setIsCancelledCallback(callback);
 }
 
 

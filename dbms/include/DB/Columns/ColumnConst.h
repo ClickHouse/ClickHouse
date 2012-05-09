@@ -107,4 +107,9 @@ template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 	return res;
 }
 
+
+template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const;
+
+// TODO: convertToFullColumn для остальных типов столбцов.
+
 }

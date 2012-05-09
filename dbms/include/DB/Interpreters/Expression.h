@@ -113,5 +113,7 @@ private:
 	void markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below = false);
 };
 
+typedef SharedPtr<Expression> ExpressionPtr;
+
 
 }

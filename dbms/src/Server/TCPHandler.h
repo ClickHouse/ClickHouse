@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Core/Protocol.h>
+#include <DB/Core/QueryProcessingStage.h>
 
 #include <DB/IO/ChunkedReadBuffer.h>
 #include <DB/IO/ChunkedWriteBuffer.h>
@@ -23,7 +24,7 @@ struct QueryState
 	/// Идентификатор запроса.
 	UInt64 query_id;
 
-	Protocol::QueryProcessingStage::Enum stage;
+	QueryProcessingStage::Enum stage;
 	Protocol::Compression::Enum compression;
 	String in_format;
 	String out_format;
@@ -51,7 +52,7 @@ struct QueryState
 	SharedPtr<Exception> exception;
 	
 
-	QueryState() : query_id(0), stage(Protocol::QueryProcessingStage::Complete), compression(Protocol::Compression::Disable) {}
+	QueryState() : query_id(0), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable) {}
 	
 	void reset()
 	{
@@ -95,7 +96,7 @@ private:
 	void sendProgress(WriteBuffer & out);
 	void sendOk(WriteBuffer & out);
 
-	bool receivePacket(ReadBuffer & in);
+	bool receivePacket(ReadBuffer & in, WriteBuffer & out);
 	void receiveQuery(ReadBuffer & in);
 	bool receiveData(ReadBuffer & in);
 

@@ -31,7 +31,7 @@ public:
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, SharedPtr<Expression> expression, unsigned max_threads_ = 1)
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, ExpressionPtr expression, unsigned max_threads_ = 1)
 		: inputs(inputs_), has_been_read(false), max_threads(max_threads_), pool(max_threads)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());

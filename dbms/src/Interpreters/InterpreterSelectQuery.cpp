@@ -25,16 +25,14 @@ namespace DB
 {
 
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_)
-	: query_ptr(query_ptr_), context(context_)
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_, QueryProcessingStage::Enum to_stage_)
+	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)), context(context_), to_stage(to_stage_)
 {
 }
 
 
 StoragePtr InterpreterSelectQuery::getTable()
 {
-	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
-	
 	/// Из какой таблицы читать данные. JOIN-ы не поддерживаются.
 
 	String database_name;
@@ -66,8 +64,6 @@ StoragePtr InterpreterSelectQuery::getTable()
 
 void InterpreterSelectQuery::setColumns()
 {
-	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
-
 	context.columns = !query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
 		? getTable()->getColumnsList()
 		: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList();
@@ -104,51 +100,11 @@ static inline BlockInputStreamPtr maybeAsynchronous(BlockInputStreamPtr in, bool
 
 BlockInputStreamPtr InterpreterSelectQuery::execute()
 {
-	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
-
-	/// Таблица, откуда читать данные, если не подзапрос.
-	StoragePtr table;
-	/// Интерпретатор подзапроса, если подзапрос
-	SharedPtr<InterpreterSelectQuery> interpreter_subquery;
-
 	/// Добавляем в контекст список доступных столбцов.
 	setColumns();
 	
-	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-		table = getTable();
-	else
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context);
-	
 	/// Объект, с помощью которого анализируется запрос.
-	Poco::SharedPtr<Expression> expression = new Expression(query_ptr, context);
-	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
-	Names required_columns = expression->getRequiredColumns();
-
-	/// Если не указан ни один столбец из таблицы, то будем читать первый попавшийся (чтобы хотя бы знать число строк).
-	if (required_columns.empty())
-		required_columns.push_back(context.columns.front().first);
-
-	/// Нужно ли агрегировать.
-	bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
-
-	size_t limit_length = 0;
-	size_t limit_offset = 0;
-	if (query.limit_length)
-	{
-		limit_length = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
-		if (query.limit_offset)
-			limit_offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
-	}
-
-	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
-	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
-	  */
-	size_t block_size = context.settings.max_block_size;
-	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
-		&& query.limit_length && !need_aggregate && limit_length + limit_offset < block_size)
-	{
-		block_size = limit_length + limit_offset;
-	}
+	ExpressionPtr expression = new Expression(query_ptr, context);
 
 	/** Потоки данных. При параллельном выполнении запроса, имеем несколько потоков данных.
 	  * Если нет GROUP BY, то выполним все операции до ORDER BY и LIMIT параллельно, затем
@@ -161,6 +117,89 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	  */
 	BlockInputStreams streams;
 
+	executeFetchColumns(streams, expression);
+
+	if (to_stage == QueryProcessingStage::FetchColumns)
+	{
+		executeUnion(streams, expression);
+	}
+	else
+	{
+		executeWhere(streams, expression);
+
+		/// Нужно ли агрегировать.
+		bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
+
+		/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
+		if (need_aggregate)
+			executeAggregation(streams, expression);
+
+		if (to_stage != QueryProcessingStage::WithMergeableState)
+		{
+			if (need_aggregate)
+				executeFinalizeAggregates(streams, expression);
+
+			executeHaving(streams, expression);
+			executeOuterExpression(streams, expression);
+			executeOrder(streams, expression);
+			executeUnion(streams, expression);
+			executeLimit(streams, expression);
+		}
+	}
+
+	return streams[0];
+}
+
+
+static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, size_t & offset)
+{
+	length = 0;
+	offset = 0;
+	if (query.limit_length)
+	{
+		length = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
+		if (query.limit_offset)
+			offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
+	}
+}
+
+
+void InterpreterSelectQuery::executeFetchColumns(BlockInputStreams & streams, ExpressionPtr & expression)
+{
+	/// Таблица, откуда читать данные, если не подзапрос.
+	StoragePtr table;
+	/// Интерпретатор подзапроса, если подзапрос
+	SharedPtr<InterpreterSelectQuery> interpreter_subquery;
+
+	/// Добавляем в контекст список доступных столбцов.
+	setColumns();
+
+	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
+		table = getTable();
+	else
+		interpreter_subquery = new InterpreterSelectQuery(query.table, context);
+	
+	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
+	Names required_columns = expression->getRequiredColumns();
+
+	/// Если не указан ни один столбец из таблицы, то будем читать первый попавшийся (чтобы хотя бы знать число строк).
+	if (required_columns.empty())
+		required_columns.push_back(getAnyColumn());
+
+	size_t limit_length = 0;
+	size_t limit_offset = 0;
+	getLimitLengthAndOffset(query, limit_length, limit_offset);
+
+	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
+	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
+	  */
+	size_t block_size = context.settings.max_block_size;
+	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
+		&& query.limit_length && !expression->hasAggregates() && limit_length + limit_offset < block_size)
+	{
+		block_size = limit_length + limit_offset;
+	}
+	
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
  		streams = table->read(required_columns, query_ptr, block_size, context.settings.max_threads);
@@ -169,7 +208,11 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	if (streams.empty())
 		throw Exception("No streams returned from table.", ErrorCodes::NO_STREAMS_RETURNED_FROM_TABLE);
+}
 
+
+void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, ExpressionPtr & expression)
+{
 	/// Если есть условие WHERE - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.where_expression)
 	{
@@ -182,36 +225,45 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			stream = maybeAsynchronous(new FilterBlockInputStream(stream), context.settings.asynchronous);
 		}
 	}
+}
 
-	/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
-	if (need_aggregate)
+
+void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionPtr & expression)
+{
+	expression->markBeforeAndAfterAggregation(PART_BEFORE_AGGREGATING, PART_AFTER_AGGREGATING);
+
+	if (query.group_expression_list)
+		setPartID(query.group_expression_list, PART_GROUP);
+
+	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 	{
-		expression->markBeforeAndAfterAggregation(PART_BEFORE_AGGREGATING, PART_AFTER_AGGREGATING);
-
-		if (query.group_expression_list)
-			setPartID(query.group_expression_list, PART_GROUP);
-
-		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
-		{
-			BlockInputStreamPtr & stream = *it;
-			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_GROUP | PART_BEFORE_AGGREGATING), context.settings.asynchronous);
-		}
-
-		BlockInputStreamPtr & stream = streams[0];
-
-		/// Если потоков несколько, то выполняем параллельную агрегацию
-		if (streams.size() > 1)
-		{
-			stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, context.settings.max_threads), context.settings.asynchronous);
-			streams.resize(1);
-		}
-		else
-			stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, expression), context.settings.asynchronous);
-
-		/// Финализируем агрегатные функции - заменяем их состояния вычислений на готовые значения
-		stream = maybeAsynchronous(new FinalizingAggregatedBlockInputStream(stream), context.settings.asynchronous);
+		BlockInputStreamPtr & stream = *it;
+		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_GROUP | PART_BEFORE_AGGREGATING), context.settings.asynchronous);
 	}
 
+	BlockInputStreamPtr & stream = streams[0];
+
+	/// Если потоков несколько, то выполняем параллельную агрегацию
+	if (streams.size() > 1)
+	{
+		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, context.settings.max_threads), context.settings.asynchronous);
+		streams.resize(1);
+	}
+	else
+		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, expression), context.settings.asynchronous);
+}
+
+
+void InterpreterSelectQuery::executeFinalizeAggregates(BlockInputStreams & streams, ExpressionPtr & expression)
+{
+	/// Финализируем агрегатные функции - заменяем их состояния вычислений на готовые значения
+	BlockInputStreamPtr & stream = streams[0];
+	stream = maybeAsynchronous(new FinalizingAggregatedBlockInputStream(stream), context.settings.asynchronous);
+}
+
+
+void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, ExpressionPtr & expression)
+{
 	/// Если есть условие HAVING - сначала выполним часть выражения, необходимую для его вычисления
 	if (query.having_expression)
 	{
@@ -224,7 +276,11 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			stream = maybeAsynchronous(new FilterBlockInputStream(stream), context.settings.asynchronous);
 		}
 	}
+}
 
+
+void InterpreterSelectQuery::executeOuterExpression(BlockInputStreams & streams, ExpressionPtr & expression)
+{
 	/// Выполним оставшуюся часть выражения
 	setPartID(query.select_expression_list, PART_SELECT);
 	if (query.order_expression_list)
@@ -243,7 +299,11 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			PART_SELECT | PART_ORDER,
 			query.order_expression_list ? NULL : query.select_expression_list);
 	}
-	
+}
+
+
+void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams, ExpressionPtr & expression)
+{
 	/// Если есть ORDER BY
 	if (query.order_expression_list)
 	{
@@ -278,29 +338,38 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		/// Оставим только столбцы, нужные для SELECT части
 		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT, query.select_expression_list);
 	}
+}
 
+
+void InterpreterSelectQuery::executeUnion(BlockInputStreams & streams, ExpressionPtr & expression)
+{
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (streams.size() > 1)
 	{
 		streams[0] = new UnionBlockInputStream(streams, context.settings.max_threads);
 		streams.resize(1);
 	}
+}
+
+
+void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams, ExpressionPtr & expression)
+{
+	size_t limit_length = 0;
+	size_t limit_offset = 0;
+	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
 	BlockInputStreamPtr & stream = streams[0];
-	
+
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
 		stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
 	}
-
-	return stream;
 }
 
 
 BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 {
-	ASTSelectQuery & query = dynamic_cast<ASTSelectQuery &>(*query_ptr);
 	Block sample = getSampleBlock();
 	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : "TabSeparated";
 
@@ -320,5 +389,26 @@ void InterpreterSelectQuery::setPartID(ASTPtr ast, unsigned part_id)
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		setPartID(*it, part_id);
 }
+
+
+String InterpreterSelectQuery::getAnyColumn()
+{
+	NamesAndTypesList::const_iterator it = context.columns.begin();
+
+	size_t min_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
+	String res = it->first;
+	for (; it != context.columns.end(); ++it)
+	{
+		size_t current_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
+		if (current_size < min_size)
+		{
+			min_size = current_size;
+			res = it->first;
+		}
+	}
+
+	return res;
+}
+
 
 }

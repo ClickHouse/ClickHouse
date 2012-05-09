@@ -19,6 +19,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Poco/Net/NetException.h>
 
 #include <Yandex/Revision.h>
 
@@ -27,6 +28,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/Types.h>
 #include <DB/Core/Protocol.h>
+#include <DB/Core/QueryProcessingStage.h>
 
 #include <DB/IO/ReadBufferFromPocoSocket.h>
 #include <DB/IO/WriteBufferFromPocoSocket.h>
@@ -259,36 +261,7 @@ private:
 		format 		= config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
 
-		String host = config().getString("host", "localhost");
-		UInt16 port = config().getInt("port", 9000);
-
-		if (is_interactive)
-			std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
-
-		socket.connect(Poco::Net::SocketAddress(host, port));
-
-		/// Получить hello пакет.
-		UInt64 packet_type = 0;
-		String server_name;
-		UInt64 server_version_major = 0;
-		UInt64 server_version_minor = 0;
-		UInt64 server_revision = 0;
-		
-		readVarUInt(packet_type, in);
-		if (packet_type != Protocol::Server::Hello)
-			throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
-		
-		readStringBinary(server_name, in);
-		readVarUInt(server_version_major, in);
-		readVarUInt(server_version_minor, in);
-		readVarUInt(server_revision, in);
-
-		if (is_interactive)
-			std::cout << "Connected to " << server_name
-				<< " server version " << server_version_major
-				<< "." << server_version_minor
-				<< "." << server_revision
-				<< "." << std::endl << std::endl;
+		connect();
 
 		context.format_factory = new FormatFactory();
 		context.data_type_factory = new DataTypeFactory();
@@ -317,6 +290,41 @@ private:
 			nonInteractive();
 
 		return 0;
+	}
+
+
+	void connect()
+	{
+		String host = config().getString("host", "localhost");
+		UInt16 port = config().getInt("port", 9000);
+
+		if (is_interactive)
+			std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
+
+		socket.connect(Poco::Net::SocketAddress(host, port));
+
+		/// Получить hello пакет.
+		UInt64 packet_type = 0;
+		String server_name;
+		UInt64 server_version_major = 0;
+		UInt64 server_version_minor = 0;
+		UInt64 server_revision = 0;
+
+		readVarUInt(packet_type, in);
+		if (packet_type != Protocol::Server::Hello)
+			throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+
+		readStringBinary(server_name, in);
+		readVarUInt(server_version_major, in);
+		readVarUInt(server_version_minor, in);
+		readVarUInt(server_revision, in);
+
+		if (is_interactive)
+			std::cout << "Connected to " << server_name
+				<< " server version " << server_version_major
+				<< "." << server_version_minor
+				<< "." << server_revision
+				<< "." << std::endl << std::endl;
 	}
 
 
@@ -367,8 +375,10 @@ private:
 			return true;
 
 		++query_id;
-		
-		sendQuery();
+
+		forceConnected();
+
+		sendQuery();		
 		sendData();
 		receiveResult();
 
@@ -382,6 +392,26 @@ private:
 		chunked_in = NULL;
 
 		return true;
+	}
+
+
+	void forceConnected()
+	{
+		try
+		{
+			if (!ping())
+			{
+				socket.close();
+				connect();
+			}
+		}
+		catch (const Poco::Net::NetException & e)
+		{
+			if (is_interactive)
+				std::cout << e.displayText() << std::endl;
+
+			connect();
+		}
 	}
 
 
@@ -419,9 +449,27 @@ private:
 	}
 
 
+	bool ping()
+	{
+		UInt64 pong = 0;
+		writeVarUInt(Protocol::Client::Ping, out);
+		out.next();
+
+		if (in.eof())
+			return false;
+
+		readVarUInt(pong, in);
+
+		if (pong != Protocol::Server::Pong)
+			throw Exception("Unknown packet from server (expected Pong)", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+
+		return true;
+	}
+
+
 	void sendQuery()
 	{
-		UInt64 stage = Protocol::QueryProcessingStage::Complete;
+		UInt64 stage = QueryProcessingStage::Complete;
 
 		writeVarUInt(Protocol::Client::Query, out);
 		writeIntBinary(query_id, out);
@@ -431,6 +479,7 @@ private:
 		writeStringBinary(out_format, out);
 
 		writeStringBinary(query, out);
+
 		out.next();
 	}
 
@@ -643,7 +692,7 @@ private:
 		Poco::Util::Application::defineOptions(options);
 
 		options.addOption(
-			Poco::Util::Option("config-file", "C")
+			Poco::Util::Option("config-file", "c")
 				.required(false)
 				.repeatable(false)
 				.argument("<file>")

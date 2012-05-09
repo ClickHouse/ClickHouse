@@ -20,7 +20,7 @@ class ProjectionBlockInputStream : public IProfilingBlockInputStream
 public:
 	ProjectionBlockInputStream(
 		BlockInputStreamPtr input_,
-		SharedPtr<Expression> expression_,
+		ExpressionPtr expression_,
 		bool without_duplicates_and_aliases_ = false,
 		unsigned part_id_ = 0,
 		ASTPtr subtree_ = NULL)
@@ -44,7 +44,7 @@ public:
 
 private:
 	BlockInputStreamPtr input;
-	SharedPtr<Expression> expression;
+	ExpressionPtr expression;
 	bool without_duplicates_and_aliases;
 	unsigned part_id;
 	ASTPtr subtree;
