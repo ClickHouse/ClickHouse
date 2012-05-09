@@ -62,7 +62,7 @@ void TCPHandler::runImpl()
 				if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
 				{
 					profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this, boost::ref(in)));
-					profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, boost::ref(out), 0, 0));
+					profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, boost::ref(out), _1, _2));
 				}
 
 				while (sendData(out, out_for_chunks))
@@ -200,6 +200,9 @@ bool TCPHandler::receiveData(ReadBuffer & in)
 bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(is_cancelled_mutex);
+
+	if (state.is_cancelled)
+		return true;
 	
 	if (after_check_cancelled.elapsed() / 1000 < state.context.settings.interactive_delay)
 		return false;
@@ -221,6 +224,7 @@ bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
 				if (state.empty())
 					throw Exception("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 				LOG_INFO(log, "Query was cancelled.");
+				state.is_cancelled = true;
 				return true;
 
 			default:
@@ -295,6 +299,9 @@ void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
+	state.rows_processed += rows;
+	state.bytes_processed += bytes;
+
 	/// Не будем отправлять прогресс после того, как отправлены все данные.
 	if (state.sent_all_data)
 		return;
@@ -305,8 +312,8 @@ void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
 	after_send_progress.restart();
 	
 	writeVarUInt(Protocol::Server::Progress, out);
-	writeVarUInt(rows, out);
-	writeVarUInt(bytes, out);
+	writeVarUInt(state.rows_processed, out);
+	writeVarUInt(state.bytes_processed, out);
 	out.next();
 }
 

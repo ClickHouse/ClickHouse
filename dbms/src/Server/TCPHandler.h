@@ -54,10 +54,17 @@ struct QueryState
 	  */
 	SharedPtr<Exception> exception;
 
+	bool is_cancelled;
 	/// Данные были отправлены.
 	bool sent_all_data;
 
-	QueryState() : query_id(0), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable), sent_all_data(false) {}
+	/// Для вывода прогресса.
+	size_t rows_processed;
+	size_t bytes_processed;
+	
+
+	QueryState() : query_id(0), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable),
+		is_cancelled(false), sent_all_data(false), rows_processed(0), bytes_processed(0) {}
 	
 	void reset()
 	{

@@ -89,7 +89,7 @@ int Server::main(const std::vector<std::string> & args)
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
 	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
 
-	Poco::ThreadPool server_pool(2, config.getInt("max_threads", 128));
+	Poco::ThreadPool server_pool(2, config.getInt("max_connections", 128));
 
 	Poco::Net::HTTPServer http_server(
 		new HTTPRequestHandlerFactory(*this),

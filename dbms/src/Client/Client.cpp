@@ -117,7 +117,8 @@ class Client : public Poco::Util::Application
 {
 public:
 	Client() : is_interactive(true), stdin_is_not_tty(false), socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
-		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0), written_progress_chars(0) {}
+		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0),
+		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0) {}
 	
 private:
 	typedef std::tr1::unordered_set<String> StringSet;
@@ -173,6 +174,8 @@ private:
 	ASTPtr parsed_query;
 	bool expect_result;		/// Запрос предполагает получение результата.
 
+	size_t rows_read_on_server;
+	size_t bytes_read_on_server;
 	size_t written_progress_chars;
 
 
@@ -377,6 +380,8 @@ private:
 			return true;
 
 		++query_id;
+		rows_read_on_server = 0;
+		bytes_read_on_server = 0;
 
 		forceConnected();
 
@@ -644,7 +649,8 @@ private:
 
 		if (written_progress_chars)
 		{
-			std::cerr << std::string(written_progress_chars, '\b');
+			for (size_t i = 0; i < written_progress_chars; ++i)
+				std::cerr << "\b \b";
 			written_progress_chars = 0;
 		}
 
@@ -706,6 +712,9 @@ private:
 		readVarUInt(rows, in);
 		readVarUInt(bytes, in);
 
+		rows_read_on_server += rows;
+		bytes_read_on_server += bytes;
+
 		static size_t increment = 0;
 		static const char * indicators[8] =
 		{
@@ -721,7 +730,7 @@ private:
 		
 		if (is_interactive)
 		{
-			//std::cout << "Progress: " << rows << " rows, " << bytes << " bytes." << std::endl;
+			std::cerr << "Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server << " bytes." << std::endl;
 			std::cerr << indicators[increment % 8];
 			++increment;
 			++written_progress_chars;
