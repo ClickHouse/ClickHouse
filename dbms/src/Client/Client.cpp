@@ -118,7 +118,7 @@ class Client : public Poco::Util::Application
 public:
 	Client() : is_interactive(true), stdin_is_not_tty(false), socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
 		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0),
-		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0) {}
+		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0), written_first_block(false) {}
 	
 private:
 	typedef std::tr1::unordered_set<String> StringSet;
@@ -177,6 +177,7 @@ private:
 	size_t rows_read_on_server;
 	size_t bytes_read_on_server;
 	size_t written_progress_chars;
+	bool written_first_block;
 
 
 	void initialize(Poco::Util::Application & self)
@@ -382,6 +383,8 @@ private:
 		++query_id;
 		rows_read_on_server = 0;
 		bytes_read_on_server = 0;
+		written_progress_chars = 0;
+		written_first_block = false;
 
 		forceConnected();
 
@@ -649,10 +652,16 @@ private:
 
 		if (written_progress_chars)
 		{
-			for (size_t i = 0; i < written_progress_chars; ++i)
-				std::cerr << "\b \b";
+			if (written_first_block)
+				for (size_t i = 0; i < written_progress_chars; ++i)
+					std::cerr << "\b \b";
+			else
+				std::cerr << "\n\n";
+
 			written_progress_chars = 0;
 		}
+
+		written_first_block = true;
 
 		/// Прочитать из сети один блок и вывести его в консоль
 		Block block = block_in->read();
@@ -718,22 +727,26 @@ private:
 		static size_t increment = 0;
 		static const char * indicators[8] =
 		{
-			"\033[1;30m.\033[0m",
-			"\033[1;31m.\033[0m",
-			"\033[1;32m.\033[0m",
-			"\033[1;33m.\033[0m",
-			"\033[1;34m.\033[0m",
-			"\033[1;35m.\033[0m",
-			"\033[1;36m.\033[0m",
-			"\033[1;37m.\033[0m",
+			"\033[1;30m→\033[0m",
+			"\033[1;31m↘\033[0m",
+			"\033[1;32m↓\033[0m",
+			"\033[1;33m↙\033[0m",
+			"\033[1;34m←\033[0m",
+			"\033[1;35m↖\033[0m",
+			"\033[1;36m↑\033[0m",
+			"\033[1;37m↗\033[0m",
 		};
 		
 		if (is_interactive)
 		{
-			std::cerr << "Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server << " bytes." << std::endl;
-			std::cerr << indicators[increment % 8];
+			for (size_t i = 0; i < written_progress_chars; ++i)
+				std::cerr << "\b \b";
+
+			std::stringstream message;
+			message << indicators[increment % 8] << " Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB.";
+			written_progress_chars = message.str().size() - 13;
+			std::cerr << message.rdbuf();
 			++increment;
-			++written_progress_chars;
 		}
 	}
 	

@@ -315,6 +315,9 @@ void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
 	writeVarUInt(state.rows_processed, out);
 	writeVarUInt(state.bytes_processed, out);
 	out.next();
+
+	state.rows_processed = 0;
+	state.bytes_processed = 0;
 }
 
 

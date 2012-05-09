@@ -58,7 +58,7 @@ struct QueryState
 	/// Данные были отправлены.
 	bool sent_all_data;
 
-	/// Для вывода прогресса.
+	/// Для вывода прогресса - разница после предыдущей отправки прогресса.
 	size_t rows_processed;
 	size_t bytes_processed;
 	
