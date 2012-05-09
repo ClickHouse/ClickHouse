@@ -201,7 +201,7 @@ bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(is_cancelled_mutex);
 
-	if (state.is_cancelled)
+	if (state.is_cancelled || state.sent_all_data)
 		return true;
 	
 	if (after_check_cancelled.elapsed() / 1000 < state.context.settings.interactive_delay)
