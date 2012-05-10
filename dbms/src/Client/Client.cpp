@@ -174,6 +174,8 @@ private:
 	ASTPtr parsed_query;
 	bool expect_result;		/// Запрос предполагает получение результата.
 
+	Stopwatch watch;
+
 	size_t rows_read_on_server;
 	size_t bytes_read_on_server;
 	size_t written_progress_chars;
@@ -372,7 +374,7 @@ private:
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
-		Stopwatch watch;
+		watch.restart();
 
 		query = line;
 
@@ -739,11 +741,23 @@ private:
 		
 		if (is_interactive)
 		{
-			for (size_t i = 0; i < written_progress_chars; ++i)
-				std::cerr << "\b \b";
+			/*for (size_t i = 0; i < written_progress_chars; ++i)
+				std::cerr << "\b \b";*/
+			std::cerr << std::string(written_progress_chars, '\b');
 
 			std::stringstream message;
-			message << indicators[increment % 8] << " Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB.";
+			message << indicators[increment % 8]
+				<< std::fixed << std::setprecision(3)
+				<< " Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB";
+
+			size_t elapsed_ns = watch.elapsed();
+			if (elapsed_ns)
+				message << " ("
+					<< rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
+					<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
+			else
+				message << ". ";
+			
 			written_progress_chars = message.str().size() - 13;
 			std::cerr << message.rdbuf();
 			++increment;

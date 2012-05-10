@@ -414,6 +414,9 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	size_t rows = 0;
 
 	/// В какой структуре данных агрегированы данные?
+	if (data_variants.empty())
+		return res;
+
 	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY)
 	{
 		AggregatedDataWithoutKey & data = data_variants.without_key;
@@ -511,6 +514,15 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 	for (size_t i = 1, size = data_variants.size(); i < size; ++i)
 	{
 		AggregatedDataVariants & current = *data_variants[i];
+
+		if (current.empty())
+			continue;
+
+		if (res.empty())
+		{
+			data_variants[0] = data_variants[i];
+			continue;
+		}
 
 		if (res.type != current.type)
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);

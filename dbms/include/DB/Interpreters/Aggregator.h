@@ -93,13 +93,17 @@ struct AggregatedDataVariants
 
 	enum Type
 	{
-		GENERIC,
-		WITHOUT_KEY,
-		KEY_64,
-		KEY_STRING,
-		HASHED,
+		EMPTY 		= 0,
+		GENERIC 	= 1,
+		WITHOUT_KEY = 2,
+		KEY_64		= 3,
+		KEY_STRING	= 4,
+		HASHED		= 5,
 	};
 	Type type;
+
+	AggregatedDataVariants() : type(EMPTY) {}
+	bool empty() { return type == EMPTY; }
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
