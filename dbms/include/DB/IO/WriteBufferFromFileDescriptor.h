@@ -40,12 +40,6 @@ protected:
 		}
 	}
 
-	void throwFromErrno(const std::string & s, int code)
-	{
-		char buf[128];
-		throw Exception(s + ", errno: " + Poco::NumberFormatter::format(errno) + ", strerror: " + std::string(strerror_r(errno, buf, sizeof(buf))), code);
-	}
-
 	/// Имя или описание файла
 	virtual std::string getFileName()
 	{

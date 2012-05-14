@@ -57,13 +57,6 @@ namespace DB
 using Poco::SharedPtr;
 
 
-void throwFromErrno(const std::string & s, int code)
-{
-	char buf[128];
-	throw Exception(s + ", errno: " + Poco::NumberFormatter::format(errno) + ", strerror: " + std::string(strerror_r(errno, buf, sizeof(buf))), code);
-}
-
-
 /** Пока существует объект этого класса - блокирует сигнал INT, при этом позволяет узнать, не пришёл ли он.
   * В один момент времени используйте только один экземпляр этого класса.
   */

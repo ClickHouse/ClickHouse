@@ -1,3 +1,8 @@
+#include <errno.h>
+#include <string.h>
+
+#include <Poco/NumberFormatter.h>
+
 #include <DB/Core/Exception.h>
 
 
@@ -37,6 +42,13 @@ Exception * Exception::clone() const
 void Exception::rethrow() const
 {
 	throw *this;
+}
+
+
+void throwFromErrno(const std::string & s, int code)
+{
+	char buf[128];
+	throw Exception(s + ", errno: " + Poco::NumberFormatter::format(errno) + ", strerror: " + std::string(strerror_r(errno, buf, sizeof(buf))), code);
 }
 
 }

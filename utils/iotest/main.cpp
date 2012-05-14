@@ -12,8 +12,13 @@
 #include <Poco/Exception.h>
 #include <Poco/SharedPtr.h>
 
+#include <DB/Core/Exception.h>
+
 #include <statdaemons/threadpool.hpp>
 #include <statdaemons/Stopwatch.h>
+
+
+using DB::throwFromErrno;
 
 
 enum Mode
@@ -24,14 +29,6 @@ enum Mode
 
 
 typedef Poco::SharedPtr<Poco::Exception> ExceptionPtr;
-
-
-void throwFromErrno(const std::string & s)
-{
-	char buf[128];
-	throw Poco::Exception(s + ", errno: " + Poco::NumberFormatter::format(errno)
-		+ ", strerror: " + std::string(strerror_r(errno, buf, sizeof(buf))));
-}
 
 
 void thread(int fd, Mode mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, ExceptionPtr & exception)
