@@ -28,7 +28,7 @@ void TCPHandler::runImpl()
 	WriteBufferFromPocoSocket out(socket());
 	WriteBufferFromPocoSocket out_for_chunks(socket());
 	
-	/// Сразу после соединения, отправляем hello-пакет.
+	receiveHello(in);
 	sendHello(out);
 
 	while (!in.eof())
@@ -68,8 +68,8 @@ void TCPHandler::runImpl()
 				while (sendData(out, out_for_chunks))
 					;
 			}
-			else
-				sendOk(out);
+
+			sendEndOfStream(out);
 		}
 		catch (DB::Exception & e)
 		{
@@ -101,6 +101,32 @@ void TCPHandler::runImpl()
 		LOG_INFO(log, std::fixed << std::setprecision(3)
 			<< "Processed in " << watch.elapsedSeconds() << " sec.");
 	}
+}
+
+
+void TCPHandler::receiveHello(ReadBuffer & in)
+{
+	/// Получить hello пакет.
+	UInt64 packet_type = 0;
+	String client_name;
+	UInt64 client_version_major = 0;
+	UInt64 client_version_minor = 0;
+	UInt64 client_revision = 0;
+
+	readVarUInt(packet_type, in);
+	if (packet_type != Protocol::Client::Hello)
+		throw Exception("Unexpected packet from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+
+	readStringBinary(client_name, in);
+	readVarUInt(client_version_major, in);
+	readVarUInt(client_version_minor, in);
+	readVarUInt(client_revision, in);
+
+	LOG_DEBUG(log, "Connected to " << client_name
+		<< " client version " << client_version_major
+		<< "." << client_version_minor
+		<< "." << client_revision
+		<< ".")
 }
 
 
@@ -287,11 +313,11 @@ void TCPHandler::sendException(WriteBuffer & out)
 	out.next();
 }
 
-void TCPHandler::sendOk(WriteBuffer & out)
+void TCPHandler::sendEndOfStream(WriteBuffer & out)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
-	writeVarUInt(Protocol::Server::Ok, out);
+	writeVarUInt(Protocol::Server::EndOfStream, out);
 	out.next();
 }
 

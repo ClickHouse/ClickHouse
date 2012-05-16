@@ -18,8 +18,6 @@
 #include <Poco/File.h>
 #include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
-#include <Poco/Net/StreamSocket.h>
-#include <Poco/Net/NetException.h>
 
 #include <Yandex/Revision.h>
 
@@ -27,15 +25,8 @@
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/Types.h>
-#include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
 
-#include <DB/IO/ReadBufferFromPocoSocket.h>
-#include <DB/IO/WriteBufferFromPocoSocket.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ChunkedReadBuffer.h>
-#include <DB/IO/ChunkedWriteBuffer.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
@@ -45,6 +36,8 @@
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Interpreters/Context.h>
+
+#include <DB/Client/Connection.h>
 
 
 /** Клиент командной строки СУБД ClickHouse.
@@ -109,7 +102,7 @@ private:
 class Client : public Poco::Util::Application
 {
 public:
-	Client() : is_interactive(true), stdin_is_not_tty(false), socket(), in(socket), out(socket), query_id(0), compression(Protocol::Compression::Enable),
+	Client() : is_interactive(true), stdin_is_not_tty(false), query_id(0),
 		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0),
 		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0), written_first_block(false) {}
 	
@@ -120,32 +113,16 @@ private:
 	bool is_interactive;				/// Использовать readline интерфейс или batch режим.
 	bool stdin_is_not_tty;				/// stdin - не терминал.
 
-	Poco::Net::StreamSocket socket;
-	ReadBufferFromPocoSocket in;
-	WriteBufferFromPocoSocket out;
+	SharedPtr<Connection> connection;	/// Соединение с БД.
 	String query;						/// Текущий запрос.
 	UInt64 query_id;					/// Идентификатор запроса. Его можно использовать, чтобы отменить запрос.
 
-	UInt64 compression;					/// Сжимать ли данные при взаимодействии с сервером.
-	String in_format;					/// Формат передачи данных (INSERT-а) на сервер.
-	String out_format;					/// Формат приёма данных (результата) от сервера.
 	String format;						/// Формат вывода результата в консоль.
 	size_t format_max_block_size;		/// Максимальный размер блока при выводе в консоль.
 	String insert_format;				/// Формат данных для INSERT-а при чтении их из stdin в batch режиме
 	size_t insert_format_max_block_size; /// Максимальный размер блока при чтении данных INSERT-а.
 
 	Context context;
-	Block empty_block;
-
-	/// Откуда читать результат выполнения запроса.
-	SharedPtr<ReadBuffer> chunked_in;
-	SharedPtr<ReadBuffer> maybe_compressed_in;
-	BlockInputStreamPtr block_in;
-
-	/// Куда писать данные INSERT-а.
-	SharedPtr<WriteBuffer> chunked_out;
-	SharedPtr<WriteBuffer> maybe_compressed_out;
-	BlockOutputStreamPtr block_out;
 
 	/// Чтение из stdin для batch режима
 	ReadBufferFromFileDescriptor std_in;
@@ -256,16 +233,13 @@ private:
 				<< "." << Revision::get()
 				<< "." << std::endl;
 
-		compression = config().getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
-		in_format 	= config().getString("in_format", 	"Native");
-		out_format 	= config().getString("out_format", 	"Native");
-		format 		= config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+		format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
-
-		connect();
 
 		context.format_factory = new FormatFactory();
 		context.data_type_factory = new DataTypeFactory();
+
+		connect();
 
 		if (is_interactive)
 		{
@@ -298,34 +272,14 @@ private:
 	{
 		String host = config().getString("host", "localhost");
 		UInt16 port = config().getInt("port", 9000);
+		Protocol::Compression::Enum compression = config().getBool("compression", true)
+			? Protocol::Compression::Enable
+			: Protocol::Compression::Disable;
 
 		if (is_interactive)
 			std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
 
-		socket.connect(Poco::Net::SocketAddress(host, port));
-
-		/// Получить hello пакет.
-		UInt64 packet_type = 0;
-		String server_name;
-		UInt64 server_version_major = 0;
-		UInt64 server_version_minor = 0;
-		UInt64 server_revision = 0;
-
-		readVarUInt(packet_type, in);
-		if (packet_type != Protocol::Server::Hello)
-			throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
-
-		readStringBinary(server_name, in);
-		readVarUInt(server_version_major, in);
-		readVarUInt(server_version_minor, in);
-		readVarUInt(server_revision, in);
-
-		if (is_interactive)
-			std::cout << "Connected to " << server_name
-				<< " server version " << server_version_major
-				<< "." << server_version_minor
-				<< "." << server_revision
-				<< "." << std::endl << std::endl;
+		connection = new Connection(host, port, *context.data_type_factory, compression);
 	}
 
 
@@ -367,6 +321,9 @@ private:
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
+		block_std_in = NULL;
+		block_std_out = NULL;
+
 		watch.restart();
 
 		query = line;
@@ -381,9 +338,7 @@ private:
 		written_progress_chars = 0;
 		written_first_block = false;
 
-		forceConnected();
-
-		sendQuery();		
+		connection->sendQuery(query, query_id, QueryProcessingStage::Complete);
 		sendData();
 		receiveResult();
 
@@ -392,31 +347,7 @@ private:
 				<< received_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec."
 				<< std::endl << std::endl;
 
-		block_in = NULL;
-		maybe_compressed_in = NULL;
-		chunked_in = NULL;
-
 		return true;
-	}
-
-
-	void forceConnected()
-	{
-		try
-		{
-			if (!ping())
-			{
-				socket.close();
-				connect();
-			}
-		}
-		catch (const Poco::Net::NetException & e)
-		{
-			if (is_interactive)
-				std::cout << e.displayText() << std::endl;
-
-			connect();
-		}
 	}
 
 
@@ -454,48 +385,6 @@ private:
 	}
 
 
-	bool ping()
-	{
-		UInt64 pong = 0;
-		writeVarUInt(Protocol::Client::Ping, out);
-		out.next();
-
-		if (in.eof())
-			return false;
-
-		readVarUInt(pong, in);
-
-		if (pong != Protocol::Server::Pong)
-			throw Exception("Unknown packet from server (expected Pong)", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-
-		return true;
-	}
-
-
-	void sendQuery()
-	{
-		UInt64 stage = QueryProcessingStage::Complete;
-
-		writeVarUInt(Protocol::Client::Query, out);
-		writeIntBinary(query_id, out);
-		writeVarUInt(stage, out);
-		writeVarUInt(compression, out);
-		writeStringBinary(in_format, out);
-		writeStringBinary(out_format, out);
-
-		writeStringBinary(query, out);
-
-		out.next();
-	}
-
-
-	void sendCancel()
-	{
-		writeVarUInt(Protocol::Client::Cancel, out);
-		out.next();
-	}
-
-
 	void sendData()
 	{
 		/// Если нужно отправить данные INSERT-а.
@@ -521,48 +410,16 @@ private:
 
 	void sendDataFrom(ReadBuffer & buf)
 	{
-/*		if (!block_out)
+		if (!block_std_in)
 		{
-			chunked_out = new ChunkedWriteBuffer(out, query_id);
-			maybe_compressed_out = compression == Protocol::Compression::Enable
-				? new CompressedWriteBuffer(*chunked_out)
-				: chunked_out;
-
-			block_out = context.format_factory->getOutput(
-				in_format,
-				*maybe_compressed_out,
-				empty_block,
-				insert_format_max_block_size,
-				*context.data_type_factory);
+			// TODO
 		}
-
-		/// Прочитать из сети один блок и вывести его в консоль
-		Block block = block_in->read();
-		if (block)
-		{
-			received_rows += block.rows();
-			if (!block_std_out)
-			{
-				String current_format = format;
-
-				/// Формат может быть указан в SELECT запросе.
-				if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*parsed_query))
-					if (select->format)
-						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*select->format))
-							current_format = id->name;
-
-				block_std_out = context.format_factory->getOutput(current_format, std_out, block);
-			}
-
-			block_std_out->write(block);
-			std_out.next();
-			return true;
-		}
-		else
-			return false;*/
 	}
 
 
+	/** Получает и обрабатывает пакеты из сервера.
+	  * Также следит, не требуется ли прервать выполнение запроса.
+	  */
 	void receiveResult()
 	{
 		InterruptListener interrupt_listener;
@@ -579,12 +436,12 @@ private:
 			{
 				if (interrupt_listener.check())
 				{
-					sendCancel();
+					connection->sendCancel();
 					cancelled = true;
 					if (is_interactive)
 						std::cout << "Cancelling query." << std::endl;
 				}
-				else if (!in.poll(1000000))
+				else if (!connection->poll(1000000))
 					continue;	/// Если новых данных в ещё нет, то после таймаута продолжим проверять, не остановлено ли выполнение запроса.
 			}
 
@@ -594,33 +451,34 @@ private:
 
 		if (cancelled && is_interactive)
 			std::cout << "Query was cancelled." << std::endl;
-		
-		block_std_out = NULL;
 	}
 
 
-	/// Получить кусок результата или прогресс выполнения или эксепшен.
+	/** Получить кусок результата или прогресс выполнения или эксепшен,
+	  *  и обработать пакет соответствующим образом.
+	  * Возвращает true, если нужно продолжать чтение пакетов.
+	  */
 	bool receivePacket()
 	{
-		UInt64 packet_type = 0;
-		readVarUInt(packet_type, in);
+		Connection::Packet packet = connection->receivePacket();
 
-		switch (packet_type)
+		switch (packet.type)
 		{
 			case Protocol::Server::Data:
-				return receiveData();
-
-			case Protocol::Server::Exception:
-				receiveException();
-				return false;
-
-			case Protocol::Server::Ok:
-				receiveOk();
-				return false;
+				onData(packet.block);
+				return true;
 
 			case Protocol::Server::Progress:
-				receiveProgress();
+				onProgress(packet.progress);
 				return true;
+
+			case Protocol::Server::Exception:
+				onException(*packet.exception);
+				return false;
+
+			case Protocol::Server::EndOfStream:
+				onEndOfStream();
+				return false;
 
 			default:
 				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
@@ -628,23 +486,8 @@ private:
 	}
 
 
-	bool receiveData()
+	void onData(Block & block)
 	{
-		if (!block_in)
-		{
-			chunked_in = new ChunkedReadBuffer(in, query_id);
-			maybe_compressed_in = compression == Protocol::Compression::Enable
-				? new CompressedReadBuffer(*chunked_in)
-				: chunked_in;
-
-			block_in = context.format_factory->getInput(
-				out_format,
-				*maybe_compressed_in,
-				empty_block,
-				format_max_block_size,
-				*context.data_type_factory);
-		}
-
 		if (written_progress_chars)
 		{
 			if (written_first_block)
@@ -658,8 +501,6 @@ private:
 
 		written_first_block = true;
 
-		/// Прочитать из сети один блок и вывести его в консоль
-		Block block = block_in->read();
 		if (block)
 		{
 			received_rows += block.rows();
@@ -679,7 +520,6 @@ private:
 			
 			block_std_out->write(block);
 			std_out.next();
-			return true;
 		}
 		else
 		{
@@ -687,37 +527,14 @@ private:
 				block_std_out->writeSuffix();
 			
 			std_out.next();
-			return false;
 		}
 	}
 
 
-	void receiveException()
+	void onProgress(const Progress & progress)
 	{
-		Exception e;
-		readException(e, in);
-
-		std::cerr << "Received exception from server:" << std::endl
-			<< "Code: " << e.code() << ". " << e.displayText();
-	}
-
-
-	void receiveOk()
-	{
-		if (is_interactive)
-			std::cout << "Ok." << std::endl;
-	}
-
-
-	void receiveProgress()
-	{
-		size_t rows = 0;
-		size_t bytes = 0;
-		readVarUInt(rows, in);
-		readVarUInt(bytes, in);
-
-		rows_read_on_server += rows;
-		bytes_read_on_server += bytes;
+		rows_read_on_server += progress.rows;
+		bytes_read_on_server += progress.bytes;
 
 		static size_t increment = 0;
 		static const char * indicators[8] =
@@ -734,8 +551,6 @@ private:
 		
 		if (is_interactive)
 		{
-			/*for (size_t i = 0; i < written_progress_chars; ++i)
-				std::cerr << "\b \b";*/
 			std::cerr << std::string(written_progress_chars, '\b');
 
 			std::stringstream message;
@@ -755,6 +570,20 @@ private:
 			std::cerr << message.rdbuf();
 			++increment;
 		}
+	}
+
+
+	void onException(const Exception & e)
+	{
+		std::cerr << "Received exception from server:" << std::endl
+			<< "Code: " << e.code() << ". " << e.displayText();
+	}
+
+
+	void onEndOfStream()
+	{
+		if (is_interactive && !written_first_block)
+			std::cout << "Ok." << std::endl;
 	}
 	
 

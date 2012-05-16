@@ -112,8 +112,9 @@ private:
 	bool sendData(WriteBuffer & out, WriteBuffer & out_for_chunks);
 	void sendException(WriteBuffer & out);
 	void sendProgress(WriteBuffer & out, size_t rows, size_t bytes);
-	void sendOk(WriteBuffer & out);
+	void sendEndOfStream(WriteBuffer & out);
 
+	void receiveHello(ReadBuffer & in);
 	bool receivePacket(ReadBuffer & in, WriteBuffer & out);
 	void receiveQuery(ReadBuffer & in);
 	bool receiveData(ReadBuffer & in);
