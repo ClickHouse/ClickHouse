@@ -45,10 +45,6 @@ void Connection::receiveHello()
 {
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
-	String server_name;
-	UInt64 server_version_major = 0;
-	UInt64 server_version_minor = 0;
-	UInt64 server_revision = 0;
 
 	readVarUInt(packet_type, in);
 	if (packet_type != Protocol::Server::Hello)
