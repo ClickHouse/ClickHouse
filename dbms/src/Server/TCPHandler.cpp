@@ -339,7 +339,7 @@ void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
 	after_send_progress.restart();
 	
 	writeVarUInt(Protocol::Server::Progress, out);
-	Progress progress(rows, bytes);
+	Progress progress(state.rows_processed, state.bytes_processed);
 	progress.write(out);
 	out.next();
 
