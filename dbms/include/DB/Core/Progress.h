@@ -21,14 +21,14 @@ struct Progress
 
 	void read(ReadBuffer & in)
 	{
-		readBinary(rows, in);
-		readBinary(bytes, in);
+		readVarUInt(rows, in);
+		readVarUInt(bytes, in);
 	}
 
 	void write(WriteBuffer & out)
 	{
-		writeBinary(rows, out);
-		writeBinary(bytes, out);
+		writeVarUInt(rows, out);
+		writeVarUInt(bytes, out);
 	}
 };
 

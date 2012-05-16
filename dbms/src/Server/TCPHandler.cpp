@@ -7,6 +7,7 @@
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Core/Progress.h>
 
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
@@ -338,8 +339,8 @@ void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
 	after_send_progress.restart();
 	
 	writeVarUInt(Protocol::Server::Progress, out);
-	writeVarUInt(state.rows_processed, out);
-	writeVarUInt(state.bytes_processed, out);
+	Progress progress(rows, bytes);
+	progress.write(out);
 	out.next();
 
 	state.rows_processed = 0;
