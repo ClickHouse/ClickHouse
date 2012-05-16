@@ -122,8 +122,8 @@ void TCPHandler::receiveHello(ReadBuffer & in)
 	readVarUInt(client_version_minor, in);
 	readVarUInt(client_revision, in);
 
-	LOG_DEBUG(log, "Connected to " << client_name
-		<< " client version " << client_version_major
+	LOG_DEBUG(log, "Connected " << client_name
+		<< " version " << client_version_major
 		<< "." << client_version_minor
 		<< "." << client_revision
 		<< ".")

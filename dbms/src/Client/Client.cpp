@@ -280,6 +280,20 @@ private:
 			std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
 
 		connection = new Connection(host, port, *context.data_type_factory, compression);
+
+		String server_name;
+		UInt64 server_version_major = 0;
+		UInt64 server_version_minor = 0;
+		UInt64 server_revision = 0;
+
+		connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+
+		if (is_interactive)
+			std::cout << "Connected to " << server_name
+				<< " server version " << server_version_major
+				<< "." << server_version_minor
+				<< "." << server_revision
+				<< "." << std::endl << std::endl;
 	}
 
 

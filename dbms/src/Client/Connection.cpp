@@ -61,6 +61,15 @@ void Connection::receiveHello()
 }
 
 
+void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision)
+{
+	name = server_name;
+	version_major = server_version_major;
+	version_minor = server_version_minor;
+	revision = server_revision;
+}
+
+
 void Connection::forceConnected()
 {
 	try

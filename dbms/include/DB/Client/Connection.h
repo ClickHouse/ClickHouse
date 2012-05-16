@@ -30,7 +30,9 @@ public:
 	Connection(const String & host_, UInt16 port_,
 		DataTypeFactory & data_type_factory_,
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable)
-		: host(host_), port(port_), socket(), in(socket), out(socket),
+		: host(host_), port(port_),
+		server_version_major(0), server_version_minor(0), server_revision(0),
+		socket(), in(socket), out(socket),
 		query_id(0), compression(compression_), data_type_factory(data_type_factory_)
 	{
 		connect();
@@ -51,6 +53,7 @@ public:
 		Packet() : type(Protocol::Server::Hello) {}
 	};
 
+	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
 	void sendQuery(const String & query, UInt64 query_id_ = 0, UInt64 stage = QueryProcessingStage::Complete);
 	void sendCancel();
@@ -65,6 +68,11 @@ public:
 private:
 	String host;
 	UInt16 port;
+
+	String server_name;
+	UInt64 server_version_major;
+	UInt64 server_version_minor;
+	UInt64 server_revision;
 	
 	Poco::Net::StreamSocket socket;
 	ReadBufferFromPocoSocket in;
