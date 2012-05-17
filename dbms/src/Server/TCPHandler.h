@@ -94,6 +94,8 @@ private:
 	Server & server;
 	Logger * log;
 
+	Context connection_context;
+
 	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
 	QueryState state;
 
@@ -108,16 +110,19 @@ private:
 
 	void runImpl();
 
+	void receiveHello(ReadBuffer & in);
+	bool receivePacket(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks);
+	void receiveQuery(ReadBuffer & in);
+	bool receiveData(ReadBuffer & in);
+
+	void processSampleBlockQuery(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks);
+
 	void sendHello(WriteBuffer & out);
-	bool sendData(WriteBuffer & out, WriteBuffer & out_for_chunks);
+	bool sendData(Block & block, WriteBuffer & out, WriteBuffer & out_for_chunks);
 	void sendException(WriteBuffer & out);
 	void sendProgress(WriteBuffer & out, size_t rows, size_t bytes);
 	void sendEndOfStream(WriteBuffer & out);
 
-	void receiveHello(ReadBuffer & in);
-	bool receivePacket(ReadBuffer & in, WriteBuffer & out);
-	void receiveQuery(ReadBuffer & in);
-	bool receiveData(ReadBuffer & in);
 
 	bool isQueryCancelled(ReadBufferFromPocoSocket & in);
 };

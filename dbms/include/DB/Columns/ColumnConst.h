@@ -58,7 +58,7 @@ public:
 		s = new_size;
 	}
 
-	size_t byteSize() { return sizeof(data) + sizeof(s); }
+	size_t byteSize() const { return sizeof(data) + sizeof(s); }
 
 	void permute(const Permutation & perm)
 	{

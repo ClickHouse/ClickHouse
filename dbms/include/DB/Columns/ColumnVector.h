@@ -99,7 +99,7 @@ public:
 		tmp.swap(data);
 	}
 
-	size_t byteSize()
+	size_t byteSize() const
 	{
 		return data.size() * sizeof(data[0]);
 	}

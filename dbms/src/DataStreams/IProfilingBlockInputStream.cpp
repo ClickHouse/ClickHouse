@@ -10,11 +10,11 @@ namespace DB
 {
 
 
-void BlockStreamProfileInfo::update(Block & block, size_t bytes_)
+void BlockStreamProfileInfo::update(Block & block)
 {
 	++blocks;
 	rows += block.rows();
-	bytes += bytes_;
+	bytes += block.bytes();
 
 	if (column_names.empty())
 		column_names = block.dumpNames();
@@ -109,17 +109,19 @@ Block IProfilingBlockInputStream::read()
 		std::cerr << std::endl;
 	}*/
 
-	size_t bytes = 0;
-	for (size_t i = 0; i < res.columns(); ++i)
-		bytes += res.getByPosition(i).column->byteSize();
-	
 	if (res)
-		info.update(res, bytes);
+		info.update(res);
 
-	if (progress_callback)
-		progress_callback(res.rows(), bytes);
-
+	progress(res);
+	
 	return res;
+}
+
+
+void IProfilingBlockInputStream::progress(Block & block)
+{
+	if (children.empty() && progress_callback)
+		progress_callback(block.rows(), block.bytes());
 }
 	
 
@@ -140,10 +142,11 @@ void IProfilingBlockInputStream::setIsCancelledCallback(IsCancelledCallback call
 
 void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
 {
-	BlockInputStreams leaves = getLeaves();
-	for (BlockInputStreams::iterator it = leaves.begin(); it != leaves.end(); ++it)
-		if (IProfilingBlockInputStream * leaf = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-			leaf->progress_callback = callback;
+	progress_callback = callback;
+	
+	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			child->setProgressCallback(callback);
 }
 
 

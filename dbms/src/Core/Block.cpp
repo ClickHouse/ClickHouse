@@ -174,6 +174,16 @@ size_t Block::columns() const
 }
 
 
+size_t Block::bytes() const
+{
+	size_t res = 0;
+	for (size_t i = 0; i < columns(); ++i)
+		res += getByPosition(i).column->byteSize();
+
+	return res;
+}
+
+
 std::string Block::dumpNames() const
 {
 	std::stringstream res;

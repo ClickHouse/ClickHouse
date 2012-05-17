@@ -25,6 +25,8 @@ namespace DB
 
 void TCPHandler::runImpl()
 {
+	connection_context = server.global_context;
+	
 	ReadBufferFromPocoSocket in(socket());
 	WriteBufferFromPocoSocket out(socket());
 	WriteBufferFromPocoSocket out_for_chunks(socket());
@@ -39,9 +41,11 @@ void TCPHandler::runImpl()
 		
 		try
 		{	
-			/// Пакет с запросом.
-			receivePacket(in, out);
+			/// Пакет Query или Ping или getSampleBlock. Всё кроме Query обрабатываем сразу же.
+			receivePacket(in, out, out_for_chunks);
 
+			/// Обрабатываем Query
+			
 			after_check_cancelled.restart();
 			after_send_progress.restart();
 
@@ -53,7 +57,7 @@ void TCPHandler::runImpl()
 			/// Читаем из сети данные для INSERT-а, если надо, и вставляем их.
 			if (state.io.out)
 			{
-				while (receivePacket(in, out))
+				while (receivePacket(in, out, out_for_chunks))
 					;
 			}
 
@@ -66,8 +70,12 @@ void TCPHandler::runImpl()
 					profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, boost::ref(out), _1, _2));
 				}
 
-				while (sendData(out, out_for_chunks))
-					;
+				while (true)
+				{
+					Block block = state.io.in->read();
+					if (!sendData(block, out, out_for_chunks))
+						break;
+				}
 			}
 
 			sendEndOfStream(out);
@@ -141,7 +149,8 @@ void TCPHandler::sendHello(WriteBuffer & out)
 	out.next();
 }
 
-bool TCPHandler::receivePacket(ReadBuffer & in, WriteBuffer & out)
+
+bool TCPHandler::receivePacket(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks)
 {
 	while (true)	/// Если пришёл пакет типа Ping, то игнорируем его и получаем следующий пакет.
 	{
@@ -168,11 +177,39 @@ bool TCPHandler::receivePacket(ReadBuffer & in, WriteBuffer & out)
 				out.next();
 				break;
 
+			case Protocol::Client::GetSampleBlock:
+				if (!state.empty())
+					throw Exception("Unexpected packet GetSampleBlock received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+				processSampleBlockQuery(in, out, out_for_chunks);
+				break;
+
 			default:
 				throw Exception("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
 		}
 	}
 }
+
+
+void TCPHandler::processSampleBlockQuery(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks)
+{
+	String database;
+	String table;
+
+	readStringBinary(database, in);
+	readStringBinary(table, in);
+
+	if (database.empty())
+		database = connection_context.current_database;
+
+	if (connection_context.databases->end() == connection_context.databases->find(database)
+		|| (*connection_context.databases)[database].end() == (*connection_context.databases)[database].find(table))
+		throw Exception("Unknown table '" + table + "' in database '" + database + "'", ErrorCodes::UNKNOWN_TABLE);
+
+	Block sample = (*connection_context.databases)[database][table]->getSampleBlock();
+
+	sendData(sample, out, out_for_chunks);
+}
+
 
 void TCPHandler::receiveQuery(ReadBuffer & in)
 {
@@ -262,11 +299,8 @@ bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
 	return false;
 }
 
-bool TCPHandler::sendData(WriteBuffer & out, WriteBuffer & out_for_chunks)
+bool TCPHandler::sendData(Block & block, WriteBuffer & out, WriteBuffer & out_for_chunks)
 {
-	/// Получить один блок результата выполнения запроса из state.io.in.
-	Block block = state.io.in->read();
-
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 	
 	writeVarUInt(Protocol::Server::Data, out);

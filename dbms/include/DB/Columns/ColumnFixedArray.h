@@ -154,7 +154,7 @@ public:
 		return res;
 	}
 
-	size_t byteSize()
+	size_t byteSize() const
 	{
 		return data->byteSize() + sizeof(n);
 	}

@@ -67,6 +67,9 @@ public:
 	size_t rows() const;
 	size_t columns() const;
 
+	/// Приблизительное количество байт в оперативке - для профайлинга.
+	size_t bytes() const;
+
 	operator bool() const { return !data.empty(); }
 	bool operator!() const { return data.empty(); }
 

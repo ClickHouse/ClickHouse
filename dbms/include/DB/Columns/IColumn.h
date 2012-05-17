@@ -99,7 +99,7 @@ public:
 	virtual void clear() = 0;
 
 	/** Приблизительный размер столбца в оперативке в байтах - для профайлинга. 0 - если неизвестно. */
-	virtual size_t byteSize() = 0;
+	virtual size_t byteSize() const = 0;
 
 	virtual ~IColumn() {}
 };
