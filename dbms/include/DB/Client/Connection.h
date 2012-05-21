@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Poco/Net/StreamSocket.h>
 
 #include <DB/Core/Block.h>
@@ -30,12 +32,12 @@ public:
 	Connection(const String & host_, UInt16 port_,
 		DataTypeFactory & data_type_factory_,
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable)
-		: host(host_), port(port_),
+		: host(host_), port(port_), connected(false),
 		server_version_major(0), server_version_minor(0), server_revision(0),
 		socket(), in(new ReadBufferFromPocoSocket(socket)), out(new WriteBufferFromPocoSocket(socket)),
 		query_id(0), compression(compression_), data_type_factory(data_type_factory_)
 	{
-		connect();
+		/// Соединеняемся не сразу, а при первой необходимости.
 	}
 
 	virtual ~Connection() {};
@@ -57,7 +59,7 @@ public:
 
 	void sendQuery(const String & query, UInt64 query_id_ = 0, UInt64 stage = QueryProcessingStage::Complete);
 	void sendCancel();
-	void sendData(Block & block);
+	void sendData(const Block & block);
 
 	/// Проверить, если ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);
@@ -68,6 +70,8 @@ public:
 private:
 	String host;
 	UInt16 port;
+
+	bool connected;
 
 	String server_name;
 	UInt64 server_version_major;
@@ -101,5 +105,9 @@ private:
 	SharedPtr<Exception> receiveException();
 	Progress receiveProgress();
 };
+
+
+typedef SharedPtr<Connection> ConnectionPtr;
+typedef std::vector<ConnectionPtr> Connections;
 
 }

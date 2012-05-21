@@ -71,7 +71,7 @@ public:
 
 	virtual void progress(Block & block);
 
-private:
+protected:
 	BlockStreamProfileInfo info;
 	IsCancelledCallback is_cancelled_callback;
 	ProgressCallback progress_callback;

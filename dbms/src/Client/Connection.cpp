@@ -21,6 +21,7 @@ namespace DB
 void Connection::connect()
 {
 	socket.connect(Poco::Net::SocketAddress(host, port));
+	connected = true;
 
 	sendHello();
 	receiveHello();
@@ -57,6 +58,9 @@ void Connection::receiveHello()
 
 void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision)
 {
+	if (!connected)
+		connect();
+	
 	name = server_name;
 	version_major = server_version_major;
 	version_minor = server_version_minor;
@@ -66,17 +70,22 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
 
 void Connection::forceConnected()
 {
-	try
+	if (!connected)
+		connect();
+	else
 	{
-		if (!ping())
+		try
 		{
-			socket.close();
+			if (!ping())
+			{
+				socket.close();
+				connect();
+			}
+		}
+		catch (const Poco::Net::NetException & e)
+		{
 			connect();
 		}
-	}
-	catch (const Poco::Net::NetException & e)
-	{
-		connect();
 	}
 }
 
@@ -128,7 +137,7 @@ void Connection::sendCancel()
 }
 
 
-void Connection::sendData(Block & block)
+void Connection::sendData(const Block & block)
 {
 	if (!block_out)
 	{
