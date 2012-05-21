@@ -32,7 +32,7 @@ public:
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable)
 		: host(host_), port(port_),
 		server_version_major(0), server_version_minor(0), server_revision(0),
-		socket(), in(socket), out(socket),
+		socket(), in(new ReadBufferFromPocoSocket(socket)), out(new WriteBufferFromPocoSocket(socket)),
 		query_id(0), compression(compression_), data_type_factory(data_type_factory_)
 	{
 		connect();
@@ -75,8 +75,8 @@ private:
 	UInt64 server_revision;
 	
 	Poco::Net::StreamSocket socket;
-	ReadBufferFromPocoSocket in;
-	WriteBufferFromPocoSocket out;
+	SharedPtr<ReadBufferFromPocoSocket> in;
+	SharedPtr<WriteBufferFromPocoSocket> out;
 
 	UInt64 query_id;
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
@@ -84,12 +84,10 @@ private:
 	DataTypeFactory & data_type_factory;
 
 	/// Откуда читать результат выполнения запроса.
-	SharedPtr<ReadBuffer> chunked_in;
 	SharedPtr<ReadBuffer> maybe_compressed_in;
 	BlockInputStreamPtr block_in;
 
 	/// Куда писать данные INSERT-а.
-	SharedPtr<WriteBuffer> chunked_out;
 	SharedPtr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 

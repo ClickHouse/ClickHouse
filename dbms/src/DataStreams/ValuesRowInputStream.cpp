@@ -26,12 +26,12 @@ Row ValuesRowInputStream::read()
 
 	skipWhitespaceIfAny(istr);
 
-	if (istr.eof())
+	if (istr.eof() || *istr.position() == ';')
 	{
 		res.clear();
 		return res;
 	}
-	
+
 	assertString("(", istr);
 	
 	for (size_t i = 0; i < size; ++i)

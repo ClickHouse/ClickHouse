@@ -6,8 +6,6 @@
 
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ChunkedReadBuffer.h>
-#include <DB/IO/ChunkedWriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -31,13 +29,13 @@ void Connection::connect()
 
 void Connection::sendHello()
 {
-	writeVarUInt(Protocol::Client::Hello, out);
-	writeStringBinary(String(DBMS_NAME) + " client", out);
-	writeVarUInt(DBMS_VERSION_MAJOR, out);
-	writeVarUInt(DBMS_VERSION_MINOR, out);
-	writeVarUInt(Revision::get(), out);
+	writeVarUInt(Protocol::Client::Hello, *out);
+	writeStringBinary(String(DBMS_NAME) + " client", *out);
+	writeVarUInt(DBMS_VERSION_MAJOR, *out);
+	writeVarUInt(DBMS_VERSION_MINOR, *out);
+	writeVarUInt(Revision::get(), *out);
 	
-	out.next();
+	out->next();
 }
 
 
@@ -46,14 +44,14 @@ void Connection::receiveHello()
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
 
-	readVarUInt(packet_type, in);
+	readVarUInt(packet_type, *in);
 	if (packet_type != Protocol::Server::Hello)
 		throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 
-	readStringBinary(server_name, in);
-	readVarUInt(server_version_major, in);
-	readVarUInt(server_version_minor, in);
-	readVarUInt(server_revision, in);
+	readStringBinary(server_name, *in);
+	readVarUInt(server_version_major, *in);
+	readVarUInt(server_version_minor, *in);
+	readVarUInt(server_revision, *in);
 }
 
 
@@ -86,13 +84,13 @@ void Connection::forceConnected()
 bool Connection::ping()
 {
 	UInt64 pong = 0;
-	writeVarUInt(Protocol::Client::Ping, out);
-	out.next();
+	writeVarUInt(Protocol::Client::Ping, *out);
+	out->next();
 
-	if (in.eof())
+	if (in->eof())
 		return false;
 
-	readVarUInt(pong, in);
+	readVarUInt(pong, *in);
 
 	if (pong != Protocol::Server::Pong)
 		throw Exception("Unknown packet from server (expected Pong)", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
@@ -107,21 +105,17 @@ void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage)
 	
 	query_id = query_id_;
 		
-	writeVarUInt(Protocol::Client::Query, out);
-	writeIntBinary(query_id, out);
-	writeVarUInt(stage, out);
-	writeVarUInt(compression, out);
-	writeStringBinary("Native", out);
-	writeStringBinary("Native", out);
+	writeVarUInt(Protocol::Client::Query, *out);
+	writeIntBinary(query_id, *out);
+	writeVarUInt(stage, *out);
+	writeVarUInt(compression, *out);
 
-	writeStringBinary(query, out);
+	writeStringBinary(query, *out);
 
-	out.next();
+	out->next();
 
 	maybe_compressed_in = NULL;
 	maybe_compressed_out = NULL;
-	chunked_in = NULL;
-	chunked_out = NULL;
 	block_in = NULL;
 	block_out = NULL;
 }
@@ -129,8 +123,8 @@ void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage)
 
 void Connection::sendCancel()
 {
-	writeVarUInt(Protocol::Client::Cancel, out);
-	out.next();
+	writeVarUInt(Protocol::Client::Cancel, *out);
+	out->next();
 }
 
 
@@ -138,28 +132,30 @@ void Connection::sendData(Block & block)
 {
 	if (!block_out)
 	{
-		chunked_out = new ChunkedWriteBuffer(out, query_id);
-		maybe_compressed_out = compression == Protocol::Compression::Enable
-			? new CompressedWriteBuffer(*chunked_out)
-			: chunked_out;
+		if (compression == Protocol::Compression::Enable)
+			maybe_compressed_out = new CompressedWriteBuffer(*out);
+		else
+			maybe_compressed_out = out;
 
 		block_out = new NativeBlockOutputStream(*maybe_compressed_out);
 	}
 
+	writeVarUInt(Protocol::Client::Data, *out);
 	block_out->write(block);
+	out->next();
 }
 
 
 bool Connection::poll(size_t timeout_microseconds)
 {
-	return in.poll(timeout_microseconds);
+	return in->poll(timeout_microseconds);
 }
 
 
 Connection::Packet Connection::receivePacket()
 {
 	Packet res;
-	readVarUInt(res.type, in);
+	readVarUInt(res.type, *in);
 
 	switch (res.type)
 	{
@@ -188,11 +184,11 @@ Block Connection::receiveData()
 {
 	if (!block_in)
 	{
-		chunked_in = new ChunkedReadBuffer(in, query_id);
-		maybe_compressed_in = compression == Protocol::Compression::Enable
-			? new CompressedReadBuffer(*chunked_in)
-			: chunked_in;
-				
+		if (compression == Protocol::Compression::Enable)
+			maybe_compressed_in = new CompressedReadBuffer(*in);
+		else
+			maybe_compressed_in = in;
+
 		block_in = new NativeBlockInputStream(*maybe_compressed_in, data_type_factory);
 	}
 
@@ -204,7 +200,7 @@ Block Connection::receiveData()
 SharedPtr<Exception> Connection::receiveException()
 {
 	Exception e;
-	readException(e, in);
+	readException(e, *in);
 	return e.clone();
 }
 
@@ -212,7 +208,7 @@ SharedPtr<Exception> Connection::receiveException()
 Progress Connection::receiveProgress()
 {
 	Progress progress;
-	progress.read(in);
+	progress.read(*in);
 	return progress;
 }
 

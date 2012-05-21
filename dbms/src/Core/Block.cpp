@@ -152,9 +152,6 @@ size_t Block::rows() const
 	{
 		size_t size = it->column->size();
 
-		if (size == 0)
-			throw Exception("Empty column " + it->name + " in block.", ErrorCodes::EMPTY_COLUMN_IN_BLOCK);
-
 		if (res != 0 && size != res)
 			throw Exception("Sizes of columns doesn't match: "
 				+ data.begin()->name + ": " + Poco::NumberFormatter::format(res)

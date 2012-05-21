@@ -3,8 +3,6 @@
 #include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
 
-#include <DB/IO/ChunkedReadBuffer.h>
-#include <DB/IO/ChunkedWriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadBufferFromPocoSocket.h>
@@ -29,16 +27,12 @@ struct QueryState
 
 	QueryProcessingStage::Enum stage;
 	Protocol::Compression::Enum compression;
-	String in_format;
-	String out_format;
 
 	/// Откуда читать данные для INSERT-а.
-	SharedPtr<ReadBuffer> chunked_in;
 	SharedPtr<ReadBuffer> maybe_compressed_in;
 	BlockInputStreamPtr block_in;
 
 	/// Куда писать возвращаемые данные.
-	SharedPtr<WriteBuffer> chunked_out;
 	SharedPtr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 
@@ -96,6 +90,9 @@ private:
 
 	Context connection_context;
 
+	SharedPtr<ReadBufferFromPocoSocket> in;
+	SharedPtr<WriteBufferFromPocoSocket> out;
+
 	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
 	QueryState state;
 
@@ -110,21 +107,24 @@ private:
 
 	void runImpl();
 
-	void receiveHello(ReadBuffer & in);
-	bool receivePacket(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks);
-	void receiveQuery(ReadBuffer & in);
-	bool receiveData(ReadBuffer & in);
+	void receiveHello();
+	bool receivePacket();
+	void receiveQuery();
+	bool receiveData();
 
-	void processSampleBlockQuery(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks);
+	/// Обработать запрос INSERT
+	void processInsertQuery();
 
-	void sendHello(WriteBuffer & out);
-	bool sendData(Block & block, WriteBuffer & out, WriteBuffer & out_for_chunks);
-	void sendException(WriteBuffer & out);
-	void sendProgress(WriteBuffer & out, size_t rows, size_t bytes);
-	void sendEndOfStream(WriteBuffer & out);
+	/// Обработать запрос, который не требует приёма блоков данных от клиента
+	void processOrdinaryQuery();
 
+	void sendHello();
+	void sendData(Block & block);	/// Записать в сеть блок.
+	void sendException();
+	void sendProgress(size_t rows, size_t bytes);
+	void sendEndOfStream();
 
-	bool isQueryCancelled(ReadBufferFromPocoSocket & in);
+	bool isQueryCancelled();
 };
 
 

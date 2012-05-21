@@ -103,7 +103,7 @@ class Client : public Poco::Util::Application
 {
 public:
 	Client() : is_interactive(true), stdin_is_not_tty(false), query_id(0),
-		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), received_rows(0),
+		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), processed_rows(0),
 		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0), written_first_block(false) {}
 	
 private:
@@ -137,8 +137,8 @@ private:
 	/// Путь к файлу истории команд.
 	String history_file;
 
-	/// Строк прочитано.
-	size_t received_rows;
+	/// Строк прочитано или записано.
+	size_t processed_rows;
 
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
@@ -236,6 +236,9 @@ private:
 		format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
 
+		insert_format = "Values";
+		insert_format_max_block_size = config().getInt("insert_format_max_block_size", format_max_block_size);
+
 		context.format_factory = new FormatFactory();
 		context.data_type_factory = new DataTypeFactory();
 
@@ -281,19 +284,21 @@ private:
 
 		connection = new Connection(host, port, *context.data_type_factory, compression);
 
-		String server_name;
-		UInt64 server_version_major = 0;
-		UInt64 server_version_minor = 0;
-		UInt64 server_revision = 0;
-
-		connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
-
 		if (is_interactive)
+		{
+			String server_name;
+			UInt64 server_version_major = 0;
+			UInt64 server_version_minor = 0;
+			UInt64 server_revision = 0;
+
+			connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+
 			std::cout << "Connected to " << server_name
 				<< " server version " << server_version_major
 				<< "." << server_version_minor
 				<< "." << server_revision
 				<< "." << std::endl << std::endl;
+		}
 	}
 
 
@@ -347,21 +352,50 @@ private:
 			return true;
 
 		++query_id;
+		processed_rows = 0;
 		rows_read_on_server = 0;
 		bytes_read_on_server = 0;
 		written_progress_chars = 0;
 		written_first_block = false;
 
-		connection->sendQuery(query, query_id, QueryProcessingStage::Complete);
-		sendData();
-		receiveResult();
+		if (dynamic_cast<const ASTInsertQuery *>(&*parsed_query))
+			processInsertQuery();
+		else
+			processOrdinaryQuery();
 
 		if (is_interactive)
 			std::cout << std::endl
-				<< received_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec."
+				<< processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec."
 				<< std::endl << std::endl;
 
 		return true;
+	}
+
+
+	/// Обработать запрос, который не требует передачи блоков данных на сервер.
+	void processOrdinaryQuery()
+	{
+		connection->sendQuery(query, query_id, QueryProcessingStage::Complete);
+		receiveResult();
+	}
+
+
+	/// Обработать запрос, который требует передачи блоков данных на сервер.
+	void processInsertQuery()
+	{
+		/// Отправляем часть запроса - без данных, так как данные будут отправлены отдельно.
+		const ASTInsertQuery & parsed_insert_query = dynamic_cast<const ASTInsertQuery &>(*parsed_query);
+		String query_without_data = parsed_insert_query.data
+			? query.substr(0, parsed_insert_query.data - query.data())
+			: query;
+
+		connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete);
+
+		/// Получим структуру таблицы
+		Block sample = receiveSampleBlock();
+
+		sendData(sample);
+		receivePacket();
 	}
 
 
@@ -399,7 +433,7 @@ private:
 	}
 
 
-	void sendData()
+	void sendData(Block & sample)
 	{
 		/// Если нужно отправить данные INSERT-а.
 		const ASTInsertQuery * parsed_insert_query = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -409,25 +443,42 @@ private:
 		if (parsed_insert_query->data)
 		{
 			/// Отправляем данные из запроса.
-			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data);
-			sendDataFrom(data_in);
+			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data, 0);
+			sendDataFrom(data_in, sample);
 		}
 		else if (!is_interactive)
 		{
 			/// Отправляем данные из stdin.
-			sendDataFrom(std_in);
+			sendDataFrom(std_in, sample);
 		}
 		else
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 	}
 
 
-	void sendDataFrom(ReadBuffer & buf)
+	void sendDataFrom(ReadBuffer & buf, Block & sample)
 	{
-		if (!block_std_in)
+		String current_format = insert_format;
+
+		/// Формат может быть указан в INSERT запросе.
+		if (ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*parsed_query))
+			if (!insert->format.empty())
+				current_format = insert->format;
+
+		block_std_in = context.format_factory->getInput(current_format, buf, sample, insert_format_max_block_size, *context.data_type_factory);
+		block_std_in->readPrefix();
+
+		while (true)
 		{
-			// TODO
+			Block block = block_std_in->read();
+			connection->sendData(block);
+			processed_rows += block.rows();
+
+			if (!block)
+				break;
 		}
+		
+		block_std_in->readSuffix();
 	}
 
 
@@ -439,7 +490,6 @@ private:
 		InterruptListener interrupt_listener;
 		bool cancelled = false;
 
-		received_rows = 0;
 		while (true)
 		{
 			/** Проверим, не требуется ли остановить выполнение запроса (Ctrl+C).
@@ -500,6 +550,23 @@ private:
 	}
 
 
+	/** Получить блок - пример структуры таблицы, в которую будут вставляться данные.
+	  */
+	Block receiveSampleBlock()
+	{
+		Connection::Packet packet = connection->receivePacket();
+
+		switch (packet.type)
+		{
+			case Protocol::Server::Data:
+				return packet.block;
+
+			default:
+				throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+		}
+	}
+
+
 	void onData(Block & block)
 	{
 		if (written_progress_chars)
@@ -517,7 +584,7 @@ private:
 
 		if (block)
 		{
-			received_rows += block.rows();
+			processed_rows += block.rows();
 			if (!block_std_out)
 			{
 				String current_format = format;

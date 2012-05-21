@@ -27,22 +27,21 @@ void TCPHandler::runImpl()
 {
 	connection_context = server.global_context;
 	
-	ReadBufferFromPocoSocket in(socket());
-	WriteBufferFromPocoSocket out(socket());
-	WriteBufferFromPocoSocket out_for_chunks(socket());
+	in = new ReadBufferFromPocoSocket(socket());
+	out = new WriteBufferFromPocoSocket(socket());
 	
-	receiveHello(in);
-	sendHello(out);
+	receiveHello();
+	sendHello();
 
-	while (!in.eof())
+	while (!in->eof())
 	{
 		Stopwatch watch;
 		state.reset();
 		
 		try
 		{	
-			/// Пакет Query или Ping или getSampleBlock. Всё кроме Query обрабатываем сразу же.
-			receivePacket(in, out, out_for_chunks);
+			/// Пакет Query. (Также, если пришёл пакет Ping - обрабатываем его и продолжаем ждать Query.)
+			receivePacket();
 
 			/// Обрабатываем Query
 			
@@ -51,34 +50,14 @@ void TCPHandler::runImpl()
 
 			LOG_DEBUG(log, "Query ID: " << state.query_id);
 			LOG_DEBUG(log, "Query: " << state.query);
-			LOG_DEBUG(log, "In format: " << state.in_format);
-			LOG_DEBUG(log, "Out format: " << state.out_format);
 
-			/// Читаем из сети данные для INSERT-а, если надо, и вставляем их.
+			/// Запрос требует приёма данных от клиента?
 			if (state.io.out)
-			{
-				while (receivePacket(in, out, out_for_chunks))
-					;
-			}
+				processInsertQuery();
+			else
+				processOrdinaryQuery();
 
-			/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
-			if (state.io.in)
-			{
-				if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
-				{
-					profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this, boost::ref(in)));
-					profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, boost::ref(out), _1, _2));
-				}
-
-				while (true)
-				{
-					Block block = state.io.in->read();
-					if (!sendData(block, out, out_for_chunks))
-						break;
-				}
-			}
-
-			sendEndOfStream(out);
+			sendEndOfStream();
 		}
 		catch (DB::Exception & e)
 		{
@@ -103,7 +82,7 @@ void TCPHandler::runImpl()
 		}
 
 		if (state.exception)
-			sendException(out);
+			sendException();
 
 		watch.stop();
 
@@ -113,7 +92,40 @@ void TCPHandler::runImpl()
 }
 
 
-void TCPHandler::receiveHello(ReadBuffer & in)
+void TCPHandler::processInsertQuery()
+{
+	/// Отправляем клиенту блок - структура таблицы.
+	Block block = state.io.out_sample;
+	sendData(block);
+
+	while (receivePacket())
+		;
+}
+
+
+void TCPHandler::processOrdinaryQuery()
+{
+	/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
+	if (state.io.in)
+	{
+		if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
+		{
+			profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this));
+			profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
+		}
+
+		while (true)
+		{
+			Block block = state.io.in->read();
+			sendData(block);
+			if (!block)
+				break;
+		}
+	}
+}
+
+
+void TCPHandler::receiveHello()
 {
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
@@ -122,14 +134,14 @@ void TCPHandler::receiveHello(ReadBuffer & in)
 	UInt64 client_version_minor = 0;
 	UInt64 client_revision = 0;
 
-	readVarUInt(packet_type, in);
+	readVarUInt(packet_type, *in);
 	if (packet_type != Protocol::Client::Hello)
 		throw Exception("Unexpected packet from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
-	readStringBinary(client_name, in);
-	readVarUInt(client_version_major, in);
-	readVarUInt(client_version_minor, in);
-	readVarUInt(client_revision, in);
+	readStringBinary(client_name, *in);
+	readVarUInt(client_version_major, *in);
+	readVarUInt(client_version_minor, *in);
+	readVarUInt(client_revision, *in);
 
 	LOG_DEBUG(log, "Connected " << client_name
 		<< " version " << client_version_major
@@ -139,23 +151,23 @@ void TCPHandler::receiveHello(ReadBuffer & in)
 }
 
 
-void TCPHandler::sendHello(WriteBuffer & out)
+void TCPHandler::sendHello()
 {
-	writeVarUInt(Protocol::Server::Hello, out);
-	writeStringBinary(DBMS_NAME, out);
-	writeVarUInt(DBMS_VERSION_MAJOR, out);
-	writeVarUInt(DBMS_VERSION_MINOR, out);
-	writeVarUInt(Revision::get(), out);
-	out.next();
+	writeVarUInt(Protocol::Server::Hello, *out);
+	writeStringBinary(DBMS_NAME, *out);
+	writeVarUInt(DBMS_VERSION_MAJOR, *out);
+	writeVarUInt(DBMS_VERSION_MINOR, *out);
+	writeVarUInt(Revision::get(), *out);
+	out->next();
 }
 
 
-bool TCPHandler::receivePacket(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks)
+bool TCPHandler::receivePacket()
 {
-	while (true)	/// Если пришёл пакет типа Ping, то игнорируем его и получаем следующий пакет.
+	while (true)	/// Если пришёл пакет типа Ping, то обработаем его и получаем следующий пакет.
 	{
 		UInt64 packet_type = 0;
-		readVarUInt(packet_type, in);
+		readVarUInt(packet_type, *in);
 
 		std::cerr << "Packet: " << packet_type << std::endl;
 
@@ -164,23 +176,17 @@ bool TCPHandler::receivePacket(ReadBuffer & in, WriteBuffer & out, WriteBuffer &
 			case Protocol::Client::Query:
 				if (!state.empty())
 					throw Exception("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-				receiveQuery(in);
+				receiveQuery();
 				return true;
 
 			case Protocol::Client::Data:
 				if (state.empty())
 					throw Exception("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-				return receiveData(in);
+				return receiveData();
 
 			case Protocol::Client::Ping:
-				writeVarUInt(Protocol::Server::Pong, out);
-				out.next();
-				break;
-
-			case Protocol::Client::GetSampleBlock:
-				if (!state.empty())
-					throw Exception("Unexpected packet GetSampleBlock received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-				processSampleBlockQuery(in, out, out_for_chunks);
+				writeVarUInt(Protocol::Server::Pong, *out);
+				out->next();
 				break;
 
 			default:
@@ -190,60 +196,37 @@ bool TCPHandler::receivePacket(ReadBuffer & in, WriteBuffer & out, WriteBuffer &
 }
 
 
-void TCPHandler::processSampleBlockQuery(ReadBuffer & in, WriteBuffer & out, WriteBuffer & out_for_chunks)
-{
-	String database;
-	String table;
-
-	readStringBinary(database, in);
-	readStringBinary(table, in);
-
-	if (database.empty())
-		database = connection_context.current_database;
-
-	if (connection_context.databases->end() == connection_context.databases->find(database)
-		|| (*connection_context.databases)[database].end() == (*connection_context.databases)[database].find(table))
-		throw Exception("Unknown table '" + table + "' in database '" + database + "'", ErrorCodes::UNKNOWN_TABLE);
-
-	Block sample = (*connection_context.databases)[database][table]->getSampleBlock();
-
-	sendData(sample, out, out_for_chunks);
-}
-
-
-void TCPHandler::receiveQuery(ReadBuffer & in)
+void TCPHandler::receiveQuery()
 {
 	UInt64 stage = 0;
 	UInt64 compression = 0;
 	
-	readIntBinary(state.query_id, in);
+	readIntBinary(state.query_id, *in);
 
-	readVarUInt(stage, in);
+	readVarUInt(stage, *in);
 	state.stage = QueryProcessingStage::Enum(stage);
 
-	readVarUInt(compression, in);
+	readVarUInt(compression, *in);
 	state.compression = Protocol::Compression::Enum(compression);
 
-	readStringBinary(state.in_format, in);
-	readStringBinary(state.out_format, in);
-	
-	readStringBinary(state.query, in);
+	readStringBinary(state.query, *in);
 
 	state.context = server.global_context;
 	state.io = executeQuery(state.query, state.context);
 }
 
-bool TCPHandler::receiveData(ReadBuffer & in)
+
+bool TCPHandler::receiveData()
 {
 	if (!state.block_in)
 	{
-		state.chunked_in = new ChunkedReadBuffer(in, state.query_id);
-		state.maybe_compressed_in = state.compression == Protocol::Compression::Enable
-			? new CompressedReadBuffer(*state.chunked_in)
-			: state.chunked_in;
+		if (state.compression == Protocol::Compression::Enable)
+			state.maybe_compressed_in = new CompressedReadBuffer(*in);
+		else
+			state.maybe_compressed_in = in;
 
 		state.block_in = state.context.format_factory->getInput(
-			state.out_format,
+			"Native",
 			*state.maybe_compressed_in,
 			state.io.out_sample,
 			state.context.settings.max_block_size,
@@ -261,7 +244,8 @@ bool TCPHandler::receiveData(ReadBuffer & in)
 		return false;
 }
 
-bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
+
+bool TCPHandler::isQueryCancelled()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(is_cancelled_mutex);
 
@@ -274,13 +258,12 @@ bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
 	after_check_cancelled.restart();
 	
 	/// Во время выполнения запроса, единственный пакет, который может прийти от клиента - это остановка выполнения запроса.
-	std::cerr << "checking cancelled" << std::endl;
-	if (in.poll(0))
+	if (in->poll(0))
 	{
 		std::cerr << "checking cancelled; socket has data" << std::endl;
 		
 		UInt64 packet_type = 0;
-		readVarUInt(packet_type, in);
+		readVarUInt(packet_type, *in);
 
 		switch (packet_type)
 		{
@@ -299,64 +282,52 @@ bool TCPHandler::isQueryCancelled(ReadBufferFromPocoSocket & in)
 	return false;
 }
 
-bool TCPHandler::sendData(Block & block, WriteBuffer & out, WriteBuffer & out_for_chunks)
+
+void TCPHandler::sendData(Block & block)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 	
-	writeVarUInt(Protocol::Server::Data, out);
-	out.next();
-
 	if (!state.block_out)
 	{
-		std::cerr << "query_id: " << state.query_id << std::endl;
-		
-		state.chunked_out = new ChunkedWriteBuffer(out_for_chunks, state.query_id);
-		state.maybe_compressed_out = state.compression == Protocol::Compression::Enable
-			? new CompressedWriteBuffer(*state.chunked_out)
-			: state.chunked_out;
+		if (state.compression == Protocol::Compression::Enable)
+			state.maybe_compressed_out = new CompressedWriteBuffer(*out);
+		else
+			state.maybe_compressed_out = out;
 
 		state.block_out = state.context.format_factory->getOutput(
-			state.in_format,
+			"Native",
 			*state.maybe_compressed_out,
 			state.io.in_sample);
 	}
 
-	/// Если блок есть - записать его в сеть. Иначе записать в сеть признак конца данных.
-	if (block)
-	{
-		state.block_out->write(block);
-		state.maybe_compressed_out->next();
-		state.chunked_out->next();
-		out_for_chunks.next();
-		return true;
-	}
-	else
-	{
-		dynamic_cast<ChunkedWriteBuffer &>(*state.chunked_out).finish();
-		out_for_chunks.next();
-		state.sent_all_data = true;
-		return false;
-	}
+	writeVarUInt(Protocol::Server::Data, *out);
+
+	state.block_out->write(block);
+	state.maybe_compressed_out->next();
+	out->next();
 }
 
-void TCPHandler::sendException(WriteBuffer & out)
+
+void TCPHandler::sendException()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 	
-	writeVarUInt(Protocol::Server::Exception, out);
-	writeException(*state.exception, out);
-	out.next();
+	writeVarUInt(Protocol::Server::Exception, *out);
+	writeException(*state.exception, *out);
+	out->next();
 }
 
-void TCPHandler::sendEndOfStream(WriteBuffer & out)
+
+void TCPHandler::sendEndOfStream()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
-	writeVarUInt(Protocol::Server::EndOfStream, out);
-	out.next();
+	writeVarUInt(Protocol::Server::EndOfStream, *out);
+	out->next();
 }
 
-void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
+
+void TCPHandler::sendProgress(size_t rows, size_t bytes)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
@@ -372,10 +343,10 @@ void TCPHandler::sendProgress(WriteBuffer & out, size_t rows, size_t bytes)
 
 	after_send_progress.restart();
 	
-	writeVarUInt(Protocol::Server::Progress, out);
+	writeVarUInt(Protocol::Server::Progress, *out);
 	Progress progress(state.rows_processed, state.bytes_processed);
-	progress.write(out);
-	out.next();
+	progress.write(*out);
+	out->next();
 
 	state.rows_processed = 0;
 	state.bytes_processed = 0;
