@@ -36,7 +36,11 @@ StoragePtr StorageFactory::get(
 		/** В запросе в качестве аргумента для движка указано имя конфигурационной секции,
 		  *  в которой задан список удалённых серверов.
 		  */
-		ASTs & args = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+		ASTs & args =
+			dynamic_cast<ASTExpressionList &>(
+				*dynamic_cast<ASTFunction &>(
+					*dynamic_cast<ASTCreateQuery &>(*query).storage).children.at(0)).children;
+		
 		if (args.size() != 3)
 			throw Exception("Storage Distributed requires exactly 3 parameters"
 				" - name of configuration section with list of remote servers, name of remote database and name of remote table.",
