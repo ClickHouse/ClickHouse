@@ -218,10 +218,11 @@ private:
 				session.reset();
 				continue;
 			}
-			catch (const DB::Exception & e)
+			catch (const Exception & e)
 			{
 				/// Если в прошлую попытку от сервера не пришло ответа, но файл всё же был переименован.
-				if (i != 0 && NULL != strstr(e.what(), "File not found"))
+				if (i != 0 && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER
+					&& NULL != strstr(e.message().data(), "File not found"))
 				{
 					LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "File already renamed");
 				}
