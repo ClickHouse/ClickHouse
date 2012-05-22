@@ -15,6 +15,8 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 
+#include <DB/Parsers/formatAST.h>
+
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 
@@ -146,22 +148,13 @@ StoragePtr InterpreterCreateQuery::execute()
 	}
 	else
 	{
+		/// Меняем CREATE на ATTACH и пишем запрос в файл.
+		ASTPtr attach = query_ptr->clone();
+		dynamic_cast<ASTCreateQuery &>(*attach).attach = true;
+		
 		Poco::FileOutputStream metadata_file(metadata_path);
-		metadata_file << "ATTACH TABLE " << table_name << "\n"
-			<< "(\n";
-
-		for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-		{
-			String quoted_column_name;
-			{
-				WriteBufferFromString buf(quoted_column_name);
-				writeProbablyBackQuotedString(it->first, buf);
-			}
-			
-			metadata_file << (it != columns->begin() ? ",\n" : "") << "\t" << quoted_column_name << " " << it->second->getName();
-		}
-			
-		metadata_file << "\n) ENGINE = " << storage_name << "\n";
+		formatAST(*attach, metadata_file, 0, false);
+		metadata_file << "\n";
 	}
 
 	(*context.databases)[database_name][table_name] = res;

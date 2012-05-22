@@ -45,6 +45,8 @@ BlockInputStreams StorageDistributed::read(
 	formatAST(select, s, 0, false);
 	String modified_query = s.str();
 
+	std::cerr << modified_query << std::endl;
+
 	BlockInputStreams res;
 
 	for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
