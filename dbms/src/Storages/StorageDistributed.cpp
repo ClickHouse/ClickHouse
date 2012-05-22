@@ -31,7 +31,9 @@ BlockInputStreams StorageDistributed::read(
 	size_t max_block_size,
 	unsigned max_threads)
 {
-	processed_stage = QueryProcessingStage::WithMergeableState;
+	processed_stage = connections.size() == 1
+		? QueryProcessingStage::Complete
+		: QueryProcessingStage::WithMergeableState;
 	
 	/// Заменим в запросе имена БД и таблицы.
 	ASTPtr modified_query_ast = query->clone();
@@ -46,9 +48,7 @@ BlockInputStreams StorageDistributed::read(
 	BlockInputStreams res;
 
 	for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
-		res.push_back(new RemoteBlockInputStream(**it, modified_query, connections.size() == 1
-			? QueryProcessingStage::Complete
-			: QueryProcessingStage::WithMergeableState));
+		res.push_back(new RemoteBlockInputStream(**it, modified_query, processed_stage));
 
 	return res;
 }
