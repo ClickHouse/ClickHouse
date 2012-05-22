@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Core/QueryProcessingStage.h>
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/Interpreters/Context.h>
 
@@ -13,7 +14,7 @@ namespace DB
 class InterpreterQuery
 {
 public:
-	InterpreterQuery(ASTPtr query_ptr_, Context & context_);
+	InterpreterQuery(ASTPtr query_ptr_, Context & context_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
 	/** Выполнить запрос.
 	  *
@@ -36,6 +37,7 @@ public:
 private:
 	ASTPtr query_ptr;
 	Context context;
+	QueryProcessingStage::Enum stage;
 };
 
 

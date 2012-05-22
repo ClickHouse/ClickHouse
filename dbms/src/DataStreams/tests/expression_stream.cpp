@@ -58,8 +58,10 @@ int main(int argc, char ** argv)
 		DB::Names column_names;
 		column_names.push_back("number");
 
+		DB::QueryProcessingStage::Enum stage;
+
 		Poco::SharedPtr<DB::IBlockInputStream> in;
-		in = table.read(column_names, 0)[0];
+		in = table.read(column_names, 0, stage)[0];
 		in = new DB::ExpressionBlockInputStream(in, expression);
 		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));

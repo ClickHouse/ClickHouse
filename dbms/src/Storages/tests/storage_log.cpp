@@ -65,7 +65,9 @@ int main(int argc, char ** argv)
 			column_names.push_back("a");
 			column_names.push_back("b");
 
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0)[0];
+			DB::QueryProcessingStage::Enum stage;
+
+			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, stage)[0];
 
 			DB::Block sample;
 			{

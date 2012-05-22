@@ -27,9 +27,12 @@ StorageDistributed::StorageDistributed(
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,
 	ASTPtr query,
+	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned max_threads)
 {
+	processed_stage = QueryProcessingStage::WithMergeableState;
+	
 	/// Заменим в запросе имена БД и таблицы.
 	ASTPtr modified_query_ast = query->clone();
 	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*modified_query_ast);
@@ -43,7 +46,9 @@ BlockInputStreams StorageDistributed::read(
 	BlockInputStreams res;
 
 	for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
-		res.push_back(new RemoteBlockInputStream(**it, modified_query, QueryProcessingStage::WithMergeableState));
+		res.push_back(new RemoteBlockInputStream(**it, modified_query, connections.size() == 1
+			? QueryProcessingStage::Complete
+			: QueryProcessingStage::WithMergeableState));
 
 	return res;
 }

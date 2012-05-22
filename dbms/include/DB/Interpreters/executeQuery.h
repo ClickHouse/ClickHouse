@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Core/QueryProcessingStage.h>
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
 
@@ -14,7 +15,8 @@ void executeQuery(
 	ReadBuffer & istr,								/// Откуда читать запрос (а также данные для INSERT-а, если есть)
 	WriteBuffer & ostr,								/// Куда писать результат
 	Context & context,								/// БД, таблицы, типы данных, движки таблиц, функции, агрегатные функции...
-	BlockInputStreamPtr & query_plan);				/// Сюда может быть записано описание, как выполнялся запрос
+	BlockInputStreamPtr & query_plan,				/// Сюда может быть записано описание, как выполнялся запрос
+	QueryProcessingStage::Enum stage = QueryProcessingStage::Complete);	/// До какой стадии выполнять SELECT запрос.
 
 
 /** Более низкоуровневая функция для межсерверного взаимодействия.
@@ -33,6 +35,7 @@ void executeQuery(
   */
 BlockIO executeQuery(
 	const String & query,	/// Текст запроса, без данных INSERT-а (если есть). Данные INSERT-а следует писать в BlockIO::out.
-	Context & context);
+	Context & context,
+	QueryProcessingStage::Enum stage = QueryProcessingStage::Complete);
 
 }

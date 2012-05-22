@@ -142,7 +142,9 @@ int main(int argc, char ** argv)
 			("IsLink")
 		;
 
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0)[0];
+		DB::QueryProcessingStage::Enum stage;
+
+		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, stage)[0];
 		in = new DB::ExpressionBlockInputStream(in, expression);
 		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 4);

@@ -19,9 +19,10 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 
 
 BlockInputStreams StorageSystemOne::read(
-	const Names & column_names, ASTPtr query, size_t max_block_size, unsigned max_threads)
+	const Names & column_names, ASTPtr query, QueryProcessingStage::Enum & processed_stage, size_t max_block_size, unsigned max_threads)
 {
 	check(column_names);
+	processed_stage = QueryProcessingStage::FetchColumns;
 
 	Block block;
 	ColumnWithNameAndType col;

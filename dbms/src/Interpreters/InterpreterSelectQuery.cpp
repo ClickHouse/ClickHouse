@@ -117,24 +117,24 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	  */
 	BlockInputStreams streams;
 
-	executeFetchColumns(streams, expression);
+	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
+	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams, expression);
 
-	if (to_stage == QueryProcessingStage::FetchColumns)
+	if (to_stage > QueryProcessingStage::FetchColumns)
 	{
-		executeUnion(streams, expression);
-	}
-	else
-	{
-		executeWhere(streams, expression);
-
 		/// Нужно ли агрегировать.
 		bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
+		
+		if (from_stage < QueryProcessingStage::WithMergeableState)
+		{
+			executeWhere(streams, expression);
 
-		/// Если есть GROUP BY - сначала выполним часть выражения, необходимую для его вычисления
-		if (need_aggregate)
-			executeAggregation(streams, expression);
+			if (need_aggregate)
+				executeAggregation(streams, expression);
+		}
 
-		if (to_stage != QueryProcessingStage::WithMergeableState)
+		if (from_stage <= QueryProcessingStage::WithMergeableState
+			&& to_stage > QueryProcessingStage::WithMergeableState)
 		{
 			if (need_aggregate)
 				executeFinalizeAggregates(streams, expression);
@@ -147,6 +147,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		}
 	}
 
+	executeUnion(streams, expression);
 	return streams[0];
 }
 
@@ -164,7 +165,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 }
 
 
-void InterpreterSelectQuery::executeFetchColumns(BlockInputStreams & streams, ExpressionPtr & expression)
+QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInputStreams & streams, ExpressionPtr & expression)
 {
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr table;
@@ -199,15 +200,19 @@ void InterpreterSelectQuery::executeFetchColumns(BlockInputStreams & streams, Ex
 	{
 		block_size = limit_length + limit_offset;
 	}
+
+	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 	
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
- 		streams = table->read(required_columns, query_ptr, block_size, context.settings.max_threads);
+ 		streams = table->read(required_columns, query_ptr, from_stage, block_size, context.settings.max_threads);
 	else
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), context.settings.asynchronous));
 
 	if (streams.empty())
 		throw Exception("No streams returned from table.", ErrorCodes::NO_STREAMS_RETURNED_FROM_TABLE);
+
+	return from_stage;
 }
 
 

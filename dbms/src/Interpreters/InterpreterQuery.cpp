@@ -14,8 +14,8 @@ namespace DB
 {
 
 
-InterpreterQuery::InterpreterQuery(ASTPtr query_ptr_, Context & context_)
-	: query_ptr(query_ptr_), context(context_)
+InterpreterQuery::InterpreterQuery(ASTPtr query_ptr_, Context & context_, QueryProcessingStage::Enum stage_)
+	: query_ptr(query_ptr_), context(context_), stage(stage_)
 {
 }
 
@@ -24,7 +24,7 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 {
 	if (dynamic_cast<ASTSelectQuery *>(&*query_ptr))
 	{
-		InterpreterSelectQuery interpreter(query_ptr, context);
+		InterpreterSelectQuery interpreter(query_ptr, context, stage);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
 	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))

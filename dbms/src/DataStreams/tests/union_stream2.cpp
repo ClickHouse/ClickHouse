@@ -40,8 +40,9 @@ int main(int argc, char ** argv)
 		column_names.push_back("WatchID");
 
 		DB::StoragePtr table = (*context.databases)["default"]["hits6"];
-		
-		DB::BlockInputStreams streams = table->read(column_names, NULL, context.settings.max_block_size, context.settings.max_threads);
+
+		DB::QueryProcessingStage::Enum stage;
+		DB::BlockInputStreams streams = table->read(column_names, NULL, stage, context.settings.max_block_size, context.settings.max_threads);
 
 		for (size_t i = 0, size = streams.size(); i < size; ++i)
 			streams[i] = new DB::AsynchronousBlockInputStream(streams[i]);

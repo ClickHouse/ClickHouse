@@ -57,7 +57,10 @@ private:
 
 
 	/// Разные стадии выполнения запроса.
-	void executeFetchColumns(		BlockInputStreams & streams, ExpressionPtr & expression);
+
+	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
+	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams, ExpressionPtr & expression);
+	
 	void executeWhere(				BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeFinalizeAggregates(	BlockInputStreams & streams, ExpressionPtr & expression);

@@ -49,10 +49,12 @@ StorageMemory::StorageMemory(const std::string & name_, NamesAndTypesListPtr col
 BlockInputStreams StorageMemory::read(
 	const Names & column_names,
 	ASTPtr query,
+	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned max_threads)
 {
 	check(column_names);
+	processed_stage = QueryProcessingStage::FetchColumns;
 	return BlockInputStreams(1, new MemoryBlockInputStream(column_names, *this));
 }
 

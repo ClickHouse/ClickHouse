@@ -12,7 +12,8 @@ void executeQuery(
 	ReadBuffer & istr,
 	WriteBuffer & ostr,
 	Context & context,
-	BlockInputStreamPtr & query_plan)
+	BlockInputStreamPtr & query_plan,
+	QueryProcessingStage::Enum stage)
 {
 	ParserQuery parser;
 	ASTPtr ast;
@@ -57,14 +58,15 @@ void executeQuery(
 	formatAST(*ast, std::cerr);
 	std::cerr << std::endl;
 
-	InterpreterQuery interpreter(ast, context);
+	InterpreterQuery interpreter(ast, context, stage);
 	interpreter.execute(ostr, &istr, query_plan);
 }
 
 
 BlockIO executeQuery(
 	const String & query,
-	Context & context)
+	Context & context,
+	QueryProcessingStage::Enum stage)
 {
 	ParserQuery parser;
 	ASTPtr ast;
@@ -87,7 +89,7 @@ BlockIO executeQuery(
 	formatAST(*ast, std::cerr);
 	std::cerr << std::endl;
 
-	InterpreterQuery interpreter(ast, context);
+	InterpreterQuery interpreter(ast, context, stage);
 	return interpreter.execute();
 }
 

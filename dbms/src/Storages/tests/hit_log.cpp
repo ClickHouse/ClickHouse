@@ -140,7 +140,9 @@ int main(int argc, char ** argv)
 */
 			DB::WriteBufferFromOStream out_buf(std::cout);
 
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0)[0];
+			DB::QueryProcessingStage::Enum stage;
+
+			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, stage)[0];
 			DB::TabSeparatedRowOutputStream out(out_buf, sample);
 			DB::copyData(*in, out);
 		}

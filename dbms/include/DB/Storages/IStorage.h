@@ -6,6 +6,7 @@
 #include <DB/Core/Names.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
+#include <DB/Core/QueryProcessingStage.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
@@ -51,12 +52,16 @@ public:
 	  *  (индексы, блокировки и т. п.)
 	  * Возвращает поток с помощью которого можно последовательно читать данные
 	  *  или несколько потоков для параллельного чтения данных.
+	  * Также в processed_stage записывается, до какой стадии запрос был обработан.
+	  * (Обычно функция только читает столбцы из списка, но в других случаях,
+	  *  например, запрос может быть частично обработан на удалённом сервере.)
 	  *
 	  * BlockInputStreams будет содержать по крайней мере один элемент и не больше max_threads элементов.
 	  */
 	virtual BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
+		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned max_threads = 1)
 	{
