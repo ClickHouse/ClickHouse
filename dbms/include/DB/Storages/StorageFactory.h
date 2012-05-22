@@ -7,6 +7,7 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+class Context;
 
 
 /** Позволяет создать таблицу по имени движка.
@@ -18,6 +19,8 @@ public:
 		const String & name,
 		const String & data_path,
 		const String & table_name,
+		Context & context,
+		ASTPtr & query,
 		NamesAndTypesListPtr columns) const;
 };
 

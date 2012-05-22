@@ -22,7 +22,7 @@ using Poco::SharedPtr;
 class IAST
 {
 public:
-	typedef std::list<SharedPtr<IAST> > ASTs;
+	typedef std::vector<SharedPtr<IAST> > ASTs;
 	ASTs children;
 	StringRange range;
 
@@ -82,6 +82,6 @@ public:
 
 
 typedef SharedPtr<IAST> ASTPtr;
-typedef std::list<ASTPtr> ASTs;
+typedef std::vector<ASTPtr> ASTs;
 
 }
