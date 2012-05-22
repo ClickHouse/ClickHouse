@@ -57,7 +57,9 @@ StoragePtr StorageFactory::get(
 		config.keys("remote_servers." + config_name, config_keys);
 			
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
-			addresses.push_back(Poco::Net::SocketAddress(config.getString(*it + ".host"), config.getInt(*it + ".port")));
+			addresses.push_back(Poco::Net::SocketAddress(
+				config.getString("remote_servers." + *it + ".host"),
+				config.getInt("remote_servers." + *it + ".port")));
 		
 		return new StorageDistributed(table_name, columns, addresses, remote_database, remote_table, *context.data_type_factory);
 	}
