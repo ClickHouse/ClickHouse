@@ -55,11 +55,13 @@ StoragePtr StorageFactory::get(
 		Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 		Poco::Util::AbstractConfiguration::Keys config_keys;
 		config.keys("remote_servers." + config_name, config_keys);
+
+		String config_prefix = "remote_servers." + config_name + ".";
 			
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 			addresses.push_back(Poco::Net::SocketAddress(
-				config.getString("remote_servers." + *it + ".host"),
-				config.getInt("remote_servers." + *it + ".port")));
+				config.getString(config_prefix + *it + ".host"),
+				config.getInt(config_prefix + *it + ".port")));
 		
 		return new StorageDistributed(table_name, columns, addresses, remote_database, remote_table, *context.data_type_factory);
 	}
