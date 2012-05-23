@@ -20,7 +20,7 @@ StorageDistributed::StorageDistributed(
 	data_type_factory(data_type_factory_)
 {
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
-		connections.push_back(new Connection(it->host().toString(), it->port(), data_type_factory));
+		connections.push_back(new Connection(it->host().toString(), it->port(), data_type_factory, "server"));
 }
 
 
@@ -44,8 +44,6 @@ BlockInputStreams StorageDistributed::read(
 	std::stringstream s;
 	formatAST(select, s, 0, false);
 	String modified_query = s.str();
-
-	std::cerr << modified_query << std::endl;
 
 	BlockInputStreams res;
 

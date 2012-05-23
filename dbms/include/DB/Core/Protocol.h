@@ -49,6 +49,12 @@ namespace Protocol
 			Pong = 4,			/// Ответ на Ping.
 			EndOfStream = 5,	/// Все пакеты были переданы.
 		};
+
+		inline const char * toString(Enum packet)
+		{
+			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream" };
+			return data[packet];
+		}
 	}
 
 	/// То, что передаёт клиент.
@@ -64,6 +70,12 @@ namespace Protocol
 			Cancel = 3,			/// Отменить выполнение запроса.
 			Ping = 4,			/// Проверка живости соединения с сервером.
 		};
+
+		inline const char * toString(Enum packet)
+		{
+			static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping" };
+			return data[packet];
+		}
 	}
 
 	/// Использовать ли сжатие.

@@ -50,6 +50,7 @@ void TCPHandler::runImpl()
 
 			LOG_DEBUG(log, "Query ID: " << state.query_id);
 			LOG_DEBUG(log, "Query: " << state.query);
+			LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(state.stage));
 
 			/// Запрос требует приёма данных от клиента?
 			if (state.io.out)

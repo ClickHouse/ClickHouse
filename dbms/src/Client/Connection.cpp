@@ -31,7 +31,7 @@ void Connection::connect()
 void Connection::sendHello()
 {
 	writeVarUInt(Protocol::Client::Hello, *out);
-	writeStringBinary(String(DBMS_NAME) + " client", *out);
+	writeStringBinary((DBMS_NAME " ") + client_name, *out);
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
 	writeVarUInt(Revision::get(), *out);
@@ -102,7 +102,9 @@ bool Connection::ping()
 	readVarUInt(pong, *in);
 
 	if (pong != Protocol::Server::Pong)
-		throw Exception("Unknown packet from server (expected Pong)", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+		throw Exception("Unexpected packet from server (expected Pong, got "
+			+ String(Protocol::Server::toString(Protocol::Server::Enum(pong))) + ")",
+			ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 
 	return true;
 }
@@ -113,7 +115,7 @@ void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage)
 	forceConnected();
 	
 	query_id = query_id_;
-		
+
 	writeVarUInt(Protocol::Client::Query, *out);
 	writeIntBinary(query_id, *out);
 	writeVarUInt(stage, *out);

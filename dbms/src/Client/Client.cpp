@@ -282,7 +282,7 @@ private:
 		if (is_interactive)
 			std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
 
-		connection = new Connection(host, port, *context.data_type_factory, compression);
+		connection = new Connection(host, port, *context.data_type_factory, "client", compression);
 
 		if (is_interactive)
 		{

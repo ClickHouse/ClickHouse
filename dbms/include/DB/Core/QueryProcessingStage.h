@@ -13,6 +13,12 @@ namespace QueryProcessingStage
 		WithMergeableState 	= 1,	/// До стадии, когда результаты обработки на разных серверах можно объединить.
 		Complete 			= 2,	/// Полностью.
 	};
+
+	inline const char * toString(Enum stage)
+	{
+		static const char * data[] = { "FetchColumns", "WithMergeableState", "Complete" };
+		return data[stage];
+	}
 }
 
 }

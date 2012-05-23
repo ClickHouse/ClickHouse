@@ -66,7 +66,7 @@ public:
 
 private:
 	Connection & connection;
-	const String & query;
+	const String query;
 	QueryProcessingStage::Enum stage;
 
 	bool sent_query;

@@ -31,8 +31,9 @@ class Connection
 public:
 	Connection(const String & host_, UInt16 port_,
 		DataTypeFactory & data_type_factory_,
+		const String & client_name_ = "client",
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable)
-		: host(host_), port(port_), connected(false),
+		: host(host_), port(port_), client_name(client_name_), connected(false),
 		server_version_major(0), server_version_minor(0), server_revision(0),
 		socket(), in(new ReadBufferFromPocoSocket(socket)), out(new WriteBufferFromPocoSocket(socket)),
 		query_id(0), compression(compression_), data_type_factory(data_type_factory_)
@@ -70,6 +71,8 @@ public:
 private:
 	String host;
 	UInt16 port;
+
+	String client_name;
 
 	bool connected;
 
