@@ -123,7 +123,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	
 	query->columns = columns;
 	query->select = select;
-	query->data = data;
+	query->data = data != end ? data : NULL;
 	query->end = end;
 
 	if (columns)

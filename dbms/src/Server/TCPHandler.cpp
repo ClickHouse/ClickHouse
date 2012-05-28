@@ -65,6 +65,9 @@ void TCPHandler::runImpl()
 			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
 				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 			state.exception = e.clone();
+
+			if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
+				throw;
 		}
 		catch (Poco::Exception & e)
 		{

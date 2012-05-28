@@ -439,7 +439,7 @@ private:
 		const ASTInsertQuery * parsed_insert_query = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
 		if (!parsed_insert_query)
 			return;
-		
+
 		if (parsed_insert_query->data)
 		{
 			/// Отправляем данные из запроса.
