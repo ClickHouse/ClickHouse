@@ -389,6 +389,9 @@ private:
 			? query.substr(0, parsed_insert_query.data - query.data())
 			: query;
 
+		if ((is_interactive && !parsed_insert_query.data) || (!is_interactive && std_in.eof()))
+			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+
 		connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete);
 
 		/// Получим структуру таблицы
@@ -446,7 +449,7 @@ private:
 			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data, 0);
 			sendDataFrom(data_in, sample);
 		}
-		else if (!is_interactive)
+		else if (!is_interactive && !std_in.eof())
 		{
 			/// Отправляем данные из stdin.
 			sendDataFrom(std_in, sample);

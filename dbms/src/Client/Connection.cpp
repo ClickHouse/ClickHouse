@@ -153,6 +153,7 @@ void Connection::sendData(const Block & block)
 
 	writeVarUInt(Protocol::Client::Data, *out);
 	block_out->write(block);
+	maybe_compressed_out->next();
 	out->next();
 }
 
