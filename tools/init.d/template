@@ -19,6 +19,7 @@ CRONFILE=/etc/cron.d/@CRONFILE@
 
 CNFFILE=$SYSCONFDIR/config.xml
 CONFFILE=$SYSCONFDIR/config.conf
+CONFMERGEDFILE=$SYSCONFDIR/config-merged.conf
 PIDFILE=$PIDDIR/$PROGRAM.pid
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
@@ -57,7 +58,13 @@ start()
 		chown -R $USER:$GROUP $PIDDIR
 
 		if [ -f "$CONFFILE" ]; then
-			/usr/local/bin/short2old.sh $CONFFILE > $CNFFILE
+			if [ -x /usr/local/bin/conf-merge.sh ]; then
+				/usr/local/bin/conf-merge.sh $CONFFILE $SYSCONFDIR/conf.d $CONFMERGEDFILE
+				else
+				echo "Warning: there is no /usr/local/bin/conf-merge.sh file" >&2
+				cp $CONFFILE $CONFMERGEDFILE
+			fi
+			/usr/local/bin/short2old.sh $CONFMERGEDFILE > $CNFFILE
 			[ $? -ne 0 ] && echo FAILED && exit 1
 		else
 			echo "Warinig: there is no $CONFFILE file; using $CNFFILE file." >&2
