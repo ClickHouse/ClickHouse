@@ -17,6 +17,7 @@
 #include <DB/Interpreters/executeQuery.h>
 
 #include "TCPHandler.h"
+#include <Poco/Ext/ThreadNumber.h>
 
 
 namespace DB
@@ -120,7 +121,10 @@ void TCPHandler::processOrdinaryQuery()
 
 		while (true)
 		{
+			std::cerr << Poco::ThreadNumber::get() << "!" << std::endl;
+			dynamic_cast<IProfilingBlockInputStream &>(*state.io.in).dumpTree(std::cerr);
 			Block block = state.io.in->read();
+			std::cerr << Poco::ThreadNumber::get() << "!!" << std::endl;
 			sendData(block);
 			if (!block)
 				break;
@@ -216,7 +220,7 @@ void TCPHandler::receiveQuery()
 	readStringBinary(state.query, *in);
 
 	state.context = server.global_context;
-	state.io = executeQuery(state.query, state.context);
+	state.io = executeQuery(state.query, state.context, state.stage);
 }
 
 

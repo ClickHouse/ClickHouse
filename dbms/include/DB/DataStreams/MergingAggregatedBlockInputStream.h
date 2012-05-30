@@ -11,15 +11,14 @@ namespace DB
 using Poco::SharedPtr;
 
 
-/** Агрегирует поток блоков, используя заданные столбцы-ключи и агрегатные функции.
-  * Столбцы с агрегатными функциями добавляет в конец блока.
-  * Агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
-  * Это необходимо, чтобы можно было продолжить агрегацию (например, объединяя потоки частично агрегированных данных).
+/** Доагрегирует поток блоков, в котором каждый блок уже агрегирован.
+  * Агрегатные функции в блоках не должны быть финализированы, чтобы их состояния можно было объединить.
+  * Сам тоже не финализирует агрегатные функции.
   */
-class AggregatingBlockInputStream : public IProfilingBlockInputStream
+class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
+	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
 		: input(input_), aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false)
 	{
 		children.push_back(input);
@@ -27,18 +26,17 @@ public:
 
 	/** keys берутся из GROUP BY части запроса
 	  * Агрегатные функции ищутся везде в выражении.
-	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
+	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
 
 	Block readImpl();
 
-	String getName() const { return "AggregatingBlockInputStream"; }
+	String getName() const { return "MergingAggregatedBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new AggregatingBlockInputStream(*this); }
+	BlockInputStreamPtr clone() { return new MergingAggregatedBlockInputStream(*this); }
 
 private:
-	AggregatingBlockInputStream(const AggregatingBlockInputStream & src)
+	MergingAggregatedBlockInputStream(const MergingAggregatedBlockInputStream & src)
 		: input(src.input), aggregator(src.aggregator), has_been_read(src.has_been_read) {}
 	
 	BlockInputStreamPtr input;

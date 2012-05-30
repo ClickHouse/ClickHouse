@@ -6,6 +6,7 @@
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
+#include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
@@ -120,6 +121,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams, expression);
 
+	std::cerr << QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage) << std::endl;
+
 	if (to_stage > QueryProcessingStage::FetchColumns)
 	{
 		/// Нужно ли агрегировать.
@@ -137,7 +140,13 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			&& to_stage > QueryProcessingStage::WithMergeableState)
 		{
 			if (need_aggregate)
+			{
+				/// Если нужно объединить агрегированные результаты с нескольких серверов
+				if (from_stage == QueryProcessingStage::WithMergeableState)
+					executeMergeAggregated(streams, expression);
+			
 				executeFinalizeAggregates(streams, expression);
+			}
 
 			executeHaving(streams, expression);
 			executeOuterExpression(streams, expression);
@@ -264,6 +273,21 @@ void InterpreterSelectQuery::executeFinalizeAggregates(BlockInputStreams & strea
 	/// Финализируем агрегатные функции - заменяем их состояния вычислений на готовые значения
 	BlockInputStreamPtr & stream = streams[0];
 	stream = maybeAsynchronous(new FinalizingAggregatedBlockInputStream(stream), context.settings.asynchronous);
+}
+
+
+void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams, ExpressionPtr & expression)
+{
+	/// Если объединять нечего
+	if (streams.size() == 1)
+		return;
+
+	/// Склеим несколько источников в один
+	streams[0] = new UnionBlockInputStream(streams, context.settings.max_threads);
+	streams.resize(1);
+
+	/// Теперь объединим агрегированные блоки
+	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], expression), context.settings.asynchronous);
 }
 
 

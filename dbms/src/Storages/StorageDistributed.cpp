@@ -42,7 +42,7 @@ BlockInputStreams StorageDistributed::read(
 	select.table 	= new ASTIdentifier(StringRange(), remote_table, 	ASTIdentifier::Table);
 
 	std::stringstream s;
-	formatAST(select, s, 0, false);
+	formatAST(select, s, 0, false, true);
 	String modified_query = s.str();
 
 	BlockInputStreams res;

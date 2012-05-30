@@ -152,6 +152,50 @@ void Aggregator::initialize(Block & block)
 }
 
 
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+{
+	size_t keys_size = key_columns.size();
+	
+/*	bool has_strings = false;
+	for (size_t j = 0; j < keys_size; ++j)
+		if (dynamic_cast<const ColumnString *>(&*key_columns[j]) || dynamic_cast<const ColumnFixedString *>(&*key_columns[j]))
+			has_strings = true;*/
+
+	keys_fit_128_bits = true;
+	size_t keys_bytes = 0;
+	key_sizes.resize(keys_size);
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		if (!key_columns[j]->isNumeric())
+		{
+			keys_fit_128_bits = false;
+			break;
+		}
+		key_sizes[j] = key_columns[j]->sizeOfField();
+		keys_bytes += key_sizes[j];
+	}
+	if (keys_bytes > 16)
+		keys_fit_128_bits = false;
+
+	/// Если ключей нет
+	if (keys_size == 0)
+		return AggregatedDataVariants::WITHOUT_KEY;
+
+	/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
+	if (keys_size == 1 && key_columns[0]->isNumeric()
+		&& !dynamic_cast<ColumnFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnFloat64 *>(&*key_columns[0]))
+		return AggregatedDataVariants::KEY_64;
+
+	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
+	if (keys_size == 1
+		&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])))
+		return AggregatedDataVariants::KEY_STRING;
+
+	/// Если много ключей - будем агрегировать по хэшу от них
+	return AggregatedDataVariants::HASHED;
+}
+
+
 /** Результат хранится в оперативке и должен полностью помещаться в оперативку.
   */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
@@ -179,7 +223,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		}
 		
 		/// Запоминаем столбцы, с которыми будем работать
-		for (size_t i = 0, size = keys_size; i < size; ++i)
+		for (size_t i = 0; i < keys_size; ++i)
 			key_columns[i] = block.getByPosition(keys[i]).column;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
@@ -189,32 +233,12 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		size_t rows = block.rows();
 
 		/// Каким способом выполнять агрегацию?
-		bool has_strings = false;
-		for (size_t j = 0; j < keys_size; ++j)
-			if (dynamic_cast<const ColumnString *>(&*key_columns[j]) || dynamic_cast<const ColumnFixedString *>(&*key_columns[j]))
-				has_strings = true;
+		bool keys_fit_128_bits = false;
+		Sizes key_sizes;
+		result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
 
-		bool keys_fit_128_bits = true;
-		size_t keys_bytes = 0;
-		typedef std::vector<size_t> Sizes;
-		Sizes key_sizes(keys_size);
-		for (size_t j = 0; j < keys_size; ++j)
+		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
 		{
-			if (!key_columns[j]->isNumeric())
-			{
-				keys_fit_128_bits = false;
-				break;
-			}
-			key_sizes[j] = key_columns[j]->sizeOfField();
-			keys_bytes += key_sizes[j];
-		}
-		if (keys_bytes > 16)
-			keys_fit_128_bits = false;
-
-		if (keys_size == 0)
-		{
-			/// Если ключей нет
-			result.type = AggregatedDataVariants::WITHOUT_KEY;
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (res.empty())
 			{
@@ -235,11 +259,8 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-		else if (keys_size == 1 && key_columns[0]->isNumeric()
-			&& !dynamic_cast<ColumnFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnFloat64 *>(&*key_columns[0]))
+		else if (result.type == AggregatedDataVariants::KEY_64)
 		{
-			/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
-			result.type = AggregatedDataVariants::KEY_64;
 			AggregatedDataWithUInt64Key & res = result.key64;
 			const FieldVisitorToUInt64 visitor;
 			IColumn & column = *key_columns[0];
@@ -273,11 +294,8 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-		else if (keys_size == 1
-			&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])))
+		else if (result.type == AggregatedDataVariants::KEY_STRING)
 		{
-			/// Если есть один строковый ключ, то используем хэш-таблицу с ним
-			result.type = AggregatedDataVariants::KEY_STRING;
 			AggregatedDataWithStringKey & res = result.key_string;
 			IColumn & column = *key_columns[0];
 
@@ -306,10 +324,8 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-		else
+		else if (result.type == AggregatedDataVariants::HASHED)
 		{
-			/// Если много ключей - будем агрегировать по хэшу от них
-			result.type = AggregatedDataVariants::HASHED;
 			AggregatedDataHashed & res = result.hashed;
 			const FieldVisitorToUInt64 to_uint64_visitor;
 
@@ -372,10 +388,9 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-/*		else
+		else if (result.type == AggregatedDataVariants::GENERIC)
 		{
 			/// Общий способ
-			result.type = AggregatedDataVariants::GENERIC;
 			AggregatedData & res = result.generic;
 			
 			/// Для всех строчек
@@ -403,7 +418,9 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					it->second[j]->add(aggregate_arguments[j]);
 				}
 			}
-		}*/
+		}
+		else
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 	}
 }
 
@@ -635,6 +652,196 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 	}
 
 	return data_variants[0];
+}
+
+
+void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & result)
+{
+	size_t keys_size = keys.empty() ? key_names.size() : keys.size();
+	size_t aggregates_size = aggregates.size();
+	Row key(keys_size);
+	Columns key_columns(keys_size);
+
+	typedef ColumnAggregateFunction::Container_t * AggregateColumn;
+	typedef std::vector<AggregateColumn> AggregateColumns;
+	AggregateColumns aggregate_columns(aggregates_size);
+
+	/// Читаем все данные
+	while (Block block = stream->read())
+	{
+		/// Запоминаем столбцы, с которыми будем работать
+		for (size_t i = 0; i < keys_size; ++i)
+			key_columns[i] = block.getByPosition(i).column;
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_columns[i] = &dynamic_cast<ColumnAggregateFunction &>(*block.getByPosition(keys_size + i).column).getData();
+
+		size_t rows = block.rows();
+
+		/// Каким способом выполнять агрегацию?
+		bool keys_fit_128_bits = false;
+		Sizes key_sizes;
+		result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
+
+		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
+		{
+			AggregatedDataWithoutKey & res = result.without_key;
+			if (res.empty())
+			{
+				res.resize(aggregates_size);
+				for (size_t i = 0; i < aggregates_size; ++i)
+					res[i] = (*aggregate_columns[i])[0];
+			}
+			else
+			{
+				/// Добавляем значения
+				for (size_t i = 0; i < aggregates_size; ++i)
+					res[i]->merge(*(*aggregate_columns[i])[0]);
+			}
+		}
+		else if (result.type == AggregatedDataVariants::KEY_64)
+		{
+			AggregatedDataWithUInt64Key & res = result.key64;
+			const FieldVisitorToUInt64 visitor;
+			IColumn & column = *key_columns[0];
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Строим ключ
+				Field field = column[i];
+				UInt64 key = boost::apply_visitor(visitor, field);
+
+				AggregatedDataWithUInt64Key::iterator it;
+				bool inserted;
+				res.emplace(key, it, inserted);
+
+				if (inserted)
+				{
+					new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						it->second[j] = aggregates[j].function->cloneEmpty();
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					it->second[j]->merge(*(*aggregate_columns[j])[i]);
+			}
+		}
+		else if (result.type == AggregatedDataVariants::KEY_STRING)
+		{
+			AggregatedDataWithStringKey & res = result.key_string;
+			IColumn & column = *key_columns[0];
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Строим ключ
+				String key = boost::get<String>(column[i]);
+
+				AggregatedDataWithStringKey::iterator it = res.find(key);
+				if (it == res.end())
+				{
+					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						it->second[j] = aggregates[j].function->cloneEmpty();
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					it->second[j]->merge(*(*aggregate_columns[j])[i]);
+			}
+		}
+		else if (result.type == AggregatedDataVariants::HASHED)
+		{
+			AggregatedDataHashed & res = result.hashed;
+			const FieldVisitorToUInt64 to_uint64_visitor;
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Строим ключ
+				union
+				{
+					UInt128 key_hash;
+					unsigned char bytes[16];
+				} key_hash_union;
+
+				/// Если все ключи числовые и помещаются в 128 бит
+				if (keys_fit_128_bits)
+				{
+					memset(key_hash_union.bytes, 0, 16);
+					size_t offset = 0;
+					for (size_t j = 0; j < keys_size; ++j)
+					{
+						key[j] = (*key_columns[j])[i];
+						UInt64 tmp = boost::apply_visitor(to_uint64_visitor, key[j]);
+						/// Работает только на little endian
+						memcpy(key_hash_union.bytes + offset, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
+						offset += key_sizes[j];
+					}
+				}
+				else	/// Иначе используем md5.
+				{
+					FieldVisitorHash key_hash_visitor;
+
+					for (size_t j = 0; j < keys_size; ++j)
+					{
+						key[j] = (*key_columns[j])[i];
+						boost::apply_visitor(key_hash_visitor, key[j]);
+					}
+
+					key_hash_visitor.finalize(key_hash_union.bytes);
+				}
+
+				AggregatedDataHashed::iterator it;
+				bool inserted;
+				res.emplace(key_hash_union.key_hash, it, inserted);
+
+				if (inserted)
+				{
+					new(&it->second) AggregatedDataHashed::mapped_type(key, AggregateFunctionsPlainPtrs(aggregates_size));
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						it->second.second[j] = aggregates[j].function->cloneEmpty();
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					it->second.second[j]->merge(*(*aggregate_columns[j])[i]);
+			}
+		}
+		else if (result.type == AggregatedDataVariants::GENERIC)
+		{
+			/// Общий способ
+			AggregatedData & res = result.generic;
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Строим ключ
+				for (size_t j = 0; j < keys_size; ++j)
+					key[j] = (*key_columns[j])[i];
+
+				AggregatedData::iterator it = res.find(key);
+				if (it == res.end())
+				{
+					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						it->second[j] = aggregates[j].function->cloneEmpty();
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					it->second[j]->merge(*(*aggregate_columns[j])[i]);
+			}
+		}
+		else
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
 }
 
 

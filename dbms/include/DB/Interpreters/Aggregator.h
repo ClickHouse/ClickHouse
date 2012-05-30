@@ -127,8 +127,13 @@ public:
 	/// Преобразовать структуру данных агрегации в блок.
 	Block convertToBlock(AggregatedDataVariants & data_variants);
 
-	/// Объединить несколько структуру данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
+	/// Объединить несколько структур данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
 	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants);
+
+	/** Объединить несколько агрегированных блоков в одну структуру данных.
+	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций.)
+	  */
+	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
 private:
 	ColumnNumbers keys;
@@ -145,6 +150,10 @@ private:
 	  * Сформировать блок - пример результата.
 	  */
 	void initialize(Block & block);
+
+	/** Выбрать способ агрегации на основе количества и типов ключей. */
+	typedef std::vector<size_t> Sizes;
+	AggregatedDataVariants::Type chooseAggregationMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 };
 
 

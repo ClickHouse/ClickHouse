@@ -27,6 +27,8 @@ void NativeBlockOutputStream::write(const Block & block)
 		/// Тип
 		writeStringBinary(column.type->getName(), ostr);
 
+		std::cerr << "write: " << column.type->getName() << std::endl;
+
 		/// Данные
 		if (column.column->isConst())
 		{
@@ -38,6 +40,8 @@ void NativeBlockOutputStream::write(const Block & block)
 		}
 		else
 			column.type->serializeBinary(*column.column, ostr);
+
+		std::cerr << "write: done" << std::endl;
 	}
 }
 

@@ -63,6 +63,7 @@ private:
 	
 	void executeWhere(				BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionPtr & expression);
+	void executeMergeAggregated(	BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeFinalizeAggregates(	BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeHaving(				BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeOuterExpression(	BlockInputStreams & streams, ExpressionPtr & expression);

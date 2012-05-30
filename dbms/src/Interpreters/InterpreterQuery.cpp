@@ -53,7 +53,7 @@ BlockIO InterpreterQuery::execute()
 	
 	if (dynamic_cast<ASTSelectQuery *>(&*query_ptr))
 	{
-		InterpreterSelectQuery interpreter(query_ptr, context);
+		InterpreterSelectQuery interpreter(query_ptr, context, stage);
 		res.in = interpreter.execute();
 		res.in_sample = interpreter.getSampleBlock();
 	}
