@@ -19,7 +19,7 @@ InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_
 
 void InterpreterDropQuery::execute()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
+	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
 	
 	ASTDropQuery & drop = dynamic_cast<ASTDropQuery &>(*query_ptr);
 

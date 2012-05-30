@@ -44,9 +44,9 @@ struct Context
 	Settings settings;										/// Настройки выполнения запроса.
 	Logger * log;											/// Логгер.
 
-	mutable SharedPtr<Poco::FastMutex> mutex;				/// Для доступа и модификации разделяемых объектов.
+	mutable SharedPtr<Poco::Mutex> mutex;					/// Для доступа и модификации разделяемых объектов.
 
-	Context() : databases(new Databases), functions(new Functions), log(&Logger::get("Context")), mutex(new Poco::FastMutex) {}
+	Context() : databases(new Databases), functions(new Functions), log(&Logger::get("Context")), mutex(new Poco::Mutex) {}
 
 	/** В сервере есть глобальный контекст.
 	  * При соединении, он копируется в контекст сессии.
@@ -55,7 +55,7 @@ struct Context
 	  */
 	Context(const Context & rhs)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(*rhs.mutex);
+		Poco::ScopedLock<Poco::Mutex> lock(*rhs.mutex);
 
 		path 						= rhs.path;
 		databases 					= rhs.databases;

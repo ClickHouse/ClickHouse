@@ -43,7 +43,7 @@ BlockInputStreams StorageSystemTables::read(
 	col_engine.column = new ColumnString;
 	block.insert(col_engine);
 
-	Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
+	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
 	
 	for (Databases::const_iterator it = context.databases->begin(); it != context.databases->end(); ++it)
 	{

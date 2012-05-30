@@ -1,10 +1,12 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageMemory.h>
+#include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemOne.h>
@@ -31,10 +33,34 @@ StoragePtr StorageFactory::get(
 	{
 		return new StorageMemory(table_name, columns);
 	}
+	else if (name == "Merge")
+	{
+		/** В запросе в качестве аргумента для движка указано имя БД, в которой находятся таблицы-источники,
+		  *  а также регексп для имён таблиц-источников.
+		  */
+		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+
+		if (args_func.size() != 1)
+			throw Exception("Storage Merge requires exactly 2 parameters"
+				" - name of source database and regexp for table names.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+		if (args.size() != 2)
+			throw Exception("Storage Merge requires exactly 2 parameters"
+				" - name of source database and regexp for table names.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		String source_database 		= dynamic_cast<ASTIdentifier &>(*args[0]).name;
+		String table_name_regexp	= boost::get<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
+		
+		return new StorageMerge(table_name, columns, source_database, table_name_regexp, context);
+	}
 	else if (name == "Distributed")
 	{
 		/** В запросе в качестве аргумента для движка указано имя конфигурационной секции,
-		  *  в которой задан список удалённых серверов.
+		  *  в которой задан список удалённых серверов, а также имя удалённой БД и имя удалённой таблицы.
 		  */
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 

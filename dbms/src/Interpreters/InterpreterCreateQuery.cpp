@@ -33,7 +33,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 
 StoragePtr InterpreterCreateQuery::execute()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(*context.mutex);
+	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
 	
 	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_ptr);
 
