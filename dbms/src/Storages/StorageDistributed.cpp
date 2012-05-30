@@ -29,7 +29,7 @@ BlockInputStreams StorageDistributed::read(
 	ASTPtr query,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
-	unsigned max_threads)
+	unsigned threads)
 {
 	processed_stage = connections.size() == 1
 		? QueryProcessingStage::Complete

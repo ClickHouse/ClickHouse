@@ -9,6 +9,9 @@ namespace DB
 
 /** Распределённая таблица, находящаяся на нескольких серверах.
   * Использует данные заданной БД и таблицы на каждом сервере.
+  *
+  * Можно передать один адрес, а не несколько.
+  * В этом случае, таблицу можно считать удалённой, а не распределённой.
   */
 class StorageDistributed : public IStorage
 {
@@ -33,7 +36,7 @@ public:
 		ASTPtr query,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned max_threads = 1);
+		unsigned threads = 1);
 
 	void drop() {}
 

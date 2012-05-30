@@ -136,7 +136,7 @@ BlockInputStreams StorageLog::read(
 	ASTPtr query,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
-	unsigned max_threads)
+	unsigned threads)
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
@@ -144,12 +144,12 @@ BlockInputStreams StorageLog::read(
 	Marks marks = files.begin()->second.marks;
 	size_t marks_size = marks.size();
 
-	if (max_threads > marks_size)
-		max_threads = marks_size;
+	if (threads > marks_size)
+		threads = marks_size;
 
 	BlockInputStreams res;
 
-	for (size_t thread = 0; thread < max_threads; ++thread)
+	for (size_t thread = 0; thread < threads; ++thread)
 	{
 /*		std::cerr << "Thread " << thread << ", mark " << thread * marks_size / max_threads
 			<< ", rows " << (thread == 0
@@ -160,10 +160,10 @@ BlockInputStreams StorageLog::read(
 			max_block_size,
 			column_names,
 			*this,
-			thread * marks_size / max_threads,
+			thread * marks_size / threads,
 			thread == 0
-				? marks[marks_size / max_threads - 1].rows
-				: (marks[(thread + 1) * marks_size / max_threads - 1].rows - marks[thread * marks_size / max_threads - 1].rows)));
+				? marks[marks_size / threads - 1].rows
+				: (marks[(thread + 1) * marks_size / threads - 1].rows - marks[thread * marks_size / threads - 1].rows)));
 	}
 	
 	return res;

@@ -56,14 +56,15 @@ public:
 	  * (Обычно функция только читает столбцы из списка, но в других случаях,
 	  *  например, запрос может быть частично обработан на удалённом сервере.)
 	  *
-	  * BlockInputStreams будет содержать по крайней мере один элемент и не больше max_threads элементов.
+	  * threads - рекомендация, сколько потоков возвращать,
+	  *  если хранилище может возвращать разное количество потоков.
 	  */
 	virtual BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned max_threads = 1)
+		unsigned threads = 1)
 	{
 		throw Exception("Method read() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

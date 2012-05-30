@@ -14,13 +14,14 @@ typedef std::vector<Block> Blocks;
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MemoryBlockInputStream(const Names & column_names_, StorageMemory & storage_);
+	MemoryBlockInputStream(const Names & column_names_, Blocks::iterator begin_, Blocks::iterator end_);
 	Block readImpl();
 	String getName() const { return "MemoryBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, storage); }
+	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, begin, end); }
 private:
 	Names column_names;
-	StorageMemory & storage;
+	Blocks::iterator begin;
+	Blocks::iterator end;
 	Blocks::iterator it;
 };
 
@@ -59,7 +60,7 @@ public:
 		ASTPtr query,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned max_threads = 1);
+		unsigned threads = 1);
 
 	BlockOutputStreamPtr write(
 		ASTPtr query);

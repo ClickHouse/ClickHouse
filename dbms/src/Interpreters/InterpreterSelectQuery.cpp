@@ -10,6 +10,7 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -121,6 +122,10 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams, expression);
 
+	/** Если данных нет. */
+	if (streams.empty())
+		return new NullBlockInputStream;
+
 	std::cerr << QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage) << std::endl;
 
 	if (to_stage > QueryProcessingStage::FetchColumns)
@@ -217,9 +222,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
  		streams = table->read(required_columns, query_ptr, from_stage, block_size, context.settings.max_threads);
 	else
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), context.settings.asynchronous));
-
-	if (streams.empty())
-		throw Exception("No streams returned from table.", ErrorCodes::NO_STREAMS_RETURNED_FROM_TABLE);
 
 	return from_stage;
 }

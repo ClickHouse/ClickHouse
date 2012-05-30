@@ -44,7 +44,7 @@ public:
 		ASTPtr query,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned max_threads = 1);
+		unsigned threads = 1);
 
 private:
 	const std::string name;
