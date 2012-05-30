@@ -15,6 +15,8 @@ class ColumnAggregateFunction : public ColumnVector<AggregateFunctionPtr>
 public:
  	std::string getName() const { return "ColumnAggregateFunction"; }
 
+ 	ColumnPtr cloneEmpty() const { return new ColumnAggregateFunction; };
+
 	bool isNumeric() const { return false; }
 
 	Field operator[](size_t n) const

@@ -117,14 +117,13 @@ void TCPHandler::processOrdinaryQuery()
 		{
 			profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this));
 			profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
+
+			profiling_in->dumpTree(std::cerr);
 		}
 
 		while (true)
 		{
-			std::cerr << Poco::ThreadNumber::get() << "!" << std::endl;
-			dynamic_cast<IProfilingBlockInputStream &>(*state.io.in).dumpTree(std::cerr);
 			Block block = state.io.in->read();
-			std::cerr << Poco::ThreadNumber::get() << "!!" << std::endl;
 			sendData(block);
 			if (!block)
 				break;

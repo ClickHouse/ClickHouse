@@ -669,6 +669,10 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
+		if (!sample)
+			for (size_t i = 0; i < keys_size + aggregates_size; ++i)
+				sample.insert(block.getByPosition(i).cloneEmpty());
+		
 		/// Запоминаем столбцы, с которыми будем работать
 		for (size_t i = 0; i < keys_size; ++i)
 			key_columns[i] = block.getByPosition(i).column;
@@ -690,14 +694,12 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			{
 				res.resize(aggregates_size);
 				for (size_t i = 0; i < aggregates_size; ++i)
-					res[i] = (*aggregate_columns[i])[0];
+					res[i] = aggregates[i].function->cloneEmpty();
 			}
-			else
-			{
-				/// Добавляем значения
-				for (size_t i = 0; i < aggregates_size; ++i)
-					res[i]->merge(*(*aggregate_columns[i])[0]);
-			}
+
+			/// Добавляем значения
+			for (size_t i = 0; i < aggregates_size; ++i)
+				res[i]->merge(*(*aggregate_columns[i])[0]);
 		}
 		else if (result.type == AggregatedDataVariants::KEY_64)
 		{
