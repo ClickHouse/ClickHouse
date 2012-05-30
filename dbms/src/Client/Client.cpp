@@ -275,14 +275,16 @@ private:
 	{
 		String host = config().getString("host", "localhost");
 		UInt16 port = config().getInt("port", 9000);
+		String default_database = config().getString("database", "");
+		
 		Protocol::Compression::Enum compression = config().getBool("compression", true)
 			? Protocol::Compression::Enable
 			: Protocol::Compression::Disable;
 
 		if (is_interactive)
-			std::cout << "Connecting to " << host << ":" << port << "." << std::endl;
+			std::cout << "Connecting to " << (!default_database.empty() ? default_database + "@" : "") << host << ":" << port << "." << std::endl;
 
-		connection = new Connection(host, port, *context.data_type_factory, "client", compression);
+		connection = new Connection(host, port, default_database, *context.data_type_factory, "client", compression);
 
 		if (is_interactive)
 		{
@@ -702,6 +704,13 @@ private:
 				.repeatable(false)
 				.argument("<string>")
 				.binding("query"));
+
+		options.addOption(
+			Poco::Util::Option("database", "d")
+				.required(false)
+				.repeatable(false)
+				.argument("<string>")
+				.binding("database"));
 	}
 };
 

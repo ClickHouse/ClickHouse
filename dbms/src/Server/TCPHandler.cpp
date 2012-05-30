@@ -32,6 +32,24 @@ void TCPHandler::runImpl()
 	out = new WriteBufferFromPocoSocket(socket());
 	
 	receiveHello();
+
+	/// При соединении может быть указана БД по-умолчанию.
+	if (!default_database.empty())
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(*connection_context.mutex);
+
+		if (connection_context.databases->end() == connection_context.databases->find(default_database))
+		{
+			Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
+				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
+			sendException(e);
+			return;
+		}
+
+		connection_context.current_database = default_database;
+	}
+	
 	sendHello();
 
 	while (!in->eof())
@@ -87,7 +105,7 @@ void TCPHandler::runImpl()
 		}
 
 		if (state.exception)
-			sendException();
+			sendException(*state.exception);
 
 		watch.stop();
 
@@ -149,11 +167,13 @@ void TCPHandler::receiveHello()
 	readVarUInt(client_version_major, *in);
 	readVarUInt(client_version_minor, *in);
 	readVarUInt(client_revision, *in);
+	readStringBinary(default_database, *in);
 
 	LOG_DEBUG(log, "Connected " << client_name
 		<< " version " << client_version_major
 		<< "." << client_version_minor
 		<< "." << client_revision
+		<< (!default_database.empty() ? ", database: " + default_database : "")
 		<< ".")
 }
 
@@ -218,7 +238,7 @@ void TCPHandler::receiveQuery()
 
 	readStringBinary(state.query, *in);
 
-	state.context = server.global_context;
+	state.context = connection_context;
 	state.io = executeQuery(state.query, state.context, state.stage);
 }
 
@@ -315,12 +335,12 @@ void TCPHandler::sendData(Block & block)
 }
 
 
-void TCPHandler::sendException()
+void TCPHandler::sendException(const Exception & e)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 	
 	writeVarUInt(Protocol::Server::Exception, *out);
-	writeException(*state.exception, *out);
+	writeException(e, *out);
 	out->next();
 }
 

@@ -35,6 +35,7 @@ void Connection::sendHello()
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
 	writeVarUInt(Revision::get(), *out);
+	writeStringBinary(default_database, *out);
 	
 	out->next();
 }
@@ -46,13 +47,17 @@ void Connection::receiveHello()
 	UInt64 packet_type = 0;
 
 	readVarUInt(packet_type, *in);
-	if (packet_type != Protocol::Server::Hello)
+	if (packet_type == Protocol::Server::Hello)
+	{
+		readStringBinary(server_name, *in);
+		readVarUInt(server_version_major, *in);
+		readVarUInt(server_version_minor, *in);
+		readVarUInt(server_revision, *in);
+	}
+	else if (packet_type == Protocol::Server::Exception)
+		receiveException()->rethrow();
+	else
 		throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
-
-	readStringBinary(server_name, *in);
-	readVarUInt(server_version_major, *in);
-	readVarUInt(server_version_minor, *in);
-	readVarUInt(server_revision, *in);
 }
 
 

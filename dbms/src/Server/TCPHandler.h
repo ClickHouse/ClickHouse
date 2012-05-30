@@ -103,6 +103,8 @@ private:
 	/// Время после последней проверки остановки запроса и отправки прогресса.
 	Stopwatch after_check_cancelled;
 	Stopwatch after_send_progress;
+
+	String default_database;
 	
 
 	void runImpl();
@@ -120,7 +122,7 @@ private:
 
 	void sendHello();
 	void sendData(Block & block);	/// Записать в сеть блок.
-	void sendException();
+	void sendException(const Exception & e);
 	void sendProgress(size_t rows, size_t bytes);
 	void sendEndOfStream();
 

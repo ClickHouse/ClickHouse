@@ -20,7 +20,7 @@ StorageDistributed::StorageDistributed(
 	data_type_factory(data_type_factory_)
 {
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
-		connections.push_back(new Connection(it->host().toString(), it->port(), data_type_factory, "server"));
+		connections.push_back(new Connection(it->host().toString(), it->port(), "", data_type_factory, "server"));
 }
 
 
