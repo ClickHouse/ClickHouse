@@ -214,6 +214,8 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
+		LOG_TRACE(log, "Aggregating block");
+		
 		initialize(block);
 
 		for (size_t i = 0; i < aggregates_size; ++i)
@@ -421,6 +423,8 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		}
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+		LOG_TRACE(log, "Aggregated block");
 	}
 }
 
@@ -429,6 +433,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 {
 	Block res = getSampleBlock();
 	size_t rows = 0;
+
+	LOG_TRACE(log, "Converting aggregated data to block");
 
 	/// В какой структуре данных агрегированы данные?
 	if (data_variants.empty())
@@ -516,6 +522,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		if (res.getByPosition(i).column->isConst())
 			res.getByPosition(i).column->cut(0, rows);
 
+	LOG_TRACE(log, "Converted aggregated data to block");
+
 	return res;
 }
 
@@ -524,6 +532,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 {
 	if (data_variants.empty())
  		throw Exception("Empty data passed to Aggregator::merge().", ErrorCodes::EMPTY_DATA_PASSED);
+
+	LOG_TRACE(log, "Merging aggregated data");
 
 	AggregatedDataVariants & res = *data_variants[0];
 
@@ -651,6 +661,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 	}
 
+	LOG_TRACE(log, "Merged aggregated data");
+
 	return data_variants[0];
 }
 
@@ -669,6 +681,8 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
+		LOG_TRACE(log, "Merging aggregated block");
+		
 		if (!sample)
 			for (size_t i = 0; i < keys_size + aggregates_size; ++i)
 				sample.insert(block.getByPosition(i).cloneEmpty());
@@ -843,6 +857,8 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		}
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+		LOG_TRACE(log, "Merged aggregated block");
 	}
 }
 

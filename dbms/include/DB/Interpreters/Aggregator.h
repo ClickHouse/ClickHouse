@@ -115,8 +115,11 @@ typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 class Aggregator
 {
 public:
-	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_) : keys(keys_), aggregates(aggregates_), initialized(false) {};
-	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_) : key_names(key_names_), aggregates(aggregates_), initialized(false) {};
+	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
+		: keys(keys_), aggregates(aggregates_), initialized(false), log(&Logger::get("Aggregator")) {};
+
+	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_)
+		: key_names(key_names_), aggregates(aggregates_), initialized(false), log(&Logger::get("Aggregator")) {};
 
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
@@ -145,6 +148,8 @@ private:
 	Poco::FastMutex mutex;
 
 	Block sample;
+
+	Logger * log;
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.
