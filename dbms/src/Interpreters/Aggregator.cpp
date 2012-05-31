@@ -131,7 +131,11 @@ void Aggregator::initialize(Block & block)
 	if (!sample)
 	{
 		for (size_t i = 0, size = keys.size(); i < size; ++i)
+		{
 			sample.insert(block.getByPosition(keys[i]).cloneEmpty());
+			if (sample.getByPosition(i).column->isConst())
+				sample.getByPosition(i).column = dynamic_cast<IColumnConst &>(*sample.getByPosition(i).column).convertToFullColumn();
+		}
 
 		for (size_t i = 0, size = aggregates.size(); i < size; ++i)
 		{
