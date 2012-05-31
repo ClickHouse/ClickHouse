@@ -107,6 +107,7 @@ void TCPHandler::runImpl()
 		if (state.exception)
 			sendException(*state.exception);
 
+		state.reset();
 		watch.stop();
 
 		LOG_INFO(log, std::fixed << std::setprecision(3)
