@@ -86,13 +86,20 @@ Block IProfilingBlockInputStream::read()
 	if (is_cancelled_callback && is_cancelled_callback())
 		return Block();
 
-	LOG_TRACE((&Logger::get("IProfilingBlockInputStream")), "Reading from " << getName());
+	bool write_log = getShortName() != "Asynchronous";
+	if (write_log)
+	{
+		LOG_TRACE((&Logger::get("Input")), "Reading from " << getShortName());
+	}
 	
 	info.work_stopwatch.start();
 	Block res = readImpl();
 	info.work_stopwatch.stop();
 
-	LOG_TRACE((&Logger::get("IProfilingBlockInputStream")), "Read from" << getName());
+	if (write_log)
+	{
+		LOG_TRACE((&Logger::get("Input")), "Read    from " << getShortName());
+	}
 
 /*	if (res)
 	{
