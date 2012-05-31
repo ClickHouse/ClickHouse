@@ -1,0 +1,256 @@
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <tr1/unordered_set>
+#include <google/dense_hash_set>
+
+#include <statdaemons/Stopwatch.h>
+
+#include <DB/Core/StringRef.h>
+#include <DB/Core/StringPool.h>
+
+#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <DB/IO/ReadHelpers.h>
+
+#include <DB/Interpreters/HashMap.h>
+
+struct StringRefZeroTraits
+{
+	static inline bool check(DB::StringRef x) { return 0 == x.data; }
+	static inline void set(DB::StringRef & x) { x.data = 0; }
+};
+
+
+int main(int argc, char ** argv)
+{
+	std::cerr << std::fixed << std::setprecision(3);
+	std::ofstream devnull("/dev/null");
+	
+	DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
+	size_t n = atoi(argv[1]);
+	size_t elems_show = 1;
+
+	typedef std::vector<std::string> Vec;
+	typedef std::tr1::unordered_set<std::string> Set;
+	typedef std::tr1::unordered_set<DB::StringRef, DB::StringRefHash> RefsSet;
+	typedef google::dense_hash_set<std::string> DenseSet;
+	typedef google::dense_hash_set<DB::StringRef, DB::StringRefHash> RefsDenseSet;
+	typedef DB::HashMap<DB::StringRef, int, DB::StringRefHash, StringRefZeroTraits> RefsHashMap;
+	Vec vec;
+
+	vec.reserve(n);
+
+	{
+		Stopwatch watch;
+
+		std::string s;
+		for (size_t i = 0; i < n && !in.eof(); ++i)
+		{
+			DB::readEscapedString(s, in);
+			DB::assertString("\n", in);
+			vec.push_back(s);
+		}
+
+		std::cerr << "Read and inserted into vector in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+	}
+
+	{
+		DB::StringPool pool;
+		Stopwatch watch;
+		const char * res = NULL;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+		{
+			const char * tmp = pool.insert(it->data(), it->size());
+			if (it == vec.begin())
+				res = tmp;
+		}
+
+		std::cerr << "Inserted into pool in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		devnull.write(res, 100);
+		devnull << std::endl;
+	}
+
+	{
+		Set set;
+		Stopwatch watch;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+			set.insert(*it);
+
+		std::cerr << "Inserted into std::tr1::unordered_set in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (Set::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull << *it;
+			devnull << std::endl;
+		}
+	}
+
+	{
+		RefsSet set;
+		Stopwatch watch;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+			set.insert(DB::StringRef(*it));
+
+		std::cerr << "Inserted refs into std::tr1::unordered_set in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (RefsSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull.write(it->data, it->size);
+			devnull << std::endl;
+		}
+	}
+
+	{
+		DB::StringPool pool;
+		RefsSet set;
+		Stopwatch watch;
+		
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+			set.insert(DB::StringRef(pool.insert(it->data(), it->size()), it->size()));
+
+		std::cerr << "Inserted into pool and refs into std::tr1::unordered_set in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (RefsSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull.write(it->data, it->size);
+			devnull << std::endl;
+		}
+	}
+
+	{
+		DenseSet set;
+		set.set_empty_key(DenseSet::value_type());
+		Stopwatch watch;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+			set.insert(*it);
+
+		std::cerr << "Inserted into google::dense_hash_set in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (DenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull << *it;
+			devnull << std::endl;
+		}
+	}
+
+	{
+		RefsDenseSet set;
+		set.set_empty_key(RefsDenseSet::value_type());
+		Stopwatch watch;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+			set.insert(DB::StringRef(it->data(), it->size()));
+
+		std::cerr << "Inserted refs into google::dense_hash_set in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (RefsDenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull.write(it->data, it->size);
+			devnull << std::endl;
+		}
+	}
+
+	{
+		DB::StringPool pool;
+		RefsDenseSet set;
+		set.set_empty_key(RefsDenseSet::value_type());
+		Stopwatch watch;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+			set.insert(DB::StringRef(pool.insert(it->data(), it->size()), it->size()));
+
+		std::cerr << "Inserted into pool and refs into google::dense_hash_set in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (RefsDenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull.write(it->data, it->size);
+			devnull << std::endl;
+		}
+	}
+
+	{
+		RefsHashMap set;
+		Stopwatch watch;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+		{
+			RefsHashMap::iterator inserted_it;
+			bool inserted;
+			set.emplace(DB::StringRef(*it), inserted_it, inserted);
+		}
+
+		std::cerr << "Inserted refs into DB::HashMap in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (RefsHashMap::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull.write(it->first.data, it->first.size);
+			devnull << std::endl;
+		}
+	}
+
+	{
+		DB::StringPool pool;
+		RefsHashMap set;
+		Stopwatch watch;
+
+		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
+		{
+			RefsHashMap::iterator inserted_it;
+			bool inserted;
+			set.emplace(DB::StringRef(pool.insert(it->data(), it->size()), it->size()), inserted_it, inserted);
+		}
+
+		std::cerr << "Inserted into pool and refs into DB::HashMap in " << watch.elapsedSeconds() << " sec, "
+			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
+			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+			<< std::endl;
+
+		size_t i = 0;
+		for (RefsHashMap::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+		{
+			devnull.write(it->first.data, it->first.size);
+			devnull << std::endl;
+		}
+	}
+
+	return 0;
+}
