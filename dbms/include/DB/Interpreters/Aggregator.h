@@ -9,8 +9,13 @@
 
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/Core/Names.h>
+#include <DB/Core/StringRef.h>
+#include <DB/Core/StringPool.h>
+
 #include <DB/DataStreams/IBlockInputStream.h>
+
 #include <DB/AggregateFunctions/IAggregateFunction.h>
+
 #include <DB/Interpreters/HashMap.h>
 
 
@@ -51,6 +56,12 @@ struct UInt128ZeroTraits
 	static inline void set(UInt128 & x) { x.first = 0; x.second = 0; }
 };
 
+struct StringRefZeroTraits
+{
+	static inline bool check(DB::StringRef x) { return 0 == x.data; }
+	static inline void set(DB::StringRef & x) { x.data = 0; }
+};
+
 
 /// Немного быстрее стандартного
 struct StringHash
@@ -66,7 +77,7 @@ struct StringHash
 typedef std::map<Row, AggregateFunctionsPlainPtrs> AggregatedData;
 typedef AggregateFunctionsPlainPtrs AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateFunctionsPlainPtrs> AggregatedDataWithUInt64Key;
-typedef std::tr1::unordered_map<String, AggregateFunctionsPlainPtrs, StringHash> AggregatedDataWithStringKey;
+typedef HashMap<StringRef, AggregateFunctionsPlainPtrs, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
 typedef HashMap<UInt128, std::pair<Row, AggregateFunctionsPlainPtrs>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
 
 
@@ -83,6 +94,7 @@ struct AggregatedDataVariants
 
 	/// Специализация для случая, когда есть один строковый ключ.
 	AggregatedDataWithStringKey key_string;
+	StringPool string_pool;
 
 	/** Агрегирует по 128 битному хэшу от ключа.
 	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.

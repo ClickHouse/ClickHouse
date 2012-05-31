@@ -305,30 +305,76 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			AggregatedDataWithStringKey & res = result.key_string;
 			IColumn & column = *key_columns[0];
 
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
+			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 			{
-				/// Строим ключ
-				String key = boost::get<String>(column[i]);
+				const ColumnString::Offsets_t & offsets = column_string->getOffsets();
+	            const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
 
-				AggregatedDataWithStringKey::iterator it = res.find(key);
-				if (it == res.end())
+				/// Для всех строчек
+				for (size_t i = 0; i < rows; ++i)
 				{
-					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
+					/// Строим ключ
+					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
 
+					AggregatedDataWithStringKey::iterator it;
+					bool inserted;
+					res.emplace(ref, it, inserted);
+
+					if (inserted)
+					{
+						it->first.data = result.string_pool.insert(ref.data, ref.size);
+						new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+
+						for (size_t j = 0; j < aggregates_size; ++j)
+							it->second[j] = aggregates[j].function->cloneEmpty();
+					}
+
+					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						it->second[j] = aggregates[j].function->cloneEmpty();
-				}
+					{
+						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
+							aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
 
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-				{
-					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
-
-					it->second[j]->add(aggregate_arguments[j]);
+						it->second[j]->add(aggregate_arguments[j]);
+					}
 				}
 			}
+			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+			{
+				size_t n = column_string->getN();
+				const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+
+				/// Для всех строчек
+				for (size_t i = 0; i < rows; ++i)
+				{
+					/// Строим ключ
+					StringRef ref(&data[i * n], n);
+
+					AggregatedDataWithStringKey::iterator it;
+					bool inserted;
+					res.emplace(ref, it, inserted);
+
+					if (inserted)
+					{
+						it->first.data = result.string_pool.insert(ref.data, ref.size);
+						new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+
+						for (size_t j = 0; j < aggregates_size; ++j)
+							it->second[j] = aggregates[j].function->cloneEmpty();
+					}
+
+					/// Добавляем значения
+					for (size_t j = 0; j < aggregates_size; ++j)
+					{
+						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
+							aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+
+						it->second[j]->add(aggregate_arguments[j]);
+					}
+				}
+			}
+			else
+				throw Exception("Illegal type of column when aggregating by string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 		}
 		else if (result.type == AggregatedDataVariants::HASHED)
 		{
@@ -482,7 +528,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 
 		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it)
 		{
-			first_column.insert(it->first);
+			first_column.insert(String(it->first.data, it->first.size));
 
 			size_t i = 1;
 			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
@@ -602,18 +648,21 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			
 			for (AggregatedDataWithStringKey::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
-				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
-				if (!res_row.empty())
+				AggregatedDataWithStringKey::iterator res_it;
+				bool inserted;
+				res_data.emplace(it->first, res_it, inserted);
+
+				if (!inserted)
 				{
 					size_t i = 0;
 					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
 					{
-						res_row[i]->merge(**jt);
+						res_it->second[i]->merge(**jt);
 						delete *jt;
 					}
 				}
 				else
-					res_row = it->second;
+					res_it->second = it->second;
 			}
 		}
 		else if (res.type == AggregatedDataVariants::HASHED)
@@ -754,25 +803,66 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			AggregatedDataWithStringKey & res = result.key_string;
 			IColumn & column = *key_columns[0];
 
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				String key = boost::get<String>(column[i]);
+			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+            {
+                const ColumnString::Offsets_t & offsets = column_string->getOffsets();
+                const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
 
-				AggregatedDataWithStringKey::iterator it = res.find(key);
-				if (it == res.end())
+				/// Для всех строчек
+				for (size_t i = 0; i < rows; ++i)
 				{
-					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
+					/// Строим ключ
+					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
 
+					AggregatedDataWithStringKey::iterator it;
+					bool inserted;
+					res.emplace(ref, it, inserted);
+
+					if (inserted)
+					{
+						it->first.data = result.string_pool.insert(ref.data, ref.size);
+						new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+
+						for (size_t j = 0; j < aggregates_size; ++j)
+							it->second[j] = aggregates[j].function->cloneEmpty();
+					}
+
+					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						it->second[j] = aggregates[j].function->cloneEmpty();
+						it->second[j]->merge(*(*aggregate_columns[j])[i]);
 				}
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					it->second[j]->merge(*(*aggregate_columns[j])[i]);
 			}
+			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+            {
+                size_t n = column_string->getN();
+                const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+
+				/// Для всех строчек
+				for (size_t i = 0; i < rows; ++i)
+				{
+					/// Строим ключ
+					StringRef ref(&data[i * n], n);
+
+					AggregatedDataWithStringKey::iterator it;
+					bool inserted;
+					res.emplace(ref, it, inserted);
+
+					if (inserted)
+					{
+						it->first.data = result.string_pool.insert(ref.data, ref.size);
+						new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+
+						for (size_t j = 0; j < aggregates_size; ++j)
+							it->second[j] = aggregates[j].function->cloneEmpty();
+					}
+
+					/// Добавляем значения
+					for (size_t j = 0; j < aggregates_size; ++j)
+						it->second[j]->merge(*(*aggregate_columns[j])[i]);
+				}
+			}
+			else
+				throw Exception("Illegal type of column when aggregating by string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 		}
 		else if (result.type == AggregatedDataVariants::HASHED)
 		{
