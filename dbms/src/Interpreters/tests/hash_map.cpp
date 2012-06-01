@@ -100,8 +100,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		std::tr1::unordered_map<Key, Value> map;
-		std::tr1::unordered_map<Key, Value>::iterator it;
+		std::tr1::unordered_map<Key, Value, DB::default_hash<Key> > map;
+		std::tr1::unordered_map<Key, Value, DB::default_hash<Key> >::iterator it;
 		for (size_t i = 0; i < n; ++i)
 		{
 			it = map.insert(std::make_pair(data[i], value)).first;
@@ -122,7 +122,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		google::dense_hash_map<Key, Value> map;
+		google::dense_hash_map<Key, Value, DB::default_hash<Key> > map;
 		map.set_empty_key(-1ULL);
 		for (size_t i = 0; i < n; ++i)
 			map.insert(std::make_pair(data[i], value));
@@ -138,7 +138,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		google::sparse_hash_map<Key, Value> map;
+		google::sparse_hash_map<Key, Value, DB::default_hash<Key> > map;
 		for (size_t i = 0; i < n; ++i)
 			map.insert(std::make_pair(data[i], value));
 

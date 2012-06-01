@@ -1,8 +1,8 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <tr1/unordered_set>
-#include <google/dense_hash_set>
+#include <tr1/unordered_map>
+#include <google/dense_hash_map>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -12,6 +12,7 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
 
+//#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #include <DB/Interpreters/HashMap.h>
 
 struct StringRefZeroTraits
@@ -31,10 +32,10 @@ int main(int argc, char ** argv)
 	size_t elems_show = 1;
 
 	typedef std::vector<std::string> Vec;
-	typedef std::tr1::unordered_set<std::string> Set;
-	typedef std::tr1::unordered_set<DB::StringRef, DB::StringRefHash> RefsSet;
-	typedef google::dense_hash_set<std::string> DenseSet;
-	typedef google::dense_hash_set<DB::StringRef, DB::StringRefHash> RefsDenseSet;
+	typedef std::tr1::unordered_map<std::string, int> Set;
+	typedef std::tr1::unordered_map<DB::StringRef, int, DB::StringRefHash> RefsSet;
+	typedef google::dense_hash_map<std::string, int> DenseSet;
+	typedef google::dense_hash_map<DB::StringRef, int, DB::StringRefHash> RefsDenseSet;
 	typedef DB::HashMap<DB::StringRef, int, DB::StringRefHash, StringRefZeroTraits> RefsHashMap;
 	Vec vec;
 
@@ -83,9 +84,9 @@ int main(int argc, char ** argv)
 		Stopwatch watch;
 
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-			set.insert(*it);
+			set[*it] = 0;
 
-		std::cerr << "Inserted into std::tr1::unordered_set in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted into std::tr1::unordered_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -93,7 +94,7 @@ int main(int argc, char ** argv)
 		size_t i = 0;
 		for (Set::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
 		{
-			devnull << *it;
+			devnull << it->first;
 			devnull << std::endl;
 		}
 	}
@@ -103,9 +104,9 @@ int main(int argc, char ** argv)
 		Stopwatch watch;
 
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-			set.insert(DB::StringRef(*it));
+			set[DB::StringRef(*it)] = 0;
 
-		std::cerr << "Inserted refs into std::tr1::unordered_set in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted refs into std::tr1::unordered_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -113,7 +114,7 @@ int main(int argc, char ** argv)
 		size_t i = 0;
 		for (RefsSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
 		{
-			devnull.write(it->data, it->size);
+			devnull.write(it->first.data, it->first.size);
 			devnull << std::endl;
 		}
 	}
@@ -124,9 +125,9 @@ int main(int argc, char ** argv)
 		Stopwatch watch;
 		
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-			set.insert(DB::StringRef(pool.insert(it->data(), it->size()), it->size()));
+			set[DB::StringRef(pool.insert(it->data(), it->size()), it->size())] = 0;
 
-		std::cerr << "Inserted into pool and refs into std::tr1::unordered_set in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted into pool and refs into std::tr1::unordered_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -134,20 +135,20 @@ int main(int argc, char ** argv)
 		size_t i = 0;
 		for (RefsSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
 		{
-			devnull.write(it->data, it->size);
+			devnull.write(it->first.data, it->first.size);
 			devnull << std::endl;
 		}
 	}
 
 	{
 		DenseSet set;
-		set.set_empty_key(DenseSet::value_type());
+		set.set_empty_key(DenseSet::key_type());
 		Stopwatch watch;
 
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-			set.insert(*it);
+			set[*it] = 0;
 
-		std::cerr << "Inserted into google::dense_hash_set in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -155,20 +156,20 @@ int main(int argc, char ** argv)
 		size_t i = 0;
 		for (DenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
 		{
-			devnull << *it;
+			devnull << it->first;
 			devnull << std::endl;
 		}
 	}
 
 	{
 		RefsDenseSet set;
-		set.set_empty_key(RefsDenseSet::value_type());
+		set.set_empty_key(RefsDenseSet::key_type());
 		Stopwatch watch;
 
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-			set.insert(DB::StringRef(it->data(), it->size()));
+			set[DB::StringRef(it->data(), it->size())] = 0;
 
-		std::cerr << "Inserted refs into google::dense_hash_set in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -176,7 +177,7 @@ int main(int argc, char ** argv)
 		size_t i = 0;
 		for (RefsDenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
 		{
-			devnull.write(it->data, it->size);
+			devnull.write(it->first.data, it->first.size);
 			devnull << std::endl;
 		}
 	}
@@ -184,13 +185,13 @@ int main(int argc, char ** argv)
 	{
 		DB::StringPool pool;
 		RefsDenseSet set;
-		set.set_empty_key(RefsDenseSet::value_type());
+		set.set_empty_key(RefsDenseSet::key_type());
 		Stopwatch watch;
 
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
-			set.insert(DB::StringRef(pool.insert(it->data(), it->size()), it->size()));
+			set[DB::StringRef(pool.insert(it->data(), it->size()), it->size())] = 0;
 
-		std::cerr << "Inserted into pool and refs into google::dense_hash_set in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted into pool and refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -198,7 +199,7 @@ int main(int argc, char ** argv)
 		size_t i = 0;
 		for (RefsDenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
 		{
-			devnull.write(it->data, it->size);
+			devnull.write(it->first.data, it->first.size);
 			devnull << std::endl;
 		}
 	}
@@ -225,6 +226,8 @@ int main(int argc, char ** argv)
 			devnull.write(it->first.data, it->first.size);
 			devnull << std::endl;
 		}
+
+		//std::cerr << set.size() << ", " << set.getCollisions() << std::endl;
 	}
 
 	{

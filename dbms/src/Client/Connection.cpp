@@ -106,6 +106,13 @@ bool Connection::ping()
 
 	readVarUInt(pong, *in);
 
+	/// Можем получить запоздалые пакеты прогресса.
+	while (pong == Protocol::Server::Progress)
+	{
+		receiveProgress();
+		readVarUInt(pong, *in);
+	}
+
 	if (pong != Protocol::Server::Pong)
 		throw Exception("Unexpected packet from server (expected Pong, got "
 			+ String(Protocol::Server::toString(Protocol::Server::Enum(pong))) + ")",
