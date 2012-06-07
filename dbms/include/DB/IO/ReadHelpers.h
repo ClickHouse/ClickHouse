@@ -328,7 +328,10 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 	UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
 	UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
 
-	datetime = Yandex::DateLUTSingleton::instance().makeDateTime(year, month, day, hour, minute, second);
+	if (unlikely(year == 0))
+		datetime = 0;
+	else
+		datetime = Yandex::DateLUTSingleton::instance().makeDateTime(year, month, day, hour, minute, second);
 }
 
 inline void readDateTimeText(mysqlxx::DateTime & datetime, ReadBuffer & buf)

@@ -61,7 +61,8 @@ public:
 
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
-	void sendQuery(const String & query, UInt64 query_id_ = 0, UInt64 stage = QueryProcessingStage::Complete);
+	/// query_id не должен быть равен 0.
+	void sendQuery(const String & query, UInt64 query_id_ = 1, UInt64 stage = QueryProcessingStage::Complete);
 	void sendCancel();
 	void sendData(const Block & block);
 

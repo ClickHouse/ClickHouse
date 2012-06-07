@@ -31,6 +31,18 @@ private:
 	
 	void init(time_t time)
 	{
+		if (unlikely(time > DATE_LUT_MAX || time == 0))
+		{
+			m_year 		= 0;
+			m_month 	= 0;
+			m_day 		= 0;
+			m_hour 		= 0;
+			m_minute 	= 0;
+			m_second 	= 0;
+			
+			return;
+		}
+		
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 		const Yandex::DateLUT::Values & values = date_lut.getValues(time);
 

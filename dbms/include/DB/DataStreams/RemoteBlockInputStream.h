@@ -22,7 +22,7 @@ public:
 	{
 		if (!sent_query)
 		{
-			connection.sendQuery(query, 0, stage);
+			connection.sendQuery(query, 1, stage);
 			sent_query = true;
 		}
 		

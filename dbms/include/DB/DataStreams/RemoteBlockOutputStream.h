@@ -25,7 +25,7 @@ public:
 	  */
 	Block sendQueryAndGetSampleBlock()
 	{
-		connection.sendQuery(query, 0, QueryProcessingStage::Complete);
+		connection.sendQuery(query);
 		sent_query = true;
 
 		Connection::Packet packet = connection.receivePacket();
@@ -63,7 +63,7 @@ public:
 
 private:
 	Connection & connection;
-	const String & query;
+	String query;
 
 	bool sent_query;
 };
