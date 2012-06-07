@@ -9,7 +9,6 @@
 
 #include <Poco/NumberFormatter.h>
 
-#include <Yandex/Common.h>		/// Yandex::VisitID_t
 #include <mysqlxx/mysqlxx.h>	/// mysqlxx::Date, mysqlxx::DateTime
 
 #include <DB/Core/Types.h>
@@ -191,35 +190,5 @@ template <> struct NearestFieldType<Float32> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<Float64> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
 template <> struct NearestFieldType<bool> 		{ typedef UInt64 	Type; };
-
-
-/// Перевести что угодно в Field.
-template <typename T>
-inline Field toField(const T & x)
-{
-	return Field(typename NearestFieldType<T>::Type(x));
-}
-
-inline Field toField(const mysqlxx::Date & x)
-{
-	return toField(static_cast<UInt16>(x.getDayNum()));
-}
-
-inline Field toField(const mysqlxx::DateTime & x)
-{
-	return toField(static_cast<UInt32>(static_cast<time_t>(x)));
-}
-
-inline Field toField(const Yandex::VisitID_t & x)
-{
-	return toField(static_cast<UInt64>(x));
-}
-
-template <typename T>
-inline Field toField(const mysqlxx::Null<T> & x)
-{
-	return x.isNull() ? Field(Null()) : toField(static_cast<const T &>(x));
-}
-
 
 }
