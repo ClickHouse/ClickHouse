@@ -122,7 +122,9 @@ public:
 
 	operator time_t() const
 	{
-		return Yandex::DateLUTSingleton::instance().makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
+		return m_year == 0
+			? 0
+			: Yandex::DateLUTSingleton::instance().makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
 	}
 
 	unsigned short year() const 	{ return m_year; }
