@@ -1,5 +1,4 @@
-#ifndef DB_VARINT_H
-#define DB_VARINT_H
+#pragma once
 
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBuffer.h>
@@ -72,6 +71,35 @@ inline void readVarT(Int64 & x, ReadBuffer & istr) { readVarInt(x, istr); }
 inline const char * readVarT(UInt64 & x, const char * istr, size_t size) { return readVarUInt(x, istr, size); }
 inline const char * readVarT(Int64 & x, const char * istr, size_t size) { return readVarInt(x, istr, size); }
 
+
+/// Для [U]Int32, [U]Int16.
+
+inline void readVarUInt(UInt32 & x, ReadBuffer & istr)
+{
+	UInt64 tmp;
+	readVarUInt(tmp, istr);
+	x = tmp;
 }
 
-#endif
+inline void readVarInt(Int32 & x, ReadBuffer & istr)
+{
+	Int64 tmp;
+	readVarInt(tmp, istr);
+	x = tmp;
+}
+
+inline void readVarUInt(UInt16 & x, ReadBuffer & istr)
+{
+	UInt64 tmp;
+	readVarUInt(tmp, istr);
+	x = tmp;
+}
+
+inline void readVarInt(Int16 & x, ReadBuffer & istr)
+{
+	Int64 tmp;
+	readVarInt(tmp, istr);
+	x = tmp;
+}
+
+}
