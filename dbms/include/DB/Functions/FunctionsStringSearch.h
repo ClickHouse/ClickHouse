@@ -293,7 +293,7 @@ struct MatchImpl
 
 			size_t size = offsets.size();
 			for (size_t i = 0; i < size; ++i)
-				res[i] = revert ^ regexp.match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]);
+				res[i] = revert ^ regexp.match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1);
 		}
 	}
 

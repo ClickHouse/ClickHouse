@@ -6,6 +6,7 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>
+#include <DB/Storages/StorageSystemDatabases.h>
 #include <DB/Storages/StorageSystemOne.h>
 
 #include "Server.h"
@@ -74,9 +75,11 @@ int Server::main(const std::vector<std::string> & args)
 
 	loadMetadata(global_context);
 
+	/// Создаём системные таблицы.
 	(*global_context.databases)["system"]["one"] 		= new StorageSystemOne("one");
 	(*global_context.databases)["system"]["numbers"] 	= new StorageSystemNumbers("numbers");
 	(*global_context.databases)["system"]["tables"] 	= new StorageSystemTables("tables", global_context);
+	(*global_context.databases)["system"]["databases"] 	= new StorageSystemDatabases("databases", global_context);
 		
 	global_context.current_database = config.getString("default_database", "default");
 

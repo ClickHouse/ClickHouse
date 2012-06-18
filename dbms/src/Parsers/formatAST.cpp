@@ -26,6 +26,9 @@ static const char * hilite_alias = "\033[0;32m";
 static const char * hilite_none = "\033[0m";
 
 
+// TODO: Правильно квотировать идентификаторы (в обратных кавычках, если идентификатор необычный).
+
+
 void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&ast);
@@ -60,6 +63,13 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	if (rename)
 	{
 		formatAST(*rename, s, indent, hilite, one_line);
+		return;
+	}
+
+	const ASTShowTablesQuery * show_tables = dynamic_cast<const ASTShowTablesQuery *>(&ast);
+	if (show_tables)
+	{
+		formatAST(*show_tables, s, indent, hilite, one_line);
 		return;
 	}
 	
@@ -263,6 +273,25 @@ void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bo
 	}
 }
 
+void formatAST(const ASTShowTablesQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	if (ast.databases)
+	{
+		s << (hilite ? hilite_keyword : "") << "SHOW DATABASES" << (hilite ? hilite_none : "");
+		return;
+	}
+	
+	s << (hilite ? hilite_keyword : "") << "SHOW TABLES" << (hilite ? hilite_none : "");
+
+	if (!ast.from.empty())
+		s << (hilite ? hilite_keyword : "") << " FROM " << (hilite ? hilite_none : "")
+			<< ast.from;
+
+	if (!ast.like.empty())
+		s << (hilite ? hilite_keyword : "") << " LIKE " << (hilite ? hilite_none : "")
+			<< mysqlxx::quote << ast.like;
+}
+
 void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_keyword : "") << "INSERT INTO " << (hilite ? hilite_none : "") << (!ast.database.empty() ? ast.database + "." : "") << ast.table;
@@ -306,7 +335,7 @@ static void writeAlias(const String & name, std::ostream & s, bool hilite, bool 
 {
 	s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
 	{
-		WriteBufferFromOStream wb(s);
+		WriteBufferFromOStream wb(s, 32);
 		writeProbablyBackQuotedString(name, wb);
 	}
 	s << (hilite ? hilite_none : "");
@@ -331,7 +360,7 @@ void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bo
 {
 	s << (hilite ? hilite_identifier : "");
 	{
-		WriteBufferFromOStream wb(s);
+		WriteBufferFromOStream wb(s, 32);
 		writeProbablyBackQuotedString(ast.name, wb);
 	}
 	s << (hilite ? hilite_none : "");

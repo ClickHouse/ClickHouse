@@ -50,8 +50,8 @@ void InterpreterRenameQuery::execute()
 		String to_table_name_escaped = escapeForFileName(to_table_name);
 		String to_metadata_path = context.path + "metadata/" + to_database_name_escaped + "/" + (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
 		
-		context.assertExists(from_database_name, from_table_name);
-		context.assertDoesntExist(to_database_name, to_table_name);
+		context.assertTableExists(from_database_name, from_table_name);
+		context.assertTableDoesntExist(to_database_name, to_table_name);
 
 		/// Уведомляем таблицу о том, что она переименовается.
 		(*context.databases)[from_database_name][from_table_name]->rename(context.path + "data/" + to_database_name_escaped + "/", to_table_name);
