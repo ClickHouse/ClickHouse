@@ -66,9 +66,10 @@ public:
 		ASTPtr query);
 
 	void drop();
+	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 
 private:
-	const std::string name;
+	String name;
 	NamesAndTypesListPtr columns;
 
 	/// Сами данные

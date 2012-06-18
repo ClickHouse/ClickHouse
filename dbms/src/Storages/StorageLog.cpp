@@ -131,6 +131,22 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 }
 
 
+void StorageLog::rename(const String & new_path_to_db, const String & new_name)
+{
+	/// Переименовываем директорию с данными.
+	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_name));
+	
+	path = new_path_to_db;
+	name = new_name;
+
+	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
+	{
+		files[it->first].data_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		files[it->first].marks_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION);
+	}
+}
+
+
 BlockInputStreams StorageLog::read(
 	const Names & column_names,
 	ASTPtr query,

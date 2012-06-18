@@ -39,9 +39,10 @@ public:
 		unsigned threads = 1);
 
 	void drop() {}
+	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 
 private:
-	const String name;
+	String name;
 	NamesAndTypesListPtr columns;
 	Addresses addresses;
 	String remote_database;

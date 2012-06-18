@@ -2,11 +2,13 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
+#include <DB/Parsers/ASTRenameQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
+#include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
 
 
@@ -42,6 +44,11 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 		InterpreterDropQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
+	else if (dynamic_cast<ASTRenameQuery *>(&*query_ptr))
+	{
+		InterpreterRenameQuery interpreter(query_ptr, context);
+		interpreter.execute();
+	}
 	else
 		throw Exception("Unknown type of query: " + query_ptr->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 }
@@ -71,6 +78,11 @@ BlockIO InterpreterQuery::execute()
 	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
 	{
 		InterpreterDropQuery interpreter(query_ptr, context);
+		interpreter.execute();
+	}
+	else if (dynamic_cast<ASTRenameQuery *>(&*query_ptr))
+	{
+		InterpreterRenameQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else

@@ -28,8 +28,8 @@ void InterpreterDropQuery::execute()
 	String table_name = drop.table;
 	String table_name_escaped = escapeForFileName(table_name);
 
-	String data_path = context.path + "data/" + database_name + "/" + table_name;	/// TODO: эскейпинг
-	String metadata_path = context.path + "metadata/" + database_name + "/" + (!table_name.empty() ?  table_name + ".sql" : "");
+	String data_path = context.path + "data/" + database_name_escaped + "/" + table_name_escaped;
+	String metadata_path = context.path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
 
 	if (!drop.if_exists && context.databases->end() == context.databases->find(database_name))
 		throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
@@ -51,7 +51,9 @@ void InterpreterDropQuery::execute()
 				table->drop();
 
 				Poco::File(metadata_path).remove();
-				Poco::File(data_path).remove();
+
+				if (Poco::File(data_path).exists())
+					Poco::File(data_path).remove();
 			}
 
 			/// Удаляем информацию о таблице из оперативки

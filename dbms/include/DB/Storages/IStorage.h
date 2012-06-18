@@ -80,10 +80,20 @@ public:
 	}
 
 	/** Удалить данные таблицы. После вызова этого метода, использование объекта некорректно (его можно лишь уничтожить).
+	  * Если директория с данными есть, то она будет удалена перед вызовом этого метода.
 	  */
 	virtual void drop()
 	{
 		throw Exception("Method drop() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	/** Переименовать таблицу.
+	  * Переименование имени в файле с метаданными, имени в списке таблиц в оперативке, осуществляется отдельно.
+	  * В этой функции нужно переименовать директорию с данными, если она есть.
+	  */
+	virtual void rename(const String & new_path_to_db, const String & new_name)
+	{
+		throw Exception("Method rename() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.

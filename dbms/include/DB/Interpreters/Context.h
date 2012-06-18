@@ -69,6 +69,44 @@ struct Context
 		log							= rhs.log;
 		mutex						= rhs.mutex;
 	}
+
+
+	/// Проверка существования таблицы. database может быть пустой - в этом случае используется текущая БД.
+	bool exists(const String & database_name, const String & table_name)
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(*mutex);
+
+		String db = database_name.empty() ? current_database : database_name;
+
+		return databases->end() == databases->find(db)
+			|| (*databases)[db].end() == (*databases)[db].find(table_name);
+	}
+
+
+	void assertExists(const String & database_name, const String & table_name)
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(*mutex);
+
+		String db = database_name.empty() ? current_database : database_name;
+
+		if (databases->end() == databases->find(db))
+			throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+
+		if ((*databases)[db].end() == (*databases)[db].find(table_name))
+			throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+	}
+
+
+	void assertDoesntExist(const String & database_name, const String & table_name)
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(*mutex);
+
+		String db = database_name.empty() ? current_database : database_name;
+
+		if (databases->end() != databases->find(db)
+			&& (*databases)[db].end() != (*databases)[db].find(table_name))
+			throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+	}
 };
 
 

@@ -55,6 +55,13 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 		formatAST(*drop, s, indent, hilite, one_line);
 		return;
 	}
+
+	const ASTRenameQuery * rename = dynamic_cast<const ASTRenameQuery *>(&ast);
+	if (rename)
+	{
+		formatAST(*rename, s, indent, hilite, one_line);
+		return;
+	}
 	
 	const ASTExpressionList * exp_list = dynamic_cast<const ASTExpressionList *>(&ast);
 	if (exp_list)
@@ -231,13 +238,29 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 
 void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	if (!ast.database.empty())
+	if (ast.table.empty() && !ast.database.empty())
 	{
 		s << (hilite ? hilite_keyword : "") << (ast.detach ? "DETACH DATABASE " : "DROP DATABASE ") << (ast.if_exists ? "IF EXISTS " : "") << (hilite ? hilite_none : "") << ast.database;
 		return;
 	}
 
-	s << (hilite ? hilite_keyword : "") << (ast.detach ? "DETACH TABLE " : "DROP TABLE ") << (ast.if_exists ? "IF EXISTS " : "") << (hilite ? hilite_none : "") << ast.table;
+	s << (hilite ? hilite_keyword : "") << (ast.detach ? "DETACH TABLE " : "DROP TABLE ") << (ast.if_exists ? "IF EXISTS " : "") << (hilite ? hilite_none : "")
+		<< (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+}
+
+void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << "RENAME TABLE " << (hilite ? hilite_none : "");
+
+	for (ASTRenameQuery::Elements::const_iterator it = ast.elements.begin(); it != ast.elements.end(); ++it)
+	{
+		if (it != ast.elements.begin())
+			s << ", ";
+
+		s << (!it->from.database.empty() ? it->from.database + "." : "") << it->from.table
+			<< (hilite ? hilite_keyword : "") << " TO " << (hilite ? hilite_none : "")
+			<< (!it->to.database.empty() ? it->to.database + "." : "") << it->to.table;
+	}
 }
 
 void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)

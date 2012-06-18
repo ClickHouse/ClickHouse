@@ -120,10 +120,12 @@ public:
 		ASTPtr query);
 
 	void drop();
+	
+	void rename(const String & new_path_to_db, const String & new_name);
 
 private:
-	const std::string path;
-	const std::string name;
+	String path;
+	String name;
 	NamesAndTypesListPtr columns;
 
 	/// Данные столбца
@@ -133,7 +135,7 @@ private:
 		Poco::File marks_file;
 		Marks marks;
 	};
-	typedef std::map<std::string, ColumnData> Files_t;
+	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
 };
 
