@@ -57,7 +57,8 @@ void Connection::receiveHello()
 	else if (packet_type == Protocol::Server::Exception)
 		receiveException()->rethrow();
 	else
-		throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+		throw Exception("Unexpected packet from server (expected Hello or Exception, got "
+			+ String(Protocol::Server::toString(Protocol::Server::Enum(packet_type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 
 

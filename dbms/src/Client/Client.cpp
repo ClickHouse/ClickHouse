@@ -567,7 +567,8 @@ private:
 				return packet.block;
 
 			default:
-				throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+				throw Exception("Unexpected packet from server (expected Data, got "
+					+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 		}
 	}
 

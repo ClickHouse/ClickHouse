@@ -32,8 +32,14 @@ public:
 
 		if (Protocol::Server::Data == packet.type)
 			return packet.block;
+		else if (Protocol::Server::Exception == packet.type)
+		{
+			packet.exception->rethrow();
+			return Block();
+		}
 		else
-			throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+			throw Exception("Unexpected packet from server (expected Data or Exception, got "
+				+ String(Protocol::Server::toString(Protocol::Server::Enum(packet.type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 	
 
@@ -54,8 +60,15 @@ public:
 		/// Получаем пакет EndOfStream.
 		Connection::Packet packet = connection.receivePacket();
 
-		if (Protocol::Server::EndOfStream != packet.type)
-			throw Exception("Unexpected packet from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+		if (Protocol::Server::EndOfStream == packet.type)
+		{
+			/// Ничего.
+		}
+		else if (Protocol::Server::Exception == packet.type)
+			packet.exception->rethrow();
+		else
+			throw Exception("Unexpected packet from server (expected EndOfStream or Exception, got "
+				+ String(Protocol::Server::toString(Protocol::Server::Enum(packet.type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 
 
