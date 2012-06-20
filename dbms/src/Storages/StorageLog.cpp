@@ -197,8 +197,11 @@ void StorageLog::drop()
 {
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
-		it->second.data_file.remove();
-		it->second.marks_file.remove();
+		if (it->second.data_file.exists())
+			it->second.data_file.remove();
+
+		if (it->second.marks_file.exists())
+			it->second.marks_file.remove();
 	}
 }
 
