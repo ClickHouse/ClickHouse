@@ -66,7 +66,8 @@ private:
 
 public:
 	CompressedReadBuffer(ReadBuffer & in_)
-		: in(in_),
+		: BufferWithOwnMemory<ReadBuffer>(0),
+		in(in_),
 		compressed_buffer(QUICKLZ_HEADER_SIZE),
 		qlz_state(NULL)
 	{
