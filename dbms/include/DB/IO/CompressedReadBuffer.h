@@ -41,9 +41,10 @@ private:
 		size_t size_decompressed = qlz_size_decompressed(&compressed_buffer[0]);
 
 		compressed_buffer.resize(size_compressed);
+		
 		memory.resize(size_decompressed);
-		internal_buffer.resize(size_decompressed);
-		working_buffer.resize(size_decompressed);
+		internal_buffer = Buffer(&memory[0], &memory[size_decompressed]);
+		working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
 
 		in.readStrict(&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed - QUICKLZ_HEADER_SIZE);
 

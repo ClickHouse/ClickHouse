@@ -16,11 +16,12 @@ namespace detail
 	  */
 	struct Memory
 	{
+		size_t m_capacity;
 		size_t m_size;
 		char * m_data;
 
-		Memory() : m_size(0), m_data(NULL) {}
-		Memory(size_t size_) : m_size(size_), m_data(new char[m_size]) {}
+		Memory() : m_capacity(0), m_size(0), m_data(NULL) {}
+		Memory(size_t size_) : m_capacity(size_), m_size(m_capacity), m_data(new char[m_capacity]) {}
 
 		~Memory()
 		{
@@ -35,14 +36,22 @@ namespace detail
 		const char & operator[](size_t i) const { return m_data[i]; }
 		char & operator[](size_t i) { return m_data[i]; }
 
-		/// Вызывают только чтобы увеличить размер буфера.
 		void resize(size_t new_size)
 		{
-			if (m_data)
-				delete[] m_data;
-			
-			m_size = new_size;
-			m_data = new char[m_size];
+			if (new_size < m_capacity)
+			{
+				m_size = new_size;
+				return;
+			}
+			else
+			{
+				if (m_data)
+					delete[] m_data;
+
+				m_capacity = new_size;
+				m_size = m_capacity;
+				m_data = new char[m_capacity];
+			}
 		}
 	};
 }
