@@ -137,6 +137,12 @@ private:
 	};
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
+
+	/** Прочитать файлы с засечками, если они ещё не прочитаны.
+	  * Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
+	  */
+	bool loaded_marks;
+	void loadMarks();
 };
 
 }
