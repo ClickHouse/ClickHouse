@@ -24,14 +24,19 @@ using Poco::SharedPtr;
 LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_)
 	: block_size(block_size_), column_names(column_names_), storage(storage_), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
 {
-	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-		streams.insert(std::make_pair(*it, new Stream(storage.files[*it].data_file.path(), storage.files[*it].marks[mark_number].offset)));
 }
 
 
 Block LogBlockInputStream::readImpl()
 {
 	Block res;
+
+	/// Если файлы не открыты, то открываем их.
+	if (streams.empty())
+		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+			streams.insert(std::make_pair(*it, new Stream(
+				storage.files[*it].data_file.path(),
+				storage.files[*it].marks[mark_number].offset)));
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
@@ -47,7 +52,15 @@ Block LogBlockInputStream::readImpl()
 
 	if (res)
 		rows_read += res.getByPosition(0).column->size();
-
+	else
+	{
+		/** Закрываем файлы (ещё до уничтожения объекта).
+		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
+		  *  буферы не висели в памяти.
+		  */
+		streams.clear();
+	}
+		
 	return res;
 }
 
