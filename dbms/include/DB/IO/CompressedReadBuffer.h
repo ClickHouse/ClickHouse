@@ -52,7 +52,12 @@ private:
 
 		/// Старший бит первого байта определяет использованный метод сжатия.
 		if ((compressed_buffer[0] & 0x80) == 0)
+		{
+			if (!qlz_state)
+				qlz_state = new qlz_state_decompress;
+			
 			qlz_decompress(&compressed_buffer[0], working_buffer.begin(), qlz_state);
+		}
 		else
 			LZ4_uncompress(&compressed_buffer[QUICKLZ_HEADER_SIZE], working_buffer.begin(), size_decompressed);
 
@@ -63,13 +68,14 @@ public:
 	CompressedReadBuffer(ReadBuffer & in_)
 		: in(in_),
 		compressed_buffer(QUICKLZ_HEADER_SIZE),
-		qlz_state(new qlz_state_decompress)
+		qlz_state(NULL)
 	{
 	}
 
     ~CompressedReadBuffer()
 	{
-		delete qlz_state;
+		if (qlz_state)
+			delete qlz_state;
 	}
 };
 

@@ -48,9 +48,11 @@ private:
 	struct Stream
 	{
 		Stream(const std::string & data_path, size_t offset)
-			: plain(data_path), compressed(plain)
+			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
+			compressed(plain)
 		{
-			plain.seek(offset);
+			if (offset)
+				plain.seek(offset);
 		}
 		
 		ReadBufferFromFile plain;
