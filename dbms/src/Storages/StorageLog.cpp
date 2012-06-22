@@ -38,21 +38,28 @@ Block LogBlockInputStream::readImpl()
 				storage.files[*it].data_file.path(),
 				storage.files[*it].marks[mark_number].offset)));
 
+	/// Сколько строк читать для следующего блока.
+	size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
+
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
 		ColumnWithNameAndType column;
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
 		column.column = column.type->createColumn();
-		column.type->deserializeBinary(*column.column, streams[column.name]->compressed, std::min(block_size, rows_limit - rows_read));
+		column.type->deserializeBinary(*column.column, streams[column.name]->compressed, max_rows_to_read);
 
 		if (column.column->size())
 			res.insert(column);
 	}
 
+	/// Сколько строк было считано только что.
+	size_t rows_has_been_read = res.rows();
+
 	if (res)
-		rows_read += res.getByPosition(0).column->size();
-	else
+		rows_read += rows_has_been_read;
+
+	if (!res || rows_has_been_read < max_rows_to_read)
 	{
 		/** Закрываем файлы (ещё до уничтожения объекта).
 		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,

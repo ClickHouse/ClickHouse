@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vector>
+#include <boost/noncopyable.hpp>
 
 #define DBMS_DEFAULT_BUFFER_SIZE 1048576ULL
 
@@ -14,7 +14,7 @@ namespace detail
 	/** Замена std::vector<char> для использования в буферах.
 	  * Отличается тем, что не делает лишний memset. (И почти ничего не делает.)
 	  */
-	struct Memory
+	struct Memory : boost::noncopyable
 	{
 		size_t m_capacity;
 		size_t m_size;
