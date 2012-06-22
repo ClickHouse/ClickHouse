@@ -55,7 +55,7 @@ public:
 				{
 					if (0 == threads_data[i].count)
 					{
-						if (pool.pending() + pool.active() > pool.size())
+						if (pool.pending() + pool.active() >= pool.size())
 							break;
 						
 		//				std::cerr << "Scheduling " << i << std::endl;
