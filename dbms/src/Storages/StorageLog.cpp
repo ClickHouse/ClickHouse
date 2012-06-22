@@ -53,13 +53,10 @@ Block LogBlockInputStream::readImpl()
 			res.insert(column);
 	}
 
-	/// Сколько строк было считано только что.
-	size_t rows_has_been_read = res.rows();
-
 	if (res)
-		rows_read += rows_has_been_read;
+		rows_read += res.rows();
 
-	if (!res || rows_has_been_read < max_rows_to_read)
+	if (!res || rows_read == rows_limit)
 	{
 		/** Закрываем файлы (ещё до уничтожения объекта).
 		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
