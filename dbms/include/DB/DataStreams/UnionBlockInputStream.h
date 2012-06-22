@@ -60,7 +60,7 @@ public:
 						++started_threads;
 						pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data[i])/*, i*/));
 
-						if (started_threads == max_threads)
+						if (started_threads == max_threads || pool.pending() + pool.active() > pool.size())
 							break;
 					}
 				}
@@ -128,6 +128,7 @@ public:
 
 	~UnionBlockInputStream()
 	{
+		pool.clear();
 		pool.wait();
 	}
 

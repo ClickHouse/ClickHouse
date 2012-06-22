@@ -64,6 +64,7 @@ public:
 			|| pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
 			throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
+		// TODO: скорее всего, эта штука не уничтожается вовремя.
 		boost::thread waiting_thread(&InterruptListener::wait, this);
 	}
 
