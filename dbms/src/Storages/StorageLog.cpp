@@ -31,6 +31,9 @@ Block LogBlockInputStream::readImpl()
 {
 	Block res;
 
+	if (rows_read == rows_limit)
+		return res;
+
 	/// Если файлы не открыты, то открываем их.
 	if (streams.empty())
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
