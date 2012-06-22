@@ -261,7 +261,16 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 
 	BlockInputStreamPtr & stream = streams[0];
 
-	/// Если потоков несколько, то выполняем параллельную агрегацию
+	/** Если истчоников слишком много, то склеим их в один (TODO: в max_threads) источников.
+	  * (Иначе агрегация в каждом маленьком источнике, а затем объединение состояний, слишком неэффективна.)
+	  */
+	if (streams.size() > context.settings.max_threads)
+	{
+		streams[0] = new UnionBlockInputStream(streams, context.settings.max_threads);
+		streams.resize(1);
+	}
+
+	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
 		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, context.settings.max_threads), context.settings.asynchronous);
