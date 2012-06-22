@@ -48,13 +48,18 @@ public:
 	//		std::cerr << "Starting initial threads" << std::endl;
 
 			/// Запустим вычисления для как можно большего количества источников, которые ещё ни разу не брались
+			size_t started_threads = 0;
 			for (size_t i = 0; i < threads_data.size(); ++i)
 			{
 				if (0 == threads_data[i].count)
 				{
 	//				std::cerr << "Scheduling " << i << std::endl;
 					++threads_data[i].count;
+					++started_threads;
 					pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data[i])/*, i*/));
+
+					if (started_threads == max_threads)
+						break;
 				}
 			}
 		}
@@ -121,7 +126,7 @@ public:
 
 	BlockInputStreamPtr clone() { return new UnionBlockInputStream(children, max_threads); }
 
-    ~UnionBlockInputStream()
+	~UnionBlockInputStream()
 	{
 		pool.wait();
 	}
