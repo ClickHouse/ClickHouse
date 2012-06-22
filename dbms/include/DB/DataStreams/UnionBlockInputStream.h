@@ -55,12 +55,15 @@ public:
 				{
 					if (0 == threads_data[i].count)
 					{
+						if (pool.pending() + pool.active() > pool.size())
+							break;
+						
 		//				std::cerr << "Scheduling " << i << std::endl;
 						++threads_data[i].count;
 						++started_threads;
 						pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data[i])/*, i*/));
 
-						if (started_threads == max_threads || pool.pending() + pool.active() > pool.size())
+						if (started_threads == max_threads)
 							break;
 					}
 				}
@@ -207,7 +210,9 @@ private:
 	}
 
 
-	/// Проверить, что во всех потоках были получены все блоки
+	/** Проверить, что во всех потоках были получены все блоки.
+	  * Объект может быть уничтожен и раньше. Например, если он находится внутри LIMIT-а.
+	  */ 
 	bool isEnd()
 	{
 	//	std::cerr << "Checking end" << std::endl;
