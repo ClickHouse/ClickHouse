@@ -60,6 +60,8 @@ Poco::Net::TCPServerConnection * TCPConnectionFactory::createConnection(const Po
 
 int Server::main(const std::vector<std::string> & args)
 {
+	Logger * log = &logger();
+	
 	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 	LOG_DEBUG(log, "Initializing DateLUT.");
 	Yandex::DateLUTSingleton::instance();

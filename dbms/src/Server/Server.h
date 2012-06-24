@@ -63,9 +63,6 @@ public:
 
 class Server : public Daemon
 {
-private:
-	Logger * log;
-	
 public:
 	Poco::Util::LayeredConfiguration & config;
 
@@ -73,7 +70,7 @@ public:
 	Context global_context;
 	
 	
-    Server() : log(&Logger::get("Server")), config(Application::instance().config()) {}
+    Server() : config(Application::instance().config()) {}
 	
 protected:
 	void initialize(Application& self)
