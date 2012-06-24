@@ -24,101 +24,99 @@ public:
 	UnionBlockInputStream(BlockInputStreams inputs_, unsigned max_threads_ = 1)
 		: max_threads(std::min(inputs_.size(), static_cast<size_t>(max_threads_))),
 		pool(max_threads),
-		threads_data(inputs_.size()),
 		ready_any(0, inputs_.size())
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
+
 		for (size_t i = 0; i < inputs_.size(); ++i)
-			threads_data[i].in = inputs_[i];
+		{
+			threads_data.push_back(ThreadData());
+			threads_data.back().in = inputs_[i];
+			threads_data.back().i = i;
+		}
 	}
 
 	Block readImpl()
 	{
 		Block res;
 
-	//	time_t current_time = time(0);
-	//	std::cerr << std::endl << ctime(&current_time) << std::endl;
-
 		while (1)
 		{
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-				if (isEnd())
+				if (threads_data.empty())
 					return res;
 
-		//		std::cerr << "Starting initial threads" << std::endl;
-
-				/// Запустим вычисления для как можно большего количества источников, которые ещё ни разу не брались
-				size_t started_threads = 0;
-				for (size_t i = 0; i < threads_data.size(); ++i)
+				if (pool.pending() + pool.active() < pool.size())
 				{
-					if (0 == threads_data[i].count)
-					{
-						if (pool.pending() + pool.active() >= pool.size())
-							break;
-						
-		//				std::cerr << "Scheduling " << i << std::endl;
-						++threads_data[i].count;
-						++started_threads;
-						pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data[i])/*, i*/));
+					std::cerr << "Starting initial threads" << std::endl;
 
-						if (started_threads == max_threads)
+					/// Запустим вычисления для как можно большего количества источников, которые ещё ни разу не брались
+					size_t started_threads = 0;
+					size_t max_threads_to_start = pool.size() - pool.pending() + pool.active();
+
+					for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end() && 0 == it->count; ++it)
+					{
+						std::cerr << "Scheduling initial " << it->i << std::endl;
+						++it->count;
+						++started_threads;
+						pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(*it)));
+
+						if (started_threads == max_threads_to_start)
 							break;
 					}
 				}
 			}
-			
-	//		std::cerr << "Waiting for one thread to finish" << std::endl;
+
+			std::cerr << "Waiting for one thread to finish" << std::endl;
 			ready_any.wait();
 
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-	/*			std::cerr << std::endl << "pool.pending: " << pool.pending() << ", pool.active: " << pool.active() << ", pool.size: " << pool.size() << std::endl;
-				for (size_t i = 0; i < threads_data.size(); ++i)
-				{
-					std::cerr << "\t" << "i: " << i << ", count: " << threads_data[i].count << ", ready: " << threads_data[i].ready << ", block: " << !!threads_data[i].block  << std::endl;
-				}
-	*/
-				if (isEnd())
+				std::cerr << std::endl << "pool.pending: " << pool.pending() << ", pool.active: " << pool.active() << ", pool.size: " << pool.size() << std::endl;
+	
+				if (threads_data.empty())
 					return res;
 
-	//			std::cerr << "Searching for first ready block" << std::endl;
+				std::cerr << "Searching for first ready block" << std::endl;
 
 				/** Найдём и вернём готовый непустой блок, если такой есть.
 				  * При чём, выберем блок из источника, из которого было получено меньше всего блоков.
 				  */
-				unsigned min_count = 0;
-				ssize_t argmin_i = -1;
-				for (size_t i = 0; i < threads_data.size(); ++i)
+				ThreadsData::iterator it = threads_data.begin();
+				while (it != threads_data.end())
 				{
-					if (threads_data[i].exception)
-						threads_data[i].exception->rethrow();
+					if (it->exception)
+						it->exception->rethrow();
 
-					if (threads_data[i].ready && threads_data[i].block
-						&& (argmin_i == -1 || threads_data[i].count < min_count))
+					if (it->ready)
 					{
-						min_count = threads_data[i].count;
-						argmin_i = i;
+						if (!it->block)
+							threads_data.erase(it++);
+						else
+							break;
 					}
+					else
+						++it;
 				}
 
-				if (argmin_i == -1)
+				if (it == threads_data.end())
 				{
-	//				std::cerr << "Continue" << std::endl;
+					std::cerr << "Continue" << std::endl;
 					continue;
 				}
 
-	//			std::cerr << "Returning found block " << argmin_i << std::endl;
+				std::cerr << "Found block " << it->i << std::endl;
 
-				res = threads_data[argmin_i].block;
+				res = it->block;
 
 				/// Запустим получение следующего блока
-				threads_data[argmin_i].reset();
-	//			std::cerr << "Scheduling " << argmin_i << std::endl;
-				++threads_data[argmin_i].count;
-				pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data[argmin_i])/*, argmin_i*/));
+				it->reset();
+				std::cerr << "Scheduling again " << it->i << std::endl;
+				++it->count;
+				pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(*it)));
 
 				return res;
 			}
@@ -148,6 +146,7 @@ private:
 		bool ready;		/// Блок уже вычислен
 		Block block;
 		ExceptionPtr exception;
+		size_t i;		/// Порядковый номер источника.
 
 		void reset()
 		{
@@ -156,25 +155,21 @@ private:
 			exception = NULL;
 		}
 
-		ThreadData() : count(0), ready(false) {}
+		ThreadData() : count(0), ready(false), i(0) {}
 	};
 
-	typedef std::vector<ThreadData> ThreadsData;
+	/// Список упорядочен по количеству полученных из источника блоков.
+	typedef std::list<ThreadData> ThreadsData;
 	ThreadsData threads_data;
 	Poco::FastMutex mutex;
 	Poco::Semaphore ready_any;
 
 	
 	/// Вычисления, которые выполняться в отдельном потоке
-	void calculate(ThreadData & data/*, int i*/)
+	void calculate(ThreadData & data)
 	{
 		try
 		{
-	/*		{
-				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-				std::cerr << "\033[1;37m" << "Calculating " << i << "\033[0m" << std::endl;
-			}
-			sleep(i);*/
 			Block block = data.in->read();
 
 			{
@@ -184,11 +179,6 @@ private:
 			}
 
 			ready_any.set();
-			
-	/*		{
-				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-				std::cerr << "\033[1;37m" << "Done " << i << "\033[0m" << std::endl;
-			}*/
 		}
 		catch (const Exception & e)
 		{
@@ -196,7 +186,6 @@ private:
 		}
 		catch (const Poco::Exception & e)
 		{
-			//std::cerr << e.message() << std::endl;
 			data.exception = e.clone();
 		}
 		catch (const std::exception & e)
@@ -207,22 +196,6 @@ private:
 		{
 			data.exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
-	}
-
-
-	/** Проверить, что во всех потоках были получены все блоки.
-	  * Объект может быть уничтожен и раньше. Например, если он находится внутри LIMIT-а.
-	  */ 
-	bool isEnd()
-	{
-	//	std::cerr << "Checking end" << std::endl;
-
-		/// Если все блоки готовы и пустые
-		size_t i = 0;
-		for (; i < threads_data.size(); ++i)
-			if (!threads_data[i].ready || threads_data[i].block)
-				break;
-		return i == threads_data.size();
 	}
 };
 

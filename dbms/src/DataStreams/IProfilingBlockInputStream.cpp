@@ -96,7 +96,7 @@ Block IProfilingBlockInputStream::read()
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
 		std::cerr << std::endl;
-		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getName() << std::endl;
+		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getShortName() << std::endl;
 		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t";
 
 		for (size_t i = 0; i < res.columns(); ++i)

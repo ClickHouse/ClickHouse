@@ -156,6 +156,13 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			executeHaving(streams, expression);
 			executeOuterExpression(streams, expression);
 			executeOrder(streams, expression);
+
+			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
+			  * ограничивающий число записей в каждом до offset + limit.
+			  */
+			if (query.limit_length && streams.size() > 1)
+				executePreLimit(streams, expression);
+
 			executeUnion(streams, expression);
 			executeLimit(streams, expression);
 		}
@@ -397,17 +404,35 @@ void InterpreterSelectQuery::executeUnion(BlockInputStreams & streams, Expressio
 }
 
 
+/// Предварительный LIMIT - применяется в каждом источнике, если источников несколько, до их объединения.
+void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams, ExpressionPtr & expression)
+{
+	size_t limit_length = 0;
+	size_t limit_offset = 0;
+	getLimitLengthAndOffset(query, limit_length, limit_offset);
+
+	/// Если есть LIMIT
+	if (query.limit_length)
+	{
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
+			BlockInputStreamPtr & stream = *it;
+			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
+		}
+	}
+}
+
+
 void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams, ExpressionPtr & expression)
 {
 	size_t limit_length = 0;
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-	BlockInputStreamPtr & stream = streams[0];
-
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
+		BlockInputStreamPtr & stream = streams[0];
 		stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
 	}
 }

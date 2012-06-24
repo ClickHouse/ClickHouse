@@ -107,10 +107,14 @@ bool Connection::ping()
 
 	readVarUInt(pong, *in);
 
-	/// Можем получить запоздалые пакеты прогресса.
+	/// Можем получить запоздалые пакеты прогресса. TODO: может быть, это можно исправить.
 	while (pong == Protocol::Server::Progress)
 	{
 		receiveProgress();
+
+		if (in->eof())
+			return false;
+
 		readVarUInt(pong, *in);
 	}
 

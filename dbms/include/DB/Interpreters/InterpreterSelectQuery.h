@@ -68,6 +68,7 @@ private:
 	void executeHaving(				BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeOuterExpression(	BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeOrder(				BlockInputStreams & streams, ExpressionPtr & expression);
+	void executePreLimit(			BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeUnion(				BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeLimit(				BlockInputStreams & streams, ExpressionPtr & expression);
 	
