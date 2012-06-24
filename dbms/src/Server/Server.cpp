@@ -61,7 +61,9 @@ Poco::Net::TCPServerConnection * TCPConnectionFactory::createConnection(const Po
 int Server::main(const std::vector<std::string> & args)
 {
 	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
+	LOG_DEBUG(log, "Initializing DateLUT.");
 	Yandex::DateLUTSingleton::instance();
+	LOG_TRACE(log, "Initialized DateLUT.");
 
 	/** Контекст содержит всё, что влияет на обработку запроса:
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
@@ -73,7 +75,9 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.storage_factory				= new StorageFactory;
 	global_context.format_factory				= new FormatFactory;
 
+	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(global_context);
+	LOG_DEBUG(log, "Loaded metadata.");
 
 	/// Создаём системные таблицы.
 	(*global_context.databases)["system"]["one"] 		= new StorageSystemOne("one");
@@ -109,6 +113,8 @@ int Server::main(const std::vector<std::string> & args)
 	http_server.start();
 	tcp_server.start();
 
+	LOG_INFO(log, "Ready for connections.");
+	
 	waitForTerminationRequest();
 
 	http_server.stop();
