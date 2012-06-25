@@ -5,6 +5,7 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Storages/StorageLog.h>
+#include <DB/Storages/StorageTinyLog.h>
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageDistributed.h>
@@ -28,6 +29,10 @@ StoragePtr StorageFactory::get(
 	if (name == "Log")
 	{
 		return new StorageLog(data_path, table_name, columns);
+	}
+	else if (name == "Log")
+	{
+		return new StorageTinyLog(data_path, table_name, columns);
 	}
 	else if (name == "Memory")
 	{

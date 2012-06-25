@@ -48,20 +48,26 @@ public:
 				if (threads_data.empty())
 					return res;
 
-				if (pool.pending() + pool.active() < pool.size())
+				ssize_t max_threads_to_start = static_cast<ssize_t>(pool.size()) - (pool.pending() + pool.active());
+				
+				if (max_threads_to_start > 0)
 				{
+					/// Запустим вычисления для как можно большего количества источников, которые ещё ни разу не брались
 					std::cerr << "Starting initial threads" << std::endl;
 
-					/// Запустим вычисления для как можно большего количества источников, которые ещё ни разу не брались
-					size_t started_threads = 0;
-					size_t max_threads_to_start = pool.size() - pool.pending() + pool.active();
-
-					for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end() && 0 == it->count; ++it)
+					ssize_t started_threads = 0;
+					ThreadsData::iterator it = threads_data.begin();
+					while (it != threads_data.end() && 0 == it->count)
 					{
 						std::cerr << "Scheduling initial " << it->i << std::endl;
 						++it->count;
 						++started_threads;
-						pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(*it)));
+
+						/// Переносим этот источник в конец списка
+						threads_data.push_back(*it);
+						threads_data.erase(it++);
+						
+						pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data.back())));
 
 						if (started_threads == max_threads_to_start)
 							break;
