@@ -30,7 +30,7 @@ StoragePtr StorageFactory::get(
 	{
 		return new StorageLog(data_path, table_name, columns);
 	}
-	else if (name == "Log")
+	else if (name == "TinyLog")
 	{
 		return new StorageTinyLog(data_path, table_name, columns);
 	}
