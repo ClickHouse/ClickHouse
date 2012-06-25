@@ -36,7 +36,7 @@ Block TinyLogBlockInputStream::readImpl()
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 			streams.insert(std::make_pair(*it, new Stream(storage.files[*it].data_file.path())));
 	}
-	else if (streams[0]->compressed.eof())
+	else if (streams.begin()->second->compressed.eof())
 		return res;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -51,7 +51,7 @@ Block TinyLogBlockInputStream::readImpl()
 			res.insert(column);
 	}
 
-	if (!res || streams[0]->compressed.eof())
+	if (!res || streams.begin()->second->compressed.eof())
 	{
 		/** Закрываем файлы (ещё до уничтожения объекта).
 		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
