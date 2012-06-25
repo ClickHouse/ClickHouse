@@ -64,6 +64,7 @@ struct Context
 		aggregate_function_factory 	= rhs.aggregate_function_factory;
 		data_type_factory			= rhs.data_type_factory;
 		storage_factory				= rhs.storage_factory;
+		format_factory				= rhs.format_factory;
 		columns						= rhs.columns;
 		settings					= rhs.settings;
 		log							= rhs.log;

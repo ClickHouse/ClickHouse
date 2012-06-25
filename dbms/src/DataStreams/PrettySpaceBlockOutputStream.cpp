@@ -47,15 +47,19 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 			for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
 				writeChar(' ', ostr);
 
-			writeString("\033[1;37m", ostr);
+			if (!no_escapes)
+				writeString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
-			writeString("\033[0m", ostr);
+			if (!no_escapes)
+				writeString("\033[0m", ostr);
 		}
 		else
 		{
-			writeString("\033[1;37m", ostr);
+			if (!no_escapes)
+				writeString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
-			writeString("\033[0m", ostr);
+			if (!no_escapes)
+				writeString("\033[0m", ostr);
 
 			for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
 				writeChar(' ', ostr);

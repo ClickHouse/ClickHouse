@@ -57,6 +57,12 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new PrettyCompactBlockOutputStream(buf);
 	else if (name == "PrettySpace")
 		return new PrettySpaceBlockOutputStream(buf);
+	else if (name == "PrettyNoEscapes")
+		return new PrettyBlockOutputStream(buf, true);
+	else if (name == "PrettyCompactNoEscapes")
+		return new PrettyCompactBlockOutputStream(buf, true);
+	else if (name == "PrettySpaceNoEscapes")
+		return new PrettySpaceBlockOutputStream(buf, true);
 	else if (name == "Vertical")
 		return new BlockOutputStreamFromRowOutputStream(new VerticalRowOutputStream(buf, sample));
 	else if (name == "Values")

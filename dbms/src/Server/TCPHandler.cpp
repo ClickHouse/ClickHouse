@@ -139,7 +139,7 @@ void TCPHandler::processOrdinaryQuery()
 
 			std::stringstream query_pipeline;
 			profiling_in->dumpTree(query_pipeline);
-			LOG_DEBUG(log, "Pipeline:\n" << query_pipeline.rdbuf());
+			LOG_DEBUG(log, "Query pipeline:\n" << query_pipeline.rdbuf());
 		}
 
 		while (true)

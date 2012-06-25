@@ -91,7 +91,7 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ost
 	if (query_plan)
 	{
 		std::stringstream log_str;
-		log_str << "Query plan:\n";
+		log_str << "Query pipeline:\n";
 		query_plan->dumpTree(log_str);
 		LOG_DEBUG(log, log_str.str());
 
@@ -122,6 +122,17 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ost
 
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
+	bool is_browser = false;
+	if (request.has("Accept"))
+	{
+		String accept = request.get("Accept");
+		if (0 == strncmp(accept.c_str(), "text/html", strlen("text/html")))
+			is_browser = true;
+	}
+
+	if (is_browser)
+		response.setContentType("text/plain; charset=UTF-8");
+	
 	std::ostream & ostr = response.send();
 	try
 	{

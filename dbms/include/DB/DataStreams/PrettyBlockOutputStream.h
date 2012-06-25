@@ -13,7 +13,8 @@ namespace DB
 class PrettyBlockOutputStream : public IBlockOutputStream
 {
 public:
-	PrettyBlockOutputStream(WriteBuffer & ostr_, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS);
+	/// no_escapes - не использовать ANSI escape sequences - для отображения в браузере, а не в консоли.
+	PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_ = false, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS);
 	void write(const Block & block);
 	void writeSuffix();
 	BlockOutputStreamPtr clone() { return new PrettyBlockOutputStream(ostr); }
@@ -28,6 +29,8 @@ protected:
 	size_t max_rows;
 	size_t total_rows;
 	size_t terminal_width;
+
+	bool no_escapes;
 };
 
 }

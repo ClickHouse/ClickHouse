@@ -58,15 +58,19 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 			for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
 				writeString("─", ostr);
 
-			writeString("\033[1;37m", ostr);
+			if (!no_escapes)
+				writeString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
-			writeString("\033[0m", ostr);
+			if (!no_escapes)
+				writeString("\033[0m", ostr);
 		}
 		else
 		{
-			writeString("\033[1;37m", ostr);
+			if (!no_escapes)
+				writeString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
-			writeString("\033[0m", ostr);
+			if (!no_escapes)
+				writeString("\033[0m", ostr);
 
 			for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
 				writeString("─", ostr);

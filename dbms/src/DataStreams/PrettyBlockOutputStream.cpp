@@ -9,8 +9,8 @@
 namespace DB
 {
 
-PrettyBlockOutputStream::PrettyBlockOutputStream(WriteBuffer & ostr_, size_t max_rows_)
-	 : ostr(ostr_), max_rows(max_rows_), total_rows(0), terminal_width(0)
+PrettyBlockOutputStream::PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_, size_t max_rows_)
+	 : ostr(ostr_), max_rows(max_rows_), total_rows(0), terminal_width(0), no_escapes(no_escapes_)
 {
 	struct winsize w;
 	if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
@@ -139,7 +139,9 @@ void PrettyBlockOutputStream::write(const Block & block_)
 
 		const ColumnWithNameAndType & col = block.getByPosition(i);
 
-		writeString("\033[1;37m", ostr);
+		if (!no_escapes)
+			writeString("\033[1;37m", ostr);
+		
 		if (col.type->isNumeric())
 		{
 			for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
@@ -154,7 +156,9 @@ void PrettyBlockOutputStream::write(const Block & block_)
 			for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
 				writeChar(' ', ostr);
 		}
-		writeString("\033[0m", ostr);
+
+		if (!no_escapes)
+			writeString("\033[0m", ostr);
 	}
 	writeString(" ┃\n", ostr);
 
