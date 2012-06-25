@@ -53,13 +53,13 @@ public:
 				if (max_threads_to_start > 0)
 				{
 					/// Запустим вычисления для как можно большего количества источников, которые ещё ни разу не брались
-					std::cerr << "Starting initial threads" << std::endl;
+	//				std::cerr << "Starting initial threads" << std::endl;
 
 					ssize_t started_threads = 0;
 					ThreadsData::iterator it = threads_data.begin();
 					while (it != threads_data.end() && 0 == it->count)
 					{
-						std::cerr << "Scheduling initial " << it->i << std::endl;
+	//					std::cerr << "Scheduling initial " << it->i << std::endl;
 						++it->count;
 						++started_threads;
 

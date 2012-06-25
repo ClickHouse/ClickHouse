@@ -29,7 +29,8 @@ namespace DB
 
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & context_, QueryProcessingStage::Enum to_stage_)
-	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)), context(context_), to_stage(to_stage_)
+	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)), context(context_), to_stage(to_stage_),
+	log(&Logger::get("InterpreterSelectQuery"))
 {
 }
 
@@ -127,7 +128,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (streams.empty())
 		return new NullBlockInputStream;
 
-	std::cerr << QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage) << std::endl;
+	LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
 	if (to_stage > QueryProcessingStage::FetchColumns)
 	{

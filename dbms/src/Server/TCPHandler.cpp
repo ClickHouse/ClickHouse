@@ -137,7 +137,9 @@ void TCPHandler::processOrdinaryQuery()
 			profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this));
 			profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
 
-			profiling_in->dumpTree(std::cerr);
+			std::stringstream query_pipeline;
+			profiling_in->dumpTree(query_pipeline);
+			LOG_DEBUG(log, '\n' << query_pipeline.rdbuf());
 		}
 
 		while (true)
@@ -197,7 +199,7 @@ bool TCPHandler::receivePacket()
 		UInt64 packet_type = 0;
 		readVarUInt(packet_type, *in);
 
-		std::cerr << "Packet: " << packet_type << std::endl;
+	//	std::cerr << "Packet: " << packet_type << std::endl;
 
 		switch (packet_type)
 		{
@@ -288,7 +290,7 @@ bool TCPHandler::isQueryCancelled()
 	/// Во время выполнения запроса, единственный пакет, который может прийти от клиента - это остановка выполнения запроса.
 	if (in->poll(0))
 	{
-		std::cerr << "checking cancelled; socket has data" << std::endl;
+	//	std::cerr << "checking cancelled; socket has data" << std::endl;
 		
 		UInt64 packet_type = 0;
 		readVarUInt(packet_type, *in);

@@ -77,6 +77,8 @@ private:
 	ASTSelectQuery & query;
 	Context context;
 	QueryProcessingStage::Enum to_stage;
+
+	Logger * log;
 };
 
 

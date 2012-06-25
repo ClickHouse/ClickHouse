@@ -55,8 +55,8 @@ void executeQuery(
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			ErrorCodes::SYNTAX_ERROR);
 
-	formatAST(*ast, std::cerr);
-	std::cerr << std::endl;
+//	formatAST(*ast, std::cerr);
+//	std::cerr << std::endl;
 
 	InterpreterQuery interpreter(ast, context, stage);
 	interpreter.execute(ostr, &istr, query_plan);
@@ -86,8 +86,8 @@ BlockIO executeQuery(
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			ErrorCodes::SYNTAX_ERROR);
 
-	formatAST(*ast, std::cerr);
-	std::cerr << std::endl;
+//	formatAST(*ast, std::cerr);
+//	std::cerr << std::endl;
 
 	InterpreterQuery interpreter(ast, context, stage);
 	return interpreter.execute();
