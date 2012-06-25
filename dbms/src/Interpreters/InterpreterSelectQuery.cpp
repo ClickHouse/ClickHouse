@@ -231,6 +231,12 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	else
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), context.settings.asynchronous));
 
+	/** Если истчоников слишком много, то склеим их в max_threads источников.
+	  * (Иначе действия в каждом маленьком источнике, а затем объединение состояний, слишком неэффективно.)
+	  */
+	if (streams.size() > context.settings.max_threads)
+		streams = narrowBlockInputStreams(streams, context.settings.max_threads);
+
 	return from_stage;
 }
 
@@ -268,12 +274,6 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	}
 
 	BlockInputStreamPtr & stream = streams[0];
-
-	/** Если истчоников слишком много, то склеим их в max_threads источников.
-	  * (Иначе агрегация в каждом маленьком источнике, а затем объединение состояний, слишком неэффективна.)
-	  */
-	if (streams.size() > context.settings.max_threads)
-		streams = narrowBlockInputStreams(streams, context.settings.max_threads);
 
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
