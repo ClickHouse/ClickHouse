@@ -45,11 +45,16 @@ public:
 
 	BlockInputStreams & getChildren() { return children; }
 	
-	void dumpTree(std::ostream & ostr, size_t indent = 0);
+	void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
 	void dumpTreeWithProfile(std::ostream & ostr, size_t indent = 0);
 
 	/// Получить листовые источники (не считая этот).
 	BlockInputStreams getLeaves();
+
+	/** Получить текст, который идентифицирует этот источник и всё поддерево.
+	  * Обычно он содержит идентификатор источника и getTreeID от всех детей.
+	  */
+	String getTreeID() const;
 
 protected:
 	BlockInputStreams children;
