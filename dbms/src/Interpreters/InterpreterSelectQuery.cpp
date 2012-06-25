@@ -11,6 +11,7 @@
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
+#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -268,14 +269,11 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 
 	BlockInputStreamPtr & stream = streams[0];
 
-	/** Если истчоников слишком много, то склеим их в один (TODO: в max_threads) источников.
+	/** Если истчоников слишком много, то склеим их в max_threads источников.
 	  * (Иначе агрегация в каждом маленьком источнике, а затем объединение состояний, слишком неэффективна.)
 	  */
 	if (streams.size() > context.settings.max_threads)
-	{
-		streams[0] = new UnionBlockInputStream(streams, context.settings.max_threads);
-		streams.resize(1);
-	}
+		streams = narrowBlockInputStreams(streams, context.settings.max_threads);
 
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)

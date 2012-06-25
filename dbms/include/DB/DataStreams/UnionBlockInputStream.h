@@ -75,18 +75,18 @@ public:
 				}
 			}
 
-			std::cerr << "Waiting for one thread to finish" << std::endl;
+	//		std::cerr << "Waiting for one thread to finish" << std::endl;
 			ready_any.wait();
 
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-				std::cerr << std::endl << "pool.pending: " << pool.pending() << ", pool.active: " << pool.active() << ", pool.size: " << pool.size() << std::endl;
+	//			std::cerr << std::endl << "pool.pending: " << pool.pending() << ", pool.active: " << pool.active() << ", pool.size: " << pool.size() << std::endl;
 	
 				if (threads_data.empty())
 					return res;
 
-				std::cerr << "Searching for first ready block" << std::endl;
+	//			std::cerr << "Searching for first ready block" << std::endl;
 
 				/** Найдём и вернём готовый непустой блок, если такой есть.
 				  * При чём, выберем блок из источника, из которого было получено меньше всего блоков.
@@ -110,17 +110,17 @@ public:
 
 				if (it == threads_data.end())
 				{
-					std::cerr << "Continue" << std::endl;
+	//				std::cerr << "Continue" << std::endl;
 					continue;
 				}
 
-				std::cerr << "Found block " << it->i << std::endl;
+	//			std::cerr << "Found block " << it->i << std::endl;
 
 				res = it->block;
 
 				/// Запустим получение следующего блока
 				it->reset();
-				std::cerr << "Scheduling again " << it->i << std::endl;
+	//			std::cerr << "Scheduling again " << it->i << std::endl;
 				++it->count;
 				pool.schedule(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(*it)));
 
