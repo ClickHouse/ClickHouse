@@ -215,20 +215,22 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
 	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
-	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено).
+	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
+	  *  а также установим количество потоков в 1 и отменим асинхронное выполнение конвейера запроса.
 	  */
-	size_t block_size = context.settings.max_block_size;
 	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
-		&& query.limit_length && !expression->hasAggregates() && limit_length + limit_offset < block_size)
+		&& query.limit_length && !expression->hasAggregates() && limit_length + limit_offset < context.settings.max_block_size)
 	{
-		block_size = limit_length + limit_offset;
+		context.settings.max_block_size = limit_length + limit_offset;
+		context.settings.max_threads = 1;
+		context.settings.asynchronous = false;
 	}
 
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 	
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
- 		streams = table->read(required_columns, query_ptr, from_stage, block_size, context.settings.max_threads);
+ 		streams = table->read(required_columns, query_ptr, from_stage, context.settings.max_block_size, context.settings.max_threads);
 	else
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), context.settings.asynchronous));
 
