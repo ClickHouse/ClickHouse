@@ -21,7 +21,7 @@ using Poco::SharedPtr;
 
 
 TinyLogBlockInputStream::TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_)
-	: block_size(block_size_), column_names(column_names_), storage(storage_)
+	: block_size(block_size_), column_names(column_names_), storage(storage_), finished(false)
 {
 }
 
@@ -30,14 +30,23 @@ Block TinyLogBlockInputStream::readImpl()
 {
 	Block res;
 
+	if (finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
+	{
+		/** Закрываем файлы (ещё до уничтожения объекта).
+		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
+		  *  буферы не висели в памяти.
+		  */
+		finished = true;
+		streams.clear();
+		return res;
+	}
+
 	/// Если файлы не открыты, то открываем их.
 	if (streams.empty())
 	{
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 			streams.insert(std::make_pair(*it, new Stream(storage.files[*it].data_file.path())));
 	}
-	else if (streams.begin()->second->compressed.eof())
-		return res;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
@@ -53,10 +62,7 @@ Block TinyLogBlockInputStream::readImpl()
 
 	if (!res || streams.begin()->second->compressed.eof())
 	{
-		/** Закрываем файлы (ещё до уничтожения объекта).
-		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
-		  *  буферы не висели в памяти.
-		  */
+		finished = true;
 		streams.clear();
 	}
 

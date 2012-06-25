@@ -28,6 +28,7 @@ private:
 	size_t block_size;
 	Names column_names;
 	StorageTinyLog & storage;
+	bool finished;
 
 	struct Stream
 	{

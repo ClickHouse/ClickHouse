@@ -361,7 +361,10 @@ private:
 		written_progress_chars = 0;
 		written_first_block = false;
 
-		if (dynamic_cast<const ASTInsertQuery *>(&*parsed_query))
+		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
+		const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
+
+		if (insert && !insert->select)
 			processInsertQuery();
 		else
 			processOrdinaryQuery();
