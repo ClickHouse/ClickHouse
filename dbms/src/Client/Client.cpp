@@ -275,7 +275,7 @@ private:
 	void connect()
 	{
 		String host = config().getString("host", "localhost");
-		UInt16 port = config().getInt("port", 9000);
+		UInt16 port = config().getInt("port", DBMS_DEFAULT_PORT);
 		String default_database = config().getString("database", "");
 		
 		Protocol::Compression::Enum compression = config().getBool("compression", true)
