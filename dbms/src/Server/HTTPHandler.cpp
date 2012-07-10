@@ -83,6 +83,8 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ost
 		context.settings.max_query_size = Poco::NumberParser::parseUnsigned(params.get("max_query_size"));
 	if (params.has("max_threads"))
 		context.settings.max_threads = Poco::NumberParser::parseUnsigned(params.get("max_threads"));
+	if (params.has("database"))
+		context.current_database = params.get("database");
 
 	Stopwatch watch;
 	executeQuery(in, *out_maybe_compressed, context, query_plan);
