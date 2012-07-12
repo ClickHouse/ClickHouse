@@ -70,6 +70,7 @@ int Server::main(const std::vector<std::string> & args)
 	/** Контекст содержит всё, что влияет на обработку запроса:
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
 	  */
+	global_context.global_context = &global_context;
 	global_context.path = config.getString("path");
 	global_context.functions = FunctionsLibrary::get();
 	global_context.aggregate_function_factory	= new AggregateFunctionFactory;

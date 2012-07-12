@@ -44,9 +44,15 @@ struct Context
 	Settings settings;										/// Настройки выполнения запроса.
 	Logger * log;											/// Логгер.
 
+	Context * session_context;								/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
+	Context * global_context;								/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
+
 	mutable SharedPtr<Poco::Mutex> mutex;					/// Для доступа и модификации разделяемых объектов.
 
-	Context() : databases(new Databases), functions(new Functions), log(&Logger::get("Context")), mutex(new Poco::Mutex) {}
+	Context() : databases(new Databases), functions(new Functions),
+		log(&Logger::get("Context")),
+		session_context(NULL), global_context(NULL),
+		mutex(new Poco::Mutex) {}
 
 	/** В сервере есть глобальный контекст.
 	  * При соединении, он копируется в контекст сессии.
@@ -69,6 +75,8 @@ struct Context
 		settings					= rhs.settings;
 		log							= rhs.log;
 		mutex						= rhs.mutex;
+		session_context				= rhs.session_context;
+		global_context				= rhs.global_context;
 	}
 
 

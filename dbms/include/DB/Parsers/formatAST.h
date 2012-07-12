@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTRenameQuery.h>
 #include <DB/Parsers/ASTShowTablesQuery.h>
+#include <DB/Parsers/ASTUseQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -32,6 +33,7 @@ void formatAST(const ASTDropQuery 		& ast, std::ostream & s, size_t indent = 0, 
 void formatAST(const ASTInsertQuery 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTRenameQuery 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTShowTablesQuery	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTUseQuery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTExpressionList 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTFunction 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTIdentifier 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);

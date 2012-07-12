@@ -72,6 +72,13 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 		formatAST(*show_tables, s, indent, hilite, one_line);
 		return;
 	}
+
+	const ASTUseQuery * use = dynamic_cast<const ASTUseQuery *>(&ast);
+	if (use)
+	{
+		formatAST(*use, s, indent, hilite, one_line);
+		return;
+	}
 	
 	const ASTExpressionList * exp_list = dynamic_cast<const ASTExpressionList *>(&ast);
 	if (exp_list)
@@ -290,6 +297,12 @@ void formatAST(const ASTShowTablesQuery			& ast, std::ostream & s, size_t indent
 	if (!ast.like.empty())
 		s << (hilite ? hilite_keyword : "") << " LIKE " << (hilite ? hilite_none : "")
 			<< mysqlxx::quote << ast.like;
+}
+
+void formatAST(const ASTUseQuery				& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << "USE " << (hilite ? hilite_none : "") << ast.database;
+	return;
 }
 
 void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)

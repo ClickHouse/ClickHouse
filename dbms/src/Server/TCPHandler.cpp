@@ -27,6 +27,7 @@ namespace DB
 void TCPHandler::runImpl()
 {
 	connection_context = server.global_context;
+	connection_context.session_context = &connection_context;
 	
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());

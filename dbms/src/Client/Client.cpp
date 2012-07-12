@@ -314,7 +314,7 @@ private:
 
 			if (line.empty())
 				continue;
-			
+
 			if (!process(line))
 				break;
 			
