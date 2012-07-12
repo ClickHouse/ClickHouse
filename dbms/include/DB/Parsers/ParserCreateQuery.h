@@ -45,7 +45,7 @@ protected:
   * ) ENGINE = engine
   *
   * Или:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
   *
   * Или:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS SELECT ...

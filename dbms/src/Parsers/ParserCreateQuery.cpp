@@ -233,6 +233,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 
 					ws.ignore(pos, end);
 				}
+
+				ws.ignore(pos, end);
+
+				/// Опционально - может быть указана ENGINE.
+				engine_p.parse(pos, end, storage, expected);
 			}
 		}
 	}
