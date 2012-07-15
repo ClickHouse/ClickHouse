@@ -32,7 +32,7 @@ namespace detail
 	void seed(drand48_data & rand_state)
 	{
 		struct timespec times;
-		if (clock_gettime(CLOCK_MONOTONIC_RAW, &times))
+		if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
 			throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
 		srand48_r(times.tv_nsec, &rand_state);
