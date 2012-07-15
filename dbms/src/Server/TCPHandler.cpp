@@ -353,6 +353,7 @@ void TCPHandler::sendEndOfStream()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
+	state.sent_all_data = true;
 	writeVarUInt(Protocol::Server::EndOfStream, *out);
 	out->next();
 }

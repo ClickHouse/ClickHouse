@@ -7,6 +7,7 @@
 #include <DB/Functions/FunctionsConversion.h>
 #include <DB/Functions/FunctionsDateTime.h>
 #include <DB/Functions/FunctionsStringSearch.h>
+#include <DB/Functions/FunctionsHashing.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Functions/FunctionsLibrary.h>
@@ -86,6 +87,10 @@ namespace FunctionsLibrary
 			("match",			new FunctionMatch)
 			("like",			new FunctionLike)
 			("notLike",			new FunctionNotLike)
+
+			("halfMD5",			new FunctionHalfMD5)
+			("cityHash64",		new FunctionCityHash64)
+			("intHash32",		new FunctionIntHash32)
 
 			("visibleWidth",	new FunctionVisibleWidth)
 		;

@@ -15,7 +15,7 @@ namespace DB
   * toYear, toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond,
   * toMonday, toStartOfMonth,
   * toTime,
-  * TODO: makeDate, makeDateTime
+  * TODO: makeDate, makeDateTime, now, toStartOfMinute, toStartOfHour, toStartOfYear
   * 
   * (toDate - расположена в файле FunctionsConversion.h)
   *
