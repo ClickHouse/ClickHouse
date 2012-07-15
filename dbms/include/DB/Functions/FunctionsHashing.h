@@ -132,8 +132,6 @@ public:
 };
 
 
-
-
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
 {

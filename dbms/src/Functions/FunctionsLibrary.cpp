@@ -8,6 +8,7 @@
 #include <DB/Functions/FunctionsDateTime.h>
 #include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/Functions/FunctionsHashing.h>
+#include <DB/Functions/FunctionsRandom.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Functions/FunctionsLibrary.h>
@@ -92,7 +93,11 @@ namespace FunctionsLibrary
 			("cityHash64",		new FunctionCityHash64)
 			("intHash32",		new FunctionIntHash32)
 
+			("rand",			new FunctionRand)
+			("rand64",			new FunctionRand64)
+
 			("visibleWidth",	new FunctionVisibleWidth)
+			("toTypeName",		new FunctionToTypeName)
 		;
 
 		return res;

@@ -56,6 +56,12 @@ public:
 	{
 		return count;
 	}
+
+	/// Для оптимизации
+	void addDelta(UInt64 x)
+	{
+		count += x;
+	}
 };
 
 }

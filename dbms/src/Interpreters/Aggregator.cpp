@@ -5,6 +5,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/AggregateFunctions/AggregateFunctionCount.h>
 
 #include <DB/Interpreters/Aggregator.h>
 
@@ -252,16 +253,23 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				for (size_t i = 0; i < aggregates_size; ++i)
 					res[i] = aggregates[i].function->cloneEmpty();
 			}
-			
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-				{
-					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
 
-					res[j]->add(aggregate_arguments[j]);
+			/// Оптимизация в случае единственной агрегатной функции count.
+			AggregateFunctionCount * agg_count = dynamic_cast<AggregateFunctionCount *>(res[0]);
+			if (aggregates_size == 1 && agg_count)
+				agg_count->addDelta(rows);
+			else
+			{
+				for (size_t i = 0; i < rows; ++i)
+				{
+					/// Добавляем значения
+					for (size_t j = 0; j < aggregates_size; ++j)
+					{
+						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
+							aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+
+						res[j]->add(aggregate_arguments[j]);
+					}
 				}
 			}
 		}

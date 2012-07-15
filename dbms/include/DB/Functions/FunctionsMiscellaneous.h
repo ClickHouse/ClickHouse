@@ -227,4 +227,32 @@ public:
 	}
 };
 
+
+class FunctionToTypeName : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "toTypeName";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() > 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeString;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstString(block.getByPosition(0).column->size(), block.getByPosition(arguments[0]).type->getName());
+	}
+};
+
 }
