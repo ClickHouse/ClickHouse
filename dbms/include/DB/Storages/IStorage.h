@@ -104,6 +104,13 @@ public:
 		throw Exception("Method alter() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
+	  */
+	virtual void optimize(bool & done_something, bool & has_more_work)
+	{
+		throw Exception("Method optimize() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	virtual ~IStorage() {}
 
 	/** Проверить, что все запрошенные имена есть в таблице и заданы корректно.
