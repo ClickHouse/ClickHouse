@@ -80,4 +80,6 @@ public:
 	Block cloneEmpty() const;
 };
 
+typedef std::vector<Block> Blocks;
+
 }

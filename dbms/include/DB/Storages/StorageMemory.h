@@ -9,7 +9,6 @@ namespace DB
 {
 
 class StorageMemory;
-typedef std::vector<Block> Blocks;
 
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {

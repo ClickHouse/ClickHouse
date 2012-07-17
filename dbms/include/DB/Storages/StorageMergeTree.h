@@ -1,6 +1,10 @@
 #pragma once
 
+#include <statdaemons/Increment.h>
+
+#include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Expression.h>
 #include <DB/Storages/IStorage.h>
 
 
@@ -34,6 +38,8 @@ namespace DB
   */
 class StorageMergeTree : public IStorage
 {
+friend class MergeTreeBlockOutputStream;
+
 public:
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
 	  *  (корректность имён и путей не проверяется)
@@ -44,7 +50,9 @@ public:
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  */
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-		ASTPtr & primary_expr_, const String & date_column_name_, size_t index_granularity_);
+		Context & context_,
+		ASTPtr & primary_expr_ast_, const String & date_column_name_,
+		size_t index_granularity_);
 
 	std::string getName() const { return "MergeTree"; }
 	std::string getTableName() const { return name; }
@@ -78,10 +86,20 @@ public:
 private:
 	String path;
 	String name;
+	String full_path;
 	NamesAndTypesListPtr columns;
-	ASTPtr primary_expr;
+
+	Context context;
+	ASTPtr primary_expr_ast;
 	String date_column_name;
 	size_t index_granularity;
+
+	Expression primary_expr;
+	SortDescription sort_descr;
+
+	Increment increment;
+
+	static String getPartName(Yandex::DayNum_t left_month, Yandex::DayNum_t right_month, UInt64 left_id, UInt64 right_id, UInt64 level);
 };
 
 }
