@@ -8,6 +8,7 @@
 #include <DB/Storages/StorageTinyLog.h>
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageMerge.h>
+#include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemOne.h>
@@ -99,6 +100,40 @@ StoragePtr StorageFactory::get(
 				config.getInt(config_prefix + *it + ".port")));
 		
 		return new StorageDistributed(table_name, columns, addresses, remote_database, remote_table, *context.data_type_factory);
+	}
+	else if (name == "MergeTree")
+	{
+		/** В качестве аргумента для движка должно быть указано:
+		  *  - имя столбца с датой;
+		  *  - выражение для сортировки в скобках;
+		  *  - index_granularity.
+		  * Например: ENGINE = MergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), EventTime), 8192).
+		  */
+		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+
+		if (args_func.size() != 1)
+			throw Exception("Storage MergeTree requires exactly 3 parameters"
+				" - name of column with date, primary key expression, index granularity.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+		if (args.size() != 3)
+			throw Exception("Storage MergeTree requires exactly 3 parameters"
+				" - name of column with date, primary key expression, index granularity.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
+		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
+		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[1]);
+		
+		if (primary_expr_func.name != "makeTuple")
+			throw Exception("Primary expression for storage MergeTree must be in parentheses.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		ASTPtr primary_expr = primary_expr_func.children.at(0);
+
+		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, index_granularity);
 	}
 	else if (name == "SystemNumbers")
 	{
