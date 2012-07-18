@@ -207,6 +207,12 @@ StorageMergeTree::StorageMergeTree(
 }
 
 
+BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
+{
+	return new MergeTreeBlockOutputStream(*this);
+}
+
+
 String StorageMergeTree::getPartName(Yandex::DayNum_t left_month, Yandex::DayNum_t right_month, UInt64 left_id, UInt64 right_id, UInt64 level)
 {
 	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
