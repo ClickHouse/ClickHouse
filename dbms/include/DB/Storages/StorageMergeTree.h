@@ -61,12 +61,12 @@ public:
 
 	/** При чтении, выбирается набор кусков, покрывающий нужный диапазон индекса.
 	  */
-	BlockInputStreams read(
+/*	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1);*/
 
 	/** При записи, данные сортируются и пишутся в новые куски.
 	  */
@@ -77,11 +77,11 @@ public:
 	  * Для нормальной работы, этот метод требуется вызывать постоянно.
 	  * (С некоторой задержкой, если возвращено has_more_work = false.)
 	  */
-	void optimize(bool & done_something, bool & has_more_work);
+//	void optimize(bool & done_something, bool & has_more_work);
 
-	void drop();
+//	void drop();
 	
-	void rename(const String & new_path_to_db, const String & new_name);
+//	void rename(const String & new_path_to_db, const String & new_name);
 
 private:
 	String path;
