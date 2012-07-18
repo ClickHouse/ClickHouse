@@ -127,7 +127,7 @@ StoragePtr StorageFactory::get(
 		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[1]);
 		
-		if (primary_expr_func.name != "makeTuple")
+		if (primary_expr_func.name != "tuple")
 			throw Exception("Primary expression for storage MergeTree must be in parentheses.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

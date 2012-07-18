@@ -119,7 +119,7 @@ private:
 		Poco::File(part_tmp_path).createDirectories();
 
 		/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
-		storage.primary_expr.execute(block);
+		storage.primary_expr->execute(block);
 
 		/// Сортируем.
 		sortBlock(block, storage.sort_descr);
@@ -189,7 +189,6 @@ StorageMergeTree::StorageMergeTree(
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), columns(columns_),
 	context(context_), primary_expr_ast(primary_expr_ast_->clone()),
 	date_column_name(date_column_name_), index_granularity(index_granularity_),
-	primary_expr(primary_expr_ast, context),
 	increment(full_path + "increment.txt")
 {
 	/// создаём директорию, если её нет
@@ -201,9 +200,12 @@ StorageMergeTree::StorageMergeTree(
 		it != primary_expr_ast->children.end();
 		++it)
 	{
-		String name = (*it)->children.front()->getColumnName();
+		String name = (*it)->getColumnName();
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
+
+	context.columns = *columns;
+	primary_expr = new Expression(primary_expr_ast, context);
 }
 
 

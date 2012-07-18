@@ -94,7 +94,7 @@ private:
 	String date_column_name;
 	size_t index_granularity;
 
-	Expression primary_expr;
+	SharedPtr<Expression> primary_expr;
 	SortDescription sort_descr;
 
 	Increment increment;
