@@ -71,7 +71,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 	if (read_bytes % n != 0)
 		throw Exception("Cannot read all data of type FixedString",
 			ErrorCodes::CANNOT_READ_ALL_DATA);
-		
+
 	data.resize(read_bytes);
 }
 

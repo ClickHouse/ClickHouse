@@ -31,7 +31,7 @@ namespace DB
   * Структура файлов:
   *  / increment.txt - файл, содержащий одно число, увеличивающееся на 1 - для генерации идентификаторов кусков.
   *  / min-date _ max-date _ min-id _ max-id _ level / - директория с куском.
-  *  / min-date _ max-date _ min-id _ max-id _ level . idx - индексный файл.
+  *  / min-date _ max-date _ min-id _ max-id _ level / primary.idx - индексный файл.
   * Внутри директории с куском:
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
