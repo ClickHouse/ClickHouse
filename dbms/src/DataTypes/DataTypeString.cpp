@@ -40,7 +40,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 }
 
 
-void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr) const
+void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback) const
 {
 	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
 	const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_array.getData()).getData();
@@ -50,11 +50,16 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr)
 	if (!size)
 		return;
 
+	size_t next_callback_point = callback ? callback() : 0;
+
 	writeVarUInt(offsets[0] - 1, ostr);
 	ostr.write(reinterpret_cast<const char *>(&data[0]), offsets[0] - 1);
 	
 	for (size_t i = 1; i < size; ++i)
 	{
+		if (next_callback_point && i == next_callback_point)
+			next_callback_point = callback();
+		
 		UInt64 str_size = offsets[i] - offsets[i - 1] - 1;
 		writeVarUInt(str_size, ostr);
 		ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);

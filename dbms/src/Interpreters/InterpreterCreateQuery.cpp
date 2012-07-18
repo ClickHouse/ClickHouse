@@ -44,7 +44,6 @@ StoragePtr InterpreterCreateQuery::execute()
 	String as_database_name = create.as_database.empty() ? context.current_database : create.as_database;
 	String as_table_name = create.as_table;
 	
-	NamesAndTypesListPtr columns = new NamesAndTypesList;
 	String data_path = context.path + "data/" + database_name_escaped + "/";
 	String metadata_path = context.path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
 
@@ -98,6 +97,8 @@ StoragePtr InterpreterCreateQuery::execute()
 	if (create.select)
 		interpreter_select = new InterpreterSelectQuery(create.select, context);
 
+	NamesAndTypesListPtr columns = new NamesAndTypesList;
+		
 	/// Получаем список столбцов
 	if (create.columns)
 	{

@@ -21,6 +21,7 @@ namespace DB
 template <typename FieldType, typename ColumnType>
 class IDataTypeNumberFixed : public IDataTypeNumber<FieldType>
 {
+	typedef IDataType::WriteCallback WriteCallback;
 public:
 	/** Формат платформозависимый (зависит от представления данных в памяти).
 	  */
@@ -39,10 +40,23 @@ public:
 		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 	
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr) const
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback = WriteCallback()) const
 	{
 		const typename ColumnType::Container_t & x = dynamic_cast<const ColumnType &>(column).getData();
-		ostr.write(reinterpret_cast<const char *>(&x[0]), sizeof(typename ColumnType::value_type) * x.size());
+
+		size_t prev_callback_point = 0;
+		size_t next_callback_point = 0;
+		size_t size = x.size();
+
+		while (next_callback_point < size)
+		{
+			next_callback_point = callback ? callback() : size;
+			if (next_callback_point > size)
+				next_callback_point = size;
+			
+			ostr.write(reinterpret_cast<const char *>(&x[prev_callback_point]),
+				sizeof(typename ColumnType::value_type) * (next_callback_point - prev_callback_point));
+		}
 	}
 	
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const

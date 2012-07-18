@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/function.hpp>
+
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Field.h>
@@ -34,7 +36,17 @@ public:
 	  */
 	virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
 	virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
-	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr) const = 0;
+
+	/** Сериализация столбца.
+	  * Можно передать callback, который будет вызван для некоторых значений.
+	  *  callback вызывается для 0-го значения и возвращает индекс следующего значения,
+	  *  для которого его следует вызвать.
+	  * Это может быть использовано для одновременной записи индексного файла.
+	  */
+	typedef boost::function<size_t()> WriteCallback;
+	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr,
+		WriteCallback callback = WriteCallback()) const = 0;
+	
 	/** Считать не более limit значений. */
 	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const = 0;
 
