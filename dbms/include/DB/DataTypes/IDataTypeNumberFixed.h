@@ -56,6 +56,8 @@ public:
 			
 			ostr.write(reinterpret_cast<const char *>(&x[prev_callback_point]),
 				sizeof(typename ColumnType::value_type) * (next_callback_point - prev_callback_point));
+
+			prev_callback_point = next_callback_point;
 		}
 	}
 	

@@ -55,6 +55,8 @@ void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & 
 
 		ostr.write(reinterpret_cast<const char *>(&data[prev_callback_point * n]),
 			n * (next_callback_point - prev_callback_point));
+
+		prev_callback_point = next_callback_point;
 	}
 }
 
