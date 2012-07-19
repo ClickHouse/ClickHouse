@@ -1,6 +1,7 @@
 #pragma once
 
 #include <statdaemons/Increment.h>
+#include <Yandex/MultiVersion.h>
 
 #include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
@@ -35,6 +36,10 @@ namespace DB
   * Внутри директории с куском:
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
+  *
+  * TODO: Может быть, все .mrk писать в один файл, так как их мало.
+  *       А если надо, можно и все .bin писать в один файл
+  *       (но, наверное, это усложнит добавление новых столбцов).
   */
 class StorageMergeTree : public IStorage
 {
@@ -99,7 +104,80 @@ private:
 
 	Increment increment;
 
-	static String getPartName(Yandex::DayNum_t left_month, Yandex::DayNum_t right_month, UInt64 left_id, UInt64 right_id, UInt64 level);
+	Logger * log;
+
+	/// Описание куска с данными.
+	struct DataPart
+	{
+		Yandex::DayNum_t left_date;
+		Yandex::DayNum_t right_date;
+		UInt64 left;
+		UInt64 right;
+		UInt32 level;
+
+		std::string name;
+		size_t size;	/// в количестве засечек.
+		time_t modification_time;
+
+		Yandex::DayNum_t left_month;
+		Yandex::DayNum_t right_month;
+
+		/// TODO рефкаунт для того, чтобы можно было определить, когда можно удалить кусок.
+
+		void remove() const
+		{
+			/// TODO
+		}
+
+		bool operator< (const DataPart & rhs) const
+		{
+			if (left_month < rhs.left_month)
+				return true;
+			if (left_month > rhs.left_month)
+				return false;
+			if (right_month < rhs.right_month)
+				return true;
+			if (right_month > rhs.right_month)
+				return false;
+
+			if (left < rhs.left)
+				return true;
+			if (left > rhs.left)
+				return false;
+			if (right < rhs.right)
+				return true;
+			if (right > rhs.right)
+				return false;
+
+			if (level < rhs.level)
+				return true;
+
+			return false;
+		}
+
+		/// Содержит другой кусок (получен после объединения другого куска с каким-то ещё)
+		bool contains(const DataPart & rhs) const
+		{
+			return left_month == rhs.left_month		/// Куски за разные месяцы не объединяются
+				&& right_month == rhs.right_month
+				&& level > rhs.level
+				&& left_date <= rhs.left_date
+				&& right_date >= rhs.right_date
+				&& left <= rhs.left
+				&& right >= rhs.right
+				&& (left == rhs.left		/// У кусков общее начало или конец.
+					|| right == rhs.right);	/// (только такие образуются после объединения)
+		}
+	};
+
+	/// Множество кусков с данными. Оно обычно небольшое (десятки элементов).
+	typedef std::set<DataPart> DataParts;
+	Yandex::MultiVersion<DataParts> data_parts;
+
+	static String getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
+
+	/// Загрузить множество кусков с данными с диска.
+	void loadDataParts();
 };
 
 }
