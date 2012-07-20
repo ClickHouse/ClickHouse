@@ -143,6 +143,8 @@ public:
 
 	Date toDate() const { return Date(m_year, m_month, m_day); }
 
+	DateTime toStartOfDate() { return DateTime(m_year, m_month, m_day, 0, 0, 0); }
+
 	bool operator< (const Date & other) const
 	{
 		return 0 > memcmp(this, &other, sizeof(*this));
