@@ -152,8 +152,6 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 
 AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const DataTypes & argument_types) const
 {
-	AggregateFunctionPtr res;
-
 	try
 	{
 		return get(name, argument_types);

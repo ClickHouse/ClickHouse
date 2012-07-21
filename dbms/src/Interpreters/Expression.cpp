@@ -217,7 +217,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool o
 	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
 		return;
 
-	/** Столбцы из таблицы уже загружены в блок.
+	/** Столбцы из таблицы уже загружены в блок (если не указано only_consts).
 	  * Вычисление состоит в добавлении в блок новых столбцов - констант и результатов вычислений функций.
 	  */
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
@@ -227,21 +227,22 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool o
 			/// Вставляем в блок столбцы - результаты вычисления функции
 			ColumnNumbers argument_numbers;
 
+			ASTs arguments = node->arguments->children;
+			for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
+			{
+				String column_name = (*it)->getColumnName();
+				if (only_consts && (!block.has(column_name) || !block.getByName(column_name).column->isConst()))
+					return;
+
+				argument_numbers.push_back(block.getPositionByName(column_name));
+			}
+
 			ColumnWithNameAndType column;
 			column.type = node->return_type;
 			column.name = node->getColumnName();
 
 			size_t result_number = block.columns();
 			block.insert(column);
-
-			ASTs arguments = node->arguments->children;
-			for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
-			{
-				if (only_consts && !block.getByName((*it)->getColumnName()).column->isConst())
-					return;
-				
-				argument_numbers.push_back(block.getPositionByName((*it)->getColumnName()));
-			}
 
 			node->function->execute(block, argument_numbers, result_number);
 		}

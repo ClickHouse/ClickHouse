@@ -431,12 +431,131 @@ static void getRelationsFromConjunction(ASTPtr & node, ASTs & relations)
 }
 
 
-BlockInputStreams StorageMergeTree::read(
-	const Names & column_names,
-	ASTPtr query,
-	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+/** Получить значение константного аргумента функции вида f(name, const_expr) или f(const_expr, name).
+  * block_with_constants содержит вычисленные значения константных выражений.
+  * Вернуть false, если такого нет.
+  */
+static bool getConstantArgument(ASTs & args, Block & block_with_constants, Field & rhs)
+{
+	if (args.size() != 2)
+		return false;
+	
+	IAST * arg_rhs;
+
+	if (dynamic_cast<ASTIdentifier *>(&*args[0]))
+		arg_rhs = &*args[1];
+	else if (dynamic_cast<ASTIdentifier *>(&*args[1]))
+		arg_rhs = &*args[0];
+	else
+		return false;
+
+	String rhs_column_name = arg_rhs->getColumnName();
+
+	ASTLiteral * lit_rhs;
+	if ((lit_rhs = dynamic_cast<ASTLiteral *>(arg_rhs)))
+	{
+		/// rhs - литерал
+		rhs = lit_rhs->value;
+		return true;
+	}
+	else if (block_with_constants.has(rhs_column_name) && block_with_constants.getByName(rhs_column_name).column->isConst())
+	{
+		/// rhs - выражение, вычислившееся в константу
+		rhs = (*block_with_constants.getByName(rhs_column_name).column)[0];
+		return true;
+	}
+	else
+		return false;
+}
+
+
+/// Составить диапазон возможных значений для столбца на основе секции WHERE с вычисленными константными выражениями.
+static Range getRangeForColumn(ASTs & relations, const String & column_name, Block & block_with_constants)
+{
+	Range range;
+	
+	for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
+	{
+		ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
+		if (!func)
+			continue;
+
+		ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
+
+		if (args.size() != 2)
+			continue;
+
+		/// Шаблон: col rel const или const rel col
+		ASTIdentifier * ident;
+
+		bool inverted;
+		if ((ident = dynamic_cast<ASTIdentifier *>(&*args[0])))
+			inverted = false;
+		else if ((ident = dynamic_cast<ASTIdentifier *>(&*args[1])))
+			inverted = true;
+		else
+			continue;
+
+		if (ident->getColumnName() != column_name)
+			continue;
+
+		Field rhs;
+		if (!getConstantArgument(args, block_with_constants, rhs))
+			continue;
+		
+		if (func->name == "equals")
+		{
+			range = Range(rhs);
+			break;
+		}
+		else if (func->name == "greater")
+			!inverted ? range.setLeft(rhs, false) : range.setRight(rhs, false);
+		else if (func->name == "greaterOrEquals")
+			!inverted ? range.setLeft(rhs, true) : range.setRight(rhs, true);
+		else if (func->name == "less")
+			!inverted ? range.setRight(rhs, false) : range.setLeft(rhs, false);
+		else if (func->name == "lessOrEquals")
+			!inverted ? range.setRight(rhs, true) : range.setLeft(rhs, true);
+	}
+
+	return range;
+}
+
+
+/** Выделяет значение, которому должен быть равен столбец на основе секции WHERE с вычисленными константными выражениями.
+  * Если такого нет - возвращает false.
+  */
+static bool getEqualityForColumn(ASTs & relations, const String & column_name, Block & block_with_constants, Field & value)
+{
+	for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
+	{
+		ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
+		if (!func || func->name != "equals")
+			continue;
+
+		ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
+
+		if (args.size() != 2)
+			continue;
+
+		ASTIdentifier * ident;
+		if (!((ident = dynamic_cast<ASTIdentifier *>(&*args[0])) || (ident = dynamic_cast<ASTIdentifier *>(&*args[1]))))
+			continue;
+
+		if (ident->getColumnName() != column_name)
+			continue;
+
+		if (getConstantArgument(args, block_with_constants, value))
+			return true;
+		else
+			continue;
+	}
+	
+	return false;
+}
+
+
+void StorageMergeTree::getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range)
 {
 	/** Вычисление выражений, зависящих только от констант.
 	  * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
@@ -450,22 +569,9 @@ BlockInputStreams StorageMergeTree::read(
 	dummy_column.type = new DataTypeUInt8;
 	dummy_column.column = new ColumnConstUInt8(1, 0);
 	block_with_constants.insert(dummy_column);
-
+	
 	expr_for_constant_folding.execute(block_with_constants, 0, true);
-	
-	/** Определим, можно ли использовать индексы, и как именно.
-	  * Производится тупой поиск в AST по шаблону.
-	  */
-	
-	/// Диапазон дат.
-	Range date_range;
-	
-	/// Префикс первичного ключа, для которого требуется равенство. Может быть пустым.
-	Row primary_prefix;
 
-	/// Диапазон следующего после префикса столбца первичного ключа.
-	Range primary_range;
-	
 	/// Выделяем из конъюнкции в секции WHERE все отношения.
 	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*query);
 	if (select.where_expression)
@@ -474,137 +580,23 @@ BlockInputStreams StorageMergeTree::read(
 		getRelationsFromConjunction(select.where_expression, relations);
 
 		/// Ищем отношения, которые могут быть использованы для индекса по дате.
-		for (ASTs::iterator it = relations.begin(); it != relations.end(); ++it)
-		{
-			ASTFunction * func = dynamic_cast<ASTFunction *>(&**it);
-			if (!func)
-				continue;
+		date_range = getRangeForColumn(relations, date_column_name, block_with_constants);
 
-			ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-
-			if (args.size() != 2)
-				continue;
-
-			/// Шаблон: date_column rel const или const rel date_column
-			ASTIdentifier * ident;
-			ASTFunction * to_date_func;
-			ASTExpressionList * to_date_func_args;
-			ASTLiteral * lit_rhs;
-
-			bool inverted;
-			if ((ident = dynamic_cast<ASTIdentifier *>(&*args[0]))
-				&& (to_date_func = dynamic_cast<ASTFunction *>(&*args[1])))
-			{
-				inverted = false;
-			}
-			else if ((ident = dynamic_cast<ASTIdentifier *>(&*args[1]))
-				&& (to_date_func = dynamic_cast<ASTFunction *>(&*args[0])))
-			{
-				inverted = true;
-			}
-			else
-				continue;
-			
-			if ((ident->name == date_column_name)
-				&& (to_date_func->name == "toDate")
-				&& (to_date_func_args = dynamic_cast<ASTExpressionList *>(&*to_date_func->arguments))
-				&& (to_date_func_args->children.size() == 1)
-				&& (lit_rhs = dynamic_cast<ASTLiteral *>(&*to_date_func_args->children[0])))
-			{
-				String str_rhs = boost::get<String>(lit_rhs->value);
-				ReadBufferFromString rb(str_rhs);
-				Yandex::DayNum_t rhs_daynum;
-				readDateText(rhs_daynum, rb);
-				UInt64 rhs = rhs_daynum;
-
-				if (func->name == "equals")
-				{
-					date_range = Range(rhs);
-					break;
-				}
-				else if (func->name == "greater")
-					!inverted ? date_range.setLeft(rhs, false) : date_range.setRight(rhs, false);
-				else if (func->name == "greaterOrEquals")
-					!inverted ? date_range.setLeft(rhs, true) : date_range.setRight(rhs, true);
-				else if (func->name == "less")
-					!inverted ? date_range.setRight(rhs, false) : date_range.setLeft(rhs, false);
-				else if (func->name == "lessOrEquals")
-					!inverted ? date_range.setRight(rhs, true) : date_range.setLeft(rhs, true);
-			}
-		}
-
-		/** Теперь ищем отношения, которые могут быть использованы для первичного ключа. */
-
-		/// Сначала находим максимальное количество отношений равенства константе для первых столбцов PK.
+		/** Теперь ищем отношения, которые могут быть использованы для первичного ключа.
+		  * Сначала находим максимальное количество отношений равенства константе для первых столбцов PK.
+		  */
 		for (SortDescription::const_iterator it = sort_descr.begin(); it != sort_descr.end(); ++it)
 		{
-			bool found_equality = false;
-			for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
-			{
-				ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
-				if (!func || func->name != "equals")
-					continue;
-
-				ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-
-				if (args.size() != 2)
-					continue;
-
-				/// Шаблон: col = const или const = col
-				ASTLiteral * lit_rhs;
-				if ((args[0]->getColumnName() == it->column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[1])))
-					|| (args[1]->getColumnName() == it->column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[0]))))
-				{
-					found_equality = true;
-					primary_prefix.push_back(lit_rhs->value);
-				}
-			}
-			if (!found_equality)
+			Field rhs;
+			if (getEqualityForColumn(relations, it->column_name, block_with_constants, rhs))
+				primary_prefix.push_back(rhs);
+			else
 				break;
 		}
 
 		/// Если не для всех столбцов PK записано равенство, то ищем отношения для следующего столбца PK.
 		if (primary_prefix.size() < sort_descr.size())
-		{
-			String column_name = sort_descr[primary_prefix.size()].column_name;
-			
-			for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
-			{
-				ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
-				if (!func)
-					continue;
-
-				ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-
-				if (args.size() != 2)
-					continue;
-
-				/// Шаблон: col rel const или const rel col
-				ASTIdentifier * ident;
-				ASTLiteral * lit_rhs;
-				
-				bool inverted;
-				if ((ident = dynamic_cast<ASTIdentifier *>(&*args[0])))
-					inverted = false;
-				else if ((ident = dynamic_cast<ASTIdentifier *>(&*args[1])))
-					inverted = true;
-				else
-					continue;
-				
-				if ((args[0]->getColumnName() == column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[1])))
-					|| (args[1]->getColumnName() == column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[0]))))
-				{
-					if (func->name == "greater")
-						!inverted ? primary_range.setLeft(lit_rhs->value, false) : primary_range.setRight(lit_rhs->value, false);
-					else if (func->name == "greaterOrEquals")
-						!inverted ? primary_range.setLeft(lit_rhs->value, true) : primary_range.setRight(lit_rhs->value, true);
-					else if (func->name == "less")
-						!inverted ? primary_range.setRight(lit_rhs->value, false) : primary_range.setLeft(lit_rhs->value, false);
-					else if (func->name == "lessOrEquals")
-						!inverted ? primary_range.setRight(lit_rhs->value, true) : primary_range.setLeft(lit_rhs->value, true);
-				}
-			}
-		}
+			primary_range = getRangeForColumn(relations, sort_descr[primary_prefix.size()].column_name, block_with_constants);
 	}
 
 	LOG_DEBUG(log, "Date range: " << date_range.toString());
@@ -619,6 +611,26 @@ BlockInputStreams StorageMergeTree::read(
 	{
 		LOG_DEBUG(log, "Primary key column " << sort_descr[primary_prefix.size()].column_name << " range: " << primary_range.toString());
 	}
+}
+
+
+BlockInputStreams StorageMergeTree::read(
+	const Names & column_names,
+	ASTPtr query,
+	QueryProcessingStage::Enum & processed_stage,
+	size_t max_block_size,
+	unsigned threads)
+{
+	/// Определим, можно ли использовать индексы, и как именно.
+
+	/// Диапазон дат.
+	Range date_range;
+	/// Префикс первичного ключа, для которого требуется равенство. Может быть пустым.
+	Row primary_prefix;
+	/// Диапазон следующего после префикса столбца первичного ключа.
+	Range primary_range;
+
+	getIndexRanges(query, date_range, primary_prefix, primary_range);
 
 	// TODO
 	return BlockInputStreams();
