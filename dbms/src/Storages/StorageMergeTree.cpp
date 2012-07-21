@@ -120,22 +120,18 @@ private:
 
 	void writePart(Block & block, UInt16 min_date, UInt16 max_date)
 	{
+		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		
 		size_t rows = block.rows();
 		size_t columns = block.columns();
 		UInt64 part_id = storage.increment.get(true);
 
-		String part_tmp_path = storage.full_path
-			+ "tmp_"
-			+ storage.getPartName(
-				Yandex::DayNum_t(min_date), Yandex::DayNum_t(max_date),
-				part_id, part_id, 0)
-			+ "/";
+		String part_name = storage.getPartName(
+			Yandex::DayNum_t(min_date), Yandex::DayNum_t(max_date),
+			part_id, part_id, 0);
 
-		String part_res_path = storage.full_path
-			+ storage.getPartName(
-				Yandex::DayNum_t(min_date), Yandex::DayNum_t(max_date),
-				part_id, part_id, 0)
-			+ "/";
+		String part_tmp_path = storage.full_path + "tmp_" + part_name + "/";
+		String part_res_path = storage.full_path + part_name + "/";
 
 		Poco::File(part_tmp_path).createDirectories();
 
@@ -183,6 +179,25 @@ private:
 
 		/// Переименовываем кусок.
 		Poco::File(part_tmp_path).renameTo(part_res_path);
+
+		/// Добавляем новый кусок в набор.
+		const SharedPtr<StorageMergeTree::DataParts> current_data_parts = storage.data_parts.get();
+		SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
+
+		StorageMergeTree::DataPart new_data_part;
+		new_data_part.left_date = Yandex::DayNum_t(min_date);
+		new_data_part.right_date = Yandex::DayNum_t(max_date);
+		new_data_part.left = part_id;
+		new_data_part.right = part_id;
+		new_data_part.level = 0;
+		new_data_part.name = part_name;
+		new_data_part.size = rows / storage.index_granularity;
+		new_data_part.modification_time = time(0);
+		new_data_part.left_month = date_lut.toFirstDayOfMonth(new_data_part.left_date);
+		new_data_part.right_month = date_lut.toFirstDayOfMonth(new_data_part.right_date);
+		
+		new_data_parts->insert(new_data_part);
+		storage.data_parts.set(new_data_parts);
 	}
 
 	/// Вызывается каждые index_granularity строк и пишет в файл с засечками (.mrk).
