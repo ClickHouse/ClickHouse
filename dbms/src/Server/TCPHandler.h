@@ -127,6 +127,9 @@ private:
 	void sendEndOfStream();
 
 	bool isQueryCancelled();
+
+	/// Вывести информацию о скорости выполнения SELECT запроса.
+	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in);
 };
 
 

@@ -143,6 +143,7 @@ void TCPHandler::processOrdinaryQuery()
 			LOG_DEBUG(log, "Query pipeline:\n" << query_pipeline.rdbuf());
 		}
 
+		Stopwatch watch;
 		while (true)
 		{
 			Block block = state.io.in->read();
@@ -150,6 +151,35 @@ void TCPHandler::processOrdinaryQuery()
 			if (!block)
 				break;
 		}
+
+		watch.stop();
+		logProfileInfo(watch, *state.io.in);
+	}
+}
+
+
+void TCPHandler::logProfileInfo(Stopwatch & watch, IBlockInputStream & in)
+{
+	/// Выведем информацию о том, сколько считано строк и байт.
+	BlockInputStreams leaves = in.getLeaves();
+	size_t rows = 0;
+	size_t bytes = 0;
+
+	for (BlockInputStreams::const_iterator it = leaves.begin(); it != leaves.end(); ++it)
+	{
+		if (const IProfilingBlockInputStream * profiling = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+		{
+			const BlockStreamProfileInfo & info = profiling->getInfo();
+			rows += info.rows;
+			bytes += info.bytes;
+		}
+	}
+
+	if (rows != 0)
+	{
+		LOG_INFO(log, std::fixed << std::setprecision(3)
+			<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MB in " << watch.elapsedSeconds() << " sec., "
+			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MB/sec.");
 	}
 }
 

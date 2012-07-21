@@ -105,6 +105,7 @@ private:
 
 	SharedPtr<Expression> primary_expr;
 	SortDescription sort_descr;
+	Block primary_key_sample;
 
 	Increment increment;
 

@@ -315,20 +315,16 @@ public:
 			String index_path = path + "primary.idx";
 			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
-			DataTypes primary_column_types;
-			for (size_t i = 0, size = storage.sort_descr.size(); i < size; ++i)
-				primary_column_types.push_back(storage.getDataTypeByName(storage.sort_descr[i].column_name));
-
 			size_t prefix_size = requested_pk_prefix.size();
-			Row pk(primary_column_types.size());
+			Row pk(storage.sort_descr.size());
 			Row pk_prefix(prefix_size);
 			
 			for (size_t current_mark_number = 0; !index.eof(); ++current_mark_number)
 			{
 				/// Читаем очередное значение PK
-				Row pk(primary_column_types.size());
-				for (size_t i = 0, size = primary_column_types.size(); i < size; ++i)
-					primary_column_types[i]->deserializeBinary(pk[i], index);
+				Row pk(storage.sort_descr.size());
+				for (size_t i = 0, size = pk.size(); i < size; ++i)
+					storage.primary_key_sample.getByPosition(i).type->deserializeBinary(pk[i], index);
 
 				pk_prefix.assign(pk.begin(), pk.begin() + pk_prefix.size());
 
@@ -484,6 +480,7 @@ StorageMergeTree::StorageMergeTree(
 
 	context.columns = *columns;
 	primary_expr = new Expression(primary_expr_ast, context);
+	primary_key_sample = primary_expr->getSampleBlock();
 
 	loadDataParts();
 }
