@@ -246,16 +246,16 @@ struct Range
 	bool rightThan(const Field & x)
 	{
 		return (left_bounded
-				? !(boost::apply_visitor(FieldVisitorGreater(), x, left) || (left_included && x == left))
-				: false);
+			? !(boost::apply_visitor(FieldVisitorGreater(), x, left) || (left_included && x == left))
+			: false);
 	}
 
 	/// x находится правее
 	bool leftThan(const Field & x)
 	{
 		return (right_bounded
-				? !(boost::apply_visitor(FieldVisitorLess(), x, right) || (right_included && x == right))
-				: false);
+			? !(boost::apply_visitor(FieldVisitorLess(), x, right) || (right_included && x == right))
+			: false);
 	}
 
 	/// Пересекает отрезок
@@ -266,8 +266,8 @@ struct Range
 		if (!right_bounded)
 			return contains(segment_right);
 
-		return boost::apply_visitor(FieldVisitorLess(), segment_left, right) || (right_included && segment_left == right)
-			|| boost::apply_visitor(FieldVisitorGreater(), segment_right, left) || (left_included && segment_right == left);
+		return (boost::apply_visitor(FieldVisitorLess(), segment_left, right) || (right_included && segment_left == right))
+			&& (boost::apply_visitor(FieldVisitorGreater(), segment_right, left) || (left_included && segment_right == left));
 	}
 
 	String toString()
