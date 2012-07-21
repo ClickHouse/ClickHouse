@@ -46,6 +46,7 @@ struct Range;
   */
 class StorageMergeTree : public IStorage
 {
+friend class MergeTreeBlockInputStream;
 friend class MergeTreeBlockOutputStream;
 
 public:

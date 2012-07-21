@@ -19,6 +19,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/narrowBlockInputStreams.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -201,10 +202,165 @@ private:
 };
 
 
+/** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
+  * Определяет, какую часть данных читать, при наличии индекса.
+  */
+struct Range
+{
+	Field left;				/// левая граница, если есть
+	Field right;			/// правая граница, если есть
+	bool left_bounded;		/// ограничен ли слева
+	bool right_bounded; 	/// ограничен ли справа
+	bool left_included; 	/// включает левую границу, если есть
+	bool right_included;	/// включает правую границу, если есть
+
+	/// Всё множество.
+	Range() : left(), right(), left_bounded(false), right_bounded(false), left_included(false), right_included(false) {}
+
+	/// Одна точка.
+	Range(const Field & point) : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
+
+	/// Установить левую границу.
+	void setLeft(const Field & point, bool included)
+	{
+		left = point;
+		left_bounded = true;
+		left_included = included;
+	}
+
+	/// Установить правую границу.
+	void setRight(const Field & point, bool included)
+	{
+		right = point;
+		right_bounded = true;
+		right_included = included;
+	}
+
+	/// x входит в range
+	bool contains(const Field & x)
+	{
+		return !leftThan(x) && !rightThan(x);
+	}
+
+	/// x находится левее
+	bool rightThan(const Field & x)
+	{
+		return (left_bounded
+				? !(boost::apply_visitor(FieldVisitorGreater(), x, left) || (left_included && x == left))
+				: false);
+	}
+
+	/// x находится правее
+	bool leftThan(const Field & x)
+	{
+		return (right_bounded
+				? !(boost::apply_visitor(FieldVisitorLess(), x, right) || (right_included && x == right))
+				: false);
+	}
+
+	/// Пересекает отрезок
+	bool intersectsSegment(const Field & segment_left, const Field & segment_right)
+	{
+		if (!left_bounded)
+			return contains(segment_left);
+		if (!right_bounded)
+			return contains(segment_right);
+
+		return boost::apply_visitor(FieldVisitorLess(), segment_left, right) || (right_included && segment_left == right)
+			|| boost::apply_visitor(FieldVisitorGreater(), segment_right, left) || (left_included && segment_right == left);
+	}
+
+	String toString()
+	{
+		std::stringstream str;
+
+		if (!left_bounded)
+			str << "(-inf, ";
+		else
+			str << (left_included ? '[' : '(') << boost::apply_visitor(FieldVisitorToString(), left) << ", ";
+
+		if (!right_bounded)
+			str << "+inf)";
+		else
+			str << boost::apply_visitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+		return str.str();
+	}
+};
+
+
 /// Для чтения из одного куска. Для чтения сразу из многих, Storage использует сразу много таких объектов.
 class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
+	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
+		size_t block_size_, const Names & column_names_, StorageMergeTree & storage_,
+		Row & requested_pk_prefix, Range & requested_pk_range)
+		: path(path_), block_size(block_size_), column_names(column_names_),
+		storage(storage_), mark_number(0), rows_limit(0), rows_read(0)
+	{
+		/// Если индекс не используется.
+		if (requested_pk_prefix.size() == 0 && !requested_pk_range.left_bounded && !requested_pk_range.right_bounded)
+		{
+			mark_number = 0;
+			rows_limit = std::numeric_limits<size_t>::max();
+		}
+		else
+		{
+			/// Читаем PK, и на основе primary_prefix, primary_range определим mark_number и rows_limit.
+
+			size_t min_mark_number = 0;
+			size_t max_mark_number = 0;
+
+			String index_path = path + "primary.idx";
+			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+
+			DataTypes primary_column_types;
+			for (size_t i = 0, size = storage.sort_descr.size(); i < size; ++i)
+				primary_column_types.push_back(storage.getDataTypeByName(storage.sort_descr[i].column_name));
+
+			size_t prefix_size = requested_pk_prefix.size();
+			Row pk(primary_column_types.size());
+			Row pk_prefix(prefix_size);
+			
+			for (size_t current_mark_number = 0; !index.eof(); ++current_mark_number)
+			{
+				/// Читаем очередное значение PK
+				Row pk(primary_column_types.size());
+				for (size_t i = 0, size = primary_column_types.size(); i < size; ++i)
+					primary_column_types[i]->deserializeBinary(pk[i], index);
+
+				pk_prefix.assign(pk.begin(), pk.begin() + pk_prefix.size());
+
+				if (pk_prefix < requested_pk_prefix)
+				{
+					min_mark_number = current_mark_number;
+				}
+				else if (pk_prefix == requested_pk_prefix)
+				{
+					if (requested_pk_range.rightThan(pk[prefix_size]))
+					{
+						min_mark_number = current_mark_number;
+					}
+					else if (requested_pk_range.leftThan(pk[prefix_size]))
+					{
+						max_mark_number = current_mark_number == 0 ? 0 : (current_mark_number - 1);
+					}
+				}
+				else
+				{
+					max_mark_number = current_mark_number == 0 ? 0 : (current_mark_number - 1);
+					break;
+				}				
+			}
+
+			mark_number = min_mark_number;
+			rows_limit = (max_mark_number - min_mark_number + 1) * storage.index_granularity;
+		}
+
+		std::cerr << mark_number << ", " << rows_limit << std::endl;
+	}
+
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
 		size_t block_size_, const Names & column_names_, StorageMergeTree & storage_,
 		size_t mark_number_, size_t rows_limit_)
@@ -232,10 +388,6 @@ public:
 
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 		{
-			String column_path = escapeForFileName(*it);
-			ReadBufferFromFile plain(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-			CompressedReadBuffer compressed(plain);
-			
 			ColumnWithNameAndType column;
 			column.name = *it;
 			column.type = storage.getDataTypeByName(*it);
@@ -341,70 +493,6 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 {
 	return new MergeTreeBlockOutputStream(*this);
 }
-
-
-/** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
-  * Определяет, какую часть данных читать, при наличии индекса.
-  */
-struct Range
-{
-	Field left;				/// левая граница, если есть
-	Field right;			/// правая граница, если есть
-	bool left_bounded;		/// ограничен ли слева
-	bool right_bounded; 	/// ограничен ли справа
-	bool left_included; 	/// включает левую границу, если есть
-	bool right_included;	/// включает правую границу, если есть
-
-	/// Всё множество.
-	Range() : left(), right(), left_bounded(false), right_bounded(false), left_included(false), right_included(false) {}
-
-	/// Одна точка.
-	Range(const Field & point) : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
-
-	/// Установить левую границу.
-	void setLeft(const Field & point, bool included)
-	{
-		left = point;
-		left_bounded = true;
-		left_included = included;
-	}
-
-	/// Установить правую границу.
-	void setRight(const Field & point, bool included)
-	{
-		right = point;
-		right_bounded = true;
-		right_included = included;
-	}
-
-	/// x входит в range
-	bool in(const Field & x)
-	{
-		return (left_bounded
-				? (boost::apply_visitor(FieldVisitorGreater(), x, left) || (left_included && x == left))
-				: true)
-			&& (right_bounded
-				? (boost::apply_visitor(FieldVisitorLess(), x, right) || (right_included && x == right))
-				: true);
-	}
-
-	String toString()
-	{
-		std::stringstream str;
-
-		if (!left_bounded)
-			str << "(-inf, ";
-		else
-			str << (left_included ? '[' : '(') << boost::apply_visitor(FieldVisitorToString(), left) << ", ";
-
-		if (!right_bounded)
-			str << "+inf)";
-		else
-			str << boost::apply_visitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
-
-		return str.str();
-	}
-};
 
 
 /// Собирает список отношений в конъюнкции в секции WHERE для определения того, можно ли использовать индекс.
@@ -599,7 +687,7 @@ void StorageMergeTree::getIndexRanges(ASTPtr & query, Range & date_range, Row & 
 
 	if (primary_prefix.size() < sort_descr.size())
 	{
-		LOG_DEBUG(log, "Primary key column " << sort_descr[primary_prefix.size()].column_name << " range: " << primary_range.toString());
+		LOG_DEBUG(log, "Primary key range for column " << sort_descr[primary_prefix.size()].column_name << ": " << primary_range.toString());
 	}
 }
 
@@ -622,8 +710,21 @@ BlockInputStreams StorageMergeTree::read(
 
 	getIndexRanges(query, date_range, primary_prefix, primary_range);
 
-	// TODO
-	return BlockInputStreams();
+	BlockInputStreams res;
+
+	/// Выберем куски, в которых могут быть данные для date_range.
+	const SharedPtr<DataParts> current_data_parts = data_parts.get();
+	for (DataParts::iterator it = current_data_parts->begin(); it != current_data_parts->end(); ++it)
+		if (date_range.intersectsSegment(static_cast<UInt64>(it->left_date), static_cast<UInt64>(it->right_date)))
+			res.push_back(new MergeTreeBlockInputStream(full_path + it->name + '/', max_block_size, column_names, *this, primary_prefix, primary_range));
+
+	LOG_DEBUG(log, "Selected " << res.size() << " parts");
+
+	/// Если истчоников слишком много, то склеим их в threads источников.
+	if (res.size() > threads)
+		res = narrowBlockInputStreams(res, threads);
+	
+	return res;
 }
 
 
