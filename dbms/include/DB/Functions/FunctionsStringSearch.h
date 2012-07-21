@@ -21,7 +21,8 @@ namespace DB
   * notLike(haystack, pattern)
   *
   * match(haystack, pattern)	- поиск по регулярному выражению re2; возвращает 0 или 1.
-  * 
+  *
+  * TODO:
   * extract(haystack, pattern)	- вынимает первый subpattern, (или нулевой, если первого нет) согласно регулярному выражению re2;
   * 							  возвращает пустую строку, если не матчится.
   * extract(haystack, pattern, n) - вынимает n-ый subpattern; возвращает пустую строку, если не матчится.

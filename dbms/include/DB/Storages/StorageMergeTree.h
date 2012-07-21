@@ -37,7 +37,7 @@ namespace DB
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
   *
-  * TODO: Может быть, все .mrk писать в один файл, так как их мало.
+  * NOTE: Может быть, все .mrk писать в один файл, так как их мало.
   *       А если надо, можно и все .bin писать в один файл
   *       (но, наверное, это усложнит добавление новых столбцов).
   */
@@ -66,12 +66,12 @@ public:
 
 	/** При чтении, выбирается набор кусков, покрывающий нужный диапазон индекса.
 	  */
-/*	BlockInputStreams read(
+	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);*/
+		unsigned threads = 1);
 
 	/** При записи, данные сортируются и пишутся в новые куски.
 	  */

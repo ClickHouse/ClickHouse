@@ -196,13 +196,13 @@ Names Expression::getRequiredColumns()
 }
 
 
-void Expression::execute(Block & block, unsigned part_id)
+void Expression::execute(Block & block, unsigned part_id, bool only_consts)
 {
-	executeImpl(ast, block, part_id);
+	executeImpl(ast, block, part_id, only_consts);
 }
 
 
-void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
+void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool only_consts)
 {
 	/// Если результат вычисления уже есть в блоке.
 	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast)) && block.has(ast->getColumnName()))
@@ -211,7 +211,7 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 	/// Обход в глубину. Не опускаемся в подзапросы.
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			executeImpl(*it, block, part_id);
+			executeImpl(*it, block, part_id, only_consts);
 
 	/// Если это - не указанная часть дерева.
 	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
@@ -236,7 +236,12 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id)
 
 			ASTs arguments = node->arguments->children;
 			for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
+			{
+				if (only_consts && !block.getByName((*it)->getColumnName()).column->isConst())
+					return;
+				
 				argument_numbers.push_back(block.getPositionByName((*it)->getColumnName()));
+			}
 
 			node->function->execute(block, argument_numbers, result_number);
 		}

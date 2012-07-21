@@ -32,8 +32,9 @@ public:
 	/** Выполнить выражение над блоком. Блок должен содержать все столбцы - идентификаторы.
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.
 	  * part_id - какую часть выражения вычислять.
+	  * Если указано only_consts - то вычисляются только выражения, зависящие от констант.
 	  */
-	void execute(Block & block, unsigned part_id = 0);
+	void execute(Block & block, unsigned part_id = 0, bool only_consts = false);
 
 	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
 	  * Переименовать их в алиасы, если они заданы и если параметр without_duplicates_and_aliases = false.
@@ -98,7 +99,7 @@ private:
 	
 	void glueTreeImpl(ASTPtr ast, Subtrees & Subtrees);
 
-	void executeImpl(ASTPtr ast, Block & block, unsigned part_id);
+	void executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool only_consts);
 
 	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id);
 

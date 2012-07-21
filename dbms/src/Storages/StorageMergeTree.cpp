@@ -10,12 +10,21 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
 
 #include <DB/Columns/ColumnsNumber.h>
 
+#include <DB/DataTypes/DataTypesNumberFixed.h>
+
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/sortBlock.h>
 
@@ -332,6 +341,287 @@ StorageMergeTree::StorageMergeTree(
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 {
 	return new MergeTreeBlockOutputStream(*this);
+}
+
+
+/** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
+  * Определяет, какую часть данных читать, при наличии индекса.
+  */
+struct Range
+{
+	Field left;				/// левая граница, если есть
+	Field right;			/// правая граница, если есть
+	bool left_bounded;		/// ограничен ли слева
+	bool right_bounded; 	/// ограничен ли справа
+	bool left_included; 	/// включает левую границу, если есть
+	bool right_included;	/// включает правую границу, если есть
+
+	/// Всё множество.
+	Range() : left(), right(), left_bounded(false), right_bounded(false), left_included(false), right_included(false) {}
+
+	/// Одна точка.
+	Range(const Field & point) : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
+
+	/// Установить левую границу.
+	void setLeft(const Field & point, bool included)
+	{
+		left = point;
+		left_bounded = true;
+		left_included = included;
+	}
+
+	/// Установить правую границу.
+	void setRight(const Field & point, bool included)
+	{
+		right = point;
+		right_bounded = true;
+		right_included = included;
+	}
+
+	/// x входит в range
+	bool in(const Field & x)
+	{
+		return (left_bounded
+				? (boost::apply_visitor(FieldVisitorGreater(), x, left) || (left_included && x == left))
+				: true)
+			&& (right_bounded
+				? (boost::apply_visitor(FieldVisitorLess(), x, right) || (right_included && x == right))
+				: true);
+	}
+
+	String toString()
+	{
+		std::stringstream str;
+
+		if (!left_bounded)
+			str << "(-inf, ";
+		else
+			str << (left_included ? '[' : '(') << boost::apply_visitor(FieldVisitorToString(), left) << ", ";
+
+		if (!right_bounded)
+			str << "+inf)";
+		else
+			str << boost::apply_visitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+		return str.str();
+	}
+};
+
+
+/// Собирает список отношений в конъюнкции в секции WHERE для определения того, можно ли использовать индекс.
+static void getRelationsFromConjunction(ASTPtr & node, ASTs & relations)
+{
+	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
+	{
+		if (func->name == "equals"
+			|| func->name == "less" || func->name == "greater"
+			|| func->name == "lessOrEquals" || func->name == "greaterOrEquals")
+		{
+			relations.push_back(node);
+		}
+		else if (func->name == "and")
+		{
+			/// Обходим рекурсивно.
+			ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
+
+			getRelationsFromConjunction(args.at(0), relations);
+			getRelationsFromConjunction(args.at(1), relations);
+		}
+	}
+}
+
+
+BlockInputStreams StorageMergeTree::read(
+	const Names & column_names,
+	ASTPtr query,
+	QueryProcessingStage::Enum & processed_stage,
+	size_t max_block_size,
+	unsigned threads)
+{
+	/** Вычисление выражений, зависящих только от констант.
+	  * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
+	  */
+	Expression expr_for_constant_folding(query, context);
+	Block block_with_constants;
+
+	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
+	ColumnWithNameAndType dummy_column;
+	dummy_column.name = "_dummy";
+	dummy_column.type = new DataTypeUInt8;
+	dummy_column.column = new ColumnConstUInt8(1, 0);
+	block_with_constants.insert(dummy_column);
+
+	expr_for_constant_folding.execute(block_with_constants, 0, true);
+	
+	/** Определим, можно ли использовать индексы, и как именно.
+	  * Производится тупой поиск в AST по шаблону.
+	  */
+	
+	/// Диапазон дат.
+	Range date_range;
+	
+	/// Префикс первичного ключа, для которого требуется равенство. Может быть пустым.
+	Row primary_prefix;
+
+	/// Диапазон следующего после префикса столбца первичного ключа.
+	Range primary_range;
+	
+	/// Выделяем из конъюнкции в секции WHERE все отношения.
+	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*query);
+	if (select.where_expression)
+	{
+		ASTs relations;
+		getRelationsFromConjunction(select.where_expression, relations);
+
+		/// Ищем отношения, которые могут быть использованы для индекса по дате.
+		for (ASTs::iterator it = relations.begin(); it != relations.end(); ++it)
+		{
+			ASTFunction * func = dynamic_cast<ASTFunction *>(&**it);
+			if (!func)
+				continue;
+
+			ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
+
+			if (args.size() != 2)
+				continue;
+
+			/// Шаблон: date_column rel const или const rel date_column
+			ASTIdentifier * ident;
+			ASTFunction * to_date_func;
+			ASTExpressionList * to_date_func_args;
+			ASTLiteral * lit_rhs;
+
+			bool inverted;
+			if ((ident = dynamic_cast<ASTIdentifier *>(&*args[0]))
+				&& (to_date_func = dynamic_cast<ASTFunction *>(&*args[1])))
+			{
+				inverted = false;
+			}
+			else if ((ident = dynamic_cast<ASTIdentifier *>(&*args[1]))
+				&& (to_date_func = dynamic_cast<ASTFunction *>(&*args[0])))
+			{
+				inverted = true;
+			}
+			else
+				continue;
+			
+			if ((ident->name == date_column_name)
+				&& (to_date_func->name == "toDate")
+				&& (to_date_func_args = dynamic_cast<ASTExpressionList *>(&*to_date_func->arguments))
+				&& (to_date_func_args->children.size() == 1)
+				&& (lit_rhs = dynamic_cast<ASTLiteral *>(&*to_date_func_args->children[0])))
+			{
+				String str_rhs = boost::get<String>(lit_rhs->value);
+				ReadBufferFromString rb(str_rhs);
+				Yandex::DayNum_t rhs_daynum;
+				readDateText(rhs_daynum, rb);
+				UInt64 rhs = rhs_daynum;
+
+				if (func->name == "equals")
+				{
+					date_range = Range(rhs);
+					break;
+				}
+				else if (func->name == "greater")
+					!inverted ? date_range.setLeft(rhs, false) : date_range.setRight(rhs, false);
+				else if (func->name == "greaterOrEquals")
+					!inverted ? date_range.setLeft(rhs, true) : date_range.setRight(rhs, true);
+				else if (func->name == "less")
+					!inverted ? date_range.setRight(rhs, false) : date_range.setLeft(rhs, false);
+				else if (func->name == "lessOrEquals")
+					!inverted ? date_range.setRight(rhs, true) : date_range.setLeft(rhs, true);
+			}
+		}
+
+		/** Теперь ищем отношения, которые могут быть использованы для первичного ключа. */
+
+		/// Сначала находим максимальное количество отношений равенства константе для первых столбцов PK.
+		for (SortDescription::const_iterator it = sort_descr.begin(); it != sort_descr.end(); ++it)
+		{
+			bool found_equality = false;
+			for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
+			{
+				ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
+				if (!func || func->name != "equals")
+					continue;
+
+				ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
+
+				if (args.size() != 2)
+					continue;
+
+				/// Шаблон: col = const или const = col
+				ASTLiteral * lit_rhs;
+				if ((args[0]->getColumnName() == it->column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[1])))
+					|| (args[1]->getColumnName() == it->column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[0]))))
+				{
+					found_equality = true;
+					primary_prefix.push_back(lit_rhs->value);
+				}
+			}
+			if (!found_equality)
+				break;
+		}
+
+		/// Если не для всех столбцов PK записано равенство, то ищем отношения для следующего столбца PK.
+		if (primary_prefix.size() < sort_descr.size())
+		{
+			String column_name = sort_descr[primary_prefix.size()].column_name;
+			
+			for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
+			{
+				ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
+				if (!func)
+					continue;
+
+				ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
+
+				if (args.size() != 2)
+					continue;
+
+				/// Шаблон: col rel const или const rel col
+				ASTIdentifier * ident;
+				ASTLiteral * lit_rhs;
+				
+				bool inverted;
+				if ((ident = dynamic_cast<ASTIdentifier *>(&*args[0])))
+					inverted = false;
+				else if ((ident = dynamic_cast<ASTIdentifier *>(&*args[1])))
+					inverted = true;
+				else
+					continue;
+				
+				if ((args[0]->getColumnName() == column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[1])))
+					|| (args[1]->getColumnName() == column_name && (lit_rhs = dynamic_cast<ASTLiteral *>(&*args[0]))))
+				{
+					if (func->name == "greater")
+						!inverted ? primary_range.setLeft(lit_rhs->value, false) : primary_range.setRight(lit_rhs->value, false);
+					else if (func->name == "greaterOrEquals")
+						!inverted ? primary_range.setLeft(lit_rhs->value, true) : primary_range.setRight(lit_rhs->value, true);
+					else if (func->name == "less")
+						!inverted ? primary_range.setRight(lit_rhs->value, false) : primary_range.setLeft(lit_rhs->value, false);
+					else if (func->name == "lessOrEquals")
+						!inverted ? primary_range.setRight(lit_rhs->value, true) : primary_range.setLeft(lit_rhs->value, true);
+				}
+			}
+		}
+	}
+
+	LOG_DEBUG(log, "Date range: " << date_range.toString());
+
+	std::stringstream primary_prefix_str;
+	for (Row::const_iterator it = primary_prefix.begin(); it != primary_prefix.end(); ++it)
+		primary_prefix_str << (it != primary_prefix.begin() ? ", " : "") << boost::apply_visitor(FieldVisitorToString(), *it);
+
+	LOG_DEBUG(log, "Primary key prefix: (" << primary_prefix_str.str() << ")");
+
+	if (primary_prefix.size() < sort_descr.size())
+	{
+		LOG_DEBUG(log, "Primary key column " << sort_descr[primary_prefix.size()].column_name << " range: " << primary_range.toString());
+	}
+
+	// TODO
+	return BlockInputStreams();
 }
 
 

@@ -188,19 +188,19 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 /** Преобразование строк в числа, даты, даты-с-временем: через парсинг.
   */
-template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & wb) { readText(x, wb); }
+template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb) { readText(x,rb); }
 
-template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & wb)
+template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb)
 {
 	Yandex::DayNum_t tmp(0);
-	readDateText(tmp, wb);
+	readDateText(tmp, rb);
 	x = tmp;
 }
 
-template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & wb)
+template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb)
 {
 	time_t tmp = 0;
-	readDateTimeText(tmp, wb);
+	readDateTimeText(tmp, rb);
 	x = tmp;
 }
 

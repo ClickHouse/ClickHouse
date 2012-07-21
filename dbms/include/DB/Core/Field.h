@@ -176,6 +176,27 @@ public:
 };
 
 
+class FieldVisitorLess : public boost::static_visitor<bool>
+{
+public:
+	template <typename T, typename U>
+	bool operator() (const T &, const U &) const { return false; }
+
+    template <typename T>
+    bool operator() (const T & lhs, const T & rhs) const { return lhs < rhs; }
+};
+
+class FieldVisitorGreater : public boost::static_visitor<bool>
+{
+public:
+	template <typename T, typename U>
+	bool operator() (const T &, const U &) const { return false; }
+
+    template <typename T>
+    bool operator() (const T & lhs, const T & rhs) const { return lhs > rhs; }
+};
+
+
 template <typename T> struct NearestFieldType;
 
 template <> struct NearestFieldType<UInt8> 		{ typedef UInt64 	Type; };

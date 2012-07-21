@@ -31,6 +31,11 @@ namespace DB
   *  cutFragment
   *  cutQueryString
   *  cutQueryStringAndFragment
+  *
+  * Извлечь значение параметра в URL, если он есть. Вернуть пустую строку, если его нет.
+  * Если таких параметров много - вернуть значение первого. Значение не разэскейпливается.
+  *
+  *  getURLParameter(URL, parameter)
   */
 
 typedef const char * Pos;
