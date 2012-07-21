@@ -23,7 +23,6 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/sortBlock.h>
@@ -431,6 +430,30 @@ static void getRelationsFromConjunction(ASTPtr & node, ASTs & relations)
 }
 
 
+/** Получить значение константного выражения.
+  * Вернуть false, если выражение не константно.
+  */
+static bool getConstant(ASTPtr & expr, Block & block_with_constants, Field & value)
+{
+	String column_name = expr->getColumnName();
+
+	if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*expr))
+	{
+		/// литерал
+		value = lit->value;
+		return true;
+	}
+	else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst())
+	{
+		/// выражение, вычислившееся в константу
+		value = (*block_with_constants.getByName(column_name).column)[0];
+		return true;
+	}
+	else
+		return false;
+}
+
+
 /** Получить значение константного аргумента функции вида f(name, const_expr) или f(const_expr, name).
   * block_with_constants содержит вычисленные значения константных выражений.
   * Вернуть false, если такого нет.
@@ -440,32 +463,8 @@ static bool getConstantArgument(ASTs & args, Block & block_with_constants, Field
 	if (args.size() != 2)
 		return false;
 	
-	IAST * arg_rhs;
-
-	if (dynamic_cast<ASTIdentifier *>(&*args[0]))
-		arg_rhs = &*args[1];
-	else if (dynamic_cast<ASTIdentifier *>(&*args[1]))
-		arg_rhs = &*args[0];
-	else
-		return false;
-
-	String rhs_column_name = arg_rhs->getColumnName();
-
-	ASTLiteral * lit_rhs;
-	if ((lit_rhs = dynamic_cast<ASTLiteral *>(arg_rhs)))
-	{
-		/// rhs - литерал
-		rhs = lit_rhs->value;
-		return true;
-	}
-	else if (block_with_constants.has(rhs_column_name) && block_with_constants.getByName(rhs_column_name).column->isConst())
-	{
-		/// rhs - выражение, вычислившееся в константу
-		rhs = (*block_with_constants.getByName(rhs_column_name).column)[0];
-		return true;
-	}
-	else
-		return false;
+	return getConstant(args[0], block_with_constants, rhs)
+		|| getConstant(args[1], block_with_constants, rhs);
 }
 
 
@@ -486,17 +485,12 @@ static Range getRangeForColumn(ASTs & relations, const String & column_name, Blo
 			continue;
 
 		/// Шаблон: col rel const или const rel col
-		ASTIdentifier * ident;
-
 		bool inverted;
-		if ((ident = dynamic_cast<ASTIdentifier *>(&*args[0])))
+		if (column_name == args[0]->getColumnName())
 			inverted = false;
-		else if ((ident = dynamic_cast<ASTIdentifier *>(&*args[1])))
+		else if (column_name == args[1]->getColumnName())
 			inverted = true;
 		else
-			continue;
-
-		if (ident->getColumnName() != column_name)
 			continue;
 
 		Field rhs;
@@ -538,11 +532,7 @@ static bool getEqualityForColumn(ASTs & relations, const String & column_name, B
 		if (args.size() != 2)
 			continue;
 
-		ASTIdentifier * ident;
-		if (!((ident = dynamic_cast<ASTIdentifier *>(&*args[0])) || (ident = dynamic_cast<ASTIdentifier *>(&*args[1]))))
-			continue;
-
-		if (ident->getColumnName() != column_name)
+		if (args[0]->getColumnName() != column_name && args[1]->getColumnName() != column_name)
 			continue;
 
 		if (getConstantArgument(args, block_with_constants, value))
