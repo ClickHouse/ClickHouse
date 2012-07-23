@@ -178,8 +178,8 @@ void TCPHandler::logProfileInfo(Stopwatch & watch, IBlockInputStream & in)
 	if (rows != 0)
 	{
 		LOG_INFO(log, std::fixed << std::setprecision(3)
-			<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MB in " << watch.elapsedSeconds() << " sec., "
-			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MB/sec.");
+			<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
+			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
 	}
 }
 
