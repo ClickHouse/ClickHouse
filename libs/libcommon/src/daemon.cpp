@@ -223,8 +223,8 @@ void Daemon::initialize(Application& self)
 			throw Poco::Exception("Cannot change directory to " + path);
 
 		/// Создадим pid-file.
-		if (is_daemon)
-			m_Pid.seed(config().getString("pid", "pid"));
+		if (is_daemon && config().has("pid"))
+			m_Pid.seed(config().getString("pid"));
 	}
 
 	// Считаем конфигурацию
