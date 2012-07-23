@@ -29,10 +29,13 @@ private:
 	BlockInputStreamPtr input;
 	SortDescription description;
 
-	/// Всё было прочитано
+	/// Всё было прочитано.
 	bool has_been_read;
 
+	/// Слить пару блоков.
 	void merge(Block & left, Block & right);
+
+	/// Слить сразу много блоков с помощью priority queue.
 	Block merge(Blocks & blocks);
 };
 

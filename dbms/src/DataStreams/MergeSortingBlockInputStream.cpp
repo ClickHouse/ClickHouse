@@ -8,9 +8,9 @@ namespace DB
 
 Block MergeSortingBlockInputStream::readImpl()
 {
-	/** На данный момент - очень простой алгоритм:
+	/** Достаточно простой алгоритм:
 	  * - прочитать в оперативку все блоки;
-	  * - объединять по два соседних блока;
+	  * - объединить их всех с помощью priority_queue;
 	  */
 
 	if (has_been_read)
@@ -22,9 +22,9 @@ Block MergeSortingBlockInputStream::readImpl()
 	while (Block block = input->read())
 		blocks.push_back(block);
 
-	if (blocks.empty())
-		return Block();
-
+	return merge(blocks);
+		
+#if 0
 	while (blocks.size() > 1)
 	{
 		for (Blocks::iterator it = blocks.begin(); it != blocks.end();)
@@ -40,6 +40,7 @@ Block MergeSortingBlockInputStream::readImpl()
 	}
 
 	return blocks.front();
+#endif
 }
 
 
@@ -48,24 +49,26 @@ namespace
 	typedef std::vector<const IColumn *> ConstColumnPlainPtrs;
 	typedef std::vector<IColumn *> ColumnPlainPtrs;
 
-/*	/// Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
+	/// Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
 	struct Cursor
 	{
-		ConstColumns * all_columns;
-		ConstColumns * sort_columns;
+		ConstColumnPlainPtrs * all_columns;
+		ConstColumnPlainPtrs * sort_columns;
 		size_t sort_columns_size;
 		size_t pos;
 		size_t rows;
 
-		Cursor(ConstColumns * all_columns_, ConstColumns * sort_columns_, size_t pos_ = 0)
+		Cursor() {}
+		
+		Cursor(ConstColumnPlainPtrs * all_columns_, ConstColumnPlainPtrs * sort_columns_, size_t pos_ = 0)
 			: all_columns(all_columns_), sort_columns(sort_columns_), sort_columns_size(sort_columns->size()),
-			pos(pos_), rows((*all_columns)[0].size()) {}
+			pos(pos_), rows((*all_columns)[0]->size()) {}
 
-		bool operator< (const Cursor & rhs)
+		bool operator< (const Cursor & rhs) const
 		{
 			for (size_t i = 0; i < sort_columns_size; ++i)
 			{
-				int res = (*sort_columns)[i]->compareAt(pos, rhs.pos, (*rhs.sort_columns)[i]);
+				int res = (*sort_columns)[i]->compareAt(pos, rhs.pos, *(*rhs.sort_columns)[i]);
 				if (res > 0)
 					return true;
 				if (res < 0)
@@ -74,19 +77,21 @@ namespace
 			return false;
 		}
 
-		bool isLast() { return pos + 1 >= rows; }
-		Cursor next() { return Cursor(all_columns, sort_columns, pos + 1); }
-	};*/
+		bool isLast() const { return !(pos < rows); }
+		Cursor next() const { return Cursor(all_columns, sort_columns, pos + 1); }
+	};
 }
 
 
-/*Block MergeSortingBlockInputStream::merge(Blocks & blocks)
+Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 {
 	Block merged;
-	Columns merged_columns;
 
 	if (!blocks.size())
 		return merged;
+
+	if (blocks.size() == 1)
+		return blocks[0];
 
 	merged = blocks[0].cloneEmpty();
 
@@ -99,27 +104,42 @@ namespace
 		if (!*it)
 			continue;
 
+		ConstColumnPlainPtrs all_columns;
 		for (size_t i = 0; i < num_columns; ++i)
-		{
-			
+			all_columns.push_back(&*it->getByPosition(i).column);
 
+		ConstColumnPlainPtrs sort_columns;
+		for (size_t i = 0, size = description.size(); i < size; ++i)
+		{
+			size_t column_number = !description[i].column_name.empty()
+				? it->getPositionByName(description[i].column_name)
+				: description[i].column_number;
+
+			sort_columns.push_back(&*it->getByPosition(column_number).column);
 		}
 
-		Cursor cursor;
+		queue.push(Cursor(&all_columns, &sort_columns));
 	}
 
-	for (size_t i = 0, size = description.size(); i < size; ++i)
-	{
-		size_t column_number = !description[i].column_name.empty()
-			? left.getPositionByName(description[i].column_name)
-			: description[i].column_number;
+	ColumnPlainPtrs merged_columns;
+	for (size_t i = 0; i < num_columns; ++i)
+		merged_columns.push_back(&*merged.getByPosition(i).column);
 
-		left_sort_columns.push_back(&*left.getByPosition(column_number).column);
-		right_sort_columns.push_back(&*right.getByPosition(column_number).column);
+	/// Вынимаем строки в нужном порядке и кладём в merged.
+	while (!queue.empty())
+	{
+		Cursor current = queue.top();
+		queue.pop();
+
+		for (size_t i = 0; i < num_columns; ++i)
+			merged_columns[i]->insert((*(*current.all_columns)[i])[current.pos]);
+
+		if (!current.isLast())
+			queue.push(current.next());
 	}
 
 	return merged;
-}*/
+}
 
 
 void MergeSortingBlockInputStream::merge(Block & left, Block & right)
@@ -146,6 +166,7 @@ void MergeSortingBlockInputStream::merge(Block & left, Block & right)
 	{
 		left_columns.push_back(&*left.getByPosition(i).column);
 		right_columns.push_back(&*right.getByPosition(i).column);
+		merged_columns.push_back(&*merged.getByPosition(i).column);
 	}
 
 	for (size_t i = 0, size = description.size(); i < size; ++i)
