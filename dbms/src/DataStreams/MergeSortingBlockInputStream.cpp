@@ -1,3 +1,5 @@
+#include <queue>
+
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 
 
@@ -15,10 +17,8 @@ Block MergeSortingBlockInputStream::readImpl()
 		return Block();
 	
 	has_been_read = true;
-	
-	typedef std::list<Block> Blocks;
-	Blocks blocks;
 
+	Blocks blocks;
 	while (Block block = input->read())
 		blocks.push_back(block);
 
@@ -43,9 +43,88 @@ Block MergeSortingBlockInputStream::readImpl()
 }
 
 
-void MergeSortingBlockInputStream::merge(Block & left, Block & right)
+namespace
+{
+	typedef std::vector<const IColumn *> ConstColumnPlainPtrs;
+	typedef std::vector<IColumn *> ColumnPlainPtrs;
+
+/*	/// Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
+	struct Cursor
+	{
+		ConstColumns * all_columns;
+		ConstColumns * sort_columns;
+		size_t sort_columns_size;
+		size_t pos;
+		size_t rows;
+
+		Cursor(ConstColumns * all_columns_, ConstColumns * sort_columns_, size_t pos_ = 0)
+			: all_columns(all_columns_), sort_columns(sort_columns_), sort_columns_size(sort_columns->size()),
+			pos(pos_), rows((*all_columns)[0].size()) {}
+
+		bool operator< (const Cursor & rhs)
+		{
+			for (size_t i = 0; i < sort_columns_size; ++i)
+			{
+				int res = (*sort_columns)[i]->compareAt(pos, rhs.pos, (*rhs.sort_columns)[i]);
+				if (res > 0)
+					return true;
+				if (res < 0)
+					return false;
+			}
+			return false;
+		}
+
+		bool isLast() { return pos + 1 >= rows; }
+		Cursor next() { return Cursor(all_columns, sort_columns, pos + 1); }
+	};*/
+}
+
+
+/*Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 {
 	Block merged;
+	Columns merged_columns;
+
+	if (!blocks.size())
+		return merged;
+
+	merged = blocks[0].cloneEmpty();
+
+	typedef std::priority_queue<Cursor> Queue;
+	Queue queue;
+
+	size_t num_columns = blocks[0].columns();
+	for (Blocks::const_iterator it = blocks.begin(); it != blocks.end(); ++it)
+	{
+		if (!*it)
+			continue;
+
+		for (size_t i = 0; i < num_columns; ++i)
+		{
+			
+
+		}
+
+		Cursor cursor;
+	}
+
+	for (size_t i = 0, size = description.size(); i < size; ++i)
+	{
+		size_t column_number = !description[i].column_name.empty()
+			? left.getPositionByName(description[i].column_name)
+			: description[i].column_number;
+
+		left_sort_columns.push_back(&*left.getByPosition(column_number).column);
+		right_sort_columns.push_back(&*right.getByPosition(column_number).column);
+	}
+
+	return merged;
+}*/
+
+
+void MergeSortingBlockInputStream::merge(Block & left, Block & right)
+{
+	Block merged = left.cloneEmpty();
 
 	size_t left_size = left.rows();
 	size_t right_size = right.rows();
@@ -53,28 +132,18 @@ void MergeSortingBlockInputStream::merge(Block & left, Block & right)
 	size_t left_pos = 0;
 	size_t right_pos = 0;
 
-	typedef std::vector<const IColumn *> ConstColumns;
-	typedef std::vector<IColumn *> Columns;
-
 	/// Все столбцы блоков.
-	ConstColumns left_columns;
-	ConstColumns right_columns;
-	Columns merged_columns;
+	ConstColumnPlainPtrs left_columns;
+	ConstColumnPlainPtrs right_columns;
+	ColumnPlainPtrs merged_columns;
 
 	/// Столбцы, по которым идёт сортировка.
-	ConstColumns left_sort_columns;
-	ConstColumns right_sort_columns;
+	ConstColumnPlainPtrs left_sort_columns;
+	ConstColumnPlainPtrs right_sort_columns;
 
 	size_t num_columns = left.columns();
 	for (size_t i = 0; i < num_columns; ++i)
 	{
-		ColumnWithNameAndType col;
-		col.name = left.getByPosition(i).name;
-		col.type = left.getByPosition(i).type;
-		col.column = left.getByPosition(i).column->cloneEmpty();
-		merged.insert(col);
-		
-		merged_columns.push_back(&*col.column);
 		left_columns.push_back(&*left.getByPosition(i).column);
 		right_columns.push_back(&*right.getByPosition(i).column);
 	}

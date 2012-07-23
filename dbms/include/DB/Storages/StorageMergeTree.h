@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/thread.hpp>
+
 #include <statdaemons/Increment.h>
 #include <Yandex/MultiVersion.h>
 
@@ -39,10 +41,6 @@ struct Range;
   * Внутри директории с куском:
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
-  *
-  * NOTE: Может быть, все .mrk писать в один файл, так как их мало.
-  *       А если надо, можно и все .bin писать в один файл
-  *       (но, наверное, это усложнит добавление новых столбцов).
   */
 class StorageMergeTree : public IStorage
 {
@@ -129,6 +127,8 @@ private:
 
 		/// TODO рефкаунт для того, чтобы можно было определить, когда можно удалить кусок.
 
+		/// NOTE можно загружать индекс и засечки в оперативку
+
 		void remove() const
 		{
 			/// TODO
@@ -175,14 +175,29 @@ private:
 		}
 	};
 
-	/// Множество кусков с данными. Оно обычно небольшое (десятки элементов).
-	typedef std::set<DataPart> DataParts;
-	Yandex::MultiVersion<DataParts> data_parts;
+	typedef SharedPtr<DataPart> DataPartPtr;
+	struct DataTypePtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
+	typedef std::set<DataPartPtr, DataTypePtrLess> DataParts;
+
+	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
+	  * Ссылки на кусок есть отсюда, из списка актуальных кусков, и из каждого потока чтения, который его сейчас использует.
+	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
+	  */
+	DataParts all_data_parts;
+	Poco::FastMutex all_data_parts_mutex;
+
+	/** Актуальное множество кусков с данными. */
+	typedef Yandex::MultiVersion<DataParts> MultiVersionDataParts;
+	MultiVersionDataParts data_parts;
+	
 
 	static String getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
 	/// Загрузить множество кусков с данными с диска.
 	void loadDataParts();
+
+	/// Удалить неактуальные куски.
+	void clearOldParts();
 
 	/** Определить диапазоны индексов для запроса.
 	  * Возвращается:
@@ -191,6 +206,14 @@ private:
 	  *  primary_range - диапазон значений следующего после префикса столбца первичного ключа.
 	  */
 	void getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range);
+
+	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке.
+	bool merge(size_t delay_time_to_merge_different_level_parts);
+	bool selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right, size_t delay_time_to_merge_different_level_parts);
+	void mergeImpl(DataParts::iterator left, DataParts::iterator right);
+
+	boost::thread merge_thread;
+	ExceptionPtr merge_exception;
 };
 
 }

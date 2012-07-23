@@ -33,6 +33,7 @@ private:
 	bool has_been_read;
 
 	void merge(Block & left, Block & right);
+	Block merge(Blocks & blocks);
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/NumberParser.h>
+#include <Poco/Ext/scopedTry.h>
 
 #include <Yandex/time2str.h>
 
@@ -168,7 +169,7 @@ private:
 			String escaped_column_name = escapeForFileName(column.name);
 
 			WriteBufferFromFile plain(part_tmp_path + escaped_column_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
-			WriteBufferFromFile marks(part_tmp_path + escaped_column_name + ".mrk", DBMS_DEFAULT_BUFFER_SIZE, flags);
+			WriteBufferFromFile marks(part_tmp_path + escaped_column_name + ".mrk", 4096, flags);
 			CompressedWriteBuffer compressed(plain);
 
 			size_t prev_mark = 0;
@@ -184,20 +185,25 @@ private:
 		const SharedPtr<StorageMergeTree::DataParts> current_data_parts = storage.data_parts.get();
 		SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
 
-		StorageMergeTree::DataPart new_data_part;
-		new_data_part.left_date = Yandex::DayNum_t(min_date);
-		new_data_part.right_date = Yandex::DayNum_t(max_date);
-		new_data_part.left = part_id;
-		new_data_part.right = part_id;
-		new_data_part.level = 0;
-		new_data_part.name = part_name;
-		new_data_part.size = rows / storage.index_granularity;
-		new_data_part.modification_time = time(0);
-		new_data_part.left_month = date_lut.toFirstDayOfMonth(new_data_part.left_date);
-		new_data_part.right_month = date_lut.toFirstDayOfMonth(new_data_part.right_date);
+		StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart;
+		new_data_part->left_date = Yandex::DayNum_t(min_date);
+		new_data_part->right_date = Yandex::DayNum_t(max_date);
+		new_data_part->left = part_id;
+		new_data_part->right = part_id;
+		new_data_part->level = 0;
+		new_data_part->name = part_name;
+		new_data_part->size = rows / storage.index_granularity;
+		new_data_part->modification_time = time(0);
+		new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
+		new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
 		
 		new_data_parts->insert(new_data_part);
 		storage.data_parts.set(new_data_parts);
+
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(storage.all_data_parts_mutex);
+			storage.all_data_parts.insert(new_data_part);
+		}
 	}
 
 	/// Вызывается каждые index_granularity строк и пишет в файл с засечками (.mrk).
@@ -725,10 +731,10 @@ BlockInputStreams StorageMergeTree::read(
 	BlockInputStreams res;
 
 	/// Выберем куски, в которых могут быть данные для date_range.
-	const SharedPtr<DataParts> current_data_parts = data_parts.get();
+	const MultiVersionDataParts::Version current_data_parts = data_parts.get();
 	for (DataParts::iterator it = current_data_parts->begin(); it != current_data_parts->end(); ++it)
-		if (date_range.intersectsSegment(static_cast<UInt64>(it->left_date), static_cast<UInt64>(it->right_date)))
-			res.push_back(new MergeTreeBlockInputStream(full_path + it->name + '/', max_block_size, column_names, *this, primary_prefix, primary_range));
+		if (date_range.intersectsSegment(static_cast<UInt64>((*it)->left_date), static_cast<UInt64>((*it)->right_date)))
+			res.push_back(new MergeTreeBlockInputStream(full_path + (*it)->name + '/', max_block_size, column_names, *this, primary_prefix, primary_range));
 
 	LOG_DEBUG(log, "Selected " << res.size() << " parts");
 
@@ -784,29 +790,184 @@ void StorageMergeTree::loadDataParts()
 		if (!(file_name_regexp.match(file_name, 0, matches) && 6 == matches.size()))
 			continue;
 			
-		DataPart part;
-		part.left_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
-		part.right_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
-		part.left = Poco::NumberParser::parseUnsigned64(file_name.substr(matches[3].offset, matches[3].length));
-		part.right = Poco::NumberParser::parseUnsigned64(file_name.substr(matches[4].offset, matches[4].length));
-		part.level = Poco::NumberParser::parseUnsigned(file_name.substr(matches[5].offset, matches[5].length));
-		part.name = file_name;
+		DataPartPtr part = new DataPart;
+		part->left_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
+		part->right_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
+		part->left = Poco::NumberParser::parseUnsigned64(file_name.substr(matches[3].offset, matches[3].length));
+		part->right = Poco::NumberParser::parseUnsigned64(file_name.substr(matches[4].offset, matches[4].length));
+		part->level = Poco::NumberParser::parseUnsigned(file_name.substr(matches[5].offset, matches[5].length));
+		part->name = file_name;
 
 		/// Размер - в количестве засечек.
-		part.size = Poco::File(full_path + file_name + "/" + escapeForFileName(columns->front().first) + ".mrk").getSize()
+		part->size = Poco::File(full_path + file_name + "/" + escapeForFileName(columns->front().first) + ".mrk").getSize()
 			/ MERGE_TREE_MARK_SIZE;
 			
-		part.modification_time = it->getLastModified().epochTime();
+		part->modification_time = it->getLastModified().epochTime();
 
-		part.left_month = date_lut.toFirstDayOfMonth(part.left_date);
-		part.right_month = date_lut.toFirstDayOfMonth(part.right_date);
+		part->left_month = date_lut.toFirstDayOfMonth(part->left_date);
+		part->right_month = date_lut.toFirstDayOfMonth(part->right_date);
 
+		
 		new_data_parts->insert(part);
 	}
 
 	data_parts.set(new_data_parts);
+
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+		all_data_parts = *new_data_parts;
+	}
 	
 	LOG_DEBUG(log, "Loaded data parts (" << new_data_parts->size() << " items)");
+}
+
+
+void StorageMergeTree::clearOldParts()
+{
+	Poco::ScopedTry<Poco::FastMutex> lock;
+
+	/// Если метод уже вызван из другого потока (или если all_data_parts прямо сейчас меняют), то можно ничего не делать.
+	if (!lock.lock(&all_data_parts_mutex))
+	{
+		LOG_TRACE(log, "Already clearing or modifying old parts");
+		return;
+	}
+	
+	LOG_TRACE(log, "Clearing old parts");
+	for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
+	{
+		if (it->referenceCount() == 1)
+		{
+			LOG_DEBUG(log, "Removing part " << (*it)->name);
+			
+			(*it)->remove();
+			all_data_parts.erase(it++);
+		}
+		else
+			++it;
+	}
+}
+
+
+bool StorageMergeTree::merge(size_t delay_time_to_merge_different_level_parts)
+{
+	DataParts::iterator left;
+	DataParts::iterator right;
+
+	if (merge_thread.joinable())
+		merge_thread.join();
+
+	if (merge_exception)
+		merge_exception->rethrow();
+
+	if (selectPartsToMerge(left, right, delay_time_to_merge_different_level_parts))
+	{
+		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeImpl, this, left, right));
+		return true;
+	}
+
+	return false;
+}
+
+
+bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right, size_t delay_time_to_merge_different_level_parts)
+{
+	LOG_DEBUG(log, "Selecting parts to merge");
+
+	const MultiVersionDataParts::Version current_data_parts = data_parts.get();
+
+	if (current_data_parts->size() < 2)
+	{
+		LOG_DEBUG(log, "Too few parts");
+		return false;
+	}
+
+	DataParts::iterator first = current_data_parts->begin();
+	DataParts::iterator second = first;
+	DataParts::iterator argmin_first = current_data_parts->end();
+	DataParts::iterator argmin_second = current_data_parts->end();
+	++second;
+
+	/** Два первых подряд идущих куска одинакового минимального уровня, за один, одинаковый месяц.
+	  * Также проверяем, что куски неперекрываются.
+	  * (обратное может быть только после неправильного объединения кусков, если старые куски не были удалены)
+	  */
+
+	UInt32 min_adjacent_level = -1U;
+	while (second != current_data_parts->end())
+	{
+		if ((*first)->left_month == (*first)->right_month
+			&& (*first)->right_month == (*second)->left_month
+			&& (*second)->left_month == (*second)->right_month
+			&& (*first)->right < (*second)->left
+			&& (*first)->level == (*second)->level
+			&& (*first)->level < min_adjacent_level)
+		{
+			min_adjacent_level = (*first)->level;
+			argmin_first = first;
+			argmin_second = second;
+		}
+
+		++first;
+		++second;
+	}
+
+	if (argmin_first != current_data_parts->end())
+	{
+		left = argmin_first;
+		right = argmin_second;
+		LOG_DEBUG(log, "Selected parts " << (*left)->name << " and " << (*right)->name);
+		return true;
+	}
+
+	first = current_data_parts->begin();
+	second = first;
+	argmin_first = current_data_parts->end();
+	argmin_second = current_data_parts->end();
+	++second;
+
+	/** Два подряд идущих куска минимальноего суммарного размера с временем создания
+	  * раньше текущего минус заданное, за один, одинаковый месяц.
+	  * Также проверяем, что куски неперекрываются, если не указан параметр merge_intersecting.
+	  */
+
+	time_t cutoff_time = time(0) - delay_time_to_merge_different_level_parts;
+	size_t min_adjacent_size = -1ULL;
+	while (second != current_data_parts->end())
+	{
+		if ((*first)->left_month == (*first)->right_month
+			&& (*first)->right_month == (*second)->left_month
+			&& (*second)->left_month == (*second)->right_month
+			&& (*first)->right < (*second)->left	/// Куски неперекрываются.
+			&& (*first)->modification_time < cutoff_time
+			&& (*second)->modification_time < cutoff_time
+			&& (*first)->size + (*second)->size < min_adjacent_size)
+		{
+			min_adjacent_size = (*first)->size + (*second)->size;
+			argmin_first = first;
+			argmin_second = second;
+		}
+
+		++first;
+		++second;
+	}
+
+	if (argmin_first != current_data_parts->end())
+	{
+		left = argmin_first;
+		right = argmin_second;
+		LOG_DEBUG(log, "Selected parts " << (*left)->name << " and " << (*right)->name);
+		return true;
+	}
+
+	LOG_DEBUG(log, "No parts to merge");
+	return false;
+}
+
+
+void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator right)
+{
+	// TODO
 }
 
 }
