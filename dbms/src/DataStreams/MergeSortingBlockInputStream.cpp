@@ -1,4 +1,7 @@
 #include <queue>
+#include <iomanip>
+
+#include <statdaemons/Stopwatch.h>
 
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 
@@ -22,7 +25,18 @@ Block MergeSortingBlockInputStream::readImpl()
 	while (Block block = input->read())
 		blocks.push_back(block);
 
-	return merge(blocks);
+	Stopwatch watch;
+	LOG_DEBUG(log, "Merge sorting");
+	
+	Block res = merge(blocks);
+	
+	LOG_DEBUG(log, std::fixed << std::setprecision(2)
+		<< "Merge sorted " << blocks.size() << " blocks, " << res.rows() << " rows"
+		<< " in " << watch.elapsedSeconds() << " sec., "
+		<< res.rows() / watch.elapsedSeconds() << " rows/sec."
+		<< res.bytes() * 1000 / watch.elapsedSeconds() << " MiB/sec.");
+	
+	return res;
 		
 #if 0
 	while (blocks.size() > 1)
