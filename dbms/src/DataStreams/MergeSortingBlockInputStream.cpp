@@ -25,18 +25,7 @@ Block MergeSortingBlockInputStream::readImpl()
 	while (Block block = input->read())
 		blocks.push_back(block);
 
-	Stopwatch watch;
-	LOG_DEBUG(log, "Merge sorting");
-	
-	Block res = merge(blocks);
-	
-	LOG_DEBUG(log, std::fixed << std::setprecision(2)
-		<< "Merge sorted " << blocks.size() << " blocks, " << res.rows() << " rows"
-		<< " in " << watch.elapsedSeconds() << " sec., "
-		<< res.rows() / watch.elapsedSeconds() << " rows/sec., "
-		<< res.bytes() / 1000000.0 / watch.elapsedSeconds() << " MiB/sec.");
-	
-	return res;
+	return merge(blocks);
 		
 #if 0
 	while (blocks.size() > 1)
@@ -99,6 +88,9 @@ namespace
 
 Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 {
+	Stopwatch watch;
+	LOG_DEBUG(log, "Merge sorting");
+		
 	Block merged;
 
 	if (!blocks.size())
@@ -154,6 +146,12 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 		if (!current.isLast())
 			queue.push(current.next());
 	}
+
+	LOG_DEBUG(log, std::fixed << std::setprecision(2)
+		<< "Merge sorted " << blocks.size() << " blocks, " << merged.rows() << " rows"
+		<< " in " << watch.elapsedSeconds() << " sec., "
+		<< merged.rows() / watch.elapsedSeconds() << " rows/sec., "
+		<< merged.bytes() / 1000000.0 / watch.elapsedSeconds() << " MiB/sec.");
 
 	return merged;
 }
