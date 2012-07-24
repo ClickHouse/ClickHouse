@@ -58,8 +58,6 @@ namespace
 		size_t pos;
 		size_t rows;
 
-		Cursor() {}
-		
 		Cursor(ConstColumnPlainPtrs * all_columns_, ConstColumnPlainPtrs * sort_columns_, size_t pos_ = 0)
 			: all_columns(all_columns_), sort_columns(sort_columns_), sort_columns_size(sort_columns->size()),
 			pos(pos_), rows((*all_columns)[0]->size()) {}
@@ -98,27 +96,30 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 	typedef std::priority_queue<Cursor> Queue;
 	Queue queue;
 
+	typedef std::vector<ConstColumnPlainPtrs> ConstColumnPlainPtrsForBlocks;
+	ConstColumnPlainPtrsForBlocks all_columns(blocks.size());
+	ConstColumnPlainPtrsForBlocks sort_columns(blocks.size());
+
+	size_t i = 0;
 	size_t num_columns = blocks[0].columns();
-	for (Blocks::const_iterator it = blocks.begin(); it != blocks.end(); ++it)
+	for (Blocks::const_iterator it = blocks.begin(); it != blocks.end(); ++it, ++i)
 	{
 		if (!*it)
 			continue;
 
-		ConstColumnPlainPtrs all_columns;
-		for (size_t i = 0; i < num_columns; ++i)
-			all_columns.push_back(&*it->getByPosition(i).column);
+		for (size_t j = 0; j < num_columns; ++j)
+			all_columns[i].push_back(&*it->getByPosition(j).column);
 
-		ConstColumnPlainPtrs sort_columns;
-		for (size_t i = 0, size = description.size(); i < size; ++i)
+		for (size_t j = 0, size = description.size(); j < size; ++j)
 		{
-			size_t column_number = !description[i].column_name.empty()
-				? it->getPositionByName(description[i].column_name)
-				: description[i].column_number;
+			size_t column_number = !description[j].column_name.empty()
+				? it->getPositionByName(description[j].column_name)
+				: description[j].column_number;
 
-			sort_columns.push_back(&*it->getByPosition(column_number).column);
+			sort_columns[i].push_back(&*it->getByPosition(column_number).column);
 		}
 
-		queue.push(Cursor(&all_columns, &sort_columns));
+		queue.push(Cursor(&all_columns[i], &sort_columns[i]));
 	}
 
 	ColumnPlainPtrs merged_columns;
