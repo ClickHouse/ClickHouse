@@ -33,8 +33,8 @@ Block MergeSortingBlockInputStream::readImpl()
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)
 		<< "Merge sorted " << blocks.size() << " blocks, " << res.rows() << " rows"
 		<< " in " << watch.elapsedSeconds() << " sec., "
-		<< res.rows() / watch.elapsedSeconds() << " rows/sec."
-		<< res.bytes() * 1000 / watch.elapsedSeconds() << " MiB/sec.");
+		<< res.rows() / watch.elapsedSeconds() << " rows/sec., "
+		<< res.bytes() / 1000000.0 / watch.elapsedSeconds() << " MiB/sec.");
 	
 	return res;
 		
