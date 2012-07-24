@@ -60,7 +60,9 @@ namespace
 
 		Cursor(ConstColumnPlainPtrs * all_columns_, ConstColumnPlainPtrs * sort_columns_, size_t pos_ = 0)
 			: all_columns(all_columns_), sort_columns(sort_columns_), sort_columns_size(sort_columns->size()),
-			pos(pos_), rows((*all_columns)[0]->size()) {}
+			pos(pos_), rows((*all_columns)[0]->size())
+		{
+		}
 
 		bool operator< (const Cursor & rhs) const
 		{
@@ -75,7 +77,7 @@ namespace
 			return false;
 		}
 
-		bool isLast() const { return !(pos < rows); }
+		bool isLast() const { return pos + 1 >= rows; }
 		Cursor next() const { return Cursor(all_columns, sort_columns, pos + 1); }
 	};
 }
