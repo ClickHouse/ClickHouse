@@ -13,7 +13,7 @@ Block MergeSortingBlockInputStream::readImpl()
 {
 	/** Достаточно простой алгоритм:
 	  * - прочитать в оперативку все блоки;
-	  * - объединить их всех с помощью priority_queue;
+	  * - объединить их всех;
 	  */
 
 	if (has_been_read)
@@ -25,25 +25,17 @@ Block MergeSortingBlockInputStream::readImpl()
 	while (Block block = input->read())
 		blocks.push_back(block);
 
-	return merge(blocks);
-		
-#if 0
-	while (blocks.size() > 1)
+	if (blocks.empty())
+		return Block();
+	else if (blocks.size() == 1)
+		return blocks[0];
+	else if (blocks.size() == 2)
 	{
-		for (Blocks::iterator it = blocks.begin(); it != blocks.end();)
-		{
-			Blocks::iterator next = it;
-			++next;
-			if (next == blocks.end())
-				break;
-			merge(*it, *next);
-			++it;
-			blocks.erase(it++);
-		}
+		merge(blocks[0], blocks[1]);
+		return blocks[0];
 	}
-
-	return blocks.front();
-#endif
+	else
+		return merge(blocks);
 }
 
 
