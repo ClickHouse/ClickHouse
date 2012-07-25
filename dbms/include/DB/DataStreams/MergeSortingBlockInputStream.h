@@ -34,7 +34,14 @@ private:
 
 	Logger * log;
 	
-	/// Слить блоки с помощью priority queue.
+
+	/// Слить пару блоков.
+	void merge(Block & left, Block & right);
+
+	/** Слить сразу много блоков с помощью priority queue.
+	  * Для более чем двух блоков это быстрее, чем древовидно сливать по два блока.
+	  * Для двух блоков это медленнее на 20%.
+	  */
 	Block merge(Blocks & blocks);
 };
 
