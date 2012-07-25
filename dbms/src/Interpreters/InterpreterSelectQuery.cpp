@@ -7,6 +7,7 @@
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
+#include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
@@ -374,6 +375,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams, Expressio
 		{
 			BlockInputStreamPtr & stream = *it;
 			stream = maybeAsynchronous(new PartialSortingBlockInputStream(stream, order_descr), is_async);
+			stream = maybeAsynchronous(new MergeSortingBlockInputStream(stream, order_descr), is_async);
 		}
 
 		BlockInputStreamPtr & stream = streams[0];
@@ -381,12 +383,9 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams, Expressio
 		/// Если потоков несколько, то объединяем их в один
 		if (streams.size() > 1)
 		{
-			stream = new UnionBlockInputStream(streams, context.settings.max_threads);
+			stream = new MergingSortedBlockInputStream(streams, order_descr, context.settings.max_block_size);
 			streams.resize(1);
 		}
-
-		/// Сливаем сортированные блоки
-		stream = maybeAsynchronous(new MergeSortingBlockInputStream(stream, order_descr), context.settings.asynchronous);
 
 		/// Оставим только столбцы, нужные для SELECT части
 		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT, query.select_expression_list);
