@@ -32,8 +32,6 @@ Block MergeSortingBlockInputStream::readImpl()
 Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 {
 	Stopwatch watch;
-	LOG_DEBUG(log, "Merge sorting");
-		
 	Block merged;
 
 	if (!blocks.size())
@@ -41,6 +39,8 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 
 	if (blocks.size() == 1)
 		return blocks[0];
+
+	LOG_DEBUG(log, "Merge sorting");
 
 	merged = blocks[0].cloneEmpty();
 
