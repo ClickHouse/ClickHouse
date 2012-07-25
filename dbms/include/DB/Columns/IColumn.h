@@ -15,6 +15,8 @@ using Poco::SharedPtr;
 class IColumn;
 typedef SharedPtr<IColumn> ColumnPtr;
 typedef std::vector<ColumnPtr> Columns;
+typedef std::vector<IColumn *> ColumnPlainPtrs;
+typedef std::vector<const IColumn *> ConstColumnPlainPtrs;
 
 
 /** Интерфейс для хранения столбцов значений в оперативке.

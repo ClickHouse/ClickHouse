@@ -29,45 +29,6 @@ Block MergeSortingBlockInputStream::readImpl()
 }
 
 
-namespace
-{
-	typedef std::vector<const IColumn *> ConstColumnPlainPtrs;
-	typedef std::vector<IColumn *> ColumnPlainPtrs;
-
-	/// Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
-	struct Cursor
-	{
-		ConstColumnPlainPtrs * all_columns;
-		ConstColumnPlainPtrs * sort_columns;
-		size_t sort_columns_size;
-		size_t pos;
-		size_t rows;
-
-		Cursor(ConstColumnPlainPtrs * all_columns_, ConstColumnPlainPtrs * sort_columns_, size_t pos_ = 0)
-			: all_columns(all_columns_), sort_columns(sort_columns_), sort_columns_size(sort_columns->size()),
-			pos(pos_), rows((*all_columns)[0]->size())
-		{
-		}
-
-		bool operator< (const Cursor & rhs) const
-		{
-			for (size_t i = 0; i < sort_columns_size; ++i)
-			{
-				int res = (*sort_columns)[i]->compareAt(pos, rhs.pos, *(*rhs.sort_columns)[i]);
-				if (res > 0)
-					return true;
-				if (res < 0)
-					return false;
-			}
-			return false;
-		}
-
-		bool isLast() const { return pos + 1 >= rows; }
-		Cursor next() const { return Cursor(all_columns, sort_columns, pos + 1); }
-	};
-}
-
-
 Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 {
 	Stopwatch watch;
@@ -83,7 +44,7 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 
 	merged = blocks[0].cloneEmpty();
 
-	typedef std::priority_queue<Cursor> Queue;
+	typedef std::priority_queue<SortCursor> Queue;
 	Queue queue;
 
 	typedef std::vector<ConstColumnPlainPtrs> ConstColumnPlainPtrsForBlocks;
@@ -109,7 +70,7 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 			sort_columns[i].push_back(&*it->getByPosition(column_number).column);
 		}
 
-		queue.push(Cursor(&all_columns[i], &sort_columns[i]));
+		queue.push(SortCursor(&all_columns[i], &sort_columns[i], &description));
 	}
 
 	ColumnPlainPtrs merged_columns;
@@ -119,7 +80,7 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 	/// Вынимаем строки в нужном порядке и кладём в merged.
 	while (!queue.empty())
 	{
-		Cursor current = queue.top();
+		SortCursor current = queue.top();
 		queue.pop();
 
 		for (size_t i = 0; i < num_columns; ++i)
