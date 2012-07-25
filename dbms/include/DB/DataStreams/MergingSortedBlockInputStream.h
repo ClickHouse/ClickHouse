@@ -17,7 +17,7 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 public:
 	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
 		: inputs(inputs_), description(description_), max_block_size(max_block_size_), first(true),
-		num_columns(0), source_blocks(inputs.size())
+		num_columns(0), source_blocks(inputs.size()), all_columns(inputs.size()), sort_columns(inputs.size())
 	{
 		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
