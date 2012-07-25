@@ -56,8 +56,13 @@ Block MergingSortedBlockInputStream::readImpl()
 	/// Клонируем структуру первого непустого блока источников.
 	Blocks::const_iterator it = source_blocks.begin();
 	for (; it != source_blocks.end(); ++it)
+	{
 		if (*it)
+		{
 			merged_block = it->cloneEmpty();
+			break;
+		}
+	}
 
 	/// Если все входные блоки пустые.
 	if (it == source_blocks.end())
