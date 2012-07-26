@@ -99,6 +99,11 @@ int Server::main(const std::vector<std::string> & args)
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
 	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
 
+	http_socket.setReceiveTimeout(	Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
+	http_socket.setSendTimeout(		Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+	tcp_socket.setReceiveTimeout(	Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
+	tcp_socket.setSendTimeout(		Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+
 	Poco::ThreadPool server_pool(2, config.getInt("max_connections", 128));
 
 	Poco::Net::HTTPServer http_server(

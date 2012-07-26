@@ -285,7 +285,10 @@ private:
 		if (is_interactive)
 			std::cout << "Connecting to " << (!default_database.empty() ? default_database + "@" : "") << host << ":" << port << "." << std::endl;
 
-		connection = new Connection(host, port, default_database, *context.data_type_factory, "client", compression);
+		connection = new Connection(host, port, default_database, *context.data_type_factory, "client", compression,
+			Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
+			Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
+			Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
 
 		if (is_interactive)
 		{

@@ -2,6 +2,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
+#include <DB/Core/Defines.h>
 #include <DB/Core/Block.h>
 #include <DB/Core/Progress.h>
 #include <DB/Core/Protocol.h>
@@ -35,11 +36,15 @@ public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
 		DataTypeFactory & data_type_factory_,
 		const String & client_name_ = "client",
-		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable)
+		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
+		Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
+		Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
+		Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
 		: host(host_), port(port_), default_database(default_database_), client_name(client_name_), connected(false),
 		server_version_major(0), server_version_minor(0), server_revision(0),
 		socket(), in(new ReadBufferFromPocoSocket(socket)), out(new WriteBufferFromPocoSocket(socket)),
-		query_id(0), compression(compression_), data_type_factory(data_type_factory_)
+		query_id(0), compression(compression_), data_type_factory(data_type_factory_),
+		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_)
 	{
 		/// Соединеняемся не сразу, а при первой необходимости.
 	}
@@ -94,6 +99,10 @@ private:
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
 
 	DataTypeFactory & data_type_factory;
+
+	Poco::Timespan connect_timeout;
+	Poco::Timespan receive_timeout;
+	Poco::Timespan send_timeout;
 
 	/// Откуда читать результат выполнения запроса.
 	SharedPtr<ReadBuffer> maybe_compressed_in;
