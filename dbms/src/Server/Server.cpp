@@ -95,22 +95,28 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.settings.max_query_size 	= config.getInt("max_query_size", 	global_context.settings.max_query_size);
 	global_context.settings.max_threads 	= config.getInt("max_threads", 		global_context.settings.max_threads);
 	global_context.settings.interactive_delay = config.getInt("interactive_delay", global_context.settings.interactive_delay);
+	global_context.settings.connect_timeout = Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
+	global_context.settings.receive_timeout = Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
+	global_context.settings.send_timeout 	= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
 	
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
 	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
 
-	http_socket.setReceiveTimeout(	Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
-	http_socket.setSendTimeout(		Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-	tcp_socket.setReceiveTimeout(	Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0));
-	tcp_socket.setSendTimeout(		Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+	http_socket.setReceiveTimeout(global_context.settings.receive_timeout);
+	http_socket.setSendTimeout(global_context.settings.send_timeout);
+	tcp_socket.setReceiveTimeout(global_context.settings.receive_timeout);
+	tcp_socket.setSendTimeout(global_context.settings.send_timeout);
 
 	Poco::ThreadPool server_pool(2, config.getInt("max_connections", 128));
+
+	Poco::Net::HTTPServerParams * http_params = new Poco::Net::HTTPServerParams;
+ 	http_params->setTimeout(global_context.settings.receive_timeout);
 
 	Poco::Net::HTTPServer http_server(
 		new HTTPRequestHandlerFactory(*this),
 		server_pool,
 		http_socket,
-		new Poco::Net::HTTPServerParams);
+		http_params);
 
 	Poco::Net::TCPServer tcp_server(
 		new TCPConnectionFactory(*this),

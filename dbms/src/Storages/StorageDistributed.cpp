@@ -14,19 +14,16 @@ StorageDistributed::StorageDistributed(
 	const StorageDistributed::Addresses & addresses_,
 	const String & remote_database_,
 	const String & remote_table_,
-	DataTypeFactory & data_type_factory_)
+	DataTypeFactory & data_type_factory_,
+	Settings & settings)
 	: name(name_), columns(columns_), addresses(addresses_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	data_type_factory(data_type_factory_)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-	
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 		connections.push_back(new Connection(
 			it->host().toString(), it->port(), "", data_type_factory, "server", Protocol::Compression::Enable,
-			Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-			Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-			Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0)));
+			settings.connect_timeout, settings.receive_timeout, settings.send_timeout));
 }
 
 

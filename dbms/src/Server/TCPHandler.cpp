@@ -28,6 +28,9 @@ void TCPHandler::runImpl()
 {
 	connection_context = server.global_context;
 	connection_context.session_context = &connection_context;
+
+	socket().setReceiveTimeout(server.global_context.settings.receive_timeout);
+	socket().setSendTimeout(server.global_context.settings.send_timeout);
 	
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());

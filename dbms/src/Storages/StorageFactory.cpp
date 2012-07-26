@@ -99,7 +99,8 @@ StoragePtr StorageFactory::get(
 				config.getString(config_prefix + *it + ".host"),
 				config.getInt(config_prefix + *it + ".port")));
 		
-		return new StorageDistributed(table_name, columns, addresses, remote_database, remote_table, *context.data_type_factory);
+		return new StorageDistributed(table_name, columns, addresses, remote_database, remote_table,
+			*context.data_type_factory, context.settings);
 	}
 	else if (name == "MergeTree")
 	{

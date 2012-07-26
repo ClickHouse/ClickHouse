@@ -2,6 +2,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Client/Connection.h>
+#include <DB/Interpreters/Settings.h>
 
 
 namespace DB
@@ -24,7 +25,8 @@ public:
 		const Addresses & addresses_,		/// Адреса удалённых серверов.
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
-		DataTypeFactory & data_type_factory_);
+		DataTypeFactory & data_type_factory_,
+		Settings & settings);
 
 	std::string getName() const { return "Distributed"; }
 	std::string getTableName() const { return name; }
