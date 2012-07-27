@@ -20,7 +20,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	ParserString s_tables("TABLES", true, true);
 	ParserString s_databases("DATABASES", true, true);
 	ParserString s_from("FROM", true, true);
-	ParserString s_like("LIKE");
+	ParserString s_like("LIKE", true, true);
 	ParserStringLiteral like_p;
 	ParserIdentifier name_p;
 
