@@ -17,7 +17,7 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 public:
 	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
 		: inputs(inputs_), description(description_), max_block_size(max_block_size_), first(true),
-		num_columns(0), source_blocks(inputs.size()), all_columns(inputs.size()), sort_columns(inputs.size())
+		num_columns(0), source_blocks(inputs.size()), cursors(inputs.size())
 	{
 		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
@@ -39,9 +39,8 @@ private:
 	size_t num_columns;
 	Blocks source_blocks;
 	
-	typedef std::vector<ConstColumnPlainPtrs> ConstColumnPlainPtrsForBlocks;
-	ConstColumnPlainPtrsForBlocks all_columns;
-	ConstColumnPlainPtrsForBlocks sort_columns;
+	typedef std::vector<SortCursorImpl> CursorImpls;
+	CursorImpls cursors;
 
 	typedef std::priority_queue<SortCursor> Queue;
 	Queue queue;

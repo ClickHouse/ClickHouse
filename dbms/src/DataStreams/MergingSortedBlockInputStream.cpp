@@ -32,19 +32,8 @@ Block MergingSortedBlockInputStream::readImpl()
 			if (!num_columns)
 				num_columns = source_blocks[0].columns();
 
-			for (size_t j = 0; j < num_columns; ++j)
-				all_columns[i].push_back(&*it->getByPosition(j).column);
-
-			for (size_t j = 0, size = description.size(); j < size; ++j)
-			{
-				size_t column_number = !description[j].column_name.empty()
-					? it->getPositionByName(description[j].column_name)
-					: description[j].column_number;
-
-				sort_columns[i].push_back(&*it->getByPosition(column_number).column);
-			}
-
-			queue.push(SortCursor(&all_columns[i], &sort_columns[i], &description));
+			cursors[i] = SortCursorImpl(*it, description);
+			queue.push(SortCursor(&cursors[i]));
 		}
 	}
 
@@ -78,40 +67,28 @@ Block MergingSortedBlockInputStream::readImpl()
 		queue.pop();
 
 		for (size_t i = 0; i < num_columns; ++i)
-			merged_columns[i]->insert((*(*current.all_columns)[i])[current.pos]);
+			merged_columns[i]->insert((*current->all_columns[i])[current->pos]);
 
-		if (!current.isLast())
-			queue.push(current.next());
+		if (!current->isLast())
+		{
+			current->next();
+			queue.push(current);
+		}
 		else
 		{
 			/// Достаём из соответствующего источника следующий блок, если есть.
-			/// Источник, соответствующий этому курсору, ищем с помощью небольшого хака (сравнивая адреса all_columns).
 
 			size_t i = 0;
-			size_t size = all_columns.size();
+			size_t size = cursors.size();
 			for (; i < size; ++i)
 			{
-				if (&all_columns[i] == current.all_columns)
+				if (&cursors[i] == current.impl)
 				{
 					source_blocks[i] = inputs[i]->read();
 					if (source_blocks[i])
 					{
-						all_columns[i].clear();
-						sort_columns[i].clear();
-						
-						for (size_t j = 0; j < num_columns; ++j)
-							all_columns[i].push_back(&*source_blocks[i].getByPosition(j).column);
-
-						for (size_t j = 0, size = description.size(); j < size; ++j)
-						{
-							size_t column_number = !description[j].column_name.empty()
-								? source_blocks[i].getPositionByName(description[j].column_name)
-								: description[j].column_number;
-
-							sort_columns[i].push_back(&*source_blocks[i].getByPosition(column_number).column);
-						}
-
-						queue.push(SortCursor(&all_columns[i], &sort_columns[i], &description));
+						cursors[i].reset(*it);
+						queue.push(SortCursor(&cursors[i]));
 					}
 
 					break;

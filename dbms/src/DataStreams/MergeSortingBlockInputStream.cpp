@@ -57,9 +57,8 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 	typedef std::priority_queue<SortCursor> Queue;
 	Queue queue;
 
-	typedef std::vector<ConstColumnPlainPtrs> ConstColumnPlainPtrsForBlocks;
-	ConstColumnPlainPtrsForBlocks all_columns(blocks.size());
-	ConstColumnPlainPtrsForBlocks sort_columns(blocks.size());
+	typedef std::vector<SortCursorImpl> CursorImpls;
+	CursorImpls cursors(blocks.size());
 
 	size_t i = 0;
 	size_t num_columns = blocks[0].columns();
@@ -68,19 +67,8 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 		if (!*it)
 			continue;
 
-		for (size_t j = 0; j < num_columns; ++j)
-			all_columns[i].push_back(&*it->getByPosition(j).column);
-
-		for (size_t j = 0, size = description.size(); j < size; ++j)
-		{
-			size_t column_number = !description[j].column_name.empty()
-				? it->getPositionByName(description[j].column_name)
-				: description[j].column_number;
-
-			sort_columns[i].push_back(&*it->getByPosition(column_number).column);
-		}
-
-		queue.push(SortCursor(&all_columns[i], &sort_columns[i], &description));
+		cursors[i] = SortCursorImpl(*it, description);
+		queue.push(SortCursor(&cursors[i]));
 	}
 
 	ColumnPlainPtrs merged_columns;
@@ -94,10 +82,13 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 		queue.pop();
 
 		for (size_t i = 0; i < num_columns; ++i)
-			merged_columns[i]->insert((*(*current.all_columns)[i])[current.pos]);
+			merged_columns[i]->insert((*current->all_columns[i])[current->pos]);
 
-		if (!current.isLast())
-			queue.push(current.next());
+		if (!current->isLast())
+		{
+			current->next();
+			queue.push(current);
+		}
 	}
 
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)

@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <DB/Core/Types.h>
+#include <DB/Core/Block.h>
 #include <DB/Columns/IColumn.h>
 
 
@@ -28,30 +29,70 @@ typedef std::vector<SortColumnDescription> SortDescription;
 
 
 /** Курсор, позволяющий сравнивать соответствующие строки в разных блоках.
+  * Курсор двигается по одному блоку.
   * Для использования в priority queue.
   */
-struct SortCursor
+struct SortCursorImpl
 {
-	ConstColumnPlainPtrs * all_columns;
-	ConstColumnPlainPtrs * sort_columns;
+	ConstColumnPlainPtrs all_columns;
+	ConstColumnPlainPtrs sort_columns;
+	SortDescription desc;
 	size_t sort_columns_size;
 	size_t pos;
 	size_t rows;
-	const SortDescription * desc;
+	
+	SortCursorImpl() {}
 
-	SortCursor(ConstColumnPlainPtrs * all_columns_, ConstColumnPlainPtrs * sort_columns_, const SortDescription * desc_, size_t pos_ = 0)
-		: all_columns(all_columns_), sort_columns(sort_columns_), sort_columns_size(sort_columns->size()),
-		pos(pos_), rows((*all_columns)[0]->size()), desc(desc_)
+	SortCursorImpl(const Block & block, const SortDescription & desc_)
+		: desc(desc_), sort_columns_size(desc.size())
 	{
+		reset(block);
 	}
 
-	/** Инвертировано, чтобы из priority queue элементы вынимались в нужном порядке.
-	  */
+	/// Установить курсор в начало нового блока.
+	void reset(const Block & block)
+	{
+		all_columns.clear();
+		sort_columns.clear();
+		
+		size_t num_columns = block.columns();
+
+		for (size_t j = 0; j < num_columns; ++j)
+			all_columns.push_back(&*block.getByPosition(j).column);
+
+		for (size_t j = 0, size = desc.size(); j < size; ++j)
+		{
+			size_t column_number = !desc[j].column_name.empty()
+				? block.getPositionByName(desc[j].column_name)
+				: desc[j].column_number;
+
+			sort_columns.push_back(&*block.getByPosition(column_number).column);
+		}
+
+		pos = 0;
+		rows = all_columns[0]->size();
+	}
+
+	bool isLast() const { return pos + 1 >= rows; }
+	void next() { ++pos; }
+};
+
+
+/// Для лёгкости копирования.
+struct SortCursor
+{
+	SortCursorImpl * impl;
+
+	SortCursor(SortCursorImpl * impl_) : impl(impl_) {}
+	SortCursorImpl * operator-> () { return impl; }
+	const SortCursorImpl * operator-> () const { return impl; }
+
+	/// Инвертировано, чтобы из priority queue элементы вынимались в нужном порядке.
 	bool operator< (const SortCursor & rhs) const
 	{
-		for (size_t i = 0; i < sort_columns_size; ++i)
+		for (size_t i = 0; i < impl->sort_columns_size; ++i)
 		{
-			int res = (*desc)[i].direction * (*sort_columns)[i]->compareAt(pos, rhs.pos, *(*rhs.sort_columns)[i]);
+			int res = impl->desc[i].direction * impl->sort_columns[i]->compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]));
 			if (res > 0)
 				return true;
 			if (res < 0)
@@ -59,9 +100,6 @@ struct SortCursor
 		}
 		return false;
 	}
-
-	bool isLast() const { return pos + 1 >= rows; }
-	SortCursor next() const { return SortCursor(all_columns, sort_columns, desc, pos + 1); }
 };
 
 }
