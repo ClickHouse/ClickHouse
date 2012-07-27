@@ -20,9 +20,9 @@ namespace DB
 
 void Connection::connect()
 {
+	socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
 	socket.setReceiveTimeout(receive_timeout);
 	socket.setSendTimeout(send_timeout);
-	socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
 
 	connected = true;
 
