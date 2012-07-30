@@ -46,6 +46,7 @@ class StorageMergeTree : public IStorage
 {
 friend class MergeTreeBlockInputStream;
 friend class MergeTreeBlockOutputStream;
+friend class MergedBlockOutputStream;
 
 public:
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
@@ -60,6 +61,8 @@ public:
 		Context & context_,
 		ASTPtr & primary_expr_ast_, const String & date_column_name_,
 		size_t index_granularity_);
+
+    ~StorageMergeTree();
 
 	std::string getName() const { return "MergeTree"; }
 	std::string getTableName() const { return name; }

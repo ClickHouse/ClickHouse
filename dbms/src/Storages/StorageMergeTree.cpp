@@ -20,7 +20,9 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
+#include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -214,6 +216,134 @@ private:
 	{
 		/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
 		
+		writeIntBinary(plain.count(), marks);
+		writeIntBinary(compressed.offset(), marks);
+
+		prev_mark += storage.index_granularity;
+		return prev_mark;
+	}
+};
+
+
+/** Для записи куска, полученного слиянием нескольких других.
+  * Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
+  */
+class MergedBlockOutputStream : public IBlockOutputStream
+{
+public:
+	MergedBlockOutputStream(StorageMergeTree & storage_,
+		UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
+		: storage(storage_), index_offset(0)
+	{
+		part_name = storage.getPartName(
+			Yandex::DayNum_t(min_date), Yandex::DayNum_t(max_date),
+			min_part_id, max_part_id, level);
+
+		part_tmp_path = storage.full_path + "tmp_" + part_name + "/";
+		part_res_path = storage.full_path + part_name + "/";
+
+		Poco::File(part_tmp_path).createDirectories();
+
+		index_stream = new WriteBufferFromFile(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_EXCL | O_CREAT | O_WRONLY);
+
+		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+		{
+			String escaped_column_name = escapeForFileName(it->first);
+			
+			column_streams[it->first] = new ColumnStream(
+				part_tmp_path + escaped_column_name + ".bin",
+				part_tmp_path + escaped_column_name + ".mrk");
+		}
+	}
+
+	void write(const Block & block)
+	{
+		size_t rows = block.rows();
+
+		/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
+		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
+		PrimaryColumns primary_columns;
+
+		for (size_t i = 0, size = storage.sort_descr.size(); i < size; ++i)
+			primary_columns.push_back(
+				!storage.sort_descr[i].column_name.empty()
+					? &block.getByName(storage.sort_descr[i].column_name)
+					: &block.getByPosition(storage.sort_descr[i].column_number));
+
+		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
+				(*it)->type->serializeBinary((*(*it)->column)[i], *index_stream);
+
+		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+		{
+			const ColumnWithNameAndType & column = block.getByName(it->first);
+			ColumnStream & stream = *column_streams[it->first];
+
+			size_t prev_mark = 0;
+			column.type->serializeBinary(*column.column, stream.compressed,
+				boost::bind(&MergedBlockOutputStream::writeCallback, this,
+					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
+		}
+
+		index_offset = storage.index_granularity - rows % storage.index_granularity;
+	}
+
+	void writeSuffix()
+	{
+		/// Заканчиваем запись.
+		index_stream = NULL;
+		column_streams.clear();
+		
+		/// Переименовываем кусок.
+		Poco::File(part_tmp_path).renameTo(part_res_path);
+
+		/// А добавление нового куска в набор (и удаление исходных кусков) сделает вызывающая сторона.
+	}
+
+	BlockOutputStreamPtr clone() { throw Exception("Cannot clone MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED); }
+
+private:
+	StorageMergeTree & storage;
+	String part_name;
+	String part_tmp_path;
+	String part_res_path;
+
+	struct ColumnStream
+	{
+		ColumnStream(const String & data_path, const std::string & marks_path) :
+			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_EXCL | O_CREAT | O_WRONLY),
+			compressed(plain),
+			marks(marks_path, 4096, O_EXCL | O_CREAT | O_WRONLY) {}
+
+		WriteBufferFromFile plain;
+		CompressedWriteBuffer compressed;
+		WriteBufferFromFile marks;
+	};
+
+	typedef std::map<String, SharedPtr<ColumnStream> > ColumnStreams;
+	ColumnStreams column_streams;
+
+	SharedPtr<WriteBuffer> index_stream;
+
+	/// Смещение до первой строчки блока, для которой надо записать индекс.
+	size_t index_offset;
+	
+
+	/// Вызывается каждые index_granularity строк и пишет в файл с засечками (.mrk).
+	size_t writeCallback(size_t & prev_mark,
+		WriteBufferFromFile & plain,
+		CompressedWriteBuffer & compressed,
+		WriteBufferFromFile & marks)
+	{
+		/// Если есть index_offset, то первая засечка идёт не сразу, а после этого количества строк.
+		if (prev_mark == 0 && index_offset != 0)
+		{
+			prev_mark = index_offset;
+			return prev_mark;
+		}
+		
+		/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
+
 		writeIntBinary(plain.count(), marks);
 		writeIntBinary(compressed.offset(), marks);
 
@@ -504,6 +634,15 @@ StorageMergeTree::StorageMergeTree(
 	primary_key_sample = primary_expr->getSampleBlock();
 
 	loadDataParts();
+}
+
+
+StorageMergeTree::~StorageMergeTree()
+{
+	LOG_DEBUG(log, "Waiting for merge tree to finish.");
+	
+	if (merge_thread.joinable())
+		merge_thread.join();
 }
 
 
@@ -967,7 +1106,66 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 
 void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator right)
 {
-	// TODO
+	Names all_column_names;
+	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
+		all_column_names.push_back(it->first);
+
+	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+
+	StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart;
+	new_data_part->left_date = (*left)->left_date;
+	new_data_part->right_date = (*right)->right_date;
+	new_data_part->left = (*left)->left;
+	new_data_part->right = (*right)->right;
+	new_data_part->level = 1 + std::max((*left)->level, (*right)->level);
+	new_data_part->name = getPartName(
+		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
+	new_data_part->size = (*left)->size + (*right)->size;
+	new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
+	new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
+
+	/// Читаем из левого и правого куска, сливаем и пишем в новый.
+	BlockInputStreams src_streams;
+
+	Row empty_prefix;
+	Range empty_range;
+	
+	src_streams.push_back(new MergeTreeBlockInputStream(
+		full_path + (*left)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
+
+	src_streams.push_back(new MergeTreeBlockInputStream(
+		full_path + (*right)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
+
+	BlockInputStreamPtr merged_stream = new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE);
+	BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
+		(*left)->left_date, (*right)->right_date, (*left)->left, (*right)->right, 1 + std::max((*left)->level, (*right)->level));
+
+	copyData(*merged_stream, *to);
+
+	new_data_part->modification_time = time(0);
+
+	/// Добавляем новый кусок в набор.
+	const SharedPtr<StorageMergeTree::DataParts> current_data_parts = data_parts.get();
+	SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
+
+	if (new_data_parts->end() == new_data_parts->find(*left))
+		throw Exception("Logical error: cannot find data part " + (*left)->name + " in list", ErrorCodes::LOGICAL_ERROR);
+	if (new_data_parts->end() == new_data_parts->find(*right))
+		throw Exception("Logical error: cannot find data part " + (*right)->name + " in list", ErrorCodes::LOGICAL_ERROR);
+
+	new_data_parts->insert(new_data_part);
+	new_data_parts->erase(new_data_parts->find(*left));
+	new_data_parts->erase(new_data_parts->find(*right));
+	
+	data_parts.set(new_data_parts);
+
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+		all_data_parts.insert(new_data_part);
+	}
+
+	/// Удаляем старые куски.
+	clearOldParts();
 }
 
 }
