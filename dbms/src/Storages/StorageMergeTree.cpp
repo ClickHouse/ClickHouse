@@ -1122,70 +1122,85 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 
 void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator right)
 {
-	LOG_DEBUG(log, "Merging parts " << (*left)->name << " with " << (*right)->name);
-	
-	Names all_column_names;
-	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-		all_column_names.push_back(it->first);
-
-	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
-
-	StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart;
-	new_data_part->left_date = (*left)->left_date;
-	new_data_part->right_date = (*right)->right_date;
-	new_data_part->left = (*left)->left;
-	new_data_part->right = (*right)->right;
-	new_data_part->level = 1 + std::max((*left)->level, (*right)->level);
-	new_data_part->name = getPartName(
-		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
-	new_data_part->size = (*left)->size + (*right)->size;
-	new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
-	new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
-
-	/// Читаем из левого и правого куска, сливаем и пишем в новый.
-	BlockInputStreams src_streams;
-
-	Row empty_prefix;
-	Range empty_range;
-	
-	src_streams.push_back(new MergeTreeBlockInputStream(
-		full_path + (*left)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
-
-	src_streams.push_back(new MergeTreeBlockInputStream(
-		full_path + (*right)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
-
-	BlockInputStreamPtr merged_stream = new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE);
-	BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
-		(*left)->left_date, (*right)->right_date, (*left)->left, (*right)->right, 1 + std::max((*left)->level, (*right)->level));
-
-	copyData(*merged_stream, *to);
-
-	new_data_part->modification_time = time(0);
-
-	/// Добавляем новый кусок в набор.
-	const SharedPtr<StorageMergeTree::DataParts> current_data_parts = data_parts.get();
-	SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
-
-	if (new_data_parts->end() == new_data_parts->find(*left))
-		throw Exception("Logical error: cannot find data part " + (*left)->name + " in list", ErrorCodes::LOGICAL_ERROR);
-	if (new_data_parts->end() == new_data_parts->find(*right))
-		throw Exception("Logical error: cannot find data part " + (*right)->name + " in list", ErrorCodes::LOGICAL_ERROR);
-
-	new_data_parts->insert(new_data_part);
-	new_data_parts->erase(new_data_parts->find(*left));
-	new_data_parts->erase(new_data_parts->find(*right));
-	
-	data_parts.set(new_data_parts);
-
+	try
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
-		all_data_parts.insert(new_data_part);
+		LOG_DEBUG(log, "Merging parts " << (*left)->name << " with " << (*right)->name);
+
+		Names all_column_names;
+		for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
+			all_column_names.push_back(it->first);
+
+		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+
+		StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart;
+		new_data_part->left_date = (*left)->left_date;
+		new_data_part->right_date = (*right)->right_date;
+		new_data_part->left = (*left)->left;
+		new_data_part->right = (*right)->right;
+		new_data_part->level = 1 + std::max((*left)->level, (*right)->level);
+		new_data_part->name = getPartName(
+			new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
+		new_data_part->size = (*left)->size + (*right)->size;
+		new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
+		new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
+
+		/// Читаем из левого и правого куска, сливаем и пишем в новый.
+		BlockInputStreams src_streams;
+
+		Row empty_prefix;
+		Range empty_range;
+
+		src_streams.push_back(new MergeTreeBlockInputStream(
+			full_path + (*left)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
+
+		src_streams.push_back(new MergeTreeBlockInputStream(
+			full_path + (*right)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
+
+		BlockInputStreamPtr merged_stream = new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE);
+		BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
+			(*left)->left_date, (*right)->right_date, (*left)->left, (*right)->right, 1 + std::max((*left)->level, (*right)->level));
+
+		copyData(*merged_stream, *to);
+
+		new_data_part->modification_time = time(0);
+
+		/// Добавляем новый кусок в набор.
+		const SharedPtr<StorageMergeTree::DataParts> current_data_parts = data_parts.get();
+		SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
+
+		if (new_data_parts->end() == new_data_parts->find(*left))
+			throw Exception("Logical error: cannot find data part " + (*left)->name + " in list", ErrorCodes::LOGICAL_ERROR);
+		if (new_data_parts->end() == new_data_parts->find(*right))
+			throw Exception("Logical error: cannot find data part " + (*right)->name + " in list", ErrorCodes::LOGICAL_ERROR);
+
+		new_data_parts->insert(new_data_part);
+		new_data_parts->erase(new_data_parts->find(*left));
+		new_data_parts->erase(new_data_parts->find(*right));
+
+		data_parts.set(new_data_parts);
+
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+			all_data_parts.insert(new_data_part);
+		}
+
+		LOG_TRACE(log, "Merged parts " << (*left)->name << " with " << (*right)->name);
+
+		/// Удаляем старые куски.
+		clearOldParts();
 	}
-
-	LOG_TRACE(log, "Merged parts " << (*left)->name << " with " << (*right)->name);
-
-	/// Удаляем старые куски.
-	clearOldParts();
+	catch (const Poco::Exception & e)
+	{
+		merge_exception = e.clone();
+	}
+	catch (const std::exception & e)
+	{
+		merge_exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+	}
+	catch (...)
+	{
+		merge_exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+	}
 }
 
 }
