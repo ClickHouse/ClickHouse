@@ -301,7 +301,9 @@ public:
 					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
 		}
 
-		index_offset = storage.index_granularity - rows % storage.index_granularity;
+		index_offset = rows % storage.index_granularity
+			? (storage.index_granularity - rows % storage.index_granularity)
+			: 0;
 	}
 
 	void writeSuffix()
