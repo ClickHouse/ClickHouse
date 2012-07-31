@@ -1112,6 +1112,8 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 
 void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator right)
 {
+	LOG_DEBUG(log, "Merging parts " << (*left)->name << " with " << (*right)->name);
+	
 	Names all_column_names;
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 		all_column_names.push_back(it->first);
@@ -1169,6 +1171,8 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
 		all_data_parts.insert(new_data_part);
 	}
+
+	LOG_TRACE(log, "Merged parts " << (*left)->name << " with " << (*right)->name);
 
 	/// Удаляем старые куски.
 	clearOldParts();
