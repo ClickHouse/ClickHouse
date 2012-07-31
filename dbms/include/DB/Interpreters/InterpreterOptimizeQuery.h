@@ -24,7 +24,7 @@ public:
 		const ASTOptimizeQuery & ast = dynamic_cast<const ASTOptimizeQuery &>(*query_ptr);
 		context.assertTableExists(ast.database, ast.table);
 
-		(*context.databases)[ast.database][ast.table]->optimize();
+		(*context.databases)[ast.database.empty() ? context.current_database : ast.database][ast.table]->optimize();
 	}
 
 private:
