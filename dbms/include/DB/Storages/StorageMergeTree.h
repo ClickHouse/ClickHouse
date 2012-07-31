@@ -225,7 +225,6 @@ private:
 	void mergeImpl(DataParts::iterator left, DataParts::iterator right);
 
 	boost::thread merge_thread;
-	ExceptionPtr merge_exception;
 };
 
 }

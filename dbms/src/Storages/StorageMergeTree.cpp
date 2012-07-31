@@ -1013,9 +1013,6 @@ bool StorageMergeTree::merge()
 	if (merge_thread.joinable())
 		merge_thread.join();
 
-	if (merge_exception)
-		merge_exception->rethrow();
-
 	if (selectPartsToMerge(left, right))
 	{
 		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeImpl, this, left, right));
@@ -1194,7 +1191,6 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 	}
 	catch (const Exception & e)
 	{
-		merge_exception = e.clone();
 		LOG_ERROR(log, "Code: " << e.code() << ". " << e.displayText() << std::endl
 			<< std::endl
 			<< "Stack trace:" << std::endl
@@ -1202,17 +1198,14 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 	}
 	catch (const Poco::Exception & e)
 	{
-		merge_exception = e.clone();
 		LOG_ERROR(log, "Poco::Exception: " << e.code() << ". " << e.displayText());
 	}
 	catch (const std::exception & e)
 	{
-		merge_exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
 		LOG_ERROR(log, "std::exception: " << e.what());
 	}
 	catch (...)
 	{
-		merge_exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		LOG_ERROR(log, "Unknown exception");
 	}
 }
