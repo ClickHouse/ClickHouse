@@ -142,15 +142,21 @@ private:
 		String part_res_path = storage.full_path + part_name + "/";
 
 		Poco::File(part_tmp_path).createDirectories();
+		
+		LOG_TRACE(storage.log, "Calculating primary expression.");
 
 		/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
 		storage.primary_expr->execute(block);
+		
+		LOG_TRACE(storage.log, "Sorting by primary key.");
 
 		/// Сортируем.
 		sortBlock(block, storage.sort_descr);
 
 		/// Наконец-то можно писать данные на диск.
 		int flags = O_EXCL | O_CREAT | O_WRONLY;
+		
+		LOG_TRACE(storage.log, "Writing index.");
 
 		/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
 		{
@@ -170,6 +176,8 @@ private:
 					(*it)->type->serializeBinary((*(*it)->column)[i], index);
 		}
 		
+		LOG_TRACE(storage.log, "Writing data.");
+		
 		for (size_t i = 0; i < columns; ++i)
 		{
 			const ColumnWithNameAndType & column = block.getByPosition(i);
@@ -184,6 +192,8 @@ private:
 				boost::bind(&MergeTreeBlockOutputStream::writeCallback, this,
 					boost::ref(prev_mark), boost::ref(plain), boost::ref(compressed), boost::ref(marks)));
 		}
+		
+		LOG_TRACE(storage.log, "Renaming.");
 
 		/// Переименовываем кусок.
 		Poco::File(part_tmp_path).renameTo(part_res_path);
