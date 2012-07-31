@@ -203,7 +203,7 @@ private:
 		const SharedPtr<StorageMergeTree::DataParts> current_data_parts = storage.data_parts.get();
 		SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
 
-		StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart;
+		StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart(storage);
 		new_data_part->left_date = Yandex::DayNum_t(min_date);
 		new_data_part->right_date = Yandex::DayNum_t(max_date);
 		new_data_part->left = part_id;
@@ -948,7 +948,7 @@ void StorageMergeTree::loadDataParts()
 		if (!(file_name_regexp.match(file_name, 0, matches) && 6 == matches.size()))
 			continue;
 			
-		DataPartPtr part = new DataPart;
+		DataPartPtr part = new DataPart(*this);
 		part->left_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
 		part->right_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
 		part->left = Poco::NumberParser::parseUnsigned64(file_name.substr(matches[3].offset, matches[3].length));
@@ -965,17 +965,19 @@ void StorageMergeTree::loadDataParts()
 		part->left_month = date_lut.toFirstDayOfMonth(part->left_date);
 		part->right_month = date_lut.toFirstDayOfMonth(part->right_date);
 
-		
 		new_data_parts->insert(part);
 	}
-
-	data_parts.set(new_data_parts);
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
 		all_data_parts = *new_data_parts;
 	}
-	
+
+	/// Удаляем из набора актуальных кусков куски, которые содержатся в другом куске (которые были склеены).
+	// TODO
+
+	data_parts.set(new_data_parts);
+
 	LOG_DEBUG(log, "Loaded data parts (" << new_data_parts->size() << " items)");
 }
 
@@ -1134,7 +1136,7 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 
-		StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart;
+		StorageMergeTree::DataPartPtr new_data_part = new DataPart(*this);
 		new_data_part->left_date = (*left)->left_date;
 		new_data_part->right_date = (*right)->right_date;
 		new_data_part->left = (*left)->left;
@@ -1168,20 +1170,24 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 
 		new_data_part->modification_time = time(0);
 
-		/// Добавляем новый кусок в набор.
-		const SharedPtr<StorageMergeTree::DataParts> current_data_parts = data_parts.get();
-		SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
+		{
+			/// Добавляем новый кусок в набор.
+			const SharedPtr<StorageMergeTree::DataParts> current_data_parts = data_parts.get();
+			SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
 
-		if (new_data_parts->end() == new_data_parts->find(*left))
-			throw Exception("Logical error: cannot find data part " + (*left)->name + " in list", ErrorCodes::LOGICAL_ERROR);
-		if (new_data_parts->end() == new_data_parts->find(*right))
-			throw Exception("Logical error: cannot find data part " + (*right)->name + " in list", ErrorCodes::LOGICAL_ERROR);
+			if (new_data_parts->end() == new_data_parts->find(*left))
+				throw Exception("Logical error: cannot find data part " + (*left)->name + " in list", ErrorCodes::LOGICAL_ERROR);
+			if (new_data_parts->end() == new_data_parts->find(*right))
+				throw Exception("Logical error: cannot find data part " + (*right)->name + " in list", ErrorCodes::LOGICAL_ERROR);
 
-		new_data_parts->insert(new_data_part);
-		new_data_parts->erase(new_data_parts->find(*left));
-		new_data_parts->erase(new_data_parts->find(*right));
+			new_data_parts->insert(new_data_part);
+			new_data_parts->erase(new_data_parts->find(*left));
+			new_data_parts->erase(new_data_parts->find(*right));
 
-		data_parts.set(new_data_parts);
+			data_parts.set(new_data_parts);
+
+			/// Версия current_data_parts больше не актуальна.
+		}
 
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);

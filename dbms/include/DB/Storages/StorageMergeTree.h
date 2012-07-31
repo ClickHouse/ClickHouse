@@ -124,6 +124,9 @@ private:
 	/// Описание куска с данными.
 	struct DataPart
 	{
+		DataPart(StorageMergeTree & storage_) : storage(storage_) {}
+
+		StorageMergeTree & storage;
 		Yandex::DayNum_t left_date;
 		Yandex::DayNum_t right_date;
 		UInt64 left;
@@ -137,13 +140,15 @@ private:
 		Yandex::DayNum_t left_month;
 		Yandex::DayNum_t right_month;
 
-		/// TODO рефкаунт для того, чтобы можно было определить, когда можно удалить кусок.
-
 		/// NOTE можно загружать индекс и засечки в оперативку
 
 		void remove() const
 		{
-			/// TODO
+			String from = storage.full_path + name + "/";
+			String to = storage.full_path + "tmp2_" + name + "/";
+
+			Poco::File(from).renameTo(to);
+			Poco::File(to).remove(true);
 		}
 
 		bool operator< (const DataPart & rhs) const
