@@ -5,6 +5,7 @@
 #include <DB/Parsers/ASTRenameQuery.h>
 #include <DB/Parsers/ASTShowTablesQuery.h>
 #include <DB/Parsers/ASTUseQuery.h>
+#include <DB/Parsers/ASTOptimizeQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
@@ -13,6 +14,7 @@
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/InterpreterShowTablesQuery.h>
 #include <DB/Interpreters/InterpreterUseQuery.h>
+#include <DB/Interpreters/InterpreterOptimizeQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
 
 
@@ -63,6 +65,11 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 		InterpreterUseQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
+	else if (dynamic_cast<ASTOptimizeQuery *>(&*query_ptr))
+	{
+		InterpreterOptimizeQuery interpreter(query_ptr, context);
+		interpreter.execute();
+	}
 	else
 		throw Exception("Unknown type of query: " + query_ptr->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 }
@@ -107,6 +114,11 @@ BlockIO InterpreterQuery::execute()
 	else if (dynamic_cast<ASTUseQuery *>(&*query_ptr))
 	{
 		InterpreterUseQuery interpreter(query_ptr, context);
+		interpreter.execute();
+	}
+	else if (dynamic_cast<ASTOptimizeQuery *>(&*query_ptr))
+	{
+		InterpreterOptimizeQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else

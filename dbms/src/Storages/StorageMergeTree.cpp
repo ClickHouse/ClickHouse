@@ -521,9 +521,9 @@ public:
 
 			mark_number = min_mark_number;
 			rows_limit = (max_mark_number - min_mark_number + 1) * storage.index_granularity;
-		}
 
-		std::cerr << mark_number << ", " << rows_limit << std::endl;
+			std::cerr << mark_number << ", " << rows_limit << std::endl;
+		}
 	}
 
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску

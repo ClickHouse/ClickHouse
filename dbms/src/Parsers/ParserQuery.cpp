@@ -4,6 +4,7 @@
 #include <DB/Parsers/ParserDropQuery.h>
 #include <DB/Parsers/ParserRenameQuery.h>
 #include <DB/Parsers/ParserShowTablesQuery.h>
+#include <DB/Parsers/ParserOptimizeQuery.h>
 #include <DB/Parsers/ParserUseQuery.h>
 #include <DB/Parsers/ParserQuery.h>
 
@@ -21,6 +22,7 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected
 	ParserRenameQuery rename_p;
 	ParserDropQuery drop_p;
 	ParserUseQuery use_p;
+	ParserOptimizeQuery optimize_p;
 
 	bool res = show_tables_p.parse(pos, end, node, expected)
 		|| select_p.parse(pos, end, node, expected)
@@ -28,10 +30,11 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected
 		|| create_p.parse(pos, end, node, expected)
 		|| rename_p.parse(pos, end, node, expected)
 		|| drop_p.parse(pos, end, node, expected)
-		|| use_p.parse(pos, end, node, expected);
+		|| use_p.parse(pos, end, node, expected)
+		|| optimize_p.parse(pos, end, node, expected);
 
 	if (!res)
-		expected = "One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE";
+		expected = "One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, OPTIMIZE";
 
 	return res;
 }

@@ -79,6 +79,13 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 		formatAST(*use, s, indent, hilite, one_line);
 		return;
 	}
+
+	const ASTOptimizeQuery * optimize = dynamic_cast<const ASTOptimizeQuery *>(&ast);
+	if (optimize)
+	{
+		formatAST(*optimize, s, indent, hilite, one_line);
+		return;
+	}
 	
 	const ASTExpressionList * exp_list = dynamic_cast<const ASTExpressionList *>(&ast);
 	if (exp_list)
@@ -262,6 +269,12 @@ void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent, boo
 	}
 
 	s << (hilite ? hilite_keyword : "") << (ast.detach ? "DETACH TABLE " : "DROP TABLE ") << (ast.if_exists ? "IF EXISTS " : "") << (hilite ? hilite_none : "")
+		<< (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+}
+
+void formatAST(const ASTOptimizeQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? ast.database + "." : "") << ast.table;
 }
 
