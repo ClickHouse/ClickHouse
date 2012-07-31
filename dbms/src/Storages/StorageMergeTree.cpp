@@ -1189,17 +1189,28 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 		/// Удаляем старые куски.
 		clearOldParts();
 	}
+	catch (const Exception & e)
+	{
+		merge_exception = e.clone();
+		LOG_ERROR(log, "Code: " << e.code() << ". " << e.displayText() << std::endl
+			<< std::endl
+			<< "Stack trace:" << std::endl
+			<< e.getStackTrace().toString());
+	}
 	catch (const Poco::Exception & e)
 	{
 		merge_exception = e.clone();
+		LOG_ERROR(log, "Poco::Exception: " << e.code() << ". " << e.displayText());
 	}
 	catch (const std::exception & e)
 	{
 		merge_exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+		LOG_ERROR(log, "std::exception: " << e.what());
 	}
 	catch (...)
 	{
 		merge_exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+		LOG_ERROR(log, "Unknown exception");
 	}
 }
 
