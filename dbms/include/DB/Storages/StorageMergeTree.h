@@ -94,7 +94,7 @@ public:
 	  */
 	bool optimize()
 	{
-		return merge();
+		return merge(false);
 	}
 
 //	void drop();
@@ -225,7 +225,7 @@ private:
 	void getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range);
 
 	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке.
-	bool merge();
+	bool merge(bool async = true);
 	bool selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right);
 	void mergeImpl(DataParts::iterator left, DataParts::iterator right);
 

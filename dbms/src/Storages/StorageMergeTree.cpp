@@ -1049,7 +1049,7 @@ void StorageMergeTree::clearOldParts()
 }
 
 
-bool StorageMergeTree::merge()
+bool StorageMergeTree::merge(bool async)
 {
 	DataParts::iterator left;
 	DataParts::iterator right;
@@ -1059,7 +1059,11 @@ bool StorageMergeTree::merge()
 
 	if (selectPartsToMerge(left, right))
 	{
-		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeImpl, this, left, right));
+		if (async)
+			merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeImpl, this, left, right));
+		else
+			mergeImpl(left, right);
+		
 		return true;
 	}
 
