@@ -21,6 +21,7 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
+#include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -1144,17 +1145,19 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 		new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
 		new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
 
-		/// Читаем из левого и правого куска, сливаем и пишем в новый.
+		/** Читаем из левого и правого куска, сливаем и пишем в новый.
+		  * Попутно вычисляем выражение для сортировки.
+		  */
 		BlockInputStreams src_streams;
 
 		Row empty_prefix;
 		Range empty_range;
 
-		src_streams.push_back(new MergeTreeBlockInputStream(
-			full_path + (*left)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
+		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
+			full_path + (*left)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range), primary_expr));
 
-		src_streams.push_back(new MergeTreeBlockInputStream(
-			full_path + (*right)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range));
+		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
+			full_path + (*right)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range), primary_expr));
 
 		BlockInputStreamPtr merged_stream = new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE);
 		BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
