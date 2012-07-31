@@ -973,9 +973,47 @@ void StorageMergeTree::loadDataParts()
 		all_data_parts = *new_data_parts;
 	}
 
-	/// Удаляем из набора актуальных кусков куски, которые содержатся в другом куске (которые были склеены).
-	// TODO
+	/** Удаляем из набора актуальных кусков куски, которые содержатся в другом куске (которые были склеены),
+	  *  но по каким-то причинам остались лежать в файловой системе.
+	  * Удаление файлов будет произведено потом в методе clearOldParts.
+	  */
 
+	DataParts::iterator prev_jt = new_data_parts->begin();
+	DataParts::iterator curr_jt = prev_jt;
+	++curr_jt;
+	while (curr_jt != new_data_parts->end())
+	{
+		/// Куски данных за разные месяцы рассматривать не будем
+		if ((*curr_jt)->left_month != (*curr_jt)->right_month
+			|| (*curr_jt)->right_month != (*prev_jt)->left_month
+			|| (*prev_jt)->left_month != (*prev_jt)->right_month)
+		{
+			++prev_jt;
+			++curr_jt;
+			continue;
+		}
+
+		if ((*curr_jt)->contains(**prev_jt))
+		{
+			LOG_WARNING(log, "Part " << (*curr_jt)->name << " contains " << (*prev_jt)->name);
+			new_data_parts->erase(prev_jt);
+			prev_jt = curr_jt;
+			++curr_jt;
+		}
+		else if ((*prev_jt)->contains(**curr_jt))
+		{
+			LOG_WARNING(log, "Part " << (*prev_jt)->name << " contains " << (*curr_jt)->name);
+			new_data_parts->erase(curr_jt++);
+		}
+		else
+		{
+			++prev_jt;
+			++curr_jt;
+		}
+	}
+
+	/** Устанавливаем актуальную версию набора кусков.
+	  */
 	data_parts.set(new_data_parts);
 
 	LOG_DEBUG(log, "Loaded data parts (" << new_data_parts->size() << " items)");
