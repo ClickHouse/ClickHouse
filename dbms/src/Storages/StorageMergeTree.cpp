@@ -105,6 +105,11 @@ public:
 			writePart(it->second.block, it->second.min_date, it->second.max_date);
 	}
 
+	void writeSuffix()
+	{
+		storage.merge();
+	}
+
 	BlockOutputStreamPtr clone() { return new MergeTreeBlockOutputStream(storage); }
 
 private:
@@ -610,10 +615,11 @@ StorageMergeTree::StorageMergeTree(
 	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 	Context & context_,
 	ASTPtr & primary_expr_ast_, const String & date_column_name_,
-	size_t index_granularity_)
+	size_t index_granularity_, size_t delay_time_to_merge_different_level_parts_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), columns(columns_),
 	context(context_), primary_expr_ast(primary_expr_ast_->clone()),
 	date_column_name(date_column_name_), index_granularity(index_granularity_),
+	delay_time_to_merge_different_level_parts(delay_time_to_merge_different_level_parts_),
 	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name))
 {
 	/// создаём директорию, если её нет
@@ -988,7 +994,7 @@ void StorageMergeTree::clearOldParts()
 }
 
 
-bool StorageMergeTree::merge(size_t delay_time_to_merge_different_level_parts)
+bool StorageMergeTree::merge()
 {
 	DataParts::iterator left;
 	DataParts::iterator right;
@@ -999,7 +1005,7 @@ bool StorageMergeTree::merge(size_t delay_time_to_merge_different_level_parts)
 	if (merge_exception)
 		merge_exception->rethrow();
 
-	if (selectPartsToMerge(left, right, delay_time_to_merge_different_level_parts))
+	if (selectPartsToMerge(left, right))
 	{
 		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeImpl, this, left, right));
 		return true;
@@ -1009,7 +1015,7 @@ bool StorageMergeTree::merge(size_t delay_time_to_merge_different_level_parts)
 }
 
 
-bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right, size_t delay_time_to_merge_different_level_parts)
+bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
 

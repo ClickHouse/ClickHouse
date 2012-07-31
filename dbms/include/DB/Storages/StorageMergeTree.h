@@ -11,6 +11,10 @@
 #include <DB/Storages/IStorage.h>
 
 
+/// Задержка от времени модификации куска по-умолчанию, после которой можно объединять куски разного уровня.
+#define DEFAULT_DELAY_TIME_TO_MERGE_DIFFERENT_LEVEL_PARTS 3600
+
+
 namespace DB
 {
 
@@ -60,7 +64,8 @@ public:
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_, const String & date_column_name_,
-		size_t index_granularity_);
+		size_t index_granularity_,
+		size_t delay_time_to_merge_different_level_parts_ = DEFAULT_DELAY_TIME_TO_MERGE_DIFFERENT_LEVEL_PARTS);
 
     ~StorageMergeTree();
 
@@ -85,9 +90,12 @@ public:
 
 	/** Выполнить очередной шаг объединения кусков.
 	  * Для нормальной работы, этот метод требуется вызывать постоянно.
-	  * (С некоторой задержкой, если возвращено has_more_work = false.)
+	  * (С некоторой задержкой, если возвращено false.)
 	  */
-//	void optimize(bool & done_something, bool & has_more_work);
+	bool optimize()
+	{
+		return merge();
+	}
 
 //	void drop();
 	
@@ -103,6 +111,7 @@ private:
 	ASTPtr primary_expr_ast;
 	String date_column_name;
 	size_t index_granularity;
+	size_t delay_time_to_merge_different_level_parts;
 
 	SharedPtr<Expression> primary_expr;
 	SortDescription sort_descr;
@@ -211,8 +220,8 @@ private:
 	void getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range);
 
 	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке.
-	bool merge(size_t delay_time_to_merge_different_level_parts);
-	bool selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right, size_t delay_time_to_merge_different_level_parts);
+	bool merge();
+	bool selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right);
 	void mergeImpl(DataParts::iterator left, DataParts::iterator right);
 
 	boost::thread merge_thread;

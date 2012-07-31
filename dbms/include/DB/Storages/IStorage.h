@@ -105,8 +105,9 @@ public:
 	}
 
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
+	  * Возвращает - была ли выполнена какая-либо работа.
 	  */
-	virtual void optimize(bool & done_something, bool & has_more_work)
+	virtual bool optimize()
 	{
 		throw Exception("Method optimize() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
