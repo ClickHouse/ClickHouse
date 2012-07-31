@@ -994,7 +994,9 @@ void StorageMergeTree::clearOldParts()
 	LOG_TRACE(log, "Clearing old parts");
 	for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
 	{
-		if (it->referenceCount() == 1)
+		int ref_count = it->referenceCount();
+		LOG_TRACE(log, (*it)->name << ": ref_count = " << ref_count);
+		if (ref_count == 1)
 		{
 			LOG_DEBUG(log, "Removing part " << (*it)->name);
 			
