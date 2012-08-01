@@ -1051,6 +1051,15 @@ void StorageMergeTree::clearOldParts()
 
 bool StorageMergeTree::merge(bool async)
 {
+	Poco::ScopedTry<Poco::FastMutex> lock;
+
+	/// Если уже мерджим - то можно ничего не делать.
+	if (!lock.lock(&merge_mutex))
+	{
+		LOG_TRACE(log, "Already merging.");
+		return false;
+	}
+	
 	DataParts::iterator left;
 	DataParts::iterator right;
 

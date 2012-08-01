@@ -230,6 +230,7 @@ private:
 	void mergeImpl(DataParts::iterator left, DataParts::iterator right);
 
 	boost::thread merge_thread;
+	Poco::FastMutex merge_mutex;
 };
 
 }
