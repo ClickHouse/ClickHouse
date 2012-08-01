@@ -43,19 +43,21 @@ Block MergingSortedBlockInputStream::readImpl()
 	ColumnPlainPtrs merged_columns;
 
 	/// Клонируем структуру первого непустого блока источников.
-	Blocks::const_iterator it = source_blocks.begin();
-	for (; it != source_blocks.end(); ++it)
 	{
-		if (*it)
+		Blocks::const_iterator it = source_blocks.begin();
+		for (; it != source_blocks.end(); ++it)
 		{
-			merged_block = it->cloneEmpty();
-			break;
+			if (*it)
+			{
+				merged_block = it->cloneEmpty();
+				break;
+			}
 		}
-	}
 
-	/// Если все входные блоки пустые.
-	if (it == source_blocks.end())
-		return Block();
+		/// Если все входные блоки пустые.
+		if (it == source_blocks.end())
+			return Block();
+	}
 		
 	for (size_t i = 0; i < num_columns; ++i)
 		merged_columns.push_back(&*merged_block.getByPosition(i).column);
@@ -87,7 +89,7 @@ Block MergingSortedBlockInputStream::readImpl()
 					source_blocks[i] = inputs[i]->read();
 					if (source_blocks[i])
 					{
-						cursors[i].reset(*it);
+						cursors[i].reset(source_blocks[i]);
 						queue.push(SortCursor(&cursors[i]));
 					}
 
