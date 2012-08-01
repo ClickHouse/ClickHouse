@@ -17,7 +17,7 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 public:
 	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
 		: inputs(inputs_), description(description_), max_block_size(max_block_size_), first(true),
-		num_columns(0), source_blocks(inputs.size()), cursors(inputs.size())
+		num_columns(0), source_blocks(inputs.size()), cursors(inputs.size()), log(&Logger::get("MergingSortedBlockInputStream"))
 	{
 		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
@@ -44,6 +44,8 @@ private:
 
 	typedef std::priority_queue<SortCursor> Queue;
 	Queue queue;
+
+	Logger * log;
 };
 
 }

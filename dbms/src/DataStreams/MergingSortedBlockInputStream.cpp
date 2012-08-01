@@ -1,4 +1,5 @@
 #include <queue>
+#include <iomanip>
 
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 
@@ -105,6 +106,14 @@ Block MergingSortedBlockInputStream::readImpl()
 		if (merged_rows == max_block_size)
 			return merged_block;
 	}
+
+	const BlockStreamProfileInfo & profile_info = getInfo();
+	double seconds = profile_info.work_stopwatch.elapsedSeconds();
+	LOG_DEBUG(log, std::fixed << std::setprecision(2)
+		<< "Merge sorted " << profile_info.blocks << " blocks, " << profile_info.rows << " rows"
+		<< " in " << seconds << " sec., "
+		<< profile_info.rows / seconds << " rows/sec., "
+		<< profile_info.bytes / 1000000.0 / seconds << " MiB/sec.");
 
 	inputs.clear();
 	return merged_block;
