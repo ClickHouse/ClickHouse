@@ -19,12 +19,18 @@ public:
 
 	void execute()
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
+		StoragePtr table;
 
-		const ASTOptimizeQuery & ast = dynamic_cast<const ASTOptimizeQuery &>(*query_ptr);
-		context.assertTableExists(ast.database, ast.table);
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
 
-		(*context.databases)[ast.database.empty() ? context.current_database : ast.database][ast.table]->optimize();
+			const ASTOptimizeQuery & ast = dynamic_cast<const ASTOptimizeQuery &>(*query_ptr);
+			context.assertTableExists(ast.database, ast.table);
+
+			table = (*context.databases)[ast.database.empty() ? context.current_database : ast.database][ast.table];
+		}
+
+		table->optimize();
 	}
 
 private:
