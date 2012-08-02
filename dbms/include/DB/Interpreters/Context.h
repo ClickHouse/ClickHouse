@@ -68,6 +68,8 @@ private:
 	Context * global_context;								/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
 public:
+	Context() : shared(new ContextShared) {}
+	
 	String getPath() const;
 	void setPath(const String & path);
 	
