@@ -93,6 +93,9 @@ public:
 
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);
+
+	/// Установить настройку по имени.
+	void setSetting(const String & name, const Field & value);
 	
 	const Functions & getFunctions() const									{ return shared->functions; }
 	const AggregateFunctionFactory & getAggregateFunctionsFactory() const	{ return shared->aggregate_function_factory; }

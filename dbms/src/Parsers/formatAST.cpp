@@ -31,113 +31,35 @@ static const char * hilite_none = "\033[0m";
 
 void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&ast);
-	if (select)
-	{
-		formatAST(*select, s, indent, hilite, one_line);
-		return;
-	}
 
-	const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&ast);
-	if (insert)
-	{
-		formatAST(*insert, s, indent, hilite, one_line);
-		return;
-	}
+#define DISPATCH(NAME) \
+	else if (const AST ## NAME * concrete = dynamic_cast<const AST ## NAME *>(&ast)) \
+		formatAST(*concrete, s, indent, hilite, one_line);
 
-	const ASTCreateQuery * create = dynamic_cast<const ASTCreateQuery *>(&ast);
-	if (create)
-	{
-		formatAST(*create, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTDropQuery * drop = dynamic_cast<const ASTDropQuery *>(&ast);
-	if (drop)
-	{
-		formatAST(*drop, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTRenameQuery * rename = dynamic_cast<const ASTRenameQuery *>(&ast);
-	if (rename)
-	{
-		formatAST(*rename, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTShowTablesQuery * show_tables = dynamic_cast<const ASTShowTablesQuery *>(&ast);
-	if (show_tables)
-	{
-		formatAST(*show_tables, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTUseQuery * use = dynamic_cast<const ASTUseQuery *>(&ast);
-	if (use)
-	{
-		formatAST(*use, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTOptimizeQuery * optimize = dynamic_cast<const ASTOptimizeQuery *>(&ast);
-	if (optimize)
-	{
-		formatAST(*optimize, s, indent, hilite, one_line);
-		return;
-	}
+	if (false) {}
+	DISPATCH(SelectQuery)
+	DISPATCH(InsertQuery)
+	DISPATCH(CreateQuery)
+	DISPATCH(DropQuery)
+	DISPATCH(RenameQuery)
+	DISPATCH(ShowTablesQuery)
+	DISPATCH(UseQuery)
+	DISPATCH(SetQuery)
+	DISPATCH(OptimizeQuery)
+	DISPATCH(ExpressionList)
+	DISPATCH(Function)
+	DISPATCH(Identifier)
+	DISPATCH(Literal)
+	DISPATCH(NameTypePair)
+	DISPATCH(Asterisk)
+	DISPATCH(OrderByElement)
+	else
+		throw DB::Exception("Unknown element in AST: " + std::string(ast.range.first, ast.range.second - ast.range.first),
+			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 	
-	const ASTExpressionList * exp_list = dynamic_cast<const ASTExpressionList *>(&ast);
-	if (exp_list)
-	{
-		formatAST(*exp_list, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTFunction * func = dynamic_cast<const ASTFunction *>(&ast);
-	if (func)
-	{
-		formatAST(*func, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTIdentifier * id = dynamic_cast<const ASTIdentifier *>(&ast);
-	if (id)
-	{
-		formatAST(*id, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTLiteral * lit = dynamic_cast<const ASTLiteral *>(&ast);
-	if (lit)
-	{
-		formatAST(*lit, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTNameTypePair * ntp = dynamic_cast<const ASTNameTypePair *>(&ast);
-	if (ntp)
-	{
-		formatAST(*ntp, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTAsterisk * asterisk = dynamic_cast<const ASTAsterisk *>(&ast);
-	if (asterisk)
-	{
-		formatAST(*asterisk, s, indent, hilite, one_line);
-		return;
-	}
-
-	const ASTOrderByElement * order_by_elem = dynamic_cast<const ASTOrderByElement *>(&ast);
-	if (order_by_elem)
-	{
-		formatAST(*order_by_elem, s, indent, hilite, one_line);
-		return;
-	}
-
-	throw DB::Exception("Unknown element in AST: " + std::string(ast.range.first, ast.range.second - ast.range.first), ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+#undef DISPATCH
 }
+
 
 void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
@@ -293,7 +215,20 @@ void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bo
 	}
 }
 
-void formatAST(const ASTShowTablesQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTSetQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << "SET " << (ast.global ? "GLOBAL " : "") << (hilite ? hilite_none : "");
+
+	for (ASTSetQuery::Changes::const_iterator it = ast.changes.begin(); it != ast.changes.end(); ++it)
+	{
+		if (it != ast.changes.begin())
+			s << ", ";
+
+		s << it->name << " = " << boost::apply_visitor(FieldVisitorToString(), it->value);
+	}
+}
+
+void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	if (ast.databases)
 	{

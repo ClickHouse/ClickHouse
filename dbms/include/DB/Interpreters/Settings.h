@@ -2,6 +2,7 @@
 
 #include <Poco/Timespan.h>
 #include <DB/Core/Defines.h>
+#include <DB/Core/Field.h>
 
 
 namespace DB
@@ -30,6 +31,21 @@ struct Settings
 		receive_timeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0)
 	{
+	}
+
+	/// Установить настройку по имени.
+	void set(const String & name, const Field & value)
+	{
+			 if (name == "max_block_size")		max_block_size 		= boost::get<UInt64>(value);
+		else if (name == "max_threads")			max_threads 		= boost::get<UInt64>(value);
+		else if (name == "max_query_size")		max_query_size 		= boost::get<UInt64>(value);
+		else if (name == "asynchronous")		asynchronous 		= boost::get<UInt64>(value);
+		else if (name == "interactive_delay") 	interactive_delay 	= boost::get<UInt64>(value);
+		else if (name == "connect_timeout")		connect_timeout 	= Poco::Timespan(boost::get<UInt64>(value), 0);
+		else if (name == "receive_timeout")		receive_timeout 	= Poco::Timespan(boost::get<UInt64>(value), 0);
+		else if (name == "send_timeout")		send_timeout 		= Poco::Timespan(boost::get<UInt64>(value), 0);
+		else
+			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 	}
 };
 

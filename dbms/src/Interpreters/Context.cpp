@@ -165,6 +165,13 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
+void Context::setSetting(const String & name, const Field & value)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	settings.set(name, value);
+}
+
+
 String Context::getCurrentDatabase() const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
