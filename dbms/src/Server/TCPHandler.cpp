@@ -424,24 +424,34 @@ void TCPHandler::run()
 
 		LOG_INFO(log, "Done processing connection.");
 	}
+	catch (DB::Exception & e)
+	{
+		LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
+			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
+	}
 	catch (Poco::Exception & e)
 	{
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.message() = " << e.message() << ", e.what() = " << e.what();
-		LOG_ERROR(log, s.str());
+		std::stringstream message;
+		message << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+
+		/// Таймаут - не ошибка.
+		if (!strcmp(e.what(), "Timeout"))
+		{
+			LOG_DEBUG(log, message.rdbuf());
+		}
+		else
+		{
+			LOG_ERROR(log, message.rdbuf());
+		}
 	}
 	catch (std::exception & e)
 	{
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
-		LOG_ERROR(log, s.str());
+		LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what());
 	}
 	catch (...)
 	{
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
-		LOG_ERROR(log, s.str());
+		LOG_ERROR(log, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ".");
 	}
 }
 
