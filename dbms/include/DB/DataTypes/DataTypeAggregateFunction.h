@@ -16,11 +16,11 @@ using Poco::SharedPtr;
 class DataTypeAggregateFunction : public IDataType
 {
 private:
-	const AggregateFunctionFactoryPtr factory;
+	AggregateFunctionFactory factory;
 	
 public:
-	DataTypeAggregateFunction() : factory(new AggregateFunctionFactory) {}
-	DataTypeAggregateFunction(const AggregateFunctionFactoryPtr & factory_) : factory(factory_) {}
+	DataTypeAggregateFunction() {}
+	DataTypeAggregateFunction(const AggregateFunctionFactory & factory_) : factory(factory_) {}
 	
 	std::string getName() const { return "AggregateFunction"; }
 	DataTypePtr clone() const { return new DataTypeAggregateFunction(factory); }

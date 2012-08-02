@@ -24,7 +24,7 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
 {
 	String name;
 	readStringBinary(name, istr);
-	AggregateFunctionPtr value = factory->getByTypeID(name);
+	AggregateFunctionPtr value = factory.getByTypeID(name);
 	value->deserializeMerge(istr);
 	field = value;
 }
@@ -64,7 +64,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 
 		String name;
 		readStringBinary(name, istr);
-		AggregateFunctionPtr value = factory->getByTypeID(name);
+		AggregateFunctionPtr value = factory.getByTypeID(name);
 		value->deserializeMerge(istr);
 		vec.push_back(value);
 	}
