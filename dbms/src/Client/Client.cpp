@@ -240,9 +240,6 @@ private:
 		insert_format = "Values";
 		insert_format_max_block_size = config().getInt("insert_format_max_block_size", format_max_block_size);
 
-		context.format_factory = new FormatFactory();
-		context.data_type_factory = new DataTypeFactory();
-
 		connect();
 
 		if (is_interactive)
@@ -285,7 +282,7 @@ private:
 		if (is_interactive)
 			std::cout << "Connecting to " << (!default_database.empty() ? default_database + "@" : "") << host << ":" << port << "." << std::endl;
 
-		connection = new Connection(host, port, default_database, *context.data_type_factory, "client", compression,
+		connection = new Connection(host, port, default_database, context.getDataTypeFactory(), "client", compression,
 			Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
@@ -477,7 +474,8 @@ private:
 			if (!insert->format.empty())
 				current_format = insert->format;
 
-		block_std_in = context.format_factory->getInput(current_format, buf, sample, insert_format_max_block_size, *context.data_type_factory);
+		block_std_in = context.getFormatFactory().getInput(
+			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory());
 		block_std_in->readPrefix();
 
 		while (true)
@@ -608,7 +606,7 @@ private:
 						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*select->format))
 							current_format = id->name;
 				
-				block_std_out = context.format_factory->getOutput(current_format, std_out, block);
+				block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 				block_std_out->writePrefix();
 			}
 			

@@ -94,9 +94,9 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 
-		context.path = "./";
-		(*context.databases)["test"];
-		context.current_database = "test";
+		context.setPath("./");
+		context.addDatabase("test");
+		context.setCurrentDatabase("test");
 
 		DB::InterpreterCreateQuery interpreter(ast, context);
 		interpreter.execute();

@@ -16,7 +16,7 @@ typedef std::map<String, FunctionPtr> Functions;
 namespace FunctionsLibrary
 {
 	/// Получить все функции.
-	SharedPtr<Functions> get();
+	Functions get();
 };
 
 }

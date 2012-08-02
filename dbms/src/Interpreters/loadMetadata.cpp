@@ -43,7 +43,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 void loadMetadata(Context & context)
 {
 	/// Здесь хранятся определения таблиц
-	String path = context.path + "metadata";
+	String path = context.getPath() + "metadata";
 
 	/// Цикл по базам данных
 	Poco::DirectoryIterator dir_end;

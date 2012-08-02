@@ -19,25 +19,28 @@ InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_
 
 void InterpreterDropQuery::execute()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
+	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	
+	String path = context.getPath();
+	String current_database = context.getCurrentDatabase();
 	
 	ASTDropQuery & drop = dynamic_cast<ASTDropQuery &>(*query_ptr);
 
-	String database_name = drop.database.empty() ? context.current_database : drop.database;
+	String database_name = drop.database.empty() ? current_database : drop.database;
 	String database_name_escaped = escapeForFileName(database_name);
 	String table_name = drop.table;
 	String table_name_escaped = escapeForFileName(table_name);
 
-	String data_path = context.path + "data/" + database_name_escaped + "/" + table_name_escaped;
-	String metadata_path = context.path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
+	String data_path = path + "data/" + database_name_escaped + "/" + table_name_escaped;
+	String metadata_path = path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
 
-	if (!drop.if_exists && context.databases->end() == context.databases->find(database_name))
-		throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+	if (!drop.if_exists)
+		context.assertDatabaseExists(database_name);
 
 	if (!drop.table.empty())
 	{
 		/// Удаление таблицы
-		if ((*context.databases)[database_name].end() == (*context.databases)[database_name].find(table_name))
+		if (!context.isTableExist(database_name, table_name))
 		{
 			if (!drop.if_exists)
 				throw Exception("Table " + database_name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -47,7 +50,7 @@ void InterpreterDropQuery::execute()
 			/// Удаляем данные таблицы
 			if (!drop.detach)
 			{
-				StoragePtr table = (*context.databases)[database_name][table_name];
+				StoragePtr table = context.getTable(database_name, table_name);
 				table->drop();
 
 				Poco::File(metadata_path).remove();
@@ -57,18 +60,18 @@ void InterpreterDropQuery::execute()
 			}
 
 			/// Удаляем информацию о таблице из оперативки
-			(*context.databases)[database_name].erase((*context.databases)[database_name].find(table_name));
+			context.detachTable(database_name, table_name);
 		}
 	}
 	else
 	{
-		if (context.databases->end() != context.databases->find(database_name))
+		if (context.isDatabaseExist(database_name))
 		{
 			/// Удаление базы данных
 			if (!drop.detach)
 			{
 				/// Удаление всех таблиц
-				for (Tables::iterator it = (*context.databases)[database_name].begin(); it != (*context.databases)[database_name].end(); ++it)
+				for (Tables::iterator it = context.getDatabases()[database_name].begin(); it != context.getDatabases()[database_name].end(); ++it)
 					it->second->drop();
 
 				Poco::File(metadata_path).remove(true);
@@ -76,7 +79,7 @@ void InterpreterDropQuery::execute()
 			}
 
 			/// Удаляем информацию о БД из оперативки
-			context.databases->erase(context.databases->find(database_name));
+			context.detachDatabase(database_name);
 		}
 	}
 }

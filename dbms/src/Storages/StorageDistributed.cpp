@@ -14,8 +14,8 @@ StorageDistributed::StorageDistributed(
 	const StorageDistributed::Addresses & addresses_,
 	const String & remote_database_,
 	const String & remote_table_,
-	DataTypeFactory & data_type_factory_,
-	Settings & settings)
+	const DataTypeFactory & data_type_factory_,
+	const Settings & settings)
 	: name(name_), columns(columns_), addresses(addresses_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	data_type_factory(data_type_factory_)

@@ -17,7 +17,7 @@ namespace DB
 NamesAndTypesList::const_iterator Expression::findColumn(const String & name)
 {
 	NamesAndTypesList::const_iterator it;
-	for (it = context.columns.begin(); it != context.columns.end(); ++it)
+	for (it = context.getColumns().begin(); it != context.getColumns().end(); ++it)
 		if (it->first == name)
 			break;
 	return it;
@@ -59,7 +59,7 @@ void Expression::addSemantic(ASTPtr & ast)
 		  */
 		String function_string = node->getColumnName();
 		NamesAndTypesList::const_iterator it = findColumn(function_string);
-		if (context.columns.end() != it)
+		if (context.getColumns().end() != it)
 		{
 			ASTIdentifier * ast_id = new ASTIdentifier(node->range, std::string(node->range.first, node->range.second));
 			ast_id->type = it->second;
@@ -77,7 +77,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
 		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
-		for (NamesAndTypesList::const_iterator it = context.columns.begin(); it != context.columns.end(); ++it)
+		for (NamesAndTypesList::const_iterator it = context.getColumns().begin(); it != context.getColumns().end(); ++it)
 			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
 		ast = all_columns;
 
@@ -86,7 +86,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	}
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		Functions::const_iterator it = context.functions->find(node->name);
+		Functions::const_iterator it = context.getFunctions().find(node->name);
 
 		/// Типы аргументов
 		DataTypes argument_types;
@@ -102,10 +102,10 @@ void Expression::addSemantic(ASTPtr & ast)
 				argument_types.push_back(arg->type);
 		}
 
-		node->aggregate_function = context.aggregate_function_factory->tryGet(node->name, argument_types);
-		if (it == context.functions->end() && node->aggregate_function.isNull())
+		node->aggregate_function = context.getAggregateFunctionsFactory().tryGet(node->name, argument_types);
+		if (it == context.getFunctions().end() && node->aggregate_function.isNull())
 			throw Exception("Unknown function " + node->name, ErrorCodes::UNKNOWN_FUNCTION);
-		if (it != context.functions->end())
+		if (it != context.getFunctions().end())
 			node->function = it->second;
 
 		/// Получаем типы результата
@@ -122,7 +122,7 @@ void Expression::addSemantic(ASTPtr & ast)
 		if (node->kind == ASTIdentifier::Column)
 		{
 			NamesAndTypesList::const_iterator it = findColumn(node->name);
-			if (it == context.columns.end())
+			if (it == context.getColumns().end())
 			{
 				/// Если это алиас
 				Aliases::const_iterator jt = aliases.find(node->name);

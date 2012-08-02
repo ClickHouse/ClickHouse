@@ -26,20 +26,7 @@ StoragePtr InterpreterInsertQuery::getTable()
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	
 	/// В какую таблицу писать.
-
-	String database_name = query.database;
-	String table_name = query.table;
-
-	/** Если база данных не указана - используем текущую базу данных.
-	  */
-	if (database_name.empty())
-		database_name = context.current_database;
-
-	if (context.databases->end() == context.databases->find(database_name)
-		|| (*context.databases)[database_name].end() == (*context.databases)[database_name].find(table_name))
-		throw Exception("Unknown table '" + table_name + "' in database '" + database_name + "'", ErrorCodes::UNKNOWN_TABLE);
-
-	return (*context.databases)[database_name][table_name];
+	return context.getTable(query.database, query.table);
 }
 
 
@@ -77,7 +64,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		ConcatReadBuffer istr(buffers);
 		Block sample = table->getSampleBlock();
 
-		in = context.format_factory->getInput(format, istr, sample, context.settings.max_block_size, *context.data_type_factory);
+		in = context.getFormatFactory().getInput(format, istr, sample, context.getSettings().max_block_size, context.getDataTypeFactory());
 		copyData(*in, *out);
 	}
 	else

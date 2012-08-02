@@ -33,18 +33,14 @@ int main(int argc, char ** argv)
 		
 		DB::Context context;
 
-		context.functions = DB::FunctionsLibrary::get();
-		context.path = "./";
+		context.setPath("./");
 		
-		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
-		context.data_type_factory				= new DB::DataTypeFactory;
-		context.storage_factory					= new DB::StorageFactory;
-
 		DB::loadMetadata(context);
 
-		(*context.databases)["system"]["one"] 		= new DB::StorageSystemOne("one");
-		(*context.databases)["system"]["numbers"] 	= new DB::StorageSystemNumbers("numbers");
-		context.current_database = "default";
+		context.addDatabase("system");
+		context.addTable("system", "one", 		new DB::StorageSystemOne("one"));
+		context.addTable("system", "numbers", 	new DB::StorageSystemNumbers("numbers"));
+		context.setCurrentDatabase("default");
 
 		DB::ReadBufferFromIStream in(std::cin);
 		DB::WriteBufferFromOStream out(std::cout);

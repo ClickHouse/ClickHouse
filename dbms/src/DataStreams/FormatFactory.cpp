@@ -19,7 +19,7 @@ namespace DB
 {
 
 BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf,
-	Block & sample, size_t max_block_size, DataTypeFactory & data_type_factory) const
+	Block & sample, size_t max_block_size, const DataTypeFactory & data_type_factory) const
 {
 	if (name == "Native")
 		return new NativeBlockInputStream(buf, data_type_factory);

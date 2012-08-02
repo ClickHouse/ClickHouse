@@ -6,7 +6,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
 class Context;
 
 
@@ -23,8 +22,5 @@ public:
 		ASTPtr & query,
 		NamesAndTypesListPtr columns) const;
 };
-
-typedef SharedPtr<StorageFactory> StorageFactoryPtr;
-
 
 }

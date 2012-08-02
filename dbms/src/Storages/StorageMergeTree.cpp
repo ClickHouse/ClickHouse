@@ -648,7 +648,7 @@ StorageMergeTree::StorageMergeTree(
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
 
-	context.columns = *columns;
+	context.setColumns(*columns);
 	primary_expr = new Expression(primary_expr_ast, context);
 	primary_key_sample = primary_expr->getSampleBlock();
 

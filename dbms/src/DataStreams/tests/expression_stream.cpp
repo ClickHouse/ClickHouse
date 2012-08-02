@@ -48,8 +48,7 @@ int main(int argc, char ** argv)
 		}
 
 		DB::Context context;
-		context.columns.push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
-		context.functions = DB::FunctionsLibrary::get();
+		context.getColumns().push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
 
 		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
 

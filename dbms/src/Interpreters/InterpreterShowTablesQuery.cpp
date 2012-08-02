@@ -26,7 +26,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 	if (query.databases)
 		return "SELECT name FROM system.databases";
 
-	String database = query.from.empty() ? context.current_database : query.from;
+	String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
 	context.assertDatabaseExists(database);
 
 	std::stringstream rewritten_query;

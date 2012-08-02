@@ -27,10 +27,10 @@ namespace DB
 void TCPHandler::runImpl()
 {
 	connection_context = server.global_context;
-	connection_context.session_context = &connection_context;
+	connection_context.setSessionContext(connection_context);
 
-	socket().setReceiveTimeout(server.global_context.settings.receive_timeout);
-	socket().setSendTimeout(server.global_context.settings.send_timeout);
+	socket().setReceiveTimeout(server.global_context.getSettingsRef().receive_timeout);
+	socket().setSendTimeout(server.global_context.getSettingsRef().send_timeout);
 	
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
@@ -40,9 +40,7 @@ void TCPHandler::runImpl()
 	/// При соединении может быть указана БД по-умолчанию.
 	if (!default_database.empty())
 	{
-		Poco::ScopedLock<Poco::Mutex> lock(*connection_context.mutex);
-
-		if (connection_context.databases->end() == connection_context.databases->find(default_database))
+		if (!connection_context.isDatabaseExist(default_database))
 		{
 			Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
@@ -51,7 +49,7 @@ void TCPHandler::runImpl()
 			return;
 		}
 
-		connection_context.current_database = default_database;
+		connection_context.setCurrentDatabase(default_database);
 	}
 	
 	sendHello();
@@ -289,12 +287,12 @@ bool TCPHandler::receiveData()
 		else
 			state.maybe_compressed_in = in;
 
-		state.block_in = state.context.format_factory->getInput(
+		state.block_in = state.context.getFormatFactory().getInput(
 			"Native",
 			*state.maybe_compressed_in,
 			state.io.out_sample,
-			state.context.settings.max_block_size,
-			*state.context.data_type_factory);
+			state.context.getSettingsRef().max_block_size,
+			state.context.getDataTypeFactory());
 	}
 	
 	/// Прочитать из сети один блок и засунуть его в state.io.out (данные для INSERT-а)
@@ -316,7 +314,7 @@ bool TCPHandler::isQueryCancelled()
 	if (state.is_cancelled || state.sent_all_data)
 		return true;
 	
-	if (after_check_cancelled.elapsed() / 1000 < state.context.settings.interactive_delay)
+	if (after_check_cancelled.elapsed() / 1000 < state.context.getSettingsRef().interactive_delay)
 		return false;
 
 	after_check_cancelled.restart();
@@ -358,7 +356,7 @@ void TCPHandler::sendData(Block & block)
 		else
 			state.maybe_compressed_out = out;
 
-		state.block_out = state.context.format_factory->getOutput(
+		state.block_out = state.context.getFormatFactory().getOutput(
 			"Native",
 			*state.maybe_compressed_out,
 			state.io.in_sample);
@@ -403,7 +401,7 @@ void TCPHandler::sendProgress(size_t rows, size_t bytes)
 	if (state.sent_all_data)
 		return;
 
-	if (after_send_progress.elapsed() / 1000 < state.context.settings.interactive_delay)
+	if (after_send_progress.elapsed() / 1000 < state.context.getSettingsRef().interactive_delay)
 		return;
 
 	after_send_progress.restart();

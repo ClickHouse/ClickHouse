@@ -20,9 +20,5 @@ public:
 	AggregateFunctionPtr getByTypeID(const String & type_id) const;
 };
 
-using Poco::SharedPtr;
-
-typedef SharedPtr<AggregateFunctionFactory> AggregateFunctionFactoryPtr;
-
 
 }

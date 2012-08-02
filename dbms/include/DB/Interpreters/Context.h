@@ -29,104 +29,94 @@ typedef std::map<String, Tables> Databases;
 
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
+  * Разделяемая часть.
   */
-struct Context
+struct ContextShared
 {
 	String path;											/// Путь к директории с данными, со слешем на конце.
-	SharedPtr<Databases> databases;							/// Список БД и таблиц в них.
-	String current_database;								/// Текущая БД.
-	SharedPtr<Functions> functions;							/// Обычные функции.
-	AggregateFunctionFactoryPtr aggregate_function_factory; /// Агрегатные функции.
-	DataTypeFactoryPtr data_type_factory;					/// Типы данных.
-	StorageFactoryPtr storage_factory;						/// Движки таблиц.
-	FormatFactoryPtr format_factory;						/// Форматы.
-	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
-	Settings settings;										/// Настройки выполнения запроса.
+	Databases databases;									/// Список БД и таблиц в них.
+	Functions functions;									/// Обычные функции.
+	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
+	DataTypeFactory data_type_factory;						/// Типы данных.
+	StorageFactory storage_factory;							/// Движки таблиц.
+	FormatFactory format_factory;							/// Форматы.
 	Logger * log;											/// Логгер.
 
+	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
+
+	ContextShared() : functions(FunctionsLibrary::get()), log(&Logger::get("Context")) {};
+};
+
+
+/** Набор известных объектов, которые могут быть использованы в запросе.
+  * Состоит из разделяемой части (всегда общей для всех сессий и запросов)
+  *  и копируемой части (которая может быть своей для каждой сессии или запроса).
+  *
+  * Всё инкапсулировано для всяких проверок и блокировок.
+  */
+class Context
+{
+private:
+	typedef SharedPtr<ContextShared> Shared;
+	Shared shared;
+
+	String current_database;								/// Текущая БД.
+	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
+	Settings settings;										/// Настройки выполнения запроса.
+	
 	Context * session_context;								/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
 	Context * global_context;								/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
-	mutable SharedPtr<Poco::Mutex> mutex;					/// Для доступа и модификации разделяемых объектов.
+public:
+	String getPath() const;
+	void setPath(const String & path);
+	
+	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
+	bool isTableExist(const String & database_name, const String & table_name) const;
+	bool isDatabaseExist(const String & database_name) const;
+	void assertTableExists(const String & database_name, const String & table_name) const;
+	void assertTableDoesntExist(const String & database_name, const String & table_name) const;
+	void assertDatabaseExists(const String & database_name) const;
+	void assertDatabaseDoesntExist(const String & database_name) const;
 
-	Context() : databases(new Databases), functions(new Functions),
-		log(&Logger::get("Context")),
-		session_context(NULL), global_context(NULL),
-		mutex(new Poco::Mutex) {}
+	StoragePtr getTable(const String & database_name, const String & table_name) const;
+	void addTable(const String & database_name, const String & table_name, StoragePtr table);
+	void addDatabase(const String & database_name);
 
-	/** В сервере есть глобальный контекст.
-	  * При соединении, он копируется в контекст сессии.
-	  * Для каждого запроса, контекст сессии копируется в контекст запроса.
-	  * Блокировка нужна, так как запрос может модифицировать глобальный контекст (SET GLOBAL ...).
-	  */
-	Context(const Context & rhs)
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(*rhs.mutex);
+	void detachTable(const String & database_name, const String & table_name);
+	void detachDatabase(const String & database_name);
 
-		path 						= rhs.path;
-		databases 					= rhs.databases;
-		current_database 			= rhs.current_database;
-		functions 					= rhs.functions;
-		aggregate_function_factory 	= rhs.aggregate_function_factory;
-		data_type_factory			= rhs.data_type_factory;
-		storage_factory				= rhs.storage_factory;
-		format_factory				= rhs.format_factory;
-		columns						= rhs.columns;
-		settings					= rhs.settings;
-		log							= rhs.log;
-		mutex						= rhs.mutex;
-		session_context				= rhs.session_context;
-		global_context				= rhs.global_context;
-	}
+	String getCurrentDatabase() const;
+	void setCurrentDatabase(const String & name);
 
+	Settings getSettings() const;
+	void setSettings(const Settings & settings_);
+	
+	const Functions & getFunctions() const									{ return shared->functions; }
+	const AggregateFunctionFactory & getAggregateFunctionsFactory() const	{ return shared->aggregate_function_factory; }
+	const DataTypeFactory & getDataTypeFactory() const						{ return shared->data_type_factory; }
+	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }
+	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 
-	/// Проверка существования таблицы. database может быть пустой - в этом случае используется текущая БД.
-	bool isTableExist(const String & database_name, const String & table_name)
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(*mutex);
+	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
+	Poco::Mutex & getMutex() const 											{ return shared->mutex; }
 
-		String db = database_name.empty() ? current_database : database_name;
+	/// Метод getDatabases не потокобезопасен. При работе со списком БД и таблиц, вы должны захватить mutex.
+	const Databases & getDatabases() const 									{ return shared->databases; }
+	Databases & getDatabases() 												{ return shared->databases; }
 
-		return databases->end() == databases->find(db)
-			|| (*databases)[db].end() == (*databases)[db].find(table_name);
-	}
+	/// При работе со списком столбцов, используйте локальный контекст, чтобы никто больше его не менял.
+	const NamesAndTypesList & getColumns() const							{ return columns; }
+	NamesAndTypesList & getColumns()										{ return columns; }
+	void setColumns(const NamesAndTypesList & columns_)						{ columns = columns_; }
 
+	Context & getSessionContext();
+	Context & getGlobalContext();
 
-	void assertTableExists(const String & database_name, const String & table_name)
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(*mutex);
+	void setSessionContext(Context & context_)								{ session_context = &context_; }
+	void setGlobalContext(Context & context_)								{ global_context = &context_; }
 
-		String db = database_name.empty() ? current_database : database_name;
-
-		if (databases->end() == databases->find(db))
-			throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-
-		if ((*databases)[db].end() == (*databases)[db].find(table_name))
-			throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-	}
-
-
-	void assertTableDoesntExist(const String & database_name, const String & table_name)
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(*mutex);
-
-		String db = database_name.empty() ? current_database : database_name;
-
-		if (databases->end() != databases->find(db)
-			&& (*databases)[db].end() != (*databases)[db].find(table_name))
-			throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-	}
-
-
-	void assertDatabaseExists(const String & database_name)
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(*mutex);
-
-		String db = database_name.empty() ? current_database : database_name;
-
-		if (databases->end() == databases->find(db))
-			throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-	}
+	const Settings & getSettingsRef() const { return settings; };
 };
 
 

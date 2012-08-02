@@ -19,17 +19,7 @@ public:
 	void execute()
 	{
 		const String & new_database = dynamic_cast<const ASTUseQuery &>(*query_ptr).database;
-
-		{
-			Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
-			if (context.databases->end() == context.databases->find(new_database))
-				throw Exception("Database " + new_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-		}
-
-		if (!context.session_context)
-			throw Exception("There is no session", ErrorCodes::THERE_IS_NO_SESSION);
-			
-		context.session_context->current_database = new_database;
+		context.getSessionContext().setCurrentDatabase(new_database);
 	}
 
 private:

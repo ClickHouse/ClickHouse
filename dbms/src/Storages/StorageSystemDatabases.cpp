@@ -29,9 +29,9 @@ BlockInputStreams StorageSystemDatabases::read(
 	col_name.column = new ColumnString;
 	block.insert(col_name);
 
-	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
+	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
-	for (Databases::const_iterator it = context.databases->begin(); it != context.databases->end(); ++it)
+	for (Databases::const_iterator it = context.getDatabases().begin(); it != context.getDatabases().end(); ++it)
 		col_name.column->insert(it->first);
 
 	return BlockInputStreams(1, new OneBlockInputStream(block));

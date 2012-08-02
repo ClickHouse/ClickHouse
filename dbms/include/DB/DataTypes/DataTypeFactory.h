@@ -8,9 +8,6 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 /** Позволяет создать тип данных по его имени. 
   */
 class DataTypeFactory
@@ -25,8 +22,5 @@ private:
 
 	Poco::RegularExpression fixed_string_regexp;
 };
-
-typedef SharedPtr<DataTypeFactory> DataTypeFactoryPtr;
-
 
 }

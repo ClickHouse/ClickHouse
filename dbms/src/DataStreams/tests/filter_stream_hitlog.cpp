@@ -102,9 +102,7 @@ int main(int argc, char ** argv)
 
 		DB::Context context;
 
-		context.functions = DB::FunctionsLibrary::get();
-
-		context.columns = *names_and_types_list;
+		context.getColumns() = *names_and_types_list;
 
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;

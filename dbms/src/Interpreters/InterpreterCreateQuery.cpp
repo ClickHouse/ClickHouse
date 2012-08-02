@@ -33,30 +33,24 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 
 StoragePtr InterpreterCreateQuery::execute()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
+	String path = context.getPath();
+	String current_database = context.getCurrentDatabase();
 	
 	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_ptr);
 
-	String database_name = create.database.empty() ? context.current_database : create.database;
+	String database_name = create.database.empty() ? current_database : create.database;
 	String database_name_escaped = escapeForFileName(database_name);
 	String table_name = create.table;
 	String table_name_escaped = escapeForFileName(table_name);
-	String as_database_name = create.as_database.empty() ? context.current_database : create.as_database;
+	String as_database_name = create.as_database.empty() ? current_database : create.as_database;
 	String as_table_name = create.as_table;
 	
-	String data_path = context.path + "data/" + database_name_escaped + "/";
-	String metadata_path = context.path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
+	String data_path = path + "data/" + database_name_escaped + "/";
+	String metadata_path = path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
 
 	/// CREATE|ATTACH DATABASE
 	if (!database_name.empty() && table_name.empty())
 	{
-		if (context.databases->end() != context.databases->find(database_name))
-		{
-			if (!create.if_not_exists)
-				throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
-			return NULL;
-		}
-
 		if (create.attach)
 		{
 			if (!Poco::File(data_path).exists())
@@ -73,92 +67,95 @@ StoragePtr InterpreterCreateQuery::execute()
 			Poco::File(data_path).createDirectory();
 		}
 
-		(*context.databases)[database_name];
+		context.addDatabase(database_name);
 		return NULL;
 	}
 
-	if (context.databases->end() == context.databases->find(database_name))
-		throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-		
-	if ((*context.databases)[database_name].end() != (*context.databases)[database_name].find(table_name))
-	{
-		if (create.if_not_exists)
-			return (*context.databases)[database_name][table_name];
-		else
-			throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-	}
-
-	if (!create.as_table.empty()
-		&& ((*context.databases).end() == (*context.databases).find(as_database_name)
-			|| (*context.databases)[as_database_name].end() == (*context.databases)[as_database_name].find(as_table_name)))
-		throw Exception("Table " + as_database_name + "." + as_table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-
+	StoragePtr res;
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
-	if (create.select)
-		interpreter_select = new InterpreterSelectQuery(create.select, context);
 
-	NamesAndTypesListPtr columns = new NamesAndTypesList;
-		
-	/// Получаем список столбцов
-	if (create.columns)
 	{
-		ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*create.columns);
-		for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+		context.assertDatabaseExists(database_name);
+
+		if (context.isTableExist(database_name, table_name))
 		{
-			ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
-			StringRange type_range = name_and_type_pair.type->range;
-			columns->push_back(NameAndTypePair(
-				name_and_type_pair.name,
-				context.data_type_factory->get(String(type_range.first, type_range.second - type_range.first))));
+			if (create.if_not_exists)
+				return context.getTable(database_name, table_name);
+			else
+				throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
+
+		if (!create.as_table.empty())
+			context.assertTableExists(as_database_name, as_table_name);
+
+		if (create.select)
+			interpreter_select = new InterpreterSelectQuery(create.select, context);
+
+		NamesAndTypesListPtr columns = new NamesAndTypesList;
+
+		/// Получаем список столбцов
+		if (create.columns)
+		{
+			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*create.columns);
+			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
+			{
+				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
+				StringRange type_range = name_and_type_pair.type->range;
+				columns->push_back(NameAndTypePair(
+					name_and_type_pair.name,
+					context.getDataTypeFactory().get(String(type_range.first, type_range.second - type_range.first))));
+			}
+		}
+		else if (!create.as_table.empty())
+			columns = new NamesAndTypesList(context.getTable(as_database_name, as_table_name)->getColumnsList());
+		else if (create.select)
+		{
+			Block sample = interpreter_select->getSampleBlock();
+			columns = new NamesAndTypesList;
+			for (size_t i = 0; i < sample.columns(); ++i)
+				columns->push_back(NameAndTypePair(sample.getByPosition(i).name, sample.getByPosition(i).type));
+		}
+		else
+			throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
+
+		/// Выбор нужного движка таблицы
+
+		String storage_name;
+		if (create.storage)
+			storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
+		else if (!create.as_table.empty())
+			storage_name = context.getTable(as_database_name, as_table_name)->getName();
+		else
+			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::INCORRECT_QUERY);
+
+		res = context.getStorageFactory().get(storage_name, data_path, table_name, context, query_ptr, columns);
+
+		/// Проверка наличия метаданных таблицы на диске и создание метаданных
+
+		if (Poco::File(metadata_path).exists())
+		{
+			/** Запрос ATTACH TABLE может использоваться, чтобы создать в оперативке ссылку на уже существующую таблицу.
+			  * Это используется, например, при загрузке сервера.
+			  */
+			if (!create.attach)
+				throw Exception("Metadata for table " + database_name + "." + table_name + " already exists.",
+					ErrorCodes::TABLE_METADATA_ALREADY_EXISTS);
+		}
+		else
+		{
+			/// Меняем CREATE на ATTACH и пишем запрос в файл.
+			ASTPtr attach = query_ptr->clone();
+			dynamic_cast<ASTCreateQuery &>(*attach).attach = true;
+
+			Poco::FileOutputStream metadata_file(metadata_path);
+			formatAST(*attach, metadata_file, 0, false);
+			metadata_file << "\n";
+		}
+
+		context.addTable(database_name, table_name, res);
 	}
-	else if (!create.as_table.empty())
-		columns = new NamesAndTypesList((*context.databases)[as_database_name][as_table_name]->getColumnsList());
-	else if (create.select)
-	{
-		Block sample = interpreter_select->getSampleBlock();
-		columns = new NamesAndTypesList;
-		for (size_t i = 0; i < sample.columns(); ++i)
-			columns->push_back(NameAndTypePair(sample.getByPosition(i).name, sample.getByPosition(i).type));
-	}
-	else
-		throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
-
-	/// Выбор нужного движка таблицы
-
-	String storage_name;
-	if (create.storage)
-		storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
-	else if (!create.as_table.empty())
-		storage_name = (*context.databases)[as_database_name][as_table_name]->getName();
-	else
-		throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::INCORRECT_QUERY);
-		
-	StoragePtr res = context.storage_factory->get(storage_name, data_path, table_name, context, query_ptr, columns);
-
-	/// Проверка наличия метаданных таблицы на диске и создание метаданных
-
-	if (Poco::File(metadata_path).exists())
-	{
-		/** Запрос ATTACH TABLE может использоваться, чтобы создать в оперативке ссылку на уже существующую таблицу.
-		  * Это используется, например, при загрузке сервера.
-		  */
-		if (!create.attach)
-			throw Exception("Metadata for table " + database_name + "." + table_name + " already exists.",
-				ErrorCodes::TABLE_METADATA_ALREADY_EXISTS);
-	}
-	else
-	{
-		/// Меняем CREATE на ATTACH и пишем запрос в файл.
-		ASTPtr attach = query_ptr->clone();
-		dynamic_cast<ASTCreateQuery &>(*attach).attach = true;
-		
-		Poco::FileOutputStream metadata_file(metadata_path);
-		formatAST(*attach, metadata_file, 0, false);
-		metadata_file << "\n";
-	}
-
-	(*context.databases)[database_name][table_name] = res;
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
 	if (create.select)

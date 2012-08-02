@@ -28,26 +28,24 @@ int main(int argc, char ** argv)
 	try
 	{
 		DB::Context context;
+		DB::Settings settings = context.getSettings();
 
-		context.path 							= "./";
-		context.aggregate_function_factory		= new DB::AggregateFunctionFactory;
-		context.data_type_factory				= new DB::DataTypeFactory;
-		context.storage_factory					= new DB::StorageFactory;
+		context.setPath("./");
 
 		DB::loadMetadata(context);
 		
 		DB::Names column_names;
 		column_names.push_back("WatchID");
 
-		DB::StoragePtr table = (*context.databases)["default"]["hits6"];
+		DB::StoragePtr table = context.getTable("default", "hits6");
 
 		DB::QueryProcessingStage::Enum stage;
-		DB::BlockInputStreams streams = table->read(column_names, NULL, stage, context.settings.max_block_size, context.settings.max_threads);
+		DB::BlockInputStreams streams = table->read(column_names, NULL, stage, settings.max_block_size, settings.max_threads);
 
 		for (size_t i = 0, size = streams.size(); i < size; ++i)
 			streams[i] = new DB::AsynchronousBlockInputStream(streams[i]);
 		
-		DB::BlockInputStreamPtr stream = new DB::UnionBlockInputStream(streams, context.settings.max_threads);
+		DB::BlockInputStreamPtr stream = new DB::UnionBlockInputStream(streams, settings.max_threads);
 		stream = new DB::LimitBlockInputStream(stream, 10);
 
 		DB::FormatFactory format_factory;

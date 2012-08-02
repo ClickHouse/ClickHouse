@@ -34,7 +34,7 @@ class Connection
 {
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
-		DataTypeFactory & data_type_factory_,
+		const DataTypeFactory & data_type_factory_,
 		const String & client_name_ = "client",
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
 		Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
@@ -98,7 +98,7 @@ private:
 	UInt64 query_id;
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
 
-	DataTypeFactory & data_type_factory;
+	const DataTypeFactory & data_type_factory;
 
 	Poco::Timespan connect_timeout;
 	Poco::Timespan receive_timeout;

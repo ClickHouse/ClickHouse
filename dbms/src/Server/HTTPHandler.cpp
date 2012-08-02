@@ -73,18 +73,23 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ost
 		out_maybe_compressed = out;
 	
 	Context context = server.global_context;
+	context.setGlobalContext(server.global_context);
 
 	/// Некоторые настройки могут быть переопределены в запросе.
+	Settings new_settings = context.getSettings();
+
 	if (params.has("asynchronous"))
-		context.settings.asynchronous = 0 != Poco::NumberParser::parseUnsigned(params.get("asynchronous"));
+		new_settings.asynchronous = 0 != Poco::NumberParser::parseUnsigned(params.get("asynchronous"));
 	if (params.has("max_block_size"))
-		context.settings.max_block_size = Poco::NumberParser::parseUnsigned(params.get("max_block_size"));
+		new_settings.max_block_size = Poco::NumberParser::parseUnsigned(params.get("max_block_size"));
 	if (params.has("max_query_size"))
-		context.settings.max_query_size = Poco::NumberParser::parseUnsigned(params.get("max_query_size"));
+		new_settings.max_query_size = Poco::NumberParser::parseUnsigned(params.get("max_query_size"));
 	if (params.has("max_threads"))
-		context.settings.max_threads = Poco::NumberParser::parseUnsigned(params.get("max_threads"));
+		new_settings.max_threads = Poco::NumberParser::parseUnsigned(params.get("max_threads"));
 	if (params.has("database"))
-		context.current_database = params.get("database");
+		context.setCurrentDatabase(params.get("database"));
+
+	context.setSettings(new_settings);
 
 	Stopwatch watch;
 	executeQuery(in, *out_maybe_compressed, context, query_plan);

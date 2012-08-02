@@ -25,30 +25,31 @@ BlockInputStreams StorageMerge::read(
 {
 	BlockInputStreams res;
 
-	/// Список таблиц могут менять в другом потоке.
-	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
-
-	if (context.databases->end() == context.databases->find(source_database))
-		throw Exception("Database " + source_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+	typedef std::vector<StoragePtr> SelectedTables;
+	SelectedTables selected_tables;
 
 	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
 	processed_stage = QueryProcessingStage::Complete;
 	QueryProcessingStage::Enum tmp_processed_stage = QueryProcessingStage::Complete;
-	
-	Tables & tables = context.databases->at(source_database);
-	typedef std::vector<Tables::iterator> SelectedTables;
-	SelectedTables selected_tables;
 
-	/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
-	  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
-	  */
-	for (Tables::iterator it = tables.begin(); it != tables.end(); ++it)
-		if (it->second != this && table_name_regexp.match(it->first))
-			selected_tables.push_back(it);
+	/// Список таблиц могут менять в другом потоке.
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+		context.assertDatabaseExists(source_database);
+
+		const Tables & tables = context.getDatabases().at(source_database);
+
+		/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
+		  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
+		  */
+		for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
+			if (it->second != this && table_name_regexp.match(it->first))
+				selected_tables.push_back(it->second);
+	}
 
 	for (SelectedTables::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 	{
-		BlockInputStreams source_streams = (*it)->second->read(
+		BlockInputStreams source_streams = (*it)->read(
 			column_names,
 			query,
 			tmp_processed_stage,

@@ -20,11 +20,11 @@ namespace DB
 
 namespace FunctionsLibrary
 {
-	SharedPtr<Functions> get()
+	Functions get()
 	{
-		Functions * res = new Functions;
+		Functions res;
 		
-		boost::assign::insert(*res)
+		boost::assign::insert(res)
 			("plus",						new FunctionPlus)
 			("minus",						new FunctionMinus)
 			("multiply",					new FunctionMultiply)

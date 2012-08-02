@@ -13,7 +13,7 @@ namespace DB
 class NativeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	NativeBlockInputStream(ReadBuffer & istr_, DataTypeFactory & data_type_factory_)
+	NativeBlockInputStream(ReadBuffer & istr_, const DataTypeFactory & data_type_factory_)
 		: istr(istr_), data_type_factory(data_type_factory_) {}
 	
 	/** Прочитать следующий блок.
@@ -27,7 +27,7 @@ public:
 
 private:
 	ReadBuffer & istr;
-	DataTypeFactory & data_type_factory;
+	const DataTypeFactory & data_type_factory;
 };
 
 }

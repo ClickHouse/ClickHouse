@@ -70,47 +70,48 @@ int Server::main(const std::vector<std::string> & args)
 	/** Контекст содержит всё, что влияет на обработку запроса:
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
 	  */
-	global_context.global_context = &global_context;
-	global_context.path = config.getString("path");
-	global_context.functions = FunctionsLibrary::get();
-	global_context.aggregate_function_factory	= new AggregateFunctionFactory;
-	global_context.data_type_factory			= new DataTypeFactory;
-	global_context.storage_factory				= new StorageFactory;
-	global_context.format_factory				= new FormatFactory;
+	global_context.setGlobalContext(global_context);
+	global_context.setPath(config.getString("path"));
 
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(global_context);
 	LOG_DEBUG(log, "Loaded metadata.");
 
 	/// Создаём системные таблицы.
-	(*global_context.databases)["system"]["one"] 		= new StorageSystemOne("one");
-	(*global_context.databases)["system"]["numbers"] 	= new StorageSystemNumbers("numbers");
-	(*global_context.databases)["system"]["tables"] 	= new StorageSystemTables("tables", global_context);
-	(*global_context.databases)["system"]["databases"] 	= new StorageSystemDatabases("databases", global_context);
+	global_context.addDatabase("system");
+	
+	global_context.addTable("system", "one",		new StorageSystemOne("one"));
+	global_context.addTable("system", "numbers", 	new StorageSystemNumbers("numbers"));
+	global_context.addTable("system", "tables", 	new StorageSystemTables("tables", global_context));
+	global_context.addTable("system", "databases", 	new StorageSystemDatabases("databases", global_context));
 		
-	global_context.current_database = config.getString("default_database", "default");
+	global_context.setCurrentDatabase(config.getString("default_database", "default"));
 
-	global_context.settings.asynchronous 	= config.getBool("asynchronous", 	global_context.settings.asynchronous);
-	global_context.settings.max_block_size 	= config.getInt("max_block_size", 	global_context.settings.max_block_size);
-	global_context.settings.max_query_size 	= config.getInt("max_query_size", 	global_context.settings.max_query_size);
-	global_context.settings.max_threads 	= config.getInt("max_threads", 		global_context.settings.max_threads);
-	global_context.settings.interactive_delay = config.getInt("interactive_delay", global_context.settings.interactive_delay);
-	global_context.settings.connect_timeout = Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
-	global_context.settings.receive_timeout = Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
-	global_context.settings.send_timeout 	= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
+	Settings settings;
+	
+	settings.asynchronous 		= config.getBool("asynchronous", 	settings.asynchronous);
+	settings.max_block_size 	= config.getInt("max_block_size", 	settings.max_block_size);
+	settings.max_query_size 	= config.getInt("max_query_size", 	settings.max_query_size);
+	settings.max_threads 		= config.getInt("max_threads", 		settings.max_threads);
+	settings.interactive_delay 	= config.getInt("interactive_delay", settings.interactive_delay);
+	settings.connect_timeout 	= Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
+	settings.receive_timeout 	= Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
+	settings.send_timeout 		= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
+
+	global_context.setSettings(settings);
 	
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
 	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
 
-	http_socket.setReceiveTimeout(global_context.settings.receive_timeout);
-	http_socket.setSendTimeout(global_context.settings.send_timeout);
-	tcp_socket.setReceiveTimeout(global_context.settings.receive_timeout);
-	tcp_socket.setSendTimeout(global_context.settings.send_timeout);
+	http_socket.setReceiveTimeout(settings.receive_timeout);
+	http_socket.setSendTimeout(settings.send_timeout);
+	tcp_socket.setReceiveTimeout(settings.receive_timeout);
+	tcp_socket.setSendTimeout(settings.send_timeout);
 
 	Poco::ThreadPool server_pool(2, config.getInt("max_connections", 128));
 
 	Poco::Net::HTTPServerParams * http_params = new Poco::Net::HTTPServerParams;
- 	http_params->setTimeout(global_context.settings.receive_timeout);
+ 	http_params->setTimeout(settings.receive_timeout);
 
 	Poco::Net::HTTPServer http_server(
 		new HTTPRequestHandlerFactory(*this),

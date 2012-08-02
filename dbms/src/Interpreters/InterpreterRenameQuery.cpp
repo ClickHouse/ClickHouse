@@ -28,7 +28,10 @@ InterpreterRenameQuery::InterpreterRenameQuery(ASTPtr query_ptr_, Context & cont
 void InterpreterRenameQuery::execute()
 {
 	/** Все таблицы переименовываются под глобальной блокировкой. */
-	Poco::ScopedLock<Poco::Mutex> lock(*context.mutex);
+	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+	String path = context.getPath();
+	String current_database = context.getCurrentDatabase();
 	
 	ASTRenameQuery & rename = dynamic_cast<ASTRenameQuery &>(*query_ptr);
 
@@ -38,23 +41,23 @@ void InterpreterRenameQuery::execute()
 
 	for (ASTRenameQuery::Elements::const_iterator it = rename.elements.begin(); it != rename.elements.end(); ++it)
 	{
-		String from_database_name = it->from.database.empty() ? context.current_database : it->from.database;
+		String from_database_name = it->from.database.empty() ? current_database : it->from.database;
 		String from_database_name_escaped = escapeForFileName(from_database_name);
 		String from_table_name = it->from.table;
 		String from_table_name_escaped = escapeForFileName(from_table_name);
-		String from_metadata_path = context.path + "metadata/" + from_database_name_escaped + "/" + (!from_table_name.empty() ?  from_table_name_escaped + ".sql" : "");
+		String from_metadata_path = path + "metadata/" + from_database_name_escaped + "/" + (!from_table_name.empty() ?  from_table_name_escaped + ".sql" : "");
 
-		String to_database_name = it->to.database.empty() ? context.current_database : it->to.database;
+		String to_database_name = it->to.database.empty() ? current_database : it->to.database;
 		String to_database_name_escaped = escapeForFileName(to_database_name);
 		String to_table_name = it->to.table;
 		String to_table_name_escaped = escapeForFileName(to_table_name);
-		String to_metadata_path = context.path + "metadata/" + to_database_name_escaped + "/" + (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
+		String to_metadata_path = path + "metadata/" + to_database_name_escaped + "/" + (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
 		
 		context.assertTableExists(from_database_name, from_table_name);
 		context.assertTableDoesntExist(to_database_name, to_table_name);
 
 		/// Уведомляем таблицу о том, что она переименовается.
-		(*context.databases)[from_database_name][from_table_name]->rename(context.path + "data/" + to_database_name_escaped + "/", to_table_name);
+		context.getTable(from_database_name, from_table_name)->rename(path + "data/" + to_database_name_escaped + "/", to_table_name);
 
 		/// Пишем новый файл с метаданными.
 		{
@@ -88,9 +91,9 @@ void InterpreterRenameQuery::execute()
 		}
 
 		/// Переименовываем таблицу в контексте.
-		StoragePtr table = (*context.databases)[from_database_name][from_table_name];
-		(*context.databases)[from_database_name].erase((*context.databases)[from_database_name].find(from_table_name));
-		(*context.databases)[to_database_name][to_table_name] = table;
+		StoragePtr table = context.getTable(from_database_name, from_table_name);
+		context.detachTable(from_database_name, from_table_name);
+		context.addTable(to_database_name, to_table_name, table);
 
 		/// Удаляем старый файл с метаданными.
 		Poco::File(from_metadata_path).remove();

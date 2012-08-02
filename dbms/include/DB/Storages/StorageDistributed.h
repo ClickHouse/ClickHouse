@@ -25,8 +25,8 @@ public:
 		const Addresses & addresses_,		/// Адреса удалённых серверов.
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
-		DataTypeFactory & data_type_factory_,
-		Settings & settings);
+		const DataTypeFactory & data_type_factory_,
+		const Settings & settings);
 
 	std::string getName() const { return "Distributed"; }
 	std::string getTableName() const { return name; }
@@ -49,7 +49,7 @@ private:
 	Addresses addresses;
 	String remote_database;
 	String remote_table;
-	DataTypeFactory & data_type_factory;
+	const DataTypeFactory & data_type_factory;
 
 	/// Соединения с удалёнными серверами.
 	Connections connections;
