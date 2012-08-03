@@ -112,6 +112,8 @@ namespace FunctionsLibrary
 
 			("visibleWidth",				new FunctionVisibleWidth)
 			("toTypeName",					new FunctionToTypeName)
+			("blockSize",					new FunctionBlockSize)
+			("materialize",					new FunctionMaterialize)
 		;
 
 		return res;

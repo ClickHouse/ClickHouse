@@ -23,6 +23,8 @@ namespace DB
   * visibleWidth(x) - вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.
   * 
   * toTypeName(x) 	- получить имя типа
+  * blockSize()     - получить размер блока
+  * materialize(x)  - материализовать константу
   */
 
 
@@ -240,7 +242,7 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() > 1)
+		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -252,6 +254,66 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		block.getByPosition(result).column = new ColumnConstString(block.getByPosition(0).column->size(), block.getByPosition(arguments[0]).type->getName());
+	}
+};
+
+
+class FunctionBlockSize : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "blockSize";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (!arguments.empty())
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeUInt64;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstUInt64(block.rows(), block.rows());
+	}
+};
+
+
+class FunctionMaterialize : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "materialize";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return arguments[0];
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const IColumn & argument = *block.getByPosition(arguments[0]).column;
+		if (!argument.isConst())
+			throw Exception("Argument for function 'materialize' must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+		
+		block.getByPosition(result).column = dynamic_cast<const IColumnConst &>(argument).convertToFullColumn();
 	}
 };
 
