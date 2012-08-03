@@ -282,7 +282,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		size_t size = block.getByPosition(0).column->size();
-		block.getByPosition(result).column = new ColumnConstUInt64(size, size);
+		block.getByPosition(result).column = ColumnConstUInt64(size, size).convertToFullColumn();
 	}
 };
 
