@@ -266,6 +266,10 @@ struct MatchImpl
 		/// Простой случай, когда выражение LIKE сводится к поиску подстроки в строке
 		if (like && likePatternIsStrstr(pattern, strstr_pattern))
 		{
+			/// Если отрицание - то заполним вектор единицами (вместо имеющихся там нулей)
+			if (revert)
+				memset(&res[0], 1, offsets.size());
+			
 			const UInt8 * begin = &data[0];
 			const UInt8 * pos = begin;
 			const UInt8 * end = pos + data.size();
@@ -282,7 +286,7 @@ struct MatchImpl
 
 				/// Проверяем, что вхождение не переходит через границы строк.
 				if (pos + strstr_pattern.size() < begin + offsets[i])
-					res[i] = 1;
+					res[i] = !revert;
 
 				pos = begin + offsets[i];
 				++i;
