@@ -108,7 +108,7 @@ public:
 		Permutation nested_perm(size * n);
 		for (size_t i = 0; i < size; ++i)
 			for (size_t j = 0; j < n; ++j)
-				nested_perm[i * n + j] = perm[i];
+				nested_perm[i * n + j] = perm[i] * n + j;
 		data->permute(nested_perm);
 	}
 
