@@ -129,8 +129,8 @@ struct EqualsStringImpl
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		for (size_t i = 0; i < size; i += a_n)
-			c[i] = a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n);
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+			c[j] = a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n);
 	}
 
 	static void fixed_string_vector_constant(
@@ -141,8 +141,8 @@ struct EqualsStringImpl
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		size_t b_n = b.size();
-		for (size_t i = 0; i < size; i += a_n)
-			c[i] = a_n == b_n && !memcmp(&a_data[i], b_data, a_n);
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+			c[j] = a_n == b_n && !memcmp(&a_data[i], b_data, a_n);
 	}
 
 	static void constant_string_vector(
@@ -168,8 +168,8 @@ struct EqualsStringImpl
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		size_t a_n = a.size();
-		for (size_t i = 0; i < size; i += b_n)
-			c[i] = a_n == b_n && !memcmp(&b_data[i], a_data, b_n);
+		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
+			c[j] = a_n == b_n && !memcmp(&b_data[i], a_data, b_n);
 	}
 
 	static void constant_constant(
@@ -273,8 +273,8 @@ struct NotEqualsStringImpl
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		for (size_t i = 0; i < size; i += a_n)
-			c[i] = !(a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n));
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+			c[j] = !(a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n));
 	}
 
 	static void fixed_string_vector_constant(
@@ -285,8 +285,8 @@ struct NotEqualsStringImpl
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		size_t b_n = b.size();
-		for (size_t i = 0; i < size; i += a_n)
-			c[i] = !(a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+			c[j] = !(a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
 	}
 
 	static void constant_string_vector(
@@ -312,8 +312,8 @@ struct NotEqualsStringImpl
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		size_t a_n = a.size();
-		for (size_t i = 0; i < size; i += b_n)
-			c[i] = !(a_n == b_n && !memcmp(&b_data[i], a_data, b_n));
+		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
+			c[j] = !(a_n == b_n && !memcmp(&b_data[i], a_data, b_n));
 	}
 
 	static void constant_constant(
@@ -453,10 +453,10 @@ struct LessStringImpl
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[i] = res < 0 || (res == 0 && a_n < b_n);
+			c[j] = res < 0 || (res == 0 && a_n < b_n);
 		}
 	}
 
@@ -468,10 +468,10 @@ struct LessStringImpl
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		size_t b_n = b.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[i] = res < 0 || (res == 0 && a_n < b_n);
+			c[j] = res < 0 || (res == 0 && a_n < b_n);
 		}
 	}
 
@@ -507,10 +507,10 @@ struct LessStringImpl
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		size_t a_n = a.size();
-		for (size_t i = 0; i < size; i += b_n)
+		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[i] = res < 0 || (res == 0 && b_n < a_n);
+			c[j] = res < 0 || (res == 0 && b_n < a_n);
 		}
 	}
 
@@ -651,10 +651,10 @@ struct GreaterStringImpl
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[i] = res > 0 || (res == 0 && a_n > b_n);
+			c[j] = res > 0 || (res == 0 && a_n > b_n);
 		}
 	}
 
@@ -666,10 +666,10 @@ struct GreaterStringImpl
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		size_t b_n = b.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[i] = res > 0 || (res == 0 && a_n > b_n);
+			c[j] = res > 0 || (res == 0 && a_n > b_n);
 		}
 	}
 
@@ -705,10 +705,10 @@ struct GreaterStringImpl
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		size_t a_n = a.size();
-		for (size_t i = 0; i < size; i += b_n)
+		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[i] = res > 0 || (res == 0 && b_n > a_n);
+			c[j] = res > 0 || (res == 0 && b_n > a_n);
 		}
 	}
 
@@ -849,10 +849,10 @@ struct LessOrEqualsStringImpl
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[i] = !(res > 0 || (res == 0 && a_n > b_n));
+			c[j] = !(res > 0 || (res == 0 && a_n > b_n));
 		}
 	}
 
@@ -864,10 +864,10 @@ struct LessOrEqualsStringImpl
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		size_t b_n = b.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[i] = !(res > 0 || (res == 0 && a_n > b_n));
+			c[j] = !(res > 0 || (res == 0 && a_n > b_n));
 		}
 	}
 
@@ -903,10 +903,10 @@ struct LessOrEqualsStringImpl
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		size_t a_n = a.size();
-		for (size_t i = 0; i < size; i += b_n)
+		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[i] = !(res > 0 || (res == 0 && b_n > a_n));
+			c[j] = !(res > 0 || (res == 0 && b_n > a_n));
 		}
 	}
 
@@ -1047,10 +1047,10 @@ struct GreaterOrEqualsStringImpl
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[i] = !(res < 0 || (res == 0 && a_n < b_n));
+			c[j] = !(res < 0 || (res == 0 && a_n < b_n));
 		}
 	}
 
@@ -1062,10 +1062,10 @@ struct GreaterOrEqualsStringImpl
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		size_t b_n = b.size();
-		for (size_t i = 0; i < size; i += a_n)
+		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[i] = !(res < 0 || (res == 0 && a_n < b_n));
+			c[j] = !(res < 0 || (res == 0 && a_n < b_n));
 		}
 	}
 
@@ -1101,10 +1101,10 @@ struct GreaterOrEqualsStringImpl
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		size_t a_n = a.size();
-		for (size_t i = 0; i < size; i += b_n)
+		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[i] = !(res < 0 || (res == 0 && b_n < a_n));
+			c[j] = !(res < 0 || (res == 0 && b_n < a_n));
 		}
 	}
 
