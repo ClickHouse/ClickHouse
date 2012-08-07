@@ -978,37 +978,40 @@ void StorageMergeTree::loadDataParts()
 	  * Удаление файлов будет произведено потом в методе clearOldParts.
 	  */
 
-	DataParts::iterator prev_jt = new_data_parts->begin();
-	DataParts::iterator curr_jt = prev_jt;
-	++curr_jt;
-	while (curr_jt != new_data_parts->end())
+	if (new_data_parts->size() >= 2)
 	{
-		/// Куски данных за разные месяцы рассматривать не будем
-		if ((*curr_jt)->left_month != (*curr_jt)->right_month
-			|| (*curr_jt)->right_month != (*prev_jt)->left_month
-			|| (*prev_jt)->left_month != (*prev_jt)->right_month)
+		DataParts::iterator prev_jt = new_data_parts->begin();
+		DataParts::iterator curr_jt = prev_jt;
+		++curr_jt;
+		while (curr_jt != new_data_parts->end())
 		{
-			++prev_jt;
-			++curr_jt;
-			continue;
-		}
+			/// Куски данных за разные месяцы рассматривать не будем
+			if ((*curr_jt)->left_month != (*curr_jt)->right_month
+				|| (*curr_jt)->right_month != (*prev_jt)->left_month
+				|| (*prev_jt)->left_month != (*prev_jt)->right_month)
+			{
+				++prev_jt;
+				++curr_jt;
+				continue;
+			}
 
-		if ((*curr_jt)->contains(**prev_jt))
-		{
-			LOG_WARNING(log, "Part " << (*curr_jt)->name << " contains " << (*prev_jt)->name);
-			new_data_parts->erase(prev_jt);
-			prev_jt = curr_jt;
-			++curr_jt;
-		}
-		else if ((*prev_jt)->contains(**curr_jt))
-		{
-			LOG_WARNING(log, "Part " << (*prev_jt)->name << " contains " << (*curr_jt)->name);
-			new_data_parts->erase(curr_jt++);
-		}
-		else
-		{
-			++prev_jt;
-			++curr_jt;
+			if ((*curr_jt)->contains(**prev_jt))
+			{
+				LOG_WARNING(log, "Part " << (*curr_jt)->name << " contains " << (*prev_jt)->name);
+				new_data_parts->erase(prev_jt);
+				prev_jt = curr_jt;
+				++curr_jt;
+			}
+			else if ((*prev_jt)->contains(**curr_jt))
+			{
+				LOG_WARNING(log, "Part " << (*prev_jt)->name << " contains " << (*curr_jt)->name);
+				new_data_parts->erase(curr_jt++);
+			}
+			else
+			{
+				++prev_jt;
+				++curr_jt;
+			}
 		}
 	}
 
