@@ -23,6 +23,7 @@ public:
 	}
 
 	Block readImpl();
+	void readSuffix();
 
 	String getName() const { return "MergingSortedBlockInputStream"; }
 
