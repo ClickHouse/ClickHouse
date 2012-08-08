@@ -124,8 +124,10 @@ void TCPHandler::processInsertQuery()
 	Block block = state.io.out_sample;
 	sendData(block);
 
+	state.io.out->writePrefix();
 	while (receivePacket())
 		;
+	state.io.out->writeSuffix();
 }
 
 
