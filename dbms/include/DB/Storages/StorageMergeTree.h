@@ -204,13 +204,12 @@ private:
 	Poco::FastMutex all_data_parts_mutex;
 
 	/** Актуальное множество кусков с данными. */
-	typedef Yandex::MultiVersion<DataParts> MultiVersionDataParts;
-	MultiVersionDataParts data_parts;
-	
+	DataParts data_parts;
+	Poco::FastMutex data_parts_mutex;
 
 	static String getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
-	/// Загрузить множество кусков с данными с диска.
+	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
 
 	/// Удалить неактуальные куски.
@@ -226,11 +225,11 @@ private:
 
 	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке.
 	bool merge(bool async = true);
-	bool selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right);
-	void mergeImpl(DataParts::iterator left, DataParts::iterator right);
+	bool selectPartsToMerge(DataPartPtr & left, DataPartPtr & right);
+	void mergeImpl(DataPartPtr left, DataPartPtr right);
 
 	boost::thread merge_thread;
-	Poco::FastMutex merge_mutex;
+	Poco::Mutex merge_mutex;
 };
 
 }

@@ -200,26 +200,23 @@ private:
 		Poco::File(part_tmp_path).renameTo(part_res_path);
 
 		/// Добавляем новый кусок в набор.
-		const SharedPtr<StorageMergeTree::DataParts> current_data_parts = storage.data_parts.get();
-		SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
-
-		StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart(storage);
-		new_data_part->left_date = Yandex::DayNum_t(min_date);
-		new_data_part->right_date = Yandex::DayNum_t(max_date);
-		new_data_part->left = part_id;
-		new_data_part->right = part_id;
-		new_data_part->level = 0;
-		new_data_part->name = part_name;
-		new_data_part->size = rows / storage.index_granularity;
-		new_data_part->modification_time = time(0);
-		new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
-		new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
-		
-		new_data_parts->insert(new_data_part);
-		storage.data_parts.set(new_data_parts);
-
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(storage.all_data_parts_mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock(storage.data_parts_mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock_all(storage.all_data_parts_mutex);
+
+			StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart(storage);
+			new_data_part->left_date = Yandex::DayNum_t(min_date);
+			new_data_part->right_date = Yandex::DayNum_t(max_date);
+			new_data_part->left = part_id;
+			new_data_part->right = part_id;
+			new_data_part->level = 0;
+			new_data_part->name = part_name;
+			new_data_part->size = rows / storage.index_granularity;
+			new_data_part->modification_time = time(0);
+			new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
+			new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
+
+			storage.data_parts.insert(new_data_part);
 			storage.all_data_parts.insert(new_data_part);
 		}
 	}
@@ -464,9 +461,11 @@ class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 public:
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
 		size_t block_size_, const Names & column_names_, StorageMergeTree & storage_,
+		const StorageMergeTree::DataPartPtr & owned_data_part_,
 		Row & requested_pk_prefix, Range & requested_pk_range)
 		: path(path_), block_size(block_size_), column_names(column_names_),
-		storage(storage_), mark_number(0), rows_limit(0), rows_read(0)
+		storage(storage_), owned_data_part(owned_data_part_),
+		mark_number(0), rows_limit(0), rows_read(0)
 	{
 		/// Если индекс не используется.
 		if (requested_pk_prefix.size() == 0 && !requested_pk_range.left_bounded && !requested_pk_range.right_bounded)
@@ -527,10 +526,12 @@ public:
 	}
 
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
-		size_t block_size_, const Names & column_names_, StorageMergeTree & storage_,
+		size_t block_size_, const Names & column_names_,
+		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
 		size_t mark_number_, size_t rows_limit_)
 		: path(path_), block_size(block_size_), column_names(column_names_),
-		storage(storage_), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
+		storage(storage_), owned_data_part(owned_data_part_),
+		mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
 	{
 	}
 
@@ -579,13 +580,18 @@ public:
 	}
 	
 	String getName() const { return "MergeTreeBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new MergeTreeBlockInputStream(path, block_size, column_names, storage, mark_number, rows_limit); }
+	
+	BlockInputStreamPtr clone()
+	{
+		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_number, rows_limit);
+	}
 
 private:
 	const String path;
 	size_t block_size;
 	Names column_names;
 	StorageMergeTree & storage;
+	const StorageMergeTree::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
 	size_t mark_number;		/// С какой засечки читать данные
 	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
 
@@ -889,10 +895,14 @@ BlockInputStreams StorageMergeTree::read(
 	BlockInputStreams res;
 
 	/// Выберем куски, в которых могут быть данные для date_range.
-	const MultiVersionDataParts::Version current_data_parts = data_parts.get();
-	for (DataParts::iterator it = current_data_parts->begin(); it != current_data_parts->end(); ++it)
-		if (date_range.intersectsSegment(static_cast<UInt64>((*it)->left_date), static_cast<UInt64>((*it)->right_date)))
-			res.push_back(new MergeTreeBlockInputStream(full_path + (*it)->name + '/', max_block_size, column_names, *this, primary_prefix, primary_range));
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		
+		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
+			if (date_range.intersectsSegment(static_cast<UInt64>((*it)->left_date), static_cast<UInt64>((*it)->right_date)))
+				res.push_back(new MergeTreeBlockInputStream(
+					full_path + (*it)->name + '/', max_block_size, column_names, *this, *it, primary_prefix, primary_range));
+	}
 
 	LOG_DEBUG(log, "Selected " << res.size() << " parts");
 
@@ -934,9 +944,12 @@ String StorageMergeTree::getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_
 void StorageMergeTree::loadDataParts()
 {
 	LOG_DEBUG(log, "Loading data parts");
-	
+
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+		
 	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
-	SharedPtr<DataParts> new_data_parts = new DataParts;
+	data_parts.clear();
 
 	static Poco::RegularExpression file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)");
 	Poco::DirectoryIterator end;
@@ -965,25 +978,22 @@ void StorageMergeTree::loadDataParts()
 		part->left_month = date_lut.toFirstDayOfMonth(part->left_date);
 		part->right_month = date_lut.toFirstDayOfMonth(part->right_date);
 
-		new_data_parts->insert(part);
+		data_parts.insert(part);
 	}
 
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
-		all_data_parts = *new_data_parts;
-	}
+	all_data_parts = data_parts;
 
 	/** Удаляем из набора актуальных кусков куски, которые содержатся в другом куске (которые были склеены),
 	  *  но по каким-то причинам остались лежать в файловой системе.
 	  * Удаление файлов будет произведено потом в методе clearOldParts.
 	  */
 
-	if (new_data_parts->size() >= 2)
+	if (data_parts.size() >= 2)
 	{
-		DataParts::iterator prev_jt = new_data_parts->begin();
+		DataParts::iterator prev_jt = data_parts.begin();
 		DataParts::iterator curr_jt = prev_jt;
 		++curr_jt;
-		while (curr_jt != new_data_parts->end())
+		while (curr_jt != data_parts.end())
 		{
 			/// Куски данных за разные месяцы рассматривать не будем
 			if ((*curr_jt)->left_month != (*curr_jt)->right_month
@@ -998,14 +1008,14 @@ void StorageMergeTree::loadDataParts()
 			if ((*curr_jt)->contains(**prev_jt))
 			{
 				LOG_WARNING(log, "Part " << (*curr_jt)->name << " contains " << (*prev_jt)->name);
-				new_data_parts->erase(prev_jt);
+				data_parts.erase(prev_jt);
 				prev_jt = curr_jt;
 				++curr_jt;
 			}
 			else if ((*prev_jt)->contains(**curr_jt))
 			{
 				LOG_WARNING(log, "Part " << (*prev_jt)->name << " contains " << (*curr_jt)->name);
-				new_data_parts->erase(curr_jt++);
+				data_parts.erase(curr_jt++);
 			}
 			else
 			{
@@ -1015,11 +1025,7 @@ void StorageMergeTree::loadDataParts()
 		}
 	}
 
-	/** Устанавливаем актуальную версию набора кусков.
-	  */
-	data_parts.set(new_data_parts);
-
-	LOG_DEBUG(log, "Loaded data parts (" << new_data_parts->size() << " items)");
+	LOG_DEBUG(log, "Loaded data parts (" << data_parts.size() << " items)");
 }
 
 
@@ -1039,7 +1045,7 @@ void StorageMergeTree::clearOldParts()
 	{
 		int ref_count = it->referenceCount();
 		LOG_TRACE(log, (*it)->name << ": ref_count = " << ref_count);
-		if (ref_count == 1)
+		if (ref_count == 1)		/// После этого ref_count не может увеличиться.
 		{
 			LOG_DEBUG(log, "Removing part " << (*it)->name);
 			
@@ -1054,7 +1060,7 @@ void StorageMergeTree::clearOldParts()
 
 bool StorageMergeTree::merge(bool async)
 {
-	Poco::ScopedTry<Poco::FastMutex> lock;
+	Poco::ScopedTry<Poco::Mutex> lock;
 
 	/// Если уже мерджим - то можно ничего не делать.
 	if (!lock.lock(&merge_mutex))
@@ -1063,8 +1069,8 @@ bool StorageMergeTree::merge(bool async)
 		return false;
 	}
 	
-	DataParts::iterator left;
-	DataParts::iterator right;
+	DataPartPtr left;
+	DataPartPtr right;
 
 	if (merge_thread.joinable())
 		merge_thread.join();
@@ -1083,22 +1089,22 @@ bool StorageMergeTree::merge(bool async)
 }
 
 
-bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts::iterator & right)
+bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & right)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
 
-	const MultiVersionDataParts::Version current_data_parts = data_parts.get();
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
-	if (current_data_parts->size() < 2)
+	if (data_parts.size() < 2)
 	{
 		LOG_DEBUG(log, "Too few parts");
 		return false;
 	}
 
-	DataParts::iterator first = current_data_parts->begin();
+	DataParts::iterator first = data_parts.begin();
 	DataParts::iterator second = first;
-	DataParts::iterator argmin_first = current_data_parts->end();
-	DataParts::iterator argmin_second = current_data_parts->end();
+	DataParts::iterator argmin_first = data_parts.end();
+	DataParts::iterator argmin_second = data_parts.end();
 	++second;
 
 	/** Два первых подряд идущих куска одинакового минимального уровня, за один, одинаковый месяц.
@@ -1107,7 +1113,7 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 	  */
 
 	UInt32 min_adjacent_level = -1U;
-	while (second != current_data_parts->end())
+	while (second != data_parts.end())
 	{
 		if ((*first)->left_month == (*first)->right_month
 			&& (*first)->right_month == (*second)->left_month
@@ -1125,18 +1131,18 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 		++second;
 	}
 
-	if (argmin_first != current_data_parts->end())
+	if (argmin_first != data_parts.end())
 	{
-		left = argmin_first;
-		right = argmin_second;
-		LOG_DEBUG(log, "Selected parts " << (*left)->name << " and " << (*right)->name);
+		left = *argmin_first;
+		right = *argmin_second;
+		LOG_DEBUG(log, "Selected parts " << left->name << " and " << right->name);
 		return true;
 	}
 
-	first = current_data_parts->begin();
+	first = data_parts.begin();
 	second = first;
-	argmin_first = current_data_parts->end();
-	argmin_second = current_data_parts->end();
+	argmin_first = data_parts.end();
+	argmin_second = data_parts.end();
 	++second;
 
 	/** Два подряд идущих куска минимальноего суммарного размера с временем создания
@@ -1146,7 +1152,7 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 
 	time_t cutoff_time = time(0) - delay_time_to_merge_different_level_parts;
 	size_t min_adjacent_size = -1ULL;
-	while (second != current_data_parts->end())
+	while (second != data_parts.end())
 	{
 		if ((*first)->left_month == (*first)->right_month
 			&& (*first)->right_month == (*second)->left_month
@@ -1165,11 +1171,11 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 		++second;
 	}
 
-	if (argmin_first != current_data_parts->end())
+	if (argmin_first != data_parts.end())
 	{
-		left = argmin_first;
-		right = argmin_second;
-		LOG_DEBUG(log, "Selected parts " << (*left)->name << " and " << (*right)->name);
+		left = *argmin_first;
+		right = *argmin_second;
+		LOG_DEBUG(log, "Selected parts " << left->name << " and " << right->name);
 		return true;
 	}
 
@@ -1178,11 +1184,13 @@ bool StorageMergeTree::selectPartsToMerge(DataParts::iterator & left, DataParts:
 }
 
 
-void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator right)
+void StorageMergeTree::mergeImpl(DataPartPtr left, DataPartPtr right)
 {
+	Poco::ScopedLock<Poco::Mutex> lock(merge_mutex);
+	
 	try
 	{
-		LOG_DEBUG(log, "Merging parts " << (*left)->name << " with " << (*right)->name);
+		LOG_DEBUG(log, "Merging parts " << left->name << " with " << right->name);
 
 		Names all_column_names;
 		for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
@@ -1191,14 +1199,14 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 
 		StorageMergeTree::DataPartPtr new_data_part = new DataPart(*this);
-		new_data_part->left_date = (*left)->left_date;
-		new_data_part->right_date = (*right)->right_date;
-		new_data_part->left = (*left)->left;
-		new_data_part->right = (*right)->right;
-		new_data_part->level = 1 + std::max((*left)->level, (*right)->level);
+		new_data_part->left_date = left->left_date;
+		new_data_part->right_date = right->right_date;
+		new_data_part->left = left->left;
+		new_data_part->right = right->right;
+		new_data_part->level = 1 + std::max(left->level, right->level);
 		new_data_part->name = getPartName(
 			new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
-		new_data_part->size = (*left)->size + (*right)->size;
+		new_data_part->size = left->size + right->size;
 		new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
 		new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
 
@@ -1211,44 +1219,37 @@ void StorageMergeTree::mergeImpl(DataParts::iterator left, DataParts::iterator r
 		Range empty_range;
 
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			full_path + (*left)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range), primary_expr));
+			full_path + left->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, left, empty_prefix, empty_range), primary_expr));
 
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			full_path + (*right)->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, empty_prefix, empty_range), primary_expr));
+			full_path + right->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, right, empty_prefix, empty_range), primary_expr));
 
 		BlockInputStreamPtr merged_stream = new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE);
 		BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
-			(*left)->left_date, (*right)->right_date, (*left)->left, (*right)->right, 1 + std::max((*left)->level, (*right)->level));
+			left->left_date, right->right_date, left->left, right->right, 1 + std::max(left->level, right->level));
 
 		copyData(*merged_stream, *to);
 
 		new_data_part->modification_time = time(0);
 
 		{
+			Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
 			/// Добавляем новый кусок в набор.
-			const SharedPtr<StorageMergeTree::DataParts> current_data_parts = data_parts.get();
-			SharedPtr<StorageMergeTree::DataParts> new_data_parts = new StorageMergeTree::DataParts(*current_data_parts);
+			if (data_parts.end() == data_parts.find(left))
+				throw Exception("Logical error: cannot find data part " + left->name + " in list", ErrorCodes::LOGICAL_ERROR);
+ 			if (data_parts.end() == data_parts.find(right))
+				throw Exception("Logical error: cannot find data part " + right->name + " in list", ErrorCodes::LOGICAL_ERROR);
 
-			if (new_data_parts->end() == new_data_parts->find(*left))
-				throw Exception("Logical error: cannot find data part " + (*left)->name + " in list", ErrorCodes::LOGICAL_ERROR);
-			if (new_data_parts->end() == new_data_parts->find(*right))
-				throw Exception("Logical error: cannot find data part " + (*right)->name + " in list", ErrorCodes::LOGICAL_ERROR);
+			data_parts.insert(new_data_part);
+			data_parts.erase(data_parts.find(left));
+			data_parts.erase(data_parts.find(right));
 
-			new_data_parts->insert(new_data_part);
-			new_data_parts->erase(new_data_parts->find(*left));
-			new_data_parts->erase(new_data_parts->find(*right));
-
-			data_parts.set(new_data_parts);
-
-			/// Версия current_data_parts больше не актуальна.
-		}
-
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
 			all_data_parts.insert(new_data_part);
 		}
 
-		LOG_TRACE(log, "Merged parts " << (*left)->name << " with " << (*right)->name);
+		LOG_TRACE(log, "Merged parts " << left->name << " with " << right->name);
 
 		/// Удаляем старые куски.
 		clearOldParts();
