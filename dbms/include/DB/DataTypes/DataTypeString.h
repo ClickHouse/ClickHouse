@@ -1,5 +1,4 @@
-#ifndef DBMS_DATA_TYPES_DATATYPE_STRING_H
-#define DBMS_DATA_TYPES_DATATYPE_STRING_H
+#pragma once
 
 #include <ostream>
 
@@ -43,8 +42,11 @@ public:
 
 	ColumnPtr createColumn() const;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const;
+
+	Field getDefault() const
+	{
+		return String("");
+	}
 };
 
 }
-
-#endif

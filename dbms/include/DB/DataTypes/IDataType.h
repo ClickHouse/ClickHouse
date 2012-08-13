@@ -76,6 +76,10 @@ public:
 	  */
 	virtual SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const = 0;
 
+	/** Получить значение "по-умолчанию".
+	  */
+	virtual Field getDefault() const = 0;
+
 	/// Вернуть приблизительный (оценочный) размер значения.
 	virtual size_t getSizeOfField() const
 	{

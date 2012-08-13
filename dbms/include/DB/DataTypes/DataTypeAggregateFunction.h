@@ -38,6 +38,11 @@ public:
 
 	ColumnPtr createColumn() const;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const;
+
+	Field getDefault() const
+	{
+		throw Exception("There is no default value for AggregateFunction data type", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+	}
 };
 
 

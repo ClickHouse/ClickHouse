@@ -22,6 +22,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
+#include <DB/DataStreams/AddingDefaultBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -1246,6 +1247,7 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 
 	/** Читаем из левого и правого куска, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.
+	  * Также, если в одном из кусков есть не все столбцы, то добавляем столбцы с значениями по-умолчанию.
 	  */
 	BlockInputStreams src_streams;
 
@@ -1258,7 +1260,9 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 	src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
 		full_path + right->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, right, empty_prefix, empty_range), primary_expr));
 
-	BlockInputStreamPtr merged_stream = new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE);
+	BlockInputStreamPtr merged_stream = new AddingDefaultBlockInputStream(
+		new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE), columns);
+	
 	BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
 		left->left_date, right->right_date, left->left, right->right, 1 + std::max(left->level, right->level));
 

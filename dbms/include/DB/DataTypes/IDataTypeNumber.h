@@ -54,6 +54,11 @@ public:
 	}
 
 	size_t getSizeOfField() const { return sizeof(FieldType); }
+
+	Field getDefault() const
+	{
+		return typename NearestFieldType<FieldType>::Type();
+	}
 };
 
 }
