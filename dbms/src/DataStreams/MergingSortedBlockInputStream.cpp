@@ -7,14 +7,9 @@
 namespace DB
 {
 
-Block MergingSortedBlockInputStream::readImpl()
-{
-	if (!inputs.size())
-		return Block();
-	
-	if (inputs.size() == 1)
-		return inputs[0]->read();
 
+void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs & merged_columns)
+{
 	/// Читаем первые блоки, инициализируем очередь.
 	if (first)
 	{
@@ -39,9 +34,6 @@ Block MergingSortedBlockInputStream::readImpl()
 	}
 
 	/// Инициализируем результат.
-	size_t merged_rows = 0;
-	Block merged_block;
-	ColumnPlainPtrs merged_columns;
 
 	/// Клонируем структуру первого непустого блока источников.
 	{
@@ -57,11 +49,29 @@ Block MergingSortedBlockInputStream::readImpl()
 
 		/// Если все входные блоки пустые.
 		if (it == source_blocks.end())
-			return Block();
+			return;
 	}
-		
+
 	for (size_t i = 0; i < num_columns; ++i)
 		merged_columns.push_back(&*merged_block.getByPosition(i).column);
+}
+	
+
+Block MergingSortedBlockInputStream::readImpl()
+{
+	if (!inputs.size())
+		return Block();
+	
+	if (inputs.size() == 1)
+		return inputs[0]->read();
+
+	size_t merged_rows = 0;
+	Block merged_block;
+	ColumnPlainPtrs merged_columns;
+	
+	init(merged_block, merged_columns);
+	if (merged_columns.empty())
+		return Block();
 
 	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
 	while (!queue.empty())
@@ -80,26 +90,7 @@ Block MergingSortedBlockInputStream::readImpl()
 		else
 		{
 			/// Достаём из соответствующего источника следующий блок, если есть.
-
-			size_t i = 0;
-			size_t size = cursors.size();
-			for (; i < size; ++i)
-			{
-				if (&cursors[i] == current.impl)
-				{
-					source_blocks[i] = inputs[i]->read();
-					if (source_blocks[i])
-					{
-						cursors[i].reset(source_blocks[i]);
-						queue.push(SortCursor(&cursors[i]));
-					}
-
-					break;
-				}
-			}
-
-			if (i == size)
-				throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
+			fetchNextBlock(current);
 		}
 
 		++merged_rows;
@@ -109,6 +100,30 @@ Block MergingSortedBlockInputStream::readImpl()
 
 	inputs.clear();
 	return merged_block;
+}
+
+
+void MergingSortedBlockInputStream::fetchNextBlock(const SortCursor & current)
+{
+	size_t i = 0;
+	size_t size = cursors.size();
+	for (; i < size; ++i)
+	{
+		if (&cursors[i] == current.impl)
+		{
+			source_blocks[i] = inputs[i]->read();
+			if (source_blocks[i])
+			{
+				cursors[i].reset(source_blocks[i]);
+				queue.push(SortCursor(&cursors[i]));
+			}
+
+			break;
+		}
+	}
+
+	if (i == size)
+		throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 }
 
 

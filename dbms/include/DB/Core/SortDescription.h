@@ -40,11 +40,16 @@ struct SortCursorImpl
 	size_t sort_columns_size;
 	size_t pos;
 	size_t rows;
+
+	/** Порядок (что сравнивается), если сравниваемые столбцы равны.
+	  * Даёт возможность предпочитать строки из нужного курсора.
+	  */
+	size_t order;
 	
 	SortCursorImpl() {}
 
-	SortCursorImpl(const Block & block, const SortDescription & desc_)
-		: desc(desc_), sort_columns_size(desc.size())
+	SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0)
+		: desc(desc_), sort_columns_size(desc.size()), order(order_)
 	{
 		reset(block);
 	}
@@ -98,7 +103,7 @@ struct SortCursor
 			if (res < 0)
 				return false;
 		}
-		return false;
+		return impl->order > rhs.impl->order;
 	}
 };
 

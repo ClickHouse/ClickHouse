@@ -29,7 +29,14 @@ public:
 
 	BlockInputStreamPtr clone() { return new MergingSortedBlockInputStream(inputs, description, max_block_size); }
 
-private:
+protected:
+	/// Инициализирует очередь и следующий блок результата.
+	void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
+	
+	/// Достаёт из источника, соответствующего current следующий блок.
+	void fetchNextBlock(const SortCursor & current);
+	
+	
 	BlockInputStreams inputs;
 	SortDescription description;
 	size_t max_block_size;
@@ -46,6 +53,7 @@ private:
 	typedef std::priority_queue<SortCursor> Queue;
 	Queue queue;
 
+private:
 	Logger * log;
 };
 
