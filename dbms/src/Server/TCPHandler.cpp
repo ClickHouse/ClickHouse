@@ -59,7 +59,7 @@ void TCPHandler::runImpl()
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
-		while (!in->poll(global_settings.poll_interval) && !Daemon::instance().isCancelled())
+		while (!in->poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
 			;
 
 		/// Если требуется завершить работу, или клиент отсоединился.
