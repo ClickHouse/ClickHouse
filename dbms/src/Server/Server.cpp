@@ -132,6 +132,9 @@ int Server::main(const std::vector<std::string> & args)
 	LOG_INFO(log, "Ready for connections.");
 	
 	waitForTerminationRequest();
+	
+	LOG_DEBUG(log, "Received termination signal.");
+	is_cancelled = true;
 
 	http_server.stop();
 	tcp_server.stop();
