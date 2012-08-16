@@ -90,9 +90,6 @@ Block CollapsingSortedBlockInputStream::readImpl()
 			throw Exception("Incorrect data: Sign = " + Poco::NumberFormatter::format(sign) + " (must be 1 or -1).",
 				ErrorCodes::INCORRECT_DATA);
 
-		for (size_t i = 0; i < num_columns; ++i)
-			merged_columns[i]->insert((*current->all_columns[i])[current->pos]);
-
 		if (!current->isLast())
 		{
 			current->next();
