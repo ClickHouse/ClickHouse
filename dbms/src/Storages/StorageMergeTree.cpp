@@ -670,7 +670,7 @@ StorageMergeTree::StorageMergeTree(
 
 StorageMergeTree::~StorageMergeTree()
 {
-	LOG_DEBUG(log, "Waiting for merge tree to finish.");
+	LOG_DEBUG(log, "Waiting for merge thread to finish.");
 	
 	if (merge_thread.joinable())
 		merge_thread.join();
@@ -1302,7 +1302,7 @@ void StorageMergeTree::drop()
 {
 	Poco::ScopedLock<Poco::Mutex> lock_merge(merge_mutex);
 
-	LOG_DEBUG(log, "Waiting for merge tree to finish.");
+	LOG_DEBUG(log, "Waiting for merge thread to finish.");
 
 	if (merge_thread.joinable())
 		merge_thread.join();
