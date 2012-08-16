@@ -19,9 +19,6 @@
 #include "TCPHandler.h"
 #include <Poco/Ext/ThreadNumber.h>
 
-/// Блокироваться в цикле ожидания запроса на указанное количество секунд.
-#define POLL_INTERVAL 10
-
 
 namespace DB
 {
@@ -32,8 +29,10 @@ void TCPHandler::runImpl()
 	connection_context = server.global_context;
 	connection_context.setSessionContext(connection_context);
 
-	socket().setReceiveTimeout(server.global_context.getSettingsRef().receive_timeout);
-	socket().setSendTimeout(server.global_context.getSettingsRef().send_timeout);
+	Settings global_settings = server.global_context.getSettings();
+
+	socket().setReceiveTimeout(global_settings.receive_timeout);
+	socket().setSendTimeout(global_settings.send_timeout);
 	
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
@@ -60,7 +59,7 @@ void TCPHandler::runImpl()
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
-		while (!in->poll(POLL_INTERVAL) && !Daemon::instance().isCancelled())
+		while (!in->poll(global_settings.poll_interval) && !Daemon::instance().isCancelled())
 			;
 
 		/// Если требуется завершить работу, или клиент отсоединился.

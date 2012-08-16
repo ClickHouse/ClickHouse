@@ -97,6 +97,7 @@ int Server::main(const std::vector<std::string> & args)
 	settings.connect_timeout 	= Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
 	settings.receive_timeout 	= Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
 	settings.send_timeout 		= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
+	settings.poll_interval		= config.getInt("poll_interval", 	settings.poll_interval);
 
 	global_context.setSettings(settings);
 	
