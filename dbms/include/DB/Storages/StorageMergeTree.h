@@ -101,7 +101,7 @@ public:
 		return merge(1, false);
 	}
 
-//	void drop();
+	void drop();
 	
 //	void rename(const String & new_path_to_db, const String & new_name);
 

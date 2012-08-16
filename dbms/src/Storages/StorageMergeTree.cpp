@@ -1297,4 +1297,23 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 	LOG_TRACE(log, "Merged parts " << left->name << " with " << right->name);
 }
 
+
+void StorageMergeTree::drop()
+{
+	Poco::ScopedLock<Poco::Mutex> lock_merge(merge_mutex);
+
+	LOG_DEBUG(log, "Waiting for merge tree to finish.");
+
+	if (merge_thread.joinable())
+		merge_thread.join();
+	
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	data_parts.clear();
+	all_data_parts.clear();
+
+	Poco::File(full_path).remove(true);
+}
+
 }
