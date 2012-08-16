@@ -64,11 +64,10 @@ Block CollapsingSortedBlockInputStream::readImpl()
 
 		if (id != current_id)
 		{
-			current_id = id;
-			
 			/// Запишем данные для предыдущего визита.
 			insertRows(merged_columns);
 
+			current_id = id;
 			count_negative = 0;
 			count_positive = 0;
 		}
