@@ -7,7 +7,7 @@ namespace DB
 
 void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns)
 {
-	if (count_positive != 0 && count_negative != 0)
+	if (count_positive != 0 || count_negative != 0)
 	{
 		if (count_positive == count_negative || count_positive + 1 == count_negative)
 			for (size_t i = 0; i < num_columns; ++i)
