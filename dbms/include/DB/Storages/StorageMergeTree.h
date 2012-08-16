@@ -3,7 +3,6 @@
 #include <boost/thread.hpp>
 
 #include <statdaemons/Increment.h>
-#include <Yandex/MultiVersion.h>
 
 #include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
@@ -45,6 +44,10 @@ struct Range;
   * Внутри директории с куском:
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
+  *
+  * Если указано id_column и sign_column, то при склейке кусков, также "схлопываются"
+  *  пары записей с разными значениями sign_column для одного значения id_column.
+  *  (см. CollapsingSortedBlockInputStream.h)
   */
 class StorageMergeTree : public IStorage
 {
@@ -65,6 +68,7 @@ public:
 		Context & context_,
 		ASTPtr & primary_expr_ast_, const String & date_column_name_,
 		size_t index_granularity_,
+		const String & id_column_ = "", const String & sign_column_ = "",
 		size_t delay_time_to_merge_different_level_parts_ = DEFAULT_DELAY_TIME_TO_MERGE_DIFFERENT_LEVEL_PARTS);
 
     ~StorageMergeTree();
@@ -111,6 +115,11 @@ private:
 	ASTPtr primary_expr_ast;
 	String date_column_name;
 	size_t index_granularity;
+
+	/// Для схлопывания записей об изменениях, если это требуется.
+	String id_column;
+	String sign_column;
+	
 	size_t delay_time_to_merge_different_level_parts;
 
 	SharedPtr<Expression> primary_expr;

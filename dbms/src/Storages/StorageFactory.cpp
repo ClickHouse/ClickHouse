@@ -136,6 +136,45 @@ StoragePtr StorageFactory::get(
 
 		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, index_granularity);
 	}
+	else if (name == "CollapsingMergeTree")
+	{
+		/** В качестве аргумента для движка должно быть указано:
+		  *  - имя столбца с датой;
+		  *  - выражение для сортировки в скобках;
+		  *  - index_granularity;
+		  *  - имя столбца - идентификатора "визита";
+		  *  - имя столбца, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
+		  * Например: ENGINE = CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), EventTime), 8192, VisitID, Sign).
+		  */
+		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+
+		if (args_func.size() != 1)
+			throw Exception("Storage CollapsingMergeTree requires exactly 5 parameters"
+				" - name of column with date, primary key expression, index granularity, id_column, sign_column.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+		if (args.size() != 5)
+			throw Exception("Storage CollapsingMergeTree requires exactly 5 parameters"
+				" - name of column with date, primary key expression, index granularity, id_column, sign_column.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
+		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
+		String id_column_name 		= dynamic_cast<ASTIdentifier &>(*args[3]).name;
+		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[4]).name;
+		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[1]);
+
+		if (primary_expr_func.name != "tuple")
+			throw Exception("Primary expression for storage CollapsingMergeTree must be in parentheses.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		ASTPtr primary_expr = primary_expr_func.children.at(0);
+
+		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, index_granularity,
+			id_column_name, sign_column_name);
+	}
 	else if (name == "SystemNumbers")
 	{
 		if (columns->size() != 1 || columns->begin()->first != "number" || columns->begin()->second->getName() != "UInt64")
