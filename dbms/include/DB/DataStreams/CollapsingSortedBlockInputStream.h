@@ -31,6 +31,7 @@ public:
 	{
 	}
 
+	/// Может возвращаться на 1 больше записей, чем max_block_size.
 	Block readImpl();
 
 	String getName() const { return "CollapsingSortedBlockInputStream"; }
@@ -63,7 +64,7 @@ private:
 	}
 
 	/// Вставить в результат строки для текущего идентификатора "визита".
-	void insertRows(ColumnPlainPtrs & merged_columns);
+	void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows);
 };
 
 }

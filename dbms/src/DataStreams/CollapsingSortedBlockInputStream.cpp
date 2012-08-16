@@ -5,17 +5,23 @@ namespace DB
 {
 
 
-void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns)
+void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows)
 {
 	if (count_positive != 0 || count_negative != 0)
 	{
 		if (count_positive == count_negative || count_positive + 1 == count_negative)
+		{
+			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insert(first_negative[i]);
+		}
 			
 		if (count_positive == count_negative || count_positive == count_negative + 1)
+		{
+			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insert(last_positive[i]);
+		}
 			
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
 			throw Exception("Incorrect data: number of rows with sign = 1 ("
@@ -67,7 +73,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
 		if (id != current_id)
 		{
 			/// Запишем данные для предыдущего визита.
-			insertRows(merged_columns);
+			insertRows(merged_columns, merged_rows);
 
 			current_id = id;
 			count_negative = 0;
@@ -102,13 +108,12 @@ Block CollapsingSortedBlockInputStream::readImpl()
 			fetchNextBlock(current);
 		}
 
-		++merged_rows;
-		if (merged_rows == max_block_size)
+		if (merged_rows >= max_block_size)
 			return merged_block;
 	}
 
 	/// Запишем данные для последнего визита.
-	insertRows(merged_columns);
+	insertRows(merged_columns, merged_rows);
 
 	inputs.clear();
 	return merged_block;
