@@ -28,7 +28,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			if (!num_columns)
 				num_columns = source_blocks[0].columns();
 
-			cursors[i] = SortCursorImpl(*it, description);
+			cursors[i] = SortCursorImpl(*it, description, i);
 			queue.push(SortCursor(&cursors[i]));
 		}
 	}
