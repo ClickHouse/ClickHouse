@@ -12,10 +12,12 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 		if (count_positive == count_negative || count_positive + 1 == count_negative)
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insert(first_negative[i]);
-		else if (count_positive == count_negative || count_positive == count_negative + 1)
+			
+		if (count_positive == count_negative || count_positive == count_negative + 1)
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insert(last_positive[i]);
-		else
+			
+		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
 			throw Exception("Incorrect data: number of rows with sign = 1 ("
 				+ Poco::NumberFormatter::format(count_positive) +
 				") differs with number of rows with sign = -1 ("
