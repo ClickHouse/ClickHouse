@@ -2,6 +2,7 @@
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/TabSeparatedRawRowOutputStream.h>
 #include <DB/DataStreams/ValuesRowInputStream.h>
 #include <DB/DataStreams/ValuesRowOutputStream.h>
 #include <DB/DataStreams/TabSeparatedBlockOutputStream.h>
@@ -29,7 +30,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true), sample, max_block_size);
 	else if (name == "TabSeparatedWithNamesAndTypes")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true, true), sample, max_block_size);
-	else if (name == "BlockTabSeparated" || name == "Pretty" || name == "PrettyCompact" || name == "PrettySpace" || name == "Vertical" || name == "Null")
+	else if (name == "BlockTabSeparated" || name == "Pretty" || name == "PrettyCompact" || name == "PrettySpace" || name == "Vertical" || name == "Null" || name == "TabSeparatedRaw")
 		throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 	else if (name == "Values")
 		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, sample), sample, max_block_size);
@@ -49,6 +50,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample, true));
 	else if (name == "TabSeparatedWithNamesAndTypes")
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample, true, true));
+	else if (name == "TabSeparatedRaw")
+		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRawRowOutputStream(buf, sample));
 	else if (name == "BlockTabSeparated")
 		return new TabSeparatedBlockOutputStream(buf);
 	else if (name == "Pretty")

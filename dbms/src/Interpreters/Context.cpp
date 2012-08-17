@@ -1,3 +1,11 @@
+#include <Poco/File.h>
+
+#include <DB/Common/escapeForFileName.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/copyData.h>
+#include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Interpreters/Context.h>
 
 
@@ -148,6 +156,53 @@ void Context::detachDatabase(const String & database_name)
 
 	assertDatabaseExists(db);
 	shared->databases.erase(shared->databases.find(db));
+}
+
+
+ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	String db = database_name.empty() ? current_database : database_name;
+
+	assertDatabaseExists(db);
+	assertTableExists(db, table_name);
+
+	/// Здесь хранится определение таблицы
+	String metadata_path = shared->path + "metadata/" + escapeForFileName(db) + "/" + escapeForFileName(table_name) + ".sql";
+	if (!Poco::File(metadata_path).exists())
+		throw Exception("Metadata file " + metadata_path + " for table " + db + "." + table_name + " doesn't exist.",
+			ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
+
+	String query;
+	{
+		ReadBufferFromFile in(metadata_path);
+		WriteBufferFromString out(query);
+		copyData(in, out);
+	}
+
+	const char * begin = query.data();
+	const char * end = begin + query.size();
+	const char * pos = begin;
+
+	ParserCreateQuery parser;
+	ASTPtr ast;
+	String expected;
+	bool parse_res = parser.parse(pos, end, ast, expected);
+
+	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
+	if (!parse_res || (pos != end && *pos != ';'))
+		throw DB::Exception("Syntax error while parsing query from file " + metadata_path + ": failed at position "
+			+ Poco::NumberFormatter::format(pos - begin) + ": "
+			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
+			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+			DB::ErrorCodes::SYNTAX_ERROR);
+
+	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);
+	ast_create_query.attach = false;
+	ast_create_query.database = db;
+
+	return ast;
 }
 
 

@@ -28,9 +28,9 @@ public:
 	void writeRowEndDelimiter();
 	void writePrefix();
 
-	RowOutputStreamPtr clone() { return new TabSeparatedRowOutputStream(ostr, sample); }
+	RowOutputStreamPtr clone() { return new TabSeparatedRowOutputStream(ostr, sample, with_names, with_types); }
 
-private:
+protected:
 	WriteBuffer & ostr;
 	const Block & sample;
 	bool with_names;

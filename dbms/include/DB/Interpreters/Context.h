@@ -103,6 +103,9 @@ public:
 	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 
+	/// Получить запрос на CREATE таблицы.
+	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
+
 	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
 	Poco::Mutex & getMutex() const 											{ return shared->mutex; }
 
