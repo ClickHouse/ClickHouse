@@ -7,6 +7,7 @@
 #include <mysqlxx/Manip.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/Core/Exception.h>
@@ -26,7 +27,16 @@ static const char * hilite_alias = "\033[0;32m";
 static const char * hilite_none = "\033[0m";
 
 
-// TODO: Правильно квотировать идентификаторы (в обратных кавычках, если идентификатор необычный).
+/// Квотировать идентификатор обратными кавычками, если это требуется.
+static String backQuoteIfNeed(const String & x)
+{
+	String res(x.size(), '\0');
+	{
+		WriteBufferFromString wb(res);
+		writeProbablyBackQuotedString(x, wb);
+	}
+	return res;
+}
 
 
 void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
@@ -145,17 +155,17 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 	if (!ast.database.empty() && ast.table.empty())
 	{
 		s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH DATABASE " : "CREATE DATABASE ") << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
-			<< ast.database;
+			<< backQuoteIfNeed(ast.database);
 		return;
 	}
 	
 	s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH TABLE " : "CREATE TABLE ") << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
-		<< (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 
 	if (!ast.as_table.empty())
 	{
 		s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_none : "")
-			<< (!ast.as_database.empty() ? ast.as_database + "." : "") << ast.as_table;
+			<< (!ast.as_database.empty() ? backQuoteIfNeed(ast.as_database) + "." : "") << backQuoteIfNeed(ast.as_table);
 	}
 
 	if (ast.columns)
@@ -186,18 +196,18 @@ void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent, boo
 {
 	if (ast.table.empty() && !ast.database.empty())
 	{
-		s << (hilite ? hilite_keyword : "") << (ast.detach ? "DETACH DATABASE " : "DROP DATABASE ") << (ast.if_exists ? "IF EXISTS " : "") << (hilite ? hilite_none : "") << ast.database;
+		s << (hilite ? hilite_keyword : "") << (ast.detach ? "DETACH DATABASE " : "DROP DATABASE ") << (ast.if_exists ? "IF EXISTS " : "") << (hilite ? hilite_none : "") << backQuoteIfNeed(ast.database);
 		return;
 	}
 
 	s << (hilite ? hilite_keyword : "") << (ast.detach ? "DETACH TABLE " : "DROP TABLE ") << (ast.if_exists ? "IF EXISTS " : "") << (hilite ? hilite_none : "")
-		<< (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 }
 
 void formatAST(const ASTOptimizeQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (hilite ? hilite_none : "")
-		<< (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 }
 
 void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
@@ -209,9 +219,9 @@ void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bo
 		if (it != ast.elements.begin())
 			s << ", ";
 
-		s << (!it->from.database.empty() ? it->from.database + "." : "") << it->from.table
+		s << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table)
 			<< (hilite ? hilite_keyword : "") << " TO " << (hilite ? hilite_none : "")
-			<< (!it->to.database.empty() ? it->to.database + "." : "") << it->to.table;
+			<< (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
 	}
 }
 
@@ -240,7 +250,7 @@ void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent,
 
 	if (!ast.from.empty())
 		s << (hilite ? hilite_keyword : "") << " FROM " << (hilite ? hilite_none : "")
-			<< ast.from;
+			<< backQuoteIfNeed(ast.from);
 
 	if (!ast.like.empty())
 		s << (hilite ? hilite_keyword : "") << " LIKE " << (hilite ? hilite_none : "")
@@ -249,13 +259,14 @@ void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent,
 
 void formatAST(const ASTUseQuery				& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	s << (hilite ? hilite_keyword : "") << "USE " << (hilite ? hilite_none : "") << ast.database;
+	s << (hilite ? hilite_keyword : "") << "USE " << (hilite ? hilite_none : "") << backQuoteIfNeed(ast.database);
 	return;
 }
 
 void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	s << (hilite ? hilite_keyword : "") << "INSERT INTO " << (hilite ? hilite_none : "") << (!ast.database.empty() ? ast.database + "." : "") << ast.table;
+	s << (hilite ? hilite_keyword : "") << "INSERT INTO " << (hilite ? hilite_none : "")
+		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 
 	if (ast.columns)
 	{
@@ -343,7 +354,7 @@ void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bo
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_ws = one_line ? " " : "\n";
 	
-	s << indent_str << ast.name << " ";
+	s << indent_str << backQuoteIfNeed(ast.name) << " ";
 	formatAST(*ast.type, s, indent, hilite, one_line);
 	s << nl_or_ws;
 }
