@@ -45,8 +45,8 @@ struct Range;
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
   *
-  * Если указано id_column и sign_column, то при склейке кусков, также "схлопываются"
-  *  пары записей с разными значениями sign_column для одного значения id_column.
+  * Если указано sign_column, то при склейке кусков, также "схлопываются"
+  *  пары записей с разными значениями sign_column для одного значения первичного ключа.
   *  (см. CollapsingSortedBlockInputStream.h)
   */
 class StorageMergeTree : public IStorage
@@ -68,7 +68,7 @@ public:
 		Context & context_,
 		ASTPtr & primary_expr_ast_, const String & date_column_name_,
 		size_t index_granularity_,
-		const String & id_column_ = "", const String & sign_column_ = "",
+		const String & sign_column_ = "",
 		size_t delay_time_to_merge_different_level_parts_ = DEFAULT_DELAY_TIME_TO_MERGE_DIFFERENT_LEVEL_PARTS);
 
     ~StorageMergeTree();
@@ -117,7 +117,6 @@ private:
 	size_t index_granularity;
 
 	/// Для схлопывания записей об изменениях, если это требуется.
-	String id_column;
 	String sign_column;
 	
 	size_t delay_time_to_merge_different_level_parts;

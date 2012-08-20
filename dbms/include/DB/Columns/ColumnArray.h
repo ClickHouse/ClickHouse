@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_COLUMN_ARRAY_H
-#define DBMS_CORE_COLUMN_ARRAY_H
+#pragma once
 
 #include <string.h> // memcpy
 
@@ -249,5 +248,3 @@ protected:
 
 
 }
-
-#endif

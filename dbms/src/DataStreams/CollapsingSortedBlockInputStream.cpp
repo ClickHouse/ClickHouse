@@ -5,6 +5,26 @@ namespace DB
 {
 
 
+void CollapsingSortedBlockInputStream::throwIncorrectData()
+{
+	std::stringstream s;
+	s << "Incorrect data: number of rows with sign = 1 (" << count_positive
+		<< ") differs with number of rows with sign = -1 (" << count_negative
+		<< ") by more than one (for key: ";
+
+	for (size_t i = 0, size = current_key.size(); i < size; ++i)
+	{
+		if (i != 0)
+			s << ", ";
+		s << boost::apply_visitor(FieldVisitorToString(), current_key[i]);
+	}
+
+	s << ").";
+
+	throw Exception(s.str(), ErrorCodes::INCORRECT_DATA);
+}
+
+
 void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows)
 {
 	if (count_positive != 0 || count_negative != 0)
@@ -24,13 +44,7 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 		}
 			
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-			throw Exception("Incorrect data: number of rows with sign = 1 ("
-				+ Poco::NumberFormatter::format(count_positive) +
-				") differs with number of rows with sign = -1 ("
-				+ Poco::NumberFormatter::format(count_negative) +
-				") by more than one (for id = "
-				+ Poco::NumberFormatter::format(current_id) + ").",
-				ErrorCodes::INCORRECT_DATA);
+			throwIncorrectData();
 	}
 }
 	
@@ -56,8 +70,9 @@ Block CollapsingSortedBlockInputStream::readImpl()
 	{
 		first_negative.resize(num_columns);
 		last_positive.resize(num_columns);
+		current_key.resize(description.size());
+		next_key.resize(description.size());
 
-		id_column_number = merged_block.getPositionByName(id_column);
 		sign_column_number = merged_block.getPositionByName(sign_column);
 	}
 
@@ -67,15 +82,15 @@ Block CollapsingSortedBlockInputStream::readImpl()
 		SortCursor current = queue.top();
 		queue.pop();
 
-		UInt64 id = boost::get<UInt64>((*current->all_columns[id_column_number])[current->pos]);
 		Int8 sign = boost::get<Int64>((*current->all_columns[sign_column_number])[current->pos]);
+		setPrimaryKey(next_key, current);
 
-		if (id != current_id)
+		if (next_key != current_key)
 		{
 			/// Запишем данные для предыдущего визита.
 			insertRows(merged_columns, merged_rows);
 
-			current_id = id;
+			current_key = next_key;
 			count_negative = 0;
 			count_positive = 0;
 		}

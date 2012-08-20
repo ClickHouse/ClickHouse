@@ -638,12 +638,12 @@ StorageMergeTree::StorageMergeTree(
 	Context & context_,
 	ASTPtr & primary_expr_ast_, const String & date_column_name_,
 	size_t index_granularity_,
-	const String & id_column_, const String & sign_column_,
+	const String & sign_column_,
 	size_t delay_time_to_merge_different_level_parts_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), columns(columns_),
 	context(context_), primary_expr_ast(primary_expr_ast_->clone()),
 	date_column_name(date_column_name_), index_granularity(index_granularity_),
-	id_column(id_column_), sign_column(sign_column_),
+	sign_column(sign_column_),
 	delay_time_to_merge_different_level_parts(delay_time_to_merge_different_level_parts_),
 	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name))
 {
@@ -1265,9 +1265,9 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 		full_path + right->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, right, empty_prefix, empty_range), primary_expr));
 
 	BlockInputStreamPtr merged_stream = new AddingDefaultBlockInputStream(
-		(id_column.empty()
+		(sign_column.empty()
 			? new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE)
-			: new CollapsingSortedBlockInputStream(src_streams, sort_descr, id_column, sign_column, DEFAULT_BLOCK_SIZE)),
+			: new CollapsingSortedBlockInputStream(src_streams, sort_descr, sign_column, DEFAULT_BLOCK_SIZE)),
 		columns);
 	
 	BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
