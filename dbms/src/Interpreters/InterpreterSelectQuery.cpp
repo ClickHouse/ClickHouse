@@ -36,13 +36,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, Context & cont
 }
 
 
-StoragePtr InterpreterSelectQuery::getTable()
+void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
-	/// Из какой таблицы читать данные. JOIN-ы не поддерживаются.
-
-	String database_name;
-	String table_name;
-
 	/** Если таблица не указана - используем таблицу system.one.
 	  * Если база данных не указана - используем текущую базу данных.
 	  */
@@ -58,8 +53,26 @@ StoragePtr InterpreterSelectQuery::getTable()
 		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
 	if (query.table)
 		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
+}
 
+
+StoragePtr InterpreterSelectQuery::getTable()
+{
+	String database_name;
+	String table_name;
+
+	getDatabaseAndTableNames(database_name, table_name);
 	return context.getTable(database_name, table_name);
+}
+
+
+ASTPtr InterpreterSelectQuery::getCreateQuery()
+{
+	String database_name;
+	String table_name;
+
+	getDatabaseAndTableNames(database_name, table_name);
+	return context.getCreateQuery(database_name, table_name);
 }
 
 

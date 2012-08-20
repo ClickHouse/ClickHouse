@@ -15,6 +15,7 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 
+#include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -120,17 +121,48 @@ StoragePtr InterpreterCreateQuery::execute()
 		else
 			throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
+		/// Дополняем запрос списком столбцов из другой таблицы, если его не было.
+		if (!create.columns)
+		{
+			ASTPtr columns_list_ptr = new ASTExpressionList;
+			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*columns_list_ptr);
+
+			for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
+			{
+				ASTPtr name_and_type_pair_ptr = new ASTNameTypePair;
+				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
+				name_and_type_pair.name = it->first;
+				String type_name = it->second->getName().data();
+
+				ParserIdentifierWithOptionalParameters storage_p;
+				String expected;
+				const char * pos = type_name.data();
+				const char * end = pos + type_name.size();
+				
+				if (!storage_p.parse(pos, end, name_and_type_pair.type, expected))
+					throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
+
+				columns_list.children.push_back(name_and_type_pair_ptr);
+			}
+
+			create.columns = columns_list_ptr;
+			create.children.push_back(create.columns);
+		}
+
 		/// Выбор нужного движка таблицы
 
 		String storage_name;
 		if (create.storage)
 			storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
 		else if (!create.as_table.empty())
+		{
 			storage_name = context.getTable(as_database_name, as_table_name)->getName();
+			create.storage = dynamic_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
+		}
 		else
-			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::INCORRECT_QUERY);
+			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
-		res = context.getStorageFactory().get(storage_name, data_path, table_name, context, query_ptr, columns);
+		res = context.getStorageFactory().get(storage_name, data_path, table_name, context, create.storage, columns);
 
 		/// Проверка наличия метаданных таблицы на диске и создание метаданных
 
@@ -146,11 +178,17 @@ StoragePtr InterpreterCreateQuery::execute()
 		else
 		{
 			/// Меняем CREATE на ATTACH и пишем запрос в файл.
-			ASTPtr attach = query_ptr->clone();
-			dynamic_cast<ASTCreateQuery &>(*attach).attach = true;
-
+			ASTPtr attach_ptr = query_ptr->clone();
+			ASTCreateQuery & attach = dynamic_cast<ASTCreateQuery &>(*attach_ptr);
+			
+			attach.attach = true;
+			attach.as_database.clear();
+			attach.as_table.clear();
+			attach.if_not_exists = false;
+			attach.select = NULL;
+			
 			Poco::FileOutputStream metadata_file(metadata_path);
-			formatAST(*attach, metadata_file, 0, false);
+			formatAST(attach, metadata_file, 0, false);
 			metadata_file << "\n";
 		}
 

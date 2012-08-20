@@ -29,7 +29,15 @@ public:
 	DataTypes getReturnTypes();
 	Block getSampleBlock();
 
+	/** Получить CREATE запрос для таблицы, из которой идёт выбор.
+	  */
+	ASTPtr getCreateQuery();
+
 private:
+	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
+	  */
+	void getDatabaseAndTableNames(String & database_name, String & table_name);
+	
 	StoragePtr getTable();
 
 	void setColumns();
