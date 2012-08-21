@@ -593,7 +593,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 	LOG_TRACE(log, "Merging aggregated data");
 
-	AggregatedDataVariants & res = *data_variants[0];
+	AggregatedDataVariantsPtr res = data_variants[0];
 
 	/// Все результаты агрегации соединяем с первым.
 	for (size_t i = 1, size = data_variants.size(); i < size; ++i)
@@ -603,19 +603,19 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		if (current.empty())
 			continue;
 
-		if (res.empty())
+		if (res->empty())
 		{
-			data_variants[0] = data_variants[i];
+			res = data_variants[i];
 			continue;
 		}
 
-		if (res.type != current.type)
+		if (res->type != current.type)
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
 
 		/// В какой структуре данных агрегированы данные?
-		if (res.type == AggregatedDataVariants::WITHOUT_KEY)
+		if (res->type == AggregatedDataVariants::WITHOUT_KEY)
 		{
-			AggregatedDataWithoutKey & res_data = res.without_key;
+			AggregatedDataWithoutKey & res_data = res->without_key;
 			AggregatedDataWithoutKey & current_data = current.without_key;
 
 			size_t i = 0;
@@ -625,9 +625,9 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 				delete *jt;
 			}
 		}
-		else if (res.type == AggregatedDataVariants::KEY_64)
+		else if (res->type == AggregatedDataVariants::KEY_64)
 		{
-			AggregatedDataWithUInt64Key & res_data = res.key64;
+			AggregatedDataWithUInt64Key & res_data = res->key64;
 			AggregatedDataWithUInt64Key & current_data = current.key64;
 
 			for (AggregatedDataWithUInt64Key::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
@@ -649,9 +649,9 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					res_it->second = it->second;
 			}
 		}
-		else if (res.type == AggregatedDataVariants::KEY_STRING)
+		else if (res->type == AggregatedDataVariants::KEY_STRING)
 		{
-			AggregatedDataWithStringKey & res_data = res.key_string;
+			AggregatedDataWithStringKey & res_data = res->key_string;
 			AggregatedDataWithStringKey & current_data = current.key_string;
 			
 			for (AggregatedDataWithStringKey::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
@@ -673,9 +673,9 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					res_it->second = it->second;
 			}
 		}
-		else if (res.type == AggregatedDataVariants::HASHED)
+		else if (res->type == AggregatedDataVariants::HASHED)
 		{
-			AggregatedDataHashed & res_data = res.hashed;
+			AggregatedDataHashed & res_data = res->hashed;
 			AggregatedDataHashed & current_data = current.hashed;
 
 			for (AggregatedDataHashed::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
@@ -697,9 +697,9 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					res_it->second = it->second;
 			}
 		}
-		else if (res.type == AggregatedDataVariants::GENERIC)
+		else if (res->type == AggregatedDataVariants::GENERIC)
 		{
-			AggregatedData & res_data = res.generic;
+			AggregatedData & res_data = res->generic;
 			AggregatedData & current_data = current.generic;
 
 			for (AggregatedData::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
@@ -724,7 +724,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 	LOG_TRACE(log, "Merged aggregated data");
 
-	return data_variants[0];
+	return res;
 }
 
 
