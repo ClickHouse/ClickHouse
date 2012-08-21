@@ -158,7 +158,7 @@ private:
 		sortBlock(block, storage.sort_descr);
 
 		/// Наконец-то можно писать данные на диск.
-		int flags = O_EXCL | O_CREAT | O_WRONLY;
+		int flags = O_TRUNC | O_CREAT | O_WRONLY;
 		
 		LOG_TRACE(storage.log, "Writing index.");
 
@@ -260,7 +260,7 @@ public:
 
 		Poco::File(part_tmp_path).createDirectories();
 
-		index_stream = new WriteBufferFromFile(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_EXCL | O_CREAT | O_WRONLY);
+		index_stream = new WriteBufferFromFile(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 
 		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		{
@@ -329,9 +329,9 @@ private:
 	struct ColumnStream
 	{
 		ColumnStream(const String & data_path, const std::string & marks_path) :
-			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_EXCL | O_CREAT | O_WRONLY),
+			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY),
 			compressed(plain),
-			marks(marks_path, 4096, O_EXCL | O_CREAT | O_WRONLY) {}
+			marks(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY) {}
 
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
