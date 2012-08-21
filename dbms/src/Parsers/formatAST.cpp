@@ -170,13 +170,9 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 
 	if (ast.columns)
 	{
-		if (one_line)
-			s << " (";
-		else
-			s << "\n(\n";
-		
+		s << (one_line ? " (" : "\n(");
 		formatAST(*ast.columns, s, indent + 1, hilite, one_line);
-		s << ")";
+		s << (one_line ? ")" : "\n)");
 	}
 
 	if (ast.storage)
@@ -354,9 +350,8 @@ void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bo
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_ws = one_line ? " " : "\n";
 	
-	s << indent_str << backQuoteIfNeed(ast.name) << " ";
+	s << nl_or_ws << indent_str << backQuoteIfNeed(ast.name) << " ";
 	formatAST(*ast.type, s, indent, hilite, one_line);
-	s << nl_or_ws;
 }
 
 void formatAST(const ASTAsterisk			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)

@@ -182,6 +182,7 @@ StoragePtr InterpreterCreateQuery::execute()
 			ASTCreateQuery & attach = dynamic_cast<ASTCreateQuery &>(*attach_ptr);
 			
 			attach.attach = true;
+			attach.database.clear();
 			attach.as_database.clear();
 			attach.as_table.clear();
 			attach.if_not_exists = false;
