@@ -26,6 +26,8 @@ public:
 	String getID() { return "Subquery"; };
 
 	ASTPtr clone() const { return new ASTSubquery(*this); }
+
+	String getColumnName() { return getTreeID(); }
 };
 
 }
