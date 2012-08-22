@@ -6,7 +6,10 @@
 #include <DB/Parsers/ASTAsterisk.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTSubquery.h>
+#include <DB/Parsers/ASTSet.h>
 
+#include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/Expression.h>
 
 
@@ -458,6 +461,55 @@ void Expression::markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_p
 void Expression::markBeforeAndAfterAggregation(unsigned before_part_id, unsigned after_part_id)
 {
 	markBeforeAndAfterAggregationImpl(ast, before_part_id, after_part_id);
+}
+
+
+void Expression::makeSets()
+{
+	makeSetsImpl(ast);
+}
+
+
+void Expression::makeSetsImpl(ASTPtr ast)
+{
+	/// Обход в глубину. Ищем выражения IN.
+	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (func->name == "in" || func->name == "notIn")
+		{
+			if (func->children.size() != 1)
+				throw Exception("Function IN requires exactly 2 arguments",
+					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+			/// У функции должно быть два аргумента.
+			ASTExpressionList & args = dynamic_cast<ASTExpressionList &>(*func->children[0]);
+			if (args.children.size() != 2)
+				throw Exception("Function IN requires exactly 2 arguments",
+					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+				
+			/** Нужно преобразовать правый аргумент в множество.
+			  * Это может быть перечисление значений или подзапрос.
+			  * Перечисление значений парсится как функция tuple.
+			  */
+			ASTPtr arg = args.children[1];
+			if (dynamic_cast<ASTSubquery *>(&*arg))
+			{
+				/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
+			    InterpreterSelectQuery interpreter(arg, context, QueryProcessingStage::Complete);
+				ASTSet * ast_set = new ASTSet;
+				ast_set->set = new Set;
+				ast_set->set->create(interpreter.execute());
+				arg = ast_set;
+			}
+			else	/// TODO случай явного перечисления значений.
+				throw Exception("Incorrect type of 2nd argument for function IN. Must be subquery or set of values.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+	}
+	else
+		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+			if (!dynamic_cast<ASTSelectQuery *>(&**it))
+				makeSetsImpl(*it);
 }
 
 }

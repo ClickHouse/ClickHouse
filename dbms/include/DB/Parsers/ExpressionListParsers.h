@@ -195,7 +195,9 @@ public:
 				(">", 			"greater")
 				("=", 			"equals")
 				("LIKE", 		"like")
-				("NOT LIKE",	"notLike"),
+				("NOT LIKE",	"notLike")
+				("IN",			"in")
+				("NOT IN",		"notIn"),
 			elem_parser)
 	{
 	}

@@ -29,6 +29,11 @@ public:
 	  */
 	Names getRequiredColumns();
 
+	/** Преобразовать подзапросы или перечисления значений в секции IN в множества.
+	  * Выполняет подзапросы, если требуется.
+	  */
+	void makeSets();
+
 	/** Выполнить выражение над блоком. Блок должен содержать все столбцы - идентификаторы.
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.
 	  * part_id - какую часть выражения вычислять.
@@ -112,6 +117,8 @@ private:
 	bool hasAggregatesImpl(ASTPtr ast);
 
 	void markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below = false);
+
+	void makeSetsImpl(ASTPtr ast);
 };
 
 typedef SharedPtr<Expression> ExpressionPtr;
