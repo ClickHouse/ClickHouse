@@ -63,6 +63,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(NameTypePair)
 	DISPATCH(Asterisk)
 	DISPATCH(OrderByElement)
+	DISPATCH(Subquery)
 	else
 		throw DB::Exception("Unknown element in AST: " + std::string(ast.range.first, ast.range.second - ast.range.first),
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
@@ -73,9 +74,11 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 
 void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
+	std::string nl_or_nothing = one_line ? "" : "\n";
+		
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_ws = one_line ? " " : "\n";
-	
+			
 	s << (hilite ? hilite_keyword : "") << indent_str << "SELECT " << (hilite ? hilite_none : "");
 	formatAST(*ast.select_expression_list, s, indent, hilite, one_line);
 
@@ -146,6 +149,15 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "FORMAT " << (hilite ? hilite_none : "");
 		formatAST(*ast.format, s, indent, hilite, one_line);
 	}
+}
+
+void formatAST(const ASTSubquery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	std::string nl_or_nothing = one_line ? "" : "\n";
+
+	s << nl_or_nothing << "(" << nl_or_nothing;
+	formatAST(*ast.children[0], s, indent + 1, hilite, one_line);
+	s << nl_or_nothing << ")";
 }
 
 void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)

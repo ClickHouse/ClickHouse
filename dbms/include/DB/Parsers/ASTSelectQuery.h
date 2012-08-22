@@ -22,7 +22,7 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 	ASTPtr format;
-	
+
 	ASTSelectQuery() {}
 	ASTSelectQuery(StringRange range_) : IAST(range_) {}
 	

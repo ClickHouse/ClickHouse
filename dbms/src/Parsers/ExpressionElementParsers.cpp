@@ -10,9 +10,12 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTAsterisk.h>
 #include <DB/Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTSubquery.h>
 
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/Parsers/ParserSelectQuery.h>
 
 #include <DB/Parsers/ExpressionElementParsers.h>
 
@@ -89,6 +92,30 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, S
 		node = function_node;
 	}
 
+	return true;
+}
+
+
+bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	Pos begin = pos;
+	ASTPtr select_node;
+	ParserString open("("), close(")");
+	ParserSelectQuery select;
+	ParserWhiteSpaceOrComments ws;
+
+	if (!open.ignore(pos, end, expected))
+		return false;
+
+	ws.ignore(pos, end);
+	select.parse(pos, end, select_node, expected);
+	ws.ignore(pos, end);
+
+	if (!close.ignore(pos, end, expected))
+		return false;
+
+	node = new ASTSubquery(StringRange(begin, pos));
+	dynamic_cast<ASTSubquery &>(*node).children.push_back(select_node);
 	return true;
 }
 	
@@ -310,11 +337,16 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 	Pos begin = pos;
 
 	ParserParenthesisExpression paren_p;
+	ParserSubquery subquery_p;
 	ParserArray array_p;
 	ParserLiteral lit_p;
 	ParserFunction fun_p;
 	ParserIdentifier id_p;
 	ParserString asterisk_p("*");
+
+	if (subquery_p.parse(pos, end, node, expected))
+		return true;
+	pos = begin;
 
 	if (paren_p.parse(pos, end, node, expected))
 		return true;
@@ -343,7 +375,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 	}
 	pos = begin;
 
-	expected = "expression element: one of array, literal, function, identifier, asterisk, parenthised expression";
+	expected = "expression element: one of array, literal, function, identifier, asterisk, parenthised expression, subquery";
 	return false;
 }
 

@@ -19,6 +19,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTAsterisk.h>
 #include <DB/Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ASTSubquery.h>
 
 
 namespace DB
@@ -45,5 +46,6 @@ void formatAST(const ASTLiteral 		& ast, std::ostream & s, size_t indent = 0, bo
 void formatAST(const ASTNameTypePair	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTAsterisk		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTOrderByElement	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTSubquery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 
 }

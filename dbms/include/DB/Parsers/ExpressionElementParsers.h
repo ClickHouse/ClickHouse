@@ -16,12 +16,23 @@ protected:
 
 
 /** Если в скобках выражение из одного элемента - возвращает в node этот элемент;
+  *  или если в скобках - подзапрос SELECT - то возвращает в node этот подзапрос;
   *  иначе возвращает функцию tuple от содержимого скобок.
   */
 class ParserParenthesisExpression : public IParserBase
 {
 protected:
 	String getName() { return "expression in parenthesis"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
+/** Подзапрос SELECT в скобках.
+  */
+class ParserSubquery : public IParserBase
+{
+protected:
+	String getName() { return "SELECT subquery"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
 };
 
