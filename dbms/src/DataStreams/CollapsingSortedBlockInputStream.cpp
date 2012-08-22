@@ -5,7 +5,7 @@ namespace DB
 {
 
 
-void CollapsingSortedBlockInputStream::throwIncorrectData()
+void CollapsingSortedBlockInputStream::reportIncorrectData()
 {
 	std::stringstream s;
 	s << "Incorrect data: number of rows with sign = 1 (" << count_positive
@@ -21,7 +21,10 @@ void CollapsingSortedBlockInputStream::throwIncorrectData()
 
 	s << ").";
 
-	throw Exception(s.str(), ErrorCodes::INCORRECT_DATA);
+	/** Пока ограничимся всего лишь логгированием таких ситуаций,
+	  *  так как данные генерируются внешними программами.
+	  */
+	LOG_ERROR(log, s.rdbuf());
 }
 
 
@@ -29,14 +32,14 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 {
 	if (count_positive != 0 || count_negative != 0)
 	{
-		if (count_positive == count_negative || count_positive + 1 == count_negative)
+		if (count_positive <= count_negative)
 		{
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insert(first_negative[i]);
 		}
 			
-		if (count_positive == count_negative || count_positive == count_negative + 1)
+		if (count_positive >= count_negative)
 		{
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
@@ -44,7 +47,7 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 		}
 			
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-			throwIncorrectData();
+			reportIncorrectData();
 	}
 }
 	

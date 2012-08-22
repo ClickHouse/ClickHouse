@@ -70,7 +70,7 @@ private:
 	/// Вставить в результат строки для текущего идентификатора "визита".
 	void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows);
 
-	void throwIncorrectData();
+	void reportIncorrectData();
 };
 
 }
