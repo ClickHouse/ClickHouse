@@ -69,7 +69,7 @@ void BlockStreamProfileInfo::print(std::ostream & ostr) const
 			<< "Average block size (out): " << rows / blocks << "." << std::endl;
 }
 
-	
+
 Block IProfilingBlockInputStream::read()
 {
 	if (!info.started)

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <city.h>
-
 #include <map>
 #include <tr1/unordered_map>
 
@@ -16,7 +14,7 @@
 
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 
-#include <DB/Interpreters/HashMap.h>
+#include <DB/Interpreters/AggregationCommon.h>
 
 
 namespace DB
@@ -32,42 +30,6 @@ struct AggregateDescription
 };
 
 typedef std::vector<AggregateDescription> AggregateDescriptions;
-
-
-/// Для агрегации по md5.
-struct UInt128
-{
-	UInt64 first;
-	UInt64 second;
-
-	bool operator== (const UInt128 rhs) const { return first == rhs.first && second == rhs.second; }
-	bool operator!= (const UInt128 rhs) const { return first != rhs.first || second != rhs.second; }
-};
-
-struct UInt128Hash
-{
-	default_hash<UInt64> hash64;
-	size_t operator()(UInt128 x) const { return hash64(x.first ^ 0xB15652B8790A0D36ULL) ^ hash64(x.second); }
-};
-
-struct UInt128ZeroTraits
-{
-	static inline bool check(UInt128 x) { return x.first == 0 && x.second == 0; }
-	static inline void set(UInt128 & x) { x.first = 0; x.second = 0; }
-};
-
-struct StringRefZeroTraits
-{
-	static inline bool check(DB::StringRef x) { return 0 == x.data; }
-	static inline void set(DB::StringRef & x) { x.data = 0; }
-};
-
-
-/// Немного быстрее стандартного
-struct StringHash
-{
-	size_t operator()(const String & x) const { return CityHash64(x.data(), x.size()); }
-};
 
 
 /** Разные структуры данных, которые могут использоваться для агрегации
@@ -169,7 +131,6 @@ private:
 	void initialize(Block & block);
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
-	typedef std::vector<size_t> Sizes;
 	AggregatedDataVariants::Type chooseAggregationMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 };
 

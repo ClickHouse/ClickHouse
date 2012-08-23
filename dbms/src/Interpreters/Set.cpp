@@ -1,10 +1,13 @@
+#include <iomanip>
+
 #include <DB/Core/Field.h>
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnsNumber.h>
 
-#include <DB/Interpreters/AggregationCommon.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
+
 #include <DB/Interpreters/Set.h>
 
 
@@ -46,12 +49,11 @@ Set::Type Set::chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Siz
 }
 
 
-// TODO: Избавиться от copy-paste при вычислении key_hashed.
-
-
 void Set::create(BlockInputStreamPtr stream)
 {
 	LOG_TRACE(log, "Creating set");
+	Stopwatch watch;
+	size_t entries = 0;
 	
 	/// Читаем все данные
 	while (Block block = stream->read())
@@ -89,6 +91,8 @@ void Set::create(BlockInputStreamPtr stream)
 				UInt64 key = boost::apply_visitor(visitor, field);
 				res.insert(key);
 			}
+
+			entries = res.size();
 		}
 		else if (type == KEY_STRING)
 		{
@@ -135,6 +139,8 @@ void Set::create(BlockInputStreamPtr stream)
 			}
 			else
 				throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+			entries = res.size();
 		}
 		else if (type == HASHED)
 		{
@@ -143,43 +149,9 @@ void Set::create(BlockInputStreamPtr stream)
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				union
-				{
-					UInt128 key_hash;
-					unsigned char bytes[16];
-				} key_hash_union;
+				res.insert(pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes));
 
-				/// Если все ключи числовые и помещаются в 128 бит
-				if (keys_fit_128_bits)
-				{
-					memset(key_hash_union.bytes, 0, 16);
-					size_t offset = 0;
-					for (size_t j = 0; j < keys_size; ++j)
-					{
-						key[j] = (*key_columns[j])[i];
-						UInt64 tmp = boost::apply_visitor(to_uint64_visitor, key[j]);
-						/// Работает только на little endian
-						memcpy(key_hash_union.bytes + offset, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
-						offset += key_sizes[j];
-					}
-				}
-				else	/// Иначе используем md5.
-				{
-					FieldVisitorHash key_hash_visitor;
-
-					for (size_t j = 0; j < keys_size; ++j)
-					{
-						key[j] = (*key_columns[j])[i];
-						boost::apply_visitor(key_hash_visitor, key[j]);
-					}
-
-					key_hash_visitor.finalize(key_hash_union.bytes);
-				}
-
-				res.insert(key_hash_union.key_hash);
-			}
+			entries = res.size();
 		}
 		else if (type == GENERIC)
 		{
@@ -195,12 +167,36 @@ void Set::create(BlockInputStreamPtr stream)
 
 				res.insert(key);
 			}
+
+			entries = res.size();
 		}
 		else
 			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
 
-	LOG_TRACE(log, "Created set");
+	logProfileInfo(watch, *stream, entries);
+}
+
+
+void Set::logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries)
+{
+	/// Выведем информацию о том, сколько считано строк и байт.
+	size_t rows = 0;
+	size_t bytes = 0;
+
+	in.getLeafRowsBytes(rows, bytes);
+
+	size_t head_rows = 0;
+	if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&in))
+		head_rows = profiling_in->getInfo().rows;
+
+	if (rows != 0)
+	{
+		LOG_DEBUG(log, std::fixed << std::setprecision(3)
+			<< "Created set with " << entries << " entries from " << head_rows << " rows."
+			<< " Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
+			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
+	}
 }
 
 
@@ -290,43 +286,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
-		{
-			/// Строим ключ
-			union
-			{
-				UInt128 key_hash;
-				unsigned char bytes[16];
-			} key_hash_union;
-
-			/// Если все ключи числовые и помещаются в 128 бит
-			if (keys_fit_128_bits)
-			{
-				memset(key_hash_union.bytes, 0, 16);
-				size_t offset = 0;
-				for (size_t j = 0; j < keys_size; ++j)
-				{
-					key[j] = (*key_columns[j])[i];
-					UInt64 tmp = boost::apply_visitor(to_uint64_visitor, key[j]);
-					/// Работает только на little endian
-					memcpy(key_hash_union.bytes + offset, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
-					offset += key_sizes[j];
-				}
-			}
-			else	/// Иначе используем md5.
-			{
-				FieldVisitorHash key_hash_visitor;
-
-				for (size_t j = 0; j < keys_size; ++j)
-				{
-					key[j] = (*key_columns[j])[i];
-					boost::apply_visitor(key_hash_visitor, key[j]);
-				}
-
-				key_hash_visitor.finalize(key_hash_union.bytes);
-			}
-
-			vec_res[i] = negative ^ (set.end() != set.find(key_hash_union.key_hash));
-		}
+			vec_res[i] = negative ^ (set.end() != set.find(pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes)));
 	}
 	else if (type == GENERIC)
 	{

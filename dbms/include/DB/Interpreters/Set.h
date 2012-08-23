@@ -2,10 +2,17 @@
 
 #include <set>
 
+#include <statdaemons/Stopwatch.h>
+
+#include <DB/Core/ColumnNumbers.h>
+#include <DB/Core/StringPool.h>
+
+#include <DB/DataStreams/IBlockInputStream.h>
+
 #include <DB/Parsers/IAST.h>
 
 #include <DB/Interpreters/HashSet.h>
-#include <DB/Interpreters/Aggregator.h>
+#include <DB/Interpreters/AggregationCommon.h>
 
 
 namespace DB
@@ -76,6 +83,10 @@ private:
 	
 	typedef std::vector<size_t> Sizes;
 	static Type chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+
+	/** Вывести в лог информацию о скорости создания множества.
+	  */
+	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries);
 };
 
 typedef SharedPtr<Set> SetPtr;

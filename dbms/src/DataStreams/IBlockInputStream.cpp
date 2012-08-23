@@ -108,6 +108,24 @@ BlockInputStreams IBlockInputStream::getLeaves()
 }
 
 
+void IBlockInputStream::getLeafRowsBytes(size_t & rows, size_t & bytes)
+{
+	BlockInputStreams leaves = getLeaves();
+	rows = 0;
+	bytes = 0;
+
+	for (BlockInputStreams::const_iterator it = leaves.begin(); it != leaves.end(); ++it)
+	{
+		if (const IProfilingBlockInputStream * profiling = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+		{
+			const BlockStreamProfileInfo & info = profiling->getInfo();
+			rows += info.rows;
+			bytes += info.bytes;
+		}
+	}
+}
+
+
 void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr)
 {
 	if (children.empty())

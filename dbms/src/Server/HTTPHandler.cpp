@@ -103,19 +103,10 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ost
 		LOG_DEBUG(log, log_str.str());
 
 		/// Выведем информацию о том, сколько считано строк и байт.
-		BlockInputStreams leaves = query_plan->getLeaves();
 		size_t rows = 0;
 		size_t bytes = 0;
 
-		for (BlockInputStreams::const_iterator it = leaves.begin(); it != leaves.end(); ++it)
-		{
-			if (const IProfilingBlockInputStream * profiling = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
-			{
-				const BlockStreamProfileInfo & info = profiling->getInfo();
-				rows += info.rows;
-				bytes += info.bytes;
-			}
-		}
+		query_plan->getLeafRowsBytes(rows, bytes);
 
 		if (rows != 0)
 		{
