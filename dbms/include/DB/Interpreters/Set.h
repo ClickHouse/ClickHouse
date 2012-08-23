@@ -69,7 +69,7 @@ private:
 	Logger * log;
 	
 	typedef std::vector<size_t> Sizes;
-	Type chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+	static Type chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 };
 
 typedef SharedPtr<Set> SetPtr;

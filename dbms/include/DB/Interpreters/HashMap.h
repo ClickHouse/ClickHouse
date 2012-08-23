@@ -206,7 +206,7 @@ public:
 
 		friend class HashMap;
 
-		const_iterator(const Self & container_, const Value * ptr_) : container(container_), ptr(ptr_) {}
+		const_iterator(const Self * container_, const Value * ptr_) : container(container_), ptr(ptr_) {}
 
 	public:
 		const_iterator() {}

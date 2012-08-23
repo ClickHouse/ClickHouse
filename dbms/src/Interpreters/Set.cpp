@@ -222,7 +222,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 	if (type == KEY_64)
 	{
-		SetUInt64 & set = key64;
+		const SetUInt64 & set = key64;
 		const FieldVisitorToUInt64 visitor;
 		IColumn & column = *key_columns[0];
 
@@ -237,7 +237,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	}
 	else if (type == KEY_STRING)
 	{
-		SetString & set = key_string;
+		const SetString & set = key_string;
 		IColumn & column = *key_columns[0];
 
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
@@ -271,7 +271,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	}
 	else if (type == HASHED)
 	{
-		SetHashed & set = hashed;
+		const SetHashed & set = hashed;
 		const FieldVisitorToUInt64 to_uint64_visitor;
 
 		/// Для всех строчек
@@ -317,7 +317,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	else if (type == GENERIC)
 	{
 		/// Общий способ
-		SetGeneric & set = generic;
+		const SetGeneric & set = generic;
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
