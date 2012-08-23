@@ -1,3 +1,6 @@
+#include <set>
+#include <boost/assign/list_inserter.hpp>
+
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/AggregateFunctions/AggregateFunctionSum.h>
 #include <DB/AggregateFunctions/AggregateFunctionAvg.h>
@@ -152,17 +155,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 
 AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const DataTypes & argument_types) const
 {
-	try
-	{
-		return get(name, argument_types);
-	}
-	catch (const DB::Exception & e)
-	{
-		if (e.code() == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION)
-			return NULL;
-		else
-			throw;
-	}
+	std::set<String> names;
+
+	boost::assign::insert(names)
+		("count")
+		("any")
+		("anyLast")
+		("min")
+		("max")
+		("sum")
+		("avg")
+		("uniq");
+	
+	return names.end() != names.find(name)
+		? get(name, argument_types)
+		: NULL;
 }
 
 

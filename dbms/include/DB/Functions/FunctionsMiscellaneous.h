@@ -345,7 +345,7 @@ public:
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			throw Exception("Number of arguments for function '" + getName() + "' doesn't match: passed "
 				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 

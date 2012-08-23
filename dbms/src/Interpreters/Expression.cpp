@@ -9,6 +9,9 @@
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTSet.h>
 
+#include <DB/DataTypes/DataTypeSet.h>
+#include <DB/Columns/ColumnSet.h>
+
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/Expression.h>
 
@@ -103,6 +106,8 @@ void Expression::addSemantic(ASTPtr & ast)
 				argument_types.push_back(arg->type);
 			else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&**it))
 				argument_types.push_back(arg->type);
+			else if (dynamic_cast<ASTSubquery *>(&**it) || dynamic_cast<ASTSet *>(&**it))
+				argument_types.push_back(new DataTypeSet);
 		}
 
 		node->aggregate_function = context.getAggregateFunctionsFactory().tryGet(node->name, argument_types);
@@ -255,6 +260,16 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool o
 		ColumnWithNameAndType column;
 		column.column = node->type->createConstColumn(block.rows(), node->value);
 		column.type = node->type;
+		column.name = node->getColumnName();
+
+		block.insert(column);
+	}
+	else if (ASTSet * node = dynamic_cast<ASTSet *>(&*ast))
+	{
+		/// Множество в секции IN.
+		ColumnWithNameAndType column;
+		column.column = new ColumnSet(block.rows(), node->set);
+		column.type = new DataTypeSet;
 		column.name = node->getColumnName();
 
 		block.insert(column);
@@ -491,12 +506,12 @@ void Expression::makeSetsImpl(ASTPtr ast)
 			  * Это может быть перечисление значений или подзапрос.
 			  * Перечисление значений парсится как функция tuple.
 			  */
-			ASTPtr arg = args.children[1];
+			ASTPtr & arg = args.children[1];
 			if (dynamic_cast<ASTSubquery *>(&*arg))
 			{
 				/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
-			    InterpreterSelectQuery interpreter(arg, context, QueryProcessingStage::Complete);
-				ASTSet * ast_set = new ASTSet;
+			    InterpreterSelectQuery interpreter(arg->children[0], context, QueryProcessingStage::Complete);
+				ASTSet * ast_set = new ASTSet(arg->getColumnName());
 				ast_set->set = new Set;
 				ast_set->set->create(interpreter.execute());
 				arg = ast_set;
