@@ -64,7 +64,7 @@ struct Set
 	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
 	  * Записать результат в столбец в позиции result.
 	  */
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result);
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) const { /* TODO */ }
 };
 
 typedef SharedPtr<Set> SetPtr;

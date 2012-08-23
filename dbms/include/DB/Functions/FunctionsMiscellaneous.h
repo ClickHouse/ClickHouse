@@ -8,11 +8,13 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnSet.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/Functions/IFunction.h>
 
 
@@ -358,9 +360,54 @@ public:
 		if (!column_set)
 			throw Exception("Second argument for function '" + getName() + "' must be Set.", ErrorCodes::ILLEGAL_COLUMN);
 
-		
+		/// Столбцы, которые проверяются на принадлежность множеству.
+		ColumnNumbers left_arguments;
 
-		block.getByPosition(result).column = dynamic_cast<const IColumnConst &>(argument).convertToFullColumn();
+		/// Первый аргумент может быть tuple или одиночным столбцом.
+		const ColumnTuple * tuple = dynamic_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
+		if (tuple)
+		{
+			/// Находим в блоке столбцы из tuple.
+			const Block & tuple_elems = tuple->getData();
+			size_t tuple_size = tuple_elems.columns();
+			for (size_t i = 0; i < tuple_size; ++i)
+				left_arguments.push_back(block.getPositionByName(tuple_elems.getByPosition(i).name));
+		}
+		else
+			left_arguments.push_back(arguments[0]);
+
+		column_set->getData()->execute(block, left_arguments, result);
+	}
+};
+
+
+class FunctionTuple : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "tuple";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() < 2)
+			throw Exception("Function tuple requires at least two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeTuple(arguments);
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		Block tuple_block;
+
+		for (ColumnNumbers::const_iterator it = arguments.begin(); it != arguments.end(); ++it)
+			tuple_block.insert(block.getByPosition(*it));
+		
+		block.getByPosition(result).column = new ColumnTuple(tuple_block);
 	}
 };
 

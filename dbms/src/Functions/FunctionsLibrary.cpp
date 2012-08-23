@@ -114,6 +114,10 @@ namespace FunctionsLibrary
 			("toTypeName",					new FunctionToTypeName)
 			("blockSize",					new FunctionBlockSize)
 			("materialize",					new FunctionMaterialize)
+
+			("tuple",						new FunctionTuple)
+			("in",							new FunctionIn)
+			("notIn",						new FunctionIn(true))
 		;
 
 		return res;
