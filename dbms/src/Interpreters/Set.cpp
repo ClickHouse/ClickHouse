@@ -91,7 +91,7 @@ void Set::create(BlockInputStreamPtr stream)
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 			{
 				const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-	            const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+				const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
 
 				/// Для всех строчек
 				for (size_t i = 0; i < rows; ++i)
@@ -203,6 +203,134 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	block.getByPosition(result).column = c_res;
 	ColumnUInt8::Container_t & vec_res = c_res->getData();
 	vec_res.resize(block.getByPosition(arguments[0]).column->size());
+
+	size_t keys_size = arguments.size();
+	Row key(keys_size);
+	Columns key_columns(keys_size);
+
+	/// Запоминаем столбцы, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByPosition(arguments[i]).column;
+
+	size_t rows = block.rows();
+
+	/// Какую структуру данных для множества использовать?
+	bool keys_fit_128_bits = false;
+	Sizes key_sizes;
+	if (type != chooseMethod(key_columns, keys_fit_128_bits, key_sizes))
+		throw Exception("Incompatible columns in IN section", ErrorCodes::INCOMPATIBLE_COLUMNS);
+
+	if (type == KEY_64)
+	{
+		SetUInt64 & set = key64;
+		const FieldVisitorToUInt64 visitor;
+		IColumn & column = *key_columns[0];
+
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			/// Строим ключ
+			Field field = column[i];
+			UInt64 key = boost::apply_visitor(visitor, field);
+			vec_res[i] = negative ^ (set.end() != set.find(key));
+		}
+	}
+	else if (type == KEY_STRING)
+	{
+		SetString & set = key_string;
+		IColumn & column = *key_columns[0];
+
+		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+		{
+			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
+			const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Строим ключ
+				StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
+				vec_res[i] = negative ^ (set.end() != set.find(ref));
+			}
+		}
+		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+		{
+			size_t n = column_string->getN();
+			const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Строим ключ
+				StringRef ref(&data[i * n], n);
+				vec_res[i] = negative ^ (set.end() != set.find(ref));
+			}
+		}
+		else
+			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+	}
+	else if (type == HASHED)
+	{
+		SetHashed & set = hashed;
+		const FieldVisitorToUInt64 to_uint64_visitor;
+
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			/// Строим ключ
+			union
+			{
+				UInt128 key_hash;
+				unsigned char bytes[16];
+			} key_hash_union;
+
+			/// Если все ключи числовые и помещаются в 128 бит
+			if (keys_fit_128_bits)
+			{
+				memset(key_hash_union.bytes, 0, 16);
+				size_t offset = 0;
+				for (size_t j = 0; j < keys_size; ++j)
+				{
+					key[j] = (*key_columns[j])[i];
+					UInt64 tmp = boost::apply_visitor(to_uint64_visitor, key[j]);
+					/// Работает только на little endian
+					memcpy(key_hash_union.bytes + offset, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
+					offset += key_sizes[j];
+				}
+			}
+			else	/// Иначе используем md5.
+			{
+				FieldVisitorHash key_hash_visitor;
+
+				for (size_t j = 0; j < keys_size; ++j)
+				{
+					key[j] = (*key_columns[j])[i];
+					boost::apply_visitor(key_hash_visitor, key[j]);
+				}
+
+				key_hash_visitor.finalize(key_hash_union.bytes);
+			}
+
+			vec_res[i] = negative ^ (set.end() != set.find(key_hash_union.key_hash));
+		}
+	}
+	else if (type == GENERIC)
+	{
+		/// Общий способ
+		SetGeneric & set = generic;
+
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			/// Строим ключ
+			for (size_t j = 0; j < keys_size; ++j)
+				key[j] = (*key_columns[j])[i];
+
+			vec_res[i] = negative ^ (set.end() != set.find(key));
+		}
+	}
+	else
+		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	
 	/* TODO */
 }
