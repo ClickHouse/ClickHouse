@@ -8,11 +8,6 @@ namespace DB
 
 
 /** См. HashMap.h
-  *
-  * Очень простое хэш множество.
-  * Можно только вставлять значения, а также проверять принадлежность.
-  *
-  * Итераторов нет. Не поддерживаются элементы с деструктором.
   */
 
 template
@@ -26,12 +21,15 @@ template
 class HashSet : private boost::noncopyable
 {
 private:
+	friend class const_iterator;
+	friend class iterator;
+	
 	typedef size_t HashValue;
 	typedef HashSet<Key, Hash, ZeroTraits, INITIAL_SIZE_DEGREE, GROWTH_DEGREE> Self;
 	
 	size_t m_size;			/// Количество элементов
 	UInt8 size_degree;		/// Размер таблицы в виде степени двух
-	bool has_zero;			/// Хэш-таблица содержит элемент с ключём = 0.
+	bool has_zero;			/// Хэш-таблица содержит элемент со значением ключа = 0.
 	Key * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
 
 	Hash hash;
@@ -100,12 +98,109 @@ public:
 
 	~HashSet()
 	{
+		for (iterator it = begin(); it != end(); ++it)
+			it->~Key();
 		free(reinterpret_cast<void*>(buf));
 	}
 
+
+	class iterator
+	{
+		Self * container;
+		Key * ptr;
+
+		friend class HashSet;
+
+		iterator(Self * container_, Key * ptr_) : container(container_), ptr(ptr_) {}
+
+	public:
+		iterator() {}
+		
+		bool operator== (const iterator & rhs) const { return ptr == rhs.ptr; }
+		bool operator!= (const iterator & rhs) const { return ptr != rhs.ptr; }
+
+		iterator & operator++()
+		{
+			if (unlikely(!ptr))
+				ptr = container->buf;
+			else
+				++ptr;
+
+			while (ptr < container->buf + container->buf_size() && ZeroTraits::check(*ptr))
+				++ptr;
+
+			return *this;
+		}
+
+		Key & operator* () const { return *ptr; }
+		Key * operator->() const { return ptr; }
+	};
+	
+
+	class const_iterator
+	{
+		const Self * container;
+		const Key * ptr;
+
+		friend class HashSet;
+
+		const_iterator(const Self & container_, const Key * ptr_) : container(container_), ptr(ptr_) {}
+
+	public:
+		const_iterator() {}
+		const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {}
+
+		bool operator== (const const_iterator & rhs) const { return ptr == rhs.ptr; }
+		bool operator!= (const const_iterator & rhs) const { return ptr != rhs.ptr; }
+
+		const_iterator & operator++()
+		{
+			if (unlikely(!ptr))
+				ptr = container->buf;
+			else
+				++ptr;
+
+			while (ptr < container->buf + container->buf_size() && ZeroTraits::check(*ptr))
+				++ptr;
+
+			return *this;
+		}
+
+		const Key & operator* () const { return *ptr; }
+		const Key * operator->() const { return ptr; }
+	};
+
+
+	const_iterator begin() const
+	{
+		if (has_zero)
+			return const_iterator(this, NULL);
+
+		const Key * ptr = buf;
+		while (ptr < buf + buf_size() && ZeroTraits::check(*ptr))
+			++ptr;
+
+		return const_iterator(this, ptr);
+	}
+
+	iterator begin()
+	{
+		if (has_zero)
+			return iterator(this, NULL);
+
+		Key * ptr = buf;
+		while (ptr < buf + buf_size() && ZeroTraits::check(*ptr))
+			++ptr;
+
+		return iterator(this, ptr);
+	}
+
+	const_iterator end() const 		{ return const_iterator(this, buf + buf_size()); }
+	iterator end() 					{ return iterator(this, buf + buf_size()); }
+	
 	
 	/// Вставить ключ.
-	void insert(const Key & x)
+	std::pair<iterator, bool> insert(const Key & x)
 	{
 		if (ZeroTraits::check(x))
 		{
@@ -113,8 +208,9 @@ public:
 			{
 				++m_size;
 				has_zero = true;
+				return std::make_pair(begin(), true);
 			}
-			return;
+			return std::make_pair(begin(), false);
 		}
 
 		size_t place_value = place(hash(x));
@@ -127,23 +223,40 @@ public:
 #endif
 		}
 
+		iterator res(this, &buf[place_value]);
+
 		if (!ZeroTraits::check(buf[place_value]) && buf[place_value] == x)
-			return;
+			return std::make_pair(res, false);
 
 		buf[place_value] = x;
 		++m_size;
 
 		if (unlikely(m_size > max_fill()))
+		{
 			resize();
+			return std::make_pair(find(x), true);
+		}
 
-		return;
+		return std::make_pair(res, true);
 	}
 
 
-	bool has(Key x) const
+	void emplace(Key x, iterator & it, bool & inserted)
 	{
 		if (ZeroTraits::check(x))
-			return has_zero;
+		{
+			if (!has_zero)
+			{
+				++m_size;
+				has_zero = true;
+				inserted = true;
+			}
+			else
+				inserted = false;
+
+			it = begin();
+			return;
+		}
 
 		size_t place_value = place(hash(x));
 		while (!ZeroTraits::check(buf[place_value]) && buf[place_value] != x)
@@ -155,7 +268,61 @@ public:
 #endif
 		}
 
-		return !ZeroTraits::check(buf[place_value]);
+		it = iterator(this, &buf[place_value]);
+
+		if (!ZeroTraits::check(buf[place_value]) && buf[place_value] == x)
+		{
+			inserted = false;
+			return;
+		}
+
+		new(&buf[place_value]) Key(x);
+		inserted = true;
+		++m_size;
+
+		if (unlikely(m_size > max_fill()))
+		{
+			resize();
+			it = find(x);
+		}
+	}
+
+
+	iterator find(Key x)
+	{
+		if (ZeroTraits::check(x))
+			return has_zero ? begin() : end();
+
+		size_t place_value = place(hash(x));
+		while (!ZeroTraits::check(buf[place_value]) && buf[place_value] != x)
+		{
+			++place_value;
+			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
+		}
+
+		return !ZeroTraits::check(buf[place_value]) ? iterator(this, &buf[place_value]) : end();
+	}
+
+
+	const_iterator find(Key x) const
+	{
+		if (ZeroTraits::check(x))
+			return has_zero ? begin() : end();
+
+		size_t place_value = place(hash(x));
+		while (!ZeroTraits::check(buf[place_value]) && buf[place_value] != x)
+		{
+			++place_value;
+			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
+		}
+
+		return !ZeroTraits::check(buf[place_value]) ? const_iterator(this, &buf[place_value]) : end();
 	}
 	
 

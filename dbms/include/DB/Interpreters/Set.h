@@ -16,6 +16,21 @@ namespace DB
   */
 struct Set
 {
+	Set() : type(EMPTY), log(&Logger::get("Set")) {}
+	bool empty() { return type == EMPTY; }
+
+	/** Создать множество по потоку блоков (для подзапроса). */
+	void create(BlockInputStreamPtr stream);
+
+	/** Создать множество по выражению (для перечисления в самом запросе). */
+	void create(ASTPtr node);
+
+	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
+	  * Записать результат в столбец в позиции result.
+	  */
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
+
+private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
 	  *  одного или нескольких столбцов значений множеству.
 	  */
@@ -23,7 +38,7 @@ struct Set
 	typedef HashSet<UInt64> SetUInt64;
 	typedef HashSet<StringRef, StringRefHash, StringRefZeroTraits> SetString;
 	typedef HashSet<UInt128, UInt128Hash, UInt128ZeroTraits> SetHashed;
-	
+
 	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
 	SetGeneric generic;
 
@@ -38,7 +53,7 @@ struct Set
 	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
 	  * Иначе - вычисляет md5 от набора из всех ключей.
 	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
-	  */ 
+	  */
 	SetHashed hashed;
 
 	enum Type
@@ -50,21 +65,11 @@ struct Set
 		HASHED		= 4,
 	};
 	Type type;
-
-	Set() : type(EMPTY) {}
-	bool empty() { return type == EMPTY; }
-
-
-	/** Создать множество по потоку блоков (для подзапроса). */
-	void create(BlockInputStreamPtr stream) { /* TODO */ }
-
-	/** Создать множество по выражению (для перечисления в самом запросе). */
-	void create(ASTPtr node);
-
-	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
-	  * Записать результат в столбец в позиции result.
-	  */
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) const { /* TODO */ }
+	
+	Logger * log;
+	
+	typedef std::vector<size_t> Sizes;
+	Type chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 };
 
 typedef SharedPtr<Set> SetPtr;

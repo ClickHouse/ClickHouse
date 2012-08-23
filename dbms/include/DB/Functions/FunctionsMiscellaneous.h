@@ -376,7 +376,7 @@ public:
 		else
 			left_arguments.push_back(arguments[0]);
 
-		column_set->getData()->execute(block, left_arguments, result);
+		column_set->getData()->execute(block, left_arguments, result, negative);
 	}
 };
 
