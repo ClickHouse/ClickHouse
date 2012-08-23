@@ -46,6 +46,9 @@ Set::Type Set::chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Siz
 }
 
 
+// TODO: Избавиться от copy-paste при вычислении key_hashed.
+
+
 void Set::create(BlockInputStreamPtr stream)
 {
 	LOG_TRACE(log, "Creating set");
@@ -56,10 +59,14 @@ void Set::create(BlockInputStreamPtr stream)
 		size_t keys_size = block.columns();
 		Row key(keys_size);
 		Columns key_columns(keys_size);
+		data_types.resize(keys_size);
 		
 		/// Запоминаем столбцы, с которыми будем работать
 		for (size_t i = 0; i < keys_size; ++i)
+		{
 			key_columns[i] = block.getByPosition(i).column;
+			data_types[i] = block.getByPosition(i).type;
+		}
 
 		size_t rows = block.rows();
 
@@ -199,6 +206,8 @@ void Set::create(BlockInputStreamPtr stream)
 
 void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const
 {
+	LOG_TRACE(log, "Checking set membership for block.");
+
 	ColumnUInt8 * c_res = new ColumnUInt8;
 	block.getByPosition(result).column = c_res;
 	ColumnUInt8::Container_t & vec_res = c_res->getData();
@@ -208,9 +217,14 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	Row key(keys_size);
 	Columns key_columns(keys_size);
 
-	/// Запоминаем столбцы, с которыми будем работать
+	/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
 	for (size_t i = 0; i < keys_size; ++i)
+	{
 		key_columns[i] = block.getByPosition(arguments[i]).column;
+
+		if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
+			throw Exception("Types in section IN doesn't match.", ErrorCodes::TYPE_MISMATCH);
+	}
 
 	size_t rows = block.rows();
 
@@ -331,8 +345,8 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	}
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-	
-	/* TODO */
+
+	LOG_TRACE(log, "Checked set membership for block.");
 }
 
 }

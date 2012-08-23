@@ -14,8 +14,9 @@ namespace DB
 
 /** Структура данных для реализации выражения IN.
   */
-struct Set
+class Set
 {
+public:
 	Set() : type(EMPTY), log(&Logger::get("Set")) {}
 	bool empty() { return type == EMPTY; }
 
@@ -23,7 +24,7 @@ struct Set
 	void create(BlockInputStreamPtr stream);
 
 	/** Создать множество по выражению (для перечисления в самом запросе). */
-	void create(ASTPtr node);
+	void create(ASTPtr node); // TODO
 
 	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
 	  * Записать результат в столбец в позиции result.
@@ -65,6 +66,11 @@ private:
 		HASHED		= 4,
 	};
 	Type type;
+
+	/** Типы данных, из которых было создано множество.
+	  * При проверке на принадлежность множеству, типы проверяемых столбцов должны с ними совпадать.
+	  */
+	DataTypes data_types;
 	
 	Logger * log;
 	
