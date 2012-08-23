@@ -12,6 +12,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnSet.h>
 #include <DB/Functions/IFunction.h>
 
 
@@ -25,6 +26,11 @@ namespace DB
   * toTypeName(x) 	- получить имя типа
   * blockSize()     - получить размер блока
   * materialize(x)  - материализовать константу
+  *
+  * in(x, set)      - функция для вычисления оператора IN
+  * notIn(x, set)   -  и NOT IN.
+  *
+  * tuple(x, y, ...) - функция, позволяющая сгруппировать несколько столбцов
   */
 
 
@@ -314,6 +320,46 @@ public:
 		if (!argument.isConst())
 			throw Exception("Argument for function 'materialize' must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 		
+		block.getByPosition(result).column = dynamic_cast<const IColumnConst &>(argument).convertToFullColumn();
+	}
+};
+
+
+class FunctionIn : public IFunction
+{
+private:
+	bool negative;
+	
+public:
+	FunctionIn(bool negative_ = false) : negative(negative_) {}
+	
+	/// Получить имя функции.
+	String getName() const
+	{
+		return negative ? "notIn" : "in";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeUInt8;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		/// Второй аргумент - обязательно ColumnSet.
+		const ColumnSet * column_set = dynamic_cast<const ColumnSet *>(&*block.getByPosition(arguments[1]).column);
+		if (!column_set)
+			throw Exception("Second argument for function '" + getName() + "' must be Set.", ErrorCodes::ILLEGAL_COLUMN);
+
+		
+
 		block.getByPosition(result).column = dynamic_cast<const IColumnConst &>(argument).convertToFullColumn();
 	}
 };
