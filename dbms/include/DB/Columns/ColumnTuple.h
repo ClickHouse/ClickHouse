@@ -50,12 +50,6 @@ public:
 		return res;
 	}
 
-	void cut(size_t start, size_t length)
-	{
-		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
-			(*it)->cut(start, length);
-	}
-
 	void insert(const Field & x)
 	{
 		const Array & arr = boost::get<const Array &>(x);
@@ -74,17 +68,13 @@ public:
 			(*it)->insertDefault();
 	}
 
-	void filter(const Filter & filt)
-	{
-		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
-			(*it)->filter(filt);
-	}
 
-	void permute(const Permutation & perm)
-	{
-		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
-			(*it)->permute(perm);
-	}
+	/** В следующих трёх функциях ничего не делаем, так как столбцы - элементы tuple обычно содержатся в блоке вместе с tuple,
+	  *  и соответствующие операции применяются к ним также. То есть, операции будут применены к tuple автоматически.
+	  */
+	void cut(size_t start, size_t length) {}
+	void filter(const Filter & filt) {}
+	void permute(const Permutation & perm) {}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs) const
 	{

@@ -269,6 +269,7 @@ void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, Expressio
 		{
 			BlockInputStreamPtr & stream = *it;
 			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_WHERE), is_async);
+			// TODO: Убрать лишние столбцы
 			stream = maybeAsynchronous(new FilterBlockInputStream(stream), is_async);
 		}
 	}
