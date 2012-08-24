@@ -121,6 +121,9 @@ private:
 	void markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below = false);
 
 	void makeSetsImpl(ASTPtr ast);
+
+	/// Получить тип у функции, идентификатора или литерала.
+	DataTypePtr getType(ASTPtr ast);
 };
 
 typedef SharedPtr<Expression> ExpressionPtr;

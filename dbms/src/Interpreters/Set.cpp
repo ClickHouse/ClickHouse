@@ -7,6 +7,11 @@
 #include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
+
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Set.h>
 
@@ -36,12 +41,14 @@ Set::Type Set::chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Siz
 
 	/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
 	if (keys_size == 1 && key_columns[0]->isNumeric()
-		&& !dynamic_cast<ColumnFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnFloat64 *>(&*key_columns[0]))
+		&& !dynamic_cast<ColumnFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnFloat64 *>(&*key_columns[0])
+		&& !dynamic_cast<ColumnConstFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnConstFloat64 *>(&*key_columns[0]))
 		return KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
-		&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])))
+		&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])
+			|| dynamic_cast<ColumnConstString *>(&*key_columns[0])))
 		return KEY_STRING;
 
 	/// Если много ключей - будем строить множество хэшей от них
@@ -200,6 +207,59 @@ void Set::logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entri
 }
 
 
+void Set::create(DataTypes & types, ASTPtr node)
+{
+	data_types = types;
+
+	/// Засунем множество в блок.
+	Block block;
+	for (size_t i = 0, size = data_types.size(); i < size; ++i)
+	{
+		ColumnWithNameAndType col;
+		col.type = data_types[i];
+		col.column = data_types[i]->createColumn();
+		col.name = "_" + Poco::NumberFormatter::format(i);
+
+		block.insert(col);
+	}
+
+	ASTExpressionList & list = dynamic_cast<ASTExpressionList &>(*node);
+	for (ASTs::iterator it = list.children.begin(); it != list.children.end(); ++it)
+	{
+		if (data_types.size() == 1)
+		{
+			if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&**it))
+				block.getByPosition(0).column->insert(lit->value);
+			else
+				throw Exception("Incorrect element of set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+		}
+		else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
+		{
+			if (func->name != "tuple")
+				throw Exception("Incorrect element of set. Must be tuple.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+
+			size_t tuple_size = func->arguments->children.size();
+			if (tuple_size != data_types.size())
+				throw Exception("Incorrect size of tuple in set.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+			
+			for (size_t j = 0; j < tuple_size; ++j)
+			{
+				if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*func->arguments->children[j]))
+					block.getByPosition(j).column->insert(lit->value);
+				else
+					throw Exception("Incorrect element of tuple in set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+			}
+		}
+		else
+			throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+
+		/// NOTE: Потом можно реализовать возможность задавать константные выражения в множествах.
+	}
+
+	create(new OneBlockInputStream(block));
+}
+
+
 void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const
 {
 	LOG_TRACE(log, "Checking set membership for block.");
@@ -275,6 +335,14 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 				StringRef ref(&data[i * n], n);
 				vec_res[i] = negative ^ (set.end() != set.find(ref));
 			}
+		}
+		else if (const ColumnConstString * column_string = dynamic_cast<const ColumnConstString *>(&column))
+		{
+			bool res = negative ^ (set.end() != set.find(StringRef(column_string->getData())));
+			
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+				vec_res[i] = res;
 		}
 		else
 			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);

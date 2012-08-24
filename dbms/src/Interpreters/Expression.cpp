@@ -99,16 +99,7 @@ void Expression::addSemantic(ASTPtr & ast)
 		ASTs & arguments = dynamic_cast<ASTExpressionList &>(*node->arguments).children;
 
 		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
-		{
-			if (ASTFunction * arg = dynamic_cast<ASTFunction *>(&**it))
-				argument_types.push_back(arg->return_type);
-			else if (ASTIdentifier * arg = dynamic_cast<ASTIdentifier *>(&**it))
-				argument_types.push_back(arg->type);
-			else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&**it))
-				argument_types.push_back(arg->type);
-			else if (dynamic_cast<ASTSubquery *>(&**it) || dynamic_cast<ASTSet *>(&**it))
-				argument_types.push_back(new DataTypeSet);
-		}
+			argument_types.push_back(getType(*it));
 
 		node->aggregate_function = context.getAggregateFunctionsFactory().tryGet(node->name, argument_types);
 		if (it == context.getFunctions().end() && node->aggregate_function.isNull())
@@ -154,6 +145,21 @@ void Expression::addSemantic(ASTPtr & ast)
 	{
 		node->type = boost::apply_visitor(FieldToDataType(), node->value);
 	}
+}
+
+
+DataTypePtr Expression::getType(ASTPtr ast)
+{
+	if (ASTFunction * arg = dynamic_cast<ASTFunction *>(&*ast))
+		return arg->return_type;
+	else if (ASTIdentifier * arg = dynamic_cast<ASTIdentifier *>(&*ast))
+		return arg->type;
+	else if (ASTLiteral * arg = dynamic_cast<ASTLiteral *>(&*ast))
+		return arg->type;
+	else if (dynamic_cast<ASTSubquery *>(&*ast) || dynamic_cast<ASTSet *>(&*ast))
+		return new DataTypeSet;
+	else
+		throw Exception("Unknown type of AST node " + ast->getID(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 }
 
 
@@ -516,7 +522,30 @@ void Expression::makeSetsImpl(ASTPtr ast)
 				ast_set->set->create(interpreter.execute());
 				arg = ast_set;
 			}
-			else	/// TODO случай явного перечисления значений.
+			else if (ASTFunction * set_func = dynamic_cast<ASTFunction *>(&*arg))
+			{
+				/// Случай явного перечисления значений.
+				if (set_func->name != "tuple")
+					throw Exception("Incorrect type of 2nd argument for function IN. Must be subquery or set of values.",
+						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+				DataTypes set_element_types;
+				ASTPtr & left_arg = args.children[0];
+
+				if (ASTFunction * left_arg_tuple = dynamic_cast<ASTFunction *>(&*left_arg))
+					for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
+						it != left_arg_tuple->arguments->children.end();
+						++it)
+						set_element_types.push_back(getType(*it));
+				else
+					set_element_types.push_back(getType(left_arg));
+
+				ASTSet * ast_set = new ASTSet(arg->getColumnName());
+				ast_set->set = new Set;
+				ast_set->set->create(set_element_types, set_func->arguments);
+				arg = ast_set;
+			}
+			else
 				throw Exception("Incorrect type of 2nd argument for function IN. Must be subquery or set of values.",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
