@@ -493,11 +493,15 @@ void Expression::makeSets()
 
 void Expression::makeSetsImpl(ASTPtr ast)
 {
+	bool made = false;
+	
 	/// Обход в глубину. Ищем выражения IN.
 	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		if (func->name == "in" || func->name == "notIn")
 		{
+			made = true;
+			
 			if (func->children.size() != 1)
 				throw Exception("Function IN requires exactly 2 arguments",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -550,10 +554,62 @@ void Expression::makeSetsImpl(ASTPtr ast)
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 	}
-	else
+
+	/// Рекурсивно обходим всё дерево, не опускаясь в только что созданные множества.
+	if (!made)
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			if (!dynamic_cast<ASTSelectQuery *>(&**it))
 				makeSetsImpl(*it);
+}
+
+
+void Expression::resolveScalarSubqueries()
+{
+	makeSetsImpl(ast);
+}
+
+
+void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast)
+{
+	/// Обход в глубину. Ищем подзапросы.
+	if (ASTSubquery * subquery = dynamic_cast<ASTSubquery *>(&*ast))
+	{
+		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
+	    InterpreterSelectQuery interpreter(subquery->children[0], context, QueryProcessingStage::Complete);
+		BlockInputStreamPtr res_stream = interpreter.execute();
+		Block res_block = res_stream->read();
+
+		/// В блоке должна быть одна строка.
+		if (res_stream->read() || res_block.rows() != 1)
+			throw Exception("Scalar subquery must return exactly one row.", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+
+		/// Создаём литерал или tuple.
+		if (res_block.columns() == 1)
+		{
+			ASTLiteral * lit = new ASTLiteral(subquery->range, (*res_block.getByPosition(0).column)[0]);
+			lit->type = res_block.getByPosition(0).type;
+			/// NOTE можно разрешить подзапросам иметь alias.
+			ast = lit;
+		}
+		else
+		{
+			/// TODO
+		}
+	}
+	else
+	{
+		/// Обходим рекурсивно, но не опускаемся в секции IN.
+		bool recurse = true;
+
+		if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+			if (func->name == "in" || func->name == "notIn")
+				recurse = false;
+
+		if (recurse)
+			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+				if (!dynamic_cast<ASTSelectQuery *>(&**it))	/// А также не опускаемся в подзапросы в секции FROM.
+					resolveScalarSubqueriesImpl(*it);
+	}
 }
 
 }

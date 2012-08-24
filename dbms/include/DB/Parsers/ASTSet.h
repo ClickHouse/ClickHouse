@@ -18,7 +18,7 @@ public:
 	
 	ASTSet(const String & column_name_) : column_name(column_name_) {}
 	ASTSet(StringRange range_, const String & column_name_) : IAST(range_), column_name(column_name_) {}
-	String getID() { return "Set"; }
+	String getID() { return "Set_" + getColumnName(); }
 	ASTPtr clone() const { return new ASTSet(*this); }
 	String getColumnName() { return column_name; }
 };

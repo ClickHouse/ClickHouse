@@ -144,6 +144,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	{
 		/// Вычислим подзапросы в секции IN.
 		expression->makeSets();
+		/// А также скалярные подзапросы.
+		expression->resolveScalarSubqueries();
 		
 		/// Нужно ли агрегировать.
 		bool need_aggregate = expression->hasAggregates() || query.group_expression_list;

@@ -269,6 +269,10 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	ColumnUInt8::Container_t & vec_res = c_res->getData();
 	vec_res.resize(block.getByPosition(arguments[0]).column->size());
 
+	/// Если множество пусто
+	if (data_types.empty())
+		return;
+
 	size_t keys_size = arguments.size();
 	Row key(keys_size);
 	Columns key_columns(keys_size);
