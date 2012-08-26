@@ -34,8 +34,8 @@ public:
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
 	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const 								{ throwNoSerialization(); }
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const 	{ throwNoSerialization(); }
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const 		{ throwNoSerialization(); }
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const 									{ throwNoSerialization(); }
 
 	SharedPtr<IColumn> createColumn() const
 	{

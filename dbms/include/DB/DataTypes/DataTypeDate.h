@@ -40,14 +40,14 @@ public:
 		deserializeText(field, istr);
 	}
 	
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
 	{
 		writeChar('\'', ostr);
 		serializeText(field, ostr);
 		writeChar('\'', ostr);
 	}
 	
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 	{
 		assertString("'", istr);
 		deserializeText(field, istr);

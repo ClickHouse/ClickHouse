@@ -43,12 +43,12 @@ public:
 		deserializeText(field, istr);
 	}
 	
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
 	{
 		serializeText(field, ostr);
 	}
 	
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 	{
 		deserializeText(field, istr);
 	}

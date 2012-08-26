@@ -62,11 +62,9 @@ public:
 	virtual void deserializeTextEscaped(Field & field, ReadBuffer & istr) const = 0;
 
 	/** Текстовая сериализация в виде литерала, который может быть вставлен в запрос.
-	  * Если compatible = true, то значение типа "массив" и "кортеж" ещё дополнительно записывается в кавычки,
-	  *  чтобы текстовый дамп можно было загрузить в другую СУБД с этими значениями в виде строки.
 	  */
-	virtual void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const = 0;
-	virtual void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const = 0;
+	virtual void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const = 0;
+	virtual void deserializeTextQuoted(Field & field, ReadBuffer & istr) const = 0;
 
 	/** Создать пустой столбец соответствующего типа.
 	  */

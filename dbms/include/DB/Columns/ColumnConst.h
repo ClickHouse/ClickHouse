@@ -98,6 +98,7 @@ private:
 
 
 typedef ColumnConst<String> ColumnConstString;
+typedef ColumnConst<Array> ColumnConstArray;
 
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
@@ -109,6 +110,8 @@ template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const;
+
+template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const;
 
 // TODO: convertToFullColumn для остальных типов столбцов.
 

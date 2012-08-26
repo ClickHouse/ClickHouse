@@ -90,12 +90,12 @@ void DataTypeAggregateFunction::deserializeTextEscaped(Field & field, ReadBuffer
 	throw Exception("Cannot read aggregate function from text.", ErrorCodes::CANNOT_READ_AGGREGATE_FUNCTION_FROM_TEXT);
 }
 
-void DataTypeAggregateFunction::serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible) const
+void DataTypeAggregateFunction::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
 {
 	throw Exception("Cannot write aggregate function as text.", ErrorCodes::CANNOT_WRITE_AGGREGATE_FUNCTION_AS_TEXT);
 }
 
-void DataTypeAggregateFunction::deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible) const
+void DataTypeAggregateFunction::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 {
 	throw Exception("Cannot read aggregate function from text.", ErrorCodes::CANNOT_READ_AGGREGATE_FUNCTION_FROM_TEXT);
 }

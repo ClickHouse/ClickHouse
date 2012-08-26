@@ -10,6 +10,7 @@
 #include <DB/Functions/FunctionsHashing.h>
 #include <DB/Functions/FunctionsRandom.h>
 #include <DB/Functions/FunctionsURL.h>
+#include <DB/Functions/FunctionsArray.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Functions/FunctionsLibrary.h>
@@ -120,6 +121,8 @@ namespace FunctionsLibrary
 			("tupleElement",				new FunctionTupleElement)
 			("in",							new FunctionIn)
 			("notIn",						new FunctionIn(true))
+
+			("array",						new FunctionArray)
 		;
 
 		return res;

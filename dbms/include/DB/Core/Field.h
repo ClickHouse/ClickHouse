@@ -38,6 +38,8 @@ typedef boost::make_recursive_variant<
 
 typedef std::vector<Field> Array;			/// Значение типа "массив"
 
+template <> struct TypeName<Array> { static std::string get() { return "Array"; } };
+
 
 /** Числовое значение конкретного типа Field */
 namespace FieldType
@@ -210,6 +212,7 @@ template <> struct NearestFieldType<Int64> 		{ typedef Int64 	Type; };
 template <> struct NearestFieldType<Float32> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<Float64> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
+template <> struct NearestFieldType<Array> 		{ typedef Array 	Type; };
 template <> struct NearestFieldType<bool> 		{ typedef UInt64 	Type; };
 
 }

@@ -26,4 +26,10 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 	return res;
 }
 
+
+template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
+{
+	throw Exception("Materializing ColumnConstArray is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 }

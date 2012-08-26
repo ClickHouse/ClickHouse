@@ -125,13 +125,13 @@ void DataTypeString::deserializeTextEscaped(Field & field, ReadBuffer & istr) co
 }
 
 
-void DataTypeString::serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible) const
+void DataTypeString::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
 {
 	writeQuotedString(boost::get<const String &>(field), ostr);
 }
 
 
-void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible) const
+void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 {
 	String s;
 	readQuotedString(s, istr);

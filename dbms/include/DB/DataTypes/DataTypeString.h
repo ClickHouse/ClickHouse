@@ -37,8 +37,8 @@ public:
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const;
 	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const;
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr, bool compatible = false) const;
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr, bool compatible = false) const;
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const;
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const;
 
 	ColumnPtr createColumn() const;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const;

@@ -241,9 +241,12 @@ public:
 		return static_cast<const ColumnOffsets_t &>(*offsets.get()).getData();
 	}
 
+	ColumnPtr & getOffsetsColumn() { return offsets; }
+	const ColumnPtr & getOffsetsColumn() const { return offsets; }
+
 protected:
 	ColumnPtr data;
-	ColumnPtr offsets;
+	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 
 	size_t __attribute__((__flatten__, __always_inline__)) offsetAt(size_t i) const { return i == 0 ? 0 : getOffsets()[i - 1]; }
 	size_t __attribute__((__flatten__, __always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
