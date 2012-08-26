@@ -85,7 +85,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		Array & array = boost::get<Array &>(x);
+		const Array & array = boost::get<const Array &>(x);
 		size_t size = array.size();
 		for (size_t i = 0; i < size; ++i)
 			data->insert(array[i]);
@@ -221,15 +221,11 @@ public:
 	}
 
 	/** Более эффективные методы манипуляции */
-	IColumn & getData()
-	{
-		return *data;
-	}
+	IColumn & getData() { return *data; }
+	const IColumn & getData() const { return *data; }
 
-	const IColumn & getData() const
-	{
-		return *data;
-	}
+	ColumnPtr & getDataPtr() { return data; }
+	const ColumnPtr & getDataPtr() const { return data; }
 
 	Offsets_t & __attribute__((__flatten__, __always_inline__)) getOffsets()
 	{

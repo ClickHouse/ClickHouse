@@ -3,15 +3,22 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 
-#include <DB/DataTypes/DataTypeArray.h>
-
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+
+#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 
 namespace DB
 {
 
+DataTypeArray::DataTypeArray(DataTypePtr nested_) : nested(nested_)
+{
+	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
+}
+
+	
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
 	throw Exception("Binary serialization of individual array values is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
@@ -35,7 +42,10 @@ void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, 
 	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
-	nested->serializeBinary(column_array.getData(), ostr, boost::bind(adjustedWriteCallback, boost::ref(callback), boost::cref(offsets)));
+	nested->serializeBinary(column_array.getData(), ostr,
+		callback
+			? boost::bind(adjustedWriteCallback, boost::ref(callback), boost::cref(offsets))
+			: WriteCallback());
 }
 
 
@@ -44,7 +54,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_
 	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
-	nested->deserializeBinary(column_array.getData(), istr, offsets[limit]);
+	nested->deserializeBinary(column_array.getData(), istr, limit == 0 ? 0 : offsets[limit - 1]);
 }
 
 

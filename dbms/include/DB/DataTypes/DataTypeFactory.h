@@ -21,6 +21,7 @@ private:
 	NonParametricDataTypes non_parametric_data_types;
 
 	Poco::RegularExpression fixed_string_regexp;
+	Poco::RegularExpression nested_regexp;
 };
 
 }

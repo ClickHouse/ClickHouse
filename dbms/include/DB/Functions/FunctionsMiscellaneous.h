@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -9,12 +10,14 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Functions/IFunction.h>
 
 
@@ -231,6 +234,47 @@ public:
 			UInt64 res = 0;
 			stringWidthConstant(col->getData(), res);
 			block.getByPosition(result).column = new ColumnConstUInt64(rows, res);
+		}
+		else if (const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*column))
+		{
+			/// Вычисляем видимую ширину для значений массива.
+			Block nested_block;
+			ColumnWithNameAndType nested_values;
+			nested_values.type = dynamic_cast<const DataTypeArray &>(*type).getNestedType();
+			nested_values.column = col->getDataPtr();
+			nested_block.insert(nested_values);
+
+			ColumnWithNameAndType nested_result;
+			nested_result.type = new DataTypeUInt64;
+			nested_block.insert(nested_result);
+
+			ColumnNumbers nested_argument_numbers(1, 0);
+			execute(nested_block, nested_argument_numbers, 1);
+			ColumnUInt64::Container_t & nested_res = dynamic_cast<ColumnUInt64 &>(*nested_block.getByPosition(1).column).getData();
+
+			/// Теперь суммируем и кладём в результат.
+			ColumnUInt64 * res = new ColumnUInt64(rows);
+			ColumnUInt64::Container_t & vec = res->getData();
+
+			size_t j = 0;
+			for (size_t i = 0; i < rows; ++i)
+			{
+				vec[i] = 1;
+				for (; j < col->getOffsets()[i]; ++j)
+					vec[i] += 1 + nested_res[j];
+			}
+
+			block.getByPosition(result).column = res;
+		}
+		else if (const ColumnConstArray * col = dynamic_cast<const ColumnConstArray *>(&*column))
+		{
+			String s;
+			{
+				WriteBufferFromString wb(s);
+				type->serializeTextEscaped(col->getData(), wb);
+			}
+
+			block.getByPosition(result).column = new ColumnConstUInt64(rows, s.size());
 		}
 		else
 		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()

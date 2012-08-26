@@ -1,11 +1,45 @@
+#include <DB/Core/Defines.h>
+
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/VarInt.h>
+
+#include <DB/Columns/ColumnArray.h>
+
+#include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>
 
 
 namespace DB
 {
+
+
+static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows)
+{
+	/** Для массивов требуется сначала десериализовать смещения, а потом значения.
+	  */
+	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	{
+		IColumn & offsets_column = *dynamic_cast<ColumnArray &>(column).getOffsetsColumn();
+		type_arr->getOffsetsType()->deserializeBinary(offsets_column, istr, rows);
+
+		if (offsets_column.size() != rows)
+			throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
+
+		if (rows)
+			readData(
+				*type_arr->getNestedType(),
+				dynamic_cast<ColumnArray &>(column).getData(),
+				istr,
+				dynamic_cast<const ColumnArray &>(column).getOffsets()[rows - 1]);
+	}
+	else
+		type.deserializeBinary(column, istr, rows);
+
+	if (column.size() != rows)
+		throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
+}
+
 
 Block NativeBlockInputStream::readImpl()
 {
@@ -34,10 +68,7 @@ Block NativeBlockInputStream::readImpl()
 
 		/// Данные
 		column.column = column.type->createColumn();
-		column.type->deserializeBinary(*column.column, istr, rows);
-
-		if (column.column->size() != rows)
-			throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
+		readData(*column.type, *column.column, istr, rows);
 
 		res.insert(column);
 	}

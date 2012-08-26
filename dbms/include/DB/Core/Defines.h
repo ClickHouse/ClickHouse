@@ -17,3 +17,6 @@
 #define SHOW_CHARS_ON_SYNTAX_ERROR 	160L
 #define DEFAULT_MAX_THREADS 		8
 #define DEFAULT_INTERACTIVE_DELAY	100000
+
+/// Суффикс имени для столбца, содержащего смещения массива.
+#define ARRAY_OFFSETS_COLUMN_NAME_SUFFIX 	".offsets"

@@ -3,6 +3,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -50,7 +51,7 @@ public:
 	
 	DataTypePtr operator() (const Array 	& x) const
 	{
-		throw Exception("Logical error: array literals cannot be passed to FieldToDataType function.", ErrorCodes::LOGICAL_ERROR);
+		return new DataTypeArray(boost::apply_visitor(FieldToDataType(), x.at(0)));
 	}
 };
 

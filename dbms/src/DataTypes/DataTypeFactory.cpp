@@ -9,6 +9,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
 
@@ -17,7 +18,8 @@ namespace DB
 
 
 DataTypeFactory::DataTypeFactory()
-	: fixed_string_regexp("^FixedString\\s*\\(\\s*(\\d+)\\s*\\)$")
+	: fixed_string_regexp("^FixedString\\s*\\(\\s*(\\d+)\\s*\\)$"),
+	nested_regexp("^(\\w+)\\s*\\(\\s*(.+)\\s*\\)$")
 {
 	boost::assign::insert(non_parametric_data_types)
 		("UInt8",				new DataTypeUInt8)
@@ -49,6 +51,19 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 	Poco::RegularExpression::MatchVec matches;
 	if (fixed_string_regexp.match(name, 0, matches) && matches.size() == 2)
 		return new DataTypeFixedString(mysqlxx::String(name.data() + matches[1].offset, matches[1].length, NULL).getUInt());
+
+	if (nested_regexp.match(name, 0, matches) && matches.size() == 3)
+	{
+		String base_name(name.data() + matches[1].offset, matches[1].length);
+		String parameter_name(name.data() + matches[2].offset, matches[2].length);
+
+		std::cerr << parameter_name << std::endl;
+
+		if (base_name == "Array")
+			return new DataTypeArray(get(parameter_name));
+		else
+			throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);
+	}
 
 	throw Exception("Unknown type " + name, ErrorCodes::UNKNOWN_TYPE);
 }

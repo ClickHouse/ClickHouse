@@ -14,8 +14,11 @@ class DataTypeArray : public IDataType
 private:
 	/// Тип элементов массивов.
 	DataTypePtr nested;
+	/// Тип смещений.
+	DataTypePtr offsets;
+
 public:
-	DataTypeArray(DataTypePtr nested_) : nested(nested_) {}
+	DataTypeArray(DataTypePtr nested_);
 	
 	std::string getName() const
 	{
@@ -59,6 +62,9 @@ public:
 	{
 		return Array();
 	}
+
+	const DataTypePtr & getNestedType() const { return nested; }
+	const DataTypePtr & getOffsetsType() const { return offsets; }
 };
 
 }
