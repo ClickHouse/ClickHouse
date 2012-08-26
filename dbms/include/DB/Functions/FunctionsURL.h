@@ -261,8 +261,8 @@ struct ExtractWWW
 template <typename Extractor>
 struct ExtractSubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size() * Extractor::getReserveLengthForElement());
 		size_t size = offsets.size();
@@ -311,8 +311,8 @@ struct ExtractSubstringImpl
 template <typename Extractor>
 struct CutSubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();

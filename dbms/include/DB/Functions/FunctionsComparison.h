@@ -70,8 +70,8 @@ struct EqualsNumImpl
 struct EqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -83,8 +83,8 @@ struct EqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -96,12 +96,12 @@ struct EqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
 			c[i] = (i == 0)
@@ -111,8 +111,8 @@ struct EqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
@@ -124,8 +124,8 @@ struct EqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
@@ -134,24 +134,24 @@ struct EqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 			c[j] = a_n == b_n && !memcmp(&a_data[i], b_data, a_n);
 	}
 
 	static void constant_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		for (size_t i = 0; i < size; ++i)
 			c[i] = (i == 0)
@@ -162,12 +162,12 @@ struct EqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 			c[j] = a_n == b_n && !memcmp(&b_data[i], a_data, b_n);
 	}
@@ -214,8 +214,8 @@ struct NotEqualsNumImpl
 struct NotEqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -227,8 +227,8 @@ struct NotEqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -240,12 +240,12 @@ struct NotEqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
 			c[i] = !((i == 0)
@@ -255,8 +255,8 @@ struct NotEqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
@@ -268,8 +268,8 @@ struct NotEqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
@@ -278,24 +278,24 @@ struct NotEqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 			c[j] = !(a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
 	}
 
 	static void constant_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		for (size_t i = 0; i < size; ++i)
 			c[i] = !((i == 0)
@@ -306,12 +306,12 @@ struct NotEqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 			c[j] = !(a_n == b_n && !memcmp(&b_data[i], a_data, b_n));
 	}
@@ -358,8 +358,8 @@ struct LessNumImpl
 struct LessStringImpl
 {
 	static void string_vector_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -380,8 +380,8 @@ struct LessStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -402,12 +402,12 @@ struct LessStringImpl
 	}
 
 	static void string_vector_constant(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -426,8 +426,8 @@ struct LessStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
@@ -448,8 +448,8 @@ struct LessStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
@@ -461,13 +461,13 @@ struct LessStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
@@ -477,11 +477,11 @@ struct LessStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -501,12 +501,12 @@ struct LessStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
@@ -556,8 +556,8 @@ struct GreaterNumImpl
 struct GreaterStringImpl
 {
 	static void string_vector_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -578,8 +578,8 @@ struct GreaterStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -600,12 +600,12 @@ struct GreaterStringImpl
 	}
 
 	static void string_vector_constant(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -624,8 +624,8 @@ struct GreaterStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
@@ -646,8 +646,8 @@ struct GreaterStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
@@ -659,13 +659,13 @@ struct GreaterStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
@@ -675,11 +675,11 @@ struct GreaterStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -699,12 +699,12 @@ struct GreaterStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
@@ -754,8 +754,8 @@ struct LessOrEqualsNumImpl
 struct LessOrEqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -776,8 +776,8 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -798,12 +798,12 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -822,8 +822,8 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
@@ -844,8 +844,8 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
@@ -857,13 +857,13 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
@@ -873,11 +873,11 @@ struct LessOrEqualsStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -897,12 +897,12 @@ struct LessOrEqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
@@ -952,8 +952,8 @@ struct GreaterOrEqualsNumImpl
 struct GreaterOrEqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -974,8 +974,8 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
@@ -996,12 +996,12 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -1020,8 +1020,8 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
@@ -1042,8 +1042,8 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
@@ -1055,13 +1055,13 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		size_t b_n = b.size();
+		ColumnArray::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
 		{
 			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
@@ -1071,11 +1071,11 @@ struct GreaterOrEqualsStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -1095,12 +1095,12 @@ struct GreaterOrEqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		size_t a_n = a.size();
+		ColumnArray::Offset_t a_n = a.size();
 		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
 		{
 			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));

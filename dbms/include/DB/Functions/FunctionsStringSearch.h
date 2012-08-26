@@ -39,7 +39,7 @@ struct PositionImpl
 	typedef UInt64 ResultType;
 
 	/// Предполагается, что res нужного размера и инициализирован нулями.
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		const std::string & needle,
 		std::vector<UInt64> & res)
 	{
@@ -81,7 +81,7 @@ struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
 	
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		const std::string & needle,
 		std::vector<UInt64> & res)
 	{
@@ -258,7 +258,7 @@ struct MatchImpl
 {
 	typedef UInt8 ResultType;
 
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		const std::string & pattern,
 		std::vector<UInt8> & res)
 	{

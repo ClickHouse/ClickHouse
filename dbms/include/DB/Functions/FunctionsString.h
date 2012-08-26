@@ -42,7 +42,7 @@ namespace DB
   */
 struct LengthImpl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
@@ -76,12 +76,12 @@ struct LengthImpl
   */
 struct LengthUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
 
-		size_t prev_offset = 0;
+		ColumnArray::Offset_t prev_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			res[i] = 0;
@@ -126,8 +126,8 @@ struct LengthUTF8Impl
 template <int F(int)>
 struct LowerUpperImpl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
@@ -165,8 +165,8 @@ private:
 template <int F(int)>
 struct LowerUpperUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
@@ -214,14 +214,14 @@ private:
   */
 struct ReverseImpl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
 		size_t size = offsets.size();
 
-		size_t prev_offset = 0;
+		ColumnArray::Offset_t prev_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
@@ -257,17 +257,17 @@ struct ReverseImpl
   */
 struct ReverseUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
 		size_t size = offsets.size();
 
-		size_t prev_offset = 0;
+		ColumnArray::Offset_t prev_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			size_t j = prev_offset;
+			ColumnArray::Offset_t j = prev_offset;
 			while (j < offsets[i] - 1)
 			{
 				if (data[j] < 0xBF)
@@ -340,17 +340,17 @@ struct ReverseUTF8Impl
 struct ConcatImpl
 {
 	static void vector_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
-		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b_data.size() - size);
 		c_offsets.resize(size);
 
-		size_t offset = 0;
-		size_t a_offset = 0;
-		size_t b_offset = 0;
+		ColumnArray::Offset_t offset = 0;
+		ColumnArray::Offset_t a_offset = 0;
+		ColumnArray::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
@@ -366,17 +366,17 @@ struct ConcatImpl
 	}
 
 	static void vector_fixed_vector(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
-		const std::vector<UInt8> & b_data, size_t b_n,
-		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b_data.size());
 		c_offsets.resize(size);
 
-		size_t offset = 0;
-		size_t a_offset = 0;
-		size_t b_offset = 0;
+		ColumnArray::Offset_t offset = 0;
+		ColumnArray::Offset_t a_offset = 0;
+		ColumnArray::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
@@ -394,9 +394,9 @@ struct ConcatImpl
 	}
 
 	static void vector_constant(
-		const std::vector<UInt8> & a_data, const std::vector<size_t> & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b.size() * size);
@@ -405,8 +405,8 @@ struct ConcatImpl
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += b.size() + i;
 
-		size_t offset = 0;
-		size_t a_offset = 0;
+		ColumnArray::Offset_t offset = 0;
+		ColumnArray::Offset_t a_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
@@ -419,17 +419,17 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
-		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = b_offsets.size();
 		c_data.resize(a_data.size() + b_data.size());
 		c_offsets.resize(size);
 
-		size_t offset = 0;
-		size_t a_offset = 0;
-		size_t b_offset = 0;
+		ColumnArray::Offset_t offset = 0;
+		ColumnArray::Offset_t a_offset = 0;
+		ColumnArray::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_n);
@@ -445,13 +445,13 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_fixed_vector(
-		const std::vector<UInt8> & a_data, size_t a_n,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c_data)
 	{
 		size_t size = a_data.size() / a_n;
 		c_data.resize(a_data.size() + b_data.size());
-		size_t c_n = a_n + b_n;
+		ColumnArray::Offset_t c_n = a_n + b_n;
 
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -461,13 +461,13 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_constant(
-		const std::vector<UInt8> & a_data, size_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c_data)
 	{
 		size_t size = a_data.size() / a_n;
-		size_t b_n = b.size();
-		size_t c_n = a_n + b_n;
+		ColumnArray::Offset_t b_n = b.size();
+		ColumnArray::Offset_t c_n = a_n + b_n;
 		c_data.resize(a_data.size() + size * b_n);
 
 		for (size_t i = 0; i < size; ++i)
@@ -479,8 +479,8 @@ struct ConcatImpl
 
 	static void constant_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const std::vector<size_t> & b_offsets,
-		std::vector<UInt8> & c_data, std::vector<size_t> & c_offsets)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = b_offsets.size();
 		c_data.resize(b_data.size() + a.size() * size);
@@ -489,8 +489,8 @@ struct ConcatImpl
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += a.size() + i;
 
-		size_t offset = 0;
-		size_t b_offset = 0;
+		ColumnArray::Offset_t offset = 0;
+		ColumnArray::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], a.data(), a.size());
@@ -504,12 +504,12 @@ struct ConcatImpl
 
 	static void constant_fixed_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, size_t b_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
 		std::vector<UInt8> & c_data)
 	{
 		size_t size = b_data.size() / b_n;
-		size_t a_n = a.size();
-		size_t c_n = a_n + b_n;
+		ColumnArray::Offset_t a_n = a.size();
+		ColumnArray::Offset_t c_n = a_n + b_n;
 		c_data.resize(size * a_n + b_data.size());
 
 		for (size_t i = 0; i < size; ++i)
@@ -533,16 +533,16 @@ struct ConcatImpl
   */
 struct SubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		size_t start, size_t length,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		size_t prev_offset = 0;
-		size_t res_offset = 0;
+		ColumnArray::Offset_t prev_offset = 0;
+		ColumnArray::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			if (start + prev_offset >= offsets[i] + 1)
@@ -595,22 +595,22 @@ struct SubstringImpl
   */
 struct SubstringUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const std::vector<size_t> & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		size_t start, size_t length,
-		std::vector<UInt8> & res_data, std::vector<size_t> & res_offsets)
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		size_t prev_offset = 0;
-		size_t res_offset = 0;
+		ColumnArray::Offset_t prev_offset = 0;
+		ColumnArray::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			size_t j = prev_offset;
-			size_t pos = 1;
-			size_t bytes_start = 0;
-			size_t bytes_length = 0;
+			ColumnArray::Offset_t j = prev_offset;
+			ColumnArray::Offset_t pos = 1;
+			ColumnArray::Offset_t bytes_start = 0;
+			ColumnArray::Offset_t bytes_length = 0;
 			while (j < offsets[i] - 1)
 			{
 				if (pos == start)
@@ -652,7 +652,7 @@ struct SubstringUTF8Impl
 		}
 	}
 
-	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+	static void vector_fixed(const std::vector<UInt8> & data, ColumnArray::Offset_t n,
 		size_t start, size_t length,
 		std::vector<UInt8> & res_data)
 	{
@@ -666,10 +666,10 @@ struct SubstringUTF8Impl
 		if (start + length > data.size() + 1)
 			throw Exception("Index out of bound for function substring of constant value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		size_t j = 0;
-		size_t pos = 1;
-		size_t bytes_start = 0;
-		size_t bytes_length = 0;
+		ColumnArray::Offset_t j = 0;
+		ColumnArray::Offset_t pos = 1;
+		ColumnArray::Offset_t bytes_start = 0;
+		ColumnArray::Offset_t bytes_length = 0;
 		while (j < data.size())
 		{
 			if (pos == start)

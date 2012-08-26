@@ -34,8 +34,8 @@ public:
 	
 	Field operator[](size_t n) const
 	{
-		size_t offset = n == 0 ? 0 : offsets[n - 1];
-		size_t size = offsets[n] - offset - 1;
+		size_t offset = n == 0 ? 0 : getOffsets()[n - 1];
+		size_t size = getOffsets()[n] - offset - 1;
 		const char * s = reinterpret_cast<const char *>(&dynamic_cast<const ColumnUInt8 &>(*data).getData()[offset]);
 		return String(s, size);
 	}
@@ -47,13 +47,13 @@ public:
 		size_t size_to_append = s.size() + 1;
 		char_data.resize(old_size + size_to_append);
 		memcpy(&char_data[old_size], s.c_str(), size_to_append);
-		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size_to_append);
 	}
 
 	void insertDefault()
 	{
 		char_data.push_back(0);
-		offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
+		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
@@ -83,7 +83,7 @@ public:
 
 	Permutation getPermutation() const
 	{
-		size_t s = offsets.size();
+		size_t s = getOffsets().size();
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;

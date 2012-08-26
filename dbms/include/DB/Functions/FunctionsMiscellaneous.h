@@ -103,7 +103,7 @@ static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
 	return res;
 }
 
-static inline void stringWidthVector(const std::vector<UInt8> & data, const std::vector<UInt64> & offsets, std::vector<UInt64> & res)
+static inline void stringWidthVector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
 {
 	size_t size = offsets.size();
 

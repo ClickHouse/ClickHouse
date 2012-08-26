@@ -8,6 +8,7 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/Columns/IColumn.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -23,11 +24,13 @@ class ColumnArray : public IColumn
 {
 public:
 	/** По индексу i находится смещение до начала i + 1 -го элемента. */
-	typedef std::vector<size_t> Offsets_t;
+	typedef UInt32 Offset_t;
+	typedef std::vector<Offset_t> Offsets_t;
+	typedef ColumnVector<Offset_t> ColumnOffsets_t;
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
 	ColumnArray(ColumnPtr nested_column)
-		: data(nested_column)
+		: data(nested_column), offsets(new ColumnOffsets_t)
 	{
 		data->clear();
 	}
@@ -41,7 +44,7 @@ public:
 	
 	size_t size() const
 	{
-		return offsets.size();
+		return getOffsets().size();
 	}
 	
 	Field operator[](size_t n) const
@@ -58,25 +61,25 @@ public:
 
 	void cut(size_t start, size_t length)
 	{
-		if (length == 0 || start + length > offsets.size())
+		if (length == 0 || start + length > getOffsets().size())
 			throw Exception("Parameter out of bound in IColumnArray::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
 		size_t nested_offset = offsetAt(start);
-		size_t nested_length = offsets[start + length - 1] - nested_offset;
+		size_t nested_length = getOffsets()[start + length - 1] - nested_offset;
 
 		data->cut(nested_offset, nested_length);
 
 		if (start == 0)
-			offsets.resize(length);
+			getOffsets().resize(length);
 		else
 		{
 			Offsets_t tmp(length);
 
 			for (size_t i = 0; i < length; ++i)
-				tmp[i] = offsets[start + i] - nested_offset;
+				tmp[i] = getOffsets()[start + i] - nested_offset;
 			
-			tmp.swap(offsets);
+			tmp.swap(getOffsets());
 		}
 	}
 
@@ -86,24 +89,24 @@ public:
 		size_t size = array.size();
 		for (size_t i = 0; i < size; ++i)
 			data->insert(array[i]);
-		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size);
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
 	void insertDefault()
 	{
 		data->insertDefault();
-		offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
+		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
 	}
 
 	void clear()
 	{
 		data->clear();
-		offsets.clear();
+		getOffsets().clear();
 	}
 
 	void filter(const Filter & filt)
 	{
-		size_t size = offsets.size();
+		size_t size = getOffsets().size();
 		if (size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
@@ -111,7 +114,7 @@ public:
 			return;
 
 		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
-		Filter nested_filt(offsets.back());
+		Filter nested_filt(getOffsets().back());
 		for (size_t i = 0; i < size; ++i)
 			if (filt[i])
 				memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
@@ -130,19 +133,19 @@ public:
 			}
 		}
 
-		tmp.swap(offsets);
+		tmp.swap(getOffsets());
 	}
 
 	void permute(const Permutation & perm)
 	{
-		size_t size = offsets.size();
+		size_t size = getOffsets().size();
 		if (size != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
 			return;
 
-		Permutation nested_perm(offsets.back());
+		Permutation nested_perm(getOffsets().back());
 
 		Offsets_t tmp_offsets(size);
 		size_t current_offset = 0;
@@ -156,7 +159,7 @@ public:
 		}
 
 		data->permute(nested_perm);
-		tmp_offsets.swap(offsets);
+		tmp_offsets.swap(getOffsets());
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
@@ -214,7 +217,7 @@ public:
 
 	size_t byteSize() const
 	{
-		return data->byteSize() + offsets.size() * sizeof(offsets[0]);
+		return data->byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
 
 	/** Более эффективные методы манипуляции */
@@ -228,22 +231,22 @@ public:
 		return *data;
 	}
 
-	Offsets_t & getOffsets()
+	Offsets_t & __attribute__((__flatten__, __always_inline__)) getOffsets()
 	{
-		return offsets;
+		return static_cast<ColumnOffsets_t &>(*offsets.get()).getData();
 	}
 
-	const Offsets_t & getOffsets() const
+	const Offsets_t & __attribute__((__flatten__, __always_inline__)) getOffsets() const
 	{
-		return offsets;
+		return static_cast<const ColumnOffsets_t &>(*offsets.get()).getData();
 	}
 
 protected:
 	ColumnPtr data;
-	Offsets_t offsets;
+	ColumnPtr offsets;
 
-	inline size_t offsetAt(size_t i) const 	{ return i == 0 ? 0 : offsets[i - 1]; }
-	inline size_t sizeAt(size_t i) const	{ return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
+	size_t __attribute__((__flatten__, __always_inline__)) offsetAt(size_t i) const { return i == 0 ? 0 : getOffsets()[i - 1]; }
+	size_t __attribute__((__flatten__, __always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 };
 
 
