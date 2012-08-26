@@ -7,6 +7,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionAny.h>
 #include <DB/AggregateFunctions/AggregateFunctionAnyLast.h>
 #include <DB/AggregateFunctions/AggregateFunctionUniq.h>
+#include <DB/AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
@@ -33,6 +34,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		return new AggregateFunctionMin;
 	else if (name == "max")
 		return new AggregateFunctionMax;
+	else if (name == "groupArray")
+		return new AggregateFunctionGroupArray;
 	else if (name == "sum")
 	{
 		if (argument_types.size() != 1)
@@ -113,6 +116,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 		return new AggregateFunctionMin;
 	else if (type_id == "max")
 		return new AggregateFunctionMax;
+	else if (type_id == "groupArray")
+		return new AggregateFunctionGroupArray;
 	else if (0 == type_id.compare(0, strlen("sum_"), "sum_"))
 	{
 		if (0 == type_id.compare(strlen("sum_"), strlen("UInt64"), "UInt64"))
@@ -165,7 +170,8 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 		("max")
 		("sum")
 		("avg")
-		("uniq");
+		("uniq")
+		("groupArray");
 	
 	return names.end() != names.find(name)
 		? get(name, argument_types)

@@ -250,18 +250,35 @@ public:
 
 			ColumnNumbers nested_argument_numbers(1, 0);
 			execute(nested_block, nested_argument_numbers, 1);
-			ColumnUInt64::Container_t & nested_res = dynamic_cast<ColumnUInt64 &>(*nested_block.getByPosition(1).column).getData();
 
 			/// Теперь суммируем и кладём в результат.
 			ColumnUInt64 * res = new ColumnUInt64(rows);
 			ColumnUInt64::Container_t & vec = res->getData();
 
-			size_t j = 0;
-			for (size_t i = 0; i < rows; ++i)
+			size_t additional_symbols = 0;	/// Кавычки.
+			if (dynamic_cast<const DataTypeDate *>(&*nested_values.type)
+				|| dynamic_cast<const DataTypeDateTime *>(&*nested_values.type)
+				|| dynamic_cast<const DataTypeString *>(&*nested_values.type)
+				|| dynamic_cast<const DataTypeFixedString *>(&*nested_values.type))
+				additional_symbols = 2;
+
+			if (ColumnUInt64 * nested_result_column = dynamic_cast<ColumnUInt64 *>(&*nested_block.getByPosition(1).column))
 			{
-				vec[i] = 1;
-				for (; j < col->getOffsets()[i]; ++j)
-					vec[i] += 1 + nested_res[j];
+				ColumnUInt64::Container_t & nested_res = nested_result_column->getData();
+
+				size_t j = 0;
+				for (size_t i = 0; i < rows; ++i)
+				{
+					vec[i] = 1;
+					for (; j < col->getOffsets()[i]; ++j)
+						vec[i] += 1 + additional_symbols + nested_res[j];
+				}
+			}
+			else if (ColumnConstUInt64 * nested_result_column = dynamic_cast<ColumnConstUInt64 *>(&*nested_block.getByPosition(1).column))
+			{
+				size_t nested_length = nested_result_column->getData() + additional_symbols + 1;
+				for (size_t i = 0; i < rows; ++i)
+					vec[i] = 1 + (i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length;
 			}
 
 			block.getByPosition(result).column = res;
