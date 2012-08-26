@@ -29,6 +29,8 @@ public:
 	}
 	
 	SharedPtr<IDataType> clone() const { return new DataTypeTuple(elems); }
+
+	const DataTypes & getElements() const { return elems; }
 };
 
 }

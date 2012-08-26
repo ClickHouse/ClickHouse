@@ -10,6 +10,8 @@
 #include <DB/Parsers/ASTSet.h>
 
 #include <DB/DataTypes/DataTypeSet.h>
+#include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/Functions/FunctionsMiscellaneous.h>
 #include <DB/Columns/ColumnSet.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -112,6 +114,14 @@ void Expression::addSemantic(ASTPtr & ast)
 		{
 			node->aggregate_function->setArguments(argument_types);
 			node->return_type = node->aggregate_function->getReturnType();
+		}
+		else if (FunctionTupleElement * func_tuple_elem = dynamic_cast<FunctionTupleElement *>(&*node->function))
+		{
+			/// Особый случай - для функции tupleElement обычный метод getReturnType не работает.
+			if (arguments.size() != 2)
+				throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+			node->return_type = func_tuple_elem->getReturnType(argument_types, boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*arguments[1]).value));
 		}
 		else
 			node->return_type = node->function->getReturnType(argument_types);
@@ -565,7 +575,7 @@ void Expression::makeSetsImpl(ASTPtr ast)
 
 void Expression::resolveScalarSubqueries()
 {
-	makeSetsImpl(ast);
+	resolveScalarSubqueriesImpl(ast);
 }
 
 
@@ -593,7 +603,18 @@ void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast)
 		}
 		else
 		{
-			/// TODO
+			ASTFunction * tuple = new ASTFunction(subquery->range);
+			ASTExpressionList * args = new ASTExpressionList(subquery->range);
+
+			size_t columns = res_block.columns();
+			for (size_t i = 0; i < columns; ++i)
+				args->children.push_back(new ASTLiteral(subquery->range, (*res_block.getByPosition(i).column)[0]));
+			
+			tuple->name = "tuple";
+			tuple->arguments = args;
+			tuple->children.push_back(tuple->arguments);
+			ast = tuple;
+			addSemantic(ast);
 		}
 	}
 	else

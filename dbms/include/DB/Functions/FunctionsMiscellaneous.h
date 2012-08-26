@@ -28,11 +28,13 @@ namespace DB
   * toTypeName(x) 	- получить имя типа
   * blockSize()     - получить размер блока
   * materialize(x)  - материализовать константу
+  * ignore(...)		- функция, принимающая любые аргументы, и всегда возвращающая 0.
   *
   * in(x, set)      - функция для вычисления оператора IN
   * notIn(x, set)   -  и NOT IN.
   *
   * tuple(x, y, ...) - функция, позволяющая сгруппировать несколько столбцов
+  * tupleElement(tuple, n) - функция, позволяющая достать столбец из tuple.
   */
 
 
@@ -408,6 +410,93 @@ public:
 			tuple_block.insert(block.getByPosition(*it));
 		
 		block.getByPosition(result).column = new ColumnTuple(tuple_block);
+	}
+};
+
+
+class FunctionTupleElement : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "tupleElement";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		/** Эта функция особая. Тип результата зависит не только от типов аргументов, но и от значения константы (номера элемента tuple).
+		  * Поэтому, тип результата здесь определить нельзя. Это делается, в функции ниже.
+		  */
+		throw Exception("Cannot get return type of function tupleElement.", ErrorCodes::CANNOT_GET_RETURN_TYPE);
+	}
+
+	DataTypePtr getReturnType(const DataTypes & arguments, size_t index) const
+	{
+		if (arguments.size() != 2)
+			throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeTuple * tuple = dynamic_cast<const DataTypeTuple *>(&*arguments[0]);
+		if (!tuple)
+			throw Exception("First argument for function tupleElement must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (index == 0)
+			throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
+			
+		const DataTypes & elems = tuple->getElements();
+
+		if (index > elems.size())
+			throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
+
+		return elems[index - 1]->clone();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnTuple * tuple_col = dynamic_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstUInt8 * index_col = dynamic_cast<const ColumnConstUInt8 *>(&*block.getByPosition(arguments[1]).column);
+
+		if (!tuple_col)
+			throw Exception("First argument for function tupleElement must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
+
+		if (!index_col)
+			throw Exception("Second argument for function tupleElement must be UInt8 constant literal.", ErrorCodes::ILLEGAL_COLUMN);
+
+		size_t index = index_col->getData();
+		if (index == 0)
+			throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
+
+		const Block & tuple_block = tuple_col->getData();
+
+		if (index > tuple_block.columns())
+			throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
+
+		block.getByPosition(result).column = tuple_block.getByPosition(index - 1).column;
+	}
+};
+
+
+class FunctionIgnore : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "ignore";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		return new DataTypeUInt8;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstUInt8(block.getByPosition(0).column->size(), 0);
 	}
 };
 
