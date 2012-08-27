@@ -33,7 +33,6 @@ template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 {
 	size_t array_size = data.size();
 	ColumnPtr nested_column = boost::apply_visitor(FieldToDataType(), data.at(0))->createColumn();
-	std::cerr << nested_column->getName() << ", " << FieldVisitorToString()(data) << std::endl;
 	ColumnArray * res = new ColumnArray(nested_column);
 	ColumnArray::Offsets_t & offsets = res->getOffsets();
 
@@ -42,10 +41,7 @@ template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 	{
 		offsets[i] = (i + 1) * array_size;
 		for (size_t j = 0; j < array_size; ++j)
-		{
-			std::cerr << boost::apply_visitor(FieldVisitorToString(), data[j]) << std::endl;
 			nested_column->insert(data[j]);
-		}
 	}
 
 	return res;

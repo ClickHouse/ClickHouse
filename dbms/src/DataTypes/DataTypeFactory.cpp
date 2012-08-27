@@ -57,8 +57,6 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 		String base_name(name.data() + matches[1].offset, matches[1].length);
 		String parameter_name(name.data() + matches[2].offset, matches[2].length);
 
-		std::cerr << parameter_name << std::endl;
-
 		if (base_name == "Array")
 			return new DataTypeArray(get(parameter_name));
 		else
