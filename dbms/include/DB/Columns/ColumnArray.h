@@ -24,8 +24,6 @@ class ColumnArray : public IColumn
 {
 public:
 	/** По индексу i находится смещение до начала i + 1 -го элемента. */
-	typedef UInt32 Offset_t;
-	typedef std::vector<Offset_t> Offsets_t;
 	typedef ColumnVector<Offset_t> ColumnOffsets_t;
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
@@ -134,6 +132,11 @@ public:
 		}
 
 		tmp.swap(getOffsets());
+	}
+
+	void replicate(const Offsets_t & offsets)
+	{
+		throw Exception("Replication of column Array is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	void permute(const Permutation & perm)

@@ -91,6 +91,43 @@ public:
 		std::sort(res.begin(), res.end(), less(*this));
 		return res;
 	}
+
+	void replicate(const Offsets_t & replicate_offsets)
+	{
+		size_t col_size = size();
+		if (col_size != replicate_offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		ColumnUInt8::Container_t tmp_chars;
+		Offsets_t tmp_offsets;
+		tmp_chars.reserve(char_data.size() / col_size * replicate_offsets.back());
+		tmp_offsets.reserve(replicate_offsets.back());
+
+		Offset_t prev_replicate_offset = 0;
+		Offset_t prev_string_offset = 0;
+		Offset_t current_new_offset = 0;
+
+		for (size_t i = 0; i < col_size; ++i)
+		{
+			size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
+			size_t string_size = getOffsets()[i] - prev_string_offset;
+
+			for (size_t j = 0; j < size_to_replicate; ++j)
+			{
+				current_new_offset += string_size;
+				tmp_offsets.push_back(current_new_offset);
+				
+				for (size_t k = 0; k < string_size; ++k)
+					tmp_chars.push_back(char_data[prev_string_offset + k]);
+			}
+
+			prev_replicate_offset = replicate_offsets[i];
+			prev_string_offset = getOffsets()[i];
+		}
+
+		tmp_chars.swap(char_data);
+		tmp_offsets.swap(getOffsets());
+	}
 };
 
 

@@ -472,7 +472,7 @@ bool Expression::hasAggregates()
 }
 
 
-void Expression::markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below)
+void Expression::markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, bool below)
 {
 	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
 		if (func->aggregate_function)
@@ -480,18 +480,62 @@ void Expression::markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_p
 	
 	if (below)
 		ast->part_id |= before_part_id;
-	else
-		ast->part_id |= after_part_id;
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			markBeforeAndAfterAggregationImpl(*it, before_part_id, after_part_id, below);
+			markBeforeAggregationImpl(*it, before_part_id, below);
 }
 
 
-void Expression::markBeforeAndAfterAggregation(unsigned before_part_id, unsigned after_part_id)
+void Expression::markBeforeAggregation(unsigned before_part_id)
 {
-	markBeforeAndAfterAggregationImpl(ast, before_part_id, after_part_id);
+	markBeforeAggregationImpl(ast, before_part_id);
+}
+
+
+bool Expression::getArrayJoinInfoImpl(ASTPtr ast, String & column_name)
+{
+	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (func->name == "arrayJoin")
+		{
+			column_name = func->arguments->children.at(0)->getColumnName();
+			return true;
+		}
+	}
+
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<ASTSelectQuery *>(&**it) && getArrayJoinInfoImpl(*it, column_name))
+			return true;
+
+	return false;
+}
+
+
+void Expression::markBeforeArrayJoinImpl(ASTPtr ast, unsigned part_id, bool below)
+{
+	if (below)
+		ast->part_id |= part_id;
+
+	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+		if (func->name == "arrayJoin")
+			below = true;
+
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			markBeforeArrayJoinImpl(*it, part_id, below);
+}
+
+
+bool Expression::getArrayJoinInfo(String & column_name)
+{
+	return getArrayJoinInfoImpl(ast, column_name);
+}
+
+
+void Expression::markBeforeArrayJoin(unsigned part_id)
+{
+	markBeforeArrayJoinImpl(ast, part_id);
 }
 
 

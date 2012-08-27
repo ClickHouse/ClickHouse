@@ -97,6 +97,13 @@ public:
 	  */
 	virtual Permutation getPermutation() const = 0;
 
+	/** Размножить все значения столько раз, сколько прописано в offsets.
+	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)
+	  */
+	typedef UInt32 Offset_t;
+	typedef std::vector<Offset_t> Offsets_t;
+	virtual void replicate(const Offsets_t & offsets) = 0;
+
 	/** Очистить */
 	virtual void clear() = 0;
 

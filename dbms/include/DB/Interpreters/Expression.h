@@ -75,7 +75,16 @@ public:
 	/** Пометить то, что должно быть вычислено до агрегирования одним part_id,
 	  * а то, что должно быть вычислено после агрегирования, а также сами агрегатные функции - другим part_id.
 	  */
-	void markBeforeAndAfterAggregation(unsigned before_part_id, unsigned after_part_id);
+	void markBeforeAggregation(unsigned before_part_id);
+
+	/** Получить информацию об операции arrayJoin, если она есть.
+	  * Если есть - в column_name будет записано имя столбца, находящегося внутри arrayJoin.
+	  */
+	bool getArrayJoinInfo(String & column_name);
+	
+	/** Пометить то, что должно быть вычислено до применения операции arrayJoin.
+	  */
+	void markBeforeArrayJoin(unsigned part_id);
 
 private:
 	ASTPtr ast;
@@ -125,11 +134,15 @@ private:
 
 	bool hasAggregatesImpl(ASTPtr ast);
 
-	void markBeforeAndAfterAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below = false);
+	void markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, bool below = false);
 
 	void makeSetsImpl(ASTPtr ast);
 
 	void resolveScalarSubqueriesImpl(ASTPtr & ast);
+
+	bool getArrayJoinInfoImpl(ASTPtr ast, String & column_name);
+
+	void markBeforeArrayJoinImpl(ASTPtr ast, unsigned part_id, bool below = false);
 
 	/// Получить тип у функции, идентификатора или литерала.
 	DataTypePtr getType(ASTPtr ast);

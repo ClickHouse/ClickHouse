@@ -59,8 +59,8 @@ private:
 		PART_GROUP 	= 8,
 		PART_HAVING = 16,
 		PART_ORDER 	= 32,
-		PART_BEFORE_AGGREGATING = 64,	/// Под агрегатной функцией, или в ветке, не содержащей агрегатных функций
-		PART_AFTER_AGGREGATING = 128,
+		PART_BEFORE_AGGREGATING = 64,	/// Под агрегатной функцией
+		PART_BEFORE_ARRAY_JOIN = 128,	/// Под функцией arrayJoin
 	};
 
 
@@ -68,7 +68,8 @@ private:
 
 	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams, ExpressionPtr & expression);
-	
+
+	void executeArrayJoin(			BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeWhere(				BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeMergeAggregated(	BlockInputStreams & streams, ExpressionPtr & expression);

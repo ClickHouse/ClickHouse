@@ -116,6 +116,7 @@ namespace FunctionsLibrary
 			("blockSize",					new FunctionBlockSize)
 			("materialize",					new FunctionMaterialize)
 			("ignore",						new FunctionIgnore)
+			("arrayJoin",					new FunctionArrayJoin)
 
 			("tuple",						new FunctionTuple)
 			("tupleElement",				new FunctionTupleElement)

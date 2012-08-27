@@ -69,12 +69,13 @@ public:
 	}
 
 
-	/** В следующих трёх функциях ничего не делаем, так как столбцы - элементы tuple обычно содержатся в блоке вместе с tuple,
+	/** В следующих функциях ничего не делаем, так как столбцы - элементы tuple обычно содержатся в блоке вместе с tuple,
 	  *  и соответствующие операции применяются к ним также. То есть, операции будут применены к tuple автоматически.
 	  */
 	void cut(size_t start, size_t length) {}
 	void filter(const Filter & filt) {}
 	void permute(const Permutation & perm) {}
+	void replicate(const Offsets_t & offsets) {}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs) const
 	{

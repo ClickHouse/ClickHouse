@@ -38,6 +38,9 @@ namespace DB
   *
   * tuple(x, y, ...) - функция, позволяющая сгруппировать несколько столбцов
   * tupleElement(tuple, n) - функция, позволяющая достать столбец из tuple.
+  *
+  * arrayJoin(arr)  - особая функция - выполнить её напрямую нельзя;
+  *                   используется только чтобы получить тип результата соответствующего выражения.
   */
 
 
@@ -558,6 +561,36 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		block.getByPosition(result).column = new ColumnConstUInt8(block.getByPosition(0).column->size(), 0);
+	}
+};
+
+
+class FunctionArrayJoin : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "arrayJoin";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Function arrayJoin requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * arr = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
+		if (!arr)
+			throw Exception("Argument for function arrayJoin must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return arr->getNestedType()->clone();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		throw Exception("Function arrayJoin must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
 	}
 };
 

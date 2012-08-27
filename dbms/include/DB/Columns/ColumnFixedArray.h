@@ -96,6 +96,11 @@ public:
 		data->filter(nested_filt);
 	}
 
+	void replicate(const Offsets_t & offsets)
+	{
+		throw Exception("Replication of column FixedArray is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	void permute(const Permutation & perm)
 	{
 		size_t size = this->size();

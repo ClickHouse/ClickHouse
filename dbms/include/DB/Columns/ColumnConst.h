@@ -51,11 +51,22 @@ public:
 
 	void filter(const Filter & filt)
 	{
+		if (s != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+		
 		size_t new_size = 0;
 		for (Filter::const_iterator it = filt.begin(); it != filt.end(); ++it)
 			if (*it)
 				++new_size;
 		s = new_size;
+	}
+
+	void replicate(const Offsets_t & offsets)
+	{
+		if (s != offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		s = offsets.back();
 	}
 
 	size_t byteSize() const { return sizeof(data) + sizeof(s); }

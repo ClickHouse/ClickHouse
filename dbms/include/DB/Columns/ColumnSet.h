@@ -50,6 +50,12 @@ public:
 		return res;
 	}
 
+	void replicate(const Offsets_t & offsets)
+	{
+		if (s != offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+	}
+
 
 	SetPtr & getData() { return data; }
 	const SetPtr & getData() const { return data; }

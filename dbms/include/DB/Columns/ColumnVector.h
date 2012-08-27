@@ -145,6 +145,28 @@ public:
 		return res;
 	}
 
+	void replicate(const Offsets_t & offsets)
+	{
+		size_t size = data.size();
+		if (size != offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Container_t tmp;
+		tmp.reserve(offsets.back());
+
+		Offset_t prev_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t size_to_replicate = offsets[i] - prev_offset;
+			prev_offset = offsets[i];
+
+			for (size_t j = 0; j < size_to_replicate; ++j)
+				tmp.push_back(data[i]);
+		}
+
+		tmp.swap(data);
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{

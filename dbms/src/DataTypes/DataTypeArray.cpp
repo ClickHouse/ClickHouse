@@ -13,6 +13,7 @@
 namespace DB
 {
 
+
 DataTypeArray::DataTypeArray(DataTypePtr nested_) : nested(nested_)
 {
 	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
@@ -54,7 +55,52 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_
 	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
-	nested->deserializeBinary(column_array.getData(), istr, limit == 0 ? 0 : offsets[limit - 1]);
+	/// Должно быть считано согласнованное с offsets количество значений.
+	size_t nested_limit = offsets.empty() ? 0 : offsets.back();
+	nested->deserializeBinary(column_array.getData(), istr, nested_limit);
+
+	if (column_array.getData().size() != nested_limit)
+		throw Exception("Cannot read all array values", ErrorCodes::CANNOT_READ_ALL_DATA);
+}
+
+
+void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr, WriteCallback callback) const
+{
+	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
+	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+	size_t size = offsets.size();
+
+	size_t next_callback_point = callback ? callback() : 0;
+
+	writeIntBinary(offsets[0], ostr);
+	for (size_t i = 1; i < size; ++i)
+	{
+		if (next_callback_point && i == next_callback_point)
+			next_callback_point = callback();
+
+		writeIntBinary(offsets[i] - offsets[i - 1], ostr);
+	}
+}
+
+
+void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const
+{
+	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
+	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+	offsets.resize(limit);
+
+	size_t i = 0;
+	ColumnArray::Offset_t current_offset = 0;
+	while (i < limit && !istr.eof())
+	{
+		ColumnArray::Offset_t current_size = 0;
+		readIntBinary(current_size, istr);
+		current_offset += current_size;
+		offsets[i] = current_offset;
+		++i;
+	}
+
+	offsets.resize(i);
 }
 
 

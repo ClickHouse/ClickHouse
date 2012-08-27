@@ -10,6 +10,7 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
+#include <DB/DataStreams/ArrayJoiningBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
@@ -152,6 +153,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		
 		if (from_stage < QueryProcessingStage::WithMergeableState)
 		{
+			executeArrayJoin(streams, expression);
 			executeWhere(streams, expression);
 
 			if (need_aggregate)
@@ -278,9 +280,28 @@ void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, Expressio
 }
 
 
+void InterpreterSelectQuery::executeArrayJoin(BlockInputStreams & streams, ExpressionPtr & expression)
+{
+	/// Если есть ARRAY JOIN - сначала выполним часть выражения, необходимую для его вычисления
+	String array_join_column_name;
+	if (expression->getArrayJoinInfo(array_join_column_name))
+	{
+		expression->markBeforeArrayJoin(PART_BEFORE_ARRAY_JOIN);
+
+		bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
+			BlockInputStreamPtr & stream = *it;
+			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_BEFORE_ARRAY_JOIN), is_async);
+			stream = maybeAsynchronous(new ArrayJoiningBlockInputStream(stream, array_join_column_name), is_async);
+		}
+	}
+}
+
+
 void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionPtr & expression)
 {
-	expression->markBeforeAndAfterAggregation(PART_BEFORE_AGGREGATING, PART_AFTER_AGGREGATING);
+	expression->markBeforeAggregation(PART_BEFORE_AGGREGATING);
 
 	if (query.group_expression_list)
 		setPartID(query.group_expression_list, PART_GROUP);
