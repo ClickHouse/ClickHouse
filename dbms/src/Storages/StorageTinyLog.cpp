@@ -205,7 +205,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_na
 	name = new_name;
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-		files[it->first].data_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
 }
 
 

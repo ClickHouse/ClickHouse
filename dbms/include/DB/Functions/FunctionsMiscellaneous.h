@@ -272,7 +272,11 @@ public:
 				size_t j = 0;
 				for (size_t i = 0; i < rows; ++i)
 				{
-					vec[i] = 1;
+					/** Если пустой массив - то два символа: [];
+					  * если непустой - то сначала один символ [, и по одному лишнему символу на значение: , или ].
+					  */
+					vec[i] = j == col->getOffsets()[i] ? 2 : 1;
+						
 					for (; j < col->getOffsets()[i]; ++j)
 						vec[i] += 1 + additional_symbols + nested_res[j];
 				}
@@ -281,7 +285,8 @@ public:
 			{
 				size_t nested_length = nested_result_column->getData() + additional_symbols + 1;
 				for (size_t i = 0; i < rows; ++i)
-					vec[i] = 1 + (i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length;
+					vec[i] = 1 + std::max(static_cast<size_t>(1),
+						(i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length);
 			}
 
 			block.getByPosition(result).column = res;
