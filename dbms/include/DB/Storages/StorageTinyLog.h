@@ -44,6 +44,9 @@ private:
 
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
 	FileStreams streams;
+
+	void addStream(const String & name, const IDataType & type, size_t level = 0);
+	void readData(const String & name, const IDataType & type, IColumn & column, size_t level = 0);
 };
 
 
@@ -70,6 +73,9 @@ private:
 
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
 	FileStreams streams;
+
+	void addStream(const String & name, const IDataType & type, size_t level = 0);
+	void writeData(const String & name, const IDataType & type, const IColumn & column, size_t level = 0);
 };
 
 
@@ -119,6 +125,8 @@ private:
 	};
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
+
+	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 };
 
 }

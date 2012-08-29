@@ -19,4 +19,4 @@
 #define DEFAULT_INTERACTIVE_DELAY	100000
 
 /// Суффикс имени для столбца, содержащего смещения массива.
-#define ARRAY_OFFSETS_COLUMN_NAME_SUFFIX 	".offsets"
+#define ARRAY_SIZES_COLUMN_NAME_SUFFIX 	".size"

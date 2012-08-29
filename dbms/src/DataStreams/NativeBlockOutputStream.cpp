@@ -22,7 +22,7 @@ static void writeData(const IDataType & type, const IColumn & column, WriteBuffe
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
 		type_arr->getOffsetsType()->serializeBinary(*dynamic_cast<const ColumnArray &>(column).getOffsetsColumn(), ostr);
-		writeData(*type_arr->getNestedType(), *dynamic_cast<const ColumnArray &>(column).getDataPtr(), ostr);
+		writeData(*type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), ostr);
 	}
 	else
 		type.serializeBinary(column, ostr);

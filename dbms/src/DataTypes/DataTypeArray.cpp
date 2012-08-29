@@ -123,11 +123,19 @@ void DataTypeArray::deserializeText(Field & field, ReadBuffer & istr) const
 {
 	Array arr;
 
+	bool first = true;
 	assertString("[", istr);
 	while (!istr.eof() && *istr.position() != ']')
 	{
-		if (*istr.position() == ',')
-			++istr.position();
+		if (!first)
+		{
+			if (*istr.position() == ',')
+				++istr.position();
+			else
+				throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+		}
+
+		first = false;
 
 		arr.push_back(Field());
 		nested->deserializeTextQuoted(arr.back(), istr);

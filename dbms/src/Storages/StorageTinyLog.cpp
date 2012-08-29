@@ -8,6 +8,10 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
+#include <DB/DataTypes/DataTypeArray.h>
+
+#include <DB/Columns/ColumnArray.h>
+
 #include <DB/Storages/StorageTinyLog.h>
 
 
@@ -43,10 +47,8 @@ Block TinyLogBlockInputStream::readImpl()
 
 	/// Если файлы не открыты, то открываем их.
 	if (streams.empty())
-	{
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			streams.insert(std::make_pair(*it, new Stream(storage.files[*it].data_file.path())));
-	}
+			addStream(*it, *storage.getDataTypeByName(*it));
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
@@ -54,7 +56,7 @@ Block TinyLogBlockInputStream::readImpl()
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
 		column.column = column.type->createColumn();
-		column.type->deserializeBinary(*column.column, streams[column.name]->compressed, block_size);
+		readData(*it, *column.type, *column.column);
 
 		if (column.column->size())
 			res.insert(column);
@@ -70,11 +72,74 @@ Block TinyLogBlockInputStream::readImpl()
 }
 
 
+void TinyLogBlockInputStream::addStream(const String & name, const IDataType & type, size_t level)
+{
+	/// Для массивов используются отдельные потоки для размеров.
+	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	{
+		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+
+		addStream(name, *type_arr->getNestedType(), level + 1);
+	}
+	else
+		streams.insert(std::make_pair(name, new Stream(storage.files[name].data_file.path())));
+}
+
+
+void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t level)
+{
+	/// Для массивов требуется сначала десериализовать размеры, а потом значения.
+	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	{
+		type_arr->deserializeOffsets(
+			column,
+			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed,
+			block_size);
+
+		readData(name, *type_arr->getNestedType(), dynamic_cast<ColumnArray &>(column).getData(), level + 1);
+	}
+	else
+		type.deserializeBinary(column, streams[name]->compressed, block_size);
+}
+
+
 TinyLogBlockOutputStream::TinyLogBlockOutputStream(StorageTinyLog & storage_)
 	: storage(storage_)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		streams.insert(std::make_pair(it->first, new Stream(storage.files[it->first].data_file.path())));
+		addStream(it->first, *it->second);
+}
+
+
+void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & type, size_t level)
+{
+	/// Для массивов используются отдельные потоки для размеров.
+	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	{
+		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+		
+		addStream(name, *type_arr->getNestedType(), level + 1);
+	}
+	else
+		streams.insert(std::make_pair(name, new Stream(storage.files[name].data_file.path())));
+}
+
+
+void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, size_t level)
+{
+	/// Для массивов требуется сначала сериализовать размеры, а потом значения.
+	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	{
+		type_arr->serializeOffsets(
+			column,
+			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed);
+		
+		writeData(name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), level + 1);
+	}
+	else
+		type.serializeBinary(column, streams[name]->compressed);
 }
 
 
@@ -85,7 +150,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
-		column.type->serializeBinary(*column.column, streams[column.name]->compressed);
+		writeData(column.name, *column.type, *column.column);
 	}
 }
 
@@ -100,14 +165,33 @@ StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & na
 	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
+		addFile(it->first, *it->second);
+}
+
+
+void StorageTinyLog::addFile(const String & column_name, const IDataType & type, size_t level)
+{
+	if (files.end() != files.find(column_name))
+		throw Exception("Duplicate column with name " + column_name + " in constructor of StorageTinyLog.",
+			ErrorCodes::DUPLICATE_COLUMN);
+
+	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		if (files.end() != files.find(it->first))
-			throw Exception("Duplicate column with name " + it->first + " in constructor of StorageTinyLog.",
-				ErrorCodes::DUPLICATE_COLUMN);
+		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
 
 		ColumnData column_data;
-		files.insert(std::make_pair(it->first, column_data));
-		files[it->first].data_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		files.insert(std::make_pair(column_name + size_column_suffix, column_data));
+		files[column_name + size_column_suffix].data_file = Poco::File(
+			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		
+		addFile(column_name, *type_arr->getNestedType(), level + 1);
+	}
+	else
+	{
+		ColumnData column_data;
+		files.insert(std::make_pair(column_name, column_data));
+		files[column_name].data_file = Poco::File(
+			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
 	}
 }
 
@@ -120,7 +204,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_na
 	path = new_path_to_db;
 	name = new_name;
 
-	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
+	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		files[it->first].data_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
 }
 
