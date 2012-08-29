@@ -639,12 +639,12 @@ StorageMergeTree::StorageMergeTree(
 	ASTPtr & primary_expr_ast_, const String & date_column_name_,
 	size_t index_granularity_,
 	const String & sign_column_,
-	size_t delay_time_to_merge_different_level_parts_)
+	const StorageMergeTreeSettings & settings_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), columns(columns_),
 	context(context_), primary_expr_ast(primary_expr_ast_->clone()),
 	date_column_name(date_column_name_), index_granularity(index_granularity_),
 	sign_column(sign_column_),
-	delay_time_to_merge_different_level_parts(delay_time_to_merge_different_level_parts_),
+	settings(settings_),
 	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name))
 {
 	/// создаём директорию, если её нет
@@ -1153,6 +1153,7 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 	/** Два первых подряд идущих куска одинакового минимального уровня, за один, одинаковый месяц.
 	  * Также проверяем, что куски неперекрываются.
 	  * (обратное может быть только после неправильного объединения кусков, если старые куски не были удалены)
+	  * Также проверяем ограничение в settings.
 	  */
 
 	UInt32 min_adjacent_level = -1U;
@@ -1163,7 +1164,9 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 			&& (*second)->left_month == (*second)->right_month
 			&& (*first)->right < (*second)->left
 			&& (*first)->level == (*second)->level
-			&& (*first)->level < min_adjacent_level)
+			&& (*first)->level < min_adjacent_level
+			&& (*first)->size * index_granularity <= settings.max_rows_to_merge_parts
+			&& (*second)->size * index_granularity <= settings.max_rows_to_merge_parts)
 		{
 			min_adjacent_level = (*first)->level;
 			argmin_first = first;
@@ -1191,9 +1194,10 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 	/** Два подряд идущих куска минимальноего суммарного размера с временем создания
 	  * раньше текущего минус заданное, за один, одинаковый месяц.
 	  * Также проверяем, что куски неперекрываются, если не указан параметр merge_intersecting.
+	  * Также проверяем ограничения в settings.
 	  */
 
-	time_t cutoff_time = time(0) - delay_time_to_merge_different_level_parts;
+	time_t cutoff_time = time(0) - settings.delay_time_to_merge_different_level_parts;
 	size_t min_adjacent_size = -1ULL;
 	while (second != data_parts.end())
 	{
@@ -1203,7 +1207,11 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 			&& (*first)->right < (*second)->left	/// Куски неперекрываются.
 			&& (*first)->modification_time < cutoff_time
 			&& (*second)->modification_time < cutoff_time
-			&& (*first)->size + (*second)->size < min_adjacent_size)
+			&& (*first)->size + (*second)->size < min_adjacent_size
+			&& (*first)->size * index_granularity <= settings.max_rows_to_merge_different_level_parts
+			&& (*second)->size * index_granularity <= settings.max_rows_to_merge_different_level_parts
+			&& (*first)->level <= settings.max_level_to_merge_different_level_parts
+			&& (*second)->level <= settings.max_level_to_merge_different_level_parts)
 		{
 			min_adjacent_size = (*first)->size + (*second)->size;
 			argmin_first = first;

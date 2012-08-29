@@ -10,10 +10,6 @@
 #include <DB/Storages/IStorage.h>
 
 
-/// Задержка от времени модификации куска по-умолчанию, после которой можно объединять куски разного уровня.
-#define DEFAULT_DELAY_TIME_TO_MERGE_DIFFERENT_LEVEL_PARTS 3600
-
-
 namespace DB
 {
 
@@ -49,6 +45,25 @@ struct Range;
   *  пары записей с разными значениями sign_column для одного значения первичного ключа.
   *  (см. CollapsingSortedBlockInputStream.h)
   */
+
+struct StorageMergeTreeSettings
+{
+	/// В каких случаях можно объединять куски разного уровня.
+	ssize_t delay_time_to_merge_different_level_parts;
+	size_t max_level_to_merge_different_level_parts;
+	size_t max_rows_to_merge_different_level_parts;
+
+	/// Куски настолько большого размера объединять нельзя вообще.
+	size_t max_rows_to_merge_parts;
+
+	StorageMergeTreeSettings() :
+		delay_time_to_merge_different_level_parts(36000),
+		max_level_to_merge_different_level_parts(10),
+		max_rows_to_merge_different_level_parts(10 * 1024 * 1024),
+		max_rows_to_merge_parts(100 * 1024 * 1024) {}
+};
+
+
 class StorageMergeTree : public IStorage
 {
 friend class MergeTreeBlockInputStream;
@@ -69,7 +84,7 @@ public:
 		ASTPtr & primary_expr_ast_, const String & date_column_name_,
 		size_t index_granularity_,
 		const String & sign_column_ = "",
-		size_t delay_time_to_merge_different_level_parts_ = DEFAULT_DELAY_TIME_TO_MERGE_DIFFERENT_LEVEL_PARTS);
+		const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
 
     ~StorageMergeTree();
 
@@ -119,7 +134,7 @@ private:
 	/// Для схлопывания записей об изменениях, если это требуется.
 	String sign_column;
 	
-	size_t delay_time_to_merge_different_level_parts;
+	StorageMergeTreeSettings settings;
 
 	SharedPtr<Expression> primary_expr;
 	SortDescription sort_descr;
