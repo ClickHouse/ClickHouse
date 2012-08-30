@@ -97,7 +97,14 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed,
 			block_size);
 
-		readData(name, *type_arr->getNestedType(), dynamic_cast<ColumnArray &>(column).getData(), level + 1);
+		if (column.size())
+		{
+			IColumn & nested_column = dynamic_cast<ColumnArray &>(column).getData();
+			readData(name, *type_arr->getNestedType(), nested_column, level + 1);
+
+			if (nested_column.size() != dynamic_cast<ColumnArray &>(column).getOffsets()[column.size() - 1])
+				throw Exception("Cannot read array data for all offsets", ErrorCodes::CANNOT_READ_ALL_DATA);
+		}
 	}
 	else
 		type.deserializeBinary(column, streams[name]->compressed, block_size);

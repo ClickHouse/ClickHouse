@@ -731,7 +731,13 @@ private:
 				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed,
 				max_rows_to_read);
 
-			readData(name, *type_arr->getNestedType(), dynamic_cast<ColumnArray &>(column).getData(), level + 1);
+			if (column.size())
+				readData(
+					name,
+					*type_arr->getNestedType(),
+					dynamic_cast<ColumnArray &>(column).getData(),
+					dynamic_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
+					level + 1);
 		}
 		else
 			type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read);
