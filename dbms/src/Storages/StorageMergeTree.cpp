@@ -16,8 +16,10 @@
 #include <DB/IO/CompressedReadBuffer.h>
 
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnArray.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
@@ -46,7 +48,7 @@ namespace DB
 class MergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MergeTreeBlockOutputStream(StorageMergeTree & storage_) : storage(storage_)
+	MergeTreeBlockOutputStream(StorageMergeTree & storage_) : storage(storage_), flags(O_TRUNC | O_CREAT | O_WRONLY)
 	{
 	}
 
@@ -119,6 +121,8 @@ public:
 private:
 	StorageMergeTree & storage;
 
+	const int flags;
+
 	struct BlockWithDateInterval
 	{
 		Block block;
@@ -158,8 +162,6 @@ private:
 		sortBlock(block, storage.sort_descr);
 
 		/// Наконец-то можно писать данные на диск.
-		int flags = O_TRUNC | O_CREAT | O_WRONLY;
-		
 		LOG_TRACE(storage.log, "Writing index.");
 
 		/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
@@ -185,16 +187,7 @@ private:
 		for (size_t i = 0; i < columns; ++i)
 		{
 			const ColumnWithNameAndType & column = block.getByPosition(i);
-			String escaped_column_name = escapeForFileName(column.name);
-
-			WriteBufferFromFile plain(part_tmp_path + escaped_column_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
-			WriteBufferFromFile marks(part_tmp_path + escaped_column_name + ".mrk", 4096, flags);
-			CompressedWriteBuffer compressed(plain);
-
-			size_t prev_mark = 0;
-			column.type->serializeBinary(*column.column, compressed,
-				boost::bind(&MergeTreeBlockOutputStream::writeCallback, this,
-					boost::ref(prev_mark), boost::ref(plain), boost::ref(compressed), boost::ref(marks)));
+			writeData(part_tmp_path, column.name, *column.type, *column.column);
 		}
 		
 		LOG_TRACE(storage.log, "Renaming.");
@@ -224,6 +217,40 @@ private:
 		}
 	}
 
+	/// Записать данные одного столбца.
+	void writeData(const String & path, const String & name, const IDataType & type, const IColumn & column, size_t level = 0)
+	{
+		String escaped_column_name = escapeForFileName(name);
+		
+		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
+		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		{
+			String size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+
+			WriteBufferFromFile plain(path + size_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
+			WriteBufferFromFile marks(path + size_name + ".mrk", 4096, flags);
+			CompressedWriteBuffer compressed(plain);
+
+			size_t prev_mark = 0;
+			type_arr->serializeOffsets(column, compressed,
+				boost::bind(&MergeTreeBlockOutputStream::writeCallback, this,
+					boost::ref(prev_mark), boost::ref(plain), boost::ref(compressed), boost::ref(marks)));
+
+			writeData(path, name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), level + 1);
+		}
+		else
+		{
+			WriteBufferFromFile plain(path + escaped_column_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
+			WriteBufferFromFile marks(path + escaped_column_name + ".mrk", 4096, flags);
+			CompressedWriteBuffer compressed(plain);
+
+			size_t prev_mark = 0;
+			type.serializeBinary(column, compressed,
+				boost::bind(&MergeTreeBlockOutputStream::writeCallback, this,
+					boost::ref(prev_mark), boost::ref(plain), boost::ref(compressed), boost::ref(marks)));
+		}
+	}
+
 	/// Вызывается каждые index_granularity строк и пишет в файл с засечками (.mrk).
 	size_t writeCallback(size_t & prev_mark,
 		WriteBufferFromFile & plain,
@@ -231,7 +258,7 @@ private:
 		WriteBufferFromFile & marks)
 	{
 		/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
-		
+
 		writeIntBinary(plain.count(), marks);
 		writeIntBinary(compressed.offset(), marks);
 
@@ -263,13 +290,7 @@ public:
 		index_stream = new WriteBufferFromFile(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 
 		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		{
-			String escaped_column_name = escapeForFileName(it->first);
-			
-			column_streams[it->first] = new ColumnStream(
-				part_tmp_path + escaped_column_name + ".bin",
-				part_tmp_path + escaped_column_name + ".mrk");
-		}
+			addStream(it->first, *it->second);
 	}
 
 	void write(const Block & block)
@@ -290,15 +311,11 @@ public:
 			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
 				(*it)->type->serializeBinary((*(*it)->column)[i], *index_stream);
 
+		/// Теперь пишем данные.
 		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		{
 			const ColumnWithNameAndType & column = block.getByName(it->first);
-			ColumnStream & stream = *column_streams[it->first];
-
-			size_t prev_mark = 0;
-			column.type->serializeBinary(*column.column, stream.compressed,
-				boost::bind(&MergedBlockOutputStream::writeCallback, this,
-					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
+			writeData(column.name, *column.type, *column.column);
 		}
 
 		index_offset = rows % storage.index_granularity
@@ -345,6 +362,58 @@ private:
 
 	/// Смещение до первой строчки блока, для которой надо записать индекс.
 	size_t index_offset;
+
+
+	void addStream(const String & name, const IDataType & type, size_t level = 0)
+	{
+		String escaped_column_name = escapeForFileName(name);
+		
+		/// Для массивов используются отдельные потоки для размеров.
+		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		{
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+
+			column_streams[size_name] = new ColumnStream(
+				part_tmp_path + escaped_size_name + ".bin",
+				part_tmp_path + escaped_size_name + ".mrk");
+
+			addStream(name, *type_arr->getNestedType(), level + 1);
+		}
+		else
+			column_streams[name] = new ColumnStream(
+				part_tmp_path + escaped_column_name + ".bin",
+				part_tmp_path + escaped_column_name + ".mrk");
+	}
+
+
+	/// Записать данные одного столбца.
+	void writeData(const String & name, const IDataType & type, const IColumn & column, size_t level = 0)
+	{
+		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
+		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		{
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+
+			ColumnStream & stream = *column_streams[size_name];
+
+			size_t prev_mark = 0;
+			type.serializeBinary(column, stream.compressed,
+				boost::bind(&MergedBlockOutputStream::writeCallback, this,
+					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
+
+			writeData(name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), level + 1);
+		}
+		else
+		{
+			ColumnStream & stream = *column_streams[name];
+
+			size_t prev_mark = 0;
+			type.serializeBinary(column, stream.compressed,
+				boost::bind(&MergedBlockOutputStream::writeCallback, this,
+					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
+		}
+	}
 	
 
 	/// Вызывается каждые index_granularity строк и пишет в файл с засечками (.mrk).
@@ -548,9 +617,7 @@ public:
 		/// Если файлы не открыты, то открываем их.
 		if (streams.empty())
 			for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-				streams.insert(std::make_pair(*it, new Stream(
-					path + escapeForFileName(*it),
-					mark_number)));
+				addStream(*it, *storage.getDataTypeByName(*it));
 
 		/// Сколько строк читать для следующего блока.
 		size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
@@ -561,7 +628,7 @@ public:
 			column.name = *it;
 			column.type = storage.getDataTypeByName(*it);
 			column.column = column.type->createColumn();
-			column.type->deserializeBinary(*column.column, streams[column.name]->compressed, max_rows_to_read);
+			readData(*it, *column.type, *column.column, max_rows_to_read);
 
 			if (column.column->size())
 				res.insert(column);
@@ -630,6 +697,45 @@ private:
 
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
 	FileStreams streams;
+
+
+	void addStream(const String & name, const IDataType & type, size_t level = 0)
+	{
+		String escaped_column_name = escapeForFileName(name);
+		
+		/// Для массивов используются отдельные потоки для размеров.
+		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		{
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+
+			streams.insert(std::make_pair(size_name, new Stream(
+				path + escaped_size_name,
+				mark_number)));
+
+			addStream(name, *type_arr->getNestedType(), level + 1);
+		}
+		else
+			streams.insert(std::make_pair(name, new Stream(
+				path + escaped_column_name,
+				mark_number)));
+	}
+
+	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0)
+	{
+		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
+		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		{
+			type_arr->deserializeOffsets(
+				column,
+				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed,
+				max_rows_to_read);
+
+			readData(name, *type_arr->getNestedType(), dynamic_cast<ColumnArray &>(column).getData(), level + 1);
+		}
+		else
+			type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read);
+	}
 };
 
 

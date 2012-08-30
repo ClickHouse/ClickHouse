@@ -216,8 +216,8 @@ private:
 	};
 
 	typedef SharedPtr<DataPart> DataPartPtr;
-	struct DataTypePtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
-	typedef std::set<DataPartPtr, DataTypePtrLess> DataParts;
+	struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
+	typedef std::set<DataPartPtr, DataPartPtrLess> DataParts;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
 	  * Ссылки на кусок есть отсюда, из списка актуальных кусков, и из каждого потока чтения, который его сейчас использует.
