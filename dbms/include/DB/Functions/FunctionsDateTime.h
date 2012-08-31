@@ -13,17 +13,18 @@ namespace DB
 /** Функции работы с датой и временем.
   *
   * toYear, toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond,
-  * toMonday, toStartOfMonth,
+  * toMonday, toStartOfMonth, toStartOfYear, toStartOfMinute, toStartOfHour
   * toTime,
-  * TODO: makeDate, makeDateTime, now, toStartOfMinute, toStartOfHour, toStartOfYear
+  * now
+  * TODO: makeDate, makeDateTime
   * 
   * (toDate - расположена в файле FunctionsConversion.h)
   *
   * Возвращаемые типы:
   *  toYear -> UInt16
   *  toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond -> UInt8
-  *  toMonday, toStartOfMonth -> Date
-  *  toTime -> DateTime
+  *  toMonday, toStartOfMonth, toStartOfYear -> Date
+  *  toStartOfMinute, toStartOfHour, toTime, now -> DateTime
   */
 
 struct ToYearImpl
@@ -61,7 +62,7 @@ struct ToHourImpl
 
 struct ToMinuteImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toMinute(t); }
+	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toMinuteInaccurate(t); }
 	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -70,7 +71,7 @@ struct ToMinuteImpl
 
 struct ToSecondImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toSecond(t); }
+	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toSecondInaccurate(t); }
 	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toSecond", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -79,15 +80,22 @@ struct ToSecondImpl
 
 struct ToMondayImpl
 {
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toWeek(t); }
-	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toWeek(Yandex::DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfWeek(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfWeek(Yandex::DayNum_t(d)); }
 };
 
 struct ToStartOfMonthImpl
 {
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayOfMonth(t); }
-	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayOfMonth(Yandex::DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfMonth(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(d)); }
 };
+
+struct ToStartOfYearImpl
+{
+	static inline UInt16 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfYear(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfYear(Yandex::DayNum_t(d)); }
+};
+
 
 struct ToTimeImpl
 {
@@ -96,6 +104,24 @@ struct ToTimeImpl
 	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+};
+
+struct ToStartOfMinuteImpl
+{
+	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfMinute(t); }
+	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	{
+		throw Exception("Illegal type Date of argument for function toStartOfMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+};
+
+struct ToStartOfHourImpl
+{
+	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfHour(t); }
+	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	{
+		throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 
@@ -169,6 +195,37 @@ public:
 };
 
 
+/// Получить текущее время. (Оно - константа, вычисляется один раз за весь запрос.)
+class FunctionNow : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "now";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 0)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeDateTime;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstUInt32(
+			block.getByPosition(0).column->size(),
+			time(0));
+	}
+};
+
+
 struct NameToYear 			{ static const char * get() { return "toYear"; } };
 struct NameToMonth 			{ static const char * get() { return "toMonth"; } };
 struct NameToDayOfMonth		{ static const char * get() { return "toDayOfMonth"; } };
@@ -178,6 +235,9 @@ struct NameToMinute			{ static const char * get() { return "toMinute"; } };
 struct NameToSecond			{ static const char * get() { return "toSecond"; } };
 struct NameToMonday			{ static const char * get() { return "toMonday"; } };
 struct NameToStartOfMonth	{ static const char * get() { return "toStartOfMonth"; } };
+struct NameToStartOfYear	{ static const char * get() { return "toStartOfYear"; } };
+struct NameToStartOfMinute	{ static const char * get() { return "toStartOfMinute"; } };
+struct NameToStartOfHour	{ static const char * get() { return "toStartOfHour"; } };
 struct NameToTime 			{ static const char * get() { return "toTime"; } };
 
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToYearImpl, 		NameToYear> 		FunctionToYear;
@@ -187,8 +247,11 @@ typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToDayOfWeekImpl, 	NameT
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToHourImpl, 		NameToHour> 		FunctionToHour;
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMinuteImpl, 		NameToMinute> 		FunctionToMinute;
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToSecondImpl, 		NameToSecond> 		FunctionToSecond;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToMondayImpl, 		NameToMonday> 		FunctionToMonday;
-typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfMonthImpl, NameToStartOfMonth> FunctionToStartOfMonth;
+typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToMondayImpl, 		NameToMonday> 		FunctionToMonday;
+typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfMonthImpl, NameToStartOfMonth> FunctionToStartOfMonth;
+typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfYearImpl, 	NameToStartOfYear> 	FunctionToStartOfYear;
+typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfMinuteImpl, NameToStartOfMinute> FunctionToStartOfMinute;
+typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfHourImpl, 	NameToStartOfHour> 	FunctionToStartOfHour;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToTimeImpl, 		NameToTime> 		FunctionToTime;
 
 }

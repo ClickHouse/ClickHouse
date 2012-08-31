@@ -83,7 +83,11 @@ namespace FunctionsLibrary
 			("toSecond",					new FunctionToSecond)
 			("toMonday",					new FunctionToMonday)
 			("toStartOfMonth",				new FunctionToStartOfMonth)
+			("toStartOfYear",				new FunctionToStartOfYear)
+			("toStartOfMinute",				new FunctionToStartOfMinute)
+			("toStartOfHour",				new FunctionToStartOfHour)
 			("toTime",						new FunctionToTime)
+			("now",							new FunctionNow)
 
 			("position",					new FunctionPosition)
 			("positionUTF8",				new FunctionPositionUTF8)

@@ -309,8 +309,8 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 	s[9] += values.day_of_month % 10;
 
 	UInt8 hour = date_lut.toHourInaccurate(datetime);
-	UInt8 minute = date_lut.toMinute(datetime);
-	UInt8 second = date_lut.toSecond(datetime);
+	UInt8 minute = date_lut.toMinuteInaccurate(datetime);
+	UInt8 second = date_lut.toSecondInaccurate(datetime);
 
 	s[11] += hour / 10;
 	s[12] += hour % 10;

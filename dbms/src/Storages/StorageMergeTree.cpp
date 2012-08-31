@@ -80,8 +80,8 @@ public:
 		typedef std::map<UInt16, BlockWithDateInterval> BlocksByMonth;
 		BlocksByMonth blocks_by_month;
 
-		UInt16 min_month = date_lut.toFirstDayOfMonth(Yandex::DayNum_t(min_date));
-		UInt16 max_month = date_lut.toFirstDayOfMonth(Yandex::DayNum_t(max_date));
+		UInt16 min_month = date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(min_date));
+		UInt16 max_month = date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(max_date));
 
 		/// Типичный случай - когда месяц один (ничего разделять не нужно).
 		if (min_month == max_month)
@@ -90,7 +90,7 @@ public:
 		{
 			for (size_t i = 0; i < rows; ++i)
 			{
-				UInt16 month = date_lut.toFirstDayOfMonth(Yandex::DayNum_t(dates[i]));
+				UInt16 month = date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(dates[i]));
 			
 				BlockWithDateInterval & block_for_month = blocks_by_month[month];
 				if (!block_for_month.block)
@@ -210,8 +210,8 @@ private:
 			new_data_part->name = part_name;
 			new_data_part->size = rows / storage.index_granularity;
 			new_data_part->modification_time = time(0);
-			new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
-			new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
+			new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
+			new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
 
 			storage.data_parts.insert(new_data_part);
 			storage.all_data_parts.insert(new_data_part);
@@ -1094,8 +1094,8 @@ void StorageMergeTree::loadDataParts()
 			
 		part->modification_time = it->getLastModified().epochTime();
 
-		part->left_month = date_lut.toFirstDayOfMonth(part->left_date);
-		part->right_month = date_lut.toFirstDayOfMonth(part->right_date);
+		part->left_month = date_lut.toFirstDayNumOfMonth(part->left_date);
+		part->right_month = date_lut.toFirstDayNumOfMonth(part->right_date);
 
 		data_parts.insert(part);
 	}
@@ -1367,8 +1367,8 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 	new_data_part->name = getPartName(
 		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
 	new_data_part->size = left->size + right->size;
-	new_data_part->left_month = date_lut.toFirstDayOfMonth(new_data_part->left_date);
-	new_data_part->right_month = date_lut.toFirstDayOfMonth(new_data_part->right_date);
+	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
+	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
 
 	/** Читаем из левого и правого куска, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.

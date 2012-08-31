@@ -50,8 +50,8 @@ private:
 		m_month = values.month;
 		m_day = values.day_of_month;
 		m_hour = date_lut.toHourInaccurate(time);
-		m_minute = date_lut.toMinute(time);
-		m_second = date_lut.toSecond(time);
+		m_minute = date_lut.toMinuteInaccurate(time);
+		m_second = date_lut.toSecondInaccurate(time);
 	}
 
 	void init(const char * s, size_t length)
