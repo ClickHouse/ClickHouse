@@ -90,7 +90,8 @@ public:
 		{
 			for (size_t i = 0; i < rows; ++i)
 			{
-				UInt16 month = date_lut.toFirstDayOfMonth(dates[i]);
+				UInt16 month = date_lut.toFirstDayOfMonth(Yandex::DayNum_t(dates[i]));
+			
 				BlockWithDateInterval & block_for_month = blocks_by_month[month];
 				if (!block_for_month.block)
 					block_for_month.block = block.cloneEmpty();
@@ -398,7 +399,7 @@ private:
 			ColumnStream & stream = *column_streams[size_name];
 
 			size_t prev_mark = 0;
-			type.serializeBinary(column, stream.compressed,
+			type_arr->serializeOffsets(column, stream.compressed,
 				boost::bind(&MergedBlockOutputStream::writeCallback, this,
 					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
 

@@ -34,7 +34,14 @@ void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 static size_t adjustedWriteCallback(IDataType::WriteCallback & original_callback, const ColumnArray::Offsets_t & offsets)
 {
-	return offsets[original_callback() - 1];
+	size_t original_res = original_callback();
+
+	if (unlikely(original_res == 0))
+		return 0;
+	else if (unlikely(original_res >= offsets.size()))
+		return offsets.back();
+	else
+		return offsets[original_res - 1];
 }
 
 
@@ -69,6 +76,9 @@ void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr,
 	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 	size_t size = offsets.size();
+
+	if (!size)
+		return;
 
 	size_t next_callback_point = callback ? callback() : 0;
 
