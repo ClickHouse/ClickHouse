@@ -258,6 +258,9 @@ private:
 			else	/// Создаём файл с историей.
 				Poco::File(history_file).createFile();
 
+			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
+			Yandex::DateLUTSingleton::instance();
+
 			loop();
 
 			std::cout << "Bye." << std::endl;
