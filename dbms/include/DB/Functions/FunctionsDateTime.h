@@ -398,8 +398,8 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!dynamic_cast<const DataTypeInt32 *>(&*arguments[1]))
-			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be Int32.",
+		if (!dynamic_cast<const DataTypeUInt32 *>(&*arguments[1]))
+			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return new DataTypeArray(new DataTypeDateTime);
@@ -411,31 +411,31 @@ public:
 		const ColumnUInt32 * starts = dynamic_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnConstUInt32 * const_starts = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column);
 
-		const ColumnInt32 * durations = dynamic_cast<const ColumnInt32 *>(&*block.getByPosition(arguments[1]).column);
-		const ColumnConstInt32 * const_durations = dynamic_cast<const ColumnConstInt32 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnUInt32 * durations = dynamic_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnConstUInt32 * const_durations = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[1]).column);
 
 		ColumnArray * res = new ColumnArray(new ColumnUInt32);
 		ColumnUInt32::Container_t & res_values = dynamic_cast<ColumnUInt32 &>(res->getData()).getData();
 
 		if (starts && durations)
 		{
-			TimeSlotsImpl<Int32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
+			TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
 			block.getByPosition(result).column = res;
 		}
 		else if (starts && const_durations)
 		{
-			TimeSlotsImpl<Int32>::vector_constant(starts->getData(), const_durations->getData(), res_values, res->getOffsets());
+			TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getData(), res_values, res->getOffsets());
 			block.getByPosition(result).column = res;
 		}
 		else if (const_starts && durations)
 		{
-			TimeSlotsImpl<Int32>::constant_vector(const_starts->getData(), durations->getData(), res_values, res->getOffsets());
+			TimeSlotsImpl<UInt32>::constant_vector(const_starts->getData(), durations->getData(), res_values, res->getOffsets());
 			block.getByPosition(result).column = res;
 		}
 		else if (const_starts && const_durations)
 		{
 			Array const_res;
-			TimeSlotsImpl<Int32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
+			TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
 			block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(0).column->size(), const_res);
 		}
 		else

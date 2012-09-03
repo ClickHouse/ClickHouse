@@ -46,7 +46,7 @@ public:
 
 	void merge(const IAggregateFunction & rhs)
 	{
-		value = dynamic_cast<const AggregateFunctionAnyLast &>(rhs).value;
+		value = static_cast<const AggregateFunctionAnyLast &>(rhs).value;
 	}
 
 	void serialize(WriteBuffer & buf) const

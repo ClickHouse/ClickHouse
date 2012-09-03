@@ -48,7 +48,7 @@ public:
 
 	void merge(const IAggregateFunction & rhs)
 	{
- 		const Array & rhs_value = dynamic_cast<const AggregateFunctionGroupArray &>(rhs).value;
+ 		const Array & rhs_value = static_cast<const AggregateFunctionGroupArray &>(rhs).value;
 		value.insert(value.begin(), rhs_value.begin(), rhs_value.end());
 	}
 

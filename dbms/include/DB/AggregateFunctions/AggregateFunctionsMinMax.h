@@ -73,12 +73,12 @@ public:
 	{
 		if (got)
 		{
-			Field value_ = dynamic_cast<const AggregateFunctionsMinMax &>(rhs).value;
+			Field value_ = static_cast<const AggregateFunctionsMinMax &>(rhs).value;
 			if (Traits::better(value_, value))
 				value = value_;
 		}
 		else
-			value = dynamic_cast<const AggregateFunctionsMinMax &>(rhs).value;
+			value = static_cast<const AggregateFunctionsMinMax &>(rhs).value;
 	}
 
 	void serialize(WriteBuffer & buf) const
