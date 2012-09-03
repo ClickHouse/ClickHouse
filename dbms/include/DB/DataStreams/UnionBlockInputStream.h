@@ -23,7 +23,6 @@ class RunnableFromFunction : public Poco::Runnable
 public:
 	typedef boost::function<void()> Func;
 	
-	RunnableFromFunction() {}
 	RunnableFromFunction(const Func & func_) : func(func_) {}
 	void run() { func(); }
 
@@ -82,9 +81,9 @@ public:
 						++it->count;
 						++started_threads;
 
-						it->runnable = RunnableFromFunction::Func(
-							boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data.back())));
-						RunnableFromFunction & runnable = it->runnable;
+						it->runnable = new RunnableFromFunction(RunnableFromFunction::Func(
+							boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(threads_data.back()))));
+						RunnableFromFunction & runnable = *it->runnable;
 
 						/// Переносим этот источник в конец списка
 						threads_data.push_back(*it);
@@ -145,8 +144,9 @@ public:
 				it->reset();
 	//			std::cerr << "Scheduling again " << it->i << std::endl;
 				++it->count;
-				it->runnable = RunnableFromFunction::Func(boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(*it)));
-				pool.start(it->runnable);
+				it->runnable = new RunnableFromFunction(RunnableFromFunction::Func(
+					boost::bind(&UnionBlockInputStream::calculate, this, boost::ref(*it))));
+				pool.start(*it->runnable);
 
 				return res;
 			}
@@ -170,7 +170,7 @@ private:
 	/// Данные отдельного источника
 	struct ThreadData
 	{
-		RunnableFromFunction runnable;
+		SharedPtr<RunnableFromFunction> runnable;
 		BlockInputStreamPtr in;
 		unsigned count;	/// Сколько блоков было вычислено
 		bool ready;		/// Блок уже вычислен
@@ -183,6 +183,7 @@ private:
 			ready = false;
 			block = Block();
 			exception = NULL;
+			runnable = NULL;
 		}
 
 		ThreadData() : count(0), ready(false), i(0) {}
