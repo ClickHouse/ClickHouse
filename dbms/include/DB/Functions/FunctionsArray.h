@@ -11,7 +11,7 @@ namespace DB
 /** Функции по работе с массивами:
   *
   * array(с1, с2, ...) - создать массив из констант.
-  * arrayElement(arr, i) - получить элемент массива.
+  * TODO arrayElement(arr, i) - получить элемент массива.
   */
 
 class FunctionArray : public IFunction

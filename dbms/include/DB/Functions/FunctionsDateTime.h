@@ -3,7 +3,11 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeArray.h>
+
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnArray.h>
+
 #include <DB/Functions/IFunction.h>
 
 
@@ -25,7 +29,22 @@ namespace DB
   *  toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond -> UInt8
   *  toMonday, toStartOfMonth, toStartOfYear -> Date
   *  toStartOfMinute, toStartOfHour, toTime, now -> DateTime
+  *
+  * А также:
+  *
+  * timeSlot(EventTime)
+  * - округляет время до получаса.
+  * 
+  * timeSlots(StartTime, Duration)
+  * - для интервала времени, начинающегося в StartTime и продолжающегося Duration секунд,
+  *   возвращает массив моментов времени, состоящий из округлений вниз до получаса точек из этого интервала.
+  *  Например, timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')].
+  *  Это нужно для поиска хитов, входящих в соответствующий визит.
   */
+
+
+#define TIME_SLOT_SIZE 1800
+
 
 struct ToYearImpl
 {
@@ -222,6 +241,208 @@ public:
 		block.getByPosition(result).column = new ColumnConstUInt32(
 			block.getByPosition(0).column->size(),
 			time(0));
+	}
+};
+
+
+class FunctionTimeSlot : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "timeSlot";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!dynamic_cast<const DataTypeDateTime *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeDateTime;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnUInt32 * times = dynamic_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnUInt32 * res = new ColumnUInt32;
+			ColumnUInt32::Container_t & res_vec = res->getData();
+			const ColumnUInt32::Container_t & vec = times->getData();
+						
+			size_t size = vec.size();
+			res_vec.resize(size);
+
+			for (size_t i = 0; i < size; ++i)
+				res_vec[i] = vec[i] / TIME_SLOT_SIZE * TIME_SLOT_SIZE;
+
+			block.getByPosition(result).column = res;
+		}
+		else if (const ColumnConstUInt32 * const_times = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
+		{
+			block.getByPosition(result).column = new ColumnConstUInt32(block.getByPosition(0).column->size(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+template <typename DurationType>
+struct TimeSlotsImpl
+{
+	static void vector_vector(
+		const std::vector<UInt32> & starts, const std::vector<DurationType> & durations,
+		std::vector<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+	{
+		size_t size = starts.size();
+
+		result_offsets.resize(size);
+		result_values.reserve(size);
+		
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + durations[i]) / TIME_SLOT_SIZE; ++value)
+			{
+				result_values.push_back(value * TIME_SLOT_SIZE);
+				++current_offset;
+			}
+
+			result_offsets[i] = current_offset;
+		}
+	}
+
+	static void vector_constant(
+		const std::vector<UInt32> & starts, DurationType duration,
+		std::vector<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+	{
+		size_t size = starts.size();
+
+		result_offsets.resize(size);
+		result_values.reserve(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + duration) / TIME_SLOT_SIZE; ++value)
+			{
+				result_values.push_back(value * TIME_SLOT_SIZE);
+				++current_offset;
+			}
+
+			result_offsets[i] = current_offset;
+		}
+	}
+
+	static void constant_vector(
+		UInt32 start, const std::vector<DurationType> & durations,
+		std::vector<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+	{
+		size_t size = durations.size();
+
+		result_offsets.resize(size);
+		result_values.reserve(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + durations[i]) / TIME_SLOT_SIZE; ++value)
+			{
+				result_values.push_back(value * TIME_SLOT_SIZE);
+				++current_offset;
+			}
+
+			result_offsets[i] = current_offset;
+		}
+	}
+
+	static void constant_constant(
+		UInt32 start, DurationType duration,
+		Array & result)
+	{
+		for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + duration) / TIME_SLOT_SIZE; ++value)
+			result.push_back(static_cast<UInt64>(value * TIME_SLOT_SIZE));
+	}
+};
+
+
+class FunctionTimeSlots : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "timeSlots";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!dynamic_cast<const DataTypeDateTime *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (!dynamic_cast<const DataTypeInt32 *>(&*arguments[1]))
+			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be Int32.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeArray(new DataTypeDateTime);
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnUInt32 * starts = dynamic_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstUInt32 * const_starts = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column);
+
+		const ColumnInt32 * durations = dynamic_cast<const ColumnInt32 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnConstInt32 * const_durations = dynamic_cast<const ColumnConstInt32 *>(&*block.getByPosition(arguments[1]).column);
+
+		ColumnArray * res = new ColumnArray(new ColumnUInt32);
+		ColumnUInt32::Container_t & res_values = dynamic_cast<ColumnUInt32 &>(res->getData()).getData();
+
+		if (starts && durations)
+		{
+			TimeSlotsImpl<Int32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
+			block.getByPosition(result).column = res;
+		}
+		else if (starts && const_durations)
+		{
+			TimeSlotsImpl<Int32>::vector_constant(starts->getData(), const_durations->getData(), res_values, res->getOffsets());
+			block.getByPosition(result).column = res;
+		}
+		else if (const_starts && durations)
+		{
+			TimeSlotsImpl<Int32>::constant_vector(const_starts->getData(), durations->getData(), res_values, res->getOffsets());
+			block.getByPosition(result).column = res;
+		}
+		else if (const_starts && const_durations)
+		{
+			Array const_res;
+			TimeSlotsImpl<Int32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
+			block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(0).column->size(), const_res);
+		}
+		else
+			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
+					+ ", " + block.getByPosition(arguments[1]).column->getName()
+					+ " of arguments of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 

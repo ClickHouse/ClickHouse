@@ -88,6 +88,8 @@ namespace FunctionsLibrary
 			("toStartOfHour",				new FunctionToStartOfHour)
 			("toTime",						new FunctionToTime)
 			("now",							new FunctionNow)
+			("timeSlot",					new FunctionTimeSlot)
+			("timeSlots",					new FunctionTimeSlots)
 
 			("position",					new FunctionPosition)
 			("positionUTF8",				new FunctionPositionUTF8)
