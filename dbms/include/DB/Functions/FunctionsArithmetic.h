@@ -22,28 +22,30 @@ struct PlusImpl
 		
 	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
+		/// Далее везде, static_cast - чтобы не было неправильного результата в выражениях вида Int64 c = UInt32(a) * Int32(-1).
+		
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] + b[i];
+			c[i] = static_cast<ResultType>(a[i]) + b[i];
 	}
 
 	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] + b;
+			c[i] = static_cast<ResultType>(a[i]) + b;
 	}
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a + b[i];
+			c[i] = static_cast<ResultType>(a) + b[i];
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
-		c = a + b;
+		c = static_cast<ResultType>(a) + b;
 	}
 };
 
@@ -56,26 +58,26 @@ struct MultiplyImpl
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] * b[i];
+			c[i] = static_cast<ResultType>(a[i]) * b[i];
 	}
 
 	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] * b;
+			c[i] = static_cast<ResultType>(a[i]) * b;
 	}
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a * b[i];
+			c[i] = static_cast<ResultType>(a) * b[i];
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
-		c = a * b;
+		c = static_cast<ResultType>(a) * b;
 	}
 };
 
@@ -88,26 +90,26 @@ struct MinusImpl
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] - b[i];
+			c[i] = static_cast<ResultType>(a[i]) - b[i];
 	}
 
 	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] - b;
+			c[i] = static_cast<ResultType>(a[i]) - b;
 	}
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a - b[i];
+			c[i] = static_cast<ResultType>(a) - b[i];
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
-		c = a - b;
+		c = static_cast<ResultType>(a) - b;
 	}
 };
 
@@ -152,26 +154,26 @@ struct DivideIntegralImpl
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] / b[i];
+			c[i] = static_cast<ResultType>(a[i]) / b[i];
 	}
 
 	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] / b;
+			c[i] = static_cast<ResultType>(a[i]) / b;
 	}
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a / b[i];
+			c[i] = static_cast<ResultType>(a) / b[i];
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
-		c = a / b;
+		c = static_cast<ResultType>(a) / b;
 	}
 };
 
