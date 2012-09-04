@@ -66,14 +66,12 @@ public:
 						++it->count;
 						++started_threads;
 
-						it->thread = new Thread(*this, inputs_data.back());
-						Thread & thread = *it->thread;
-
 						/// Переносим этот источник в конец списка
 						inputs_data.push_back(*it);
 						inputs_data.erase(it++);
-												
-						pool.start(thread);
+
+						inputs_data.back().thread = new Thread(*this, inputs_data.back());
+						pool.start(*inputs_data.back().thread);
 
 						if (started_threads == max_threads_to_start)
 							break;
