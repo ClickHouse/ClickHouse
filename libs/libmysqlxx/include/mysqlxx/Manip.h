@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_MANIP_H
-#define MYSQLXX_MANIP_H
+#pragma once
 
 #include <cstring>
 #include <iostream>
@@ -195,6 +194,7 @@ public:
 		ostr.put('\'');
 		return ostr;
 	}
+	
 	template <typename T>
 	std::ostream & operator<< (const Null<T> & value)
 	{
@@ -208,7 +208,6 @@ public:
 		}
 		return ostr ;
 	}
-
 
 private:
 
@@ -457,6 +456,7 @@ public:
 		}
 		throw Poco::Exception("Cannot parse string: unexpected end of input.");
 	}
+
 private:
 
 	void readQuote()
@@ -476,5 +476,3 @@ inline UnQuoteManipResult operator>> (std::istream & istr, unquote_enum manip)
 
 	
 }
-
-#endif
