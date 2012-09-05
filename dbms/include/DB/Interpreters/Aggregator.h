@@ -5,6 +5,8 @@
 
 #include <Poco/Mutex.h>
 
+#include <Yandex/logger_useful.h>
+
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/StringRef.h>

@@ -6,6 +6,8 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
 
+#include <Yandex/logger_useful.h>
+
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/Storages/IStorage.h>

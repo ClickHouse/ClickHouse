@@ -1,3 +1,6 @@
+#include <Poco/Util/Application.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>

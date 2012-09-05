@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Yandex/logger_useful.h>
+
 #include <DB/Core/SortDescription.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include <Poco/RegularExpression.h>
 
 #include <DB/DataTypes/IDataType.h>

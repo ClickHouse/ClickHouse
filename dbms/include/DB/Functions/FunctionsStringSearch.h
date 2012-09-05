@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/Mutex.h>
+
 #include <statdaemons/OptimizedRegularExpression.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>

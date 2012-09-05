@@ -9,7 +9,9 @@
 
 #include <Poco/NumberFormatter.h>
 
-#include <mysqlxx/mysqlxx.h>	/// mysqlxx::Date, mysqlxx::DateTime
+#include <mysqlxx/Date.h>
+#include <mysqlxx/DateTime.h>
+#include <mysqlxx/Manip.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
@@ -215,4 +217,44 @@ template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
 template <> struct NearestFieldType<Array> 		{ typedef Array 	Type; };
 template <> struct NearestFieldType<bool> 		{ typedef UInt64 	Type; };
 
+}
+
+
+/// Заглушки, чтобы DBObject-ы с полем типа Array компилировались.
+namespace mysqlxx
+{
+	inline std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Array & value)
+	{
+		throw Poco::Exception("Cannot escape Array with mysqlxx::escape.");
+	}
+
+	inline std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value)
+	{
+		throw Poco::Exception("Cannot quote Array with mysqlxx::quote.");
+	}
+
+	inline std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Array & value)
+	{
+		throw Poco::Exception("Cannot unescape Array with mysqlxx::unescape.");
+	}
+
+	inline std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Array & value)
+	{
+		throw Poco::Exception("Cannot unquote Array with mysqlxx::unquote.");
+	}
+}
+
+
+namespace DB
+{
+	class ReadBuffer;
+	class WriteBuffer;
+	
+	inline void readBinary(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+	inline void readText(Array & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+	inline void readQuoted(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+
+	inline void writeBinary(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
+	inline void writeText(const Array & x, WriteBuffer & buf) 	{ throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
+	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
 }
