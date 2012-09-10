@@ -1177,7 +1177,7 @@ void StorageMergeTree::clearOldParts()
 }
 
 
-bool StorageMergeTree::merge(size_t iterations, bool async)
+void StorageMergeTree::merge(size_t iterations, bool async)
 {
 	Poco::ScopedTry<Poco::Mutex> lock;
 
@@ -1185,24 +1185,20 @@ bool StorageMergeTree::merge(size_t iterations, bool async)
 	if (!lock.lock(&merge_mutex))
 	{
 		LOG_TRACE(log, "Already merging.");
-		return false;
+		return;
 	}
 	
 	if (merge_thread.joinable())
 		merge_thread.join();
 
-	bool merged_any = false;
-	
 	if (async)
-		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeThread, this, iterations, async, boost::ref(merged_any)));
+		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeThread, this, iterations));
 	else
-		mergeThread(iterations, async, merged_any);
-
-	return merged_any;
+		mergeThread(iterations);
 }
 
 
-void StorageMergeTree::mergeThread(size_t iterations, bool async, bool & merged_any)
+void StorageMergeTree::mergeThread(size_t iterations)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(merge_mutex);
 	
@@ -1211,11 +1207,9 @@ void StorageMergeTree::mergeThread(size_t iterations, bool async, bool & merged_
 		DataPartPtr left;
 		DataPartPtr right;
 
-		merged_any = false;
 		for (size_t i = 0; i < iterations && selectPartsToMerge(left, right); ++i)
 		{
 			mergeParts(left, right);
-			merged_any = true;
 
 			/// Удаляем старые куски.
 			left = NULL;

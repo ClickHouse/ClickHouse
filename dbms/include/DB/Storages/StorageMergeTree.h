@@ -113,7 +113,8 @@ public:
 	  */
 	bool optimize()
 	{
-		return merge(1, false);
+		merge(1, false);
+		return true;
 	}
 
 	void drop();
@@ -247,8 +248,8 @@ private:
 	void getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range);
 
 	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке.
-	bool merge(size_t iterations = 1, bool async = true);
-	void mergeThread(size_t iterations, bool async, bool & merged_any);
+	void merge(size_t iterations = 1, bool async = true);
+	void mergeThread(size_t iterations);
 	bool selectPartsToMerge(DataPartPtr & left, DataPartPtr & right);
 	void mergeParts(DataPartPtr left, DataPartPtr right);
 
