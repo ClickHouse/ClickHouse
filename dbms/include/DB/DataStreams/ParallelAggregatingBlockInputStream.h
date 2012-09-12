@@ -58,6 +58,10 @@ public:
 			pool.schedule(boost::bind(&ParallelAggregatingBlockInputStream::calculate, this, boost::ref(inputs[i]), boost::ref(*many_data[i]), boost::ref(exceptions[i])));
 		}
 		pool.wait();
+
+		for (size_t i = 0, size = exceptions.size(); i < size; ++i)
+			if (exceptions[i])
+				exceptions[i]->rethrow();
 		
 		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
 		return aggregator->convertToBlock(*res);
