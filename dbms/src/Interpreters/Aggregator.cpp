@@ -64,8 +64,6 @@ void Aggregator::initialize(Block & block)
 
 AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
 {
-	size_t keys_size = key_columns.size();
-	
 /*	bool has_strings = false;
 	for (size_t j = 0; j < keys_size; ++j)
 		if (dynamic_cast<const ColumnString *>(&*key_columns[j]) || dynamic_cast<const ColumnFixedString *>(&*key_columns[j]))
@@ -110,7 +108,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(Columns & key_c
   */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
-	size_t keys_size = keys.empty() ? key_names.size() : keys.size();
 	size_t aggregates_size = aggregates.size();
 	Row key(keys_size);
 	Columns key_columns(keys_size);
@@ -601,7 +598,6 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
-	size_t keys_size = keys.empty() ? key_names.size() : keys.size();
 	size_t aggregates_size = aggregates.size();
 	Row key(keys_size);
 	Columns key_columns(keys_size);

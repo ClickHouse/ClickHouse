@@ -92,10 +92,14 @@ class Aggregator
 {
 public:
 	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
-		: keys(keys_), aggregates(aggregates_), initialized(false), log(&Logger::get("Aggregator")) {};
+		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), initialized(false), log(&Logger::get("Aggregator"))
+	{
+	}
 
 	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_)
-		: key_names(key_names_), aggregates(aggregates_), initialized(false), log(&Logger::get("Aggregator")) {};
+		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), initialized(false), log(&Logger::get("Aggregator"))
+	{
+	}
 
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
@@ -118,6 +122,7 @@ private:
 	ColumnNumbers keys;
 	Names key_names;
 	AggregateDescriptions aggregates;
+	size_t keys_size;
 
 	/// Для инициализации от первого блока при конкуррентном использовании.
 	bool initialized;
