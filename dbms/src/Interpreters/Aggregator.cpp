@@ -514,7 +514,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					}
 				}
 				else
-					res_it->second = it->second;
+					new(&res_it->second) AggregateFunctionsPlainPtrs(it->second);
 			}
 		}
 		else if (res->type == AggregatedDataVariants::KEY_STRING)
@@ -538,7 +538,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					}
 				}
 				else
-					res_it->second = it->second;
+					new(&res_it->second) AggregateFunctionsPlainPtrs(it->second);
 			}
 		}
 		else if (res->type == AggregatedDataVariants::HASHED)
@@ -562,7 +562,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					}
 				}
 				else
-					res_it->second = it->second;
+					new(&res_it->second) AggregatedDataHashed::mapped_type(it->second);
 			}
 		}
 		else if (res->type == AggregatedDataVariants::GENERIC)
