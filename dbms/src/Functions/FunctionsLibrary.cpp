@@ -11,6 +11,7 @@
 #include <DB/Functions/FunctionsRandom.h>
 #include <DB/Functions/FunctionsURL.h>
 #include <DB/Functions/FunctionsArray.h>
+#include <DB/Functions/FunctionsStringArray.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Functions/FunctionsLibrary.h>
@@ -130,6 +131,8 @@ namespace FunctionsLibrary
 			("notIn",						new FunctionIn(true))
 
 			("array",						new FunctionArray)
+
+			("alphaTokens",					new FunctionAlphaTokens)
 		;
 
 		return res;
