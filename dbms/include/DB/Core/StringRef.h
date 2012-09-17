@@ -46,4 +46,10 @@ namespace DB
 			return CityHash64(x.data, x.size);
 		}
 	};
+
+	struct StringRefZeroTraits
+	{
+		static inline bool check(DB::StringRef x) { return NULL == x.data; }
+		static inline void set(DB::StringRef & x) { x.data = NULL; }
+	};
 }

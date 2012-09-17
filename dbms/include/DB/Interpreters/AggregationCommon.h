@@ -36,12 +36,6 @@ struct UInt128ZeroTraits
 };
 
 
-struct StringRefZeroTraits
-{
-	static inline bool check(DB::StringRef x) { return 0 == x.data; }
-	static inline void set(DB::StringRef & x) { x.data = 0; }
-};
-
 /// Немного быстрее стандартного
 struct StringHash
 {
