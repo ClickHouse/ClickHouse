@@ -164,7 +164,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 		Mark mark;
 		mark.rows = (storage.files[size_name].marks.empty() ? 0 : storage.files[size_name].marks.back().rows) + column.size();
-		mark.offset = streams[size_name]->plain.count();
+		mark.offset = streams[size_name]->plain_offset + streams[size_name]->plain.count();
 
 		writeIntBinary(mark.rows, streams[size_name]->marks);
 		writeIntBinary(mark.offset, streams[size_name]->marks);
@@ -180,7 +180,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 	{
 		Mark mark;
 		mark.rows = (storage.files[name].marks.empty() ? 0 : storage.files[name].marks.back().rows) + column.size();
-		mark.offset = streams[name]->plain.count();
+		mark.offset = streams[name]->plain_offset + streams[name]->plain.count();
 
 		writeIntBinary(mark.rows, streams[name]->marks);
 		writeIntBinary(mark.offset, streams[name]->marks);

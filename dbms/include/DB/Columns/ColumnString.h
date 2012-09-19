@@ -116,9 +116,9 @@ public:
 			{
 				current_new_offset += string_size;
 				tmp_offsets.push_back(current_new_offset);
-				
-				for (size_t k = 0; k < string_size; ++k)
-					tmp_chars.push_back(char_data[prev_string_offset + k]);
+
+				tmp_chars.resize(tmp_chars.size() + string_size);
+				memcpy(&tmp_chars[tmp_chars.size() - string_size], &char_data[prev_string_offset], string_size);
 			}
 
 			prev_replicate_offset = replicate_offsets[i];

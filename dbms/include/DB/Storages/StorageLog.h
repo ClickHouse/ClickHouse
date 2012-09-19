@@ -81,11 +81,16 @@ private:
 		Stream(const std::string & data_path, const std::string & marks_path) :
 			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY),
 			compressed(plain),
-			marks(marks_path, 4096, O_APPEND | O_CREAT | O_WRONLY) {}
+			marks(marks_path, 4096, O_APPEND | O_CREAT | O_WRONLY)
+		{
+			plain_offset = Poco::File(data_path).getSize();
+		}
 		
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
 		WriteBufferFromFile marks;
+
+		size_t plain_offset;	/// Сколько байт было в файле на момент создания LogBlockOutputStream.
 	};
 
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
