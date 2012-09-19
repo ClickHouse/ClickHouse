@@ -58,7 +58,7 @@ public:
 		if (-1 == array_column)
 			array_column = block.getPositionByName(array_column_name);
 
-		ColumnPtr & array = block.getByPosition(array_column).column;
+		ColumnPtr array = block.getByPosition(array_column).column;
 
 		if (array->isConst())
 			array = dynamic_cast<const IColumnConst &>(*array).convertToFullColumn();
@@ -76,7 +76,7 @@ public:
 				result.name = "arrayJoin(" + current.name + ")";
 
 				block.erase(i);
-				block.insert(result);
+				block.insert(i, result);
 			}
 			else
 				current.column->replicate(dynamic_cast<const ColumnArray &>(*array).getOffsets());
