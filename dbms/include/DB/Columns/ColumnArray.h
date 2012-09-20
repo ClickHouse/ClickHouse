@@ -59,7 +59,14 @@ public:
 
 	void cut(size_t start, size_t length)
 	{
-		if (length == 0 || start + length > getOffsets().size())
+		if (length == 0)
+		{
+			data->cut(0, 0);
+			Offsets_t().swap(getOffsets());
+			return;
+		}
+		
+		if (start + length > getOffsets().size())
 			throw Exception("Parameter out of bound in IColumnArray::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 

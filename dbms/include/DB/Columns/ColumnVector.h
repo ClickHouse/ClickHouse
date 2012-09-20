@@ -46,7 +46,7 @@ public:
 	
 	void cut(size_t start, size_t length)
 	{
-		if (length == 0 || start + length > data.size())
+		if (start + length > data.size())
 			throw Exception("Parameters start = "
 				+ Poco::NumberFormatter::format(start) + ", length = "
 				+ Poco::NumberFormatter::format(length) + " are out of bound in IColumnVector<T>::cut() method"
