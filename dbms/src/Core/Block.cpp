@@ -44,9 +44,15 @@ void Block::rebuildIndexByPosition()
 
 void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 {
-	if (position >= index_by_position.size())
+	if (position > index_by_position.size())
 		throw Exception("Position out of bound in Block::insert(), max position = "
 			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+
+	if (position == index_by_position.size())
+	{
+		insert(elem);
+		return;
+	}
 		
 	Container_t::iterator it = data.insert(index_by_position[position], elem);
 	rebuildIndexByPosition();
