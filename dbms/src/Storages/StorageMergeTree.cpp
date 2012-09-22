@@ -236,10 +236,8 @@ private:
 			type_arr->serializeOffsets(column, compressed,
 				boost::bind(&MergeTreeBlockOutputStream::writeCallback, this,
 					boost::ref(prev_mark), boost::ref(plain), boost::ref(compressed), boost::ref(marks)));
-
-			writeData(path, name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), level + 1);
 		}
-		else
+
 		{
 			WriteBufferFromFile plain(path + escaped_column_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
 			WriteBufferFromFile marks(path + escaped_column_name + ".mrk", 4096, flags);
@@ -402,10 +400,8 @@ private:
 			type_arr->serializeOffsets(column, stream.compressed,
 				boost::bind(&MergedBlockOutputStream::writeCallback, this,
 					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
-
-			writeData(name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), level + 1);
 		}
-		else
+
 		{
 			ColumnStream & stream = *column_streams[name];
 
@@ -550,8 +546,8 @@ public:
 		{
 			/// Читаем PK, и на основе primary_prefix, primary_range определим mark_number и rows_limit.
 
-			size_t min_mark_number = 0;
-			size_t max_mark_number = 0;
+			ssize_t min_mark_number = -1;
+			ssize_t max_mark_number = -1;
 
 			String index_path = path + "primary.idx";
 			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
@@ -591,8 +587,8 @@ public:
 				}				
 			}
 
-			mark_number = min_mark_number;
-			rows_limit = (max_mark_number - min_mark_number + 1) * storage.index_granularity;
+			mark_number = min_mark_number == -1 ? 0 : min_mark_number;
+			rows_limit = max_mark_number == -1 ? std::numeric_limits<size_t>::max() : ((max_mark_number - min_mark_number + 1) * storage.index_granularity);
 
 			std::cerr << mark_number << ", " << rows_limit << std::endl;
 		}
