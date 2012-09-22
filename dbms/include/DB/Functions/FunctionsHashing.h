@@ -14,6 +14,8 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
 
+#include <stats/IntHash.h>
+
 
 namespace DB
 {
@@ -63,13 +65,8 @@ struct IntHash32Impl
 	
 	static UInt32 apply(UInt64 x)
 	{
-		x = (~x) + (x << 18);
-		x = x ^ ((x >> 31) | (x << 33));
-		x = x * 21;
-		x = x ^ ((x >> 11) | (x << 53));
-		x = x + (x << 6);
-		x = x ^ ((x >> 22) | (x << 42));
-		return x;
+		/// seed взят из /dev/urandom.
+		return intHash32<UInt64, 0x75D9543DE018BF45ULL>(x);
 	}
 };
 

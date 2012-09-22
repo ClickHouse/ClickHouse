@@ -9,6 +9,8 @@
 
 #include <Yandex/optimization.h>
 
+#include <stats/IntHash.h>
+
 #include <DB/Core/Types.h>
 
 
@@ -42,13 +44,7 @@ template <> struct default_hash<UInt64>
 {
 	size_t operator() (UInt64 key) const
 	{
-		key = (~key) + (key << 18);
-		key = key ^ ((key >> 31) | (key << 33));
-		key = key * 21;
-		key = key ^ ((key >> 11) | (key << 53));
-		key = key + (key << 6);
-		key = key ^ ((key >> 22) | (key << 42));
-		return key;
+		return intHash32<UInt64, 0>(key);
 	}
 };
 
