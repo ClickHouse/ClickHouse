@@ -111,6 +111,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 
 			exp_list.children.push_back(node);
 			exp_list.children.push_back(elem);
+			exp_list.range.first = begin;
 			exp_list.range.second = pos;
 
 			/** специальное исключение для оператора доступа к элементу массива x[y], который
@@ -129,6 +130,71 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 		}
 
 		first = false;
+	}
+
+	return true;
+}
+
+
+bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	ParserWhiteSpaceOrComments ws;
+	ParserString symbol1("?");
+	ParserString symbol2(":");
+
+	ASTPtr elem_cond;
+	ASTPtr elem_then;
+	ASTPtr elem_else;
+
+	Pos begin = pos;
+		
+	if (!elem_parser->parse(pos, end, elem_cond, expected))
+		return false;
+
+	ws.ignore(pos, end);
+
+	if (!symbol1.ignore(pos, end, expected))
+		node = elem_cond;
+	else
+	{
+		ws.ignore(pos, end);
+
+		if (!elem_parser->parse(pos, end, elem_then, expected))
+			return false;
+		
+		ws.ignore(pos, end);
+
+		if (!symbol2.ignore(pos, end, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (!elem_parser->parse(pos, end, elem_else, expected))
+			return false;
+
+		/// функция, соответствующая оператору
+		ASTFunction * p_function = new ASTFunction;
+		ASTFunction & function = *p_function;
+		ASTPtr function_node = p_function;
+
+		/// аргументы функции
+		ASTExpressionList * p_exp_list = new ASTExpressionList;
+		ASTExpressionList & exp_list = *p_exp_list;
+		ASTPtr exp_list_node = p_exp_list;
+
+		function.range.first = begin;
+		function.range.second = pos;
+		function.name = "if";
+		function.arguments = exp_list_node;
+		function.children.push_back(exp_list_node);
+
+		exp_list.children.push_back(elem_cond);
+		exp_list.children.push_back(elem_then);
+		exp_list.children.push_back(elem_else);
+		exp_list.range.first = begin;
+		exp_list.range.second = pos;
+
+		node = function_node;
 	}
 
 	return true;
@@ -176,6 +242,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 		function.children.push_back(exp_list_node);
 
 		exp_list.children.push_back(elem);
+		exp_list.range.first = begin;
 		exp_list.range.second = pos;
 
 		node = function_node;
@@ -196,7 +263,7 @@ ParserAccessExpression::ParserAccessExpression()
 
 
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias()
-	: impl(new ParserWithOptionalAlias(new ParserLogicalOrExpression))
+	: impl(new ParserWithOptionalAlias(new ParserTernaryOperatorExpression))
 {
 }
 

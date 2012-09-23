@@ -278,6 +278,27 @@ protected:
 };
 
 
+/** Выражение с тернарным оператором.
+  * Например, a = 1 ? b + 1 : c * 2.
+  */
+class ParserTernaryOperatorExpression : public IParserBase
+{
+private:
+	ParserPtr elem_parser;
+
+public:
+	ParserTernaryOperatorExpression()
+		: elem_parser(new ParserLogicalOrExpression)
+	{
+	}
+
+protected:
+	String getName() { return "expression with ternary operator"; }
+
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
