@@ -135,6 +135,8 @@ namespace FunctionsLibrary
 			("array",						new FunctionArray)
 
 			("alphaTokens",					new FunctionAlphaTokens)
+			("splitByChar",					new FunctionSplitByChar)
+			("splitByString",				new FunctionSplitByString)
 		;
 
 		return res;
