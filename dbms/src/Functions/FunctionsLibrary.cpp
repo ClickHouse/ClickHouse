@@ -47,6 +47,8 @@ namespace FunctionsLibrary
 			("xor",							new FunctionXor)
 			("not",							new FunctionNot)
 
+			("empty",						new FunctionEmpty)
+			("notEmpty",					new FunctionNotEmpty)
 			("length",						new FunctionLength)
 			("lengthUTF8",					new FunctionLengthUTF8)
 			("lower",						new FunctionLower)

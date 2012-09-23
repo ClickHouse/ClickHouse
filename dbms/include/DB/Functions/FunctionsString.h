@@ -8,6 +8,7 @@
 #include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
@@ -19,11 +20,13 @@ namespace DB
 
 /** Функции работы со строками:
   *
-  * length, concat, substring, left, right, insert, replace, lower, upper, reverse,
-  * escape, quote, unescape, unquote, trim, trimLeft, trimRight, pad, padLeft
-  * lengthUTF8, substringUTF8, leftUTF8, rightUTF8, insertUTF8, replaceUTF8, lowerUTF8, upperUTF8, reverseUTF8,
-  * padUTF8, padLeftUTF8.
+  * length, empty, notEmpty,
+  * concat, substring, lower, upper, reverse, // left, right, insert, replace,
+  * // escape, quote, unescape, unquote, trim, trimLeft, trimRight, pad, padLeft
+  * lengthUTF8, substringUTF8, lowerUTF8, upperUTF8, reverseUTF8, // leftUTF8, rightUTF8, insertUTF8, replaceUTF8
+  * // padUTF8, padLeftUTF8.
   *
+  * s				-> UInt8:	empty, notEmpty
   * s 				-> UInt64: 	length, lengthUTF8
   * s 				-> s:		lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8, escape, quote, unescape, unquote, trim, trimLeft, trimRight
   * s, s 			-> s: 		concat
@@ -36,8 +39,57 @@ namespace DB
   * Функции работы с URL расположены отдельно.
   * Функции кодирования строк, конвертации в другие типы расположены отдельно.
   *
-  * Функция length также работает с массивами.
+  * Функции length, empty, notEmpty также работают с массивами.
   */
+
+
+template <bool negative = false>
+struct EmptyImpl
+{
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res)
+	{
+		size_t size = offsets.size();
+		ColumnArray::Offset_t prev_offset = 1;
+		for (size_t i = 0; i < size; ++i)
+		{
+			res[i] = negative ^ (offsets[i] == prev_offset);
+			prev_offset = offsets[i] + 1;
+		}
+	}
+
+	static void vector_fixed_to_constant(const std::vector<UInt8> & data, size_t n,
+		UInt8 & res)
+	{
+		res = negative ^ (n == 0);
+	}
+
+	static void vector_fixed_to_vector(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res)
+	{
+	}
+
+	static void constant(const std::string & data, UInt8 & res)
+	{
+		res = negative ^ (data.empty());
+	}
+
+	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt8> & res)
+	{
+		size_t size = offsets.size();
+		ColumnArray::Offset_t prev_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			res[i] = negative ^ (offsets[i] == prev_offset);
+			prev_offset = offsets[i];
+		}
+	}
+
+	static void constant_array(const Array & data, UInt8 & res)
+	{
+		res = negative ^ (data.empty());
+	}
+};
 
 
 /** Вычисляет длину строки в байтах.
@@ -66,6 +118,20 @@ struct LengthImpl
 	}
 
 	static void constant(const std::string & data, UInt64 & res)
+	{
+		res = data.size();
+	}
+
+	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
+	{
+		size_t size = offsets.size();
+		for (size_t i = 0; i < size; ++i)
+			res[i] = i == 0
+				? (offsets[i])
+				: (offsets[i] - offsets[i - 1]);
+	}
+
+	static void constant_array(const Array & data, UInt64 & res)
 	{
 		res = data.size();
 	}
@@ -119,6 +185,16 @@ struct LengthUTF8Impl
 		for (const UInt8 * c = reinterpret_cast<const UInt8 *>(data.data()); c < reinterpret_cast<const UInt8 *>(data.data() + data.size()); ++c)
 			if (*c <= 0x7F || *c >= 0xC0)
 				++res;
+	}
+
+	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
+	{
+		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+	static void constant_array(const Array & data, UInt64 & res)
+	{
+		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 
@@ -700,8 +776,8 @@ struct SubstringUTF8Impl
 };
 
 
-template <typename Impl, typename Name>
-class FunctionStringToUInt64 : public IFunction
+template <typename Impl, typename Name, typename ResultType>
+class FunctionStringOrArrayToT : public IFunction
 {
 public:
 	/// Получить имя функции.
@@ -718,32 +794,31 @@ public:
 				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0])
+			&& !dynamic_cast<const DataTypeArray *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt64;
+		return new typename DataTypeFromFieldType<ResultType>::Type;
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		typedef UInt64 ResultType;
-		
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
 		{
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
-			ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->size());
 			Impl::vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(), vec_res);
 		}
 		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
 		{
-			/// Для фиксированной строки, функция length возвращает константу, а функция lengthUTF8 - не константу.
-			if ("length" == getName())
+			/// Для фиксированной строки, только функция lengthUTF8 возвращает не константу.
+			if ("lengthUTF8" != getName())
 			{
 				ResultType res = 0;
 				Impl::vector_fixed_to_constant(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(), res);
@@ -756,7 +831,7 @@ public:
 				ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 				block.getByPosition(result).column = col_res;
 
-				ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+				typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 				vec_res.resize(col->size());
 				Impl::vector_fixed_to_vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(), vec_res);
 			}
@@ -765,6 +840,23 @@ public:
 		{
 			ResultType res = 0;
 			Impl::constant(col->getData(), res);
+
+			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
+			block.getByPosition(result).column = col_res;
+		}
+		else if (const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*column))
+		{
+			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			block.getByPosition(result).column = col_res;
+
+			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			vec_res.resize(col->size());
+			Impl::array(col->getOffsets(), vec_res);
+		}
+		else if (const ColumnConstArray * col = dynamic_cast<const ColumnConstArray *>(&*column))
+		{
+			ResultType res = 0;
+			Impl::constant_array(col->getData(), res);
 
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
 			block.getByPosition(result).column = col_res;
@@ -1046,6 +1138,8 @@ public:
 };
 
 
+struct NameEmpty 			{ static const char * get() { return "empty"; } };
+struct NameNotEmpty 		{ static const char * get() { return "notEmpty"; } };
 struct NameLength 			{ static const char * get() { return "length"; } };
 struct NameLengthUTF8 		{ static const char * get() { return "lengthUTF8"; } };
 struct NameLower 			{ static const char * get() { return "lower"; } };
@@ -1058,8 +1152,10 @@ struct NameConcat			{ static const char * get() { return "concat"; } };
 struct NameSubstring		{ static const char * get() { return "substring"; } };
 struct NameSubstringUTF8	{ static const char * get() { return "substringUTF8"; } };
 
-typedef FunctionStringToUInt64<LengthImpl, 				NameLength> 			FunctionLength;
-typedef FunctionStringToUInt64<LengthUTF8Impl, 			NameLengthUTF8> 		FunctionLengthUTF8;
+typedef FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> 	FunctionEmpty;
+typedef FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> 	FunctionNotEmpty;
+typedef FunctionStringOrArrayToT<LengthImpl, 			NameLength,		UInt64> FunctionLength;
+typedef FunctionStringOrArrayToT<LengthUTF8Impl, 		NameLengthUTF8,	UInt64> FunctionLengthUTF8;
 typedef FunctionStringToString<LowerUpperImpl<tolower>, NameLower>	 			FunctionLower;
 typedef FunctionStringToString<LowerUpperImpl<toupper>, NameUpper>	 			FunctionUpper;
 typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toLower>,	NameLowerUTF8>	FunctionLowerUTF8;
