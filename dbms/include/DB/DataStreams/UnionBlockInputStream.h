@@ -1,9 +1,13 @@
 #pragma once
 
-#include <Poco/Semaphore.h>
-#include <Poco/ThreadPool.h>
+#include <list>
+#include <queue>
 
-#include <statdaemons/threadpool.hpp>
+#include <Poco/Thread.h>
+#include <Poco/Mutex.h>
+#include <Poco/Semaphore.h>
+
+#include <Yandex/logger_useful.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
@@ -14,11 +18,60 @@ namespace DB
 using Poco::SharedPtr;
 
 
+/** Очень простая thread-safe очередь ограниченной длины.
+  * Если пытаться вынуть элемент из пустой очереди, то поток блокируется, пока очередь не станет непустой.
+  * Если пытаться вставить элемент в переполненную очередь, то поток блокируется, пока в очереди не появится элемент.
+  */
+template <typename T>
+class ConcurrentBoundedQueue
+{
+private:
+	size_t max_fill;
+	std::queue<T> queue;
+	Poco::Mutex mutex;
+	Poco::Semaphore fill_count;
+	Poco::Semaphore empty_count;
+
+public:
+	ConcurrentBoundedQueue(size_t max_fill)
+		: fill_count(0, max_fill), empty_count(max_fill, max_fill) {}
+
+	void push(const T & x)
+	{
+		empty_count.wait();
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			queue.push(x);
+		}
+		fill_count.set();
+	}
+
+	void pop(T & x)
+	{
+		fill_count.wait();
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			x = queue.front();
+			queue.pop();
+		}
+		empty_count.set();
+	}
+};
+
 
 /** Объединяет несколько источников в один.
   * Блоки из разных источников перемежаются друг с другом произвольным образом.
   * Можно указать количество потоков (max_threads),
   *  в которых будет выполняться получение данных из разных источников.
+  *
+  * Устроено так:
+  * - есть набор источников, из которых можно вынимать блоки;
+  * - есть набор потоков, которые могут одновременно вынимать блоки из разных источников;
+  * - "свободные" источники (с которыми сейчас не работает никакой поток) кладутся в очередь источников;
+  * - когда поток берёт источник для обработки, он удаляет его из очереди источников,
+  *    вынимает из него блок, и затем кладёт источник обратно в очередь источников;
+  * - полученные блоки складываются в ограниченную очередь готовых блоков;
+  * - основной поток вынимает готовые блоки из очереди готовых блоков.
   */
 class UnionBlockInputStream : public IProfilingBlockInputStream
 {
@@ -26,112 +79,41 @@ class UnionBlockInputStream : public IProfilingBlockInputStream
 public:
 	UnionBlockInputStream(BlockInputStreams inputs_, unsigned max_threads_ = 1)
 		: max_threads(std::min(inputs_.size(), static_cast<size_t>(max_threads_))),
-		pool(max_threads, max_threads),
-		ready_any(0, inputs_.size())
+		output_queue(max_threads), exhausted_inputs(0), finish(false),
+		log(&Logger::get("UnionBlockInputStream"))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 
 		for (size_t i = 0; i < inputs_.size(); ++i)
 		{
-			inputs_data.push_back(InputData());
-			inputs_data.back().in = inputs_[i];
-			inputs_data.back().i = i;
+			input_queue.push(InputData());
+			input_queue.back().in = inputs_[i];
+			input_queue.back().i = i;
 		}
 	}
 
 	Block readImpl()
 	{
 		Block res;
-
-		while (1)
+		if (finish)
+			return res;
+		
+		/// Запускаем потоки, если это ещё не было сделано.
+		if (threads_data.empty())
 		{
+			threads_data.resize(max_threads);
+			for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
-				if (inputs_data.empty())
-					return res;
-
-				ssize_t max_threads_to_start = pool.available();
-				
-				if (max_threads_to_start > 0)
-				{
-					/// Запустим вычисления для как можно большего количества источников, которые ещё ни разу не брались
-	//				std::cerr << "Starting initial threads" << std::endl;
-
-					ssize_t started_threads = 0;
-					InputsData::iterator it = inputs_data.begin();
-					while (it != inputs_data.end() && 0 == it->count)
-					{
-	//					std::cerr << "Scheduling initial " << it->i << std::endl;
-						++it->count;
-						++started_threads;
-
-						/// Переносим этот источник в конец списка
-						inputs_data.push_back(*it);
-						inputs_data.erase(it++);
-
-						inputs_data.back().thread = new Thread(*this, inputs_data.back());
-						pool.start(*inputs_data.back().thread);
-
-						if (started_threads == max_threads_to_start)
-							break;
-					}
-				}
-			}
-
-	//		std::cerr << "Waiting for one thread to finish" << std::endl;
-			ready_any.wait();
-
-			{
-				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
-	//			std::cerr << std::endl << "pool.pending: " << pool.pending() << ", pool.active: " << pool.active() << ", pool.size: " << pool.size() << std::endl;
-	
-				if (inputs_data.empty())
-					return res;
-
-	//			std::cerr << "Searching for first ready block" << std::endl;
-
-				/** Найдём и вернём готовый непустой блок, если такой есть.
-				  * При чём, выберем блок из источника, из которого было получено меньше всего блоков.
-				  */
-				InputsData::iterator it = inputs_data.begin();
-				while (it != inputs_data.end())
-				{
-					if (it->exception)
-						it->exception->rethrow();
-
-					if (it->ready)
-					{
-						if (!it->block)
-							inputs_data.erase(it++);
-						else
-							break;
-					}
-					else
-						++it;
-				}
-
-				if (it == inputs_data.end())
-				{
-	//				std::cerr << "Continue" << std::endl;
-					continue;
-				}
-
-	//			std::cerr << "Found block " << it->i << std::endl;
-
-				res = it->block;
-
-				/// Запустим получение следующего блока
-				it->reset();
-	//			std::cerr << "Scheduling again " << it->i << std::endl;
-				++it->count;
-				it->thread = new Thread(*this, *it);
-				pool.start(*it->thread);
-
-				return res;
+				it->runnable = new Thread(*this, it->exception);
+				it->thread = new Poco::Thread;
+				it->thread->start(*it->runnable);
 			}
 		}
+
+		/// Будем ждать, пока будет готов следующий блок.
+		output_queue.pop(res);
+
+		return res;
 	}
 
 	String getName() const { return "UnionBlockInputStream"; }
@@ -140,86 +122,158 @@ public:
 
 	~UnionBlockInputStream()
 	{
-		pool.joinAll();
+		LOG_TRACE(log, "Waiting for threads to finish");
+
+		finish = true;
+		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
+		{
+			it->thread->join();
+
+			if (!std::uncaught_exception() && it->exception)
+				it->exception->rethrow();
+		}
+
+		LOG_TRACE(log, "Waited for threads to finish");
 	}
 
 private:
-	unsigned max_threads;
-
-	/** Будем использовать Poco::ThreadPool вместо boost::threadpool.
-	  * Последний неудобен тем, что в нём не совсем так как надо узнаётся количество свободных потоков.
-	  */
-	Poco::ThreadPool pool;
-
 	/// Данные отдельного источника
 	struct InputData
 	{
-		SharedPtr<Thread> thread;
 		BlockInputStreamPtr in;
-		unsigned count;	/// Сколько блоков было вычислено
-		bool ready;		/// Блок уже вычислен
-		Block block;
-		ExceptionPtr exception;
-		size_t i;		/// Порядковый номер источника.
-
-		void reset()
-		{
-			ready = false;
-			block = Block();
-			exception = NULL;
-			thread = NULL;
-		}
-
-		InputData() : count(0), ready(false), i(0) {}
+		size_t i;		/// Порядковый номер источника (для отладки).
 	};
+
+
+	/// Данные отдельного потока
+	struct ThreadData
+	{
+		SharedPtr<Poco::Thread> thread;
+		SharedPtr<Thread> runnable;
+		ExceptionPtr exception;
+	};
+
 
 	class Thread : public Poco::Runnable
 	{
 	public:
-		Thread(UnionBlockInputStream & parent_, InputData & data_) : parent(parent_), data(data_) {}
+		Thread(UnionBlockInputStream & parent_, ExceptionPtr & exception_) : parent(parent_), exception(exception_) {}
 
 		void run()
 		{
 			try
 			{
-				Block block = data.in->read();
-
-				{
-					Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
-					data.ready = true;
-					data.block = block;
-				}
+				loop();
 			}
 			catch (const Exception & e)
 			{
-				data.exception = e.clone();
+				exception = e.clone();
 			}
 			catch (const Poco::Exception & e)
 			{
-				data.exception = e.clone();
+				exception = e.clone();
 			}
 			catch (const std::exception & e)
 			{
-				data.exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+				exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
 			}
 			catch (...)
 			{
-				data.exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+				exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 			}
 
-			parent.ready_any.set();
+			if (exception)
+			{
+				/// Попросим остальные потоки побыстрее прекратить работу.
+				parent.finish = true;
+
+				/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
+				Block empty_block;
+				parent.output_queue.push(empty_block);
+			}
+		}
+
+		void loop()
+		{
+			while (!parent.finish)	/// Может потребоваться прекратить работу раньше, чем все источники иссякнут.
+			{
+				InputData input;
+
+				/// Выбираем следующий источник.
+				{
+					Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
+
+					/// Если свободных источников нет, то этот поток больше не нужен. (Но другие потоки могут работать со своими источниками.)
+					if (parent.input_queue.empty())
+						break;
+
+					input = parent.input_queue.front();
+
+					/// Убираем источник из очереди доступных источников.
+					parent.input_queue.pop();
+				}
+
+				/// Основная работа.
+				Block block = input.in->read();
+
+				{
+					Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
+
+					/// Если этот источник ещё не иссяк, то положим полученный блок в очередь готовых.
+					if (block)
+					{
+						parent.input_queue.push(input);
+						parent.output_queue.push(block);
+					}
+					else
+					{
+						++parent.exhausted_inputs;
+
+						/// Если все источники иссякли.
+						if (parent.exhausted_inputs == parent.children.size())
+						{
+							/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
+							Block empty_block;
+							parent.output_queue.push(empty_block);
+							parent.finish = true;
+
+							break;
+						}
+					}
+				}
+			}
 		}
 
 	private:
 		UnionBlockInputStream & parent;
-		InputData & data;
+		ExceptionPtr & exception;
 	};
 
-	/// Список упорядочен по количеству полученных из источника блоков.
-	typedef std::list<InputData> InputsData;
-	InputsData inputs_data;
+
+	unsigned max_threads;
+
+	/// Потоки.
+	typedef std::list<ThreadData> ThreadsData;
+	ThreadsData threads_data;
+
+	/// Очередь доступных источников, которые не заняты каким-либо потоком в данный момент.
+	typedef std::queue<InputData> InputQueue;
+	InputQueue input_queue;
+
+	/// Очередь готовых блоков.
+	typedef ConcurrentBoundedQueue<Block> OutputQueue;
+	OutputQueue output_queue;
+
+	/// Для операций с очередями.
 	Poco::FastMutex mutex;
-	Poco::Semaphore ready_any;
+
+	/// Сколько источников иссякло.
+	size_t exhausted_inputs;
+
+	/// Завершить работу потоков (раньше, чем иссякнут источники).
+	volatile bool finish;
+
+	Logger * log;
 };
 
 }
