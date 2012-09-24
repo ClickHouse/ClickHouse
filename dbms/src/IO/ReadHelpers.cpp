@@ -1,17 +1,35 @@
 #include <sstream>
 
+#include <mysqlxx/Manip.h>
+
+#include <DB/Core/Defines.h>
 #include <DB/IO/ReadHelpers.h>
 
 
 namespace DB
 {
 
+
+static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
+{
+	std::stringstream message;
+	message <<  "Cannot parse input: expected " << mysqlxx::escape << s;
+
+	if (buf.eof())
+		message << " at end of stream.";
+	else
+		message << " before: " << mysqlxx::escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+
+	throw Exception(message.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+}
+
+
 void assertString(const char * s, ReadBuffer & buf)
 {
 	for (; *s; ++s)
 	{
 		if (buf.eof() || *buf.position() != *s)
-			throw Exception(String("Cannot parse input: expected ") + s, ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+			throwAtAssertionFailed(s, buf);
 		++buf.position();
 	}
 }
