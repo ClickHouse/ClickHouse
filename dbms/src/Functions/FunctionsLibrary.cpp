@@ -12,6 +12,7 @@
 #include <DB/Functions/FunctionsURL.h>
 #include <DB/Functions/FunctionsArray.h>
 #include <DB/Functions/FunctionsStringArray.h>
+#include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Functions/FunctionsLibrary.h>
@@ -137,6 +138,8 @@ namespace FunctionsLibrary
 			("alphaTokens",					new FunctionAlphaTokens)
 			("splitByChar",					new FunctionSplitByChar)
 			("splitByString",				new FunctionSplitByString)
+
+			("if",							new FunctionIf)
 		;
 
 		return res;
