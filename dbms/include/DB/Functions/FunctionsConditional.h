@@ -2,6 +2,9 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Functions/IFunction.h>
 
 
@@ -9,6 +12,8 @@ namespace DB
 {
 
 /** Функция выбора по условию: if(cond, then, else).
+  * cond - UInt8
+  * then, else - одинакового типа - либо числа/даты/даты-с-временем, либо строки.
   */
 
 
@@ -57,6 +62,152 @@ struct NumIfImpl
 };
 
 
+struct StringIfImpl
+{
+	static void vector_vector(
+		const std::vector<UInt8> & cond,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+	{
+		size_t size = cond.size();
+		c_offsets.resize(size);
+		c_data.reserve(std::max(a_data.size(), b_data.size()));
+		
+		ColumnArray::Offset_t a_prev_offset = 0;
+		ColumnArray::Offset_t b_prev_offset = 0;
+		ColumnArray::Offset_t c_prev_offset = 0;
+		
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (cond[i])
+			{
+				size_t size_to_write = a_offsets[i] - a_prev_offset;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+			else
+			{
+				size_t size_to_write = b_offsets[i] - b_prev_offset;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], &b_data[b_prev_offset], size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+
+			a_prev_offset = a_offsets[i];
+			b_prev_offset = b_offsets[i];
+		}
+	}
+
+	static void vector_constant(
+		const std::vector<UInt8> & cond,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const String & b,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+	{
+		size_t size = cond.size();
+		c_offsets.resize(size);
+		c_data.reserve(a_data.size());
+
+		ColumnArray::Offset_t a_prev_offset = 0;
+		ColumnArray::Offset_t c_prev_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (cond[i])
+			{
+				size_t size_to_write = a_offsets[i] - a_prev_offset;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+			else
+			{
+				size_t size_to_write = b.size() + 1;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], b.data(), size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+
+			a_prev_offset = a_offsets[i];
+		}
+	}
+
+	static void constant_vector(
+		const std::vector<UInt8> & cond,
+		const String & a,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+	{
+		size_t size = cond.size();
+		c_offsets.resize(size);
+		c_data.reserve(b_data.size());
+
+		ColumnArray::Offset_t b_prev_offset = 0;
+		ColumnArray::Offset_t c_prev_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (cond[i])
+			{
+				size_t size_to_write = a.size() + 1;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], a.data(), size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+			else
+			{
+				size_t size_to_write = b_offsets[i] - b_prev_offset;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], &b_data[b_prev_offset], size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+
+			b_prev_offset = b_offsets[i];
+		}
+	}
+
+	static void constant_constant(
+		const std::vector<UInt8> & cond,
+		const String & a, const String & b,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+	{
+		size_t size = cond.size();
+		c_offsets.resize(size);
+		c_data.reserve((std::max(a.size(), b.size()) + 1) * size);
+
+		ColumnArray::Offset_t c_prev_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (cond[i])
+			{
+				size_t size_to_write = a.size() + 1;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], a.data(), size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+			else
+			{
+				size_t size_to_write = b.size() + 1;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], b.data(), size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+		}
+	}
+};
+
+
 class FunctionIf : public IFunction
 {
 private:
@@ -82,6 +233,49 @@ private:
 			NumIfImpl<T>::constant_vector(cond_col->getData(), col_then_const->getData(), col_else_vec->getData(), vec_res);
 		else if (col_then_const && col_else_const)
 			NumIfImpl<T>::constant_constant(cond_col->getData(), col_then_const->getData(), col_else_const->getData(), vec_res);
+		else
+			return false;
+
+		return true;
+	}
+
+	bool executeString(const ColumnVector<UInt8> * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		ColumnString * col_then = dynamic_cast<ColumnString *>(&*block.getByPosition(arguments[1]).column);
+		ColumnString * col_else = dynamic_cast<ColumnString *>(&*block.getByPosition(arguments[2]).column);
+		ColumnConstString * col_then_const = dynamic_cast<ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+		ColumnConstString * col_else_const = dynamic_cast<ColumnConstString *>(&*block.getByPosition(arguments[2]).column);
+
+		ColumnString * col_res = new ColumnString;
+		block.getByPosition(result).column = col_res;
+
+		std::vector<UInt8> & res_vec = dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData();
+		ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
+
+		if (col_then && col_else)
+			StringIfImpl::vector_vector(
+				cond_col->getData(),
+				dynamic_cast<const ColumnUInt8 &>(col_then->getData()).getData(), col_then->getOffsets(),
+				dynamic_cast<const ColumnUInt8 &>(col_else->getData()).getData(), col_else->getOffsets(),
+				res_vec, res_offsets);
+		else if (col_then && col_else_const)
+			StringIfImpl::vector_constant(
+				cond_col->getData(),
+				dynamic_cast<const ColumnUInt8 &>(col_then->getData()).getData(), col_then->getOffsets(),
+				col_else_const->getData(),
+				res_vec, res_offsets);
+		else if (col_then_const && col_else)
+			StringIfImpl::constant_vector(
+				cond_col->getData(),
+				col_then_const->getData(),
+				dynamic_cast<const ColumnUInt8 &>(col_else->getData()).getData(), col_else->getOffsets(),
+				res_vec, res_offsets);
+		else if (col_then_const && col_else_const)
+			StringIfImpl::constant_constant(
+				cond_col->getData(),
+				col_then_const->getData(),
+				col_else_const->getData(),
+				res_vec, res_offsets);
 		else
 			return false;
 
@@ -121,34 +315,32 @@ public:
 		const ColumnVector<UInt8> * cond_col = dynamic_cast<const ColumnVector<UInt8> *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnConst<UInt8> * cond_const_col = dynamic_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);
 
-		/// Если аргумент-условие - константа - то материализуем её.
-		ColumnPtr materialized_const_holder;
-
 		if (cond_const_col)
 		{
-			materialized_const_holder = cond_const_col->convertToFullColumn();
-			cond_col = dynamic_cast<const ColumnVector<UInt8> *>(&*materialized_const_holder);
+			block.getByPosition(result).column = cond_const_col->getData()
+				? block.getByPosition(arguments[1]).column
+				: block.getByPosition(arguments[2]).column;
 		}
-
-		if (!cond_col)
+		else if (cond_col)
+		{
+			if (!(	executeType<UInt8>(cond_col, block, arguments, result)
+				||	executeType<UInt16>(cond_col, block, arguments, result)
+				||	executeType<UInt32>(cond_col, block, arguments, result)
+				||	executeType<UInt64>(cond_col, block, arguments, result)
+				||	executeType<Int8>(cond_col, block, arguments, result)
+				||	executeType<Int16>(cond_col, block, arguments, result)
+				||	executeType<Int32>(cond_col, block, arguments, result)
+				||	executeType<Int64>(cond_col, block, arguments, result)
+				||	executeType<Float32>(cond_col, block, arguments, result)
+				||	executeType<Float64>(cond_col, block, arguments, result)
+				|| 	executeString(cond_col, block, arguments, result)))
+				throw Exception("Illegal columns " + block.getByPosition(arguments[1]).column->getName()
+						+ " and " + block.getByPosition(arguments[2]).column->getName()
+						+ " of second (then) and third (else) arguments of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
 			throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName() + ". Must be ColumnUInt8 or ColumnConstUInt8.",
-				ErrorCodes::ILLEGAL_COLUMN);
-
-		/// TODO: для строк.
-		
-		if (!(	executeType<UInt8>(cond_col, block, arguments, result)
-			||	executeType<UInt16>(cond_col, block, arguments, result)
-			||	executeType<UInt32>(cond_col, block, arguments, result)
-			||	executeType<UInt64>(cond_col, block, arguments, result)
-			||	executeType<Int8>(cond_col, block, arguments, result)
-			||	executeType<Int16>(cond_col, block, arguments, result)
-			||	executeType<Int32>(cond_col, block, arguments, result)
-			||	executeType<Int64>(cond_col, block, arguments, result)
-			||	executeType<Float32>(cond_col, block, arguments, result)
-			||	executeType<Float64>(cond_col, block, arguments, result)))
-		   throw Exception("Illegal columns " + block.getByPosition(arguments[1]).column->getName()
-					+ " and " + block.getByPosition(arguments[2]).column->getName()
-					+ " of second (then) and third (else) arguments of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
