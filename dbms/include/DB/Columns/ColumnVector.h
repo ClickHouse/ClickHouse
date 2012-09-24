@@ -88,13 +88,8 @@ public:
 		tmp.reserve(size);
 		
 		for (size_t i = 0; i < size; ++i)
-		{
 			if (filt[i])
-			{
-				tmp.push_back(T());
-				std::swap(tmp.back(), data[i]);
-			}
-		}
+				tmp.push_back(data[i]);
 
 		tmp.swap(data);
 	}
