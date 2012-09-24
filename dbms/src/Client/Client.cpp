@@ -32,6 +32,8 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
+#include <DB/DataStreams/AsynchronousBlockInputStream.h>
+
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/formatAST.h>
 
@@ -477,8 +479,8 @@ private:
 			if (!insert->format.empty())
 				current_format = insert->format;
 
-		block_std_in = context.getFormatFactory().getInput(
-			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory());
+		block_std_in = new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
+			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory()));
 		block_std_in->readPrefix();
 
 		while (true)
