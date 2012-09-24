@@ -41,6 +41,10 @@ public:
 	void insert(const Field & x)
 	{
 		const String & s = boost::get<const String &>(x);
+
+		if (s.size() > n)
+			throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+		
 		size_t old_size = char_data.size();
 		char_data.resize(old_size + n);
 		memcpy(&char_data[old_size], s.data(), s.size());
