@@ -75,7 +75,15 @@ void loadMetadata(Context & context)
 			if (!istr.good())
 				throw Exception("Cannot read from file " + jt->path(), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
 
-			executeCreateQuery(s.str(), context, it.name(), jt->path());
+			try
+			{
+				executeCreateQuery(s.str(), context, it.name(), jt->path());
+			}
+			catch (const DB::Exception & e)
+			{
+				throw Exception("Cannot create table from metadata file " + jt->path() + ", error: " + e.message(),
+					ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+			}
 		}
 	}
 }
