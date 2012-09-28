@@ -17,25 +17,64 @@
 #include <statdaemons/threadpool.hpp>
 #include <statdaemons/Stopwatch.h>
 
+#include <stdlib.h>
+#include <malloc.h>
+
 
 using DB::throwFromErrno;
 
 
 enum Mode
 {
-	MODE_READ,
-	MODE_WRITE,
+	MODE_NONE = 0,
+	MODE_READ = 1,
+	MODE_WRITE = 2,
+	MODE_ALIGNED = 4,
+	MODE_DIRECT = 8,
+	MODE_SYNC = 16,
 };
 
 
 typedef Poco::SharedPtr<Poco::Exception> ExceptionPtr;
 
 
-void thread(int fd, Mode mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, ExceptionPtr & exception)
+struct AlignedBuffer
+{
+	int size;
+	char * data;
+	
+	AlignedBuffer(int size_)
+	{
+		size = size_;
+		data = static_cast<char*>(memalign(size, size));
+		if (!data)
+			throwFromErrno("memalign failed");
+	}
+	
+	~AlignedBuffer()
+	{
+		free(data);
+	}
+};
+
+void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, ExceptionPtr & exception)
 {
 	try
 	{
-		std::vector<char> buf(block_size);
+		static boost::thread_specific_ptr<AlignedBuffer> direct_buf;
+		if ((mode & MODE_DIRECT) && direct_buf.get() == NULL)
+		{
+			direct_buf.reset(new AlignedBuffer(block_size));
+		}
+		
+		std::vector<char> simple_buf(block_size);
+		
+		char * buf;
+		if ((mode & MODE_DIRECT))
+			buf = direct_buf->data;
+		else
+			buf = &simple_buf[0];
+		
 		drand48_data rand_data;
 
 		timespec times;
@@ -50,18 +89,31 @@ void thread(int fd, Mode mode, size_t min_offset, size_t max_offset, size_t bloc
 			lrand48_r(&rand_data, &rand_result1);
 			lrand48_r(&rand_data, &rand_result2);
 			lrand48_r(&rand_data, &rand_result3);
+			
+			for (size_t j = 0; j + 3 < block_size; j += 3)
+			{
+				long r;
+				lrand48_r(&rand_data, &r);
+				buf[j    ] = static_cast<char>((r >>  0) & 255);
+				buf[j + 1] = static_cast<char>((r >>  8) & 255);
+				buf[j + 2] = static_cast<char>((r >> 16) & 255);
+			}
 
 			size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
-			size_t offset = min_offset + rand_result % (max_offset - min_offset - block_size);
+			size_t offset;
+			if ((mode & MODE_DIRECT) || (mode & MODE_ALIGNED))
+				offset = min_offset + rand_result % ((max_offset - min_offset) / block_size) * block_size;
+			else
+				offset = min_offset + rand_result % (max_offset - min_offset - block_size + 1);
 
-			if (mode == MODE_READ)
+			if (mode & MODE_READ)
 			{
-				if (static_cast<int>(block_size) != pread(fd, &buf[0], block_size, offset))
+				if (static_cast<int>(block_size) != pread(fd, buf, block_size, offset))
 					throwFromErrno("Cannot read");
 			}
 			else
 			{
-				if (static_cast<int>(block_size) != pwrite(fd, &buf[0], block_size, offset))
+				if (static_cast<int>(block_size) != pwrite(fd, buf, block_size, offset))
 					throwFromErrno("Cannot write");
 			}
 		}
@@ -80,7 +132,7 @@ void thread(int fd, Mode mode, size_t min_offset, size_t max_offset, size_t bloc
 int mainImpl(int argc, char ** argv)
 {
 	const char * file_name = 0;
-	Mode mode = MODE_READ;
+	int mode = MODE_NONE;
 	size_t min_offset = 0;
 	size_t max_offset = 0;
 	size_t block_size = 0;
@@ -89,7 +141,8 @@ int mainImpl(int argc, char ** argv)
 
 	if (argc != 8)
 	{
-		std::cerr << "Usage: " << argv[0] << " file_name r|w min_offset max_offset block_size threads count" << std::endl;
+		std::cerr << "Usage: " << argv[0] << " file_name (r|w)[a][d][s] min_offset max_offset block_size threads count" << std::endl <<
+		             "a - aligned, d - direct, s - sync" << std::endl;
 		return 1;
 	}
 
@@ -99,15 +152,35 @@ int mainImpl(int argc, char ** argv)
 	block_size = Poco::NumberParser::parseUnsigned64(argv[5]);
 	threads = Poco::NumberParser::parseUnsigned(argv[6]);
 	count = Poco::NumberParser::parseUnsigned(argv[7]);
-
-	if (!strcmp(argv[2], "r"))
-		mode = MODE_READ;
-	else if (!strcmp(argv[2], "w"))
-		mode = MODE_WRITE;
-
+	
+	for (int i = 0; argv[2][i]; ++i)
+	{
+		char c = argv[2][i];
+		switch(c)
+		{
+			case 'r':
+				mode |= MODE_READ;
+				break;
+			case 'w':
+				mode |= MODE_WRITE;
+				break;
+			case 'a':
+				mode |= MODE_ALIGNED;
+				break;
+			case 'd':
+				mode |= MODE_DIRECT;
+				break;
+			case 's':
+				mode |= MODE_SYNC;
+				break;
+			default:
+				throw Poco::Exception("Invalid mode");
+		}
+	}
+	
 	boost::threadpool::pool pool(threads);
 
-	int fd = open(file_name, O_SYNC | (mode == MODE_READ ? O_RDONLY : O_WRONLY));
+	int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_DIRECT) ? O_DIRECT : 0) | ((mode & MODE_SYNC) ? O_SYNC : 0));
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
@@ -119,6 +192,8 @@ int mainImpl(int argc, char ** argv)
 	for (size_t i = 0; i < threads; ++i)
 		pool.schedule(boost::bind(thread, fd, mode, min_offset, max_offset, block_size, count, boost::ref(exceptions[i])));
 	pool.wait();
+	
+	fsync(fd);
 
 	for (size_t i = 0; i < threads; ++i)
 		if (exceptions[i])
@@ -130,7 +205,14 @@ int mainImpl(int argc, char ** argv)
 		throwFromErrno("Cannot close file");
 
 	std::cout << std::fixed << std::setprecision(2)
-		<< "Done " << count << " * " << threads << " ops in " << watch.elapsedSeconds() << " sec."
+		<< "Done " << count << " * " << threads << " ops";
+	if (mode & MODE_ALIGNED)
+		std::cout << " (aligned)";
+	if (mode & MODE_DIRECT)
+		std::cout << " (direct)";
+	if (mode & MODE_SYNC)
+		std::cout << " (sync)";
+	std::cout << " in " << watch.elapsedSeconds() << " sec."
 		<< ", " << count * threads / watch.elapsedSeconds() << " ops/sec."
 		<< ", " << count * threads * block_size / watch.elapsedSeconds() / 1000000 << " MB/sec."
 		<< std::endl;
