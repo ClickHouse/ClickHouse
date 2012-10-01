@@ -62,7 +62,7 @@ int mainImpl(int argc, char ** argv)
 		throw Poco::Exception("Invalid mode");
 	
 	std::vector<int> fds(descriptors);
-	for (int i = 0; i < descriptors; ++i)
+	for (size_t i = 0; i < descriptors; ++i)
 	{
 		fds[i] = open(file_name, O_SYNC | ((mode == MODE_READ) ? O_RDONLY : O_WRONLY));
 		if (-1 == fds[i])
@@ -81,19 +81,19 @@ int mainImpl(int argc, char ** argv)
 	
 	std::vector<pollfd> polls(descriptors);
 	
-	for (int i = 0; i < descriptors; ++i)
+	for (size_t i = 0; i < descriptors; ++i)
 	{
 		polls[i].fd = fds[i];
 		polls[i].events = (mode == MODE_READ) ? POLLIN : POLLOUT;
 		polls[i].revents = 0;
 	}
 	
-	int ops = 0;
+	size_t ops = 0;
 	while (ops < count)
 	{
 		if (poll(&polls[0], descriptors, -1) <= 0)
 			throwFromErrno("poll failed");
-		for (int i = 0; i < descriptors; ++i)
+		for (size_t i = 0; i < descriptors; ++i)
 		{
 			if (!polls[i].revents)
 				continue;
@@ -136,7 +136,7 @@ int mainImpl(int argc, char ** argv)
 		}
 	}
 	
-	for (int i = 0; i < descriptors; ++i)
+	for (size_t i = 0; i < descriptors; ++i)
 	{
 		if (fsync(fds[i]))
 			throwFromErrno("Cannot fsync");
@@ -144,7 +144,7 @@ int mainImpl(int argc, char ** argv)
 	
 	watch.stop();
 	
-	for (int i = 0; i < descriptors; ++i)
+	for (size_t i = 0; i < descriptors; ++i)
 	{
 		if (0 != close(fds[i]))
 			throwFromErrno("Cannot close file");
