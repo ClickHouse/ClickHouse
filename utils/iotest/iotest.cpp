@@ -45,8 +45,9 @@ struct AlignedBuffer
 	
 	AlignedBuffer(int size_)
 	{
+		size_t page = sysconf(_SC_PAGESIZE);
 		size = size_;
-		data = static_cast<char*>(memalign(size, size));
+		data = static_cast<char*>(memalign(page, (size + page - 1) / page * page));
 		if (!data)
 			throwFromErrno("memalign failed");
 	}
