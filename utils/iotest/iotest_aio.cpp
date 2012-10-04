@@ -132,7 +132,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 		srand48_r(times.tv_nsec, &rand_data);
 		
 		int in_progress = 0;
-		int blocks_sent = 0;
+		size_t blocks_sent = 0;
 		std::vector<bool> buffer_used(buffers_count, false);
 		std::vector<iocb> iocbs(buffers_count);
 		std::vector<iocb*> query_cbs;
