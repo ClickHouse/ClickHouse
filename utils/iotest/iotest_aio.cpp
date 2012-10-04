@@ -131,7 +131,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
 		srand48_r(times.tv_nsec, &rand_data);
 		
-		int in_progress = 0;
+		size_t in_progress = 0;
 		size_t blocks_sent = 0;
 		std::vector<bool> buffer_used(buffers_count, false);
 		std::vector<iocb> iocbs(buffers_count);
@@ -142,7 +142,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 		{
 			/// Составим запросы.
 			query_cbs.clear();
-			for (int i = 0; i < buffers_count; ++i)
+			for (size_t i = 0; i < buffers_count; ++i)
 			{
 				if (blocks_sent >= count || in_progress >= buffers_count)
 					break;
@@ -208,7 +208,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 			for (int i = 0; i < evs; ++i)
 			{
 				int b = static_cast<int>(events[i].data);
-				if (events[i].res != block_size)
+				if (events[i].res != static_cast<int>(block_size))
 					throw Poco::Exception("read/write error");
 				--in_progress;
 				buffer_used[b] = false;
