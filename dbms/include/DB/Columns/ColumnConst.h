@@ -95,6 +95,8 @@ public:
 		return res;
 	}
 
+	StringRef getDataAt(size_t n) const;
+
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }
 	const T & getData() const { return data; }
@@ -124,6 +126,33 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const;
 
 template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const;
 
-// TODO: convertToFullColumn для остальных типов столбцов.
+
+template <typename T> StringRef ColumnConst<T>::getDataAt(size_t n) const
+{
+	throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+template <> inline StringRef ColumnConst<String>::getDataAt(size_t n) const
+{
+	return StringRef(data);
+}
+
+/// Для элементарных типов.
+template <typename T> StringRef getDataAtImpl(size_t n, const T & data)
+{
+	return StringRef(reinterpret_cast<const char *>(&data), sizeof(data));
+}
+
+template <> inline StringRef ColumnConst<UInt8	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<UInt16	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<UInt32	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<UInt64	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int8	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int16	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int32	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int64	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Float32>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Float64>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+
 
 }

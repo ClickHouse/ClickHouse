@@ -43,6 +43,11 @@ public:
 	{
 		return typename NearestFieldType<T>::Type(data[n]);
 	}
+
+	StringRef getDataAt(size_t n) const
+	{
+		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+	}
 	
 	void cut(size_t start, size_t length)
 	{

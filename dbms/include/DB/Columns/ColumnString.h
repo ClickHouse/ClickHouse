@@ -40,6 +40,11 @@ public:
 		return String(s, size);
 	}
 
+	StringRef getDataAt(size_t n) const
+	{
+		return StringRef(&char_data[offsetAt(n)], sizeAt(n));
+	}
+
 	void insert(const Field & x)
 	{
 		const String & s = boost::get<const String &>(x);

@@ -50,6 +50,11 @@ public:
 		return res;
 	}
 
+	StringRef getDataAt(size_t n) const
+	{
+		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	void insert(const Field & x)
 	{
 		const Array & arr = boost::get<const Array &>(x);

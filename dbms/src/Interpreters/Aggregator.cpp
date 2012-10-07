@@ -289,7 +289,6 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		else if (result.type == AggregatedDataVariants::HASHED)
 		{
 			AggregatedDataHashed & res = result.hashed;
-			const FieldVisitorToUInt64 to_uint64_visitor;
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -742,7 +741,6 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		else if (result.type == AggregatedDataVariants::HASHED)
 		{
 			AggregatedDataHashed & res = result.hashed;
-			const FieldVisitorToUInt64 to_uint64_visitor;
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)

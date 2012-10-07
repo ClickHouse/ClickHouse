@@ -26,6 +26,7 @@ public:
 	void insertDefault() { ++s; }
 	size_t byteSize() const { return 0; }
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const { return 0; }
+	StringRef getDataAt(size_t n) const { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
 	void filter(const Filter & filt)
 	{

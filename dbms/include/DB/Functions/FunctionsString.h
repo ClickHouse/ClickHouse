@@ -481,7 +481,7 @@ struct ConcatImpl
 		c_offsets = a_offsets;
 
 		for (size_t i = 0; i < size; ++i)
-			c_offsets[i] += b.size() + i;
+			c_offsets[i] += b.size() * (i + 1);
 
 		ColumnArray::Offset_t offset = 0;
 		ColumnArray::Offset_t a_offset = 0;
@@ -565,7 +565,7 @@ struct ConcatImpl
 		c_offsets = b_offsets;
 
 		for (size_t i = 0; i < size; ++i)
-			c_offsets[i] += a.size() + i;
+			c_offsets[i] += a.size() * (i + 1);
 
 		ColumnArray::Offset_t offset = 0;
 		ColumnArray::Offset_t b_offset = 0;

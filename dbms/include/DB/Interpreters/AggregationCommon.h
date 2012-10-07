@@ -3,6 +3,7 @@
 #include <city.h>
 #include <openssl/md5.h>
 
+#include <DB/Common/SipHash.h>
 #include <DB/Core/Row.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Columns/IColumn.h>
@@ -13,7 +14,7 @@ namespace DB
 {
 
 
-/// Для агрегации по md5.
+/// Для агрегации по SipHash.
 struct UInt128
 {
 	UInt64 first;
@@ -40,68 +41,6 @@ struct UInt128ZeroTraits
 struct StringHash
 {
 	size_t operator()(const String & x) const { return CityHash64(x.data(), x.size()); }
-};
-
-
-class FieldVisitorHash : public boost::static_visitor<>
-{
-public:
-	MD5_CTX state;
-	
-	FieldVisitorHash()
-	{
-		MD5_Init(&state);
-	}
-
-	void finalize(unsigned char * place)
-	{
-		MD5_Final(place, &state);
-	}
-
-	void operator() (const Null 	& x)
-	{
-		char type = FieldType::Null;
-		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
-	}
-	
-	void operator() (const UInt64 	& x)
-	{
-		char type = FieldType::UInt64;
-		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
-		MD5_Update(&state, reinterpret_cast<const char *>(&x), sizeof(x));
-	}
-	
- 	void operator() (const Int64 	& x)
-	{
-		char type = FieldType::Int64;
-		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
-		MD5_Update(&state, reinterpret_cast<const char *>(&x), sizeof(x));
-	}
-
-	void operator() (const Float64 	& x)
-	{
-		char type = FieldType::Float64;
-		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
-		MD5_Update(&state, reinterpret_cast<const char *>(&x), sizeof(x));
-	}
-
-	void operator() (const String 	& x)
-	{
-		char type = FieldType::String;
-		MD5_Update(&state, reinterpret_cast<const char *>(&type), sizeof(type));
-		/// Используем ноль на конце.
-		MD5_Update(&state, x.c_str(), x.size() + 1);
-	}
-
-	void operator() (const Array 	& x)
-	{
-		throw Exception("Cannot aggregate by array", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
-	}
-
-	void operator() (const SharedPtr<IAggregateFunction> & x)
-	{
-		throw Exception("Cannot aggregate by state of aggregate function", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
-	}
 };
 
 
@@ -142,16 +81,14 @@ public:
 typedef std::vector<size_t> Sizes;
 
 
-/// Записать набор ключей в UInt128. Либо уложив их подряд, либо вычислив md5.
+/// Записать набор ключей в UInt128. Либо уложив их подряд, либо вычислив SipHash.
 inline UInt128 __attribute__((__always_inline__)) pack128(
 	size_t i, bool keys_fit_128_bits, size_t keys_size, Row & key, const Columns & key_columns, const Sizes & key_sizes)
 {
-	const FieldVisitorToUInt64 to_uint64_visitor;
-	
 	union
 	{
 		UInt128 key_hash;
-		unsigned char bytes[16];
+		char bytes[16];
 	} key_hash_union;
 
 	/// Если все ключи числовые и помещаются в 128 бит
@@ -162,23 +99,23 @@ inline UInt128 __attribute__((__always_inline__)) pack128(
 		for (size_t j = 0; j < keys_size; ++j)
 		{
 			key[j] = (*key_columns[j])[i];
-			UInt64 tmp = boost::apply_visitor(to_uint64_visitor, key[j]);
-			/// Работает только на little endian
-			memcpy(key_hash_union.bytes + offset, reinterpret_cast<const char *>(&tmp), key_sizes[j]);
+			StringRef key_data = key_columns[j]->getDataAt(i);
+			memcpy(key_hash_union.bytes + offset, key_data.data, key_sizes[j]);
 			offset += key_sizes[j];
 		}
 	}
-	else	/// Иначе используем md5.
+	else	/// Иначе используем SipHash.
 	{
-		FieldVisitorHash key_hash_visitor;
+		SipHash hash;
 
 		for (size_t j = 0; j < keys_size; ++j)
 		{
 			key[j] = (*key_columns[j])[i];
-			boost::apply_visitor(key_hash_visitor, key[j]);
+			StringRef key_data = key_columns[j]->getDataAt(i);
+			hash.update(key_data.data, key_data.size);
 		}
 
-		key_hash_visitor.finalize(key_hash_union.bytes);
+		hash.final(key_hash_union.bytes);
 	}
 
 	return key_hash_union.key_hash;

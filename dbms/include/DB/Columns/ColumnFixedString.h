@@ -38,6 +38,11 @@ public:
 		return String(reinterpret_cast<const char *>(&char_data[n * index]), n);
 	}
 
+	StringRef getDataAt(size_t index) const
+	{
+		return StringRef(&char_data[n * index], n);
+	}
+
 	void insert(const Field & x)
 	{
 		const String & s = boost::get<const String &>(x);

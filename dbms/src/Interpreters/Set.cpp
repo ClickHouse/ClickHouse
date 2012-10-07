@@ -152,7 +152,6 @@ void Set::create(BlockInputStreamPtr stream)
 		else if (type == HASHED)
 		{
 			SetHashed & res = hashed;
-			const FieldVisitorToUInt64 to_uint64_visitor;
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -354,7 +353,6 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	else if (type == HASHED)
 	{
 		const SetHashed & set = hashed;
-		const FieldVisitorToUInt64 to_uint64_visitor;
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)

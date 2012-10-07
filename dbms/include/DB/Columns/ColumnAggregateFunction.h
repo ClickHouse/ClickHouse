@@ -23,6 +23,11 @@ public:
 	{
 		return data[n];
 	}
+
+	StringRef getDataAt(size_t n) const
+	{
+		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
 	
 	void cut(size_t start, size_t length)
 	{
