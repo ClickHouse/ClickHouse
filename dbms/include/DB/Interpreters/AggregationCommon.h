@@ -124,7 +124,7 @@ public:
 
 	UInt64 operator() (const String 	& x) const
 	{
-		return std::tr1::hash<String>()(x);
+		return CityHash64(x.data(), x.size());
 	}
 
 	UInt64 operator() (const Array 	& x) const
