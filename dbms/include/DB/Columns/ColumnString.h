@@ -50,6 +50,71 @@ public:
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size_to_append);
 	}
 
+	void filter(const Filter & filt)
+	{
+		size_t size = getOffsets().size();
+		if (size != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return;
+
+		ColumnUInt8::Container_t tmp_chars;
+		Offsets_t tmp_offsets;
+		tmp_chars.reserve(char_data.size());
+		tmp_offsets.reserve(size);
+
+		Offset_t current_new_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (!filt[i])
+				continue;
+			
+			size_t string_offset = i == 0 ? 0 : getOffsets()[i - 1];
+			size_t string_size = getOffsets()[i] - string_offset;
+
+			current_new_offset += string_size;
+			tmp_offsets.push_back(current_new_offset);
+
+			tmp_chars.resize(tmp_chars.size() + string_size);
+			memcpy(&tmp_chars[tmp_chars.size() - string_size], &char_data[string_offset], string_size);
+		}
+
+		tmp_chars.swap(char_data);
+		tmp_offsets.swap(getOffsets());
+	}
+
+	void permute(const Permutation & perm)
+	{
+		size_t size = getOffsets().size();
+		if (size != perm.size())
+			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return;
+
+		ColumnUInt8::Container_t tmp_chars(char_data.size());
+		Offsets_t tmp_offsets(size);
+
+		Offset_t current_new_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t j = perm[i];
+			size_t string_offset = j == 0 ? 0 : getOffsets()[j - 1];
+			size_t string_size = getOffsets()[j] - string_offset;
+
+			memcpy(&tmp_chars[current_new_offset], &char_data[string_offset], string_size);
+
+			current_new_offset += string_size;
+			tmp_offsets[i] = current_new_offset;
+		}
+
+		tmp_chars.swap(char_data);
+		tmp_offsets.swap(getOffsets());
+	}
+
 	void insertDefault()
 	{
 		char_data.push_back(0);
