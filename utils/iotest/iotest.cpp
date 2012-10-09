@@ -62,17 +62,13 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 {
 	try
 	{
-		static boost::thread_specific_ptr<AlignedBuffer> direct_buf;
-		if ((mode & MODE_DIRECT) && direct_buf.get() == NULL)
-		{
-			direct_buf.reset(new AlignedBuffer(block_size));
-		}
+		AlignedBuffer direct_buf(block_size);
 		
 		std::vector<char> simple_buf(block_size);
 		
 		char * buf;
 		if ((mode & MODE_DIRECT))
-			buf = direct_buf->data;
+			buf = direct_buf.data;
 		else
 			buf = &simple_buf[0];
 		
