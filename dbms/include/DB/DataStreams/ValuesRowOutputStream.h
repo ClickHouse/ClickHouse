@@ -30,7 +30,7 @@ public:
 
 private:
 	WriteBuffer & ostr;
-	const Block & sample;
+	const Block sample;
 	DataTypes data_types;
 	size_t field_number;
 };

@@ -26,7 +26,7 @@ public:
 
 private:
 	ReadBuffer & istr;
-	const Block & sample;
+	const Block sample;
 	DataTypes data_types;
 };
 

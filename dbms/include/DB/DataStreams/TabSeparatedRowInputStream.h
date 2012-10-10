@@ -30,7 +30,7 @@ public:
 
 private:
 	ReadBuffer & istr;
-	const Block & sample;
+	const Block sample;
 	bool with_names;
 	bool with_types;
 	DataTypes data_types;
