@@ -13,7 +13,7 @@ class TabSeparatedRawRowOutputStream : public TabSeparatedRowOutputStream
 {
 public:
 	TabSeparatedRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false)
-		: TabSeparatedRowOutputStream(ostr, sample, with_names, with_types) {}
+		: TabSeparatedRowOutputStream(ostr_, sample_, with_names_, with_types_) {}
 
 	void writeField(const Field & field)
 	{
