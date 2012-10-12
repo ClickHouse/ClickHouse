@@ -94,9 +94,9 @@ public:
 
 	Block readImpl()
 	{
-		Block res;
+		OutputData res;
 		if (finish)
-			return res;
+			return res.block;
 		
 		/// Запускаем потоки, если это ещё не было сделано.
 		if (threads_data.empty())
@@ -104,16 +104,19 @@ public:
 			threads_data.resize(max_threads);
 			for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			{
-				it->runnable = new Thread(*this, it->exception);
+				it->runnable = new Thread(*this);
 				it->thread = new Poco::Thread;
 				it->thread->start(*it->runnable);
 			}
 		}
 
-		/// Будем ждать, пока будет готов следующий блок.
+		/// Будем ждать, пока будет готов следующий блок или будет выкинуто исключение.
 		output_queue.pop(res);
 
-		return res;
+		if (res.exception)
+			res.exception->rethrow();
+
+		return res.block;
 	}
 
 	String getName() const { return "UnionBlockInputStream"; }
@@ -126,12 +129,7 @@ public:
 
 		finish = true;
 		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-		{
 			it->thread->join();
-
-			if (!std::uncaught_exception() && it->exception)
-				it->exception->rethrow();
-		}
 
 		LOG_TRACE(log, "Waited for threads to finish");
 	}
@@ -150,17 +148,18 @@ private:
 	{
 		SharedPtr<Poco::Thread> thread;
 		SharedPtr<Thread> runnable;
-		ExceptionPtr exception;
 	};
 
 
 	class Thread : public Poco::Runnable
 	{
 	public:
-		Thread(UnionBlockInputStream & parent_, ExceptionPtr & exception_) : parent(parent_), exception(exception_) {}
+		Thread(UnionBlockInputStream & parent_) : parent(parent_) {}
 
 		void run()
 		{
+			ExceptionPtr exception;
+			
 			try
 			{
 				loop();
@@ -187,9 +186,8 @@ private:
 				/// Попросим остальные потоки побыстрее прекратить работу.
 				parent.finish = true;
 
-				/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
-				Block empty_block;
-				parent.output_queue.push(empty_block);
+				/// Отдаём эксепшен в основной поток.
+				parent.output_queue.push(exception);
 			}
 		}
 
@@ -233,8 +231,7 @@ private:
 						if (parent.exhausted_inputs == parent.children.size())
 						{
 							/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
-							Block empty_block;
-							parent.output_queue.push(empty_block);
+							parent.output_queue.push(OutputData());
 							parent.finish = true;
 
 							break;
@@ -246,7 +243,6 @@ private:
 
 	private:
 		UnionBlockInputStream & parent;
-		ExceptionPtr & exception;
 	};
 
 
@@ -260,8 +256,19 @@ private:
 	typedef std::queue<InputData> InputQueue;
 	InputQueue input_queue;
 
-	/// Очередь готовых блоков.
-	typedef ConcurrentBoundedQueue<Block> OutputQueue;
+	/// Блок или эксепшен.
+	struct OutputData
+	{
+		Block block;
+		ExceptionPtr exception;
+
+		OutputData() {}
+		OutputData(Block & block_) : block(block_) {}
+		OutputData(ExceptionPtr & exception_) : exception(exception_) {}
+	};
+
+	/// Очередь готовых блоков. Также туда можно положить эксепшен вместо блока.
+	typedef ConcurrentBoundedQueue<OutputData> OutputQueue;
 	OutputQueue output_queue;
 
 	/// Для операций с очередями.
