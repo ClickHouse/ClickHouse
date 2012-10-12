@@ -78,7 +78,7 @@ public:
 	Packet receivePacket();
 
 private:
-	/// Адрес сервера.
+	/// Адрес сервера - для сообщений в логе и в эксепшенах.
 	String getServerAddress() const;
 	
 	String host;
