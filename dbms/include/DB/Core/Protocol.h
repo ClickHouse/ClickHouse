@@ -53,7 +53,9 @@ namespace Protocol
 		inline const char * toString(Enum packet)
 		{
 			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream" };
-			return data[packet];
+			return packet >= 0 && packet < static_cast<ssize_t>(sizeof(data))
+				? data[packet]
+				: "Unknown packet";
 		}
 	}
 
@@ -74,7 +76,9 @@ namespace Protocol
 		inline const char * toString(Enum packet)
 		{
 			static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping" };
-			return data[packet];
+			return packet >= 0 && packet < static_cast<ssize_t>(sizeof(data))
+				? data[packet]
+				: "Unknown packet";
 		}
 	}
 

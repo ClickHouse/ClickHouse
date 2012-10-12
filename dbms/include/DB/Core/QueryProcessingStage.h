@@ -17,7 +17,9 @@ namespace QueryProcessingStage
 	inline const char * toString(Enum stage)
 	{
 		static const char * data[] = { "FetchColumns", "WithMergeableState", "Complete" };
-		return data[stage];
+		return stage >= 0 && stage < static_cast<ssize_t>(sizeof(data))
+			? data[stage]
+			: "Unknown stage";
 	}
 }
 
