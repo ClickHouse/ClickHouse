@@ -78,9 +78,6 @@ public:
 	Packet receivePacket();
 
 private:
-	/// Адрес сервера - для сообщений в логе и в эксепшенах.
-	String getServerAddress() const;
-	
 	String host;
 	UInt16 port;
 	String default_database;
@@ -124,6 +121,9 @@ private:
 	Block receiveData();
 	SharedPtr<Exception> receiveException();
 	Progress receiveProgress();
+
+	/// Адрес сервера - для сообщений в логе и в эксепшенах.
+	String getServerAddress() const;
 };
 
 
