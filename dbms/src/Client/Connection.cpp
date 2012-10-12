@@ -232,7 +232,7 @@ Block Connection::receiveData()
 SharedPtr<Exception> Connection::receiveException()
 {
 	Exception e;
-	readException(e, *in);
+	readException(e, *in, "Received from " + socket.address().toString());
 	return e.clone();
 }
 
