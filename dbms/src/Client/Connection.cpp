@@ -231,10 +231,7 @@ Block Connection::receiveData()
 
 String Connection::getServerAddress() const
 {
-	std::stringstream s;
-	/// Для IPv6 адресов будет не хватать квадратных скобочек, но это не важно.
-	s << host << ':' << port;
-	return s.str();
+	return Poco::Net::SocketAddress(host, port).toString();
 }
 
 
