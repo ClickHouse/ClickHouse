@@ -60,7 +60,7 @@ void Connection::receiveHello()
 	else if (packet_type == Protocol::Server::Exception)
 		receiveException()->rethrow();
 	else
-		throw Exception("Unexpected packet from server (expected Hello or Exception, got "
+		throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Hello or Exception, got "
 			+ String(Protocol::Server::toString(Protocol::Server::Enum(packet_type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 
@@ -122,7 +122,7 @@ bool Connection::ping()
 	}
 
 	if (pong != Protocol::Server::Pong)
-		throw Exception("Unexpected packet from server (expected Pong, got "
+		throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Pong, got "
 			+ String(Protocol::Server::toString(Protocol::Server::Enum(pong))) + ")",
 			ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 
@@ -207,7 +207,7 @@ Connection::Packet Connection::receivePacket()
 			return res;
 
 		default:
-			throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+			throw Exception("Unknown packet from server" + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 	}
 }
 
@@ -229,10 +229,16 @@ Block Connection::receiveData()
 }
 
 
+String Connection::getServerAddress() const
+{
+	return socket.address().toString();
+}
+
+
 SharedPtr<Exception> Connection::receiveException()
 {
 	Exception e;
-	readException(e, *in, "Received from " + socket.address().toString());
+	readException(e, *in, "Received from " + getServerAddress());
 	return e.clone();
 }
 

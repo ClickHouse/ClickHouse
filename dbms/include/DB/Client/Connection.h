@@ -76,8 +76,11 @@ public:
 
 	/// Получить пакет от сервера.
 	Packet receivePacket();
-	
+
 private:
+	/// Адрес сервера.
+	String getServerAddress() const;
+	
 	String host;
 	UInt16 port;
 	String default_database;
