@@ -13,6 +13,12 @@ FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize
 	children.push_back(input);
 }
 
+FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, const String & filter_column_name_)
+	: input(input_), filter_column(-1), filter_column_name(filter_column_name_)
+{
+	children.push_back(input);
+}
+
 
 Block FilterBlockInputStream::readImpl()
 {
@@ -23,11 +29,16 @@ Block FilterBlockInputStream::readImpl()
 		if (!res)
 			return res;
 
+		//std::cerr << res.dumpNames() << std::endl;
+
 		/// Если кроме столбца с фильтром ничего нет.
 		if (res.columns() <= 1)
 			throw Exception("There is only filter column in block.", ErrorCodes::ONLY_FILTER_COLUMN_IN_BLOCK);
 
-		if (filter_column < 0)
+		/// Найдём настоящую позицию столбца с фильтром в блоке.
+		if (!filter_column_name.empty())
+			filter_column = res.getPositionByName(filter_column_name);
+		else if (filter_column < 0)
 			filter_column = static_cast<ssize_t>(res.columns()) + filter_column;
 
 		/// Любой столбец - не являющийся фильтром.

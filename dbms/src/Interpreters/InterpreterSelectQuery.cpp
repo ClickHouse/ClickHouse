@@ -274,7 +274,7 @@ void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, Expressio
 			BlockInputStreamPtr & stream = *it;
 			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_WHERE), is_async);
 			// TODO: Убрать лишние столбцы
-			stream = maybeAsynchronous(new FilterBlockInputStream(stream), is_async);
+			stream = maybeAsynchronous(new FilterBlockInputStream(stream, query.where_expression->getColumnName()), is_async);
 		}
 	}
 }
@@ -361,7 +361,7 @@ void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, Expressi
 		{
 			BlockInputStreamPtr & stream = *it;
 			stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression, PART_HAVING), is_async);
-			stream = maybeAsynchronous(new FilterBlockInputStream(stream), is_async);
+			stream = maybeAsynchronous(new FilterBlockInputStream(stream, query.having_expression->getColumnName()), is_async);
 		}
 	}
 }
