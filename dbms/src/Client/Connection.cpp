@@ -231,7 +231,7 @@ Block Connection::receiveData()
 
 String Connection::getServerAddress() const
 {
-	return socket.address().toString();
+	return Poco::Net::SocketAddress(host, port).toString();
 }
 
 
