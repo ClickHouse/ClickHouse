@@ -36,10 +36,8 @@ Block FilterBlockInputStream::readImpl()
 			throw Exception("There is only filter column in block.", ErrorCodes::ONLY_FILTER_COLUMN_IN_BLOCK);
 
 		/// Найдём настоящую позицию столбца с фильтром в блоке.
-		if (!filter_column_name.empty())
+		if (filter_column == -1)
 			filter_column = res.getPositionByName(filter_column_name);
-		else if (filter_column < 0)
-			filter_column = static_cast<ssize_t>(res.columns()) + filter_column;
 
 		/// Любой столбец - не являющийся фильтром.
 		IColumn & any_not_filter_column = *res.getByPosition(filter_column == 0 ? 1 : 0).column;
