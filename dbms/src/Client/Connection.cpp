@@ -20,14 +20,22 @@ namespace DB
 
 void Connection::connect()
 {
-	socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
-	socket.setReceiveTimeout(receive_timeout);
-	socket.setSendTimeout(send_timeout);
+	try
+	{
+		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
+		socket.setReceiveTimeout(receive_timeout);
+		socket.setSendTimeout(send_timeout);
 
-	connected = true;
+		connected = true;
 
-	sendHello();
-	receiveHello();
+		sendHello();
+		receiveHello();
+	}
+	catch (Poco::Net::NetException & e)
+	{
+		/// Добавляем в сообщение адрес сервера. Жаль, что более точный тип исключения теряется.
+		throw Poco::Net::NetException(e.displayText(), "(" + getServerAddress() + ")", e.code());
+	}
 }
 
 
