@@ -81,7 +81,11 @@ public:
 		/// Если ещё прочитали не все данные, но они больше не нужны, то отправим просьбу прервать выполнение запроса.
 		if (sent_query && !finished)
 		{
-			connection.sendCancel();
+			if (!cancelled)
+			{
+				cancelled = true;
+				connection.sendCancel();
+			}
 
 			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
 			while (true)
