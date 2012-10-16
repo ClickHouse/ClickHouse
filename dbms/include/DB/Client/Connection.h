@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Yandex/logger_useful.h>
+
 #include <Poco/Net/StreamSocket.h>
 
 #include <DB/Core/Defines.h>
@@ -44,7 +46,8 @@ public:
 		server_version_major(0), server_version_minor(0), server_revision(0),
 		socket(), in(new ReadBufferFromPocoSocket(socket)), out(new WriteBufferFromPocoSocket(socket)),
 		query_id(0), compression(compression_), data_type_factory(data_type_factory_),
-		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_)
+		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
+		log(&Logger::get("Connection (" + Poco::Net::SocketAddress(host, port).toString() + ")"))
 	{
 		/// Соединеняемся не сразу, а при первой необходимости.
 	}
@@ -114,6 +117,8 @@ private:
 	/// Куда писать данные INSERT-а.
 	SharedPtr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
+
+	Logger * log;
 
 	void connect();
 	void sendHello();

@@ -22,6 +22,8 @@ void Connection::connect()
 {
 	try
 	{
+		LOG_TRACE(log, "Connecting");
+		
 		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
 		socket.setReceiveTimeout(receive_timeout);
 		socket.setSendTimeout(send_timeout);
@@ -30,6 +32,21 @@ void Connection::connect()
 
 		sendHello();
 		receiveHello();
+
+		{
+			String server_name;
+			UInt64 server_version_major = 0;
+			UInt64 server_version_minor = 0;
+			UInt64 server_revision = 0;
+
+			getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+
+			LOG_TRACE(log, "Connected to " << server_name
+				<< " server version " << server_version_major
+				<< "." << server_version_minor
+				<< "." << server_revision
+				<< ".");
+		}
 	}
 	catch (Poco::Net::NetException & e)
 	{
@@ -100,6 +117,7 @@ void Connection::forceConnected()
 		{
 			if (!ping())
 			{
+				LOG_TRACE(log, "Connection was closed, will reconnect.");
 				socket.close();
 				connect();
 			}
