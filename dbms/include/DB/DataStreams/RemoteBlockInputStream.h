@@ -31,19 +31,6 @@ public:
 		
 		while (true)
 		{
-			/// Периодически (каждую секунду) проверяем, не запрошено ли прервать запрос.
-			while (!cancelled && !connection.poll(1000000))
-			{
-				if (is_cancelled_callback && is_cancelled_callback())
-				{
-					LOG_TRACE(log, "Cancelling query");
-					
-					/// Если да - запросим удалённый сервер тоже прервать запрос.
-					cancelled = true;
-					connection.sendCancel();
-				}
-			}
-			
 			Connection::Packet packet = connection.receivePacket();
 
 			switch (packet.type)
@@ -64,6 +51,16 @@ public:
 				case Protocol::Server::Progress:
 					if (progress_callback)
 						progress_callback(packet.progress.rows, packet.progress.bytes);
+
+					if (is_cancelled_callback && is_cancelled_callback())
+					{
+						LOG_TRACE(log, "Cancelling query");
+
+						/// Если да - запросим удалённый сервер тоже прервать запрос.
+						cancelled = true;
+						connection.sendCancel();
+					}
+					
 					break;
 
 				default:
