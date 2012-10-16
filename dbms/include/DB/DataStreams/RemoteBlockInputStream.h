@@ -52,7 +52,7 @@ public:
 					if (progress_callback)
 						progress_callback(packet.progress.rows, packet.progress.bytes);
 
-					if (is_cancelled_callback && is_cancelled_callback())
+					if (!cancelled && is_cancelled_callback && is_cancelled_callback())
 					{
 						LOG_TRACE(log, "Cancelling query");
 
