@@ -16,7 +16,7 @@ class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	RemoteBlockInputStream(Connection & connection_, const String & query_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: connection(connection_), query(query_), stage(stage_), sent_query(false), finished(false), cancelled(false),
+		: connection(connection_), query(query_), stage(stage_), sent_query(false), finished(false), was_cancelled(false),
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
 	}
@@ -52,12 +52,12 @@ public:
 					if (progress_callback)
 						progress_callback(packet.progress.rows, packet.progress.bytes);
 
-					if (!cancelled && is_cancelled_callback && is_cancelled_callback())
+					if (!was_cancelled && (is_cancelled || (is_cancelled_callback && is_cancelled_callback())))
 					{
 						LOG_TRACE(log, "Cancelling query");
 
 						/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-						cancelled = true;
+						was_cancelled = true;
 						connection.sendCancel();
 					}
 					
@@ -83,11 +83,11 @@ public:
 		/// Если ещё прочитали не все данные, но они больше не нужны, то отправим просьбу прервать выполнение запроса.
 		if (sent_query && !finished)
 		{
-			if (!cancelled)
+			if (!was_cancelled)
 			{
 				LOG_TRACE(log, "Cancelling query because enough data has been read");
 				
-				cancelled = true;
+				was_cancelled = true;
 				connection.sendCancel();
 			}
 
@@ -125,7 +125,7 @@ private:
 
 	bool sent_query;
 	bool finished;
-	bool cancelled;
+	bool was_cancelled;
 
 	Logger * log;
 };

@@ -128,6 +128,8 @@ public:
 		LOG_TRACE(log, "Waiting for threads to finish");
 
 		finish = true;
+		cancel();
+		
 		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			it->thread->join();
 

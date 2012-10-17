@@ -45,6 +45,8 @@ struct BlockStreamProfileInfo
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
+	IProfilingBlockInputStream() : is_cancelled(false) {}
+	
 	Block read();
 
 	/// Наследники должны реализовать эту функцию.
@@ -52,6 +54,11 @@ public:
 
 	/// Получить информацию о скорости выполнения.
 	const BlockStreamProfileInfo & getInfo() const;
+
+	/** Попросить прервать получение данных как можно скорее.
+	  * По-умолчанию - просто выставляет флаг is_cancelled и просит прерваться всех детей.
+	  */
+	virtual void cancel();
 
 	/** Установить колбэк, который вызывается, чтобы проверить, не был ли запрос остановлен.
 	  * Колбэк пробрасывается во все листовые источники и вызывается там перед чтением данных.
@@ -74,6 +81,7 @@ public:
 
 protected:
 	BlockStreamProfileInfo info;
+	volatile bool is_cancelled;
 	IsCancelledCallback is_cancelled_callback;
 	ProgressCallback progress_callback;
 };
