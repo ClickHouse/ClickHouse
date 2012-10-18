@@ -83,8 +83,11 @@ Block IProfilingBlockInputStream::read()
 		info.started = true;
 	}
 
-	if (is_cancelled || (is_cancelled_callback && is_cancelled_callback()))
+	if (isCancelled())
+	{
+		is_cancelled = true;
 		return Block();
+	}
 
 	info.work_stopwatch.start();
 	Block res = readImpl();

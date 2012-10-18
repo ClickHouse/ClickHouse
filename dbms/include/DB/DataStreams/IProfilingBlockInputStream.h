@@ -55,6 +55,19 @@ public:
 	/// Получить информацию о скорости выполнения.
 	const BlockStreamProfileInfo & getInfo() const;
 
+	/** Установить колбэк прогресса выполнения.
+	  * Колбэк пробрасывается во все источники.
+	  * По-умолчанию, он вызывается для листовых источников, после каждого блока.
+	  * (Но это может быть переопределено в методе progress())
+	  * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
+	  * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
+	  */
+	typedef boost::function<void(size_t, size_t)> ProgressCallback;
+	void setProgressCallback(ProgressCallback callback);
+
+	virtual void progress(Block & block);
+
+
 	/** Попросить прервать получение данных как можно скорее.
 	  * По-умолчанию - просто выставляет флаг is_cancelled и просит прерваться всех детей.
 	  */
@@ -67,17 +80,16 @@ public:
 	typedef boost::function<bool()> IsCancelledCallback;
 	void setIsCancelledCallback(IsCancelledCallback callback);
 
-	/** Установить колбэк прогресса выполнения.
-	  * Колбэк пробрасывается во все источники.
-	  * По-умолчанию, он вызывается для листовых источников, после каждого блока.
-	  * (Но это может быть переопределено в методе progress())
-	  * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
-	  * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
-	  */
-	typedef boost::function<void(size_t, size_t)> ProgressCallback;
-	void setProgressCallback(ProgressCallback callback);
 
-	virtual void progress(Block & block);
+	/** Требуется ли прервать получение данных.
+	  */
+	bool isCancelled()
+	{
+		if (is_cancelled || (is_cancelled_callback && is_cancelled_callback()))
+			is_cancelled = true;
+
+		return is_cancelled;
+	}
 
 protected:
 	BlockStreamProfileInfo info;

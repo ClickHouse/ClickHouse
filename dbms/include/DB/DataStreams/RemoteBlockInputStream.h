@@ -21,7 +21,8 @@ public:
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
 	}
-		
+
+
 	Block readImpl()
 	{
 		if (!sent_query)
@@ -54,14 +55,8 @@ public:
 					if (progress_callback)
 						progress_callback(packet.progress.rows, packet.progress.bytes);
 
-					if (!was_cancelled && (is_cancelled || (is_cancelled_callback && is_cancelled_callback())))
-					{
-						LOG_TRACE(log, "Cancelling query");
-
-						/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-						was_cancelled = true;
-						connection.sendCancel();
-					}
+					if (!was_cancelled && isCancelled())
+						cancel();
 					
 					break;
 
@@ -71,14 +66,31 @@ public:
 		}
 	}
 
+
 	String getName() const { return "RemoteBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new RemoteBlockInputStream(connection, query, stage); }
+
 
 	/** Отменяем умолчальное уведомление о прогрессе,
 	  * так как колбэк прогресса вызывается самостоятельно.
 	  */
 	void progress(Block & block) {}
+
+
+	void cancel()
+	{
+		if (!was_cancelled)
+		{
+			LOG_TRACE(log, "Cancelling query");
+
+			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
+			is_cancelled = true;
+			was_cancelled = true;
+			connection.sendCancel();
+		}
+	}
+
 
     ~RemoteBlockInputStream()
 	{
