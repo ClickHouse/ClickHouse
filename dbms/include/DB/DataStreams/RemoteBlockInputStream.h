@@ -109,11 +109,9 @@ public:
 		  */
 
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
-		if (!was_cancelled)
+		if (!was_cancelled && !std::uncaught_exception())
 		{
-			LOG_TRACE(log, (std::uncaught_exception()
-				? "Cancelling query because of exception on client"
-				: "Cancelling query because enough data has been read"));
+			LOG_TRACE(log, "Cancelling query because enough data has been read");
 				
 			was_cancelled = true;
 			connection.sendCancel();
