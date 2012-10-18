@@ -16,7 +16,8 @@ class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	RemoteBlockInputStream(Connection & connection_, const String & query_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: connection(connection_), query(query_), stage(stage_), sent_query(false), finished(false), was_cancelled(false),
+		: connection(connection_), query(query_), stage(stage_),
+		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
 	}
@@ -41,6 +42,7 @@ public:
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
 				case Protocol::Server::Exception:
+					got_exception_from_server = true;
 					packet.exception->rethrow();
 					break;
 
@@ -80,40 +82,56 @@ public:
 
     ~RemoteBlockInputStream()
 	{
-		/// Если ещё прочитали не все данные, но они больше не нужны, то отправим просьбу прервать выполнение запроса.
-		if (sent_query && !finished)
+		/** Если одно из:
+		  *   - ничего не начинали делать;
+		  *   - получили все пакеты до EndOfStream;
+		  *   - получили с сервера эксепшен;
+		  * - то больше читать ничего не нужно.
+		  */
+		if (!sent_query || finished || got_exception_from_server)
+			return;
+		
+		/** Если ещё прочитали не все данные, но они больше не нужны.
+		  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
+	      *  или если на стороне клиента произошло исключение.
+		  */
+
+		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
+		if (!was_cancelled)
 		{
-			if (!was_cancelled && !std::uncaught_exception())
-			{
-				LOG_TRACE(log, "Cancelling query because enough data has been read");
+			LOG_TRACE(log, (std::uncaught_exception()
+				? "Cancelling query because of exception on client"
+				: "Cancelling query because enough data has been read"));
 				
-				was_cancelled = true;
-				connection.sendCancel();
-			}
+			was_cancelled = true;
+			connection.sendCancel();
+		}
 
-			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
-			while (true)
+		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
+		while (true)
+		{
+			Connection::Packet packet = connection.receivePacket();
+
+			switch (packet.type)
 			{
-				Connection::Packet packet = connection.receivePacket();
+				case Protocol::Server::Data:
+				case Protocol::Server::Progress:
+					break;
 
-				switch (packet.type)
-				{
-					case Protocol::Server::Data:
-					case Protocol::Server::Progress:
-						break;
+				case Protocol::Server::EndOfStream:
+					return;
 
-					case Protocol::Server::EndOfStream:
-						return;
+				case Protocol::Server::Exception:
+					if (!got_exception_from_server && !std::uncaught_exception())
+					{
+						got_exception_from_server = true;
+						packet.exception->rethrow();
+					}
+					break;
 
-					case Protocol::Server::Exception:
-						if (!std::uncaught_exception())
-							packet.exception->rethrow();
-						break;
-
-					default:
-						if (!std::uncaught_exception())
-							throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-				}
+				default:
+					if (!std::uncaught_exception())
+						throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
 	}
@@ -123,9 +141,24 @@ private:
 	const String query;
 	QueryProcessingStage::Enum stage;
 
+	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query;
+	
+	/** Получили все данные от сервера, до пакета EndOfStream.
+	  * Если при уничтожении объекта, ещё не все данные считаны,
+	  *  то для того, чтобы не было рассинхронизации, на сервер отправляется просьба прервать выполнение запроса,
+	  *  и после этого считываются все пакеты до EndOfStream.
+	  */
 	bool finished;
+	
+	/** На сервер была отправлена просьба прервать выполенение запроса, так как данные больше не нужны.
+	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
+	  *  или если на стороне клиента произошло исключение.
+	  */
 	bool was_cancelled;
+
+	/// С сервера было получено исключение. В этом случае получать больше пакетов или просить прервать запрос не нужно.
+	bool got_exception_from_server;
 
 	Logger * log;
 };
