@@ -83,7 +83,7 @@ public:
 		/// Если ещё прочитали не все данные, но они больше не нужны, то отправим просьбу прервать выполнение запроса.
 		if (sent_query && !finished)
 		{
-			if (!was_cancelled)
+			if (!was_cancelled && !std::uncaught_exception())
 			{
 				LOG_TRACE(log, "Cancelling query because enough data has been read");
 				
