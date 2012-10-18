@@ -55,7 +55,7 @@ public:
 					if (progress_callback)
 						progress_callback(packet.progress.rows, packet.progress.bytes);
 
-					if (!was_cancelled && isCancelled())
+					if (!was_cancelled && !finished && isCancelled())
 						cancel();
 					
 					break;
@@ -80,7 +80,7 @@ public:
 
 	void cancel()
 	{
-		if (!was_cancelled)
+		if (!was_cancelled && !finished)
 		{
 			LOG_TRACE(log, "Cancelling query");
 
