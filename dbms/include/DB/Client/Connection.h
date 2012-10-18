@@ -121,6 +121,7 @@ private:
 	Logger * log;
 
 	void connect();
+	void disconnect();
 	void sendHello();
 	void receiveHello();
 	void forceConnected();

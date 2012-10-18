@@ -23,7 +23,7 @@ void Connection::connect()
 	try
 	{
 		LOG_TRACE(log, "Connecting");
-		
+
 		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
 		socket.setReceiveTimeout(receive_timeout);
 		socket.setSendTimeout(send_timeout);
@@ -53,6 +53,13 @@ void Connection::connect()
 		/// Добавляем в сообщение адрес сервера. Жаль, что более точный тип исключения теряется.
 		throw Poco::Net::NetException(e.displayText(), "(" + getServerAddress() + ")", e.code());
 	}
+}
+
+
+void Connection::disconnect()
+{
+	socket.close();
+	connected = false;
 }
 
 
@@ -87,7 +94,7 @@ void Connection::receiveHello()
 	else
 	{
 		/// Закроем соединение, чтобы не было рассинхронизации.
-		socket.close();
+		disconnect();
 		
 		throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Hello or Exception, got "
 			+ String(Protocol::Server::toString(Protocol::Server::Enum(packet_type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
@@ -110,56 +117,55 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
 void Connection::forceConnected()
 {
 	if (!connected)
-		connect();
-	else
 	{
-		try
-		{
-			if (!ping())
-			{
-				LOG_TRACE(log, "Connection was closed, will reconnect.");
-				socket.close();
-				connect();
-			}
-		}
-		catch (const Poco::Net::NetException & e)
-		{
-			connect();
-		}
+		connect();
+	}
+	else if (!ping())
+	{
+		LOG_TRACE(log, "Connection was closed, will reconnect.");
+		connect();
 	}
 }
 
 
 bool Connection::ping()
 {
-	UInt64 pong = 0;
-	writeVarUInt(Protocol::Client::Ping, *out);
-	out->next();
-
-	if (in->eof())
-		return false;
-
-	readVarUInt(pong, *in);
-
-	/// Можем получить запоздалые пакеты прогресса. TODO: может быть, это можно исправить.
-	while (pong == Protocol::Server::Progress)
+	try
 	{
-		receiveProgress();
+		UInt64 pong = 0;
+		writeVarUInt(Protocol::Client::Ping, *out);
+		out->next();
 
 		if (in->eof())
 			return false;
 
 		readVarUInt(pong, *in);
-	}
 
-	if (pong != Protocol::Server::Pong)
+		/// Можем получить запоздалые пакеты прогресса. TODO: может быть, это можно исправить.
+		while (pong == Protocol::Server::Progress)
+		{
+			receiveProgress();
+
+			if (in->eof())
+				return false;
+
+			readVarUInt(pong, *in);
+		}
+
+		if (pong != Protocol::Server::Pong)
+		{
+			throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Pong, got "
+				+ String(Protocol::Server::toString(Protocol::Server::Enum(pong))) + ")",
+				ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+		}
+	}
+	catch (const Poco::Exception & e)
 	{
 		/// Закроем соединение, чтобы не было рассинхронизации.
-		socket.close();
-		
-		throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Pong, got "
-			+ String(Protocol::Server::toString(Protocol::Server::Enum(pong))) + ")",
-			ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+		disconnect();
+
+		LOG_TRACE(log, e.displayText());
+		return false;
 	}
 
 	return true;
@@ -244,7 +250,7 @@ Connection::Packet Connection::receivePacket()
 
 		default:
 			/// Закроем соединение, чтобы не было рассинхронизации.
-			socket.close();
+			disconnect();
 			throw Exception("Unknown packet from server" + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 	}
 }
