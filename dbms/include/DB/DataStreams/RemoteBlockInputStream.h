@@ -98,18 +98,19 @@ public:
 		  *   - ничего не начинали делать;
 		  *   - получили все пакеты до EndOfStream;
 		  *   - получили с сервера эксепшен;
+		  *   - объект уничтожается из-за эксепшена;
 		  * - то больше читать ничего не нужно.
 		  */
-		if (!sent_query || finished || got_exception_from_server)
+		if (!sent_query || finished || got_exception_from_server || std::uncaught_exception())
 			return;
-		
+
 		/** Если ещё прочитали не все данные, но они больше не нужны.
 		  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
 	      *  или если на стороне клиента произошло исключение.
 		  */
 
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
-		if (!was_cancelled && !std::uncaught_exception())
+		if (!was_cancelled)
 		{
 			LOG_TRACE(log, "Cancelling query because enough data has been read");
 				
@@ -132,16 +133,12 @@ public:
 					return;
 
 				case Protocol::Server::Exception:
-					if (!got_exception_from_server && !std::uncaught_exception())
-					{
-						got_exception_from_server = true;
-						packet.exception->rethrow();
-					}
+					got_exception_from_server = true;
+					packet.exception->rethrow();
 					break;
 
 				default:
-					if (!std::uncaught_exception())
-						throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
 	}

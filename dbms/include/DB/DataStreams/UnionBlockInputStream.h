@@ -187,6 +187,7 @@ private:
 			{
 				/// Попросим остальные потоки побыстрее прекратить работу.
 				parent.finish = true;
+				parent.cancel();
 
 				/// Отдаём эксепшен в основной поток.
 				parent.output_queue.push(exception);
