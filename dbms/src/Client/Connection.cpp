@@ -22,6 +22,9 @@ void Connection::connect()
 {
 	try
 	{
+		if (connected)
+			disconnect();
+		
 		LOG_TRACE(log, "Connecting");
 
 		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
@@ -161,9 +164,6 @@ bool Connection::ping()
 	}
 	catch (const Poco::Exception & e)
 	{
-		/// Закроем соединение, чтобы не было рассинхронизации.
-		disconnect();
-
 		LOG_TRACE(log, e.displayText());
 		return false;
 	}

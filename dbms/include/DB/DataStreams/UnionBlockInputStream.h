@@ -102,6 +102,8 @@ public:
 
 		finish = true;
 		cancel();
+
+		// TODO: может быть, здесь может возникнуть блокировка, если очередь переполнена, и какой-нибудь из потоков попытается положить в неё блок.
 		
 		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			it->thread->join();

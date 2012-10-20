@@ -166,7 +166,10 @@ void TCPHandler::processOrdinaryQuery()
 					break;
 				}
 				else if (isQueryCancelled())
+				{
 					async_in.cancel();
+					break;
+				}
 			}
 
 			sendData(block);
@@ -262,6 +265,14 @@ bool TCPHandler::receivePacket()
 				writeVarUInt(Protocol::Server::Pong, *out);
 				out->next();
 				break;
+
+			case Protocol::Client::Cancel:
+				/// Если пришёл запоздавший пакет Cancel, то игнорируем его.
+				break;
+				
+			case Protocol::Client::Hello:
+				throw Exception("Unexpected packet " + String(Protocol::Client::toString(Protocol::Client::Enum(packet_type))) + " received from client",
+					ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
 			default:
 				throw Exception("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
