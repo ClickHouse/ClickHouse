@@ -56,6 +56,18 @@ public:
 		}
 		empty_count.set();
 	}
+
+	void clear()
+	{
+		while (fill_count.tryWait(0))
+		{
+			{
+				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				queue.pop();
+			}
+			empty_count.set();
+		}
+	}
 };
 
 
@@ -103,8 +115,13 @@ public:
 		finish = true;
 		cancel();
 
-		// TODO: может быть, здесь может возникнуть блокировка, если очередь переполнена, и какой-нибудь из потоков попытается положить в неё блок.
-		
+		/// Вынем всё, что есть в очереди готовых данных.
+		output_queue.clear();
+
+		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
+		  * PS. Может быть, для переменной finish нужен барьер?
+		  */
+
 		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			it->thread->join();
 
