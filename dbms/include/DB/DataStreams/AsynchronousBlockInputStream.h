@@ -115,6 +115,7 @@ protected:
 	{
 		if (!started)
 		{
+			started = true;
 			thread = new Poco::Thread;
 			thread->start(runnable);
 		}
@@ -163,8 +164,14 @@ protected:
 
 		void loop()
 		{
-			while (Block res = parent.in->read())
+			while (true)
+			{
+				Block res = parent.in->read();
 				parent.output_queue.push(res);
+
+				if (!res)
+					break;
+			}
 		}
 
 	private:
