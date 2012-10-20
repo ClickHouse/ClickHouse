@@ -36,7 +36,7 @@ public:
 
 	void cancel()
 	{
-		if (!was_cancelled && !finished)
+		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
 			LOG_TRACE(log, "Cancelling query");
 
