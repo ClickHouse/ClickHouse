@@ -52,6 +52,7 @@ public:
 	/// Получить информацию о скорости выполнения.
 	const BlockStreamProfileInfo & getInfo() const;
 
+
 	/** Установить колбэк прогресса выполнения.
 	  * Колбэк пробрасывается во все источники.
 	  * По-умолчанию, он вызывается для листовых источников, после каждого блока.
@@ -70,28 +71,16 @@ public:
 	  */
 	virtual void cancel();
 
-	/** Установить колбэк, который вызывается, чтобы проверить, не был ли запрос остановлен.
-	  * Колбэк пробрасывается во все листовые источники и вызывается там перед чтением данных.
-	  * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
-	  */
-	typedef boost::function<bool()> IsCancelledCallback;
-	void setIsCancelledCallback(IsCancelledCallback callback);
-
-
 	/** Требуется ли прервать получение данных.
-	  */
+	 */
 	bool isCancelled()
 	{
-		if (is_cancelled || (is_cancelled_callback && is_cancelled_callback()))
-			is_cancelled = true;
-
 		return is_cancelled;
 	}
 
 protected:
 	BlockStreamProfileInfo info;
 	volatile bool is_cancelled;
-	IsCancelledCallback is_cancelled_callback;
 	ProgressCallback progress_callback;
 
 	/// Наследники должны реализовать эту функцию.

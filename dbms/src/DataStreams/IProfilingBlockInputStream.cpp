@@ -83,11 +83,8 @@ Block IProfilingBlockInputStream::read()
 		info.started = true;
 	}
 
-	if (isCancelled())
-	{
-		is_cancelled = true;
+	if (is_cancelled)
 		return Block();
-	}
 
 	info.work_stopwatch.start();
 	Block res = readImpl();
@@ -141,15 +138,6 @@ void IProfilingBlockInputStream::progress(Block & block)
 const BlockStreamProfileInfo & IProfilingBlockInputStream::getInfo() const
 {
 	return info;
-}
-
-
-void IProfilingBlockInputStream::setIsCancelledCallback(IsCancelledCallback callback)
-{
-	BlockInputStreams leaves = getLeaves();
-	for (BlockInputStreams::iterator it = leaves.begin(); it != leaves.end(); ++it)
-		if (IProfilingBlockInputStream * leaf = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-			leaf->is_cancelled_callback = callback;
 }
 
 

@@ -13,7 +13,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/copyData.h>
 
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 
 #include "TCPHandler.h"
@@ -146,20 +146,29 @@ void TCPHandler::processOrdinaryQuery()
 	/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
 	if (state.io.in)
 	{
-		if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
-		{
-			profiling_in->setIsCancelledCallback(boost::bind(&TCPHandler::isQueryCancelled, this));
-			profiling_in->setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
+		AsynchronousBlockInputStream async_in(state.io.in);
+		async_in.setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
 
-			std::stringstream query_pipeline;
-			profiling_in->dumpTree(query_pipeline);
-			LOG_DEBUG(log, "Query pipeline:\n" << query_pipeline.rdbuf());
-		}
+		std::stringstream query_pipeline;
+		async_in.dumpTree(query_pipeline);
+		LOG_DEBUG(log, "Query pipeline:\n" << query_pipeline.rdbuf());
 
 		Stopwatch watch;
 		while (true)
 		{
-			Block block = state.io.in->read();
+			Block block;
+			
+			while (true)
+			{
+				if (async_in.poll(state.context.getSettingsRef().interactive_delay / 1000))
+				{
+					block = async_in.read();
+					break;
+				}
+				else if (isQueryCancelled())
+					async_in.cancel();
+			}
+
 			sendData(block);
 			if (!block)
 				break;
@@ -312,21 +321,17 @@ bool TCPHandler::receiveData()
 
 bool TCPHandler::isQueryCancelled()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(is_cancelled_mutex);
-
 	if (state.is_cancelled || state.sent_all_data)
 		return true;
-	
+
 	if (after_check_cancelled.elapsed() / 1000 < state.context.getSettingsRef().interactive_delay)
 		return false;
 
 	after_check_cancelled.restart();
-	
+
 	/// Во время выполнения запроса, единственный пакет, который может прийти от клиента - это остановка выполнения запроса.
 	if (in->poll(0))
 	{
-	//	std::cerr << "checking cancelled; socket has data" << std::endl;
-		
 		UInt64 packet_type = 0;
 		readVarUInt(packet_type, *in);
 
