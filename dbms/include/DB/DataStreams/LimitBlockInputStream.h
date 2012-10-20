@@ -17,11 +17,13 @@ class LimitBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_ = 0);
-	Block readImpl();
-
+	
 	String getName() const { return "LimitBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new LimitBlockInputStream(input, limit, offset); }
+
+protected:
+	Block readImpl();
 
 private:
 	BlockInputStreamPtr input;

@@ -22,6 +22,11 @@ public:
 		children.push_back(input);
 	}
 
+	String getName() const { return "FinalizingAggregatedBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new FinalizingAggregatedBlockInputStream(input); }
+
+protected:
 	Block readImpl()
 	{
 		Block res = input->read();
@@ -42,17 +47,13 @@ public:
 
 				for (size_t j = 0; j < rows; ++j)
 					finalized_column->insert(data[j]->getResult());
-				
+
 				column.column = finalized_column;
 			}
 		}
 
 		return res;
 	}
-
-	String getName() const { return "FinalizingAggregatedBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new FinalizingAggregatedBlockInputStream(input); }
 
 private:
 	BlockInputStreamPtr input;

@@ -48,6 +48,11 @@ public:
 		children.push_back(input);
 	}
 	
+	String getName() const { return "ArrayJoiningBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new ArrayJoiningBlockInputStream(input, array_column); }
+
+protected:
 	Block readImpl()
 	{
 		Block block = input->read();
@@ -67,7 +72,7 @@ public:
 		for (size_t i = 0; i < columns; ++i)
 		{
 			ColumnWithNameAndType & current = block.getByPosition(i);
-			
+
 			if (static_cast<ssize_t>(i) == array_column)
 			{
 				ColumnWithNameAndType result;
@@ -84,10 +89,6 @@ public:
 
 		return block;
 	}
-
-	String getName() const { return "ArrayJoiningBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ArrayJoiningBlockInputStream(input, array_column); }
 
 private:
 	BlockInputStreamPtr input;

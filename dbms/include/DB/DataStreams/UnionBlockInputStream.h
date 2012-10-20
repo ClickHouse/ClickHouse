@@ -92,12 +92,30 @@ public:
 		}
 	}
 
+	String getName() const { return "UnionBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new UnionBlockInputStream(children, max_threads); }
+
+	~UnionBlockInputStream()
+	{
+		LOG_TRACE(log, "Waiting for threads to finish");
+
+		finish = true;
+		cancel();
+		
+		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
+			it->thread->join();
+
+		LOG_TRACE(log, "Waited for threads to finish");
+	}
+
+protected:
 	Block readImpl()
 	{
 		OutputData res;
 		if (finish)
 			return res.block;
-		
+
 		/// Запускаем потоки, если это ещё не было сделано.
 		if (threads_data.empty())
 		{
@@ -117,23 +135,6 @@ public:
 			res.exception->rethrow();
 
 		return res.block;
-	}
-
-	String getName() const { return "UnionBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new UnionBlockInputStream(children, max_threads); }
-
-	~UnionBlockInputStream()
-	{
-		LOG_TRACE(log, "Waiting for threads to finish");
-
-		finish = true;
-		cancel();
-		
-		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-			it->thread->join();
-
-		LOG_TRACE(log, "Waited for threads to finish");
 	}
 
 private:

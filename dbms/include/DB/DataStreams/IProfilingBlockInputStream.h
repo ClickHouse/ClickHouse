@@ -49,9 +49,6 @@ public:
 	
 	Block read();
 
-	/// Наследники должны реализовать эту функцию.
-	virtual Block readImpl() = 0;
-
 	/// Получить информацию о скорости выполнения.
 	const BlockStreamProfileInfo & getInfo() const;
 
@@ -96,6 +93,9 @@ protected:
 	volatile bool is_cancelled;
 	IsCancelledCallback is_cancelled_callback;
 	ProgressCallback progress_callback;
+
+	/// Наследники должны реализовать эту функцию.
+	virtual Block readImpl() = 0;
 };
 
 }

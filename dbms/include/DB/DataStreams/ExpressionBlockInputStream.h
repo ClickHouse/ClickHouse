@@ -28,6 +28,11 @@ public:
 		children.push_back(input);
 	}
 
+	String getName() const { return "ExpressionBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new ExpressionBlockInputStream(input, expression, part_id); }
+
+protected:
 	Block readImpl()
 	{
 		Block res = input->read();
@@ -37,10 +42,6 @@ public:
 		expression->execute(res, part_id);
 		return res;
 	}
-
-	String getName() const { return "ExpressionBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ExpressionBlockInputStream(input, expression, part_id); }
 
 private:
 	BlockInputStreamPtr input;

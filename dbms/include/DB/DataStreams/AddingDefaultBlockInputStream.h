@@ -26,6 +26,11 @@ public:
 		children.push_back(input);
 	}
 
+	String getName() const { return "AddingDefaultBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new AddingDefaultBlockInputStream(input, required_columns); }
+
+protected:
 	Block readImpl()
 	{
 		Block res = input->read();
@@ -43,14 +48,10 @@ public:
 					res.rows(), it->second->getDefault())).convertToFullColumn();
 				res.insert(col);
 			}
-		}				
-		
+		}
+
 		return res;
 	}
-
-	String getName() const { return "AddingDefaultBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new AddingDefaultBlockInputStream(input, required_columns); }
 
 private:
 	BlockInputStreamPtr input;

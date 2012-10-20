@@ -19,6 +19,11 @@ public:
 		children.push_back(input);
 	}
 
+	String getName() const { return "MaterializingBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new MaterializingBlockInputStream(input); }
+
+protected:
 	Block readImpl()
 	{
 		Block res = input->read();
@@ -36,10 +41,6 @@ public:
 
 		return res;
 	}
-
-	String getName() const { return "MaterializingBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new MaterializingBlockInputStream(input); }
 
 private:
 	BlockInputStreamPtr input;

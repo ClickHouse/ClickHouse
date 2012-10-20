@@ -16,14 +16,12 @@ public:
 	NativeBlockInputStream(ReadBuffer & istr_, const DataTypeFactory & data_type_factory_)
 		: istr(istr_), data_type_factory(data_type_factory_) {}
 	
-	/** Прочитать следующий блок.
-	  * Если блоков больше нет - вернуть пустой блок (для которого operator bool возвращает false).
-	  */
-	Block readImpl();
-
 	String getName() const { return "NativeBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new NativeBlockInputStream(istr, data_type_factory); }
+
+protected:
+	Block readImpl();
 
 private:
 	ReadBuffer & istr;

@@ -42,6 +42,11 @@ public:
 		aggregator = new Aggregator(key_names, aggregates);
 	}
 
+	String getName() const { return "ParallelAggregatingBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new ParallelAggregatingBlockInputStream(*this); }
+
+protected:
 	Block readImpl()
 	{
 		if (has_been_read)
@@ -51,7 +56,7 @@ public:
 
 		ManyAggregatedDataVariants many_data(inputs.size());
 		Exceptions exceptions(inputs.size());
-		
+
 		for (size_t i = 0, size = many_data.size(); i < size; ++i)
 		{
 			many_data[i] = new AggregatedDataVariants;
@@ -62,14 +67,10 @@ public:
 		for (size_t i = 0, size = exceptions.size(); i < size; ++i)
 			if (exceptions[i])
 				exceptions[i]->rethrow();
-		
+
 		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
 		return aggregator->convertToBlock(*res);
 	}
-
-	String getName() const { return "ParallelAggregatingBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ParallelAggregatingBlockInputStream(*this); }
 
 private:
 	ParallelAggregatingBlockInputStream(const ParallelAggregatingBlockInputStream & src)

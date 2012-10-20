@@ -33,9 +33,10 @@ class LogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_);
-	Block readImpl();
 	String getName() const { return "LogBlockInputStream"; }
 	BlockInputStreamPtr clone() { return new LogBlockInputStream(block_size, column_names, storage, mark_number, rows_limit); }
+protected:
+	Block readImpl();
 private:
 	size_t block_size;
 	Names column_names;

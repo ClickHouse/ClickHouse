@@ -21,11 +21,13 @@ public:
 	/// filter_column_ - номер столбца с условиями фильтрации.
 	FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_);
 	FilterBlockInputStream(BlockInputStreamPtr input_, const String & filter_column_name_);
-	Block readImpl();
 
 	String getName() const { return "FilterBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new FilterBlockInputStream(input, filter_column); }
+
+protected:
+	Block readImpl();
 
 private:
 	BlockInputStreamPtr input;

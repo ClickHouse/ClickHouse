@@ -20,13 +20,15 @@ public:
 		const Block & sample_,
 		size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
 
-	Block readImpl();
 	void readPrefix() { row_input->readPrefix(); }
 	void readSuffix() { row_input->readSuffix(); }
 
 	String getName() const { return "BlockInputStreamFromRowInputStream"; }
 
 	BlockInputStreamPtr clone() { return new BlockInputStreamFromRowInputStream(row_input, sample, max_block_size); }
+
+protected:
+	Block readImpl();
 
 private:
 	RowInputStreamPtr row_input;

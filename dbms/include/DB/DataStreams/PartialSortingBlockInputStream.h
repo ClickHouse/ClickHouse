@@ -20,11 +20,12 @@ public:
 		children.push_back(input);
 	}
 
-	Block readImpl();
-
 	String getName() const { return "PartialSortingBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new PartialSortingBlockInputStream(input, description); }
+
+protected:
+	Block readImpl();
 
 private:
 	BlockInputStreamPtr input;

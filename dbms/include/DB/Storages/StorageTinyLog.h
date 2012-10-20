@@ -21,9 +21,10 @@ class TinyLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_);
-	Block readImpl();
 	String getName() const { return "TinyLogBlockInputStream"; }
 	BlockInputStreamPtr clone() { return new TinyLogBlockInputStream(block_size, column_names, storage); }
+protected:
+	Block readImpl();
 private:
 	size_t block_size;
 	Names column_names;

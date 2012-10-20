@@ -29,6 +29,11 @@ public:
 		children.push_back(input);
 	}
 
+	String getName() const { return "ProjectionBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new ProjectionBlockInputStream(input, expression, without_duplicates_and_aliases, part_id, subtree); }
+
+protected:
 	Block readImpl()
 	{
 		Block res = input->read();
@@ -37,10 +42,6 @@ public:
 
 		return expression->projectResult(res, without_duplicates_and_aliases, part_id, subtree);
 	}
-
-	String getName() const { return "ProjectionBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ProjectionBlockInputStream(input, expression, without_duplicates_and_aliases, part_id, subtree); }
 
 private:
 	BlockInputStreamPtr input;

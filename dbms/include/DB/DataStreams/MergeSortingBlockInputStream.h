@@ -21,11 +21,12 @@ public:
 		children.push_back(input);
 	}
 
-	Block readImpl();
-
 	String getName() const { return "MergeSortingBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new MergeSortingBlockInputStream(input, description); }
+
+protected:
+	Block readImpl();
 
 private:
 	BlockInputStreamPtr input;

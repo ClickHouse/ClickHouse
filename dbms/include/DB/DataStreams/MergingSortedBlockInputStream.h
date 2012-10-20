@@ -24,7 +24,6 @@ public:
 		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
 
-	Block readImpl();
 	void readSuffix();
 
 	String getName() const { return "MergingSortedBlockInputStream"; }
@@ -32,6 +31,8 @@ public:
 	BlockInputStreamPtr clone() { return new MergingSortedBlockInputStream(inputs, description, max_block_size); }
 
 protected:
+	Block readImpl();
+	
 	/// Инициализирует очередь и следующий блок результата.
 	void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
 	

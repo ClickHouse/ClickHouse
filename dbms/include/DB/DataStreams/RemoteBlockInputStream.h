@@ -23,50 +23,6 @@ public:
 	}
 
 
-	Block readImpl()
-	{
-		if (!sent_query)
-		{
-			connection.sendQuery(query, 1, stage);
-			sent_query = true;
-		}
-		
-		while (true)
-		{
-			Connection::Packet packet = connection.receivePacket();
-
-			switch (packet.type)
-			{
-				case Protocol::Server::Data:
-					if (packet.block)
-						return packet.block;
-					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
-
-				case Protocol::Server::Exception:
-					got_exception_from_server = true;
-					packet.exception->rethrow();
-					break;
-
-				case Protocol::Server::EndOfStream:
-					finished = true;
-					return Block();
-
-				case Protocol::Server::Progress:
-					if (progress_callback)
-						progress_callback(packet.progress.rows, packet.progress.bytes);
-
-					if (!was_cancelled && !finished && isCancelled())
-						cancel();
-					
-					break;
-
-				default:
-					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-			}
-		}
-	}
-
-
 	String getName() const { return "RemoteBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new RemoteBlockInputStream(connection, query, stage); }
@@ -135,6 +91,50 @@ public:
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
 					packet.exception->rethrow();
+					break;
+
+				default:
+					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+			}
+		}
+	}
+
+protected:
+	Block readImpl()
+	{
+		if (!sent_query)
+		{
+			connection.sendQuery(query, 1, stage);
+			sent_query = true;
+		}
+
+		while (true)
+		{
+			Connection::Packet packet = connection.receivePacket();
+
+			switch (packet.type)
+			{
+				case Protocol::Server::Data:
+					if (packet.block)
+						return packet.block;
+					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
+
+				case Protocol::Server::Exception:
+					got_exception_from_server = true;
+					packet.exception->rethrow();
+					break;
+
+				case Protocol::Server::EndOfStream:
+					finished = true;
+					return Block();
+
+				case Protocol::Server::Progress:
+					if (progress_callback)
+						progress_callback(packet.progress.rows, packet.progress.bytes);
+
+					if (!was_cancelled && !finished && isCancelled())
+						cancel();
+
 					break;
 
 				default:

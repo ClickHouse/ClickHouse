@@ -22,6 +22,11 @@ public:
 		current_stream = children.begin();
 	}
 
+	String getName() const { return "ConcatBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new ConcatBlockInputStream(children); }
+
+protected:
 	Block readImpl()
 	{
 		Block res;
@@ -38,10 +43,6 @@ public:
 
 		return res;
 	}
-
-	String getName() const { return "ConcatBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ConcatBlockInputStream(children); }
 
 private:
 	BlockInputStreams::iterator current_stream;

@@ -604,6 +604,14 @@ public:
 	{
 	}
 
+	String getName() const { return "MergeTreeBlockInputStream"; }
+	
+	BlockInputStreamPtr clone()
+	{
+		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_number, rows_limit);
+	}
+
+protected:
 	Block readImpl()
 	{
 		Block res;
@@ -644,13 +652,6 @@ public:
 		}
 
 		return res;
-	}
-	
-	String getName() const { return "MergeTreeBlockInputStream"; }
-	
-	BlockInputStreamPtr clone()
-	{
-		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_number, rows_limit);
 	}
 
 private:

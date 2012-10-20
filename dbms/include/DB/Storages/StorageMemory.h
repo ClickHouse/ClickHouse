@@ -14,9 +14,10 @@ class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MemoryBlockInputStream(const Names & column_names_, Blocks::iterator begin_, Blocks::iterator end_);
-	Block readImpl();
 	String getName() const { return "MemoryBlockInputStream"; }
 	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, begin, end); }
+protected:
+	Block readImpl();
 private:
 	Names column_names;
 	Blocks::iterator begin;

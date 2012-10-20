@@ -18,6 +18,11 @@ class OneBlockInputStream : public IProfilingBlockInputStream
 public:
 	OneBlockInputStream(Block & block_) : block(block_), has_been_read(false) {}
 
+	String getName() const { return "OneBlockInputStream"; }
+
+	BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
+
+protected:
 	Block readImpl()
 	{
 		if (has_been_read)
@@ -26,10 +31,6 @@ public:
 		has_been_read = true;
 		return block;
 	}
-
-	String getName() const { return "OneBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
 
 private:
 	Block block;

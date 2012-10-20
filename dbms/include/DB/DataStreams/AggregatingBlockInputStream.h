@@ -31,11 +31,12 @@ public:
 	  */
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
 
-	Block readImpl();
-
 	String getName() const { return "AggregatingBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new AggregatingBlockInputStream(*this); }
+
+protected:
+	Block readImpl();
 
 private:
 	AggregatingBlockInputStream(const AggregatingBlockInputStream & src)

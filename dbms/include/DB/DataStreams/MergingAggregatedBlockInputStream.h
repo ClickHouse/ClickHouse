@@ -29,11 +29,12 @@ public:
 	  */
 	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
 
-	Block readImpl();
-
 	String getName() const { return "MergingAggregatedBlockInputStream"; }
 
 	BlockInputStreamPtr clone() { return new MergingAggregatedBlockInputStream(*this); }
+
+protected:
+	Block readImpl();
 
 private:
 	MergingAggregatedBlockInputStream(const MergingAggregatedBlockInputStream & src)
