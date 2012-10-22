@@ -73,6 +73,23 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.setGlobalContext(global_context);
 	global_context.setPath(config.getString("path"));
 
+	/// Загружаем настройки.
+	Settings settings;
+
+	settings.asynchronous 		= config.getBool("asynchronous", 	settings.asynchronous);
+	settings.max_block_size 	= config.getInt("max_block_size", 	settings.max_block_size);
+	settings.max_query_size 	= config.getInt("max_query_size", 	settings.max_query_size);
+	settings.max_threads 		= config.getInt("max_threads", 		settings.max_threads);
+	settings.interactive_delay 	= config.getInt("interactive_delay", settings.interactive_delay);
+	settings.connect_timeout 	= Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
+	settings.receive_timeout 	= Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
+	settings.send_timeout 		= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
+	settings.poll_interval		= config.getInt("poll_interval", 	settings.poll_interval);
+	settings.distributed_connections_pool_size =
+		config.getInt("distributed_connections_pool_size", settings.distributed_connections_pool_size);
+
+	global_context.setSettings(settings);
+
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(global_context);
 	LOG_DEBUG(log, "Loaded metadata.");
@@ -87,22 +104,6 @@ int Server::main(const std::vector<std::string> & args)
 		
 	global_context.setCurrentDatabase(config.getString("default_database", "default"));
 
-	Settings settings;
-	
-	settings.asynchronous 		= config.getBool("asynchronous", 	settings.asynchronous);
-	settings.max_block_size 	= config.getInt("max_block_size", 	settings.max_block_size);
-	settings.max_query_size 	= config.getInt("max_query_size", 	settings.max_query_size);
-	settings.max_threads 		= config.getInt("max_threads", 		settings.max_threads);
-	settings.interactive_delay 	= config.getInt("interactive_delay", settings.interactive_delay);
-	settings.connect_timeout 	= Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
-	settings.receive_timeout 	= Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
-	settings.send_timeout 		= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
-	settings.poll_interval		= config.getInt("poll_interval", 	settings.poll_interval);
-	settings.distributed_connections_pool_size =
-		config.getInt("distributed_connections_pool_size", settings.distributed_connections_pool_size);
-
-	global_context.setSettings(settings);
-	
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
 	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
 
