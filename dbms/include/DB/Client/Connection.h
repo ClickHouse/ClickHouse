@@ -32,7 +32,7 @@ using Poco::SharedPtr;
   * В качестве default_database может быть указана пустая строка
   *  - в этом случае сервер использует свою БД по-умолчанию.
   */
-class Connection
+class Connection : private boost::noncopyable
 {
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
