@@ -4,7 +4,7 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
-#include <DB/Client/Connection.h>
+#include <DB/Client/ConnectionPool.h>
 
 
 namespace DB
@@ -15,8 +15,18 @@ namespace DB
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	RemoteBlockInputStream(Connection & connection_, const String & query_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+	RemoteBlockInputStream(Connection & connection_, const String & query_,
+		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
 		: connection(connection_), query(query_), stage(stage_),
+		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
+		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
+	{
+	}
+
+	/// Захватывает владение соединением из пула.
+	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_,
+		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), stage(stage_),
 		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
@@ -25,7 +35,12 @@ public:
 
 	String getName() const { return "RemoteBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new RemoteBlockInputStream(connection, query, stage); }
+	BlockInputStreamPtr clone()
+	{
+		return pool_entry.isNull()
+			? new RemoteBlockInputStream(connection, query, stage)
+			: new RemoteBlockInputStream(pool_entry, query, stage);
+	}
 
 
 	/** Отменяем умолчальное уведомление о прогрессе,
@@ -144,7 +159,11 @@ protected:
 	}
 
 private:
+	/// Используется, если нужно владеть соединением из пула
+	ConnectionPool::Entry pool_entry;
+	
 	Connection & connection;
+
 	const String query;
 	QueryProcessingStage::Enum stage;
 

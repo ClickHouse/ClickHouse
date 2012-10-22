@@ -21,7 +21,8 @@ StorageDistributed::StorageDistributed(
 	data_type_factory(data_type_factory_)
 {
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
-		connections.push_back(new Connection(
+		pools.push_back(new ConnectionPool(
+			settings.distributed_connections_pool_size,
 			it->host().toString(), it->port(), "", data_type_factory, "server", Protocol::Compression::Enable,
 			settings.connect_timeout, settings.receive_timeout, settings.send_timeout));
 }
@@ -34,7 +35,7 @@ BlockInputStreams StorageDistributed::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	processed_stage = connections.size() == 1
+	processed_stage = pools.size() == 1
 		? QueryProcessingStage::Complete
 		: QueryProcessingStage::WithMergeableState;
 	
@@ -50,8 +51,8 @@ BlockInputStreams StorageDistributed::read(
 
 	BlockInputStreams res;
 
-	for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
-		res.push_back(new RemoteBlockInputStream(**it, modified_query, processed_stage));
+	for (ConnectionPools::iterator it = pools.begin(); it != pools.end(); ++it)
+		res.push_back(new RemoteBlockInputStream((*it)->get(), modified_query, processed_stage));
 
 	return res;
 }

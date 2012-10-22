@@ -21,6 +21,7 @@ struct Settings
 	Poco::Timespan receive_timeout;
 	Poco::Timespan send_timeout;
 	size_t poll_interval;   /// Блокироваться в цикле ожидания запроса в сервере на указанное количество секунд.
+	size_t distributed_connections_pool_size;	/// Максимальное количество соединений с одним удалённым сервером в пуле.
 
 	Settings() :
 		max_block_size(DEFAULT_BLOCK_SIZE),
@@ -31,7 +32,8 @@ struct Settings
 		connect_timeout(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
 		receive_timeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
-		poll_interval(DBMS_DEFAULT_POLL_INTERVAL)
+		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
+		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE)
 	{
 	}
 
@@ -47,6 +49,7 @@ struct Settings
 		else if (name == "receive_timeout")		receive_timeout 	= Poco::Timespan(boost::get<UInt64>(value), 0);
 		else if (name == "send_timeout")		send_timeout 		= Poco::Timespan(boost::get<UInt64>(value), 0);
 		else if (name == "poll_interval")		poll_interval 		= boost::get<UInt64>(value);
+		else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = boost::get<UInt64>(value);
 		else
 			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 	}

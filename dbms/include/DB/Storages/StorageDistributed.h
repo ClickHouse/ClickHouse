@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
-#include <DB/Client/Connection.h>
+#include <DB/Client/ConnectionPool.h>
 #include <DB/Interpreters/Settings.h>
 
 
@@ -52,7 +52,7 @@ private:
 	const DataTypeFactory & data_type_factory;
 
 	/// Соединения с удалёнными серверами.
-	Connections connections;
+	ConnectionPools pools;
 };
 
 }

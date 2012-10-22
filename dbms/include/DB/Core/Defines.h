@@ -17,6 +17,7 @@
 #define SHOW_CHARS_ON_SYNTAX_ERROR 	160L
 #define DEFAULT_MAX_THREADS 		8
 #define DEFAULT_INTERACTIVE_DELAY	100000
+#define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 128
 
 /// Суффикс имени для столбца, содержащего смещения массива.
 #define ARRAY_SIZES_COLUMN_NAME_SUFFIX 	".size"
