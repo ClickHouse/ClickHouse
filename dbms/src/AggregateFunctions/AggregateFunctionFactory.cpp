@@ -11,6 +11,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <DB/AggregateFunctions/AggregateFunctionMedian.h>
 
 
 namespace DB
@@ -99,6 +100,30 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "median")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		String argument_type_name = argument_types[0]->getName();
+		
+		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
+			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
+			|| argument_type_name == "VarUInt")
+			return new AggregateFunctionMedian<UInt64>(new DataTypeUInt64);
+		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
+			|| argument_type_name == "Int32" || argument_type_name == "Int64"
+			|| argument_type_name == "VarInt")
+			return new AggregateFunctionMedian<Int64>(new DataTypeInt64);
+		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
+			return new AggregateFunctionMedian<Float64>(new DataTypeFloat64);
+		else if (argument_type_name == "Date")
+			return new AggregateFunctionMedian<UInt64>(new DataTypeDate);
+		else if (argument_type_name == "DateTime")
+			return new AggregateFunctionMedian<UInt64>(new DataTypeDateTime);
+		else
+			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 	else
 		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
@@ -153,6 +178,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 		else
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 	}
+	else if (0 == type_id.compare(0, strlen("median_"), "median_"))
+	{
+		if (0 == type_id.compare(strlen("median_"), strlen("UInt64"), "UInt64"))
+			return new AggregateFunctionMedian<UInt64>(new DataTypeUInt64);
+		else if (0 == type_id.compare(strlen("median_"), strlen("Int64"), "Int64"))
+			return new AggregateFunctionMedian<Int64>(new DataTypeInt64);
+		else if (0 == type_id.compare(strlen("median_"), strlen("Float64"), "Float64"))
+			return new AggregateFunctionMedian<Float64>(new DataTypeFloat64);
+		else if (0 == type_id.compare(strlen("median_"), strlen("Date"), "Date"))
+			return new AggregateFunctionMedian<UInt64>(new DataTypeDate);
+		else if (0 == type_id.compare(strlen("median_"), strlen("DateTime"), "DateTime"))
+			return new AggregateFunctionMedian<UInt64>(new DataTypeDateTime);
+		else
+			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+	}
 	else
 		throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
@@ -171,7 +211,8 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 		("sum")
 		("avg")
 		("uniq")
-		("groupArray");
+		("groupArray")
+		("median");
 	
 	return names.end() != names.find(name)
 		? get(name, argument_types)
