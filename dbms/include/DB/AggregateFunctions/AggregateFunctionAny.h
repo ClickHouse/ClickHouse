@@ -61,8 +61,11 @@ public:
 
 	void deserializeMerge(ReadBuffer & buf)
 	{
+		Field tmp;
+		type->deserializeBinary(tmp, buf);
+		
 		if (!got)
-			type->deserializeBinary(value, buf);
+			value = tmp;
 	}
 
 	Field getResult() const
