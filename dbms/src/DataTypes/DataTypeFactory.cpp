@@ -16,6 +16,9 @@
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/Parsers/ASTExpressionList.h>
+
 
 namespace DB
 {
@@ -68,19 +71,26 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			AggregateFunctionPtr function;
 			DataTypes argument_types;
 
-			// TODO: парсить нормально. А то будут проблемы с параметризованными типами данных.
-			Strings split_res;
-			boost::split(split_res, parameters, boost::is_any_of(", \t\r\n\f"), boost::token_compress_on);
+			ParserExpressionList args_parser;
+			ASTPtr args_ast;
+			String expected;
+			IParser::Pos pos = parameters.data();
+			IParser::Pos end = pos + parameters.size();
 
-			if (split_res.empty())
+			if (!(args_parser.parse(pos, end, args_ast, expected) && pos == end))
+				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
+
+			ASTExpressionList & args_list = dynamic_cast<ASTExpressionList &>(*args_ast);
+			
+			if (args_list.children.empty())
 				throw Exception("Data type AggregateFunction requires parameters: "
 					"name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			Strings::const_iterator it = split_res.begin();
-			function_name = *it;
+			ASTs::iterator it = args_list.children.begin();
+			function_name = (*it)->getColumnName();
 
-			for (++it; it != split_res.end(); ++it)
-				argument_types.push_back(get(*it));
+			for (++it; it != args_list.children.end(); ++it)
+				argument_types.push_back(get((*it)->getColumnName()));
 
 			function = AggregateFunctionFactory().get(function_name, argument_types);
 			return new DataTypeAggregateFunction(function, argument_types);
