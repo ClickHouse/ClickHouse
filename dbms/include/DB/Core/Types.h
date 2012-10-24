@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <boost/strong_typedef.hpp>
 #include <Poco/Types.h>
 #include <Poco/SharedPtr.h>
@@ -28,6 +29,7 @@ typedef float Float32;
 typedef double Float64;
 
 typedef std::string String;
+typedef std::vector<String> Strings;
 
 
 template <typename T> struct IsNumber 	{ static const bool value = false; };

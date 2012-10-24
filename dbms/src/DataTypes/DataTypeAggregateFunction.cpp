@@ -16,15 +16,12 @@ using Poco::SharedPtr;
 void DataTypeAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
 	const AggregateFunctionPtr & value = boost::get<const AggregateFunctionPtr &>(field);
-	writeStringBinary(value->getTypeID(), ostr);
 	value->serialize(ostr);
 }
 
 void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-	String name;
-	readStringBinary(name, istr);
-	AggregateFunctionPtr value = factory.getByTypeID(name);
+	AggregateFunctionPtr value = function->cloneEmpty();
 	value->deserializeMerge(istr);
 	field = value;
 }
@@ -34,10 +31,6 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 	const ColumnAggregateFunction & real_column = dynamic_cast<const ColumnAggregateFunction &>(column);
 	const ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
-	String name;
-	if (!vec.empty())
-		name = vec[0]->getTypeID();
-
 	size_t next_callback_point = callback ? callback() : 0;
 	size_t i = 0;
 	for (ColumnAggregateFunction::Container_t::const_iterator it = vec.begin(); it != vec.end(); ++it, ++i)
@@ -45,7 +38,6 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 		if (next_callback_point && i == next_callback_point)
 			next_callback_point = callback();
 		
-		writeStringBinary(name, ostr);
 		(*it)->serialize(ostr);
 	}
 }
@@ -62,11 +54,8 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 		if (istr.eof())
 			break;
 
-		String name;
-		readStringBinary(name, istr);
-		AggregateFunctionPtr value = factory.getByTypeID(name);
-		value->deserializeMerge(istr);
-		vec.push_back(value);
+		vec.push_back(function->cloneEmpty());
+		vec.back()->deserializeMerge(istr);
 	}
 }
 

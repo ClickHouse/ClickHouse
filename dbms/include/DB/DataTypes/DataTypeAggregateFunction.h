@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <DB/DataTypes/IDataType.h>
 
@@ -12,18 +11,34 @@ namespace DB
 using Poco::SharedPtr;
 
 /** Тип - состояние агрегатной функции.
+  * Параметры типа - это агрегатная функция и типы её аргументов.
   */
 class DataTypeAggregateFunction : public IDataType
 {
 private:
-	AggregateFunctionFactory factory;
+	AggregateFunctionPtr function;
+	DataTypes argument_types;
 	
 public:
-	DataTypeAggregateFunction() {}
-	DataTypeAggregateFunction(const AggregateFunctionFactory & factory_) : factory(factory_) {}
+	DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_)
+		: function(function_), argument_types(argument_types_)
+	{
+		function->setArguments(argument_types);
+	}
 	
-	std::string getName() const { return "AggregateFunction"; }
-	DataTypePtr clone() const { return new DataTypeAggregateFunction(factory); }
+	std::string getName() const
+	{
+		std::stringstream stream;
+		stream << "AggregateFunction(" << function->getName();
+
+		for (DataTypes::const_iterator it = argument_types.begin(); it != argument_types.end(); ++it)
+			stream << ", " << (*it)->getName();
+		
+		stream << ")";
+		return stream.str();
+	}
+	
+	DataTypePtr clone() const { return new DataTypeAggregateFunction(function, argument_types); }
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
 	void deserializeBinary(Field & field, ReadBuffer & istr) const;
