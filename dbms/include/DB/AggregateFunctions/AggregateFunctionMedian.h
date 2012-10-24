@@ -16,40 +16,6 @@
 namespace DB
 {
 
-	BOOST_STRONG_TYPEDEF(UInt16, Date)
-	BOOST_STRONG_TYPEDEF(UInt32, DateTime)
-	
-	template <typename T> struct AggregateFunctionMedianTraits;
-	
-	template <> struct AggregateFunctionMedianTraits<Float64>
-	{
-		static DataTypePtr getReturnType() { return new DataTypeFloat64; }
-		static void write(Float64 x, WriteBuffer & buf) { writeFloatBinary<Float64>(x, buf); }
-		static void read(Float64 & x, ReadBuffer & buf) { readFloatBinary<Float64>(x, buf); }
-		static bool validArgumentType(const DataTypePtr & argument) { return argument->isNumeric(); }
-	};
-	
-	template <> struct AggregateFunctionMedianTraits<Date>
-	{
-		static DataTypePtr getReturnType() { return new DataTypeDate; }
-		static void write(Date x, WriteBuffer & buf) { writeIntBinary<UInt16>(x, buf); }
-		static void read(Date & x, ReadBuffer & buf) { readIntBinary<UInt16>(x, buf); }
-		static bool validArgumentType(const DataTypePtr & argument) { return argument->getName() == "Date"; }
-	};
-	
-	template <> struct AggregateFunctionMedianTraits<DateTime>
-	{
-		static DataTypePtr getReturnType() { return new DataTypeDateTime; }
-		static void write(DateTime x, WriteBuffer & buf) { writeIntBinary<UInt32>(x, buf); }
-		static void read(DateTime & x, ReadBuffer & buf) { readIntBinary<UInt32>(x, buf); }
-		static bool validArgumentType(const DataTypePtr & argument) { return argument->getName() == "DateTime"; }
-	};
-	
-	
-	template <> struct TypeName<Date> 	{ static std::string get() { return "Date"; } };
-	template <> struct TypeName<DateTime> 	{ static std::string get() { return "DateTime"; } };
-	
-	
 	/// Приближённо вычисляет медиану.
 	template <typename T>
 	class AggregateFunctionMedian : public IUnaryAggregateFunction
@@ -95,13 +61,13 @@ namespace DB
 		
 		void serialize(WriteBuffer & buf) const
 		{
-			sample.writePOD(buf);
+			sample.write(buf);
 		}
 		
 		void deserializeMerge(ReadBuffer & buf)
 		{
 			ReservoirSampler<T> tmp_sample;
-			tmp_sample.readPOD(buf);
+			tmp_sample.read(buf);
 			sample.merge(tmp_sample);
 		}
 		
