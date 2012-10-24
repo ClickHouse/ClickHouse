@@ -224,7 +224,6 @@ public:
 			}
 
 			lock.unlock();
-			sched_yield();
 			Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 			lock.lock();
 		}
