@@ -45,8 +45,6 @@ namespace DB
 		
 		void setArgument(const DataTypePtr & argument)
 		{
-			if (type->getName() != argument->getName())
-				throw Exception("Argument type mismatch", ErrorCodes::TYPE_MISMATCH);
 		}
 		
 		void addOne(const Field & value)
