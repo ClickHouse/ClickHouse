@@ -18,11 +18,12 @@ using Poco::SharedPtr;
   * Выражение не меняет количество строк в потоке, и обрабатывает каждую строку независимо от других.
   * part_id - идентификатор части выражения, которую надо вычислять.
   *  Например, может потребоваться вычислить только часть выражения в секции WHERE.
+  * clear_temporaries - удалить временные столбцы из блока, которые больше не понадобятся ни для каких вычислений.
   */
 class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression_, unsigned part_id_ = 0)
+	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression_, unsigned part_id_ = 0, bool clear_temporaries_ = false)
 		: input(input_), expression(expression_), part_id(part_id_)
 	{
 		children.push_back(input);
@@ -40,6 +41,10 @@ protected:
 			return res;
 
 		expression->execute(res, part_id);
+
+		if (clear_temporaries)
+			expression->clearTemporaries(res);
+			
 		return res;
 	}
 
@@ -47,6 +52,7 @@ private:
 	BlockInputStreamPtr input;
 	ExpressionPtr expression;
 	unsigned part_id;
+	bool clear_temporaries;
 };
 
 }

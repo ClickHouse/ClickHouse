@@ -226,13 +226,81 @@ void Expression::execute(Block & block, unsigned part_id, bool only_consts)
 }
 
 
+void Expression::clearTemporaries(Block & block)
+{
+	clearTemporariesImpl(ast, block);
+}
+
+
+void Expression::clearTemporariesImpl(ASTPtr ast, Block & block)
+{
+	/** Очистку ненужных столбцов будем делать так:
+	  * - будем собирать нужные столбцы:
+	  * - пройдём по выражению;
+	  * - корневые столбцы считаем нужными;
+	  * - если столбца ещё нет в блоке, то считаем его нужным, и всех его детей тоже.
+	  */
+
+	NeedColumns need_columns;
+	collectNeedColumns(ast, block, need_columns);
+
+	Block cleared_block;
+
+	for (size_t i = 0, columns = block.columns(); i < columns; ++i)
+		if (need_columns.end() != need_columns.find(block.getByPosition(i).name))
+			cleared_block.insert(block.getByPosition(i));
+
+	block = cleared_block;
+}
+
+
+void Expression::collectNeedColumns(ASTPtr ast, Block & block, NeedColumns & need_columns, bool top_level, bool all_children_need)
+{
+	bool is_column =
+		dynamic_cast<ASTIdentifier *>(&*ast)
+		|| dynamic_cast<ASTLiteral *>(&*ast)
+		|| dynamic_cast<ASTFunction *>(&*ast)
+		|| dynamic_cast<ASTSet *>(&*ast);
+
+	bool need_this_column = false;
+		
+	if (is_column)
+	{
+		if (all_children_need)
+		{
+			need_this_column = true;
+		}
+		else if (!block.has(ast->getColumnName()))
+		{
+			/// Если столбца ещё нет в блоке, то считаем его нужным, и всех его детей тоже.
+			need_this_column = true;
+			all_children_need = true;
+		}
+		else if (top_level)
+		{
+			/// Корневые столбцы считаем нужными.
+			need_this_column = true;
+			top_level = false;
+		}
+	}
+
+	if (need_this_column)
+		need_columns.insert(ast->getColumnName());
+
+	/// Обход сверху-вниз. Не опускаемся в подзапросы.
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			collectNeedColumns(*it, block, need_columns, top_level, all_children_need);
+}
+
+
 void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool only_consts)
 {
 	/// Если результат вычисления уже есть в блоке.
 	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast)) && block.has(ast->getColumnName()))
 		return;
 
-	/// Обход в глубину. Не опускаемся в подзапросы.
+	/// Обход снизу-вверх. Не опускаемся в подзапросы.
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
 			executeImpl(*it, block, part_id, only_consts);

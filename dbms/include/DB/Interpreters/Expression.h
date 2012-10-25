@@ -47,8 +47,13 @@ public:
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.
 	  * part_id - какую часть выражения вычислять.
 	  * Если указано only_consts - то вычисляются только выражения, зависящие от констант.
+	  * Если указано clear_temporaries - удалить временные столбцы из блока, которые больше не понадобятся ни для каких вычислений.
 	  */
 	void execute(Block & block, unsigned part_id = 0, bool only_consts = false);
+
+	/** Убрать из блока столбцы, которые больше не нужны.
+	  */
+	void clearTemporaries(Block & block);
 
 	/** Взять из блока с промежуточными результатами вычислений только столбцы, представляющие собой конечный результат.
 	  * Переименовать их в алиасы, если они заданы и если параметр without_duplicates_and_aliases = false.
@@ -143,6 +148,12 @@ private:
 	bool getArrayJoinInfoImpl(ASTPtr ast, String & column_name);
 
 	void markBeforeArrayJoinImpl(ASTPtr ast, unsigned part_id, bool below = false);
+
+	typedef std::set<std::string> NeedColumns;
+
+	void clearTemporariesImpl(ASTPtr ast, Block & block);
+
+	void collectNeedColumns(ASTPtr ast, Block & block, NeedColumns & need_columns, bool top_level = true, bool all_children_need = false);
 
 	/// Получить тип у функции, идентификатора или литерала.
 	DataTypePtr getType(ASTPtr ast);
