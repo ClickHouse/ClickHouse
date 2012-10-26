@@ -31,20 +31,16 @@ Block FilterBlockInputStream::readImpl()
 
 		//std::cerr << res.dumpNames() << std::endl;
 
-		/// Если кроме столбца с фильтром ничего нет.
-		if (res.columns() <= 1)
-			throw Exception("There is only filter column in block.", ErrorCodes::ONLY_FILTER_COLUMN_IN_BLOCK);
-
 		/// Найдём настоящую позицию столбца с фильтром в блоке.
 		if (filter_column == -1)
 			filter_column = res.getPositionByName(filter_column_name);
 
-		/// Любой столбец - не являющийся фильтром.
-		IColumn & any_not_filter_column = *res.getByPosition(filter_column == 0 ? 1 : 0).column;
-
 		size_t columns = res.columns();
 		ColumnPtr column = res.getByPosition(filter_column).column;
 
+		/** Если фильтр - константа (например, написано WHERE 1),
+		  *  то либо вернём пустой блок, либо вернём блок без изменений.
+		  */
 		ColumnConstUInt8 * column_const = dynamic_cast<ColumnConstUInt8 *>(&*column);
 		if (column_const)
 		{
@@ -59,6 +55,26 @@ Block FilterBlockInputStream::readImpl()
 
 		IColumn::Filter & filter = column_vec->getData();
 
+		/// Если кроме столбца с фильтром ничего нет.
+		if (columns == 1)
+		{
+			/// То посчитаем в нём количество единичек.
+			size_t filtered_rows = 0;
+			for (size_t i = 0, size = filter.size(); i < size; ++i)
+				if (filter[i])
+					++filtered_rows;
+
+			/// Если текущий блок полностью отфильтровался - перейдём к следующему.
+			if (filtered_rows == 0)
+				continue;
+
+			/// Заменяем этот столбец на столбец с константой 1, нужного размера.
+			res.getByPosition(filter_column).column = new ColumnConstUInt8(filtered_rows, 1);
+			
+			return res;
+		}
+
+		/// Общий случай - фильтруем остальные столбцы.
 		for (size_t i = 0; i < columns; ++i)
 		{
 			if (i != static_cast<size_t>(filter_column))
@@ -69,6 +85,9 @@ Block FilterBlockInputStream::readImpl()
 					break;
 			}
 		}
+
+		/// Любой столбец - не являющийся фильтром.
+		IColumn & any_not_filter_column = *res.getByPosition(filter_column == 0 ? 1 : 0).column;
 
 		/// Если текущий блок полностью отфильтровался - перейдём к следующему.
 		if (any_not_filter_column.empty())
