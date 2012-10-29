@@ -324,12 +324,19 @@ static void writeAlias(const String & name, std::ostream & s, bool hilite, bool 
 void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_function : "") << ast.name;
-	if (ast.arguments)
+
+	if (ast.parameters)
 	{
 		s << '(' << (hilite ? hilite_none : "");
-		formatAST(*ast.arguments, s, indent, hilite, one_line);
+		formatAST(*ast.parameters, s, indent, hilite, one_line);
 		s << (hilite ? hilite_function : "") << ')';
 	}
+
+	s << '(' << (hilite ? hilite_none : "");
+	if (ast.arguments)
+		formatAST(*ast.arguments, s, indent, hilite, one_line);
+	s << (hilite ? hilite_function : "") << ')';
+	
 	s << (hilite ? hilite_none : "");
 
 	if (!ast.alias.empty())
