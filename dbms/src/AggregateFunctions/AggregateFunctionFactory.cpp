@@ -11,7 +11,10 @@
 #include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/AggregateFunctions/AggregateFunctionMedian.h>
+#include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
+
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
 
 namespace DB
@@ -100,27 +103,27 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
-	else if (name == "median")
+	else if (name == "median" || name == "quantile")
 	{
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		String argument_type_name = argument_types[0]->getName();
 		
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
-			|| argument_type_name == "VarUInt")
-			return new AggregateFunctionMedian<UInt64>(new DataTypeUInt64);
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64"
-			|| argument_type_name == "VarInt")
-			return new AggregateFunctionMedian<Int64>(new DataTypeInt64);
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionMedian<Float64>(new DataTypeFloat64);
-		else if (argument_type_name == "Date")
-			return new AggregateFunctionMedian<UInt64>(new DataTypeDate);
-		else if (argument_type_name == "DateTime")
-			return new AggregateFunctionMedian<UInt64>(new DataTypeDateTime);
+		if 		(argument_type_name == "UInt8")		return new AggregateFunctionQuantile<UInt8>;
+		else if (argument_type_name == "UInt16")	return new AggregateFunctionQuantile<UInt16>;
+		else if (argument_type_name == "UInt32")	return new AggregateFunctionQuantile<UInt32>;
+		else if (argument_type_name == "UInt64")	return new AggregateFunctionQuantile<UInt64>;
+		else if (argument_type_name == "Int8")		return new AggregateFunctionQuantile<Int8>;
+		else if (argument_type_name == "Int16")		return new AggregateFunctionQuantile<Int16>;
+		else if (argument_type_name == "Int32")		return new AggregateFunctionQuantile<Int32>;
+		else if (argument_type_name == "Int64")		return new AggregateFunctionQuantile<Int64>;
+		else if (argument_type_name == "VarUInt")	return new AggregateFunctionQuantile<UInt64>;
+		else if (argument_type_name == "VarInt")	return new AggregateFunctionQuantile<Int64>;
+		else if (argument_type_name == "Float32")	return new AggregateFunctionQuantile<Float32>;
+		else if (argument_type_name == "Float64")	return new AggregateFunctionQuantile<Float64>;
+		else if (argument_type_name == "Date")		return new AggregateFunctionQuantile<DataTypeDate::FieldType, false>;
+		else if (argument_type_name == "DateTime")	return new AggregateFunctionQuantile<DataTypeDateTime::FieldType, false>;
 		else
 			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -178,18 +181,33 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 		else
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 	}
-	else if (0 == type_id.compare(0, strlen("median_"), "median_"))
+	else if (0 == type_id.compare(0, strlen("quantile_float_"), "quantile_float_"))
 	{
-		if (0 == type_id.compare(strlen("median_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionMedian<UInt64>(new DataTypeUInt64);
-		else if (0 == type_id.compare(strlen("median_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionMedian<Int64>(new DataTypeInt64);
-		else if (0 == type_id.compare(strlen("median_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionMedian<Float64>(new DataTypeFloat64);
-		else if (0 == type_id.compare(strlen("median_"), strlen("Date"), "Date"))
-			return new AggregateFunctionMedian<UInt64>(new DataTypeDate);
-		else if (0 == type_id.compare(strlen("median_"), strlen("DateTime"), "DateTime"))
-			return new AggregateFunctionMedian<UInt64>(new DataTypeDateTime);
+		if 		(0 == type_id.compare(strlen("quantile_float_"), strlen("UInt8"), 	"UInt8"))	return new AggregateFunctionQuantile<UInt8>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("UInt16"), 	"UInt16"))	return new AggregateFunctionQuantile<UInt16>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("UInt32"), 	"UInt32"))	return new AggregateFunctionQuantile<UInt32>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("UInt64"), 	"UInt64"))	return new AggregateFunctionQuantile<UInt64>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("Int8"), 	"Int8"))	return new AggregateFunctionQuantile<Int8>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("Int16"), 	"Int16"))	return new AggregateFunctionQuantile<Int16>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("Int32"), 	"Int32"))	return new AggregateFunctionQuantile<Int32>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("Int64"), 	"Int64"))	return new AggregateFunctionQuantile<Int64>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("Float32"), "Float32"))	return new AggregateFunctionQuantile<Float32>;
+		else if (0 == type_id.compare(strlen("quantile_float_"), strlen("Float64"), "Float64"))	return new AggregateFunctionQuantile<Float64>;
+		else
+			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+	}
+	else if (0 == type_id.compare(0, strlen("quantile_rounded_"), "quantile_rounded_"))
+	{
+		if 		(0 == type_id.compare(strlen("quantile_rounded_"), strlen("UInt8"), 	"UInt8"))	return new AggregateFunctionQuantile<UInt8,		false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("UInt16"), 	"UInt16"))	return new AggregateFunctionQuantile<UInt16,	false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("UInt32"), 	"UInt32"))	return new AggregateFunctionQuantile<UInt32,	false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("UInt64"), 	"UInt64"))	return new AggregateFunctionQuantile<UInt64,	false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("Int8"), 		"Int8"))	return new AggregateFunctionQuantile<Int8,		false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("Int16"), 	"Int16"))	return new AggregateFunctionQuantile<Int16,		false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("Int32"), 	"Int32"))	return new AggregateFunctionQuantile<Int32,		false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("Int64"), 	"Int64"))	return new AggregateFunctionQuantile<Int64,		false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("Float32"), 	"Float32"))	return new AggregateFunctionQuantile<Float32,	false>;
+		else if (0 == type_id.compare(strlen("quantile_rounded_"), strlen("Float64"), 	"Float64"))	return new AggregateFunctionQuantile<Float64,	false>;
 		else
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 	}
@@ -212,7 +230,9 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 		("avg")
 		("uniq")
 		("groupArray")
-		("median");
+		("median")
+		("quantile")
+		;
 	
 	return names.end() != names.find(name)
 		? get(name, argument_types)

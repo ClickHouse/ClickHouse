@@ -163,8 +163,9 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expec
 	ParserExpressionList contents;
 	ParserWhiteSpaceOrComments ws;
 
-	ASTPtr identifier = new ASTIdentifier;
-	ASTPtr expr_list = new ASTExpressionList;
+	ASTPtr identifier;
+	ASTPtr expr_list_args;
+	ASTPtr expr_list_params;
 
 	if (!id_parser.parse(pos, end, identifier, expected))
 		return false;
@@ -175,16 +176,38 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expec
 		return false;
 
 	ws.ignore(pos, end);
-	contents.parse(pos, end, expr_list, expected);
+	contents.parse(pos, end, expr_list_args, expected);
 	ws.ignore(pos, end);
 
 	if (!close.ignore(pos, end, expected))
 		return false;
 
+	/// У параметрической агрегатной функции - два списка (параметры и аргументы) в круглых скобках. Пример: quantile(0.9)(x).
+	if (open.ignore(pos, end, expected))
+	{
+		expr_list_params = expr_list_args;
+		expr_list_args = NULL;
+		
+		ws.ignore(pos, end);
+		contents.parse(pos, end, expr_list_args, expected);
+		ws.ignore(pos, end);
+
+		if (!close.ignore(pos, end, expected))
+			return false;
+	}
+
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
 	function_node->name = dynamic_cast<ASTIdentifier &>(*identifier).name;
-	function_node->arguments = expr_list;
-	function_node->children.push_back(expr_list);
+
+	function_node->arguments = expr_list_args;
+	function_node->children.push_back(function_node->arguments);
+
+	if (expr_list_params)
+	{
+		function_node->parameters = expr_list_params;
+		function_node->children.push_back(function_node->parameters);
+	}
+	
 	node = function_node;
 	return true;
 }

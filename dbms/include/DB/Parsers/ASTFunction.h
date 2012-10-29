@@ -17,6 +17,8 @@ public:
 	String name;
 	/// аргументы
 	ASTPtr arguments;
+	/// параметры - для параметрических агрегатных функций. Пример: quantile(0.9)(x) - то, что в первых скобках - параметры.
+	ASTPtr parameters;
 	/// алиас, если есть
 	String alias;
 
@@ -35,7 +37,21 @@ public:
 	String getColumnName()
 	{
 		std::stringstream s;
-		s << name << "(";
+		s << name;
+
+		if (parameters)
+		{
+			s << "(";
+			for (ASTs::iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
+			{
+				if (it != parameters->children.begin())
+					s << ", ";
+				s << (*it)->getColumnName();
+			}
+			s << ")";
+		}
+
+		s << "(";
 		for (ASTs::iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
 		{
 			if (it != arguments->children.begin())
@@ -43,6 +59,7 @@ public:
 			s << (*it)->getColumnName();
 		}
 		s << ")";
+		
 		return s.str();
 	}
 
@@ -56,7 +73,8 @@ public:
 		ASTFunction * res = new ASTFunction(*this);
 		res->children.clear();
 
-		if (arguments) 	{ res->arguments = arguments->clone(); 	res->children.push_back(res->arguments); }
+		if (arguments) 	{ res->arguments = arguments->clone();		res->children.push_back(res->arguments); }
+		if (parameters) { res->parameters = parameters->clone(); 	res->children.push_back(res->parameters); }
 
 		return res;
 	}

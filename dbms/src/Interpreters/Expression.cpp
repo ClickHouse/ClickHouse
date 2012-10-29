@@ -112,6 +112,25 @@ void Expression::addSemantic(ASTPtr & ast)
 		/// Получаем типы результата
 		if (node->aggregate_function)
 		{
+			/// Также устанавливаем параметры агрегатной функции, если есть. Поддерживаются только литералы, пока без constant folding-а.
+			if (node->parameters)
+			{
+				ASTs & parameters = dynamic_cast<ASTExpressionList &>(*node->parameters).children;
+				size_t params_size = parameters.size();
+				Row params_row(params_size);
+
+				for (size_t i = 0; i < params_size; ++i)
+				{
+					ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*parameters[i]);
+					if (!lit)
+						throw Exception("Parameters to aggregate functions must be literals", ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+					
+					params_row[i] = lit->value;
+				}
+
+				node->aggregate_function->setParameters(params_row);
+			}
+			
 			node->aggregate_function->setArguments(argument_types);
 			node->return_type = node->aggregate_function->getReturnType();
 		}
