@@ -89,6 +89,7 @@ protected:
 
 	void next()
 	{
+		ready.reset();
 		pool.schedule(boost::bind(&AsynchronousBlockInputStream::calculate, this));
 	}
 	
@@ -96,8 +97,6 @@ protected:
 	/// Вычисления, которые могут выполняться в отдельном потоке
 	void calculate()
 	{
-		ready.reset();
-
 		try
 		{
 			block = in->read();
