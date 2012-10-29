@@ -332,10 +332,12 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 		s << (hilite ? hilite_function : "") << ')';
 	}
 
-	s << '(' << (hilite ? hilite_none : "");
 	if (ast.arguments)
+	{
+		s << '(' << (hilite ? hilite_none : "");
 		formatAST(*ast.arguments, s, indent, hilite, one_line);
-	s << (hilite ? hilite_function : "") << ')';
+		s << (hilite ? hilite_function : "") << ')';
+	}
 	
 	s << (hilite ? hilite_none : "");
 
