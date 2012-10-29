@@ -269,7 +269,13 @@ void Expression::clearTemporariesImpl(ASTPtr ast, Block & block)
 		if (need_columns.end() != need_columns.find(block.getByPosition(i).name))
 			cleared_block.insert(block.getByPosition(i));
 
-	block = cleared_block;
+	/** Список нужных столбцов может оказаться пустым, например, в случае запроса SELECT count() FROM t.
+	  * Но, при выполнении такого запроса, из таблицы считывается первый попавшийся столбец,
+	  *  чтобы узнать количество строк, и он нужен, хотя не виден в запросе.
+	  * То есть, в таких случаях, удалять "ненужные" столбцы не нужно.
+	  */
+	if (cleared_block)
+		block = cleared_block;
 }
 
 
