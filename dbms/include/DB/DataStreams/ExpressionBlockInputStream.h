@@ -24,7 +24,7 @@ class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression_, unsigned part_id_ = 0, bool clear_temporaries_ = false)
-		: input(input_), expression(expression_), part_id(part_id_)
+		: input(input_), expression(expression_), part_id(part_id_), clear_temporaries(clear_temporaries_)
 	{
 		children.push_back(input);
 	}
