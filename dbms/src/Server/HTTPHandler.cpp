@@ -12,7 +12,7 @@
 #include <DB/IO/ConcatReadBuffer.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -40,7 +40,7 @@ struct HTMLForm : public Poco::Net::HTMLForm
 };
 
 
-void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ostream & ostr, std::istream & istr)
+void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Net::HTTPServerResponse & response, std::istream & istr)
 {
 	BlockInputStreamPtr query_plan;
 	
@@ -64,7 +64,7 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, std::ost
 	ConcatReadBuffer in(in_param, *in_post_maybe_compressed);
 
 	/// Если указано compress, то будем сжимать результат.
-	SharedPtr<WriteBuffer> out = new WriteBufferFromOStream(ostr);
+	SharedPtr<WriteBuffer> out = new WriteBufferFromHTTPServerResponse(response);
 	SharedPtr<WriteBuffer> out_maybe_compressed;
 
 	if (0 != Poco::NumberParser::parseUnsigned(params.get("compress", "0")))
@@ -130,28 +130,41 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
 	if (is_browser)
 		response.setContentType("text/plain; charset=UTF-8");
-	
-	std::ostream & ostr = response.send();
+
 	try
 	{
 		LOG_TRACE(log, "Request URI: " << request.getURI());
 		
 		HTMLForm params(request);
 		std::istream & istr = request.stream();
-		processQuery(params, ostr, istr);
+		processQuery(params, response, istr);
 
 		LOG_INFO(log, "Done processing query");
 	}
+	catch (DB::Exception & e)
+	{
+		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		std::ostream & ostr = response.send();
+		std::stringstream s;
+		s << "Code: " << e.code()
+			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+		ostr << s.str() << std::endl;
+		LOG_ERROR(log, s.str());
+	}
 	catch (Poco::Exception & e)
 	{
+		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		std::ostream & ostr = response.send();
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.message() = " << e.message() << ", e.what() = " << e.what();
+			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
 		ostr << s.str() << std::endl;
 		LOG_ERROR(log, s.str());
 	}
 	catch (std::exception & e)
 	{
+		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		std::ostream & ostr = response.send();
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
 		ostr << s.str() << std::endl;
@@ -159,6 +172,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 	}
 	catch (...)
 	{
+		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		std::ostream & ostr = response.send();
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
 		ostr << s.str() << std::endl;

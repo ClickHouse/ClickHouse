@@ -93,7 +93,7 @@ void TCPHandler::runImpl()
 		}
 		catch (DB::Exception & e)
 		{
-			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
+			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 			state.exception = e.clone();
 
@@ -102,7 +102,8 @@ void TCPHandler::runImpl()
 		}
 		catch (Poco::Exception & e)
 		{
-			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code() << ", e.displayText() = " << e.displayText());
+			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 			state.exception = new Exception(e.message(), e.code());
 		}
 		catch (std::exception & e)
