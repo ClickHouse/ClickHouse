@@ -128,6 +128,49 @@ public:
 		LOG_TRACE(log, "Waited for threads to finish");
 	}
 
+	/** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
+	  *  пропуская отвалившиеся по эксепшену.
+	  */
+	void cancel()
+	{
+		is_cancelled = true;
+		
+		ExceptionPtr exception;
+		for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+		{
+			if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			{
+				try
+				{
+					child->cancel();
+				}
+				catch (const Exception & e)
+				{
+					if (!exception)
+						exception = e.clone();
+				}
+				catch (const Poco::Exception & e)
+				{
+					if (!exception)
+						exception = e.clone();
+				}
+				catch (const std::exception & e)
+				{
+					if (!exception)
+						exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+				}
+				catch (...)
+				{
+					if (!exception)
+						exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+				}
+			}
+		}
+
+		if (exception)
+			exception->rethrow();
+	}
+
 protected:
 	Block readImpl()
 	{
@@ -207,7 +250,18 @@ private:
 			{
 				/// Попросим остальные потоки побыстрее прекратить работу.
 				parent.finish = true;
-				parent.cancel();
+
+				try
+				{
+					parent.cancel();
+				}
+				catch (...)
+				{
+					/** Если не удалось попросить остановиться одного или несколько источников.
+					  * (например, разорвано соединение при распределённой обработке запроса)
+					  * - то пофиг.
+					  */
+				}
 
 				/// Отдаём эксепшен в основной поток.
 				parent.output_queue.push(exception);

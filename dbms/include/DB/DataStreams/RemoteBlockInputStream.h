@@ -51,19 +51,20 @@ public:
 
 	void cancel()
 	{
+		is_cancelled = true;
+					
 		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
 			LOG_TRACE(log, "Cancelling query");
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-			is_cancelled = true;
-			was_cancelled = true;
 			connection.sendCancel();
+			was_cancelled = true;
 		}
 	}
 
 
-    ~RemoteBlockInputStream()
+	~RemoteBlockInputStream()
 	{
 		/** Если одно из:
 		  *   - ничего не начинали делать;
