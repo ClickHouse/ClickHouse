@@ -33,6 +33,8 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
+	bool isRemote() const { return true; }
+
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,

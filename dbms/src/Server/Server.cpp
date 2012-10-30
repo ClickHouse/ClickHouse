@@ -85,6 +85,7 @@ int Server::main(const std::vector<std::string> & args)
 	settings.receive_timeout 	= Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
 	settings.send_timeout 		= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
 	settings.poll_interval		= config.getInt("poll_interval", 	settings.poll_interval);
+	settings.max_distributed_connections = config.getInt("max_distributed_connections", settings.max_distributed_connections);
 	settings.distributed_connections_pool_size =
 		config.getInt("distributed_connections_pool_size", settings.distributed_connections_pool_size);
 
