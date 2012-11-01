@@ -44,7 +44,7 @@ template <> struct default_hash<UInt64>
 {
 	size_t operator() (UInt64 key) const
 	{
-		return intHash32<UInt64, 0>(key);
+		return intHash32<0>(key);
 	}
 };
 

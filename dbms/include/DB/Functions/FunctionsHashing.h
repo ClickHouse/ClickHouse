@@ -66,7 +66,7 @@ struct IntHash32Impl
 	static UInt32 apply(UInt64 x)
 	{
 		/// seed взят из /dev/urandom.
-		return intHash32<UInt64, 0x75D9543DE018BF45ULL>(x);
+		return intHash32<0x75D9543DE018BF45ULL>(x);
 	}
 };
 
