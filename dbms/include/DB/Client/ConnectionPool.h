@@ -71,24 +71,35 @@ namespace detail
 }
 
 
-/** Пул соединений.
-  * Использование:
-  * 	ConnectionPool pool(...);
+/** Интерфейс для пулов соединений.
   *
-  *		void thread()
-  *		{
-  *		  	sqxxl::Pool::Entry connection = pool.get();
-  *			connection->sendQuery("SELECT 'Hello, world!' AS world");
-  *		}
+  * Использование (на примере обычного ConnectionPool):
+  * ConnectionPool pool(...);
   *
-  * TODO: Неплохо обобщить все пулы, которые есть в проекте.
+  *	void thread()
+  *	{
+  *	  	sqxxl::Pool::Entry connection = pool.get();
+  *		connection->sendQuery("SELECT 'Hello, world!' AS world");
+  *	}
   */
-class ConnectionPool : private boost::noncopyable
+class IConnectionPool : private boost::noncopyable
 {
 public:
 	typedef detail::ConnectionPoolEntry Entry;
+	virtual Entry get() = 0;
+};
+
+typedef SharedPtr<IConnectionPool> ConnectionPoolPtr;
+typedef std::vector<ConnectionPoolPtr> ConnectionPools;
 
 
+
+/** Обычный пул соединений, без отказоустойчивости.
+  * TODO: Неплохо бы обобщить все пулы, которые есть в проекте.
+  */
+class ConnectionPool : public IConnectionPool
+{
+public:
 	ConnectionPool(unsigned max_connections_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const DataTypeFactory & data_type_factory_,
@@ -125,11 +136,10 @@ public:
 		}
 	}
 
-protected:
+private:
 	/** Максимально возможное количество соедиений. */
 	unsigned max_connections;
 
-private:
 	String host;
 	UInt16 port;
 	String default_database;
@@ -166,9 +176,5 @@ private:
 		return *connections.back();
 	}
 };
-
-
-typedef SharedPtr<ConnectionPool> ConnectionPoolPtr;
-typedef std::vector<ConnectionPoolPtr> ConnectionPools;
 
 }

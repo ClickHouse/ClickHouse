@@ -83,6 +83,9 @@ public:
 	/// Получить пакет от сервера.
 	Packet receivePacket();
 
+	/// Если ещё не соединено, или соединение разорвано - соединиться. Если не получилось - кинуть исключение.
+	void forceConnected();
+
 private:
 	String host;
 	UInt16 port;
@@ -124,7 +127,6 @@ private:
 	void disconnect();
 	void sendHello();
 	void receiveHello();
-	void forceConnected();
 	bool ping();
 
 	Block receiveData();

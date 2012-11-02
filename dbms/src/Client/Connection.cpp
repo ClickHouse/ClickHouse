@@ -58,6 +58,13 @@ void Connection::connect()
 		/// Добавляем в сообщение адрес сервера. Жаль, что более точный тип исключения теряется.
 		throw Poco::Net::NetException(e.displayText(), "(" + getServerAddress() + ")", e.code());
 	}
+	catch (Poco::TimeoutException & e)
+	{
+		disconnect();
+
+		/// Добавляем в сообщение адрес сервера. Жаль, что более точный тип исключения теряется.
+		throw Poco::TimeoutException(e.displayText(), "(" + getServerAddress() + ")", e.code());
+	}
 }
 
 
