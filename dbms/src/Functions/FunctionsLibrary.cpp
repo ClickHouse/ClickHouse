@@ -134,6 +134,8 @@ namespace FunctionsLibrary
 			("notIn",						new FunctionIn(true))
 
 			("array",						new FunctionArray)
+			("arrayElement",				new FunctionArrayElement)
+			("has",							new FunctionHas)
 
 			("alphaTokens",					new FunctionAlphaTokens)
 			("splitByChar",					new FunctionSplitByChar)
