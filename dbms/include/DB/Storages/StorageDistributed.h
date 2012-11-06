@@ -2,6 +2,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Client/ConnectionPool.h>
+#include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Interpreters/Settings.h>
 
 
@@ -17,14 +18,28 @@ namespace DB
 class StorageDistributed : public IStorage
 {
 public:
+	/// Массив шардов. Каждый шард - адреса одного сервера.
 	typedef std::vector<Poco::Net::SocketAddress> Addresses;
-	
+
+	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
+	typedef std::vector<Addresses> AddressesWithFailover;
+
 	StorageDistributed(
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
-		const Addresses & addresses_,		/// Адреса удалённых серверов.
+		const Addresses & addresses,		/// Адреса удалённых серверов.
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
+		const DataTypeFactory & data_type_factory_,
+		const Settings & settings);
+
+	/// Использовать реплики для отказоустойчивости.
+	StorageDistributed(
+		const std::string & name_,					/// Имя таблицы.
+		NamesAndTypesListPtr columns_,				/// Список столбцов.
+		const AddressesWithFailover & addresses,	/// Адреса удалённых серверов с учётом реплик.
+		const String & remote_database_,			/// БД на удалённых серверах.
+		const String & remote_table_,				/// Имя таблицы на удалённых серверах.
 		const DataTypeFactory & data_type_factory_,
 		const Settings & settings);
 
@@ -48,7 +63,6 @@ public:
 private:
 	String name;
 	NamesAndTypesListPtr columns;
-	Addresses addresses;
 	String remote_database;
 	String remote_table;
 	const DataTypeFactory & data_type_factory;

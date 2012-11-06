@@ -88,6 +88,8 @@ int Server::main(const std::vector<std::string> & args)
 	settings.max_distributed_connections = config.getInt("max_distributed_connections", settings.max_distributed_connections);
 	settings.distributed_connections_pool_size =
 		config.getInt("distributed_connections_pool_size", settings.distributed_connections_pool_size);
+	settings.connections_with_failover_max_tries =
+		config.getInt("connections_with_failover_max_tries", settings.connections_with_failover_max_tries);
 
 	global_context.setSettings(settings);
 

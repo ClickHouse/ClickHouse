@@ -31,6 +31,8 @@ struct Settings
 	size_t poll_interval;
 	/// Максимальное количество соединений с одним удалённым сервером в пуле.
 	size_t distributed_connections_pool_size;
+	/// Максимальное количество попыток соединения с репликами.
+	size_t connections_with_failover_max_tries;
 
 	Settings() :
 		max_block_size(DEFAULT_BLOCK_SIZE),
@@ -43,7 +45,8 @@ struct Settings
 		receive_timeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
-		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE)
+		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
+		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES)
 	{
 	}
 
@@ -61,6 +64,7 @@ struct Settings
 		else if (name == "poll_interval")		poll_interval 		= boost::get<UInt64>(value);
 		else if (name == "max_distributed_connections") max_distributed_connections = boost::get<UInt64>(value);
 		else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = boost::get<UInt64>(value);
+		else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = boost::get<UInt64>(value);
 		else
 			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 	}

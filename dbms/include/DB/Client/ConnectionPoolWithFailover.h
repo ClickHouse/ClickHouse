@@ -74,7 +74,7 @@ public:
 			}
 		}
 
-		throw DB::Exception("All connection tries failed. Log: \n\n" << fail_messages.rdbuf() << "\n",
+		throw DB::Exception("All connection tries failed. Log: \n\n" + fail_messages.str() + "\n",
 			ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 	}
 
@@ -106,8 +106,5 @@ private:
 	Logger * log;
 };
 
-
-typedef SharedPtr<ConnectionPool> ConnectionPoolPtr;
-typedef std::vector<ConnectionPoolPtr> ConnectionPools;
 
 }
