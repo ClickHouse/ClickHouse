@@ -82,6 +82,8 @@ int Server::main(const std::vector<std::string> & args)
 	settings.max_threads 		= config.getInt("max_threads", 		settings.max_threads);
 	settings.interactive_delay 	= config.getInt("interactive_delay", settings.interactive_delay);
 	settings.connect_timeout 	= Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
+	settings.connect_timeout_with_failover_ms
+		= Poco::Timespan(config.getInt("connect_timeout_with_failover_ms", DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS) * 1000);
 	settings.receive_timeout 	= Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
 	settings.send_timeout 		= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
 	settings.poll_interval		= config.getInt("poll_interval", 	settings.poll_interval);

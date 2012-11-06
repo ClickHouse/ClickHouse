@@ -44,6 +44,8 @@ public:
 		{
 			for (size_t i = 0, size = nested_pools.size(); i < size; ++i)
 			{
+				std::stringstream fail_message;
+				
 				try
 				{
 					Entry res = nested_pools[i].pool->get();
@@ -52,25 +54,21 @@ public:
 				}
 			    catch (Poco::Net::NetException & e)
 				{
-					std::stringstream fail_message;
-					
 					fail_message << "Poco::Net::NetException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 						<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-					LOG_WARNING(log, "Connection failed at try №" << try_no << ", reason: " << fail_message);
-					
-					fail_messages << fail_message.rdbuf() << std::endl;
 				}
 				catch (Poco::TimeoutException & e)
 				{
-					std::stringstream fail_message;
-					
 					fail_message << "Poco::TimeoutException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 						<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-
-					LOG_WARNING(log, "Connection failed at try №" << try_no << ", reason: " << fail_message);
-
-					fail_messages << fail_message.rdbuf() << std::endl;
 				}
+
+				LOG_WARNING(log, "Connection failed at try №"
+					<< (try_no + 1) << ", reason: " << fail_message.str());
+
+				fail_messages << fail_message.str() << std::endl;
+
+				++nested_pools[i].error_count;
 			}
 		}
 
@@ -84,9 +82,21 @@ private:
 		ConnectionPoolPtr pool;
 		UInt64 error_count;
 		UInt32 random;
+		drand48_data rand_state;
 
-		PoolWithErrorCount(ConnectionPoolPtr & pool_) : pool(pool_), error_count(0), random(0) {}
-		void randomize() { random = rand(); }
+		PoolWithErrorCount(ConnectionPoolPtr & pool_)
+			: pool(pool_), error_count(0), random(0)
+		{
+			/// Инициализация плохая, но это не важно.
+			srand48_r(reinterpret_cast<ptrdiff_t>(this), &rand_state);
+		}
+		
+		void randomize()
+		{
+			long int rand_res;
+			lrand48_r(&rand_state, &rand_res);
+			random = rand_res;
+		}
 
 		bool operator< (const PoolWithErrorCount & rhs) const
 		{

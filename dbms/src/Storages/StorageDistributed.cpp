@@ -48,7 +48,7 @@ StorageDistributed::StorageDistributed(
 			replicas.push_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,
 				jt->host().toString(), jt->port(), "", data_type_factory, "server", Protocol::Compression::Enable,
-				settings.connect_timeout, settings.receive_timeout, settings.send_timeout));
+				settings.connect_timeout_with_failover_ms, settings.receive_timeout, settings.send_timeout));
 
 		pools.push_back(new ConnectionPoolWithFailover(replicas, settings.connections_with_failover_max_tries));
 	}

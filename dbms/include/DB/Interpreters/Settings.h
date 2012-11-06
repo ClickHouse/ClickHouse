@@ -25,6 +25,7 @@ struct Settings
 	/// Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса.
 	size_t interactive_delay;
 	Poco::Timespan connect_timeout;
+	Poco::Timespan connect_timeout_with_failover_ms;	/// Если следует выбрать одну из рабочих реплик.
 	Poco::Timespan receive_timeout;
 	Poco::Timespan send_timeout;
 	/// Блокироваться в цикле ожидания запроса в сервере на указанное количество секунд.
@@ -42,6 +43,7 @@ struct Settings
 		asynchronous(true),
 		interactive_delay(DEFAULT_INTERACTIVE_DELAY),
 		connect_timeout(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
+		connect_timeout_with_failover_ms(0, DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS),
 		receive_timeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
@@ -62,6 +64,8 @@ struct Settings
 		else if (name == "receive_timeout")		receive_timeout 	= Poco::Timespan(boost::get<UInt64>(value), 0);
 		else if (name == "send_timeout")		send_timeout 		= Poco::Timespan(boost::get<UInt64>(value), 0);
 		else if (name == "poll_interval")		poll_interval 		= boost::get<UInt64>(value);
+		else if (name == "connect_timeout_with_failover_ms")
+			connect_timeout_with_failover_ms = Poco::Timespan(boost::get<UInt64>(value) * 1000);
 		else if (name == "max_distributed_connections") max_distributed_connections = boost::get<UInt64>(value);
 		else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = boost::get<UInt64>(value);
 		else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = boost::get<UInt64>(value);

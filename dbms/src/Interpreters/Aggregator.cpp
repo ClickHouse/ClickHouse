@@ -127,8 +127,6 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
-		LOG_TRACE(log, "Aggregating block");
-		
 		initialize(block);
 
 		for (size_t i = 0; i < aggregates_size; ++i)
@@ -354,8 +352,6 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		}
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-
-		LOG_TRACE(log, "Aggregated block");
 	}
 }
 
