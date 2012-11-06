@@ -423,6 +423,37 @@ inline void readQuoted(mysqlxx::DateTime & x, ReadBuffer & buf)
 }
 
 
+/// В двойных кавычках
+inline void readDoubleQuoted(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readDoubleQuoted(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readDoubleQuoted(String & x, 	ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
+inline void readDoubleQuoted(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
+
+inline void readDoubleQuoted(Yandex::VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+
+inline void readDoubleQuoted(mysqlxx::Date & x, ReadBuffer & buf)
+{
+	assertString("\"", buf);
+	readDateText(x, buf);
+	assertString("\"", buf);
+}
+
+inline void readDoubleQuoted(mysqlxx::DateTime & x, ReadBuffer & buf)
+{
+	assertString("\"", buf);
+	readDateTimeText(x, buf);
+	assertString("\"", buf);
+}
+
+
 /// Пропустить пробельные символы.
 inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {

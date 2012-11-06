@@ -437,6 +437,40 @@ inline void writeQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
 }
 
 
+/// В двойных кавычках
+inline void writeDoubleQuoted(const UInt8 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const UInt16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const UInt32 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const UInt64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const Int8 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const Int16 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const Int32 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const Int64 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeDoubleQuoted(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeDoubleQuoted(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeDoubleQuoted(const String & x,		WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+inline void writeDoubleQuoted(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
+
+inline void writeDoubleQuoted(const Yandex::VisitID_t & x, 	WriteBuffer & buf)
+{
+	writeIntText(static_cast<const UInt64 &>(x), buf);
+}
+
+inline void writeDoubleQuoted(const mysqlxx::Date & x,		WriteBuffer & buf)
+{
+	writeChar('"', buf);
+	writeDateText(x, buf);
+	writeChar('"', buf);
+}
+
+inline void writeDoubleQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
+{
+	writeChar('"', buf);
+	writeDateTimeText(x, buf);
+	writeChar('"', buf);
+}
+
+
 /// Сериализация эксепшена (чтобы его можно было передать по сети)
 void writeException(const Exception & e, WriteBuffer & buf);
 
