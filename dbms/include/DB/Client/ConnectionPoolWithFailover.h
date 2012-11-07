@@ -84,7 +84,7 @@ private:
 		UInt32 random;
 		drand48_data rand_state;
 
-		PoolWithErrorCount(ConnectionPoolPtr & pool_)
+		PoolWithErrorCount(const ConnectionPoolPtr & pool_)
 			: pool(pool_), error_count(0), random(0)
 		{
 			/// Инициализация плохая, но это не важно.
