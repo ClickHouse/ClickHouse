@@ -227,7 +227,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	  * Чтобы одновременно опрашивалось больше удалённых серверов,
 	  *  вместо max_threads используется max_distributed_connections.
 	  */
-	if (table->isRemote())
+	if (table && table->isRemote())
 		settings.max_threads = settings.max_distributed_connections;
 	
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
