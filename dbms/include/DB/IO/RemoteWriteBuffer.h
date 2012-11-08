@@ -65,19 +65,22 @@ public:
 			<< "&if_exists=" << if_exists
 			<< "&decompress=" << (decompress ? "true" : "false");
 
-		uri_str = uri.str();
+		uri_str = Poco::URI(uri.str()).getPathAndQuery();
 
 		session.setHost(host);
 		session.setPort(port);
+		session.setKeepAlive(true);
 		
 		/// устанавливаем таймаут
-		session.setTimeout(Poco::Timespan(timeout_ || DEFAULT_REMOTE_WRITE_BUFFER_TIMEOUT, 0));
+		session.setTimeout(Poco::Timespan((timeout_ ? timeout_ : DEFAULT_REMOTE_WRITE_BUFFER_TIMEOUT), 0));
 		
-		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str);
+		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str, Poco::Net::HTTPRequest::HTTP_1_1);
+		
+		request.setChunkedTransferEncoding(true);
 		
 		for (unsigned i = 0; i < connection_retries; ++i)
 		{
-			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending write request to " << uri_str);
+			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending write request to " << host << ":" << port << uri_str);
 
 			try
 			{
@@ -88,7 +91,7 @@ public:
 				if (i + 1 == connection_retries)
 					throw;
 
-				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.message() << ", URL: " << uri_str << ", try No " << i + 1 << ".");
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.message() << ", URL: " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;
 			}
@@ -97,7 +100,7 @@ public:
 				if (i + 1 == connection_retries)
 					throw;
 
-				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), "Connection timeout from " << uri_str << ", try No " << i + 1 << ".");
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), "Connection timeout from " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;
 			}
@@ -187,12 +190,13 @@ private:
 			<< "&from=" << encoded_tmp_path
 			<< "&to=" << encoded_path;
 
-		uri_str = uri.str();
-		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri_str);
-
+		uri_str = Poco::URI(uri.str()).getPathAndQuery();
+		
+		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri_str, Poco::Net::HTTPRequest::HTTP_1_1);
+		
 		for (unsigned i = 0; i < connection_retries; ++i)
 		{
-			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << uri_str);
+			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << host << ":" << port << uri_str);
 
 			try
 			{
@@ -205,7 +209,7 @@ private:
 					throw;
 				
 				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.what() << ", message: " << e.message()
-					<< ", URL: " << uri_str << ", try No " << i + 1 << ".");
+					<< ", URL: " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;
 			}
@@ -214,7 +218,7 @@ private:
 				if (i + 1 == connection_retries)
 					throw;
 				
-				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), "Connection timeout from " << uri_str << ", try No " << i + 1 << ".");
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), "Connection timeout from " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;
 			}
