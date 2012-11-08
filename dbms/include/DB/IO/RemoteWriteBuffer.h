@@ -91,7 +91,7 @@ public:
 				if (i + 1 == connection_retries)
 					throw;
 
-				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.message() << ", URL: " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.displayText() << ", URL: " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;
 			}
@@ -208,7 +208,7 @@ private:
 				if (i + 1 == connection_retries)
 					throw;
 				
-				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.what() << ", message: " << e.message()
+				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.what() << ", message: " << e.displayText()
 					<< ", URL: " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;
@@ -226,7 +226,7 @@ private:
 			{
 				/// Если в прошлую попытку от сервера не пришло ответа, но файл всё же был переименован.
 				if (i != 0 && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER
-					&& NULL != strstr(e.message().data(), "File not found"))
+					&& NULL != strstr(e.displayText().data(), "File not found"))
 				{
 					LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "File already renamed");
 				}

@@ -81,7 +81,7 @@ void loadMetadata(Context & context)
 			}
 			catch (const DB::Exception & e)
 			{
-				throw Exception("Cannot create table from metadata file " + jt->path() + ", error: " + e.message(),
+				throw Exception("Cannot create table from metadata file " + jt->path() + ", error: " + e.displayText(),
 					ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 			}
 		}

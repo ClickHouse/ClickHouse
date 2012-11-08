@@ -104,7 +104,7 @@ void TCPHandler::runImpl()
 		{
 			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
-			state.exception = new Exception(e.message(), e.code());
+			state.exception = new Exception(e.displayText(), e.code());
 		}
 		catch (std::exception & e)
 		{

@@ -89,7 +89,7 @@ int main(int argc, char ** argv)
 	}
 	catch (const DB::Exception & e)
 	{
-		std::cerr << e.what() << ", " << e.message() << std::endl;
+		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;
 	}
 
