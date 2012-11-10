@@ -14,7 +14,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-/** Интерфейс потока для вывода данных в формате "каждое значение на своей строке".
+/** Поток для вывода данных в формате "каждое значение на своей строке".
   */
 class VerticalRowOutputStream : public IRowOutputStream
 {

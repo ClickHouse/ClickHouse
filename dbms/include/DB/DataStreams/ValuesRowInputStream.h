@@ -13,7 +13,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-/** Интерфейс потока для чтения данных в формате VALUES (как в INSERT запросе).
+/** Поток для чтения данных в формате VALUES (как в INSERT запросе).
   */
 class ValuesRowInputStream : public IRowInputStream
 {

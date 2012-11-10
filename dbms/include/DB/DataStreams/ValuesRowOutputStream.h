@@ -13,7 +13,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-/** Интерфейс потока для вывода данных в формате VALUES (как в INSERT запросе).
+/** Поток для вывода данных в формате VALUES (как в INSERT запросе).
   */
 class ValuesRowOutputStream : public IRowOutputStream
 {

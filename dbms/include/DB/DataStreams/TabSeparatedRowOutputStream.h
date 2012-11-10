@@ -10,10 +10,7 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
-/** Интерфейс потока для вывода данных в формате tsv.
+/** Поток для вывода данных в формате tsv.
   */
 class TabSeparatedRowOutputStream : public IRowOutputStream
 {

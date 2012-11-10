@@ -10,10 +10,7 @@
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
-/** Интерфейс потока для ввода данных в формате tsv.
+/** Поток для ввода данных в формате tsv.
   */
 class TabSeparatedRowInputStream : public IRowInputStream
 {
@@ -26,7 +23,7 @@ public:
 	Row read();
 	void readPrefix();
 
-	RowInputStreamPtr clone() { return new TabSeparatedRowInputStream(istr, sample); }
+	RowInputStreamPtr clone() { return new TabSeparatedRowInputStream(istr, sample, with_names, with_types); }
 
 private:
 	ReadBuffer & istr;
