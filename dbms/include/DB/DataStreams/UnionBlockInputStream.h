@@ -57,6 +57,35 @@ public:
 		empty_count.set();
 	}
 
+	bool tryPush(const T & x)
+	{
+		if (empty_count.tryWait(0))
+		{
+			{
+				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				queue.push(x);
+			}
+			fill_count.set();
+			return true;
+		}
+		return false;
+	}
+
+	bool tryPop(T & x)
+	{
+		if (fill_count.tryWait(0))
+		{
+			{
+				Poco::ScopedLock<Poco::Mutex> lock(mutex);
+				x = queue.front();
+				queue.pop();
+			}
+			empty_count.set();
+			return true;
+		}
+		return false;
+	}
+
 	void clear()
 	{
 		while (fill_count.tryWait(0))
@@ -116,7 +145,10 @@ public:
 		cancel();
 
 		/// Вынем всё, что есть в очереди готовых данных.
-		output_queue.clear();	/// TODO: здесь возможно умалчивание эксепшена.
+		OutputData res;
+		while (output_queue.tryPop(res))
+			if (res.exception && !std::uncaught_exception())
+				res.exception->rethrow();
 
 		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
 		  * PS. Может быть, для переменной finish нужен барьер?
@@ -124,6 +156,11 @@ public:
 
 		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			it->thread->join();
+
+		/// Может быть, нам под конец положили эксепшен.
+		while (output_queue.tryPop(res))
+			if (res.exception && !std::uncaught_exception())
+				res.exception->rethrow();
 
 		LOG_TRACE(log, "Waited for threads to finish");
 	}
