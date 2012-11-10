@@ -3,6 +3,8 @@
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/TabSeparatedRawRowOutputStream.h>
+#include <DB/DataStreams/BinaryRowInputStream.h>
+#include <DB/DataStreams/BinaryRowOutputStream.h>
 #include <DB/DataStreams/ValuesRowInputStream.h>
 #include <DB/DataStreams/ValuesRowOutputStream.h>
 #include <DB/DataStreams/TabSeparatedBlockOutputStream.h>
@@ -26,6 +28,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return new NativeBlockInputStream(buf, data_type_factory);
 	else if (name == "TabSeparated")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample), sample, max_block_size);
+	else if (name == "RowBinary")
+		return new BlockInputStreamFromRowInputStream(new BinaryRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "TabSeparatedWithNames")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true), sample, max_block_size);
 	else if (name == "TabSeparatedWithNamesAndTypes")
@@ -46,6 +50,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new NativeBlockOutputStream(buf);
 	else if (name == "TabSeparated")
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample));
+	else if (name == "RowBinary")
+		return new BlockOutputStreamFromRowOutputStream(new BinaryRowOutputStream(buf, sample));
 	else if (name == "TabSeparatedWithNames")
 		return new BlockOutputStreamFromRowOutputStream(new TabSeparatedRowOutputStream(buf, sample, true));
 	else if (name == "TabSeparatedWithNamesAndTypes")
