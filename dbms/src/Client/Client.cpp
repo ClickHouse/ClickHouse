@@ -12,7 +12,6 @@
 
 #include <tr1/unordered_set>
 
-#include <boost/thread/thread.hpp>
 #include <boost/assign/list_inserter.hpp>
 
 #include <Poco/File.h>
@@ -53,51 +52,82 @@ using Poco::SharedPtr;
 
 
 /** Пока существует объект этого класса - блокирует сигнал INT, при этом позволяет узнать, не пришёл ли он.
+  * Это нужно, чтобы можно было прервать выполнение запроса с помощью Ctrl+C.
   * В один момент времени используйте только один экземпляр этого класса.
+  * Если метод check вернул true (пришёл сигнал), то следующие вызовы будет ждать следующий сигнал.
   */
 class InterruptListener
 {
-public:
-	InterruptListener() : is_interrupted(false)
-	{
-		sigset_t sig_set;
-		if (sigemptyset(&sig_set)
-			|| sigaddset(&sig_set, SIGINT)
-			|| pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
-			throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+private:
+	bool active;
 
-		// TODO: скорее всего, эта штука не уничтожается вовремя.
-		boost::thread waiting_thread(&InterruptListener::wait, this);
+public:
+	InterruptListener() : active(false)
+	{
+		block();
 	}
 
 	~InterruptListener()
 	{
-		sigset_t sig_set;
-		if (sigemptyset(&sig_set)
-			|| sigaddset(&sig_set, SIGINT)
-			|| pthread_sigmask(SIG_UNBLOCK, &sig_set, NULL))
-			throwFromErrno("Cannot unblock signal.", ErrorCodes::CANNOT_UNBLOCK_SIGNAL);
+		unblock();
 	}
 
-	bool check() { return is_interrupted; }
-
-private:
-	bool is_interrupted;
-
-	void wait()
+	bool check()
 	{
+		if (!active)
+			return false;
+		
+		timespec timeout = { 0, 0 };
 		sigset_t sig_set;
-		int sig = 0;
 
 		if (sigemptyset(&sig_set)
-			|| sigaddset(&sig_set, SIGINT)
-			|| sigwait(&sig_set, &sig))
+			|| sigaddset(&sig_set, SIGINT))
+			throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+		
+		if (-1 == sigtimedwait(&sig_set, NULL, &timeout))
 		{
-			std::cerr << "Cannot wait for signal." << std::endl;
-			return;
+			if (errno == EAGAIN)
+				return false;
+			else
+				throwFromErrno("Cannot poll signal (sigtimedwait).", ErrorCodes::CANNOT_WAIT_FOR_SIGNAL);
 		}
 
-		is_interrupted = true;
+		return true;
+	}
+
+	void block()
+	{
+		if (!active)
+		{
+			sigset_t sig_set;
+
+			if (sigemptyset(&sig_set)
+				|| sigaddset(&sig_set, SIGINT))
+				throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+
+			if (pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
+				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+
+			active = true;
+		}
+	}
+
+	/// Можно прекратить блокировать сигнал раньше, чем в деструкторе.
+	void unblock()
+	{
+		if (active)
+		{
+			sigset_t sig_set;
+
+			if (sigemptyset(&sig_set)
+				|| sigaddset(&sig_set, SIGINT))
+				throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+
+			if (pthread_sigmask(SIG_UNBLOCK, &sig_set, NULL))
+				throwFromErrno("Cannot unblock signal.", ErrorCodes::CANNOT_UNBLOCK_SIGNAL);
+
+			active = false;
+		}
 	}
 };
 
@@ -519,6 +549,9 @@ private:
 					cancelled = true;
 					if (is_interactive)
 						std::cout << "Cancelling query." << std::endl;
+
+					/// Повторное нажатие Ctrl+C приведёт к завершению работы.
+					interrupt_listener.unblock();
 				}
 				else if (!connection->poll(1000000))
 					continue;	/// Если новых данных в ещё нет, то после таймаута продолжим проверять, не остановлено ли выполнение запроса.
