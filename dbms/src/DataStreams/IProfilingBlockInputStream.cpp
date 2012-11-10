@@ -143,7 +143,8 @@ const BlockStreamProfileInfo & IProfilingBlockInputStream::getInfo() const
 
 void IProfilingBlockInputStream::cancel()
 {
-	is_cancelled = true;
+	if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+		return;
 
 	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))

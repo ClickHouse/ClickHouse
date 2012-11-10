@@ -51,8 +51,9 @@ public:
 
 	void cancel()
 	{
-		is_cancelled = true;
-					
+		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+			return;
+
 		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
 			LOG_TRACE(log, "Cancelling query");

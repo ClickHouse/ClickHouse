@@ -116,7 +116,7 @@ public:
 		cancel();
 
 		/// Вынем всё, что есть в очереди готовых данных.
-		output_queue.clear();
+		output_queue.clear();	/// TODO: здесь возможно умалчивание эксепшена.
 
 		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
 		  * PS. Может быть, для переменной finish нужен барьер?
@@ -133,7 +133,8 @@ public:
 	  */
 	void cancel()
 	{
-		is_cancelled = true;
+		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+			return;
 
 		ExceptionPtr exception;
 		for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
