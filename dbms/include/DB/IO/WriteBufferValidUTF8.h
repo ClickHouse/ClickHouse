@@ -106,7 +106,7 @@ namespace DB
 	public:
 		static const size_t DEFAULT_SIZE;
 		
-		WriteBufferValidUTF8(DB::WriteBuffer & output_buffer, size_t size = DEFAULT_SIZE, bool group_replacements = true, const char * replacement = "\xEF\xBF\xBD")
+		WriteBufferValidUTF8(DB::WriteBuffer & output_buffer, bool group_replacements = true, const char * replacement = "\xEF\xBF\xBD", size_t size = DEFAULT_SIZE)
 		: BufferWithOwnMemory<DB::WriteBuffer>(size), output_buffer(output_buffer),
 		  group_replacements(group_replacements), just_put_replacement(false), replacement(replacement) {}
 		
