@@ -4,6 +4,8 @@
 namespace DB
 {
 	
+const size_t WriteBufferValidUTF8::DEFAULT_SIZE = 64;
+	
 const char WriteBufferValidUTF8::trailingBytesForUTF8[256] = {
 	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,

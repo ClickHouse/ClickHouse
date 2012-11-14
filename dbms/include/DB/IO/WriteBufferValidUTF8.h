@@ -1,20 +1,20 @@
 #pragma once
 
 #include <DB/IO/WriteBuffer.h>
+#include <DB/IO/BufferWithOwnMemory.h>
 #include <Poco/UTF8Encoding.h>
 
 namespace DB
 {
 	
 	/** Пишет данные в другой буфер, заменяя невалидные UTF-8 последовательности на указанную последовательность.
+	 * Если записывается уже валидный UTF-8, работает быстро, иначе - медленно.
 	 * Замечение: перед использованием полученной строки, уничтожте этот объект.
 	 */
-	class WriteBufferValidUTF8 : public WriteBuffer
+	class WriteBufferValidUTF8 : public BufferWithOwnMemory<WriteBuffer>
 	{
 	private:
 		WriteBuffer & output_buffer;
-		/// Текущая неполная последовательность.
-		unsigned char current_sequence[4];
 		bool group_replacements;
 		/// Последний записанный символ был replacement.
 		bool just_put_replacement;
@@ -38,19 +38,18 @@ namespace DB
 			output_buffer.write(replacement.data(), replacement.size());
 		}
 		
-		inline void putValid(size_t from, size_t len)
+		inline void putValid(char *data, size_t len)
 		{
 			just_put_replacement = false;
-			output_buffer.write(reinterpret_cast<char*>(current_sequence) + from, len);
+			output_buffer.write(data, len);
 		}
 		
 		void nextImpl()
 		{
-			size_t cnt = pos - reinterpret_cast<char*>(current_sequence);
-			size_t p = 0;
-			while (p < cnt)
+			char *p = &memory[0];
+			while (p < pos)
 			{
-				size_t len = 1 + static_cast<size_t>(trailingBytesForUTF8[current_sequence[p]]);
+				size_t len = 1 + static_cast<size_t>(trailingBytesForUTF8[static_cast<unsigned char>(*p)]);
 				
 				if (len > 4)
 				{
@@ -58,12 +57,12 @@ namespace DB
 					putReplacement();
 					++p;
 				}
-				else if (p + len > cnt)
+				else if (p + len > pos)
 				{
 					/// Еще не вся последовательность записана.
 					break;
 				}
-				else if (Poco::UTF8Encoding::isLegal(current_sequence + p, len))
+				else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char*>(p), len))
 				{
 					/// Валидная последовательность.
 					putValid(p, len);
@@ -76,13 +75,13 @@ namespace DB
 					p += len;
 				}
 			}
-			cnt -= p;
+			size_t cnt = pos - p;
 			/// Сдвинем незаконченную последовательность в начало буфера.
 			for (size_t i = 0; i < cnt; ++i)
 			{
-				current_sequence[i] = current_sequence[p + i];
+				memory[i] = p[i];
 			}
-			working_buffer = Buffer(reinterpret_cast<char*>(current_sequence) + cnt, reinterpret_cast<char*>(current_sequence) + 4);
+			working_buffer = Buffer(&memory[cnt], &memory[0] + memory.size());
 		}
 		
 		void finish()
@@ -90,15 +89,17 @@ namespace DB
 			/// Выпишем все полные последовательности из буфера.
 			nextImpl();
 			/// Если осталась незаконченная последовательность, запишем replacement.
-			if (working_buffer.begin() != reinterpret_cast<char*>(current_sequence))
+			if (working_buffer.begin() != &memory[0])
 			{
 				putReplacement();
 			}
 		}
 		
 	public:
-		WriteBufferValidUTF8(DB::WriteBuffer & output_buffer, bool group_replacements = true, const char * replacement = "\xEF\xBF\xBD")
-		: WriteBuffer(reinterpret_cast<char*>(current_sequence), 4), output_buffer(output_buffer),
+		static const size_t DEFAULT_SIZE;
+		
+		WriteBufferValidUTF8(DB::WriteBuffer & output_buffer, size_t size = DEFAULT_SIZE, bool group_replacements = true, const char * replacement = "\xEF\xBF\xBD")
+		: BufferWithOwnMemory<DB::WriteBuffer>(size), output_buffer(output_buffer),
 		  group_replacements(group_replacements), just_put_replacement(false), replacement(replacement) {}
 		
 		virtual ~WriteBufferValidUTF8()
