@@ -8,7 +8,7 @@ namespace DB
 {
 	
 	/** Пишет данные в другой буфер, заменяя невалидные UTF-8 последовательности на указанную последовательность.
-	 * Если записывается уже валидный UTF-8, работает быстро, иначе - медленно.
+	 * Если записывается уже валидный UTF-8, работает быстрее.
 	 * Замечение: перед использованием полученной строки, уничтожте этот объект.
 	 */
 	class WriteBufferValidUTF8 : public BufferWithOwnMemory<WriteBuffer>
@@ -40,6 +40,8 @@ namespace DB
 		
 		inline void putValid(char *data, size_t len)
 		{
+			if (len == 0)
+				return;
 			just_put_replacement = false;
 			output_buffer.write(data, len);
 		}
@@ -47,6 +49,7 @@ namespace DB
 		void nextImpl()
 		{
 			char *p = &memory[0];
+			char *valid_start = p;
 			while (p < pos)
 			{
 				size_t len = 1 + static_cast<size_t>(trailingBytesForUTF8[static_cast<unsigned char>(*p)]);
@@ -54,8 +57,10 @@ namespace DB
 				if (len > 4)
 				{
 					/// Невалидное начало последовательности. Пропустим один байт.
+					putValid(valid_start, p - valid_start);
 					putReplacement();
 					++p;
+					valid_start = p;
 				}
 				else if (p + len > pos)
 				{
@@ -65,16 +70,19 @@ namespace DB
 				else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char*>(p), len))
 				{
 					/// Валидная последовательность.
-					putValid(p, len);
 					p += len;
 				}
 				else
 				{
 					/// Невалидная последовательность. Пропустим ее всю.
+					putValid(valid_start, p - valid_start);
 					putReplacement();
 					p += len;
+					valid_start = p;
 				}
 			}
+			putValid(valid_start, p - valid_start);
+			
 			size_t cnt = pos - p;
 			/// Сдвинем незаконченную последовательность в начало буфера.
 			for (size_t i = 0; i < cnt; ++i)
