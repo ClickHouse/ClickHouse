@@ -35,7 +35,7 @@ int main(int argc, char ** argv)
 		
 		std::string str2;
 		{
-			DB::WriteBufferFromString simple_buf(str1);
+			DB::WriteBufferFromString simple_buf(str2);
 			{
 				DB::WriteBufferValidUTF8 utf_buf(simple_buf);
 				for (int i = 0; i < repeats; ++i)
