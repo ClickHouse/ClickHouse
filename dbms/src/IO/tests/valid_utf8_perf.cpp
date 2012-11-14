@@ -36,10 +36,12 @@ int main(int argc, char ** argv)
 		std::string str2;
 		{
 			DB::WriteBufferFromString simple_buf(str1);
-			DB::WriteBufferValidUTF8 utf_buf(simple_buf);
-			for (int i = 0; i < repeats; ++i)
 			{
-				utf_buf.write(text.data(), text.size());
+				DB::WriteBufferValidUTF8 utf_buf(simple_buf);
+				for (int i = 0; i < repeats; ++i)
+				{
+					utf_buf.write(text.data(), text.size());
+				}
 			}
 		}
 		std::cout << "Wrote to UTF8 in " << timer.elapsedSeconds() << "s." << std::endl;
