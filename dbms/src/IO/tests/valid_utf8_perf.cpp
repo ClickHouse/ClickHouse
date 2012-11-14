@@ -28,7 +28,8 @@ int main(int argc, char ** argv)
 				simple_buf.write(text.data(), text.size());
 			}
 		}
-		std::cout << "Wrote to string in " << timer.elapsedSeconds() << "s." << std::endl;
+		double t = timer.elapsedSeconds();
+		std::cout << "Wrote to string in " << t << "s at " << text.size() / 1e6 * repeats / t << "MB/s." << std::endl;
 		std::cout << "String length: " << str1.size() << "(" << (str1.size() == text.size() * repeats ? "as " : "un") << "expected)" << std::endl;
 		
 		timer.restart();
@@ -36,15 +37,14 @@ int main(int argc, char ** argv)
 		std::string str2;
 		{
 			DB::WriteBufferFromString simple_buf(str2);
+			for (int i = 0; i < repeats; ++i)
 			{
 				DB::WriteBufferValidUTF8 utf_buf(simple_buf);
-				for (int i = 0; i < repeats; ++i)
-				{
-					utf_buf.write(text.data(), text.size());
-				}
+				utf_buf.write(text.data(), text.size());
 			}
 		}
-		std::cout << "Wrote to UTF8 in " << timer.elapsedSeconds() << "s." << std::endl;
+		t = timer.elapsedSeconds();
+		std::cout << "Wrote to UTF8 in " << t << "s at " << text.size() / 1e6 * repeats / t << "MB/s." << std::endl;
 		std::cout << "String length: " << str2.size() << "(" << (str2.size() == text.size() * repeats ? "as " : "un") << "expected)" << std::endl;
 	}
 	catch (const DB::Exception & e)
