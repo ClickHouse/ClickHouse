@@ -88,7 +88,7 @@ public:
 
 	Field getResult() const
 	{
-		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считаеть это нарушением константности.
+		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
 
 		if (returns_float)
 			return Float64(const_cast<Sample &>(sample).quantileInterpolated(level));
