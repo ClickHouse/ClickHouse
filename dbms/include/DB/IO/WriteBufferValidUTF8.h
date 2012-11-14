@@ -32,7 +32,7 @@ namespace DB
 		
 		inline void putReplacement()
 		{
-			if (replacement.empty() || group_replacements && just_put_replacement)
+			if (replacement.empty() || (group_replacements && just_put_replacement))
 				return;
 			just_put_replacement = true;
 			output_buffer.write(replacement.data(), replacement.size());
@@ -98,8 +98,8 @@ namespace DB
 		
 	public:
 		WriteBufferValidUTF8(DB::WriteBuffer & output_buffer, bool group_replacements = true, const char * replacement = "\xEF\xBF\xBD")
-		: WriteBuffer(reinterpret_cast<char*>(current_sequence), 4), output_buffer(output_buffer), group_replacements(group_replacements), replacement(replacement),
-		  just_put_replacement(false) {}
+		: WriteBuffer(reinterpret_cast<char*>(current_sequence), 4), output_buffer(output_buffer),
+		  group_replacements(group_replacements), just_put_replacement(false), replacement(replacement) {}
 		
 		virtual ~WriteBufferValidUTF8()
 		{
