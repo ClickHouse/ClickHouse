@@ -39,6 +39,6 @@ typedef SharedPtr<Poco::Exception> ExceptionPtr;
 typedef std::vector<ExceptionPtr> Exceptions;
 
 
-void throwFromErrno(const std::string & s, int code = 0);
+void throwFromErrno(const std::string & s, int code = 0, int theErrno = errno);
 
 }
