@@ -1,5 +1,7 @@
 #pragma once
 
+#include <errno.h>
+
 #include <vector>
 
 #include <Poco/Exception.h>
@@ -39,6 +41,6 @@ typedef SharedPtr<Poco::Exception> ExceptionPtr;
 typedef std::vector<ExceptionPtr> Exceptions;
 
 
-void throwFromErrno(const std::string & s, int code = 0, int theErrno = errno);
+void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
 
 }
