@@ -74,10 +74,10 @@ namespace DB
 				}
 				else
 				{
-					/// Невалидная последовательность. Пропустим ее всю.
+					/// Невалидная последовательность. Пропустим только первый байт.
 					putValid(valid_start, p - valid_start);
 					putReplacement();
-					p += len;
+					++p;
 					valid_start = p;
 				}
 			}
@@ -107,7 +107,7 @@ namespace DB
 		static const size_t DEFAULT_SIZE;
 		
 		WriteBufferValidUTF8(DB::WriteBuffer & output_buffer, bool group_replacements = true, const char * replacement = "\xEF\xBF\xBD", size_t size = DEFAULT_SIZE)
-		: BufferWithOwnMemory<DB::WriteBuffer>(size), output_buffer(output_buffer),
+		: BufferWithOwnMemory<DB::WriteBuffer>(std::max(4LU, size)), output_buffer(output_buffer),
 		  group_replacements(group_replacements), just_put_replacement(false), replacement(replacement) {}
 		
 		virtual ~WriteBufferValidUTF8()
