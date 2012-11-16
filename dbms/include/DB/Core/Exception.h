@@ -1,7 +1,6 @@
 #pragma once
 
-#include <errno.h>
-
+#include <cerrno>
 #include <vector>
 
 #include <Poco/Exception.h>
