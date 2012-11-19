@@ -41,7 +41,7 @@ Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactory::createRequestHandler(
 		<< ", Address: " << request.clientAddress().toString()
 		<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
-	if (request.getURI().find('?') != std::string::npos)
+	if (request.getURI().find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 		return new HTTPHandler(server);
 	else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
 		return new PingRequestHandler();

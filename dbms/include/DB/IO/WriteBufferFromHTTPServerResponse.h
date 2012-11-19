@@ -48,7 +48,12 @@ public:
 	~WriteBufferFromHTTPServerResponse()
 	{
 		if (!std::uncaught_exception())
+		{
+			if (!ostr)
+				ostr = &response.send();
+			
 			next();
+		}
 	}
 };
 
