@@ -11,115 +11,37 @@
 namespace DB
 {
 
-/** Преобразование значения в указанный тип. */
-template<typename T>
-class FieldVisitorToType : public boost::static_visitor<T> {};
-
-template<>
-class FieldVisitorToType<Null> : public boost::static_visitor<Null>
-{
-public:
-	typedef Null T;
-	FieldVisitorToType() {}
-	T operator() (const Null    & x) const { return x; }
-	T operator() (const UInt64  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Int64   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Float64 & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const String  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Array   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const SharedPtr<IAggregateFunction> & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-};
-
-template<>
-class FieldVisitorToType<UInt64> : public boost::static_visitor<UInt64>
-{
-public:
-	typedef UInt64 T;
-	FieldVisitorToType() {}
-	T operator() (const Null    & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const UInt64  & x) const { return x; }
-	T operator() (const Int64   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Float64 & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const String  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Array   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const SharedPtr<IAggregateFunction> & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-};
-	
-template<>
-class FieldVisitorToType<Int64> : public boost::static_visitor<Int64>
-{
-public:
-	typedef Int64 T;
-	FieldVisitorToType() {}
-	T operator() (const Null    & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const UInt64  & x) const { return static_cast<Int64>(x); }
-	T operator() (const Int64   & x) const { return x; }
-	T operator() (const Float64 & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const String  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Array   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const SharedPtr<IAggregateFunction> & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-};
-
-template<>
-class FieldVisitorToType<Float64> : public boost::static_visitor<Float64>
-{
-public:
-	typedef Float64 T;
-	FieldVisitorToType() {}
-	T operator() (const Null    & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const UInt64  & x) const { return static_cast<Float64>(x); }
-	T operator() (const Int64   & x) const { return static_cast<Float64>(x); }
-	T operator() (const Float64 & x) const { return x; }
-	T operator() (const String  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Array   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const SharedPtr<IAggregateFunction> & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-};
-
-template<>
-class FieldVisitorToType<String> : public boost::static_visitor<String>
-{
-public:
-	typedef String T;
-	FieldVisitorToType() {}
-	T operator() (const Null    & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const UInt64  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Int64   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Float64 & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const String  & x) const { return x; }
-	T operator() (const Array   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const SharedPtr<IAggregateFunction> & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-};
-
-template<>
-class FieldVisitorToType<Array> : public boost::static_visitor<Array>
-{
-public:
-	typedef Array T;
-	FieldVisitorToType() {}
-	T operator() (const Null    & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const UInt64  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Int64   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Float64 & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const String  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Array   & x) const { return x; }
-	T operator() (const SharedPtr<IAggregateFunction> & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-};
-
-template<>
-class FieldVisitorToType<SharedPtr<IAggregateFunction> > : public boost::static_visitor<SharedPtr<IAggregateFunction> >
+/** Эта специализация на самом деле не конвертирует в число, но так удобнее. */
+template <>
+class FieldVisitorConvertToNumber<SharedPtr<IAggregateFunction> > : public boost::static_visitor<SharedPtr<IAggregateFunction> >
 {
 public:
 	typedef SharedPtr<IAggregateFunction> T;
-	FieldVisitorToType() {}
-	T operator() (const Null    & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const UInt64  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Int64   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Float64 & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const String  & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Array   & x) const { throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const SharedPtr<IAggregateFunction> & x) const { return x; }
+	T operator() (const Null & x) const
+	{
+		throw Exception("Cannot convert NULL to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+	
+	T operator() (const String & x) const
+	{
+		throw Exception("Cannot convert String to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+	
+	T operator() (const Array & x) const
+	{
+		throw Exception("Cannot convert Array to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+	
+	T operator() (const SharedPtr<IAggregateFunction> & x) const
+	{
+		return x;
+	}
+	
+	T operator() (const UInt64 	& x) const { throw Exception("Cannot convert UInt64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE); }
+	T operator() (const Int64 	& x) const { throw Exception("Cannot convert Int64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE); }
+	T operator() (const Float64 & x) const { throw Exception("Cannot convert Float64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE); }
 };
-
+	
 /** Шаблон столбцов, которые используют для хранения std::vector.
   */
 template <typename T>
@@ -179,7 +101,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(boost::apply_visitor(FieldVisitorToType<typename NearestFieldType<T>::Type>(), x));
+		data.push_back(boost::apply_visitor(FieldVisitorConvertToNumber<typename NearestFieldType<T>::Type>(), x));
 	}
 
 	void insertDefault()
