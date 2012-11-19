@@ -475,4 +475,52 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
 void readException(Exception & e, ReadBuffer & buf, const String & additional_message = "");
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
+
+/** Вспомогательная функция
+ */
+template <typename T>
+static inline const char * tryReadIntText(T & x, const char * pos, const char * end)
+{
+	bool negative = false;
+	x = 0;
+	if (pos >= end)
+		return pos;
+
+	while (pos < end)
+	{
+		switch (*pos)
+		{
+			case '+':
+				break;
+			case '-':
+				if (std::tr1::is_signed<T>::value)
+					negative = true;
+				else
+					return pos;
+				break;
+			case '0':
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+				x *= 10;
+				x += *pos - '0';
+				break;
+			default:
+				if (negative)
+					x = -x;
+				return pos;
+		}
+		++pos;
+	}
+	if (negative)
+		x = -x;
+	return pos;
+}
+
 }
