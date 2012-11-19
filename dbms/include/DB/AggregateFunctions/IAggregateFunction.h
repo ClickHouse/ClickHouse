@@ -58,6 +58,7 @@ public:
 
 	/// Получить результат
 	virtual Field getResult() const = 0;
+	
 	virtual ~IAggregateFunction() {};
 };
 

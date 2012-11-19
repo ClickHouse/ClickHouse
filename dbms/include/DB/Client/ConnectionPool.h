@@ -87,6 +87,7 @@ class IConnectionPool : private boost::noncopyable
 public:
 	typedef detail::ConnectionPoolEntry Entry;
 	virtual Entry get() = 0;
+	virtual ~IConnectionPool() {}
 };
 
 typedef SharedPtr<IConnectionPool> ConnectionPoolPtr;
