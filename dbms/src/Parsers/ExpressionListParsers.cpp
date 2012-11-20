@@ -252,6 +252,25 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 }
 
 
+bool ParserUnaryMinusExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	/// В качестве исключения, отрицательные числа должны парситься, как литералы, а не как применение оператора.
+
+	if (pos < end && *pos == '-')
+	{
+		ParserLiteral lit_p;
+		Pos begin = pos;
+
+		if (lit_p.parse(pos, end, node, expected))
+			return true;
+
+		pos = begin;
+	}
+
+	return operator_parser.parse(pos, end, node, expected);
+}
+
+
 ParserAccessExpression::ParserAccessExpression()
 	: elem_parser(new ParserExpressionElement),
 	operator_parser(boost::assign::map_list_of

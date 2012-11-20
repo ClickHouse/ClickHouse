@@ -585,7 +585,7 @@ public:
 				{
 					max_mark_number = current_mark_number == 0 ? 0 : (current_mark_number - 1);
 					break;
-				}				
+				}
 			}
 
 			mark_number = min_mark_number == -1 ? 0 : min_mark_number;

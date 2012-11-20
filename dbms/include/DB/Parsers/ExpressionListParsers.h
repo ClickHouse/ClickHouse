@@ -119,10 +119,7 @@ public:
 protected:
 	String getName() { return "unary minus expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
-	{
-		return operator_parser.parse(pos, end, node, expected);
-	}
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
 };
 
 
