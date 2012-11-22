@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/thread.hpp>
+#include <Poco/Ext/scopedTry.h>
 
 #include <statdaemons/Increment.h>
 
@@ -249,7 +250,7 @@ private:
 
 	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке.
 	void merge(size_t iterations = 1, bool async = true);
-	void mergeThread(size_t iterations);
+	void mergeThread(size_t iterations, Poco::SharedPtr<Poco::ScopedTry<Poco::Mutex> > merge_lock);
 	bool selectPartsToMerge(DataPartPtr & left, DataPartPtr & right);
 	void mergeParts(DataPartPtr left, DataPartPtr right);
 

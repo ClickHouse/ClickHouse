@@ -2,7 +2,6 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/NumberParser.h>
-#include <Poco/Ext/scopedTry.h>
 
 #include <Yandex/time2str.h>
 
@@ -1177,10 +1176,10 @@ void StorageMergeTree::clearOldParts()
 
 void StorageMergeTree::merge(size_t iterations, bool async)
 {
-	Poco::ScopedTry<Poco::Mutex> lock;
-
+	Poco::SharedPtr<Poco::ScopedTry<Poco::Mutex> > lock = new Poco::ScopedTry<Poco::Mutex>();
+	
 	/// Если уже мерджим - то можно ничего не делать.
-	if (!lock.lock(&merge_mutex))
+	if (!lock->lock(&merge_mutex))
 	{
 		LOG_TRACE(log, "Already merging.");
 		return;
@@ -1190,16 +1189,14 @@ void StorageMergeTree::merge(size_t iterations, bool async)
 		merge_thread.join();
 
 	if (async)
-		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeThread, this, iterations));
+		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeThread, this, iterations, lock));
 	else
-		mergeThread(iterations);
+		mergeThread(iterations, lock);
 }
 
 
-void StorageMergeTree::mergeThread(size_t iterations)
+void StorageMergeTree::mergeThread(size_t iterations, Poco::SharedPtr<Poco::ScopedTry<Poco::Mutex> > merge_lock)
 {
-	Poco::ScopedLock<Poco::Mutex> lock(merge_mutex);
-	
 	try
 	{
 		DataPartPtr left;
