@@ -1234,7 +1234,7 @@ void StorageMergeTree::merge(size_t iterations, bool async)
 		iterations = settings.merging_threads;
 	}
 	
-	for (size_t i = 0; i < settings.merging_threads; ++i)
+	for (size_t i = 0; i < iterations; ++i)
 		merge_threads->schedule(boost::bind(&StorageMergeTree::mergeThread, this, while_can));
 	
 	if (!async)
@@ -1246,9 +1246,6 @@ void StorageMergeTree::mergeThread(bool while_can)
 {
 	try
 	{
-		DataPartPtr left;
-		DataPartPtr right;
-
 		std::vector<DataPartPtr> parts;
 		while (selectPartsToMerge(parts))
 		{

@@ -151,7 +151,7 @@ private:
 	/// Описание куска с данными.
 	struct DataPart
 	{
-		DataPart(StorageMergeTree & storage_) : storage(storage_) {}
+		DataPart(StorageMergeTree & storage_) : storage(storage_), currently_merging(false) {}
 
 		StorageMergeTree & storage;
 		Yandex::DayNum_t left_date;
