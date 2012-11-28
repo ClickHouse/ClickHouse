@@ -113,12 +113,6 @@ public:
 			writePart(it->second.block, it->second.min_date, it->second.max_date);
 	}
 
-	void writeSuffix()
-	{
-		/// Если на каждую запись делать по две итерации слияния, то дерево будет максимально компактно.
-		storage.merge(2);
-	}
-
 	BlockOutputStreamPtr clone() { return new MergeTreeBlockOutputStream(storage); }
 
 private:
@@ -218,6 +212,9 @@ private:
 			storage.data_parts.insert(new_data_part);
 			storage.all_data_parts.insert(new_data_part);
 		}
+		
+		/// Если на каждую запись делать по две итерации слияния, то дерево будет максимально компактно.
+		storage.merge(2);
 	}
 
 	/// Записать данные одного столбца.
