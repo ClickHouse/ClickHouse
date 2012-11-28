@@ -1,9 +1,9 @@
 #pragma once
 
 #include <boost/thread.hpp>
-#include <Poco/Ext/scopedTry.h>
 
 #include <statdaemons/Increment.h>
+#include <statdaemons/threadpool.hpp>
 
 #include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
@@ -56,12 +56,16 @@ struct StorageMergeTreeSettings
 
 	/// Куски настолько большого размера объединять нельзя вообще.
 	size_t max_rows_to_merge_parts;
+	
+	/// Сколько потоков использовать для объединения кусков.
+	size_t merging_threads;
 
 	StorageMergeTreeSettings() :
 		delay_time_to_merge_different_level_parts(36000),
 		max_level_to_merge_different_level_parts(10),
 		max_rows_to_merge_different_level_parts(10 * 1024 * 1024),
-		max_rows_to_merge_parts(100 * 1024 * 1024) {}
+		max_rows_to_merge_parts(100 * 1024 * 1024),
+		merging_threads(2) {}
 };
 
 
@@ -109,8 +113,6 @@ public:
 		ASTPtr query);
 
 	/** Выполнить очередной шаг объединения кусков.
-	  * Для нормальной работы, этот метод требуется вызывать постоянно.
-	  * (С некоторой задержкой, если возвращено false.)
 	  */
 	bool optimize()
 	{
@@ -164,6 +166,9 @@ private:
 
 		Yandex::DayNum_t left_month;
 		Yandex::DayNum_t right_month;
+		
+		/// Смотреть и изменять это поле следует под залоченным data_parts_mutex.
+		bool currently_merging;
 
 		/// NOTE можно загружать индекс и засечки в оперативку
 
@@ -220,6 +225,22 @@ private:
 	typedef SharedPtr<DataPart> DataPartPtr;
 	struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
 	typedef std::set<DataPartPtr, DataPartPtrLess> DataParts;
+	
+	struct DataPartRange
+	{
+		DataPartPtr data_part;
+		size_t first_mark;
+		size_t last_mark;
+		
+		DataPartRange()
+		{
+		}
+		
+		DataPartRange(DataPartPtr data_part_, size_t first_mark_, size_t last_mark_)
+		: data_part(data_part_), first_mark(first_mark_), last_mark(last_mark_)
+		{
+		}
+	};
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
 	  * Ссылки на кусок есть отсюда, из списка актуальных кусков, и из каждого потока чтения, который его сейчас использует.
@@ -248,14 +269,20 @@ private:
 	  */
 	void getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range);
 
-	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке.
+	typedef Poco::SharedPtr<boost::thread> ThreadPtr;
+	
+	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке. Если iterations=0, объединяет, пока это возможно.
 	void merge(size_t iterations = 1, bool async = true);
-	void mergeThread(size_t iterations, Poco::SharedPtr<Poco::ScopedTry<Poco::Mutex> > merge_lock);
-	bool selectPartsToMerge(DataPartPtr & left, DataPartPtr & right);
-	void mergeParts(DataPartPtr left, DataPartPtr right);
+	/// Если while_can, объединяет в цикле, пока можно; иначе выбирает и объединяет только одну пару кусков.
+	void mergeThread(bool while_can);
+	/// Сразу помечает их как currently_merging.
+	bool selectPartsToMerge(std::vector<DataPartPtr> & parts);
+	void mergeParts(std::vector<DataPartPtr> parts);
+	
+	/// Дождаться, пока фоновые потоки закончат слияния.
+	void joinMergeThreads();
 
-	boost::thread merge_thread;
-	Poco::Mutex merge_mutex;
+	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
 };
 
 }

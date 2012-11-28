@@ -1,7 +1,9 @@
 #include <boost/bind.hpp>
+#include <numeric>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/NumberParser.h>
+#include <Poco/Ext/scopedTry.h>
 
 #include <Yandex/time2str.h>
 
@@ -25,6 +27,7 @@
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
+#include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -528,29 +531,49 @@ class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
-		size_t block_size_, const Names & column_names_, StorageMergeTree & storage_,
-		const StorageMergeTree::DataPartPtr & owned_data_part_,
-		Row & requested_pk_prefix, Range & requested_pk_range)
+		size_t block_size_, const Names & column_names_,
+		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
+		size_t mark_number_, size_t rows_limit_)
 		: path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
-		mark_number(0), rows_limit(0), rows_read(0)
+		mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
 	{
+	}
+
+	String getName() const { return "MergeTreeBlockInputStream"; }
+	
+	BlockInputStreamPtr clone()
+	{
+		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_number, rows_limit);
+	}
+	
+	/// Получает диапазон засечек, вне которого не могут находиться ключи из заданного диапазона.
+	static void markRangeFromPkRange(const String & path,
+									  size_t marks_count,
+									  StorageMergeTree & storage,
+								      Row & requested_pk_prefix,
+								      Range & requested_pk_range,
+									  size_t & out_first_mark,
+									  size_t & out_last_mark)
+	{
+		size_t last_mark_in_file = (marks_count == 0) ? 0 : (marks_count - 1);
+		
 		/// Если индекс не используется.
 		if (requested_pk_prefix.size() == 0 && !requested_pk_range.left_bounded && !requested_pk_range.right_bounded)
 		{
-			mark_number = 0;
-			rows_limit = std::numeric_limits<size_t>::max();
+			out_first_mark = 0;
+			out_last_mark = last_mark_in_file;
 		}
 		else
 		{
 			/// Читаем PK, и на основе primary_prefix, primary_range определим mark_number и rows_limit.
-
+			
 			ssize_t min_mark_number = -1;
 			ssize_t max_mark_number = -1;
-
+			
 			String index_path = path + "primary.idx";
 			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
-
+			
 			size_t prefix_size = requested_pk_prefix.size();
 			Row pk(storage.sort_descr.size());
 			Row pk_prefix(prefix_size);
@@ -561,9 +584,9 @@ public:
 				Row pk(storage.sort_descr.size());
 				for (size_t i = 0, size = pk.size(); i < size; ++i)
 					storage.primary_key_sample.getByPosition(i).type->deserializeBinary(pk[i], index);
-
+				
 				pk_prefix.assign(pk.begin(), pk.begin() + pk_prefix.size());
-
+				
 				if (pk_prefix < requested_pk_prefix)
 				{
 					min_mark_number = current_mark_number;
@@ -586,29 +609,10 @@ public:
 					break;
 				}
 			}
-
-			mark_number = min_mark_number == -1 ? 0 : min_mark_number;
-			rows_limit = max_mark_number == -1 ? std::numeric_limits<size_t>::max() : ((max_mark_number - min_mark_number + 1) * storage.index_granularity);
-
-			std::cerr << mark_number << ", " << rows_limit << std::endl;
+			
+			out_first_mark = min_mark_number == -1 ? 0 : min_mark_number;
+			out_last_mark = max_mark_number == -1 ? last_mark_in_file : max_mark_number - min_mark_number;
 		}
-	}
-
-	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
-		size_t block_size_, const Names & column_names_,
-		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
-		size_t mark_number_, size_t rows_limit_)
-		: path(path_), block_size(block_size_), column_names(column_names_),
-		storage(storage_), owned_data_part(owned_data_part_),
-		mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
-	{
-	}
-
-	String getName() const { return "MergeTreeBlockInputStream"; }
-	
-	BlockInputStreamPtr clone()
-	{
-		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_number, rows_limit);
 	}
 
 protected:
@@ -774,16 +778,15 @@ StorageMergeTree::StorageMergeTree(
 	primary_expr = new Expression(primary_expr_ast, context);
 	primary_key_sample = primary_expr->getSampleBlock();
 
+	merge_threads = new boost::threadpool::pool(settings.merging_threads);
+	
 	loadDataParts();
 }
 
 
 StorageMergeTree::~StorageMergeTree()
 {
-	LOG_DEBUG(log, "Waiting for merge thread to finish.");
-	
-	if (merge_thread.joinable())
-		merge_thread.join();
+	joinMergeThreads();
 }
 
 
@@ -997,8 +1000,6 @@ BlockInputStreams StorageMergeTree::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	/// Определим, можно ли использовать индексы, и как именно.
-
 	/// Диапазон дат.
 	Range date_range;
 	/// Префикс первичного ключа, для которого требуется равенство. Может быть пустым.
@@ -1008,23 +1009,77 @@ BlockInputStreams StorageMergeTree::read(
 
 	getIndexRanges(query, date_range, primary_prefix, primary_range);
 
-	BlockInputStreams res;
-
+	typedef std::vector<DataPartRange> PartsRanges;
+	PartsRanges parts;
+	
 	/// Выберем куски, в которых могут быть данные для date_range.
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		
 		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 			if (date_range.intersectsSegment(static_cast<UInt64>((*it)->left_date), static_cast<UInt64>((*it)->right_date)))
-				res.push_back(new MergeTreeBlockInputStream(
-					full_path + (*it)->name + '/', max_block_size, column_names, *this, *it, primary_prefix, primary_range));
+				parts.push_back(DataPartRange(*it, 0, 0));
 	}
-
-	LOG_DEBUG(log, "Selected " << res.size() << " parts");
-
-	/// Если истчоников слишком много, то склеим их в threads источников.
-	if (res.size() > threads)
-		res = narrowBlockInputStreams(res, threads);
+	
+	/// Найдем, какой диапазон читать из каждого куска.
+	size_t sum_marks = 0;
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		DataPartRange & part = parts[i];
+		MergeTreeBlockInputStream::markRangeFromPkRange(full_path + part.data_part->name + '/',
+		                                                part.data_part->size,
+												         *this,
+		                                                primary_prefix,
+		                                                primary_range,
+		                                                part.first_mark,
+		                                                part.last_mark);
+		sum_marks += part.last_mark - part.first_mark + 1;
+	}
+	
+	LOG_DEBUG(log, "Selected " << parts.size() << " parts, " << sum_marks << " marks to read");
+	
+	/// В случайном порядке поровну поделим засечки между потоками.
+	size_t effective_threads = std::min(static_cast<size_t>(threads), sum_marks);
+	std::random_shuffle(parts.begin(), parts.end());
+	BlockInputStreams res;
+	size_t cur_part = 0;
+	/// Сколько зесечек уже забрали из parts[cur_part].
+	size_t cur_pos = 0;
+	for (size_t i = 0; i < effective_threads; ++i)
+	{
+		size_t need_marks = sum_marks * (i + 1) / effective_threads - sum_marks * i / effective_threads;
+		BlockInputStreams streams;
+		while (need_marks > 0)
+		{
+			if (cur_part >= parts.size())
+				throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+			DataPartRange & part = parts[cur_part];
+			size_t marks_left_in_part = part.last_mark - part.first_mark + 1 - cur_pos;
+			if (marks_left_in_part == 0)
+			{
+				++cur_part;
+				cur_pos = 0;
+				continue;
+			}
+			size_t marks_to_get_from_part = std::min(marks_left_in_part, need_marks);
+			
+			streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
+			                                                max_block_size, column_names, *this,
+			                                                part.data_part, part.first_mark + cur_pos,
+			                                                marks_to_get_from_part * index_granularity));
+			
+			need_marks -= marks_to_get_from_part;
+			cur_pos += marks_to_get_from_part;
+		}
+		
+		if (streams.size() == 1)
+			res.push_back(streams[0]);
+		else
+			res.push_back(new ConcatBlockInputStream(streams));
+	}
+	
+	if (cur_part + 1 != parts.size() || cur_pos != parts.back().last_mark - parts.back().first_mark + 1)
+		throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
 	
 	return res;
 }
@@ -1176,40 +1231,38 @@ void StorageMergeTree::clearOldParts()
 
 void StorageMergeTree::merge(size_t iterations, bool async)
 {
-	Poco::SharedPtr<Poco::ScopedTry<Poco::Mutex> > lock = new Poco::ScopedTry<Poco::Mutex>();
-	
-	/// Если уже мерджим - то можно ничего не делать.
-	if (!lock->lock(&merge_mutex))
-	{
-		LOG_TRACE(log, "Already merging.");
-		return;
+	bool while_can = false;
+	if (iterations == 0){
+		while_can = true;
+		iterations = settings.merging_threads;
 	}
 	
-	if (merge_thread.joinable())
-		merge_thread.join();
-
-	if (async)
-		merge_thread = boost::thread(boost::bind(&StorageMergeTree::mergeThread, this, iterations, lock));
-	else
-		mergeThread(iterations, lock);
+	for (size_t i = 0; i < settings.merging_threads; ++i)
+		merge_threads->schedule(boost::bind(&StorageMergeTree::mergeThread, this, while_can));
+	
+	if (!async)
+		joinMergeThreads();
 }
 
 
-void StorageMergeTree::mergeThread(size_t iterations, Poco::SharedPtr<Poco::ScopedTry<Poco::Mutex> > merge_lock)
+void StorageMergeTree::mergeThread(bool while_can)
 {
 	try
 	{
 		DataPartPtr left;
 		DataPartPtr right;
 
-		for (size_t i = 0; i < iterations && selectPartsToMerge(left, right); ++i)
+		std::vector<DataPartPtr> parts;
+		while (selectPartsToMerge(parts))
 		{
-			mergeParts(left, right);
+			mergeParts(parts);
 
 			/// Удаляем старые куски.
-			left = NULL;
-			right = NULL;
+			parts.clear();
 			clearOldParts();
+			
+			if (!while_can)
+				break;
 		}
 	}
 	catch (const Exception & e)
@@ -1234,10 +1287,22 @@ void StorageMergeTree::mergeThread(size_t iterations, Poco::SharedPtr<Poco::Scop
 }
 
 
-bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & right)
+void StorageMergeTree::joinMergeThreads()
+{
+	LOG_DEBUG(log, "Waiting for merge thread to finish.");
+	merge_threads->wait();
+}
+
+
+bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
 
+	parts.clear();
+	parts.resize(2);
+	DataPartPtr & left = parts[0];
+	DataPartPtr & right = parts[1];
+	
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	if (data_parts.size() < 2)
@@ -1261,7 +1326,9 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 	UInt32 min_adjacent_level = -1U;
 	while (second != data_parts.end())
 	{
-		if ((*first)->left_month == (*first)->right_month
+		if (   !(*first)->currently_merging
+			&& !(*second)->currently_merging
+			&& (*first)->left_month == (*first)->right_month
 			&& (*first)->right_month == (*second)->left_month
 			&& (*second)->left_month == (*second)->right_month
 			&& (*first)->right < (*second)->left
@@ -1283,6 +1350,8 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 	{
 		left = *argmin_first;
 		right = *argmin_second;
+		left->currently_merging = true;
+		right->currently_merging = true;
 		LOG_DEBUG(log, "Selected parts " << left->name << " and " << right->name);
 		return true;
 	}
@@ -1293,9 +1362,8 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 	argmin_second = data_parts.end();
 	++second;
 
-	/** Два подряд идущих куска минимальноего суммарного размера с временем создания
+	/** Два подряд идущих куска минимального суммарного размера с временем создания
 	  * раньше текущего минус заданное, за один, одинаковый месяц.
-	  * Также проверяем, что куски неперекрываются, если не указан параметр merge_intersecting.
 	  * Также проверяем ограничения в settings.
 	  */
 
@@ -1303,7 +1371,9 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 	size_t min_adjacent_size = -1ULL;
 	while (second != data_parts.end())
 	{
-		if ((*first)->left_month == (*first)->right_month
+		if (   !(*first)->currently_merging
+			&& !(*second)->currently_merging
+			&& (*first)->left_month == (*first)->right_month
 			&& (*first)->right_month == (*second)->left_month
 			&& (*second)->left_month == (*second)->right_month
 			&& (*first)->right < (*second)->left	/// Куски неперекрываются.
@@ -1328,18 +1398,21 @@ bool StorageMergeTree::selectPartsToMerge(DataPartPtr & left, DataPartPtr & righ
 	{
 		left = *argmin_first;
 		right = *argmin_second;
+		left->currently_merging = true;
+		right->currently_merging = true;
 		LOG_DEBUG(log, "Selected parts " << left->name << " and " << right->name);
 		return true;
 	}
 
 	LOG_DEBUG(log, "No parts to merge");
+	parts.clear();
 	return false;
 }
 
 
-void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
+void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 {
-	LOG_DEBUG(log, "Merging parts " << left->name << " with " << right->name);
+	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from" << parts[0]->name << " to " << parts.back()->name);
 
 	Names all_column_names;
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
@@ -1348,14 +1421,20 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 
 	StorageMergeTree::DataPartPtr new_data_part = new DataPart(*this);
-	new_data_part->left_date = left->left_date;
-	new_data_part->right_date = right->right_date;
-	new_data_part->left = left->left;
-	new_data_part->right = right->right;
-	new_data_part->level = 1 + std::max(left->level, right->level);
+	new_data_part->left_date = parts[0]->left_date;
+	new_data_part->right_date = parts.back()->right_date;
+	new_data_part->left = parts[0]->left;
+	new_data_part->right = parts.back()->right;
+	new_data_part->level = 0;
+	new_data_part->size = 0;
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		new_data_part->level = std::max(new_data_part->level, parts[i]->level);
+		new_data_part->size += parts[i]->size;
+	}
+	++new_data_part->level;
 	new_data_part->name = getPartName(
 		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
-	new_data_part->size = left->size + right->size;
 	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
 
@@ -1365,14 +1444,11 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 	  */
 	BlockInputStreams src_streams;
 
-	Row empty_prefix;
-	Range empty_range;
-
-	src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-		full_path + left->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, left, empty_prefix, empty_range), primary_expr));
-
-	src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-		full_path + right->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, right, empty_prefix, empty_range), primary_expr));
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
+			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], 0, std::numeric_limits<size_t>::max()), primary_expr));
+	}
 
 	BlockInputStreamPtr merged_stream = new AddingDefaultBlockInputStream(
 		(sign_column.empty()
@@ -1381,7 +1457,7 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 		columns);
 	
 	BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
-		left->left_date, right->right_date, left->left, right->right, 1 + std::max(left->level, right->level));
+		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
 
 	copyData(*merged_stream, *to);
 
@@ -1392,30 +1468,29 @@ void StorageMergeTree::mergeParts(DataPartPtr left, DataPartPtr right)
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
 		/// Добавляем новый кусок в набор.
-		if (data_parts.end() == data_parts.find(left))
-			throw Exception("Logical error: cannot find data part " + left->name + " in list", ErrorCodes::LOGICAL_ERROR);
- 		if (data_parts.end() == data_parts.find(right))
-			throw Exception("Logical error: cannot find data part " + right->name + " in list", ErrorCodes::LOGICAL_ERROR);
+		
+		for (size_t i = 0; i < parts.size(); ++i)
+		{
+			if (data_parts.end() == data_parts.find(parts[i]))
+				throw Exception("Logical error: cannot find data part " + parts[i]->name + " in list", ErrorCodes::LOGICAL_ERROR);
+		}
 
 		data_parts.insert(new_data_part);
-		data_parts.erase(data_parts.find(left));
-		data_parts.erase(data_parts.find(right));
-
 		all_data_parts.insert(new_data_part);
+		
+		for (size_t i = 0; i < parts.size(); ++i)
+		{
+			data_parts.erase(data_parts.find(parts[i]));
+		}
 	}
 
-	LOG_TRACE(log, "Merged parts " << left->name << " with " << right->name);
+	LOG_TRACE(log, "Merged " << parts.size() << " parts: from" << parts[0]->name << " to " << parts.back()->name);
 }
 
 
 void StorageMergeTree::drop()
 {
-	Poco::ScopedLock<Poco::Mutex> lock_merge(merge_mutex);
-
-	LOG_DEBUG(log, "Waiting for merge thread to finish.");
-
-	if (merge_thread.joinable())
-		merge_thread.join();
+	joinMergeThreads();
 	
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
