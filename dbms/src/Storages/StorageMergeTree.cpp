@@ -1299,6 +1299,9 @@ void StorageMergeTree::joinMergeThreads()
 
 /// Выбираем отрезок из не более чем max_parts_to_merge_at_once кусков так, чтобы максимальный размер был меньше чем в max_size_ratio_to_merge_parts раз больше суммы остальных.
 /// Это обеспечивает в худшем случае время O(n log n) на все слияния, независимо от выбора сливаемых кусков, порядка слияния и добавления.
+/// При max_parts_to_merge_at_once >= log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts),
+/// несложно доказать, что всегда будет что сливать, пока количество кусков больше
+/// log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts)*(количество кусков размером больше max_rows_to_merge_parts).
 /// Дальше эвристики.
 /// Будем выбирать максимальный по включению подходящий отрезок.
 /// Из всех таких выбираем отрезок с минимальным максимумом размера.
