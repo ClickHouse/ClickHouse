@@ -1340,8 +1340,8 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 		}
 		
 		/// Самый длинный валидный отрезок, начинающийся здесь.
-		size_t cur_longest_max;
-		size_t cur_longest_min;
+		size_t cur_longest_max = -1U;
+		size_t cur_longest_min = -1U;
 		int cur_longest_len = 0;
 		
 		/// Текущий отрезок, не обязательно валидный.
@@ -1458,7 +1458,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
 
-	/** Читаем из всех кусков куска, сливаем и пишем в новый.
+	/** Читаем из всех кусков, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.
 	  * Также, если некоторых кусках есть не все столбцы, то добавляем столбцы с значениями по-умолчанию.
 	  */
