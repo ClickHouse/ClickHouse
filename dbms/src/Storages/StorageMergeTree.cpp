@@ -1309,9 +1309,9 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
-	size_t min_max;
-	size_t min_min;
-	int max_len;
+	size_t min_max = -1U;
+	size_t min_min = -1U;
+	int max_len = 0;
 	DataParts::iterator best_begin;
 	bool found = false;
 	
@@ -1334,7 +1334,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 		UInt64 cur_id = part->right;
 		
 		DataParts::iterator jt = it;
-		for (++jt; jt != data_parts.end() && cur_len < settings.max_parts_to_merge_at_once; ++jt)
+		for (++jt; jt != data_parts.end() && cur_len < static_cast<int>(settings.max_parts_to_merge_at_once); ++jt)
 		{
 			/// Кусок не занят, достаточно мал, в одном правильном месяце, правее предыдущего.
 			if (part->currently_merging ||
