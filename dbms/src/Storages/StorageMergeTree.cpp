@@ -1299,10 +1299,11 @@ void StorageMergeTree::joinMergeThreads()
 
 /// Выбираем отрезок из не более чем max_parts_to_merge_at_once кусков так, чтобы максимальный размер был меньше чем в max_size_ratio_to_merge_parts раз больше суммы остальных.
 /// Это обеспечивает в худшем случае время O(n log n) на все слияния, независимо от выбора сливаемых кусков, порядка слияния и добавления.
-/// При этом ограничении стараемся выбрать куски поменьше размером, но побольше количеством:
-/// Из подходящих отрезков выбираем отрезок с минимальным максимумом размера.
-/// Из всех таких отрезков выбираем отрезок с минимальным минимумом размера.
-/// Из всех таких отрезков выбираем отрезок с максимальной длиной.
+/// Дальше эвристики.
+/// Будем выбирать максимальный по включению подходящий отрезок.
+/// Из всех таких выбираем отрезок с минимальным максимумом размера.
+/// Из всех таких выбираем отрезок с минимальным минимумом размера.
+/// Из всех таких выбираем отрезок с максимальной длиной.
 bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
@@ -1314,54 +1315,94 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 	int max_len = 0;
 	DataParts::iterator best_begin;
 	bool found = false;
+		
+	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
+	/// Нужно для определения максимальности по включению.
+	size_t max_count_from_left = 0;
 	
+	/// Левый конец отрезка.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 	{
-		const DataPartPtr & part = *it;
+		const DataPartPtr & first_part = *it;
 		
-		/// Кусок не занят, достаточно мал и в одном месяце.
-		if (part->currently_merging ||
-			part->size * index_granularity > settings.max_rows_to_merge_parts ||
-			part->left_month != part->right_month)
+		if (max_count_from_left > 0)
+			--max_count_from_left;
+		
+		/// Кусок не занят и достаточно мал.
+		if (first_part->currently_merging ||
+			first_part->size * index_granularity > settings.max_rows_to_merge_parts)
 			continue;
 		
-		size_t cur_max = part->size;
-		size_t cur_min = part->size;
-		size_t cur_sum = part->size;
+		/// Кусок в одном месяце.
+		if (first_part->left_month != first_part->right_month)
+		{
+			LOG_WARNING(log, "Part " << first_part->name << " spans more than one month");
+			continue;
+		}
+		
+		/// Самый длинный валидный отрезок, начинающийся здесь.
+		size_t cur_longest_max;
+		size_t cur_longest_min;
+		int cur_longest_len = 0;
+		
+		/// Текущий отрезок, не обязательно валидный.
+		size_t cur_max = first_part->size;
+		size_t cur_min = first_part->size;
+		size_t cur_sum = first_part->size;
 		int cur_len = 1;
 		
-		Yandex::DayNum_t month = part->left_month;
-		UInt64 cur_id = part->right;
+		Yandex::DayNum_t month = first_part->left_month;
+		UInt64 cur_id = first_part->right;
 		
+		/// Правый конец отрезка.
 		DataParts::iterator jt = it;
 		for (++jt; jt != data_parts.end() && cur_len < static_cast<int>(settings.max_parts_to_merge_at_once); ++jt)
 		{
-			/// Кусок не занят, достаточно мал, в одном правильном месяце, правее предыдущего.
-			if (part->currently_merging ||
-				part->size * index_granularity > settings.max_rows_to_merge_parts ||
-				part->left_month != part->right_month ||
-				part->left_month != month ||
-				part->left < cur_id)
+			const DataPartPtr & last_part = *jt;
+			
+			/// Кусок не занят, достаточно мал и в одном правильном месяце.
+			if (last_part->currently_merging ||
+				last_part->size * index_granularity > settings.max_rows_to_merge_parts ||
+				last_part->left_month != last_part->right_month ||
+				last_part->left_month != month)
 				break;
 			
-			cur_max = std::max(cur_max, part->size);
-			cur_min = std::min(cur_min, part->size);
-			cur_sum += part->size;
+			/// Кусок правее предыдущего.
+				if (last_part->left < cur_id)
+			{
+				LOG_WARNING(log, "Part " << last_part->name << " intersects previous part");
+				break;
+			}
+			
+			cur_max = std::max(cur_max, last_part->size);
+			cur_min = std::min(cur_min, last_part->size);
+			cur_sum += last_part->size;
 			++cur_len;
-			cur_id = part->right;
+			cur_id = last_part->right;
 			
-			if (found && cur_max > min_max)
-				break;
+			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= 2 &&
-				static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts &&
-				(!found ||
-				 std::make_pair(std::make_pair(cur_max, cur_min), -cur_len) <
-				 std::make_pair(std::make_pair(min_max, min_min), -max_len)))
+				static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts)
+			{
+				cur_longest_max = cur_max;
+				cur_longest_min = cur_min;
+				cur_longest_len = cur_len;
+			}
+		}
+		
+		/// Отрезок максимальный по включению валидный отрезок.
+		if (cur_longest_len > max_count_from_left)
+		{
+			max_count_from_left = cur_longest_len;
+			
+			if (!found ||
+				std::make_pair(std::make_pair(cur_longest_max, cur_longest_min), -cur_longest_len) <
+				std::make_pair(std::make_pair(min_max, min_min), -max_len))
 			{
 				found = true;
-				min_max = cur_max;
-				min_min = cur_min;
-				max_len = cur_len;
+				min_max = cur_longest_max;
+				min_min = cur_longest_min;
+				max_len = cur_longest_len;
 				best_begin = it;
 			}
 		}
