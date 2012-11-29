@@ -1318,15 +1318,14 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 		
 	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
 	/// Нужно для определения максимальности по включению.
-	size_t max_count_from_left = 0;
+	int max_count_from_left = 0;
 	
 	/// Левый конец отрезка.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 	{
 		const DataPartPtr & first_part = *it;
 		
-		if (max_count_from_left > 0)
-			--max_count_from_left;
+		max_count_from_left = std::max(0, max_count_from_left - 1);
 		
 		/// Кусок не занят и достаточно мал.
 		if (first_part->currently_merging ||
@@ -1390,7 +1389,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 			}
 		}
 		
-		/// Отрезок максимальный по включению валидный отрезок.
+		/// Это максимальный по включению валидный отрезок.
 		if (cur_longest_len > max_count_from_left)
 		{
 			max_count_from_left = cur_longest_len;
