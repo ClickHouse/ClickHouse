@@ -49,27 +49,31 @@ struct Range;
 
 struct StorageMergeTreeSettings
 {
-	/// В каких случаях можно объединять куски разного уровня.
-	ssize_t delay_time_to_merge_different_level_parts;
-	size_t max_level_to_merge_different_level_parts;
-	size_t max_rows_to_merge_different_level_parts;
+	/// Набор кусков разрешено объединить, если среди них максимальный размер не более чем во столько раз больше суммы остальных.
+	/// Должно быть больше 1.
+	double max_size_ratio_to_merge_parts;
+	
+	/// Сколько за раз сливать кусков.
+	/// Трудоемкость выбора кусков O(N * max_parts_to_merge_at_once), так что не следует делать это число слишком большим.
+	/// С другой стороны, чтобы слияния точно не могли зайти в тупик, нужно хотя бы
+	/// log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts).
+	size_t max_parts_to_merge_at_once;
 
 	/// Куски настолько большого размера объединять нельзя вообще.
 	size_t max_rows_to_merge_parts;
 	
-	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
-	size_t min_rows_for_concurrent_read;
-	
 	/// Сколько потоков использовать для объединения кусков.
 	size_t merging_threads;
 
+	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
+	size_t min_rows_for_concurrent_read;
+	
 	StorageMergeTreeSettings() :
-		delay_time_to_merge_different_level_parts(36000),
-		max_level_to_merge_different_level_parts(10),
-		max_rows_to_merge_different_level_parts(10 * 1024 * 1024),
+		max_size_ratio_to_merge_parts(5),
+		max_parts_to_merge_at_once(10),
 		max_rows_to_merge_parts(100 * 1024 * 1024),
-		min_rows_for_concurrent_read(20 * 8192),
-		merging_threads(2) {}
+		merging_threads(2),
+		min_rows_for_concurrent_read(20 * 8192) {}
 };
 
 
@@ -162,6 +166,7 @@ private:
 		Yandex::DayNum_t right_date;
 		UInt64 left;
 		UInt64 right;
+		/// Уровень игнорируется. Использовался предыдущей эвристикой слияния.
 		UInt32 level;
 
 		std::string name;
