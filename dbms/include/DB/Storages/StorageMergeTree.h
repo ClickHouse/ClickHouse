@@ -57,6 +57,9 @@ struct StorageMergeTreeSettings
 	/// Куски настолько большого размера объединять нельзя вообще.
 	size_t max_rows_to_merge_parts;
 	
+	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
+	size_t min_rows_for_concurrent_read;
+	
 	/// Сколько потоков использовать для объединения кусков.
 	size_t merging_threads;
 
@@ -65,6 +68,7 @@ struct StorageMergeTreeSettings
 		max_level_to_merge_different_level_parts(10),
 		max_rows_to_merge_different_level_parts(10 * 1024 * 1024),
 		max_rows_to_merge_parts(100 * 1024 * 1024),
+		min_rows_for_concurrent_read(20 * 8192),
 		merging_threads(2) {}
 };
 
