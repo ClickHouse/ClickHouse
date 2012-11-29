@@ -224,9 +224,7 @@ private:
 				&& left_date <= rhs.left_date
 				&& right_date >= rhs.right_date
 				&& left <= rhs.left
-				&& right >= rhs.right
-				&& (left == rhs.left		/// У кусков общее начало или конец.
-					|| right == rhs.right);	/// (только такие образуются после объединения)
+				&& right >= rhs.right;
 		}
 	};
 
