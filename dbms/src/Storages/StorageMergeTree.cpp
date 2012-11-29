@@ -204,7 +204,7 @@ private:
 			new_data_part->right = part_id;
 			new_data_part->level = 0;
 			new_data_part->name = part_name;
-			new_data_part->size = rows / storage.index_granularity;
+			new_data_part->size = (rows + storage.index_granularity - 1) / storage.index_granularity;
 			new_data_part->modification_time = time(0);
 			new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 			new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
