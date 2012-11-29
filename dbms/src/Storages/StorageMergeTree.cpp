@@ -1350,7 +1350,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 			++cur_len;
 			cur_id = part->right;
 			
-			if (cur_max > min_max)
+			if (found && cur_max > min_max)
 				break;
 			if (cur_len >= 2 &&
 				static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts &&
