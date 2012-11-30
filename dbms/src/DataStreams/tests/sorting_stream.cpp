@@ -98,7 +98,8 @@ int main(int argc, char ** argv)
 			("WithHash",			new DB::DataTypeUInt8)
 		;
 
-		DB::NamesAndTypesMapPtr names_and_types_map = new DB::NamesAndTypesMap;
+		typedef std::map<DB::String, DB::DataTypePtr> NamesAndTypesMap;
+		SharedPtr<NamesAndTypesMap> names_and_types_map = new NamesAndTypesMap;
 
 		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 			names_and_types_map->insert(*it);
