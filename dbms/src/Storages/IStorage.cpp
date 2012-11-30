@@ -1,34 +1,13 @@
 #include <set>
 
+#include <sparsehash/dense_hash_set>
+#include <sparsehash/dense_hash_map>
+
 #include <DB/Storages/IStorage.h>
 
 
 namespace DB
 {
-
-static std::string listOfColumns(const NamesAndTypesMap & available_columns)
-{
-	std::stringstream s;
-	for (NamesAndTypesMap::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
-	{
-		if (it != available_columns.begin())
-			s << ", ";
-		s << it->first;
-	}
-	return s.str();
-}
-
-
-NamesAndTypesMap IStorage::getColumnsMap() const
-{
-	NamesAndTypesMap res;
-
-	const NamesAndTypesList & names_and_types = getColumnsList();
-	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
-		res.insert(*it);
-	
-	return res;
-}
 
 
 const DataTypePtr IStorage::getDataTypeByName(const String & column_name) const
@@ -60,21 +39,50 @@ Block IStorage::getSampleBlock() const
 }
 
 
+static std::string listOfColumns(const NamesAndTypesList & available_columns)
+{
+	std::stringstream s;
+	for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
+	{
+		if (it != available_columns.begin())
+			s << ", ";
+		s << it->first;
+	}
+	return s.str();
+}
+
+
+typedef google::dense_hash_map<StringRef, const IDataType *, StringRefHash> NamesAndTypesMap;
+
+
+static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_columns)
+{
+	NamesAndTypesMap res;
+
+	for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
+		res.insert(NamesAndTypesMap::value_type(it->first, &*it->second));
+
+	return res;
+}
+
+
 void IStorage::check(const Names & column_names) const
 {
-	const NamesAndTypesMap & available_columns = getColumnsMap();
+	const NamesAndTypesList & available_columns = getColumnsList();
 	
 	if (column_names.empty())
 		throw Exception("Empty list of columns queried for table " + getTableName()
 			+ ". There are columns: " + listOfColumns(available_columns),
 			ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
-	typedef std::set<std::string> UniqueStrings;
+	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
+
+	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
-		if (available_columns.end() == available_columns.find(*it))
+		if (columns_map.end() == columns_map.find(*it))
 			throw Exception("There is no column with name " + *it + " in table " + getTableName()
 			+ ". There are columns: " + listOfColumns(available_columns),
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
@@ -89,14 +97,15 @@ void IStorage::check(const Names & column_names) const
 
 void IStorage::check(const Block & block) const
 {
-	const NamesAndTypesMap & available_columns = getColumnsMap();
+	const NamesAndTypesList & available_columns = getColumnsList();
+	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
 	
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
 
-		NamesAndTypesMap::const_iterator it = available_columns.find(column.name);
-		if (available_columns.end() == it)
+		NamesAndTypesMap::const_iterator it = columns_map.find(column.name);
+		if (columns_map.end() == it)
 			throw Exception("There is no column with name " + column.name + " in table " + getTableName()
 				+ ". There are columns: " + listOfColumns(available_columns),
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);

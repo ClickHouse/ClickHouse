@@ -39,7 +39,6 @@ public:
 	  */
 	virtual const NamesAndTypesList & getColumnsList() const = 0;
 
-	NamesAndTypesMap getColumnsMap() const;
 	const DataTypePtr getDataTypeByName(const String & column_name) const;
 
 	/** То же самое, но в виде блока-образца.
