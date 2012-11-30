@@ -1475,7 +1475,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 			++it;
 		}
 		
-		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts[0]->name << " to " << parts.back()->name);
+		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
 	}
 	else
 	{
@@ -1488,7 +1488,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 
 void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 {
-	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from" << parts[0]->name << " to " << parts.back()->name);
+	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
 	Names all_column_names;
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
@@ -1497,9 +1497,9 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 
 	StorageMergeTree::DataPartPtr new_data_part = new DataPart(*this);
-	new_data_part->left_date = parts[0]->left_date;
+	new_data_part->left_date = parts.front()->left_date;
 	new_data_part->right_date = parts.back()->right_date;
-	new_data_part->left = parts[0]->left;
+	new_data_part->left = parts.front()->left;
 	new_data_part->right = parts.back()->right;
 	new_data_part->level = 0;
 	new_data_part->size = 0;
@@ -1557,7 +1557,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 		}
 	}
 
-	LOG_TRACE(log, "Merged " << parts.size() << " parts: from" << parts[0]->name << " to " << parts.back()->name);
+	LOG_TRACE(log, "Merged " << parts.size() << " parts: from" << parts.front()->name << " to " << parts.back()->name);
 }
 
 
