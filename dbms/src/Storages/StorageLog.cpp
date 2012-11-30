@@ -40,8 +40,12 @@ Block LogBlockInputStream::readImpl()
 
 	/// Если файлы не открыты, то открываем их.
 	if (streams.empty())
+	{
+		Poco::ScopedReadRWLock lock(storage.rwlock);
+		
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 			addStream(*it, *storage.getDataTypeByName(*it));
+	}
 
 	/// Сколько строк читать для следующего блока.
 	size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
@@ -117,7 +121,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 
 
 LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
-	: storage(storage_)
+	: storage(storage_), lock(storage.rwlock)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		addStream(it->first, *it->second);
@@ -240,6 +244,8 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 
 void StorageLog::loadMarks()
 {
+	Poco::ScopedWriteRWLock lock(rwlock);
+	
 	if (loaded_marks)
 		return;
 	
@@ -277,6 +283,8 @@ void StorageLog::loadMarks()
 
 void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 {
+	Poco::ScopedWriteRWLock lock(rwlock);
+	
 	/// Переименовываем директорию с данными.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_name));
 	
@@ -302,7 +310,9 @@ BlockInputStreams StorageLog::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	Marks marks = files.begin()->second.marks;
+	Poco::ScopedReadRWLock lock(rwlock);
+
+	const Marks & marks = files.begin()->second.marks;
 	size_t marks_size = marks.size();
 
 	if (threads > marks_size)
@@ -312,11 +322,6 @@ BlockInputStreams StorageLog::read(
 
 	for (size_t thread = 0; thread < threads; ++thread)
 	{
-/*		std::cerr << "Thread " << thread << ", mark " << thread * marks_size / max_threads
-			<< ", rows " << (thread == 0
-				? marks[marks_size / max_threads - 1].rows
-				: (marks[(thread + 1) * marks_size / max_threads - 1].rows - marks[thread * marks_size / max_threads - 1].rows)) << std::endl;*/
-		
 		res.push_back(new LogBlockInputStream(
 			max_block_size,
 			column_names,
@@ -341,6 +346,8 @@ BlockOutputStreamPtr StorageLog::write(
 
 void StorageLog::drop()
 {
+	Poco::ScopedWriteRWLock lock(rwlock);
+	
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
 		if (it->second.data_file.exists())

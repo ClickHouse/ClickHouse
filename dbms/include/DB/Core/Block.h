@@ -81,5 +81,6 @@ public:
 };
 
 typedef std::vector<Block> Blocks;
+typedef std::list<Block> BlocksList;
 
 }

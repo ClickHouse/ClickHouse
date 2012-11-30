@@ -12,7 +12,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-MemoryBlockInputStream::MemoryBlockInputStream(const Names & column_names_, Blocks::iterator begin_, Blocks::iterator end_)
+MemoryBlockInputStream::MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_)
 	: column_names(column_names_), begin(begin_), end(end_), it(begin)
 {
 }
@@ -36,6 +36,7 @@ MemoryBlockOutputStream::MemoryBlockOutputStream(StorageMemory & storage_)
 void MemoryBlockOutputStream::write(const Block & block)
 {
 	storage.check(block);
+	Poco::ScopedLock<Poco::FastMutex> lock(storage.mutex);
 	storage.data.push_back(block);
 }
 
@@ -56,16 +57,25 @@ BlockInputStreams StorageMemory::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	if (threads > data.size())
-		threads = data.size();
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
+	size_t size = data.size();
+	
+	if (threads > size)
+		threads = size;
 
 	BlockInputStreams res;
 
 	for (size_t thread = 0; thread < threads; ++thread)
-		res.push_back(new MemoryBlockInputStream(
-			column_names,
-			data.begin() + thread * data.size() / threads,
-			data.begin() + (thread + 1) * data.size() / threads));
+	{
+		BlocksList::iterator begin = data.begin();
+		BlocksList::iterator end = data.begin();
+
+		std::advance(begin, thread * size / threads);
+		std::advance(end, (thread + 1) * size / threads);
+		
+		res.push_back(new MemoryBlockInputStream(column_names, begin, end));
+	}
 	
 	return res;
 }
@@ -80,6 +90,7 @@ BlockOutputStreamPtr StorageMemory::write(
 
 void StorageMemory::drop()
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 	data.clear();
 }
 

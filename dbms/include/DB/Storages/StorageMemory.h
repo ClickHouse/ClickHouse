@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/Mutex.h>
+
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -13,16 +15,16 @@ class StorageMemory;
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MemoryBlockInputStream(const Names & column_names_, Blocks::iterator begin_, Blocks::iterator end_);
+	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_);
 	String getName() const { return "MemoryBlockInputStream"; }
 	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, begin, end); }
 protected:
 	Block readImpl();
 private:
 	Names column_names;
-	Blocks::iterator begin;
-	Blocks::iterator end;
-	Blocks::iterator it;
+	BlocksList::iterator begin;
+	BlocksList::iterator end;
+	BlocksList::iterator it;
 };
 
 
@@ -72,8 +74,10 @@ private:
 	String name;
 	NamesAndTypesListPtr columns;
 
-	/// Сами данные
-	Blocks data;
+	/// Сами данные. list - чтобы при вставке в конец, существующие итераторы не инвалидировались.
+	BlocksList data;
+
+	Poco::FastMutex mutex;
 };
 
 }

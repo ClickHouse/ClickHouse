@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/File.h>
+#include <Poco/RWLock.h>
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -76,6 +77,7 @@ public:
 	BlockOutputStreamPtr clone() { return new LogBlockOutputStream(storage); }
 private:
 	StorageLog & storage;
+	Poco::ScopedWriteRWLock lock;
 
 	struct Stream
 	{
@@ -151,6 +153,8 @@ private:
 	};
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
+
+	Poco::RWLock rwlock;
 
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
