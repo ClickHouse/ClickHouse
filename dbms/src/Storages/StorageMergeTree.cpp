@@ -1090,63 +1090,67 @@ BlockInputStreams StorageMergeTree::read(
 	
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts, " << sum_marks << " marks to read");
 	
-	/// В случайном порядке поровну поделим засечки между потоками.
-	size_t effective_threads = std::min(static_cast<size_t>(threads), sum_marks);
-	std::random_shuffle(parts.begin(), parts.end());
-	
 	BlockInputStreams res;
-	size_t cur_part = 0;
-	/// Сколько зесечек уже забрали из parts[cur_part].
-	size_t cur_pos = 0;
-	size_t marks_spread = 0;
 	
-	for (size_t i = 0; i < effective_threads && marks_spread < sum_marks; ++i)
+	if (sum_marks > 0)
 	{
-		size_t need_marks = sum_marks * (i + 1) / effective_threads - marks_spread;
-		BlockInputStreams streams;
+		/// В случайном порядке поровну поделим засечки между потоками.
+		size_t effective_threads = std::min(static_cast<size_t>(threads), sum_marks);
+		std::random_shuffle(parts.begin(), parts.end());
 		
-		while (need_marks > 0)
+		size_t cur_part = 0;
+		/// Сколько зесечек уже забрали из parts[cur_part].
+		size_t cur_pos = 0;
+		size_t marks_spread = 0;
+		
+		for (size_t i = 0; i < effective_threads && marks_spread < sum_marks; ++i)
 		{
-			if (cur_part >= parts.size())
-				throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+			size_t need_marks = sum_marks * (i + 1) / effective_threads - marks_spread;
+			BlockInputStreams streams;
 			
-			DataPartRange & part = parts[cur_part];
-			size_t marks_left_in_part = part.last_mark - part.first_mark + 1 - cur_pos;
-			
-			if (marks_left_in_part == 0)
+			while (need_marks > 0)
 			{
-				++cur_part;
-				cur_pos = 0;
-				continue;
+				if (cur_part >= parts.size())
+					throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+				
+				DataPartRange & part = parts[cur_part];
+				size_t marks_left_in_part = part.last_mark - part.first_mark + 1 - cur_pos;
+				
+				if (marks_left_in_part == 0)
+				{
+					++cur_part;
+					cur_pos = 0;
+					continue;
+				}
+				
+				size_t marks_to_get_from_part = std::min(marks_left_in_part, need_marks);
+				
+				/// Не будем оставлять в куске слишком мало строк.
+				if ((marks_left_in_part - marks_to_get_from_part) * index_granularity < settings.min_rows_for_concurrent_read)
+					marks_to_get_from_part = marks_left_in_part;
+				
+				streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
+																max_block_size, column_names, *this,
+																part.data_part, part.first_mark + cur_pos,
+																marks_to_get_from_part * index_granularity));
+				
+				marks_spread += marks_to_get_from_part;
+				if (marks_to_get_from_part > need_marks)
+					need_marks = 0;
+				else
+					need_marks -= marks_to_get_from_part;
+				cur_pos += marks_to_get_from_part;
 			}
 			
-			size_t marks_to_get_from_part = std::min(marks_left_in_part, need_marks);
-			
-			/// Не будем оставлять в куске слишком мало строк.
-			if ((marks_left_in_part - marks_to_get_from_part) * index_granularity < settings.min_rows_for_concurrent_read)
-				marks_to_get_from_part = marks_left_in_part;
-			
-			streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
-			                                                max_block_size, column_names, *this,
-			                                                part.data_part, part.first_mark + cur_pos,
-			                                                marks_to_get_from_part * index_granularity));
-			
-			marks_spread += marks_to_get_from_part;
-			if (marks_to_get_from_part > need_marks)
-				need_marks = 0;
+			if (streams.size() == 1)
+				res.push_back(streams[0]);
 			else
-				need_marks -= marks_to_get_from_part;
-			cur_pos += marks_to_get_from_part;
+				res.push_back(new ConcatBlockInputStream(streams));
 		}
 		
-		if (streams.size() == 1)
-			res.push_back(streams[0]);
-		else
-			res.push_back(new ConcatBlockInputStream(streams));
+		if (marks_spread != sum_marks || cur_part + 1 != parts.size() || cur_pos != parts.back().last_mark - parts.back().first_mark + 1)
+			throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
 	}
-	
-	if (marks_spread != sum_marks || cur_part + 1 != parts.size() || cur_pos != parts.back().last_mark - parts.back().first_mark + 1)
-		throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
 	
 	return res;
 }
