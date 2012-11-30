@@ -58,6 +58,7 @@ typedef google::dense_hash_map<StringRef, const IDataType *, StringRefHash> Name
 static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_columns)
 {
 	NamesAndTypesMap res;
+	res.set_empty_key(StringRef());
 
 	for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
 		res.insert(NamesAndTypesMap::value_type(it->first, &*it->second));
@@ -79,6 +80,7 @@ void IStorage::check(const Names & column_names) const
 
 	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;
+	unique_names.set_empty_key(StringRef());
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
