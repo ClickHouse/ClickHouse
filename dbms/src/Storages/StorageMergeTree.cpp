@@ -534,7 +534,15 @@ public:
 		storage(storage_), owned_data_part(owned_data_part_),
 		mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
 	{
-		LOG_TRACE(storage.log, "Reading from part " << owned_data_part->name << ", up to " << rows_limit << " rows from row " << mark_number * storage.index_granularity);
+		if (mark_number == 0 && rows_limit == std::numeric_limits<size_t>::max())
+		{
+			LOG_TRACE(storage.log, "Reading from part " << owned_data_part->name << ", all rows.");
+		}
+		else
+		{
+			LOG_TRACE(storage.log, "Reading from part " << owned_data_part->name
+				<< ", up to " << rows_limit << " rows from row " << mark_number * storage.index_granularity << ".");
+		}
 	}
 
 	String getName() const { return "MergeTreeBlockInputStream"; }
