@@ -26,7 +26,7 @@ using Poco::SharedPtr;
   * - структура хранения данных (сжатие, etc.)
   * - конкуррентный доступ к данным (блокировки, etc.)
   */
-class IStorage
+class IStorage : private boost::noncopyable
 {
 public:
 	/// Основное имя типа таблицы (например, StorageWithoutKey).

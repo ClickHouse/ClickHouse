@@ -26,7 +26,6 @@
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/AddingDefaultBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
@@ -535,6 +534,7 @@ public:
 		storage(storage_), owned_data_part(owned_data_part_),
 		mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
 	{
+		LOG_TRACE(storage.log, "Reading from part " << owned_data_part->name << ", up to " << rows_limit << " rows from row " << mark_number * storage.index_granularity);
 	}
 
 	String getName() const { return "MergeTreeBlockInputStream"; }
@@ -628,8 +628,22 @@ protected:
 		/// Сколько строк читать для следующего блока.
 		size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
 
+		/** Для некоторых столбцов файлы с данными могут отсутствовать.
+		  * Это бывает для старых кусков, после добавления новых столбцов в структуру таблицы.
+		  */
+		bool has_missing_columns = false;
+		bool has_normal_columns = false;
+
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 		{
+			if (streams.end() == streams.find(*it))
+			{
+				has_missing_columns = true;
+				continue;
+			}
+
+			has_normal_columns = true;
+
 			ColumnWithNameAndType column;
 			column.name = *it;
 			column.type = storage.getDataTypeByName(*it);
@@ -640,8 +654,35 @@ protected:
 				res.insert(column);
 		}
 
+		if (has_missing_columns && !has_normal_columns)
+			throw Exception("All requested columns are missing", ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING);
+
 		if (res)
+		{
 			rows_read += res.rows();
+
+			/// Заполним столбцы, для которых нет файлов, значениями по-умолчанию.
+			if (has_missing_columns)
+			{
+				for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+				{
+					if (streams.end() == streams.find(*it))
+					{
+						ColumnWithNameAndType column;
+						column.name = *it;
+						column.type = storage.getDataTypeByName(*it);
+
+						/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
+						  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
+						  */
+						column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
+							res.rows(), column.type->getDefault())).convertToFullColumn();
+
+						res.insert(column);
+					}
+				}
+			}
+		}
 
 		if (!res || rows_read == rows_limit)
 		{
@@ -701,7 +742,13 @@ private:
 	void addStream(const String & name, const IDataType & type, size_t level = 0)
 	{
 		String escaped_column_name = escapeForFileName(name);
-		
+
+		/** Если файла с данными нет - то не будем пытаться открыть его.
+		  * Это нужно, чтобы можно было добавлять новые столбцы к структуре таблицы без создания файлов для старых кусков.
+		  */
+		if (!Poco::File(path + escaped_column_name + ".bin").exists())
+			return;
+
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
@@ -1038,27 +1085,33 @@ BlockInputStreams StorageMergeTree::read(
 	/// В случайном порядке поровну поделим засечки между потоками.
 	size_t effective_threads = std::min(static_cast<size_t>(threads), sum_marks);
 	std::random_shuffle(parts.begin(), parts.end());
+	
 	BlockInputStreams res;
 	size_t cur_part = 0;
 	/// Сколько зесечек уже забрали из parts[cur_part].
 	size_t cur_pos = 0;
 	size_t marks_spread = 0;
+	
 	for (size_t i = 0; i < effective_threads && marks_spread < sum_marks; ++i)
 	{
 		size_t need_marks = sum_marks * (i + 1) / effective_threads - marks_spread;
 		BlockInputStreams streams;
+		
 		while (need_marks > 0)
 		{
 			if (cur_part >= parts.size())
 				throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+			
 			DataPartRange & part = parts[cur_part];
 			size_t marks_left_in_part = part.last_mark - part.first_mark + 1 - cur_pos;
+			
 			if (marks_left_in_part == 0)
 			{
 				++cur_part;
 				cur_pos = 0;
 				continue;
 			}
+			
 			size_t marks_to_get_from_part = std::min(marks_left_in_part, need_marks);
 			
 			/// Не будем оставлять в куске слишком мало строк.
@@ -1370,7 +1423,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 				break;
 			
 			/// Кусок правее предыдущего.
-				if (last_part->left < cur_id)
+			if (last_part->left < cur_id)
 			{
 				LOG_WARNING(log, "Part " << last_part->name << " intersects previous part");
 				break;
@@ -1473,11 +1526,9 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], 0, std::numeric_limits<size_t>::max()), primary_expr));
 	}
 
-	BlockInputStreamPtr merged_stream = new AddingDefaultBlockInputStream(
-		(sign_column.empty()
-			? new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE)
-			: new CollapsingSortedBlockInputStream(src_streams, sort_descr, sign_column, DEFAULT_BLOCK_SIZE)),
-		columns);
+	BlockInputStreamPtr merged_stream = sign_column.empty()
+		? new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE)
+		: new CollapsingSortedBlockInputStream(src_streams, sort_descr, sign_column, DEFAULT_BLOCK_SIZE);
 	
 	BlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
 		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);

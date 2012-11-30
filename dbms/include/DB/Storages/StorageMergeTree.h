@@ -1,7 +1,5 @@
 #pragma once
 
-#include <boost/thread.hpp>
-
 #include <statdaemons/Increment.h>
 #include <statdaemons/threadpool.hpp>
 
@@ -87,7 +85,7 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов.
 	  *
-	  * primary_expr 		- выражение для сортировки;
+	  * primary_expr_ast	- выражение для сортировки;
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  */
@@ -237,13 +235,11 @@ private:
 		DataPartPtr data_part;
 		size_t first_mark;
 		size_t last_mark;
-		
-		DataPartRange()
-		{
-		}
-		
+
+		DataPartRange() {}
+
 		DataPartRange(DataPartPtr data_part_, size_t first_mark_, size_t last_mark_)
-		: data_part(data_part_), first_mark(first_mark_), last_mark(last_mark_)
+			: data_part(data_part_), first_mark(first_mark_), last_mark(last_mark_)
 		{
 		}
 	};
@@ -275,8 +271,6 @@ private:
 	  */
 	void getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range);
 
-	typedef Poco::SharedPtr<boost::thread> ThreadPtr;
-	
 	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке. Если iterations=0, объединяет, пока это возможно.
 	void merge(size_t iterations = 1, bool async = true);
 	/// Если while_can, объединяет в цикле, пока можно; иначе выбирает и объединяет только одну пару кусков.
