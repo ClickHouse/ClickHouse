@@ -1123,7 +1123,7 @@ BlockInputStreams StorageMergeTree::read(
 		
 		for (size_t i = 0; i < effective_threads && marks_spread < sum_marks; ++i)
 		{
-			size_t need_marks = std::min((sum_marks - 1) / effective_threads, sum_marks - marks_spread);
+			size_t need_marks = std::min((sum_marks - 1) / effective_threads + 1, sum_marks - marks_spread);
 			BlockInputStreams streams;
 			
 			while (need_marks > 0)
