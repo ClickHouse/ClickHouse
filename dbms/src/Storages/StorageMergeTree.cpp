@@ -273,7 +273,7 @@ class MergedBlockOutputStream : public IBlockOutputStream
 public:
 	MergedBlockOutputStream(StorageMergeTree & storage_,
 		UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
-		: storage(storage_), index_offset(0), marks_count(0)
+		: storage(storage_), marks_count(0), index_offset(0)
 	{
 		part_name = storage.getPartName(
 			Yandex::DayNum_t(min_date), Yandex::DayNum_t(max_date),
@@ -1167,7 +1167,7 @@ BlockInputStreams StorageMergeTree::read(
 		}
 		
 		if (marks_spread != sum_marks || cur_part + 1 != parts.size() || cur_pos != parts.back().last_mark - parts.back().first_mark + 1)
-			throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Couldn't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
 	}
 	
 	return res;
