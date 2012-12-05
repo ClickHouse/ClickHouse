@@ -38,6 +38,7 @@
 #include <DB/Interpreters/sortBlock.h>
 
 #include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/PkCondition.h>
 
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
@@ -453,93 +454,6 @@ private:
 typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
 
 
-/** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
-  * Определяет, какую часть данных читать, при наличии индекса.
-  */
-struct Range
-{
-	Field left;				/// левая граница, если есть
-	Field right;			/// правая граница, если есть
-	bool left_bounded;		/// ограничен ли слева
-	bool right_bounded; 	/// ограничен ли справа
-	bool left_included; 	/// включает левую границу, если есть
-	bool right_included;	/// включает правую границу, если есть
-
-	/// Всё множество.
-	Range() : left(), right(), left_bounded(false), right_bounded(false), left_included(false), right_included(false) {}
-
-	/// Одна точка.
-	Range(const Field & point) : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
-
-	/// Установить левую границу.
-	void setLeft(const Field & point, bool included)
-	{
-		left = point;
-		left_bounded = true;
-		left_included = included;
-	}
-
-	/// Установить правую границу.
-	void setRight(const Field & point, bool included)
-	{
-		right = point;
-		right_bounded = true;
-		right_included = included;
-	}
-
-	/// x входит в range
-	bool contains(const Field & x)
-	{
-		return !leftThan(x) && !rightThan(x);
-	}
-
-	/// x находится левее
-	bool rightThan(const Field & x)
-	{
-		return (left_bounded
-			? !(boost::apply_visitor(FieldVisitorGreater(), x, left) || (left_included && x == left))
-			: false);
-	}
-
-	/// x находится правее
-	bool leftThan(const Field & x)
-	{
-		return (right_bounded
-			? !(boost::apply_visitor(FieldVisitorLess(), x, right) || (right_included && x == right))
-			: false);
-	}
-
-	/// Пересекает отрезок
-	bool intersectsSegment(const Field & segment_left, const Field & segment_right)
-	{
-		if (!left_bounded)
-			return contains(segment_left);
-		if (!right_bounded)
-			return contains(segment_right);
-
-		return (boost::apply_visitor(FieldVisitorLess(), segment_left, right) || (right_included && segment_left == right))
-			&& (boost::apply_visitor(FieldVisitorGreater(), segment_right, left) || (left_included && segment_right == left));
-	}
-
-	String toString()
-	{
-		std::stringstream str;
-
-		if (!left_bounded)
-			str << "(-inf, ";
-		else
-			str << (left_included ? '[' : '(') << boost::apply_visitor(FieldVisitorToString(), left) << ", ";
-
-		if (!right_bounded)
-			str << "+inf)";
-		else
-			str << boost::apply_visitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
-
-		return str.str();
-	}
-};
-
-
 /// Для чтения из одного куска. Для чтения сразу из многих, Storage использует сразу много таких объектов.
 class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {
@@ -571,18 +485,18 @@ public:
 	}
 	
 	/// Получает диапазон засечек, вне которого не могут находиться ключи из заданного диапазона.
+	/// Сейчас может работать некорректно, это промежуточная версия для тестирования.
 	static void markRangeFromPkRange(const String & path,
 									  size_t marks_count,
 									  StorageMergeTree & storage,
-								      Row & requested_pk_prefix,
-								      Range & requested_pk_range,
+								      PkCondition & key_condition,
 									  size_t & out_first_mark,
 									  size_t & out_last_mark)
 	{
 		size_t last_mark_in_file = (marks_count == 0) ? 0 : (marks_count - 1);
 		
 		/// Если индекс не используется.
-		if (requested_pk_prefix.size() == 0 && !requested_pk_range.left_bounded && !requested_pk_range.right_bounded)
+		if (key_condition.alwaysTrue())
 		{
 			out_first_mark = 0;
 			out_last_mark = last_mark_in_file;
@@ -597,10 +511,8 @@ public:
 			String index_path = path + "primary.idx";
 			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 			
-			size_t prefix_size = requested_pk_prefix.size();
-			Row pk(storage.sort_descr.size());
-			Row pk_prefix(prefix_size);
-			
+			ssize_t last_read_mark;
+			Row prev_pk;
 			for (size_t current_mark_number = 0; !index.eof(); ++current_mark_number)
 			{
 				/// Читаем очередное значение PK
@@ -608,30 +520,22 @@ public:
 				for (size_t i = 0, size = pk.size(); i < size; ++i)
 					storage.primary_key_sample.getByPosition(i).type->deserializeBinary(pk[i], index);
 				
-				pk_prefix.assign(pk.begin(), pk.begin() + pk_prefix.size());
+				if (current_mark_number > 0)
+				{
+					if (key_condition.mayBeTrueInRange(prev_pk, pk))
+					{
+						if (min_mark_number == -1)
+							min_mark_number = current_mark_number - 1;
+						max_mark_number = current_mark_number - 1;
+					}
+				}
 				
-				if (pk_prefix < requested_pk_prefix)
-				{
-					min_mark_number = current_mark_number;
-				}
-				else if (pk_prefix == requested_pk_prefix)
-				{
-					if (requested_pk_range.rightThan(pk[prefix_size]))
-					{
-						min_mark_number = current_mark_number;
-					}
-					else if (requested_pk_range.leftThan(pk[prefix_size]))
-					{
-						max_mark_number = current_mark_number == 0 ? 0 : (current_mark_number - 1);
-						break;
-					}
-				}
-				else
-				{
-					max_mark_number = current_mark_number == 0 ? 0 : (current_mark_number - 1);
-					break;
-				}
+				prev_pk = pk;
+				last_read_mark = current_mark_number;
 			}
+			
+			if (max_mark_number == last_read_mark - 1)
+				++max_mark_number;
 			
 			out_first_mark = min_mark_number == -1 ? 0 : min_mark_number;
 			out_last_mark = max_mark_number == -1 ? last_mark_in_file : max_mark_number;
@@ -866,203 +770,6 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 }
 
 
-/// Собирает список отношений в конъюнкции в секции WHERE для определения того, можно ли использовать индекс.
-static void getRelationsFromConjunction(ASTPtr & node, ASTs & relations)
-{
-	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
-	{
-		if (func->name == "equals"
-			|| func->name == "less" || func->name == "greater"
-			|| func->name == "lessOrEquals" || func->name == "greaterOrEquals")
-		{
-			relations.push_back(node);
-		}
-		else if (func->name == "and")
-		{
-			/// Обходим рекурсивно.
-			ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-
-			getRelationsFromConjunction(args.at(0), relations);
-			getRelationsFromConjunction(args.at(1), relations);
-		}
-	}
-}
-
-
-/** Получить значение константного выражения.
-  * Вернуть false, если выражение не константно.
-  */
-static bool getConstant(ASTPtr & expr, Block & block_with_constants, Field & value)
-{
-	String column_name = expr->getColumnName();
-
-	if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*expr))
-	{
-		/// литерал
-		value = lit->value;
-		return true;
-	}
-	else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst())
-	{
-		/// выражение, вычислившееся в константу
-		value = (*block_with_constants.getByName(column_name).column)[0];
-		return true;
-	}
-	else
-		return false;
-}
-
-
-/** Получить значение константного аргумента функции вида f(name, const_expr) или f(const_expr, name).
-  * block_with_constants содержит вычисленные значения константных выражений.
-  * Вернуть false, если такого нет.
-  */
-static bool getConstantArgument(ASTs & args, Block & block_with_constants, Field & rhs)
-{
-	if (args.size() != 2)
-		return false;
-	
-	return getConstant(args[0], block_with_constants, rhs)
-		|| getConstant(args[1], block_with_constants, rhs);
-}
-
-
-/// Составить диапазон возможных значений для столбца на основе секции WHERE с вычисленными константными выражениями.
-static Range getRangeForColumn(ASTs & relations, const String & column_name, Block & block_with_constants)
-{
-	Range range;
-	
-	for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
-	{
-		ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
-		if (!func)
-			continue;
-
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-
-		if (args.size() != 2)
-			continue;
-
-		/// Шаблон: col rel const или const rel col
-		bool inverted;
-		if (column_name == args[0]->getColumnName())
-			inverted = false;
-		else if (column_name == args[1]->getColumnName())
-			inverted = true;
-		else
-			continue;
-
-		Field rhs;
-		if (!getConstantArgument(args, block_with_constants, rhs))
-			continue;
-		
-		if (func->name == "equals")
-		{
-			range = Range(rhs);
-			break;
-		}
-		else if (func->name == "greater")
-			!inverted ? range.setLeft(rhs, false) : range.setRight(rhs, false);
-		else if (func->name == "greaterOrEquals")
-			!inverted ? range.setLeft(rhs, true) : range.setRight(rhs, true);
-		else if (func->name == "less")
-			!inverted ? range.setRight(rhs, false) : range.setLeft(rhs, false);
-		else if (func->name == "lessOrEquals")
-			!inverted ? range.setRight(rhs, true) : range.setLeft(rhs, true);
-	}
-
-	return range;
-}
-
-
-/** Выделяет значение, которому должен быть равен столбец на основе секции WHERE с вычисленными константными выражениями.
-  * Если такого нет - возвращает false.
-  */
-static bool getEqualityForColumn(ASTs & relations, const String & column_name, Block & block_with_constants, Field & value)
-{
-	for (ASTs::iterator jt = relations.begin(); jt != relations.end(); ++jt)
-	{
-		ASTFunction * func = dynamic_cast<ASTFunction *>(&**jt);
-		if (!func || func->name != "equals")
-			continue;
-
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-
-		if (args.size() != 2)
-			continue;
-
-		if (args[0]->getColumnName() != column_name && args[1]->getColumnName() != column_name)
-			continue;
-
-		if (getConstantArgument(args, block_with_constants, value))
-			return true;
-		else
-			continue;
-	}
-	
-	return false;
-}
-
-
-void StorageMergeTree::getIndexRanges(ASTPtr & query, Range & date_range, Row & primary_prefix, Range & primary_range)
-{
-	/** Вычисление выражений, зависящих только от констант.
-	  * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
-	  */
-	Expression expr_for_constant_folding(query, context);
-	Block block_with_constants;
-
-	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
-	ColumnWithNameAndType dummy_column;
-	dummy_column.name = "_dummy";
-	dummy_column.type = new DataTypeUInt8;
-	dummy_column.column = new ColumnConstUInt8(1, 0);
-	block_with_constants.insert(dummy_column);
-	
-	expr_for_constant_folding.execute(block_with_constants, 0, true);
-
-	/// Выделяем из конъюнкции в секции WHERE все отношения.
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*query);
-	if (select.where_expression)
-	{
-		ASTs relations;
-		getRelationsFromConjunction(select.where_expression, relations);
-
-		/// Ищем отношения, которые могут быть использованы для индекса по дате.
-		date_range = getRangeForColumn(relations, date_column_name, block_with_constants);
-
-		/** Теперь ищем отношения, которые могут быть использованы для первичного ключа.
-		  * Сначала находим максимальное количество отношений равенства константе для первых столбцов PK.
-		  */
-		for (SortDescription::const_iterator it = sort_descr.begin(); it != sort_descr.end(); ++it)
-		{
-			Field rhs;
-			if (getEqualityForColumn(relations, it->column_name, block_with_constants, rhs))
-				primary_prefix.push_back(rhs);
-			else
-				break;
-		}
-
-		/// Если не для всех столбцов PK записано равенство, то ищем отношения для следующего столбца PK.
-		if (primary_prefix.size() < sort_descr.size())
-			primary_range = getRangeForColumn(relations, sort_descr[primary_prefix.size()].column_name, block_with_constants);
-	}
-
-	LOG_DEBUG(log, "Date range: " << date_range.toString());
-
-	std::stringstream primary_prefix_str;
-	for (Row::const_iterator it = primary_prefix.begin(); it != primary_prefix.end(); ++it)
-		primary_prefix_str << (it != primary_prefix.begin() ? ", " : "") << boost::apply_visitor(FieldVisitorToString(), *it);
-
-	LOG_DEBUG(log, "Primary key prefix: (" << primary_prefix_str.str() << ")");
-
-	if (primary_prefix.size() < sort_descr.size())
-	{
-		LOG_DEBUG(log, "Primary key range for column " << sort_descr[primary_prefix.size()].column_name << ": " << primary_range.toString());
-	}
-}
-
-
 BlockInputStreams StorageMergeTree::read(
 	const Names & column_names,
 	ASTPtr query,
@@ -1070,24 +777,21 @@ BlockInputStreams StorageMergeTree::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	/// Диапазон дат.
-	Range date_range;
-	/// Префикс первичного ключа, для которого требуется равенство. Может быть пустым.
-	Row primary_prefix;
-	/// Диапазон следующего после префикса столбца первичного ключа.
-	Range primary_range;
+	PkCondition key_condition(query, context, sort_descr);
+	PkCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
-	getIndexRanges(query, date_range, primary_prefix, primary_range);
-
+	LOG_DEBUG(log, "key condition: " << key_condition.toString());
+	LOG_DEBUG(log, "date condition: " << date_condition.toString());
+	
 	typedef std::vector<DataPartRange> PartsRanges;
 	PartsRanges parts;
 	
-	/// Выберем куски, в которых могут быть данные для date_range.
+	/// Выберем куски, в которых могут быть данные, удовлетворяющие key_condition.
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		
 		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-			if (date_range.intersectsSegment(static_cast<UInt64>((*it)->left_date), static_cast<UInt64>((*it)->right_date)))
+			if (date_condition.mayBeTrueInRange(Row(static_cast<UInt64>((*it)->left_date)),Row(static_cast<UInt64>((*it)->right_date))))
 				parts.push_back(DataPartRange(*it, 0, 0));
 	}
 	
@@ -1099,8 +803,7 @@ BlockInputStreams StorageMergeTree::read(
 		MergeTreeBlockInputStream::markRangeFromPkRange(full_path + part.data_part->name + '/',
 		                                                part.data_part->size,
 												         *this,
-		                                                primary_prefix,
-		                                                primary_range,
+		                                                key_condition,
 		                                                part.first_mark,
 		                                                part.last_mark);
 		sum_marks += part.last_mark - part.first_mark + 1;
