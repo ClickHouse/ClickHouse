@@ -511,7 +511,7 @@ public:
 			String index_path = path + "primary.idx";
 			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 			
-			ssize_t last_read_mark;
+			ssize_t last_read_mark = -1;
 			Row prev_pk;
 			for (size_t current_mark_number = 0; !index.eof(); ++current_mark_number)
 			{
@@ -791,7 +791,7 @@ BlockInputStreams StorageMergeTree::read(
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		
 		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-			if (date_condition.mayBeTrueInRange(Row(static_cast<UInt64>((*it)->left_date)),Row(static_cast<UInt64>((*it)->right_date))))
+			if (date_condition.mayBeTrueInRange(Row(1, static_cast<UInt64>((*it)->left_date)),Row(1, static_cast<UInt64>((*it)->right_date))))
 				parts.push_back(DataPartRange(*it, 0, 0));
 	}
 	
