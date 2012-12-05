@@ -538,7 +538,7 @@ public:
 				++max_mark_number;
 			
 			out_first_mark = min_mark_number == -1 ? 0 : min_mark_number;
-			out_last_mark = max_mark_number == -1 ? last_mark_in_file : max_mark_number;
+			out_last_mark = max_mark_number == -1 ? 0 : max_mark_number;
 		}
 	}
 
