@@ -132,54 +132,6 @@ struct Range
 		return true;
 	}
 	
-	void uniteWithRange(const Range & r)
-	{
-		left_bounded &= r.left_bounded;
-		if (left_bounded && boost::apply_visitor(FieldVisitorLess(), r.left, left) || (r.left_included && r.left == left))
-		{
-			left = r.left;
-			left_included = r.left_included;
-		}
-		right_bounded &= r.right_bounded;
-		if (right_bounded && boost::apply_visitor(FieldVisitorGreater(), r.right, right) || (r.right_included && r.right == right))
-		{
-			right = r.right;
-			right_included = r.right_included;
-		}
-	}
-	
-	void intersectWithRange(const Range & r)
-	{
-		if (!left_bounded)
-		{
-			left_bounded = r.left_bounded;
-			left = r.left;
-			left_included = r.left_included;
-		}
-		else if (r.left_bounded)
-		{
-			if (boost::apply_visitor(FieldVisitorGreater(), r.left, left) || (!r.left_included && r.left == left))
-			{
-				left = r.left;
-				left_included = r.left_included;
-			}
-		}
-		if (!right_bounded)
-		{
-			right_bounded = r.right_bounded;
-			right = r.right;
-			right_included = r.right_included;
-		}
-		else if (r.right_bounded)
-		{
-			if (boost::apply_visitor(FieldVisitorLess(), r.right, right) || (!r.right_included && r.right == right))
-			{
-				right = r.right;
-				right_included = r.right_included;
-			}
-		}
-	}
-	
 	String toString()
 	{
 		std::stringstream str;
