@@ -124,6 +124,9 @@ void TCPHandler::runImpl()
 			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 
+		// TODO Не пытаться ничего отправить (данные, эксепшен, прогресс), если уже стало ясно, что соединение разорвано.
+		// (возникает ошибка IO Error 32, когда пытаемся снова записать в сокет)
+
 		if (exception)
 		{
 			sendException(*exception);
