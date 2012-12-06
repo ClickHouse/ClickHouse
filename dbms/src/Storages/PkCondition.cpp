@@ -221,23 +221,31 @@ struct BoolMask
 	}
 };
 
-bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk)
+bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bool right_bounded)
 {
 	/// Найдем диапазоны элементов ключа.
 	std::vector<Range> key_ranges(sort_descr.size(), Range());
-	for (size_t i = 0; i < sort_descr.size(); ++i)
+	
+	if (right_bounded)
 	{
-		if (left_pk[i] == right_pk[i])
+		for (size_t i = 0; i < sort_descr.size(); ++i)
 		{
-			key_ranges[i] = Range(left_pk[i]);
-		}
-		else
-		{
-			key_ranges[i] = Range(left_pk[i], true, right_pk[i], true);
-			break;
+			if (left_pk[i] == right_pk[i])
+			{
+				key_ranges[i] = Range(left_pk[i]);
+			}
+			else
+			{
+				key_ranges[i] = Range(left_pk[i], true, right_pk[i], true);
+				break;
+			}
 		}
 	}
-	
+	else
+	{
+		key_ranges[0] = Range::LeftBounded(left_pk[0], true);
+	}
+
 	std::vector<BoolMask> rpn_stack;
 	for (size_t i = 0; i < rpn.size(); ++i)
 	{
@@ -281,6 +289,16 @@ bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk)
 		throw Exception("Unexpected stack size in PkCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
 	
 	return rpn_stack[0].can_be_true;
+}
+
+bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk)
+{
+	return mayBeTrueInRange(left_pk, right_pk, true);
+}
+
+bool PkCondition::mayBeTrueAfter(const Row & left_pk)
+{
+	return mayBeTrueInRange(left_pk, Row(), false);
 }
 
 }

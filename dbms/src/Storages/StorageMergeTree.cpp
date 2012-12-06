@@ -461,85 +461,84 @@ public:
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
 		size_t block_size_, const Names & column_names_,
 		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
-		size_t mark_number_, size_t rows_limit_)
+		const MarkRanges & mark_ranges_)
 		: path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
-		mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
+		mark_ranges(mark_ranges_), current_range(-1), rows_left_in_current_range(0)
 	{
-		if (mark_number == 0 && rows_limit == std::numeric_limits<size_t>::max())
-		{
-			LOG_TRACE(storage.log, "Reading from part " << owned_data_part->name << ", all rows.");
-		}
-		else
-		{
-			LOG_TRACE(storage.log, "Reading from part " << owned_data_part->name
-				<< ", up to " << rows_limit << " rows from row " << mark_number * storage.index_granularity << ".");
-		}
+		LOG_TRACE(storage.log, "Reading " << mark_ranges.size() << " ranges from part " << owned_data_part->name
+			<< ", up to " << (mark_ranges.back().end - mark_ranges.front().begin) * storage.index_granularity
+			<< " rows starting from " << mark_ranges.front().begin * storage.index_granularity);
 	}
 
 	String getName() const { return "MergeTreeBlockInputStream"; }
 	
 	BlockInputStreamPtr clone()
 	{
-		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_number, rows_limit);
+		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_ranges);
 	}
 	
-	/// Получает диапазон засечек, вне которого не могут находиться ключи из заданного диапазона.
-	/// Сейчас может работать некорректно, это промежуточная версия для тестирования.
-	static void markRangeFromPkRange(const String & path,
+	/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
+	static MarkRanges markRangesFromPkRange(const String & path,
 									  size_t marks_count,
 									  StorageMergeTree & storage,
-								      PkCondition & key_condition,
-									  size_t & out_first_mark,
-									  size_t & out_last_mark)
+								      PkCondition & key_condition)
 	{
-		size_t last_mark_in_file = (marks_count == 0) ? 0 : (marks_count - 1);
+		MarkRanges res;
 		
 		/// Если индекс не используется.
 		if (key_condition.alwaysTrue())
 		{
-			out_first_mark = 0;
-			out_last_mark = last_mark_in_file;
+			res.push_back(MarkRange(0,marks_count));
 		}
 		else
 		{
-			/// Читаем PK, и на основе primary_prefix, primary_range определим mark_number и rows_limit.
-			
-			ssize_t min_mark_number = -1;
-			ssize_t max_mark_number = -1;
+			/// Читаем индекс и находим промежутки, подходящие под условие.
 			
 			String index_path = path + "primary.idx";
 			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 			
-			ssize_t last_read_mark = -1;
 			Row prev_pk;
-			for (size_t current_mark_number = 0; !index.eof(); ++current_mark_number)
+			/// Включая фиктивную засечку после конца файла.
+			for (size_t current_mark_number = 0; current_mark_number <= marks_count; ++current_mark_number)
 			{
-				/// Читаем очередное значение PK
-				Row pk(storage.sort_descr.size());
-				for (size_t i = 0, size = pk.size(); i < size; ++i)
-					storage.primary_key_sample.getByPosition(i).type->deserializeBinary(pk[i], index);
+				bool may_be_true = false;
 				
-				if (current_mark_number > 0)
+				if (current_mark_number < marks_count)
 				{
-					if (key_condition.mayBeTrueInRange(prev_pk, pk))
-					{
-						if (min_mark_number == -1)
-							min_mark_number = current_mark_number - 1;
-						max_mark_number = current_mark_number - 1;
-					}
+					/// Читаем очередное значение PK
+					Row pk(storage.sort_descr.size());
+					for (size_t i = 0, size = pk.size(); i < size; ++i)
+						storage.primary_key_sample.getByPosition(i).type->deserializeBinary(pk[i], index);
+					
+					if (current_mark_number > 0)
+						may_be_true = key_condition.mayBeTrueInRange(prev_pk, pk);
+					prev_pk = pk;
+				}
+				else
+				{
+					may_be_true = key_condition.mayBeTrueAfter(prev_pk);
 				}
 				
-				prev_pk = pk;
-				last_read_mark = current_mark_number;
+				if (may_be_true)
+				{
+					/// Увидели полезный промежуток между соседними засечками. Либо добавим его к последнему диапазону, либо начнем новый диапазон.
+					if (res.empty() || (current_mark_number - 1) - res.back().end > storage.settings.min_rows_for_seek)
+					{
+						res.push_back(MarkRange(current_mark_number - 1, current_mark_number));
+					}
+					else
+					{
+						res.back().end = current_mark_number;
+					}
+				}
 			}
 			
-			if (max_mark_number == last_read_mark - 1)
-				++max_mark_number;
-			
-			out_first_mark = min_mark_number == -1 ? 0 : min_mark_number;
-			out_last_mark = max_mark_number == -1 ? 0 : max_mark_number;
+			if (!index.eof())
+				throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 		}
+		
+		return res;
 	}
 
 protected:
@@ -547,16 +546,22 @@ protected:
 	{
 		Block res;
 
-		if (rows_read == rows_limit)
-			return res;
-
-		/// Если файлы не открыты, то открываем их.
-		if (streams.empty())
+		/// Если нужно, переходим к следующему диапазону.
+		if (rows_left_in_current_range == 0)
+		{
+			++current_range;
+			if (current_range == mark_ranges.size())
+				return res;
+			
+			MarkRange & range = mark_ranges[current_range];
+			rows_left_in_current_range = (range.end - range.begin) * storage.index_granularity;
+			
 			for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-				addStream(*it, *storage.getDataTypeByName(*it));
+				addStream(*it, *storage.getDataTypeByName(*it), range.begin);
+		}
 
 		/// Сколько строк читать для следующего блока.
-		size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
+		size_t max_rows_to_read = std::min(block_size, rows_left_in_current_range);
 
 		/** Для некоторых столбцов файлы с данными могут отсутствовать.
 		  * Это бывает для старых кусков, после добавления новых столбцов в структуру таблицы.
@@ -589,7 +594,7 @@ protected:
 
 		if (res)
 		{
-			rows_read += res.rows();
+			rows_left_in_current_range -= res.rows();
 
 			/// Заполним столбцы, для которых нет файлов, значениями по-умолчанию.
 			if (has_missing_columns)
@@ -614,8 +619,9 @@ protected:
 			}
 		}
 
-		if (!res || rows_read == rows_limit)
+		if (!res || rows_left_in_current_range == 0)
 		{
+			rows_left_in_current_range = 0;
 			/** Закрываем файлы (ещё до уничтожения объекта).
 			  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
 			  *  буферы не висели в памяти.
@@ -632,10 +638,10 @@ private:
 	Names column_names;
 	StorageMergeTree & storage;
 	const StorageMergeTree::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
-	size_t mark_number;		/// С какой засечки читать данные
-	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
-
-	size_t rows_read;
+	MarkRanges mark_ranges; /// В каких диапазонах засечек читать.
+	
+	int current_range; /// Какой из mark_ranges сейчас читаем.
+	size_t rows_left_in_current_range; /// Сколько строк уже прочитали из текущего элемента mark_ranges.
 
 	struct Stream
 	{
@@ -669,7 +675,7 @@ private:
 	FileStreams streams;
 
 
-	void addStream(const String & name, const IDataType & type, size_t level = 0)
+	void addStream(const String & name, const IDataType & type, size_t mark_number, size_t level = 0)
 	{
 		String escaped_column_name = escapeForFileName(name);
 
@@ -689,7 +695,7 @@ private:
 				path + escaped_size_name,
 				mark_number)));
 
-			addStream(name, *type_arr->getNestedType(), level + 1);
+			addStream(name, *type_arr->getNestedType(), mark_number, level + 1);
 		}
 		else
 			streams.insert(std::make_pair(name, new Stream(
@@ -783,8 +789,7 @@ BlockInputStreams StorageMergeTree::read(
 	LOG_DEBUG(log, "key condition: " << key_condition.toString());
 	LOG_DEBUG(log, "date condition: " << date_condition.toString());
 	
-	typedef std::vector<DataPartRange> PartsRanges;
-	PartsRanges parts;
+	RangesInDataParts parts;
 	
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие key_condition.
 	{
@@ -792,75 +797,114 @@ BlockInputStreams StorageMergeTree::read(
 		
 		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 			if (date_condition.mayBeTrueInRange(Row(1, static_cast<UInt64>((*it)->left_date)),Row(1, static_cast<UInt64>((*it)->right_date))))
-				parts.push_back(DataPartRange(*it, 0, 0));
+				parts.push_back(RangesInDataPart(*it));
 	}
 	
 	/// Найдем, какой диапазон читать из каждого куска.
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
-		DataPartRange & part = parts[i];
-		MergeTreeBlockInputStream::markRangeFromPkRange(full_path + part.data_part->name + '/',
-		                                                part.data_part->size,
-												         *this,
-		                                                key_condition,
-		                                                part.first_mark,
-		                                                part.last_mark);
-		sum_marks += part.last_mark - part.first_mark + 1;
+		RangesInDataPart & part = parts[i];
+		part.ranges = MergeTreeBlockInputStream::markRangesFromPkRange(full_path + part.data_part->name + '/',
+		                                                              part.data_part->size,
+												                       *this,
+		                                                              key_condition);
 	}
 	
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts, " << sum_marks << " marks to read");
+	
+	return spreadMarkRangesAmongThreads(parts, threads, column_names, max_block_size);
+}
+
+
+/// Примерно поровну распределить засечки между потоками.
+BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
+{
+	/// На всякий случай перемешаем куски.
+	std::random_shuffle(parts.begin(), parts.end());
+	
+	/// Посчитаем засечки для каждого куска.
+	std::vector<size_t> sum_marks_in_parts(parts.size());
+	size_t sum_marks = 0;
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
+		std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
+		
+		sum_marks_in_parts[i] = 0;
+		for (size_t j = 0; j < parts[i].ranges.size(); ++j)
+		{
+			MarkRange & range = parts[i].ranges[j];
+			sum_marks_in_parts[i] += range.end - range.begin;
+		}
+		sum_marks += sum_marks_in_parts[i];
+	}
 	
 	BlockInputStreams res;
 	
 	if (sum_marks > 0)
 	{
-		/// В случайном порядке поровну поделим засечки между потоками.
-		size_t effective_threads = std::min(static_cast<size_t>(threads), sum_marks);
-		std::random_shuffle(parts.begin(), parts.end());
+		size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 		
-		size_t cur_part = 0;
-		/// Сколько зесечек уже забрали из parts[cur_part].
-		size_t cur_pos = 0;
-		size_t marks_spread = 0;
-		
-		for (size_t i = 0; i < effective_threads && marks_spread < sum_marks; ++i)
+		for (size_t i = 0; i < threads && !parts.empty(); ++i)
 		{
-			size_t need_marks = std::min((sum_marks - 1) / effective_threads + 1, sum_marks - marks_spread);
+			size_t need_marks = min_marks_per_thread;
 			BlockInputStreams streams;
 			
-			while (need_marks > 0)
+			/// Цикл по кускам.
+			while (need_marks > 0 && !parts.empty())
 			{
-				if (cur_part >= parts.size())
-					throw Exception("Can't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+				RangesInDataPart & part = parts.back();
+				size_t & marks_in_part = sum_marks_in_parts.back();
 				
-				DataPartRange & part = parts[cur_part];
-				size_t marks_left_in_part = part.last_mark - part.first_mark + 1 - cur_pos;
+				/// Не будем брать из куска слишком мало строк.
+				if (marks_in_part >= settings.min_rows_for_concurrent_read &&
+					need_marks < settings.min_rows_for_concurrent_read)
+					need_marks = settings.min_rows_for_concurrent_read;
 				
-				if (marks_left_in_part == 0)
+				/// Не будем оставлять в куске слишком мало строк.
+				if (marks_in_part > need_marks &&
+					marks_in_part - need_marks < settings.min_rows_for_concurrent_read)
+					need_marks = marks_in_part;
+				
+				/// Возьмем весь кусок, если он достаточно мал.
+				if (marks_in_part <= need_marks)
 				{
-					++cur_part;
-					cur_pos = 0;
+					/// Восстановим порядок отрезков.
+					std::reverse(part.ranges.begin(), part.ranges.end());
+					
+					streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
+																	  max_block_size, column_names, *this,
+																	  part.data_part, part.ranges));
+					need_marks -= marks_in_part;
+					parts.pop_back();
+					sum_marks_in_parts.pop_back();
 					continue;
 				}
 				
-				size_t marks_to_get_from_part = std::min(marks_left_in_part, need_marks);
+				MarkRanges ranges_to_get_from_part;
 				
-				/// Не будем оставлять в куске слишком мало строк.
-				if ((marks_left_in_part - marks_to_get_from_part) * index_granularity < settings.min_rows_for_concurrent_read)
-					marks_to_get_from_part = marks_left_in_part;
+				/// Цикл по отрезкам куска.
+				while (need_marks > 0)
+				{
+					if (part.ranges.empty())
+						throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
+					
+					MarkRange & range = part.ranges.back();
+					size_t marks_in_range = range.end - range.begin;
+				
+					size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+					ranges_to_get_from_part.push_back(MarkRange(range.begin, range.begin + marks_to_get_from_range));
+					range.begin += marks_to_get_from_range;
+					marks_in_part -= marks_to_get_from_range;
+					need_marks -= marks_to_get_from_range;
+					if (range.begin == range.end)
+						part.ranges.pop_back();
+				}
 				
 				streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
-																max_block_size, column_names, *this,
-																part.data_part, part.first_mark + cur_pos,
-																marks_to_get_from_part * index_granularity));
-				
-				marks_spread += marks_to_get_from_part;
-				if (marks_to_get_from_part > need_marks)
-					need_marks = 0;
-				else
-					need_marks -= marks_to_get_from_part;
-				cur_pos += marks_to_get_from_part;
+																  max_block_size, column_names, *this,
+																  part.data_part, ranges_to_get_from_part));
 			}
 			
 			if (streams.size() == 1)
@@ -869,11 +913,9 @@ BlockInputStreams StorageMergeTree::read(
 				res.push_back(new ConcatBlockInputStream(streams));
 		}
 		
-		if (marks_spread != sum_marks || cur_part + 1 != parts.size() || cur_pos != parts.back().last_mark - parts.back().first_mark + 1)
+		if (!parts.empty())
 			throw Exception("Couldn't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
 	}
-	
-	return res;
 }
 
 
@@ -1252,8 +1294,9 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
+		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], 0, std::numeric_limits<size_t>::max()), primary_expr));
+			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], ranges), primary_expr));
 	}
 
 	BlockInputStreamPtr merged_stream = sign_column.empty()

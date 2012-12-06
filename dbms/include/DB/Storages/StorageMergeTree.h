@@ -12,9 +12,6 @@
 namespace DB
 {
 
-struct Range;
-
-
 /** Движок, использующий merge tree для инкрементальной сортировки данных.
   * Таблица представлена набором сортированных кусков.
   * При вставке, данные сортируются по указанному выражению (первичному ключу) и пишутся в новый кусок.
@@ -55,7 +52,7 @@ struct StorageMergeTreeSettings
 	/// С другой стороны, чтобы слияния точно не могли зайти в тупик, нужно хотя бы
 	/// log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts).
 	size_t max_parts_to_merge_at_once;
-
+	
 	/// Куски настолько большого размера объединять нельзя вообще.
 	size_t max_rows_to_merge_parts;
 	
@@ -65,13 +62,29 @@ struct StorageMergeTreeSettings
 	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
 	size_t min_rows_for_concurrent_read;
 	
+	/// Можно пропускать чтение более чем стольки строк ценой одного seek по файлу.
+	size_t min_rows_for_seek;
+	
 	StorageMergeTreeSettings() :
 		max_size_ratio_to_merge_parts(5),
 		max_parts_to_merge_at_once(10),
 		max_rows_to_merge_parts(100 * 1024 * 1024),
 		merging_threads(2),
-		min_rows_for_concurrent_read(20 * 8192) {}
+		min_rows_for_concurrent_read(20 * 8192),
+		min_rows_for_seek(10 * 8192) {}
 };
+
+/// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
+struct MarkRange
+{
+	int begin;
+	int end;
+	
+	MarkRange() {}
+	MarkRange(int begin_, int end_) : begin(begin_), end(end_) {}
+};
+
+typedef std::vector<MarkRange> MarkRanges;
 
 
 class StorageMergeTree : public IStorage
@@ -230,19 +243,20 @@ private:
 	struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
 	typedef std::set<DataPartPtr, DataPartPtrLess> DataParts;
 	
-	struct DataPartRange
+	struct RangesInDataPart
 	{
 		DataPartPtr data_part;
-		size_t first_mark;
-		size_t last_mark;
+		MarkRanges ranges;
 
-		DataPartRange() {}
+		RangesInDataPart() {}
 
-		DataPartRange(DataPartPtr data_part_, size_t first_mark_, size_t last_mark_)
-			: data_part(data_part_), first_mark(first_mark_), last_mark(last_mark_)
+		RangesInDataPart(DataPartPtr data_part_)
+			: data_part(data_part_)
 		{
 		}
 	};
+	
+	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
 	  * Ссылки на кусок есть отсюда, из списка актуальных кусков, и из каждого потока чтения, который его сейчас использует.
@@ -257,6 +271,8 @@ private:
 
 	static String getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
+	BlockInputStreams spreadMarkRangesAmongThreads(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size);
+	
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
 
