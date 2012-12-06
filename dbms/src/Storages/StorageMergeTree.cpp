@@ -550,7 +550,7 @@ protected:
 		if (rows_left_in_current_range == 0)
 		{
 			++current_range;
-			if (current_range == mark_ranges.size())
+			if (static_cast<size_t>(current_range) == mark_ranges.size())
 				return res;
 			
 			MarkRange & range = mark_ranges[current_range];
