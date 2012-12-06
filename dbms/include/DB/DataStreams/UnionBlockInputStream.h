@@ -144,11 +144,13 @@ public:
 		finish = true;
 		cancel();
 
+		ExceptionPtr exception;
+
 		/// Вынем всё, что есть в очереди готовых данных.
 		OutputData res;
 		while (output_queue.tryPop(res))
-			if (res.exception && !std::uncaught_exception())
-				res.exception->rethrow();
+			if (res.exception && !exception)
+				exception = res.exception;
 
 		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
 		  * PS. Может быть, для переменной finish нужен барьер?
@@ -159,8 +161,11 @@ public:
 
 		/// Может быть, нам под конец положили эксепшен.
 		while (output_queue.tryPop(res))
-			if (res.exception && !std::uncaught_exception())
-				res.exception->rethrow();
+			if (res.exception && !exception)
+				exception = res.exception;
+
+		if (exception && !std::uncaught_exception())
+			exception->rethrow();
 
 		LOG_TRACE(log, "Waited for threads to finish");
 	}

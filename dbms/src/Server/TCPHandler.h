@@ -43,11 +43,6 @@ struct QueryState
 
 	Context context;
 
-	/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
-	  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета.
-	  */
-	SharedPtr<Exception> exception;
-
 	bool is_cancelled;
 	/// Данные были отправлены.
 	bool sent_all_data;
@@ -93,9 +88,6 @@ private:
 	SharedPtr<ReadBufferFromPocoSocket> in;
 	SharedPtr<WriteBufferFromPocoSocket> out;
 
-	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
-	QueryState state;
-
 	/// Для сериализации пакетов "данные" и "прогресс" (пакет типа "прогресс" может отправляться из другого потока).
 	Poco::FastMutex send_mutex;
 
@@ -104,7 +96,10 @@ private:
 	Stopwatch after_send_progress;
 
 	String default_database;
-	
+
+	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
+	QueryState state;
+
 
 	void runImpl();
 

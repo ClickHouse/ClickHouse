@@ -68,6 +68,11 @@ void TCPHandler::runImpl()
 		
 		Stopwatch watch;
 		state.reset();
+
+		/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
+		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета.
+		  */
+		ExceptionPtr exception;
 		
 		try
 		{	
@@ -90,12 +95,14 @@ void TCPHandler::runImpl()
 				processOrdinaryQuery();
 
 			sendEndOfStream();
+
+			state.reset();
 		}
 		catch (DB::Exception & e)
 		{
 			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
-			state.exception = e.clone();
+			exception = e.clone();
 
 			if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
 				throw;
@@ -104,23 +111,37 @@ void TCPHandler::runImpl()
 		{
 			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
-			state.exception = new Exception(e.displayText(), e.code());
+			exception = new Exception(e.displayText(), e.code());
 		}
 		catch (std::exception & e)
 		{
 			LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
-			state.exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+			exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
-			state.exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 
-		if (state.exception)
-			sendException(*state.exception);
+		if (exception)
+		{
+			sendException(*exception);
 
-		state.reset();
+			try
+			{
+				state.reset();
+			}
+			catch (...)
+			{
+				/** В процессе обработки запроса было исключение, которое мы поймали и отправили клиенту.
+				  * При уничтожении конвейера выполнения запроса, было второе исключение.
+				  * Например, конвейер мог выполняться в нескольких потоках, и в каждом из них могло возникнуть исключение.
+				  * Проигнорируем его.
+				  */
+			}
+		}
+
 		watch.stop();
 
 		LOG_INFO(log, std::fixed << std::setprecision(3)
