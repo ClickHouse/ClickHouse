@@ -789,7 +789,8 @@ BlockInputStreams StorageMergeTree::read(
 	LOG_DEBUG(log, "key condition: " << key_condition.toString());
 	LOG_DEBUG(log, "date condition: " << date_condition.toString());
 	
-	RangesInDataParts parts;
+	typedef std::vector<DataPartPtr> PartsList;
+	PartsList parts;
 	
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие key_condition.
 	{
@@ -797,23 +798,38 @@ BlockInputStreams StorageMergeTree::read(
 		
 		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 			if (date_condition.mayBeTrueInRange(Row(1, static_cast<UInt64>((*it)->left_date)),Row(1, static_cast<UInt64>((*it)->right_date))))
-				parts.push_back(RangesInDataPart(*it));
+				parts.push_back(*it);
 	}
+	
+	RangesInDataParts parts_with_ranges;
 	
 	/// Найдем, какой диапазон читать из каждого куска.
 	size_t sum_marks = 0;
+	size_t sum_ranges = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
-		RangesInDataPart & part = parts[i];
-		part.ranges = MergeTreeBlockInputStream::markRangesFromPkRange(full_path + part.data_part->name + '/',
-		                                                              part.data_part->size,
+		DataPartPtr & part = parts[i];
+		RangesInDataPart ranges(part);
+		ranges.ranges = MergeTreeBlockInputStream::markRangesFromPkRange(full_path + part->name + '/',
+		                                                              part->size,
 												                       *this,
 		                                                              key_condition);
+		if (!ranges.ranges.empty())
+		{
+			parts_with_ranges.push_back(ranges);
+			
+			sum_ranges += ranges.ranges.size();
+			for (size_t j = 0; j < ranges.ranges.size(); ++j)
+			{
+				sum_marks += ranges.ranges[j].end - ranges.ranges[j].begin;
+			}
+		}
 	}
 	
-	LOG_DEBUG(log, "Selected " << parts.size() << " parts, " << sum_marks << " marks to read");
+	LOG_DEBUG(log, "Selected " << parts.size() << " by date, " << parts_with_ranges.size() << " parts by key, "
+			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
 	
-	return spreadMarkRangesAmongThreads(parts, threads, column_names, max_block_size);
+	return spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names, max_block_size);
 }
 
 
