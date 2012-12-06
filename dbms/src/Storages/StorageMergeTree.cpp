@@ -826,7 +826,7 @@ BlockInputStreams StorageMergeTree::read(
 		}
 	}
 	
-	LOG_DEBUG(log, "Selected " << parts.size() << " by date, " << parts_with_ranges.size() << " parts by key, "
+	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
 			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
 	
 	return spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names, max_block_size);
@@ -1290,8 +1290,8 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 
 	StorageMergeTree::DataPartPtr new_data_part = new DataPart(*this);
-	new_data_part->left_date = parts.front()->left_date;
-	new_data_part->right_date = parts.back()->right_date;
+	new_data_part->left_date = std::min(parts.front()->left_date, parts.back()->left_date);
+	new_data_part->right_date = std::max(parts.front()->right_date, parts.back()->right_date);
 	new_data_part->left = parts.front()->left;
 	new_data_part->right = parts.back()->right;
 	new_data_part->level = 0;
