@@ -523,7 +523,7 @@ public:
 				if (may_be_true)
 				{
 					/// Увидели полезный промежуток между соседними засечками. Либо добавим его к последнему диапазону, либо начнем новый диапазон.
-					if (res.empty() || (current_mark_number - 1) - res.back().end > storage.settings.min_rows_for_seek)
+					if (res.empty() || (current_mark_number - 1) - res.back().end > storage.min_marks_for_seek)
 					{
 						res.push_back(MarkRange(current_mark_number - 1, current_mark_number));
 					}
@@ -741,6 +741,9 @@ StorageMergeTree::StorageMergeTree(
 	settings(settings_),
 	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name))
 {
+	min_marks_for_seek = (settings.min_rows_for_seek + index_granularity - 1) / index_granularity;
+	min_marks_for_concurrent_read = (settings.min_rows_for_concurrent_read + index_granularity - 1) / index_granularity;
+
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
 
@@ -874,13 +877,13 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 				size_t & marks_in_part = sum_marks_in_parts.back();
 				
 				/// Не будем брать из куска слишком мало строк.
-				if (marks_in_part >= settings.min_rows_for_concurrent_read &&
-					need_marks < settings.min_rows_for_concurrent_read)
-					need_marks = settings.min_rows_for_concurrent_read;
+				if (marks_in_part >= min_marks_for_concurrent_read &&
+					need_marks < min_marks_for_concurrent_read)
+					need_marks = min_marks_for_concurrent_read;
 				
 				/// Не будем оставлять в куске слишком мало строк.
 				if (marks_in_part > need_marks &&
-					marks_in_part - need_marks < settings.min_rows_for_concurrent_read)
+					marks_in_part - need_marks < min_marks_for_concurrent_read)
 					need_marks = marks_in_part;
 				
 				/// Возьмем весь кусок, если он достаточно мал.

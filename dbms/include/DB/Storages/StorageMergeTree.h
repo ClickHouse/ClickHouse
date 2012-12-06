@@ -152,6 +152,9 @@ private:
 	ASTPtr primary_expr_ast;
 	String date_column_name;
 	size_t index_granularity;
+	
+	size_t min_marks_for_seek;
+	size_t min_marks_for_concurrent_read;
 
 	/// Для схлопывания записей об изменениях, если это требуется.
 	String sign_column;
