@@ -916,6 +916,8 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 		if (!parts.empty())
 			throw Exception("Couldn't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
 	}
+	
+	return res;
 }
 
 

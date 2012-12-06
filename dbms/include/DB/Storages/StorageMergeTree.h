@@ -77,11 +77,11 @@ struct StorageMergeTreeSettings
 /// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
 struct MarkRange
 {
-	int begin;
-	int end;
+	size_t begin;
+	size_t end;
 	
 	MarkRange() {}
-	MarkRange(int begin_, int end_) : begin(begin_), end(end_) {}
+	MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
 };
 
 typedef std::vector<MarkRange> MarkRanges;
