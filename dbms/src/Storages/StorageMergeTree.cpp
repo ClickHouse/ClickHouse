@@ -1290,14 +1290,16 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 
 	StorageMergeTree::DataPartPtr new_data_part = new DataPart(*this);
-	new_data_part->left_date = std::min(parts.front()->left_date, parts.back()->left_date);
-	new_data_part->right_date = std::max(parts.front()->right_date, parts.back()->right_date);
+	new_data_part->left_date = std::numeric_limits<UInt16>::max();
+	new_data_part->right_date = std::numeric_limits<UInt16>::min();
 	new_data_part->left = parts.front()->left;
 	new_data_part->right = parts.back()->right;
 	new_data_part->level = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		new_data_part->level = std::max(new_data_part->level, parts[i]->level);
+		new_data_part->left_date = std::min(new_data_part->left_date, parts[i]->left_date);
+		new_data_part->right_date = std::max(new_data_part->right_date, parts[i]->right_date);
 	}
 	++new_data_part->level;
 	new_data_part->name = getPartName(
