@@ -72,7 +72,7 @@ void TCPHandler::runImpl()
 		/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
 		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета.
 		  */
-		ExceptionPtr exception;
+		SharedPtr<DB::Exception> exception;
 		
 		try
 		{	
