@@ -71,7 +71,7 @@ struct StorageMergeTreeSettings
 		max_rows_to_merge_parts(100 * 1024 * 1024),
 		merging_threads(2),
 		min_rows_for_concurrent_read(20 * 8192),
-		min_rows_for_seek(10 * 8192) {}
+		min_rows_for_seek(5 * 8192) {}
 };
 
 /// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
