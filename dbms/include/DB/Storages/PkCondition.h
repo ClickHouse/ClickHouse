@@ -151,10 +151,10 @@ struct Range
 };
 
 
-class PkCondition
+class PKCondition
 {
 public:
-	PkCondition(ASTPtr query, const Context & context, const SortDescription & sort_descr);
+	PKCondition(ASTPtr query, const Context & context, const SortDescription & sort_descr);
 	
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
@@ -171,6 +171,7 @@ public:
 	
 	String toString();
 private:
+	/// Выражение хранится в виде обратной польской строки (Reverse Polish Notation).
 	struct RPNElement
 	{
 		enum Function

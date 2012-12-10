@@ -482,60 +482,80 @@ public:
 	static MarkRanges markRangesFromPkRange(const String & path,
 									  size_t marks_count,
 									  StorageMergeTree & storage,
-								      PkCondition & key_condition)
+								      PKCondition & key_condition)
 	{
 		MarkRanges res;
 		
 		/// Если индекс не используется.
 		if (key_condition.alwaysTrue())
 		{
-			res.push_back(MarkRange(0,marks_count));
+			res.push_back(MarkRange(0, marks_count));
 		}
 		else
 		{
-			/// Читаем индекс и находим промежутки, подходящие под условие.
+			/// Читаем индекс.
+			typedef std::vector<Row> Index;
+			size_t key_size = storage.sort_descr.size();
+			Index index(marks_count, Row(key_size));
 			
-			String index_path = path + "primary.idx";
-			ReadBufferFromFile index(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
-			
-			Row prev_pk;
-			/// Включая фиктивную засечку после конца файла.
-			for (size_t current_mark_number = 0; current_mark_number <= marks_count; ++current_mark_number)
 			{
-				bool may_be_true = false;
+				String index_path = path + "primary.idx";
+				ReadBufferFromFile index_file(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 				
-				if (current_mark_number < marks_count)
+				for (size_t i = 0; i < marks_count; ++i)
 				{
-					/// Читаем очередное значение PK
-					Row pk(storage.sort_descr.size());
-					for (size_t i = 0, size = pk.size(); i < size; ++i)
-						storage.primary_key_sample.getByPosition(i).type->deserializeBinary(pk[i], index);
-					
-					if (current_mark_number > 0)
-						may_be_true = key_condition.mayBeTrueInRange(prev_pk, pk);
-					prev_pk = pk;
+					for (size_t j = 0; j < key_size; ++j)
+						storage.primary_key_sample.getByPosition(j).type->deserializeBinary(index[i][j], index_file);
 				}
+				
+				if (!index_file.eof())
+					throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+			}
+
+			/// В стеке всегда будут находиться непересекающиеся подозрительные отрезки, самый левый наверху (back).
+			/// На каждом шаге берем левый отрезок и проверяем, подходит ли он.
+			/// Если подходит, разбиваем его на более мелкие и кладем их в стек. Если нет - выбрасываем его.
+			/// Если отрезок уже длиной в одну засечку, добавляем его в ответ и выбрасываем.
+			std::vector<MarkRange> ranges_stack;
+			ranges_stack.push_back(MarkRange(0, marks_count));
+			while (!ranges_stack.empty())
+			{
+				MarkRange range = ranges_stack.back();
+				ranges_stack.pop_back();
+				
+				bool may_be_true;
+				if (range.end == marks_count)
+					may_be_true = key_condition.mayBeTrueAfter(index[range.begin]);
 				else
-				{
-					may_be_true = key_condition.mayBeTrueAfter(prev_pk);
-				}
+					may_be_true = key_condition.mayBeTrueInRange(index[range.begin], index[range.end]);
 				
-				if (may_be_true)
+				if (!may_be_true)
+					continue;
+				
+				if (range.end == range.begin + 1)
 				{
 					/// Увидели полезный промежуток между соседними засечками. Либо добавим его к последнему диапазону, либо начнем новый диапазон.
-					if (res.empty() || (current_mark_number - 1) - res.back().end > storage.min_marks_for_seek)
+					if (res.empty() || range.begin - res.back().end > storage.min_marks_for_seek)
 					{
-						res.push_back(MarkRange(current_mark_number - 1, current_mark_number));
+						res.push_back(range);
 					}
 					else
 					{
-						res.back().end = current_mark_number;
+						res.back().end = range.end;
 					}
 				}
+				else
+				{
+					/// Разбиваем отрезок и кладем результат в стек справа налево.
+					size_t step = (range.end - range.begin - 1) / storage.settings.coarse_index_granularity + 1;
+					size_t end;
+					for (end = range.end; end > range.begin + step; end -= step)
+					{
+						ranges_stack.push_back(MarkRange(end - step, end));
+					}
+					ranges_stack.push_back(MarkRange(range.begin, end));
+				}
 			}
-			
-			if (!index.eof())
-				throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 		}
 		
 		return res;
@@ -786,8 +806,8 @@ BlockInputStreams StorageMergeTree::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	PkCondition key_condition(query, context, sort_descr);
-	PkCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
+	PKCondition key_condition(query, context, sort_descr);
+	PKCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
 	LOG_DEBUG(log, "key condition: " << key_condition.toString());
 	LOG_DEBUG(log, "date condition: " << date_condition.toString());

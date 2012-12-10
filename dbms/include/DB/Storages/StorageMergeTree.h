@@ -65,13 +65,17 @@ struct StorageMergeTreeSettings
 	/// Можно пропускать чтение более чем стольки строк ценой одного seek по файлу.
 	size_t min_rows_for_seek;
 	
+	/// Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их.
+	size_t coarse_index_granularity;
+	
 	StorageMergeTreeSettings() :
 		max_size_ratio_to_merge_parts(5),
 		max_parts_to_merge_at_once(10),
 		max_rows_to_merge_parts(100 * 1024 * 1024),
 		merging_threads(2),
 		min_rows_for_concurrent_read(20 * 8192),
-		min_rows_for_seek(5 * 8192) {}
+		min_rows_for_seek(5 * 8192),
+		coarse_index_granularity(8) {}
 };
 
 /// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).

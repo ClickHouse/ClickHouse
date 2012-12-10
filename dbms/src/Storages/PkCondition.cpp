@@ -4,7 +4,7 @@
 namespace DB
 {
 
-PkCondition::PkCondition(ASTPtr query, const Context & context_, const SortDescription & sort_descr_)
+PKCondition::PKCondition(ASTPtr query, const Context & context_, const SortDescription & sort_descr_)
 	: context(context_), sort_descr(sort_descr_)
 {
 	for (size_t i = 0; i < sort_descr.size(); ++i)
@@ -62,7 +62,7 @@ static bool getConstant(ASTPtr & expr, Block & block_with_constants, Field & val
 		return false;
 }
 
-void PkCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
+void PKCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 {
 	RPNElement element;
 	
@@ -89,7 +89,7 @@ void PkCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 	rpn.push_back(element);
 }
 
-bool PkCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out)
+bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
 	/// Фнукции < > = != <= >=, у которых один агрумент константа, другой - один из столбцов первичного ключа.
 	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
@@ -158,7 +158,7 @@ bool PkCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 	return false;
 }
 
-bool PkCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
+bool PKCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 {
 	/// Фнукции AND, OR, NOT.
 	ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
@@ -186,7 +186,7 @@ bool PkCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 	return true;
 }
 
-String PkCondition::toString()
+String PKCondition::toString()
 {
 	String res;
 	for (size_t i = 0; i < rpn.size(); ++i)
@@ -221,7 +221,7 @@ struct BoolMask
 	}
 };
 
-bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bool right_bounded)
+bool PKCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bool right_bounded)
 {
 	/// Найдем диапазоны элементов ключа.
 	std::vector<Range> key_ranges(sort_descr.size(), Range());
@@ -282,7 +282,7 @@ bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bo
 			rpn_stack.back() = arg1 | arg2;
 		}
 		else
-			throw Exception("Unexpected function type in PkCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unexpected function type in PKCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
 	}
 	
 	if (rpn_stack.size() != 1)
@@ -291,12 +291,12 @@ bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bo
 	return rpn_stack[0].can_be_true;
 }
 
-bool PkCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk)
+bool PKCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk)
 {
 	return mayBeTrueInRange(left_pk, right_pk, true);
 }
 
-bool PkCondition::mayBeTrueAfter(const Row & left_pk)
+bool PKCondition::mayBeTrueAfter(const Row & left_pk)
 {
 	return mayBeTrueInRange(left_pk, Row(), false);
 }
