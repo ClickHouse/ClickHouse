@@ -38,14 +38,13 @@ public:
 	virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
 
 	/** Сериализация столбца.
-	  * Можно передать callback, который будет вызван для некоторых значений.
-	  *  callback вызывается для 0-го значения и возвращает индекс следующего значения,
-	  *  для которого его следует вызвать.
-	  * Это может быть использовано для одновременной записи индексного файла.
+	  * offset и limit используются, чтобы сериализовать часть столбца.
+	  * limit = 0 - означает - не ограничено.
+	  * offset не должен быть больше размера столбца.
+	  * offset + limit может быть больше размера столбца
+	  *  - в этом случае, столбец сериализуется до конца.
 	  */
-	typedef boost::function<size_t()> WriteCallback;
-	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr,
-		WriteCallback callback = WriteCallback()) const = 0;
+	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const = 0;
 	
 	/** Считать не более limit значений. */
 	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const = 0;

@@ -50,7 +50,7 @@ public:
 	  */
 
 	/** Записать только значения, без размеров. Вызывающая сторона также должна куда-нибудь записать смещения. */
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback = WriteCallback()) const;
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
 
 	/** Прочитать только значения, без размеров.
 	  * При этом, в column уже заранее должны быть считаны все размеры.
@@ -58,7 +58,7 @@ public:
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const;
 
 	/** Записать размеры. */
-	void serializeOffsets(const IColumn & column, WriteBuffer & ostr, WriteCallback callback = WriteCallback()) const;
+	void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
 
 	/** Прочитать размеры. Вызывайте этот метод перед чтением значений. */
 	void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;

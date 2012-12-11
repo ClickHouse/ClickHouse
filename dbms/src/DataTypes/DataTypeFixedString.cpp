@@ -38,26 +38,17 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
 }
 
 
-void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback) const
+void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnFixedArray & column_array = dynamic_cast<const ColumnFixedArray &>(column);
 	const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_array.getData()).getData();
 
-	size_t prev_callback_point = 0;
-	size_t next_callback_point = 0;
 	size_t size = data.size() / n;
 
-	while (next_callback_point < size)
-	{
-		next_callback_point = callback ? callback() : size;
-		if (next_callback_point > size)
-			next_callback_point = size;
+	if (limit == 0 || offset + limit > size)
+		limit = size - offset;
 
-		ostr.write(reinterpret_cast<const char *>(&data[prev_callback_point * n]),
-			n * (next_callback_point - prev_callback_point));
-
-		prev_callback_point = next_callback_point;
-	}
+	ostr.write(reinterpret_cast<const char *>(&data[offset]), n * limit);
 }
 
 

@@ -221,6 +221,7 @@ private:
 	void writeData(const String & path, const String & name, const IDataType & type, const IColumn & column, size_t level = 0)
 	{
 		String escaped_column_name = escapeForFileName(name);
+		size_t size = column.size();
 		
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
@@ -232,9 +233,15 @@ private:
 			CompressedWriteBuffer compressed(plain);
 
 			size_t prev_mark = 0;
-			type_arr->serializeOffsets(column, compressed,
-				boost::bind(&MergeTreeBlockOutputStream::writeCallback, this,
-					boost::ref(prev_mark), boost::ref(plain), boost::ref(compressed), boost::ref(marks)));
+			while (prev_mark < size)
+			{
+				/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
+				writeIntBinary(plain.count(), marks);
+				writeIntBinary(compressed.offset(), marks);
+				
+				type_arr->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
+				prev_mark += storage.index_granularity;
+			}
 		}
 
 		{
@@ -242,26 +249,17 @@ private:
 			WriteBufferFromFile marks(path + escaped_column_name + ".mrk", 4096, flags);
 			CompressedWriteBuffer compressed(plain);
 
+			// TODO Для массивов здесь баг - засечки сериализуются неправильно.
 			size_t prev_mark = 0;
-			type.serializeBinary(column, compressed,
-				boost::bind(&MergeTreeBlockOutputStream::writeCallback, this,
-					boost::ref(prev_mark), boost::ref(plain), boost::ref(compressed), boost::ref(marks)));
+			while (prev_mark < size)
+			{
+				writeIntBinary(plain.count(), marks);
+				writeIntBinary(compressed.offset(), marks);
+				
+				type.serializeBinary(column, compressed, prev_mark, storage.index_granularity);
+				prev_mark += storage.index_granularity;
+			}
 		}
-	}
-
-	/// Вызывается каждые index_granularity строк и пишет в файл с засечками (.mrk).
-	size_t writeCallback(size_t & prev_mark,
-		WriteBufferFromFile & plain,
-		CompressedWriteBuffer & compressed,
-		WriteBufferFromFile & marks)
-	{
-		/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
-
-		writeIntBinary(plain.count(), marks);
-		writeIntBinary(compressed.offset(), marks);
-
-		prev_mark += storage.index_granularity;
-		return prev_mark;
 	}
 };
 
@@ -404,6 +402,8 @@ private:
 	/// Записать данные одного столбца.
 	void writeData(const String & name, const IDataType & type, const IColumn & column, size_t level = 0)
 	{
+		size_t size = column.size();
+		
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
@@ -412,42 +412,52 @@ private:
 			ColumnStream & stream = *column_streams[size_name];
 
 			size_t prev_mark = 0;
-			type_arr->serializeOffsets(column, stream.compressed,
-				boost::bind(&MergedBlockOutputStream::writeCallback, this,
-					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
+			while (prev_mark < size)
+			{
+				size_t limit = 0;
+				
+				/// Если есть index_offset, то первая засечка идёт не сразу, а после этого количества строк.
+				if (prev_mark == 0 && index_offset != 0)
+				{
+					limit = index_offset;
+				}
+				else
+				{
+					limit = storage.index_granularity;
+					writeIntBinary(stream.plain.count(), stream.marks);
+					writeIntBinary(stream.compressed.offset(), stream.marks);
+				}
+				
+				type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
+				prev_mark += limit;
+			}
 		}
 
 		{
 			ColumnStream & stream = *column_streams[name];
 
+			// TODO Для массивов здесь баг - засечки сериализуются неправильно.
 			size_t prev_mark = 0;
-			type.serializeBinary(column, stream.compressed,
-				boost::bind(&MergedBlockOutputStream::writeCallback, this,
-					boost::ref(prev_mark), boost::ref(stream.plain), boost::ref(stream.compressed), boost::ref(stream.marks)));
+			while (prev_mark < size)
+			{
+				size_t limit = 0;
+
+				/// Если есть index_offset, то первая засечка идёт не сразу, а после этого количества строк.
+				if (prev_mark == 0 && index_offset != 0)
+				{
+					limit = index_offset;
+				}
+				else
+				{
+					limit = storage.index_granularity;
+					writeIntBinary(stream.plain.count(), stream.marks);
+					writeIntBinary(stream.compressed.offset(), stream.marks);
+				}
+
+				type.serializeBinary(column, stream.compressed, prev_mark, limit);
+				prev_mark += limit;
+			}
 		}
-	}
-	
-
-	/// Вызывается каждые index_granularity строк и пишет в файл с засечками (.mrk).
-	size_t writeCallback(size_t & prev_mark,
-		WriteBufferFromFile & plain,
-		CompressedWriteBuffer & compressed,
-		WriteBufferFromFile & marks)
-	{
-		/// Если есть index_offset, то первая засечка идёт не сразу, а после этого количества строк.
-		if (prev_mark == 0 && index_offset != 0)
-		{
-			prev_mark = index_offset;
-			return prev_mark;
-		}
-		
-		/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
-
-		writeIntBinary(plain.count(), marks);
-		writeIntBinary(compressed.offset(), marks);
-
-		prev_mark += storage.index_granularity;
-		return prev_mark;
 	}
 };
 

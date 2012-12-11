@@ -24,7 +24,6 @@ namespace DB
 template <typename FieldType, typename ColumnType>
 class IDataTypeNumberVariable : public IDataTypeNumber<FieldType>
 {
-	typedef IDataType::WriteCallback WriteCallback;
 public:
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const
 	{
@@ -36,19 +35,17 @@ public:
 		readVarT(static_cast<typename ColumnType::value_type &>(boost::get<FieldType &>(field)), istr);
 	}
 	
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback = WriteCallback()) const
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const
 	{
 		const typename ColumnType::Container_t & x = dynamic_cast<const ColumnType &>(column).getData();
 		size_t size = x.size();
+
+		size_t end = limit && offset + limit < size
+			? offset + limit
+			: size;
 		
-		size_t next_callback_point = callback ? callback() : 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (next_callback_point && i == next_callback_point)
-				next_callback_point = callback();
-			
+		for (size_t i = offset; i < end; ++i)
 			writeVarT(x[i], ostr);
-		}
 	}
 	
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const

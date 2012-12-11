@@ -24,7 +24,7 @@ public:
 	void deserializeBinary(Field & field, ReadBuffer & istr) const 										{ throwNoSerialization(); }
 
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr,
-		WriteCallback callback = WriteCallback()) const 												{ throwNoSerialization(); }
+		size_t offset = 0, size_t limit = 0) const														{ throwNoSerialization(); }
 	
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const 					{ throwNoSerialization(); }
 

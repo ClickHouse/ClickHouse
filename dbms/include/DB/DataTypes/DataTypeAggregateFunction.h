@@ -42,7 +42,7 @@ public:
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
 	void deserializeBinary(Field & field, ReadBuffer & istr) const;
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback = WriteCallback()) const;
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const;
 	void serializeText(const Field & field, WriteBuffer & ostr) const;
 	void deserializeText(Field & field, ReadBuffer & istr) const;

@@ -32,28 +32,17 @@ void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 }
 
 
-static size_t adjustedWriteCallback(IDataType::WriteCallback & original_callback, const ColumnArray::Offsets_t & offsets)
-{
-	size_t original_res = original_callback();
-
-	if (unlikely(original_res == 0))
-		return 0;
-	else if (unlikely(original_res >= offsets.size()))
-		return offsets.back();
-	else
-		return offsets[original_res - 1];
-}
-
-
-void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback) const
+void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
-	nested->serializeBinary(column_array.getData(), ostr,
-		callback
-			? boost::bind(adjustedWriteCallback, boost::ref(callback), boost::cref(offsets))
-			: WriteCallback());
+	size_t nested_offset = offset ? offsets[offset] : 0;
+	size_t nested_limit = limit && offset + limit < offsets.size()
+		? offsets[offset + limit] - offset
+		: 0;
+
+	nested->serializeBinary(column_array.getData(), ostr, nested_offset, nested_limit);
 }
 
 
@@ -71,7 +60,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_
 }
 
 
-void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr, WriteCallback callback) const
+void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -80,16 +69,12 @@ void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr,
 	if (!size)
 		return;
 
-	size_t next_callback_point = callback ? callback() : 0;
+	size_t end = limit && offset + limit < size
+		? offset + limit
+		: size;
 
-	writeIntBinary(offsets[0], ostr);
-	for (size_t i = 1; i < size; ++i)
-	{
-		if (next_callback_point && i == next_callback_point)
-			next_callback_point = callback();
-
+	for (size_t i = offset; i < end; ++i)
 		writeIntBinary(offsets[i] - offsets[i - 1], ostr);
-	}
 }
 
 

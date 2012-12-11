@@ -26,20 +26,19 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
 	field = value;
 }
 
-void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, WriteCallback callback) const
+void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnAggregateFunction & real_column = dynamic_cast<const ColumnAggregateFunction &>(column);
 	const ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
-	size_t next_callback_point = callback ? callback() : 0;
-	size_t i = 0;
-	for (ColumnAggregateFunction::Container_t::const_iterator it = vec.begin(); it != vec.end(); ++it, ++i)
-	{
-		if (next_callback_point && i == next_callback_point)
-			next_callback_point = callback();
-		
+	ColumnAggregateFunction::Container_t::const_iterator it = vec.begin() + offset;
+	ColumnAggregateFunction::Container_t::const_iterator end = limit ? it + limit : vec.end();
+
+	if (end > vec.end())
+		end = vec.end();
+
+	for (; it != end; ++it)
 		(*it)->serialize(ostr);
-	}
 }
 
 void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
