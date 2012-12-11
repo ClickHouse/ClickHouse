@@ -12,7 +12,7 @@ namespace DB
 {
 
 /** Арифметические функции: +, -, *, /, %,
-  * div (целочисленное деление), унарный минус.
+  * intDiv (целочисленное деление), унарный минус.
   */
 
 template<typename A, typename B>
@@ -544,7 +544,7 @@ struct NamePlus 			{ static const char * get() { return "plus"; } };
 struct NameMinus 			{ static const char * get() { return "minus"; } };
 struct NameMultiply 		{ static const char * get() { return "multiply"; } };
 struct NameDivideFloating	{ static const char * get() { return "divide"; } };
-struct NameDivideIntegral 	{ static const char * get() { return "div"; } };
+struct NameDivideIntegral 	{ static const char * get() { return "intDiv"; } };
 struct NameModulo 			{ static const char * get() { return "modulo"; } };
 struct NameNegate 			{ static const char * get() { return "negate"; } };
 

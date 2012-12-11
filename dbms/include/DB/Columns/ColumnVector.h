@@ -11,12 +11,15 @@
 namespace DB
 {
 
-/** Эта специализация на самом деле не конвертирует в число, но так удобнее. */
+/** Специализация - заглушка, которая ничего не делает для агрегатных функций.
+  */
 template <>
-class FieldVisitorConvertToNumber<SharedPtr<IAggregateFunction> > : public boost::static_visitor<SharedPtr<IAggregateFunction> >
+class FieldVisitorConvertToNumber<SharedPtr<IAggregateFunction> >
+	: public boost::static_visitor<SharedPtr<IAggregateFunction> >
 {
 public:
 	typedef SharedPtr<IAggregateFunction> T;
+	
 	T operator() (const Null & x) const
 	{
 		throw Exception("Cannot convert NULL to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
@@ -37,10 +40,22 @@ public:
 		return x;
 	}
 	
-	T operator() (const UInt64 	& x) const { throw Exception("Cannot convert UInt64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Int64 	& x) const { throw Exception("Cannot convert Int64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE); }
-	T operator() (const Float64 & x) const { throw Exception("Cannot convert Float64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE); }
+	T operator() (const UInt64 & x) const
+	{
+		throw Exception("Cannot convert UInt64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+	
+	T operator() (const Int64 & x) const
+	{
+		throw Exception("Cannot convert Int64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+	
+	T operator() (const Float64 & x) const
+	{
+		throw Exception("Cannot convert Float64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
 };
+
 	
 /** Шаблон столбцов, которые используют для хранения std::vector.
   */
