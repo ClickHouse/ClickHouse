@@ -825,7 +825,7 @@ BlockInputStreams StorageMergeTree::read(
 
 	size_t count_limit = std::numeric_limits<size_t>::max();
 	bool sample_by_value = false;
-	UInt64 sample_column_value_limit;
+	UInt64 sample_column_value_limit = 0;
 
 	ASTSelectQuery & select = *dynamic_cast<ASTSelectQuery*>(&*query);
 	if (select.sample_size)

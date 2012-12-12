@@ -195,7 +195,7 @@ private:
 		RPNElement(Function function_) : function(function_) {}
 		RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
 		RPNElement(Function function_, size_t key_column_, const Range & range_)
-			: function(function_), key_column(key_column_), range(range_){}
+			: function(function_), range(range_), key_column(key_column_){}
 		
 		String toString()
 		{
