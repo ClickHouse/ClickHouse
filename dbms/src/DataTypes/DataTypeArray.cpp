@@ -73,6 +73,12 @@ void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr,
 		? offset + limit
 		: size;
 
+	if (offset == 0)
+	{
+		writeIntBinary(offsets[0], ostr);
+		++offset;
+	}
+
 	for (size_t i = offset; i < end; ++i)
 		writeIntBinary(offsets[i] - offsets[i - 1], ostr);
 }

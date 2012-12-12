@@ -54,6 +54,15 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 	size_t end = limit && offset + limit < size
 		? offset + limit
 		: size;
+
+	if (offset == 0)
+	{
+		UInt64 str_size = offsets[0] - 1;
+		writeVarUInt(str_size, ostr);
+		ostr.write(reinterpret_cast<const char *>(&data[0]), str_size);
+		
+		++offset;
+	}
 	
 	for (size_t i = offset; i < end; ++i)
 	{
