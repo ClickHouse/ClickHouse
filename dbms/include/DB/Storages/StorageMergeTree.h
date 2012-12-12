@@ -117,7 +117,7 @@ public:
 
     ~StorageMergeTree();
 
-	std::string getName() const { return "MergeTree"; }
+	std::string getName() const { return sign_column.empty() ? "MergeTree" : "CollapsingMergeTree"; }
 	std::string getTableName() const { return name; }
 	bool supportsSampling() const { return !!sampling_expression; }
 
