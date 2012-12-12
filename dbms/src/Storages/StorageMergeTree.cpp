@@ -814,7 +814,7 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 
 
 BlockInputStreams StorageMergeTree::read(
-	const Names & column_names,
+	const Names & column_names_to_return,
 	ASTPtr query,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
@@ -823,6 +823,7 @@ BlockInputStreams StorageMergeTree::read(
 	PKCondition key_condition(query, context, sort_descr);
 	PKCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
+	Names column_names_to_read = column_names_to_return;
 	size_t count_limit = std::numeric_limits<size_t>::max();
 	bool sample_by_value = false;
 	UInt64 sample_column_value_limit = 0;
@@ -841,6 +842,7 @@ BlockInputStreams StorageMergeTree::read(
 		{
 			sample_by_value = true;
 			sample_column_value_limit = static_cast<UInt64>(size * std::numeric_limits<UInt32>::max());
+			column_names_to_read.push_back(sampling_expression->getColumnName());
 			if (!key_condition.addCondition(sampling_expression->getColumnName(),
 				Range::RightBounded(sample_column_value_limit, true)))
 				throw Exception("Invalid sampling column in storage parameters", ErrorCodes::ILLEGAL_COLUMN);
@@ -904,7 +906,7 @@ BlockInputStreams StorageMergeTree::read(
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
 			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
 	
-	BlockInputStreams res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names, max_block_size);
+	BlockInputStreams res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names_to_read, max_block_size);
 	
 	if (sample_by_value)
 	{
