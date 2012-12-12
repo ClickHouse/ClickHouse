@@ -823,10 +823,14 @@ BlockInputStreams StorageMergeTree::read(
 	PKCondition key_condition(query, context, sort_descr);
 	PKCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
+	/// Семплирование.
 	Names column_names_to_read = column_names_to_return;
 	size_t count_limit = std::numeric_limits<size_t>::max();
 	bool sample_by_value = false;
 	UInt64 sample_column_value_limit = 0;
+	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
+	ASTFunctionPtr filter_function;
+	ExpressionPtr filter_expression;
 
 	ASTSelectQuery & select = *dynamic_cast<ASTSelectQuery*>(&*query);
 	if (select.sample_size)
@@ -842,11 +846,31 @@ BlockInputStreams StorageMergeTree::read(
 		{
 			sample_by_value = true;
 			sample_column_value_limit = static_cast<UInt64>(size * std::numeric_limits<UInt32>::max());
-			column_names_to_read.push_back(sampling_expression->getColumnName());
 			if (!key_condition.addCondition(sampling_expression->getColumnName(),
 				Range::RightBounded(sample_column_value_limit, true)))
 				throw Exception("Invalid sampling column in storage parameters", ErrorCodes::ILLEGAL_COLUMN);
 		}
+	}
+	
+	if (sample_by_value)
+	{
+		/// Выражение для фильтрации: sampling_column_name <= sample_column_value_limit
+
+		ASTPtr filter_function_args = new ASTExpressionList;
+		filter_function_args->children.push_back(sampling_expression);
+		filter_function_args->children.push_back(new ASTLiteral(StringRange(), sample_column_value_limit));
+		
+		filter_function = new ASTFunction;
+		filter_function->name = "lessOrEquals";
+		filter_function->arguments = filter_function_args;
+		filter_function->children.push_back(filter_function->arguments);
+
+		filter_expression = new Expression(filter_function, context);
+		
+		std::vector<String> add_columns = filter_expression->getRequiredColumns();
+		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+		std::sort(column_names_to_read.begin(), column_names_to_read.end());
+		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 	}
 
 	LOG_DEBUG(log, "key condition: " << key_condition.toString());
@@ -910,19 +934,6 @@ BlockInputStreams StorageMergeTree::read(
 	
 	if (sample_by_value)
 	{
-		/// Добавим фильтрацию: sampling_column_name <= sample_column_value_limit
-		
-		ASTPtr filter_function_args = new ASTExpressionList;
-		filter_function_args->children.push_back(sampling_expression);
-		filter_function_args->children.push_back(new ASTLiteral(StringRange(), sample_column_value_limit));
-		
-		Poco::SharedPtr<ASTFunction> filter_function = new ASTFunction;
-		filter_function->name = "lessOrEquals";
-		filter_function->arguments = filter_function_args;
-		filter_function->children.push_back(filter_function->arguments);
-
-		ExpressionPtr filter_expression = new Expression(filter_function, context);
-
 		for (size_t i = 0; i < res.size(); ++i)
 		{
 			BlockInputStreamPtr original_stream = res[i];
