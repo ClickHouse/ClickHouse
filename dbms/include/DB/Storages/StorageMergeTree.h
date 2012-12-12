@@ -108,7 +108,9 @@ public:
 	  */
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 		Context & context_,
-		ASTPtr & primary_expr_ast_, const String & date_column_name_,
+		ASTPtr & primary_expr_ast_,
+		const String & date_column_name_,
+		const String & sampling_column_name_, /// "", если семплирование не поддерживается.
 		size_t index_granularity_,
 		const String & sign_column_ = "",
 		const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
@@ -117,6 +119,7 @@ public:
 
 	std::string getName() const { return "MergeTree"; }
 	std::string getTableName() const { return name; }
+	bool supportsSampling() const { return sampling_column_name != ""; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
@@ -155,6 +158,7 @@ private:
 	Context context;
 	ASTPtr primary_expr_ast;
 	String date_column_name;
+	String sampling_column_name; /// "", если семплирование не поддерживается.
 	size_t index_granularity;
 	
 	size_t min_marks_for_seek;

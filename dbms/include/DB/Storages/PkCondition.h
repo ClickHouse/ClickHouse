@@ -154,6 +154,7 @@ struct Range
 class PKCondition
 {
 public:
+	/// Не учитывает секцию SAMPLE.
 	PKCondition(ASTPtr query, const Context & context, const SortDescription & sort_descr);
 	
 	/// Выполнимо ли условие в диапазоне ключей.
@@ -168,6 +169,10 @@ public:
 	{
 		return rpn.size() == 1 && rpn[0].function == RPNElement::FUNCTION_UNKNOWN;
 	}
+	
+	/// Наложить дополнительное условие: значение в столбце column должно быть в диапазоне range.
+	/// Возвращает, есть ли такой столбец в первичном ключе.
+	bool addCondition(const String & column, const Range & range);
 	
 	String toString();
 private:
@@ -189,6 +194,8 @@ private:
 		RPNElement() {}
 		RPNElement(Function function_) : function(function_) {}
 		RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
+		RPNElement(Function function_, size_t key_column_, const Range & range_)
+			: function(function_), key_column(key_column_), range(range_){}
 		
 		String toString()
 		{

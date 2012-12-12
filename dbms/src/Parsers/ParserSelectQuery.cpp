@@ -22,6 +22,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_select("SELECT", true, true);
 	ParserString s_from("FROM", true, true);
 	ParserString s_where("WHERE", true, true);
+	ParserString s_sample("SAMPLE", true, true);
 	ParserString s_group("GROUP", true, true);
 	ParserString s_by("BY", true, true);
 	ParserString s_having("HAVING", true, true);
@@ -93,6 +94,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			return false;
 	}
 
+	/// SAMPLE number
+	if (s_sample.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+		
+		ParserNumber num;
+		
+		if (!num.parse(pos, end, select_query->sample_size, expected))
+			return false;
+		
+		ws.ignore(pos, end);
+	}
+	
 	/// WHERE expr
 	if (s_where.ignore(pos, end, expected))
 	{
@@ -183,6 +197,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		select_query->children.push_back(select_query->database);
 	if (select_query->table)
 		select_query->children.push_back(select_query->table);
+	if (select_query->sample_size)
+		select_query->children.push_back(select_query->sample_size);
 	if (select_query->where_expression)
 		select_query->children.push_back(select_query->where_expression);
 	if (select_query->group_expression_list)

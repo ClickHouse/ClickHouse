@@ -158,9 +158,11 @@ StoragePtr StorageFactory::get(
 	{
 		/** В качестве аргумента для движка должно быть указано:
 		  *  - имя столбца с датой;
+		  *  - имя столбца для семплирования (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x*UINT32_MAX);
 		  *  - выражение для сортировки в скобках;
 		  *  - index_granularity.
-		  * Например: ENGINE = MergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), EventTime), 8192).
+		  * Например: ENGINE = MergeTree(EventDate, intHash32(UniqID), (CounterID, EventDate, intHash32(UniqID), EventTime), 8192).
+		  * 
 		  */
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
@@ -171,14 +173,17 @@ StoragePtr StorageFactory::get(
 
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		if (args.size() != 3)
-			throw Exception("Storage MergeTree requires exactly 3 parameters"
-				" - name of column with date, primary key expression, index granularity.",
+		if (args.size() != 3 && args.size() != 4)
+			throw Exception("Storage MergeTree requires 3 or 4 parameters"
+				" - name of column with date, [name of column for sampling], primary key expression, index granularity.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+		size_t arg_offset = args.size() - 3;
+
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
-		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[1]);
+		String sampling_column_name = arg_offset == 0 ? "" : dynamic_cast<ASTIdentifier &>(*args[1]).name;
+		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
+		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 		
 		if (primary_expr_func.name != "tuple")
 			throw Exception("Primary expression for storage MergeTree must be in parentheses.",
@@ -186,12 +191,13 @@ StoragePtr StorageFactory::get(
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, index_granularity);
+		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_column_name, index_granularity);
 	}
 	else if (name == "CollapsingMergeTree")
 	{
 		/** В качестве аргумента для движка должно быть указано:
 		  *  - имя столбца с датой;
+		  *  - имя столбца для семплирования (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x*UINT32_MAX);
 		  *  - выражение для сортировки в скобках;
 		  *  - index_granularity;
 		  *  - имя столбца, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
@@ -206,15 +212,18 @@ StoragePtr StorageFactory::get(
 
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		if (args.size() != 4)
-			throw Exception("Storage CollapsingMergeTree requires exactly 4 parameters"
-				" - name of column with date, primary key expression, index granularity, sign_column.",
+		if (args.size() != 4 && args.size() != 5)
+			throw Exception("Storage CollapsingMergeTree requires 4 or 5 parameters"
+				" - name of column with date, [name of column for sampling], primary key expression, index granularity, sign_column.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+		size_t arg_offset = args.size() - 4;
+		
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
-		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[3]).name;
-		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[1]);
+		String sampling_column_name = arg_offset == 0 ? "" : dynamic_cast<ASTIdentifier &>(*args[1]).name;
+		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
+		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[arg_offset + 3]).name;
+		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 
 		if (primary_expr_func.name != "tuple")
 			throw Exception("Primary expression for storage CollapsingMergeTree must be in parentheses.",
@@ -222,7 +231,7 @@ StoragePtr StorageFactory::get(
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, index_granularity, sign_column_name);
+		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_column_name, index_granularity, sign_column_name);
 	}
 	else if (name == "SystemNumbers")
 	{

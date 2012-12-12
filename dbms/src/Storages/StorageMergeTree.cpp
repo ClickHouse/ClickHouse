@@ -29,11 +29,13 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
+#include <DB/DataStreams/FilterBlockInputStream.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTIdentifier.h>
 
 #include <DB/Interpreters/sortBlock.h>
 
@@ -760,13 +762,15 @@ private:
 StorageMergeTree::StorageMergeTree(
 	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 	Context & context_,
-	ASTPtr & primary_expr_ast_, const String & date_column_name_,
+	ASTPtr & primary_expr_ast_,
+	const String & date_column_name_, const String & sampling_column_name_,
 	size_t index_granularity_,
 	const String & sign_column_,
 	const StorageMergeTreeSettings & settings_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), columns(columns_),
 	context(context_), primary_expr_ast(primary_expr_ast_->clone()),
-	date_column_name(date_column_name_), index_granularity(index_granularity_),
+	date_column_name(date_column_name_), sampling_column_name(sampling_column_name_), 
+	index_granularity(index_granularity_),
 	sign_column(sign_column_),
 	settings(settings_),
 	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name))
@@ -819,6 +823,30 @@ BlockInputStreams StorageMergeTree::read(
 	PKCondition key_condition(query, context, sort_descr);
 	PKCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
+	size_t count_limit = std::numeric_limits<size_t>::max();
+	bool sample_by_value = false;
+	UInt64 sample_column_value_limit;
+
+	ASTSelectQuery & select = *dynamic_cast<ASTSelectQuery*>(&*query);
+	if (select.sample_size)
+	{
+		double size = boost::apply_visitor(FieldVisitorConvertToNumber<double>(), dynamic_cast<ASTLiteral*>(&*select.sample_size)->value);
+		if (size < 0)
+			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		if (size > 1)
+		{
+			count_limit = boost::apply_visitor(FieldVisitorConvertToNumber<UInt64>(), dynamic_cast<ASTLiteral*>(&*select.sample_size)->value);
+		}
+		else
+		{
+			sample_by_value = true;
+			sample_column_value_limit = static_cast<UInt64>(size * std::numeric_limits<UInt32>::max());
+			if (!key_condition.addCondition(sampling_column_name,
+				Range::RightBounded(sample_column_value_limit, true)))
+				throw Exception("Invalid sampling column in storage parameters", ErrorCodes::ILLEGAL_COLUMN);
+		}
+	}
+
 	LOG_DEBUG(log, "key condition: " << key_condition.toString());
 	LOG_DEBUG(log, "date condition: " << date_condition.toString());
 	
@@ -855,14 +883,54 @@ BlockInputStreams StorageMergeTree::read(
 			for (size_t j = 0; j < ranges.ranges.size(); ++j)
 			{
 				sum_marks += ranges.ranges[j].end - ranges.ranges[j].begin;
+				
+				/// Если нашли достаточно строк.
+				if (sum_marks * index_granularity >= count_limit)
+				{
+					MarkRanges & new_ranges = parts_with_ranges.back().ranges;
+					/// Обрежем этот отрезок.
+					new_ranges[j].end -= count_limit - sum_marks * index_granularity;
+					/// Удалим вссе последующие отрезки.
+					new_ranges.erase(new_ranges.begin() + j + 1, new_ranges.end());
+				}
 			}
+			
+			/// Если нашли достаточно строк, дальше можено не смотреть.
+			if (sum_marks * index_granularity >= count_limit)
+				break;
 		}
 	}
 	
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
 			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
 	
-	return spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names, max_block_size);
+	BlockInputStreams res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names, max_block_size);
+	
+	if (sample_by_value)
+	{
+		/// Добавим фильтрацию: sampling_column_name <= sample_column_value_limit
+		
+		ASTPtr filter_function_args = new ASTExpressionList;
+		filter_function_args->children.push_back(new ASTIdentifier(StringRange(), sampling_column_name));
+		filter_function_args->children.push_back(new ASTLiteral(StringRange(), sample_column_value_limit));
+		
+		Poco::SharedPtr<ASTFunction> filter_function;
+		filter_function->name = "lessOrEquals";
+		filter_function->arguments = filter_function_args;
+		filter_function->children.push_back(filter_function->arguments);
+
+		ExpressionPtr filter_expression = new Expression(filter_function, context);
+
+		for (size_t i = 0; i < res.size(); ++i)
+		{
+			BlockInputStreamPtr original_stream = res[i];
+			BlockInputStreamPtr expression_stream = new ExpressionBlockInputStream(original_stream, filter_expression);
+			BlockInputStreamPtr filter_stream = new FilterBlockInputStream(expression_stream, filter_function->getColumnName());
+			res[i] = filter_stream;
+		}
+	}
+	
+	return res;
 }
 
 

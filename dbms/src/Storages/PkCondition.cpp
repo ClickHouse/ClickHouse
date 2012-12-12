@@ -39,6 +39,15 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const SortDescr
 	}
 }
 
+bool PKCondition::addCondition(const String & column, const Range & range)
+{
+	if (!pk_columns.count(column))
+		return false;
+	rpn.push_back(RPNElement(RPNElement::FUNCTION_IN_RANGE, pk_columns[column], range));
+	rpn.push_back(RPNElement(RPNElement::FUNCTION_AND));
+	return true;
+}
+
 /** Получить значение константного выражения.
  * Вернуть false, если выражение не константно.
  */
