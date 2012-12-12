@@ -46,8 +46,9 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 	const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_array.getData()).getData();
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
-	size_t size = column_array.size();
-	if (!size)
+	size_t array_size = column_array.size();
+	size_t size = column.size();
+	if (!array_size)
 		return;
 
 	size_t end = limit && offset + limit < size
