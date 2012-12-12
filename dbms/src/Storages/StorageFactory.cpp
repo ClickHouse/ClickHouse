@@ -181,7 +181,7 @@ StoragePtr StorageFactory::get(
 		size_t arg_offset = args.size() - 3;
 
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String sampling_column_name = arg_offset == 0 ? "" : args[1]->getColumnName();
+		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
 		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 		
@@ -191,7 +191,7 @@ StoragePtr StorageFactory::get(
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_column_name, index_granularity);
+		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity);
 	}
 	else if (name == "CollapsingMergeTree")
 	{
@@ -220,7 +220,7 @@ StoragePtr StorageFactory::get(
 		size_t arg_offset = args.size() - 4;
 		
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String sampling_column_name = arg_offset == 0 ? "" : args[1]->getColumnName();
+		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
 		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
 		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[arg_offset + 3]).name;
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
@@ -231,7 +231,7 @@ StoragePtr StorageFactory::get(
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_column_name, index_granularity, sign_column_name);
+		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity, sign_column_name);
 	}
 	else if (name == "SystemNumbers")
 	{

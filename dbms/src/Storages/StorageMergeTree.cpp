@@ -763,13 +763,13 @@ StorageMergeTree::StorageMergeTree(
 	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
-	const String & date_column_name_, const String & sampling_column_name_,
+	const String & date_column_name_, const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
 	const String & sign_column_,
 	const StorageMergeTreeSettings & settings_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), columns(columns_),
 	context(context_), primary_expr_ast(primary_expr_ast_->clone()),
-	date_column_name(date_column_name_), sampling_column_name(sampling_column_name_), 
+	date_column_name(date_column_name_), sampling_expression(sampling_expression_), 
 	index_granularity(index_granularity_),
 	sign_column(sign_column_),
 	settings(settings_),
@@ -841,7 +841,7 @@ BlockInputStreams StorageMergeTree::read(
 		{
 			sample_by_value = true;
 			sample_column_value_limit = static_cast<UInt64>(size * std::numeric_limits<UInt32>::max());
-			if (!key_condition.addCondition(sampling_column_name,
+			if (!key_condition.addCondition(sampling_expression->getColumnName(),
 				Range::RightBounded(sample_column_value_limit, true)))
 				throw Exception("Invalid sampling column in storage parameters", ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -911,7 +911,7 @@ BlockInputStreams StorageMergeTree::read(
 		/// Добавим фильтрацию: sampling_column_name <= sample_column_value_limit
 		
 		ASTPtr filter_function_args = new ASTExpressionList;
-		filter_function_args->children.push_back(new ASTIdentifier(StringRange(), sampling_column_name));
+		filter_function_args->children.push_back(sampling_expression);
 		filter_function_args->children.push_back(new ASTLiteral(StringRange(), sample_column_value_limit));
 		
 		Poco::SharedPtr<ASTFunction> filter_function = new ASTFunction;

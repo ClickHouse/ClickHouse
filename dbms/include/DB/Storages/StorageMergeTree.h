@@ -110,7 +110,7 @@ public:
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
-		const String & sampling_column_name_, /// "", если семплирование не поддерживается.
+		const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
 		size_t index_granularity_,
 		const String & sign_column_ = "",
 		const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
@@ -119,7 +119,7 @@ public:
 
 	std::string getName() const { return "MergeTree"; }
 	std::string getTableName() const { return name; }
-	bool supportsSampling() const { return sampling_column_name != ""; }
+	bool supportsSampling() const { return !!sampling_expression; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
@@ -158,7 +158,7 @@ private:
 	Context context;
 	ASTPtr primary_expr_ast;
 	String date_column_name;
-	String sampling_column_name; /// "", если семплирование не поддерживается.
+	ASTPtr sampling_expression;
 	size_t index_granularity;
 	
 	size_t min_marks_for_seek;
