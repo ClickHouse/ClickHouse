@@ -181,7 +181,7 @@ StoragePtr StorageFactory::get(
 		size_t arg_offset = args.size() - 3;
 
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String sampling_column_name = arg_offset == 0 ? "" : dynamic_cast<ASTIdentifier &>(*args[1]).name;
+		String sampling_column_name = arg_offset == 0 ? "" : args[1]->getColumnName();
 		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 		
@@ -220,7 +220,7 @@ StoragePtr StorageFactory::get(
 		size_t arg_offset = args.size() - 4;
 		
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String sampling_column_name = arg_offset == 0 ? "" : dynamic_cast<ASTIdentifier &>(*args[1]).name;
+		String sampling_column_name = arg_offset == 0 ? "" : args[1]->getColumnName();
 		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
 		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[arg_offset + 3]).name;
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
