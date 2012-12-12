@@ -891,6 +891,7 @@ BlockInputStreams StorageMergeTree::read(
 	RangesInDataParts parts_with_ranges;
 	
 	/// Найдем, какой диапазон читать из каждого куска.
+	size_t mark_count_limit = (count_limit - 1) / index_granularity + 1;
 	size_t sum_marks = 0;
 	size_t sum_ranges = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
@@ -911,11 +912,11 @@ BlockInputStreams StorageMergeTree::read(
 				sum_marks += ranges.ranges[j].end - ranges.ranges[j].begin;
 				
 				/// Если нашли достаточно строк.
-				if (sum_marks * index_granularity >= count_limit)
+				if (sum_marks >= mark_count_limit)
 				{
 					MarkRanges & new_ranges = parts_with_ranges.back().ranges;
 					/// Обрежем этот отрезок.
-					new_ranges[j].end -= count_limit - sum_marks * index_granularity;
+					new_ranges[j].end -= mark_count_limit - sum_marks;
 					/// Удалим вссе последующие отрезки.
 					new_ranges.erase(new_ranges.begin() + j + 1, new_ranges.end());
 				}
