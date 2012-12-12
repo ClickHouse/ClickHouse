@@ -108,6 +108,12 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		else
 			formatAST(*ast.table, s, indent, hilite, one_line);
 	}
+	
+	if (ast.sample_size)
+	{
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "SAMPLE " << (hilite ? hilite_none : "");
+		formatAST(*ast.sample_size, s, indent, hilite, one_line);
+	}
 
 	if (ast.where_expression)
 	{
