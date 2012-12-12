@@ -914,7 +914,7 @@ BlockInputStreams StorageMergeTree::read(
 		filter_function_args->children.push_back(new ASTIdentifier(StringRange(), sampling_column_name));
 		filter_function_args->children.push_back(new ASTLiteral(StringRange(), sample_column_value_limit));
 		
-		Poco::SharedPtr<ASTFunction> filter_function;
+		Poco::SharedPtr<ASTFunction> filter_function = new ASTFunction;
 		filter_function->name = "lessOrEquals";
 		filter_function->arguments = filter_function_args;
 		filter_function->children.push_back(filter_function->arguments);
