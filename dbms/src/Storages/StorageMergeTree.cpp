@@ -851,6 +851,8 @@ BlockInputStreams StorageMergeTree::read(
 			total_count *= index_granularity;
 			
 			size = std::min(1., static_cast<double>(requested_count) / total_count);
+			
+			LOG_DEBUG(log, "Relative sample size: " << size);
 		}
 		
 		UInt64 sampling_column_max = 0;
