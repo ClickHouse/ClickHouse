@@ -39,7 +39,7 @@ void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, 
 
 	size_t nested_offset = offset ? offsets[offset] : 0;
 	size_t nested_limit = limit && offset + limit < offsets.size()
-		? offsets[offset + limit] - offset
+		? offsets[offset + limit] - nested_offset
 		: 0;
 
 	nested->serializeBinary(column_array.getData(), ostr, nested_offset, nested_limit);
