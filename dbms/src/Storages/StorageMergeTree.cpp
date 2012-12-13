@@ -251,7 +251,6 @@ private:
 			WriteBufferFromFile marks(path + escaped_column_name + ".mrk", 4096, flags);
 			CompressedWriteBuffer compressed(plain);
 
-			// TODO Для массивов здесь баг - засечки сериализуются неправильно.
 			size_t prev_mark = 0;
 			while (prev_mark < size)
 			{
@@ -438,7 +437,6 @@ private:
 		{
 			ColumnStream & stream = *column_streams[name];
 
-			// TODO Для массивов здесь баг - засечки сериализуются неправильно.
 			size_t prev_mark = 0;
 			while (prev_mark < size)
 			{
@@ -1479,7 +1477,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 		}
 	}
 
-	LOG_TRACE(log, "Merged " << parts.size() << " parts: from" << parts.front()->name << " to " << parts.back()->name);
+	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 }
 
 
