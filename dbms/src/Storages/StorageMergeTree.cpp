@@ -823,6 +823,18 @@ BlockInputStreams StorageMergeTree::read(
 	PKCondition key_condition(query, context, sort_descr);
 	PKCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
+	typedef std::vector<DataPartPtr> PartsList;
+	PartsList parts;
+	
+	/// Выберем куски, в которых могут быть данные, удовлетворяющие key_condition.
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		
+		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
+			if (date_condition.mayBeTrueInRange(Row(1, static_cast<UInt64>((*it)->left_date)),Row(1, static_cast<UInt64>((*it)->right_date))))
+				parts.push_back(*it);
+	}
+	
 	/// Семплирование.
 	Names column_names_to_read = column_names_to_return;
 	UInt64 sampling_column_value_limit = 0;
@@ -833,26 +845,32 @@ BlockInputStreams StorageMergeTree::read(
 	ASTSelectQuery & select = *dynamic_cast<ASTSelectQuery*>(&*query);
 	if (select.sample_size)
 	{
-		double size = boost::apply_visitor(FieldVisitorConvertToNumber<double>(), dynamic_cast<ASTLiteral&>(*select.sample_size).value);
+		double size = boost::apply_visitor(FieldVisitorConvertToNumber<double>(),
+										   dynamic_cast<ASTLiteral&>(*select.sample_size).value);
 		if (size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		if (size > 1)
 		{
 			size_t requested_count = boost::apply_visitor(FieldVisitorConvertToNumber<UInt64>(), dynamic_cast<ASTLiteral&>(*select.sample_size).value);
-			
-			/// Узнаем количество строк в таблице.
+
+			/// Узнаем, сколько строк мы бы прочли без семплирования.
+			LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
 			size_t total_count = 0;
+			for (size_t i = 0; i < parts.size(); ++i)
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-				
-				for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-					total_count += (*it)->size;
+				DataPartPtr & part = parts[i];
+				MarkRanges ranges = MergeTreeBlockInputStream::markRangesFromPkRange(full_path + part->name + '/',
+																					part->size,
+																					*this,
+																					key_condition);
+				for (size_t j = 0; j < ranges.size(); ++j)
+					total_count += ranges[j].end - ranges[j].begin;
 			}
 			total_count *= index_granularity;
 			
 			size = std::min(1., static_cast<double>(requested_count) / total_count);
 			
-			LOG_DEBUG(log, "Relative sample size: " << size);
+			LOG_DEBUG(log, "Selected relative sample size: " << size);
 		}
 		
 		UInt64 sampling_column_max = 0;
@@ -869,6 +887,7 @@ BlockInputStreams StorageMergeTree::read(
 		else
 			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
+		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
 		sampling_column_value_limit = static_cast<UInt64>(size * sampling_column_max);
 		if (!key_condition.addCondition(sampling_expression->getColumnName(),
 			Range::RightBounded(sampling_column_value_limit, true)))
@@ -893,20 +912,8 @@ BlockInputStreams StorageMergeTree::read(
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 	}
 
-	LOG_DEBUG(log, "key condition: " << key_condition.toString());
-	LOG_DEBUG(log, "date condition: " << date_condition.toString());
-	
-	typedef std::vector<DataPartPtr> PartsList;
-	PartsList parts;
-	
-	/// Выберем куски, в которых могут быть данные, удовлетворяющие key_condition.
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		
-		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-			if (date_condition.mayBeTrueInRange(Row(1, static_cast<UInt64>((*it)->left_date)),Row(1, static_cast<UInt64>((*it)->right_date))))
-				parts.push_back(*it);
-	}
+	LOG_DEBUG(log, "Key condition: " << key_condition.toString());
+	LOG_DEBUG(log, "Date condition: " << date_condition.toString());
 	
 	RangesInDataParts parts_with_ranges;
 	
@@ -918,9 +925,9 @@ BlockInputStreams StorageMergeTree::read(
 		DataPartPtr & part = parts[i];
 		RangesInDataPart ranges(part);
 		ranges.ranges = MergeTreeBlockInputStream::markRangesFromPkRange(full_path + part->name + '/',
-		                                                              part->size,
-												                       *this,
-		                                                              key_condition);
+		                                                                 part->size,
+												                          *this,
+		                                                                 key_condition);
 		if (!ranges.ranges.empty())
 		{
 			parts_with_ranges.push_back(ranges);
