@@ -18,6 +18,8 @@
 #include <Yandex/daemon.h>
 
 #include <DB/Interpreters/Context.h>
+#include "OLAPQueryParser.h"
+#include "OLAPQueryConverter.h"
 
 /** Сервер предоставляет три интерфейса:
   * 1. HTTP - простой интерфейс для доступа из любых приложений.
@@ -43,6 +45,8 @@ public:
 	/// Глобальные настройки севрера
 	Context global_context;
 	
+	Poco::SharedPtr<OLAP::QueryParser> olap_parser;
+	Poco::SharedPtr<OLAP::QueryConverter> olap_converter;
 	
     Server() : config(Application::instance().config()) {}
 	

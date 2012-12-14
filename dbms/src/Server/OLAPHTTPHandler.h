@@ -6,6 +6,7 @@
 namespace DB
 {
 	
+	/// Обработчик http-запросов в формате OLAP-server.
 	class OLAPHTTPHandler : public Poco::Net::HTTPRequestHandler
 	{
 	public:

@@ -162,6 +162,9 @@ int Server::main(const std::vector<std::string> & args)
 	Poco::SharedPtr<Poco::Net::HTTPServer> olap_http_server;
 	if (use_olap_server)
 	{
+		olap_parser = new OLAP::QueryParser();
+		olap_converter = new OLAP::QueryConverter(config);
+		
 		Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("olap_http_port")));
 		olap_http_socket.setReceiveTimeout(settings.receive_timeout);
 		olap_http_socket.setSendTimeout(settings.send_timeout);
