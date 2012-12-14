@@ -2,6 +2,8 @@
 
 #include <iostream>
 #include <DB/IO/VarInt.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadBufferFromString.h>
 #include <Poco/NumberParser.h>
 #include <Poco/HexBinaryEncoder.h>
 
@@ -19,6 +21,24 @@ int main(int argc, char ** argv)
 	Poco::HexBinaryEncoder hex(std::cout);
 	DB::writeVarUInt(x, hex);
 	std::cout << std::endl;
+
+	std::string s;
+
+	{
+		DB::WriteBufferFromString wb(s);
+		DB::writeVarUInt(x, wb);
+		wb.next();
+	}
+
+	hex << s;
+	std::cout << std::endl;
+
+	DB::UInt64 y = 0;
+	
+	DB::ReadBufferFromString rb(s);
+	DB::readVarUInt(y, rb);
+
+	std::cerr << "x: " << x << ", y: " << y << std::endl;
 	
 	return 0;
 }
