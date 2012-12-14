@@ -5,7 +5,6 @@
 #include <mysqlxx/String.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -39,8 +38,6 @@ DataTypeFactory::DataTypeFactory()
 		("Int64",				new DataTypeInt64)
 		("Float32",				new DataTypeFloat32)
 		("Float64",				new DataTypeFloat64)
-		("VarUInt",				new DataTypeVarUInt)
-		("VarInt",				new DataTypeVarInt)
 		("Date",				new DataTypeDate)
 		("DateTime",			new DataTypeDateTime)
 		("String",				new DataTypeString)

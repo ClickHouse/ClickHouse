@@ -3,7 +3,6 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
@@ -16,14 +15,14 @@ template <typename T> struct AggregateFunctionSumTraits;
 
 template <> struct AggregateFunctionSumTraits<UInt64>
 {
-	static DataTypePtr getReturnType() { return new DataTypeVarUInt; }
+	static DataTypePtr getReturnType() { return new DataTypeUInt64; }
 	static void write(UInt64 x, WriteBuffer & buf) { writeVarUInt(x, buf); }
 	static void read(UInt64 & x, ReadBuffer & buf) { readVarUInt(x, buf); }
 };
 
 template <> struct AggregateFunctionSumTraits<Int64>
 {
-	static DataTypePtr getReturnType() { return new DataTypeVarInt; }
+	static DataTypePtr getReturnType() { return new DataTypeInt64; }
 	static void write(Int64 x, WriteBuffer & buf) { writeVarInt(x, buf); }
 	static void read(Int64 & x, ReadBuffer & buf) { readVarInt(x, buf); }
 };

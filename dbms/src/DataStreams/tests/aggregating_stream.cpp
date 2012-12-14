@@ -9,7 +9,6 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
@@ -106,7 +105,7 @@ int main(int argc, char ** argv)
 		boost::assign::push_back(*result_types)
 			(new DB::DataTypeInt16)
 		//	(new DB::DataTypeString)
-			(new DB::DataTypeVarUInt)
+			(new DB::DataTypeUInt64)
 			;
 
 		DB::Block sample;

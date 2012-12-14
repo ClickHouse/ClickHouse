@@ -3,7 +3,6 @@
 #include <Poco/NumberFormatter.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/Functions/IFunction.h>
 
 

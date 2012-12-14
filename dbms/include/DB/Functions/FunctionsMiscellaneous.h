@@ -4,7 +4,6 @@
 
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>

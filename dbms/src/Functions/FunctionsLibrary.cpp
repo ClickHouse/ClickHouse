@@ -72,8 +72,6 @@ namespace FunctionsLibrary
 			("toInt64",						new FunctionToInt64)
 			("toFloat32",					new FunctionToFloat32)
 			("toFloat64",					new FunctionToFloat64)
-			("toVarUInt",					new FunctionToVarUInt)
-			("toVarInt",					new FunctionToVarInt)
 			("toDate",						new FunctionToDate)
 			("toDateTime",					new FunctionToDateTime)
 			("toString",					new FunctionToString)

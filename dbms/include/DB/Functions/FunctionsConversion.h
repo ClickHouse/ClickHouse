@@ -3,7 +3,6 @@
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -297,8 +296,6 @@ public:
 		else if (dynamic_cast<const DataTypeInt64 *		>(from_type)) ConvertImpl<DataTypeInt64, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (dynamic_cast<const DataTypeFloat32 *	>(from_type)) ConvertImpl<DataTypeFloat32, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (dynamic_cast<const DataTypeFloat64 *	>(from_type)) ConvertImpl<DataTypeFloat64, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeVarUInt *	>(from_type)) ConvertImpl<DataTypeVarUInt, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeVarInt *	>(from_type)) ConvertImpl<DataTypeVarInt, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (dynamic_cast<const DataTypeDate *		>(from_type)) ConvertImpl<DataTypeDate, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (dynamic_cast<const DataTypeDateTime *	>(from_type)) ConvertImpl<DataTypeDateTime,	ToDataType, Name>::execute(block, arguments, result);
 		else if (dynamic_cast<const DataTypeString *	>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
@@ -319,8 +316,6 @@ struct NameToInt32			{ static const char * get() { return "toInt32"; } };
 struct NameToInt64			{ static const char * get() { return "toInt64"; } };
 struct NameToFloat32		{ static const char * get() { return "toFloat32"; } };
 struct NameToFloat64		{ static const char * get() { return "toFloat64"; } };
-struct NameToVarUInt		{ static const char * get() { return "toVarUInt"; } };
-struct NameToVatInt			{ static const char * get() { return "toVarInt"; } };
 struct NameToDate			{ static const char * get() { return "toDate"; } };
 struct NameToDateTime		{ static const char * get() { return "toDateTime"; } };
 struct NameToString			{ static const char * get() { return "toString"; } };
@@ -335,8 +330,6 @@ typedef FunctionConvert<DataTypeInt32,		NameToInt32> 		FunctionToInt32;
 typedef FunctionConvert<DataTypeInt64,		NameToInt64> 		FunctionToInt64;
 typedef FunctionConvert<DataTypeFloat32,	NameToFloat32> 		FunctionToFloat32;
 typedef FunctionConvert<DataTypeFloat64,	NameToFloat64> 		FunctionToFloat64;
-typedef FunctionConvert<DataTypeVarUInt,	NameToVarUInt> 		FunctionToVarUInt;
-typedef FunctionConvert<DataTypeVarInt,		NameToVatInt> 		FunctionToVarInt;
 typedef FunctionConvert<DataTypeDate,		NameToDate> 		FunctionToDate;
 typedef FunctionConvert<DataTypeDateTime,	NameToDateTime> 	FunctionToDateTime;
 typedef FunctionConvert<DataTypeString,		NameToString> 		FunctionToString;

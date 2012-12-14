@@ -8,7 +8,6 @@
 #include <DB/Columns/ColumnFixedString.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeString.h>

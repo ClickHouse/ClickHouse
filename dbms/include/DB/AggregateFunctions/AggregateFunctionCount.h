@@ -3,7 +3,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberVariable.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/AggregateFunctions/INullaryAggregateFunction.h>
 
@@ -30,7 +30,7 @@ public:
 	
 	DataTypePtr getReturnType() const
 	{
-		return new DataTypeVarUInt;
+		return new DataTypeUInt64;
 	}
 
 	void addZero() { ++count; }

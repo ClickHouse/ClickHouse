@@ -8,7 +8,6 @@
 #include <DB/IO/ReadHelpers.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
@@ -66,7 +65,7 @@ public:
 	
 	DataTypePtr getReturnType() const
 	{
-		return new DataTypeVarUInt;
+		return new DataTypeUInt64;
 	}
 
 	void setArgument(const DataTypePtr & argument)

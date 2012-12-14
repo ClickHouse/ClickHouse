@@ -3,7 +3,6 @@
 #include <Poco/NumberFormatter.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 
@@ -262,9 +261,7 @@ private:
 				||	checkRightType<T0, DataTypeInt32>(arguments, type_res)
 				||	checkRightType<T0, DataTypeInt64>(arguments, type_res)
 				||	checkRightType<T0, DataTypeFloat32>(arguments, type_res)
-				||	checkRightType<T0, DataTypeFloat64>(arguments, type_res)
-				||	checkRightType<T0, DataTypeVarUInt>(arguments, type_res)
-				||	checkRightType<T0, DataTypeVarInt>(arguments, type_res))
+				||	checkRightType<T0, DataTypeFloat64>(arguments, type_res))
 				return true;
 			else
 				throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
@@ -408,9 +405,7 @@ public:
 			||	checkLeftType<DataTypeInt32>(arguments, type_res)
 			||	checkLeftType<DataTypeInt64>(arguments, type_res)
 			||	checkLeftType<DataTypeFloat32>(arguments, type_res)
-			||	checkLeftType<DataTypeFloat64>(arguments, type_res)
-			||	checkLeftType<DataTypeVarUInt>(arguments, type_res)
-			||	checkLeftType<DataTypeVarInt>(arguments, type_res)))
+			||	checkLeftType<DataTypeFloat64>(arguments, type_res)))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -511,9 +506,7 @@ public:
 			||	checkType<DataTypeInt32>(arguments, result)
 			||	checkType<DataTypeInt64>(arguments, result)
 			||	checkType<DataTypeFloat32>(arguments, result)
-			||	checkType<DataTypeFloat64>(arguments, result)
-			||	checkType<DataTypeVarUInt>(arguments, result)
-			||	checkType<DataTypeVarInt>(arguments, result)))
+			||	checkType<DataTypeFloat64>(arguments, result)))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

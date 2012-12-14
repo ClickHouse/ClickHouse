@@ -48,12 +48,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		String argument_type_name = argument_types[0]->getName();
 		
 		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
-			|| argument_type_name == "VarUInt")
+			|| argument_type_name == "UInt32" || argument_type_name == "UInt64")
 			return new AggregateFunctionSum<UInt64>;
 		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64"
-			|| argument_type_name == "VarInt")
+			|| argument_type_name == "Int32" || argument_type_name == "Int64")
 			return new AggregateFunctionSum<Int64>;
 		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
 			return new AggregateFunctionSum<Float64>;
@@ -68,12 +66,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		String argument_type_name = argument_types[0]->getName();
 
 		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
-			|| argument_type_name == "VarUInt")
+			|| argument_type_name == "UInt32" || argument_type_name == "UInt64")
 			return new AggregateFunctionAvg<UInt64>;
 		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64"
-			|| argument_type_name == "VarInt")
+			|| argument_type_name == "Int32" || argument_type_name == "Int64")
 			return new AggregateFunctionAvg<Int64>;
 		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
 			return new AggregateFunctionAvg<Float64>;
@@ -89,12 +85,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
 			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
-			|| argument_type_name == "VarUInt"
 			|| argument_type_name == "Date" || argument_type_name == "DateTime")
 			return new AggregateFunctionUniq<UInt64>;
 		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64"
-			|| argument_type_name == "VarInt")
+			|| argument_type_name == "Int32" || argument_type_name == "Int64")
 			return new AggregateFunctionUniq<Int64>;
 		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
 			return new AggregateFunctionUniq<Float64>;
@@ -118,8 +112,6 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else if (argument_type_name == "Int16")		return new AggregateFunctionQuantile<Int16>;
 		else if (argument_type_name == "Int32")		return new AggregateFunctionQuantile<Int32>;
 		else if (argument_type_name == "Int64")		return new AggregateFunctionQuantile<Int64>;
-		else if (argument_type_name == "VarUInt")	return new AggregateFunctionQuantile<UInt64>;
-		else if (argument_type_name == "VarInt")	return new AggregateFunctionQuantile<Int64>;
 		else if (argument_type_name == "Float32")	return new AggregateFunctionQuantile<Float32>;
 		else if (argument_type_name == "Float64")	return new AggregateFunctionQuantile<Float64>;
 		else if (argument_type_name == "Date")		return new AggregateFunctionQuantile<DataTypeDate::FieldType, false>;

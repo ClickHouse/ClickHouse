@@ -6,7 +6,6 @@
 #include <Poco/ByteOrder.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypesNumberVariable.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
@@ -196,8 +195,6 @@ public:
 		else if (dynamic_cast<const DataTypeInt16 *		>(from_type)) executeType<Int16	>(block, arguments, result);
 		else if (dynamic_cast<const DataTypeInt32 *		>(from_type)) executeType<Int32	>(block, arguments, result);
 		else if (dynamic_cast<const DataTypeInt64 *		>(from_type)) executeType<Int64	>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeVarUInt *	>(from_type)) executeType<UInt64>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeVarInt *	>(from_type)) executeType<Int64	>(block, arguments, result);
 		else if (dynamic_cast<const DataTypeDate *		>(from_type)) executeType<UInt16>(block, arguments, result);
 		else if (dynamic_cast<const DataTypeDateTime *	>(from_type)) executeType<UInt32>(block, arguments, result);
 		else
