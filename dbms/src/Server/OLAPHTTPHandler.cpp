@@ -1,4 +1,6 @@
 #include <DB/Interpreters/executeQuery.h>
+#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
+#include <DB/IO/WriteHelpers.h>
 
 #include "OLAPHTTPHandler.h"
 
@@ -11,6 +13,8 @@ namespace DB
 	void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerResponse & response, std::istream & istr)
 	{
 		LOG_TRACE(log, "Doing nothing instead of processing query");
+		WriteBufferFromHTTPServerResponse out(response);
+		writeString("Hello there", out);
 	}
 
 
