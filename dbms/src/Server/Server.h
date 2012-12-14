@@ -19,7 +19,7 @@
 
 #include <DB/Interpreters/Context.h>
 
-/** Сервер предоставляет два интерфейса:
+/** Сервер предоставляет три интерфейса:
   * 1. HTTP - простой интерфейс для доступа из любых приложений.
   * 2. TCP - интерфейс для доступа из родной библиотеки, родного клиента, и для межсерверного взаимодействия.
   *    Более эффективен, так как
@@ -27,38 +27,12 @@
   *     - данные передаются со сжатием;
   *     - возможно выполнение нескольких запросов одновременно;
   *    Позволяет тонко управлять настройками и получать более подробную информацию в ответах.
+  * 3. OLAP-server HTTP - интерфейс для совместимости с устаревшим демоном OLAP-server.
   */
 
 
 namespace DB
 {
-
-
-class Server;
-
-
-class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
-{
-private:
-	Server & server;
-	Logger * log;
-
-public:
-	HTTPRequestHandlerFactory(Server & server_) : server(server_), log(&Logger::get("HTTPRequestHandlerFactory")) {}
-	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request);
-};
-
-
-class TCPConnectionFactory : public Poco::Net::TCPServerConnectionFactory
-{
-private:
-	Server & server;
-	Logger * log;
-
-public:
-	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
-	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket);
-};
 
 
 class Server : public Daemon

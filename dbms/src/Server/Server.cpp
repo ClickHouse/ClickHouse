@@ -11,6 +11,7 @@
 
 #include "Server.h"
 #include "HTTPHandler.h"
+#include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
 
 
@@ -33,29 +34,51 @@ public:
 };
 
 
-Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactory::createRequestHandler(
-	const Poco::Net::HTTPServerRequest & request)
+template<typename HandlerType>
+class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
-	LOG_TRACE(log, "HTTP Request. "
-		<< "Method: " << request.getMethod()
-		<< ", Address: " << request.clientAddress().toString()
-		<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
+private:
+	Server & server;
+	Logger * log;
+	std::string name;
+	
+public:
+	HTTPRequestHandlerFactory(Server & server_, const std::string & name_)
+		: server(server_), log(&Logger::get(name_)), name(name_) {}
+	
+	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request)
+	{
+		LOG_TRACE(log, "HTTP Request for " << name << ". "
+			<< "Method: " << request.getMethod()
+			<< ", Address: " << request.clientAddress().toString()
+			<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
-	if (request.getURI().find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-		return new HTTPHandler(server);
-	else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
-		return new PingRequestHandler();
-	else
-		return 0;
-}
+		if (request.getURI().find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+			return new HandlerType(server);
+		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+			return new PingRequestHandler();
+		else
+			return 0;
+	}
+};
 
 
-Poco::Net::TCPServerConnection * TCPConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket)
+class TCPConnectionFactory : public Poco::Net::TCPServerConnectionFactory
 {
-	LOG_TRACE(log, "TCP Request. " << "Address: " << socket.address().toString());
+private:
+	Server & server;
+	Logger * log;
+	
+public:
+	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
 
-	return new TCPHandler(server, socket);
-}
+	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket)
+	{
+		LOG_TRACE(log, "TCP Request. " << "Address: " << socket.address().toString());
+		
+		return new TCPHandler(server, socket);
+	}
+};
 
 
 int Server::main(const std::vector<std::string> & args)
@@ -109,33 +132,50 @@ int Server::main(const std::vector<std::string> & args)
 		
 	global_context.setCurrentDatabase(config.getString("default_database", "default"));
 
+	bool use_olap_server = config.getBool("use_olap_http_server", false);
+	
+	Poco::ThreadPool server_pool(3, config.getInt("max_connections", 128));
+	Poco::Net::HTTPServerParams * http_params = new Poco::Net::HTTPServerParams;
+	http_params->setTimeout(settings.receive_timeout);
+	
+	/// HTTP
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
-	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
-
 	http_socket.setReceiveTimeout(settings.receive_timeout);
 	http_socket.setSendTimeout(settings.send_timeout);
-	tcp_socket.setReceiveTimeout(settings.receive_timeout);
-	tcp_socket.setSendTimeout(settings.send_timeout);
-
-	Poco::ThreadPool server_pool(2, config.getInt("max_connections", 128));
-
-	Poco::Net::HTTPServerParams * http_params = new Poco::Net::HTTPServerParams;
- 	http_params->setTimeout(settings.receive_timeout);
-
 	Poco::Net::HTTPServer http_server(
-		new HTTPRequestHandlerFactory(*this),
+		new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
 		server_pool,
 		http_socket,
 		http_params);
-
+	
+	/// TCP
+	Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
+	tcp_socket.setReceiveTimeout(settings.receive_timeout);
+	tcp_socket.setSendTimeout(settings.send_timeout);
 	Poco::Net::TCPServer tcp_server(
 		new TCPConnectionFactory(*this),
 		server_pool,
 		tcp_socket,
 		new Poco::Net::TCPServerParams);
+	
+	/// OLAP HTTP
+	Poco::SharedPtr<Poco::Net::HTTPServer> olap_http_server;
+	if (use_olap_server)
+	{
+		Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("olap_http_port")));
+		olap_http_socket.setReceiveTimeout(settings.receive_timeout);
+		olap_http_socket.setSendTimeout(settings.send_timeout);
+		olap_http_server = new Poco::Net::HTTPServer(
+			new HTTPRequestHandlerFactory<OLAPHTTPHandler>(*this, "OLAPHTTPHandler-factory"),
+			server_pool,
+			olap_http_socket,
+			http_params);
+	}
 
 	http_server.start();
 	tcp_server.start();
+	if (use_olap_server)
+		olap_http_server->start();
 
 	LOG_INFO(log, "Ready for connections.");
 	
@@ -146,6 +186,8 @@ int Server::main(const std::vector<std::string> & args)
 
 	http_server.stop();
 	tcp_server.stop();
+	if (use_olap_server)
+		olap_http_server->stop();
 	
 	return Application::EXIT_OK;
 }
