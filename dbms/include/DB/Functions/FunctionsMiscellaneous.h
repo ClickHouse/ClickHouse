@@ -60,6 +60,8 @@ static void numWidthConstant(T a, UInt64 & c)
 {
 	if (a >= 0)
 		c = a ? 1 + log10(a) : 1;
+	else if (std::tr1::is_signed<T>::value && a == std::numeric_limits<T>::min())
+		c = 2 + log10(std::numeric_limits<T>::max());
 	else
 		c = 2 + log10(-a);
 }
