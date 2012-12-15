@@ -235,6 +235,7 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expecte
 	if (pos == end)
 		return false;
 
+	errno = 0;	/// Функции strto* не очищают errno.
 	Float64 float_value = std::strtod(pos, const_cast<char**>(&pos));
 	if (pos == begin || errno == ERANGE)
 	{
@@ -248,12 +249,14 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expecte
 	Pos pos_integer = begin;
 	if (float_value < 0)
 	{
+		errno = 0;
 		Int64 int_value = std::strtoll(pos_integer, const_cast<char**>(&pos_integer), 0);
 		if (pos_integer == pos && errno != ERANGE)
 			res = int_value;
 	}
 	else
 	{
+		errno = 0;
 		UInt64 uint_value = std::strtoull(pos_integer, const_cast<char**>(&pos_integer), 0);
 		if (pos_integer == pos && errno != ERANGE)
 			res = uint_value;
