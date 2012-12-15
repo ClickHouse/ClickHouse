@@ -167,8 +167,8 @@ StoragePtr StorageFactory::get(
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
 		if (args_func.size() != 1)
-			throw Exception("Storage MergeTree requires exactly 3 parameters"
-				" - name of column with date, primary key expression, index granularity.",
+			throw Exception("Storage MergeTree requires 3 or 4 parameters"
+				" - name of column with date, [name of column for sampling], primary key expression, index granularity.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
@@ -206,8 +206,8 @@ StoragePtr StorageFactory::get(
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
 		if (args_func.size() != 1)
-			throw Exception("Storage CollapsingMergeTree requires exactly 4 parameters"
-				" - name of column with date, primary key expression, index granularity, sign_column.",
+			throw Exception("Storage CollapsingMergeTree requires 4 or 5 parameters"
+				" - name of column with date, [name of column for sampling], primary key expression, index granularity, sign_column.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
