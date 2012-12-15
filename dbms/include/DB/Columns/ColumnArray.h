@@ -235,6 +235,26 @@ public:
 		return data->byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
 
+	void reserve(size_t rows, size_t bytes)
+	{
+		if (!rows)
+			return;
+
+		if (!bytes)
+			bytes = rows * 32;
+
+		offsets->reserve(rows, rows * sizeof(getOffsets()[0]));
+
+		if (bytes < rows * sizeof(getOffsets()[0]))
+			return;
+
+		size_t data_reserve_bytes = bytes - rows * sizeof(getOffsets()[0]);
+		double avg_field_size = static_cast<double>(data_reserve_bytes) / rows;
+		size_t data_reserve_rows = 1 + data_reserve_bytes / avg_field_size;
+
+		data->reserve(data_reserve_rows, data_reserve_bytes);
+	}
+
 	/** Более эффективные методы манипуляции */
 	IColumn & getData() { return *data; }
 	const IColumn & getData() const { return *data; }

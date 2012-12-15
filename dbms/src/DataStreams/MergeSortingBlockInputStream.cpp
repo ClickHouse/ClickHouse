@@ -61,9 +61,21 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 		queue.push(SortCursor(&cursors[i]));
 	}
 
-	ColumnPlainPtrs merged_columns;
+	ColumnPlainPtrs merged_columns(num_columns);
 	for (size_t i = 0; i < num_columns; ++i)
-		merged_columns.push_back(&*merged.getByPosition(i).column);
+	{
+		merged_columns[i] = &*merged.getByPosition(i).column;
+
+		size_t total_rows = 0;
+		size_t total_bytes = 0;
+		for (size_t j = 0; j < blocks.size(); ++j)
+		{
+			total_rows += blocks[j].getByPosition(i).column->size();
+			total_bytes += blocks[j].getByPosition(i).column->byteSize();
+		}
+
+		merged_columns[i]->reserve(total_rows, total_bytes);
+	}
 
 	/// Вынимаем строки в нужном порядке и кладём в merged.
 	while (!queue.empty())

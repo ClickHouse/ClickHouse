@@ -98,7 +98,18 @@ public:
 			
 				BlockWithDateInterval & block_for_month = blocks_by_month[month];
 				if (!block_for_month.block)
+				{
 					block_for_month.block = block.cloneEmpty();
+
+					for (size_t j = 0; j < columns; ++j)
+					{
+						/// Для двух месяцев выполним reserve.
+						blocks_by_month[min_month].block.getByPosition(j).column->reserve(
+							block.getByPosition(j).column->size(), block.getByPosition(j).column->byteSize());
+						blocks_by_month[max_month].block.getByPosition(j).column->reserve(
+							block.getByPosition(j).column->size(), block.getByPosition(j).column->byteSize());
+					}
+				}
 
 				if (dates[i] < block_for_month.min_date)
 					block_for_month.min_date = dates[i];
