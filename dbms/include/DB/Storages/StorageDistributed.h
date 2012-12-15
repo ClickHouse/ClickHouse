@@ -45,6 +45,7 @@ public:
 
 	std::string getName() const { return "Distributed"; }
 	std::string getTableName() const { return name; }
+	bool supportsSampling() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 

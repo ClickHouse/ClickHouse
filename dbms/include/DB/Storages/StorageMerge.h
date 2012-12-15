@@ -24,6 +24,7 @@ public:
 
 	std::string getName() const { return "Merge"; }
 	std::string getTableName() const { return name; }
+	bool supportsSampling() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
