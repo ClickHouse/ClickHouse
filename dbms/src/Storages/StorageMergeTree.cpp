@@ -818,6 +818,9 @@ BlockInputStreams StorageMergeTree::read(
 	size_t max_block_size,
 	unsigned threads)
 {
+	check(column_names_to_return);
+	processed_stage = QueryProcessingStage::FetchColumns;
+	
 	PKCondition key_condition(query, context, sort_descr);
 	PKCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
