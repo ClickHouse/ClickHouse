@@ -134,6 +134,7 @@ namespace FunctionsLibrary
 			("array",						new FunctionArray)
 			("arrayElement",				new FunctionArrayElement)
 			("has",							new FunctionHas)
+			("indexOf",						new FunctionIndexOf)
 
 			("alphaTokens",					new FunctionAlphaTokens)
 			("splitByChar",					new FunctionSplitByChar)

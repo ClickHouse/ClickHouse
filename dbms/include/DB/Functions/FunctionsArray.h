@@ -17,6 +17,7 @@ namespace DB
   * array(с1, с2, ...) - создать массив из констант.
   * arrayElement(arr, i) - получить элемент массива.
   * has(arr, x) - есть ли в массиве элемент x.
+  * indexOf(arr, x) - возвращает индекс элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
   */
 
 class FunctionArray : public IFunction
@@ -119,73 +120,6 @@ struct ArrayElementStringImpl
 				result_data.resize(current_result_offset + 1);
 				current_result_offset += 1;
 				result_offsets[i] = current_result_offset;
-			}
-
-			current_offset = offsets[i];
-		}
-	}
-};
-
-
-template <typename T>
-struct ArrayHasNumImpl
-{
-	static void vector(
-		const std::vector<T> & data, const ColumnArray::Offsets_t & offsets,
-		const T value,
-		std::vector<UInt8> & result)
-	{
-		size_t size = offsets.size();
-		result.resize(size);
-
-		ColumnArray::Offset_t current_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			size_t array_size = offsets[i] - current_offset;
-
-			for (size_t j = 0; j < array_size; ++j)
-			{
-				if (data[current_offset + j] == value)
-				{
-					result[i] = 1;
-					break;
-				}
-			}
-			
-			current_offset = offsets[i];
-		}
-	}
-};
-
-struct ArrayHasStringImpl
-{
-	static void vector(
-		const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
-		const String & value,
-		std::vector<UInt8> & result)
-	{
-		size_t size = offsets.size();
-		size_t value_size = value.size();
-		result.resize(size);
-
-		ColumnArray::Offset_t current_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			size_t array_size = offsets[i] - current_offset;
-
-			for (size_t j = 0; j < array_size; ++j)
-			{
-				ColumnArray::Offset_t string_pos = current_offset == 0 && j == 0
-					? 0
-					: string_offsets[current_offset + j - 1];
-
-				ColumnArray::Offset_t string_size = string_offsets[current_offset + j] - string_pos;
-				
-				if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
-				{
-					result[i] = 1;
-					break;
-				}
 			}
 
 			current_offset = offsets[i];
@@ -316,9 +250,95 @@ public:
 };
 
 
-class FunctionHas : public IFunction
+/// Для реализации функции has и indexOf, соответственно.
+struct IndexToOne
+{
+	typedef UInt8 ResultType;
+	static inline UInt8 apply(size_t j) { return 1; }
+};
+
+struct IndexIdentity
+{
+	typedef UInt64 ResultType;
+	/// Индекс возвращается начиная с единицы.
+	static inline UInt64 apply(size_t j) { return j + 1; }
+};
+
+
+template <typename T, typename IndexConv>
+struct ArrayIndexNumImpl
+{
+	static void vector(
+		const std::vector<T> & data, const ColumnArray::Offsets_t & offsets,
+		const T value,
+		std::vector<typename IndexConv::ResultType> & result)
+	{
+		size_t size = offsets.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+
+			for (size_t j = 0; j < array_size; ++j)
+			{
+				if (data[current_offset + j] == value)
+				{
+					result[i] = IndexConv::apply(j);
+					break;
+				}
+			}
+
+			current_offset = offsets[i];
+		}
+	}
+};
+
+template <typename IndexConv>
+struct ArrayIndexStringImpl
+{
+	static void vector(
+		const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+		const String & value,
+		std::vector<typename IndexConv::ResultType> & result)
+	{
+		size_t size = offsets.size();
+		size_t value_size = value.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+
+			for (size_t j = 0; j < array_size; ++j)
+			{
+				ColumnArray::Offset_t string_pos = current_offset == 0 && j == 0
+					? 0
+					: string_offsets[current_offset + j - 1];
+
+				ColumnArray::Offset_t string_size = string_offsets[current_offset + j] - string_pos;
+
+				if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
+				{
+					result[i] = IndexConv::apply(j);
+					break;
+				}
+			}
+
+			current_offset = offsets[i];
+		}
+	}
+};
+
+
+template <typename IndexConv, typename Name>
+class FunctionArrayIndex : public IFunction
 {
 private:
+	typedef ColumnVector<typename IndexConv::ResultType> ResultColumnType;
+	
 	template <typename T>
 	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const Field & value)
 	{
@@ -332,10 +352,10 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnUInt8 * col_res = new ColumnUInt8;
+		ResultColumnType * col_res = new ResultColumnType;
 		block.getByPosition(result).column = col_res;
 
-		ArrayHasNumImpl<T>::vector(
+		ArrayIndexNumImpl<T, IndexConv>::vector(
 			col_nested->getData(),
 			col_array->getOffsets(),
 			boost::get<typename NearestFieldType<T>::Type>(value),
@@ -356,10 +376,10 @@ private:
 		if (!col_nested)
 			return false;
 
-		ColumnUInt8 * col_res = new ColumnUInt8;
+		ResultColumnType * col_res = new ResultColumnType;
 		block.getByPosition(result).column = col_res;
 
-		ArrayHasStringImpl::vector(
+		ArrayIndexStringImpl<IndexConv>::vector(
 			dynamic_cast<const ColumnUInt8 &>(col_nested->getData()).getData(),
 			col_array->getOffsets(),
 			col_nested->getOffsets(),
@@ -386,7 +406,7 @@ private:
 
 		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
 			block.getByPosition(0).column->size(),
-			UInt64(i != size));
+			UInt64(i == size ? 0 : IndexConv::apply(i)));
 
 		return true;
 	}
@@ -396,7 +416,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "has";
+		return Name::get();
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -415,7 +435,7 @@ public:
 			throw Exception("Type of array elements and second argument for function " + getName() + " must be same."
 				" Passed: " + arguments[0]->getName() + " and " + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeUInt8;
+		return new typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type;
 	}
 
 	/// Выполнить функцию над блоком.
@@ -443,6 +463,13 @@ public:
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
+
+
+struct NameHas 		{ static const char * get() { return "has"; } };
+struct NameIndexOf	{ static const char * get() { return "indexOf"; } };
+
+typedef FunctionArrayIndex<IndexToOne, 		NameHas>		FunctionHas;
+typedef FunctionArrayIndex<IndexIdentity, 	NameIndexOf>	FunctionIndexOf;
 
 
 }
