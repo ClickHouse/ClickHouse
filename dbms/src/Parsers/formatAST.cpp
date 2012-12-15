@@ -56,6 +56,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(UseQuery)
 	DISPATCH(SetQuery)
 	DISPATCH(OptimizeQuery)
+	DISPATCH(ExistsQuery)
 	DISPATCH(ExpressionList)
 	DISPATCH(Function)
 	DISPATCH(Identifier)
@@ -221,6 +222,12 @@ void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent, boo
 void formatAST(const ASTOptimizeQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (hilite ? hilite_none : "")
+		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
+}
+
+void formatAST(const ASTExistsQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << "EXISTS TABLE " << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 }
 
