@@ -67,6 +67,18 @@ public:
 			columns[i]->insert(arr[i]);
 	}
 
+	void insertFrom(const IColumn & src_, size_t n)
+	{
+		const ColumnTuple & src = static_cast<const ColumnTuple &>(src_);
+		
+		size_t size = columns.size();
+		if (src.columns.size() != size)
+			throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
+			
+		for (size_t i = 0; i < size; ++i)
+			columns[i]->insertFrom(*src.columns[i], n);
+	}
+
 	void insertDefault()
 	{
 		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)

@@ -50,8 +50,21 @@ public:
 		const String & s = boost::get<const String &>(x);
 		size_t old_size = char_data.size();
 		size_t size_to_append = s.size() + 1;
+		
 		char_data.resize(old_size + size_to_append);
 		memcpy(&char_data[old_size], s.c_str(), size_to_append);
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size_to_append);
+	}
+
+	void insertFrom(const IColumn & src_, size_t n)
+	{
+		const ColumnString & src = static_cast<const ColumnString &>(src_);
+		size_t old_size = char_data.size();
+		size_t size_to_append = src.sizeAt(n);
+		size_t offset = src.offsetAt(n);
+		
+		char_data.resize(old_size + size_to_append);
+		memcpy(&char_data[old_size], &src.char_data[offset], size_to_append);
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size_to_append);
 	}
 

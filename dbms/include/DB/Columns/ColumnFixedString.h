@@ -55,6 +55,18 @@ public:
 		memcpy(&char_data[old_size], s.data(), s.size());
 	}
 
+	void insertFrom(const IColumn & src_, size_t index)
+	{
+		const ColumnFixedString & src = static_cast<const ColumnFixedString &>(src_);
+
+		if (n != src.getN())
+			throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN);
+
+		size_t old_size = char_data.size();
+		char_data.resize(old_size + n);
+		memcpy(&char_data[old_size], &src.char_data[n * index], n);
+	}
+
 	void insertDefault()
 	{
 		char_data.resize(char_data.size() + n);

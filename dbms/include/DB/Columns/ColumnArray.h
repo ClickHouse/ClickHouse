@@ -102,6 +102,18 @@ public:
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
+	void insertFrom(const IColumn & src_, size_t n)
+	{
+		const ColumnArray & src = static_cast<const ColumnArray &>(src_);
+		size_t size = src.sizeAt(n);
+		size_t offset = src.offsetAt(n);
+
+		for (size_t i = 0; i < size; ++i)
+			data->insertFrom(src.getData(), offset + i);
+		
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+	}
+
 	void insertDefault()
 	{
 		data->insertDefault();

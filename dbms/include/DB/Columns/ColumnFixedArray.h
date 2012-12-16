@@ -67,6 +67,18 @@ public:
 			data->insert(array[i]);
 	}
 
+	void insertFrom(const IColumn & src_, size_t index)
+	{
+		const ColumnFixedArray & src = static_cast<const ColumnFixedArray &>(src_);
+
+		if (n != src.getN())
+			throw Exception("Size of array doesn't match size of FixedArray column",
+				ErrorCodes::SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN);
+
+		for (size_t i = 0; i < n; ++i)
+			data->insertFrom(src.getData(), n * index + i);
+	}
+
 	void insertDefault()
 	{
 		for (size_t i = 0; i < n; ++i)

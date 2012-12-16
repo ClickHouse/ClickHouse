@@ -72,7 +72,7 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 		queue.pop();
 
 		for (size_t i = 0; i < num_columns; ++i)
-			merged_columns[i]->insert((*current->all_columns[i])[current->pos]);
+			merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
 		if (!current->isLast())
 		{

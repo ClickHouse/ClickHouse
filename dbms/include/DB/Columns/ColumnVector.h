@@ -119,6 +119,11 @@ public:
 		data.push_back(boost::apply_visitor(FieldVisitorConvertToNumber<typename NearestFieldType<T>::Type>(), x));
 	}
 
+	void insertFrom(const IColumn & src, size_t n)
+	{
+		data.push_back(static_cast<const ColumnVector<T> &>(src).getData()[n]);
+	}
+
 	void insertDefault()
 	{
 		data.push_back(T());
