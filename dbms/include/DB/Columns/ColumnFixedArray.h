@@ -170,11 +170,6 @@ public:
 		return data->byteSize() + sizeof(n);
 	}
 
-	void reserve(size_t rows, size_t bytes)
-	{
-		data->reserve(rows * n, bytes);
-	}
-
 	const IColumn & getData() const
 	{
 		return *data;

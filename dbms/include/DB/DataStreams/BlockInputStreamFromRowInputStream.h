@@ -33,13 +33,8 @@ protected:
 private:
 	RowInputStreamPtr row_input;
 	const Block sample;
-	size_t columns;
 	size_t max_block_size;
 	bool first_row;
-	bool first_block;
-
-	/// Запомненные размеры столбцов - для оптимизации при чтении следующих блоков.
-	std::vector<size_t> byte_counts;
 };
 
 }

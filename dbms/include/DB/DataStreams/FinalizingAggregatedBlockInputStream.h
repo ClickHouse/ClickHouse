@@ -45,7 +45,6 @@ protected:
 				column.type = data[0]->getReturnType();
 				ColumnPtr finalized_column = column.type->createColumn();
 
-				finalized_column->reserve(rows, rows * 32);
 				for (size_t j = 0; j < rows; ++j)
 					finalized_column->insert(data[j]->getResult());
 

@@ -52,27 +52,10 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			return;
 	}
 
-	merged_columns.resize(num_columns);
 	for (size_t i = 0; i < num_columns; ++i)
-	{
-		merged_columns[i] = &*merged_block.getByPosition(i).column;
-
-		/// Резервируем место.
-		size_t total_rows = 0;
-		size_t total_bytes = 0;
-		for (size_t j = 0; j < source_blocks.size(); ++j)
-		{
-			if (!source_blocks[j])
-				continue;
-
-			total_rows += source_blocks[j].getByPosition(i).column->size();
-			total_bytes += source_blocks[j].getByPosition(i).column->byteSize();
-		}
-
-		merged_columns[i]->reserve(total_rows, total_bytes);
-	}
+		merged_columns.push_back(&*merged_block.getByPosition(i).column);
 }
-
+	
 
 Block MergingSortedBlockInputStream::readImpl()
 {
