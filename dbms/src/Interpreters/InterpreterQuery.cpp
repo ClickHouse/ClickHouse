@@ -79,7 +79,7 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 		InterpreterOptimizeQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	if (dynamic_cast<ASTExistsQuery *>(&*query_ptr))
+	else if (dynamic_cast<ASTExistsQuery *>(&*query_ptr))
 	{
 		InterpreterExistsQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
