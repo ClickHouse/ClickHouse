@@ -28,6 +28,8 @@ namespace DB
 		std::string clickhouse_query;
 		server.olap_converter->OLAPServerQueryToClickhouse(olap_query, context, clickhouse_query);
 		
+		LOG_TRACE(log, "Converted query: " << clickhouse_query);
+		
 		ReadBufferFromString in(clickhouse_query);
 		WriteBufferFromHTTPServerResponse out(response);
 		
