@@ -11,7 +11,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/Functions/FunctionsLibrary.h>
+#include <DB/Functions/FunctionFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
@@ -37,7 +37,7 @@ struct ContextShared
 {
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
-	Functions functions;									/// Обычные функции.
+	FunctionFactory function_factory;						/// Обычные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	DataTypeFactory data_type_factory;						/// Типы данных.
 	StorageFactory storage_factory;							/// Движки таблиц.
@@ -46,7 +46,7 @@ struct ContextShared
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
-	ContextShared() : functions(FunctionsLibrary::get()), log(&Logger::get("Context")) {};
+	ContextShared() : log(&Logger::get("Context")) {};
 };
 
 
@@ -99,8 +99,8 @@ public:
 	/// Установить настройку по имени.
 	void setSetting(const String & name, const Field & value);
 	
-	const Functions & getFunctions() const									{ return shared->functions; }
-	const AggregateFunctionFactory & getAggregateFunctionsFactory() const	{ return shared->aggregate_function_factory; }
+	const FunctionFactory & getFunctionFactory() const						{ return shared->function_factory; }
+	const AggregateFunctionFactory & getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 	const DataTypeFactory & getDataTypeFactory() const						{ return shared->data_type_factory; }
 	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }

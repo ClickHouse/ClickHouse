@@ -17,8 +17,6 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-#include <DB/Functions/FunctionsLibrary.h>
-
 #include <DB/Parsers/ParserSelectQuery.h>
 
 

@@ -2,7 +2,6 @@
 
 #include <Yandex/ApplicationServerExt.h>
 
-#include <DB/Functions/FunctionsLibrary.h>
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>

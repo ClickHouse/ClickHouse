@@ -10,8 +10,6 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 
-#include <DB/Functions/FunctionsLibrary.h>
-
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>

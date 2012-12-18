@@ -94,8 +94,6 @@ void Expression::addSemantic(ASTPtr & ast)
 	}
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		Functions::const_iterator it = context.getFunctions().find(node->name);
-
 		/// Типы аргументов
 		DataTypes argument_types;
 		ASTs & arguments = dynamic_cast<ASTExpressionList &>(*node->arguments).children;
@@ -103,11 +101,9 @@ void Expression::addSemantic(ASTPtr & ast)
 		for (ASTs::iterator it = arguments.begin(); it != arguments.end(); ++it)
 			argument_types.push_back(getType(*it));
 
-		node->aggregate_function = context.getAggregateFunctionsFactory().tryGet(node->name, argument_types);
-		if (it == context.getFunctions().end() && node->aggregate_function.isNull())
-			throw Exception("Unknown function " + node->name, ErrorCodes::UNKNOWN_FUNCTION);
-		if (it != context.getFunctions().end())
-			node->function = it->second;
+		node->aggregate_function = context.getAggregateFunctionFactory().tryGet(node->name, argument_types);
+		if (node->aggregate_function.isNull())
+			node->function = context.getFunctionFactory().get(node->name, context);
 
 		/// Получаем типы результата
 		if (node->aggregate_function)

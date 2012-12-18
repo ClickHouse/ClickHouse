@@ -15,8 +15,6 @@
 #include <DB/Storages/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
 
-#include <DB/Functions/FunctionsLibrary.h>
-
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/executeQuery.h>
 
