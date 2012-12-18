@@ -144,6 +144,14 @@ struct DivideFloatingImpl
 	}
 };
 
+
+template <typename T>
+inline void throwIfZero(T x)
+{
+	if (unlikely(x == 0))
+		throw Exception("Division by zero", ErrorCodes::DIVISION_BY_ZERO);
+}
+
 template<typename A, typename B>
 struct DivideIntegralImpl
 {
@@ -153,25 +161,35 @@ struct DivideIntegralImpl
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
+		{
+			throwIfZero(b[i]);
 			c[i] = static_cast<ResultType>(a[i]) / b[i];
+		}
 	}
 
 	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
+		{
+			throwIfZero(b);
 			c[i] = static_cast<ResultType>(a[i]) / b;
+		}
 	}
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
+		{
+			throwIfZero(b[i]);
 			c[i] = static_cast<ResultType>(a) / b[i];
+		}
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
+		throwIfZero(b);
 		c = static_cast<ResultType>(a) / b;
 	}
 };
@@ -185,28 +203,38 @@ struct ModuloImpl
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
+		{
+			throwIfZero(typename NumberTraits::ToInteger<A>::Type(b[i]));
 			c[i] = typename NumberTraits::ToInteger<A>::Type(a[i])
 				% typename NumberTraits::ToInteger<A>::Type(b[i]);
+		}
 	}
 
 	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
+		{
+			throwIfZero(typename NumberTraits::ToInteger<A>::Type(b));
 			c[i] = typename NumberTraits::ToInteger<A>::Type(a[i])
 				% typename NumberTraits::ToInteger<A>::Type(b);
+		}
 	}
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
+		{
+			throwIfZero(typename NumberTraits::ToInteger<A>::Type(b[i]));
 			c[i] = typename NumberTraits::ToInteger<A>::Type(a)
 				% typename NumberTraits::ToInteger<A>::Type(b[i]);
+		}
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
+		throwIfZero(typename NumberTraits::ToInteger<A>::Type(b));
 		c = typename NumberTraits::ToInteger<A>::Type(a)
 			% typename NumberTraits::ToInteger<A>::Type(b);
 	}
