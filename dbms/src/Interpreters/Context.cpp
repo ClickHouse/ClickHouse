@@ -257,4 +257,15 @@ Context & Context::getGlobalContext()
 	return *global_context;
 }
 
+
+const Dictionaries & Context::getDictionaries()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	
+	if (!shared->dictionaries)
+		shared->dictionaries = new Dictionaries;
+	
+	return *shared->dictionaries;
+}
+
 }

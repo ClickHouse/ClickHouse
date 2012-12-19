@@ -1,0 +1,105 @@
+#pragma once
+
+#include <boost/thread.hpp>
+
+#include <Poco/SharedPtr.h>
+
+#include <Yandex/MultiVersion.h>
+#include <Yandex/logger_useful.h>
+#include <statdaemons/RegionsHierarchy.h>
+#include <statdaemons/TechDataHierarchy.h>
+
+
+namespace DB
+{
+
+using Poco::SharedPtr;
+	
+/// Словари Метрики, которые могут использоваться в функциях.
+
+class Dictionaries
+{
+private:
+	Yandex::MultiVersion<RegionsHierarchy> regions_hierarchy;
+	Yandex::MultiVersion<TechDataHierarchy> tech_data_hierarchy;
+
+	/// Периодичность обновления справочников, в секундах.
+	int reload_period;
+
+	boost::thread reloading_thread;
+	Poco::Event destroy;
+
+	Logger * log;
+
+
+	/// Обновляет справочники.
+	void reloadImpl()
+	{
+		/** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
+		  * Если старых корректных справочников нет, то при использовании функций, которые от них зависят,
+		  *  будет кидаться исключение.
+		  */
+		try
+		{
+			LOG_INFO(log, "Loading dictionaries.");
+
+			Yandex::MultiVersion<TechDataHierarchy>::Version new_tech_data_hierarchy = new TechDataHierarchy;
+			Yandex::MultiVersion<RegionsHierarchy>::Version new_regions_hierarchy = new RegionsHierarchy;
+			new_regions_hierarchy->reload();
+
+			tech_data_hierarchy.set(new_tech_data_hierarchy);
+			regions_hierarchy.set(new_regions_hierarchy);
+		}
+		catch (const Poco::Exception & e)
+		{
+			LOG_ERROR(log, "Cannot load dictionaries! You must resolve this manually. " << e.displayText());
+			return;
+		}
+		catch (...)
+		{
+			LOG_ERROR(log, "Cannot load dictionaries! You must resolve this manually.");
+			return;
+		}
+
+		LOG_INFO(log, "Loaded dictionaries.");
+	}
+
+	/// Обновляет каждые reload_period секунд.
+	void reloadPeriodically()
+	{
+		while (true)
+		{
+			reloadImpl();
+			
+			if (destroy.tryWait(reload_period * 1000))
+				return;
+		}
+	}
+
+public:
+	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
+	Dictionaries(int reload_period_ = 3600)
+		: reload_period(reload_period_),
+		reloading_thread(&Dictionaries::reloadPeriodically, this),
+		log(&Logger::get("Dictionaries"))
+	{
+	}
+
+	~Dictionaries()
+	{
+		destroy.set();
+		reloading_thread.join();
+	}
+
+	Yandex::MultiVersion<RegionsHierarchy>::Version getRegionsHierarchy() const
+	{
+		return regions_hierarchy.get();
+	}
+
+	Yandex::MultiVersion<TechDataHierarchy>::Version getTechDataHierarchy() const
+	{
+		return tech_data_hierarchy.get();
+	}
+};
+
+}

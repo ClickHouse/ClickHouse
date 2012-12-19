@@ -185,7 +185,7 @@ void TCPHandler::processOrdinaryQuery()
 			
 			while (true)
 			{
-				if (async_in.poll(state.context.getSettingsRef().interactive_delay / 1000))
+				if (async_in.poll(connection_context.getSettingsRef().interactive_delay / 1000))
 				{
 					block = async_in.read();
 					break;
@@ -321,8 +321,7 @@ void TCPHandler::receiveQuery()
 
 	readStringBinary(state.query, *in);
 
-	state.context = connection_context;
-	state.io = executeQuery(state.query, state.context, state.stage);
+	state.io = executeQuery(state.query, connection_context, state.stage);
 }
 
 
@@ -335,12 +334,12 @@ bool TCPHandler::receiveData()
 		else
 			state.maybe_compressed_in = in;
 
-		state.block_in = state.context.getFormatFactory().getInput(
+		state.block_in = connection_context.getFormatFactory().getInput(
 			"Native",
 			*state.maybe_compressed_in,
 			state.io.out_sample,
-			state.context.getSettingsRef().max_block_size,
-			state.context.getDataTypeFactory());
+			connection_context.getSettingsRef().max_block_size,
+			connection_context.getDataTypeFactory());
 	}
 	
 	/// Прочитать из сети один блок и засунуть его в state.io.out (данные для INSERT-а)
@@ -360,7 +359,7 @@ bool TCPHandler::isQueryCancelled()
 	if (state.is_cancelled || state.sent_all_data)
 		return true;
 
-	if (after_check_cancelled.elapsed() / 1000 < state.context.getSettingsRef().interactive_delay)
+	if (after_check_cancelled.elapsed() / 1000 < connection_context.getSettingsRef().interactive_delay)
 		return false;
 
 	after_check_cancelled.restart();
@@ -400,7 +399,7 @@ void TCPHandler::sendData(Block & block)
 		else
 			state.maybe_compressed_out = out;
 
-		state.block_out = state.context.getFormatFactory().getOutput(
+		state.block_out = connection_context.getFormatFactory().getOutput(
 			"Native",
 			*state.maybe_compressed_out,
 			state.io.in_sample);
@@ -445,7 +444,7 @@ void TCPHandler::sendProgress(size_t rows, size_t bytes)
 	if (state.sent_all_data)
 		return;
 
-	if (after_send_progress.elapsed() / 1000 < state.context.getSettingsRef().interactive_delay)
+	if (after_send_progress.elapsed() / 1000 < connection_context.getSettingsRef().interactive_delay)
 		return;
 
 	after_send_progress.restart();

@@ -41,8 +41,6 @@ struct QueryState
 	/// Потоки блоков, с помощью которых выполнять запрос.
 	BlockIO io;
 
-	Context context;
-
 	bool is_cancelled;
 	/// Данные были отправлены.
 	bool sent_all_data;
@@ -72,7 +70,7 @@ class TCPHandler : public Poco::Net::TCPServerConnection
 public:
 	TCPHandler(Server & server_, const Poco::Net::StreamSocket & socket_)
 		: Poco::Net::TCPServerConnection(socket_), server(server_)
-		, log(&Logger::get("TCPHandler"))
+		, log(&Logger::get("TCPHandler")), connection_context(server.global_context)
 	{
 	    LOG_TRACE(log, "In constructor.");
 	}
