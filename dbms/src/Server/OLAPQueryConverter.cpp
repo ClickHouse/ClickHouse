@@ -184,10 +184,12 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	if (name == "count_non_minus_one")
 		return "sum((" + numeric + ") == -1 ? 0 : 1)";
 	
-	if (!formatting_aggregated_attribute_map.count(attribute))
-		throw Exception("Cannot apply aggregate function " + name + " to attribute " + attribute, ErrorCodes::AGGREGATE_FUNCTION_NOT_APPLICABLE);
-	
-	std::string format = formatting_aggregated_attribute_map[attribute];
+	std::string format;
+	if (formatting_aggregated_attribute_map.count(attribute))
+		format = formatting_aggregated_attribute_map[attribute];
+	else
+		format = "%s";
+
 	std::string s;
 	
 	if (name == "sum")
