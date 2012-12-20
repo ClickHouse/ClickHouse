@@ -163,6 +163,14 @@ namespace NumberTraits
 					Bits64,
 					typename Traits<B>::Bits>::type>::type>::Type Type;
 	};
+
+	template <typename A> struct ResultOfBitwiseNot
+	{
+		typedef typename Construct<
+			typename Traits<A>::Sign,
+			Integer,
+			typename Traits<A>::Bits>::Type Type;
+	};
 	
 	/** Перед применением оператора % и побитовых операций, операнды приводятся к целым числам. */
 	template <typename A> struct ToInteger

@@ -12,39 +12,69 @@ namespace DB
 
 /** Арифметические функции: +, -, *, /, %,
   * intDiv (целочисленное деление), унарный минус.
+  * Битовые функции: |, &, ^, ~.
   */
 
-template<typename A, typename B>
-struct PlusImpl
+template<typename A, typename B, typename Op>
+struct BinaryOperationImpl
 {
-	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
-		
+	typedef typename Op::ResultType ResultType;
+
 	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
-		/// Далее везде, static_cast - чтобы не было неправильного результата в выражениях вида Int64 c = UInt32(a) * Int32(-1).
-		
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) + b[i];
+			c[i] = Op::apply(a[i], b[i]);
 	}
 
 	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) + b;
+			c[i] = Op::apply(a[i], b);
 	}
 
 	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a) + b[i];
+			c[i] = Op::apply(a, b[i]);
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
-		c = static_cast<ResultType>(a) + b;
+		c = Op::apply(a, b);
+	}
+};
+
+template<typename A, typename Op>
+struct UnaryOperationImpl
+{
+	typedef typename Op::ResultType ResultType;
+
+	static void vector(const std::vector<A> & a, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = Op::apply(a[i]);
+	}
+
+	static void constant(A a, ResultType & c)
+	{
+		c = Op::apply(a);
+	}
+};
+
+
+template<typename A, typename B>
+struct PlusImpl
+{
+	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
+		
+	static inline ResultType apply(A a, B b)
+	{
+		/// Далее везде, static_cast - чтобы не было неправильного результата в выражениях вида Int64 c = UInt32(a) * Int32(-1).
+		return static_cast<ResultType>(a) + b;
 	}
 };
 
@@ -53,30 +83,9 @@ struct MultiplyImpl
 {
 	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
 
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static inline ResultType apply(A a, B b)
 	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) * b[i];
-	}
-
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) * b;
-	}
-
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a) * b[i];
-	}
-
-	static void constant_constant(A a, B b, ResultType & c)
-	{
-		c = static_cast<ResultType>(a) * b;
+		return static_cast<ResultType>(a) * b;
 	}
 };
 
@@ -85,30 +94,9 @@ struct MinusImpl
 {
 	typedef typename NumberTraits::ResultOfSubtraction<A, B>::Type ResultType;
 
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static inline ResultType apply(A a, B b)
 	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) - b[i];
-	}
-
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) - b;
-	}
-
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a) - b[i];
-	}
-
-	static void constant_constant(A a, B b, ResultType & c)
-	{
-		c = static_cast<ResultType>(a) - b;
+		return static_cast<ResultType>(a) - b;
 	}
 };
 
@@ -117,30 +105,9 @@ struct DivideFloatingImpl
 {
 	typedef typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type ResultType;
 
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static inline ResultType apply(A a, B b)
 	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) / b[i];
-	}
-
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a[i]) / b;
-	}
-
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = static_cast<ResultType>(a) / b[i];
-	}
-
-	static void constant_constant(A a, B b, ResultType & c)
-	{
-		c = static_cast<ResultType>(a) / b;
+		return static_cast<ResultType>(a) / b;
 	}
 };
 
@@ -157,40 +124,10 @@ struct DivideIntegralImpl
 {
 	typedef typename NumberTraits::ResultOfIntegerDivision<A, B>::Type ResultType;
 
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			throwIfZero(b[i]);
-			c[i] = static_cast<ResultType>(a[i]) / b[i];
-		}
-	}
-
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			throwIfZero(b);
-			c[i] = static_cast<ResultType>(a[i]) / b;
-		}
-	}
-
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			throwIfZero(b[i]);
-			c[i] = static_cast<ResultType>(a) / b[i];
-		}
-	}
-
-	static void constant_constant(A a, B b, ResultType & c)
+	static inline ResultType apply(A a, B b)
 	{
 		throwIfZero(b);
-		c = static_cast<ResultType>(a) / b;
+		return static_cast<ResultType>(a) / b;
 	}
 };
 
@@ -199,43 +136,10 @@ struct ModuloImpl
 {
 	typedef typename NumberTraits::ResultOfModulo<A, B>::Type ResultType;
 
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			throwIfZero(typename NumberTraits::ToInteger<A>::Type(b[i]));
-			c[i] = typename NumberTraits::ToInteger<A>::Type(a[i])
-				% typename NumberTraits::ToInteger<A>::Type(b[i]);
-		}
-	}
-
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			throwIfZero(typename NumberTraits::ToInteger<A>::Type(b));
-			c[i] = typename NumberTraits::ToInteger<A>::Type(a[i])
-				% typename NumberTraits::ToInteger<A>::Type(b);
-		}
-	}
-
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			throwIfZero(typename NumberTraits::ToInteger<A>::Type(b[i]));
-			c[i] = typename NumberTraits::ToInteger<A>::Type(a)
-				% typename NumberTraits::ToInteger<A>::Type(b[i]);
-		}
-	}
-
-	static void constant_constant(A a, B b, ResultType & c)
+	static inline ResultType apply(A a, B b)
 	{
 		throwIfZero(typename NumberTraits::ToInteger<A>::Type(b));
-		c = typename NumberTraits::ToInteger<A>::Type(a)
+		return typename NumberTraits::ToInteger<A>::Type(a)
 			% typename NumberTraits::ToInteger<A>::Type(b);
 	}
 };
@@ -245,39 +149,9 @@ struct BitwiseAndImpl
 {
 	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
 	
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static inline ResultType apply(A a, B b)
 	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			c[i] = static_cast<ResultType>(a[i])
-				& static_cast<ResultType>(b[i]);
-		}
-	}
-	
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			c[i] = static_cast<ResultType>(a[i])
-				& static_cast<ResultType>(b);
-		}
-	}
-	
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			c[i] = static_cast<ResultType>(a)
-				& static_cast<ResultType>(b[i]);
-		}
-	}
-	
-	static void constant_constant(A a, B b, ResultType & c)
-	{
-		c = static_cast<ResultType>(a)
+		return static_cast<ResultType>(a)
 			& static_cast<ResultType>(b);
 	}
 };
@@ -287,40 +161,22 @@ struct BitwiseOrImpl
 {
 	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
 	
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static inline ResultType apply(A a, B b)
 	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			c[i] = static_cast<ResultType>(a[i])
-				| static_cast<ResultType>(b[i]);
-		}
-	}
-	
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			c[i] = static_cast<ResultType>(a[i])
-				| static_cast<ResultType>(b);
-		}
-	}
-	
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			c[i] = static_cast<ResultType>(a)
-				| static_cast<ResultType>(b[i]);
-		}
-	}
-	
-	static void constant_constant(A a, B b, ResultType & c)
-	{
-		c = static_cast<ResultType>(a)
+		return static_cast<ResultType>(a)
 			| static_cast<ResultType>(b);
+	}
+};
+
+template<typename A, typename B>
+struct BitwiseXorImpl
+{
+	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+
+	static inline ResultType apply(A a, B b)
+	{
+		return static_cast<ResultType>(a)
+			^ static_cast<ResultType>(b);
 	}
 };
 
@@ -329,21 +185,26 @@ struct NegateImpl
 {
 	typedef typename NumberTraits::ResultOfNegate<A>::Type ResultType;
 
-	static void vector(const std::vector<A> & a, std::vector<ResultType> & c)
+	static inline ResultType apply(A a)
 	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = -a[i];
+		return -a;
 	}
+};
 
-	static void constant(A a, ResultType & c)
+template<typename A>
+struct BitwiseNotImpl
+{
+	typedef typename NumberTraits::ResultOfBitwiseNot<A>::Type ResultType;
+
+	static inline ResultType apply(A a)
 	{
-		c = -a;
+		return ~static_cast<ResultType>(a);
 	}
 };
 
 
-template <template <typename, typename> class Impl, typename Name>
+
+template <template <typename, typename> class Op, typename Name>
 class FunctionBinaryArithmetic : public IFunction
 {
 private:
@@ -353,7 +214,7 @@ private:
 		if (dynamic_cast<const T1 *>(&*arguments[1]))
 		{
 			type_res = new typename DataTypeFromFieldType<
-				typename Impl<typename T0::FieldType, typename T1::FieldType>::ResultType>::Type;
+				typename Op<typename T0::FieldType, typename T1::FieldType>::ResultType>::Type;
 			return true;
 		}
 		return false;
@@ -388,27 +249,27 @@ private:
 	{
 		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
-			typedef typename Impl<T0, T1>::ResultType ResultType;
+			typedef typename Op<T0, T1>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
-			Impl<T0, T1>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1> >::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
 		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
-			typedef typename Impl<T0, T1>::ResultType ResultType;
+			typedef typename Op<T0, T1>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
-			Impl<T0, T1>::vector_constant(col_left->getData(), col_right->getData(), vec_res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1> >::vector_constant(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
@@ -421,23 +282,23 @@ private:
 	{
 		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
-			typedef typename Impl<T0, T1>::ResultType ResultType;
+			typedef typename Op<T0, T1>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
-			Impl<T0, T1>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1> >::constant_vector(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
 		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
-			typedef typename Impl<T0, T1>::ResultType ResultType;
+			typedef typename Op<T0, T1>::ResultType ResultType;
 
 			ResultType res = 0;
-			Impl<T0, T1>::constant_constant(col_left->getData(), col_right->getData(), res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1> >::constant_constant(col_left->getData(), col_right->getData(), res);
 			
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_left->size(), res);
 			block.getByPosition(result).column = col_res;
@@ -544,7 +405,7 @@ public:
 };
 
 
-template <template <typename> class Impl, typename Name>
+template <template <typename> class Op, typename Name>
 class FunctionUnaryArithmetic : public IFunction
 {
 private:
@@ -554,7 +415,7 @@ private:
 		if (dynamic_cast<const T0 *>(&*arguments[0]))
 		{
 			result = new typename DataTypeFromFieldType<
-				typename Impl<typename T0::FieldType>::ResultType>::Type;
+				typename Op<typename T0::FieldType>::ResultType>::Type;
 			return true;
 		}
 		return false;
@@ -565,23 +426,23 @@ private:
 	{
 		if (ColumnVector<T0> * col = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			typedef typename Impl<T0>::ResultType ResultType;
+			typedef typename Op<T0>::ResultType ResultType;
 
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->getData().size());
-			Impl<T0>::vector(col->getData(), vec_res);
+			UnaryOperationImpl<T0, Op<T0> >::vector(col->getData(), vec_res);
 
 			return true;
 		}
 		else if (ColumnConst<T0> * col = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			typedef typename Impl<T0>::ResultType ResultType;
+			typedef typename Op<T0>::ResultType ResultType;
 
 			ResultType res = 0;
-			Impl<T0>::constant(col->getData(), res);
+			UnaryOperationImpl<T0, Op<T0> >::constant(col->getData(), res);
 
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
 			block.getByPosition(result).column = col_res;
@@ -651,9 +512,11 @@ struct NameMultiply 		{ static const char * get() { return "multiply"; } };
 struct NameDivideFloating	{ static const char * get() { return "divide"; } };
 struct NameDivideIntegral 	{ static const char * get() { return "intDiv"; } };
 struct NameModulo 			{ static const char * get() { return "modulo"; } };
+struct NameNegate 			{ static const char * get() { return "negate"; } };
 struct NameBitwiseAnd		{ static const char * get() { return "bitwiseAnd"; } };
 struct NameBitwiseOr		{ static const char * get() { return "bitwiseOr"; } };
-struct NameNegate 			{ static const char * get() { return "negate"; } };
+struct NameBitwiseXor		{ static const char * get() { return "bitwiseXor"; } };
+struct NameBitwiseNot		{ static const char * get() { return "bitwiseNot"; } };
 
 typedef FunctionBinaryArithmetic<PlusImpl,				NamePlus> 			FunctionPlus;
 typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 			FunctionMinus;
@@ -661,9 +524,12 @@ typedef FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 		FunctionMultipl
 typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating> FunctionDivideFloating;
 typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> FunctionDivideIntegral;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 		FunctionModulo;
-typedef FunctionBinaryArithmetic<BitwiseAndImpl,		NameBitwiseAnd> 	FunctionBitwiseAnd;
-typedef FunctionBinaryArithmetic<BitwiseOrImpl,		NameBitwiseOr> 		FunctionBitwiseOr;
 typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 		FunctionNegate;
+typedef FunctionBinaryArithmetic<BitwiseAndImpl,		NameBitwiseAnd> 	FunctionBitwiseAnd;
+typedef FunctionBinaryArithmetic<BitwiseOrImpl,			NameBitwiseOr> 		FunctionBitwiseOr;
+typedef FunctionBinaryArithmetic<BitwiseXorImpl,		NameBitwiseXor> 	FunctionBitwiseXor;
+typedef FunctionUnaryArithmetic<BitwiseNotImpl,			NameBitwiseNot> 	FunctionBitwiseNot;
+
 
 
 }
