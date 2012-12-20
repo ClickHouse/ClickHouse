@@ -69,10 +69,10 @@ private:
 	{
 		while (true)
 		{
-			reloadImpl();
-			
 			if (destroy.tryWait(reload_period * 1000))
 				return;
+
+			reloadImpl();
 		}
 	}
 
@@ -80,9 +80,10 @@ public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
 	Dictionaries(int reload_period_ = 3600)
 		: reload_period(reload_period_),
-		reloading_thread(&Dictionaries::reloadPeriodically, this),
 		log(&Logger::get("Dictionaries"))
 	{
+		reloadImpl();
+		reloading_thread = boost::thread(&Dictionaries::reloadPeriodically, this);
 	}
 
 	~Dictionaries()
