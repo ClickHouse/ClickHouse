@@ -275,7 +275,7 @@ std::string QueryConverter::convertDateRange(time_t date_first, time_t date_last
 		writeDateText(Yandex::DateLUTSingleton::instance().toDayNum(date_first), first_buf);
 		writeDateText(Yandex::DateLUTSingleton::instance().toDayNum(date_last), last_buf);
 	}
-	return "StartDate >= '" + first_str + "' AND StartDate <= '" + last_str + "'";
+	return "StartDate >= toDate('" + first_str + "') AND StartDate <= toDate('" + last_str + "')";
 }
 
 std::string QueryConverter::convertCounterID(Yandex::CounterID_t CounterID)
