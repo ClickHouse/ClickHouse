@@ -240,6 +240,90 @@ struct ModuloImpl
 	}
 };
 
+template<typename A, typename B>
+struct BitwiseAndImpl
+{
+	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+	
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			c[i] = static_cast<ResultType>(a[i])
+				& static_cast<ResultType>(b[i]);
+		}
+	}
+	
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			c[i] = static_cast<ResultType>(a[i])
+				& static_cast<ResultType>(b);
+		}
+	}
+	
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			c[i] = static_cast<ResultType>(a)
+				& static_cast<ResultType>(b[i]);
+		}
+	}
+	
+	static void constant_constant(A a, B b, ResultType & c)
+	{
+		c = static_cast<ResultType>(a)
+			& static_cast<ResultType>(b);
+	}
+};
+
+template<typename A, typename B>
+struct BitwiseOrImpl
+{
+	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+	
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			c[i] = static_cast<ResultType>(a[i])
+				| static_cast<ResultType>(b[i]);
+		}
+	}
+	
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	{
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			c[i] = static_cast<ResultType>(a[i])
+				| static_cast<ResultType>(b);
+		}
+	}
+	
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	{
+		size_t size = b.size();
+		for (size_t i = 0; i < size; ++i)
+		{
+			c[i] = static_cast<ResultType>(a)
+				| static_cast<ResultType>(b[i]);
+		}
+	}
+	
+	static void constant_constant(A a, B b, ResultType & c)
+	{
+		c = static_cast<ResultType>(a)
+			| static_cast<ResultType>(b);
+	}
+};
+
 template<typename A>
 struct NegateImpl
 {
@@ -567,14 +651,18 @@ struct NameMultiply 		{ static const char * get() { return "multiply"; } };
 struct NameDivideFloating	{ static const char * get() { return "divide"; } };
 struct NameDivideIntegral 	{ static const char * get() { return "intDiv"; } };
 struct NameModulo 			{ static const char * get() { return "modulo"; } };
+struct NameBitwiseAnd		{ static const char * get() { return "bitwiseAnd"; } };
+struct NameBitwiseOr		{ static const char * get() { return "bitwiseOr"; } };
 struct NameNegate 			{ static const char * get() { return "negate"; } };
 
-typedef FunctionBinaryArithmetic<PlusImpl, 				NamePlus> 			FunctionPlus;
+typedef FunctionBinaryArithmetic<PlusImpl,				NamePlus> 			FunctionPlus;
 typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 			FunctionMinus;
-typedef FunctionBinaryArithmetic<MultiplyImpl, 			NameMultiply> 		FunctionMultiply;
+typedef FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 		FunctionMultiply;
 typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating> FunctionDivideFloating;
 typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> FunctionDivideIntegral;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 		FunctionModulo;
+typedef FunctionBinaryArithmetic<BitwiseAndImpl,		NameBitwiseAnd> 	FunctionBitwiseAnd;
+typedef FunctionBinaryArithmetic<BitwiseOrImpl,		NameBitwiseOr> 		FunctionBitwiseOr;
 typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 		FunctionNegate;
 
 

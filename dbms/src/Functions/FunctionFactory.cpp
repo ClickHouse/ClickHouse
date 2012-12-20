@@ -34,6 +34,8 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "divide")						return new FunctionDivideFloating;
 	else if (name == "intDiv")						return new FunctionDivideIntegral;
 	else if (name == "modulo")						return new FunctionModulo;
+	else if (name == "bitwiseAnd")					return new FunctionBitwiseAnd;
+	else if (name == "bitwiseOr")					return new FunctionBitwiseOr;
 	else if (name == "negate")						return new FunctionNegate;
 
 	else if (name == "equals")						return new FunctionEquals;

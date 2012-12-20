@@ -146,7 +146,25 @@ namespace NumberTraits
 			typename Traits<A>::Bits>::Type Type;
 	};
 
-	/** Перед применением оператора %, операнды приводятся к целым числам. */
+	/** При побитовых операциях получается целое число, битность которого равна максимальной из битностей аргументов.
+	  */
+	template <typename A, typename B> struct ResultOfBitwise
+	{
+		typedef typename Construct<
+			typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
+			Integer,
+			typename boost::mpl::max<
+				typename boost::mpl::if_<
+					typename Traits<A>::Floatness,
+					Bits64,
+					typename Traits<A>::Bits>::type,
+				typename boost::mpl::if_<
+					typename Traits<B>::Floatness,
+					Bits64,
+					typename Traits<B>::Bits>::type>::type>::Type Type;
+	};
+	
+	/** Перед применением оператора % и побитовых операций, операнды приводятся к целым числам. */
 	template <typename A> struct ToInteger
 	{
 		typedef typename Construct<
