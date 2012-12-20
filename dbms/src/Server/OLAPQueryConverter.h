@@ -3,6 +3,7 @@
 #include "OLAPQueryParser.h"
 #include <DB/Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "OLAPAttributesMetadata.h"
 
 
 namespace DB
@@ -43,16 +44,19 @@ private:
 	void fillFormattedAttributeMap();
 	void fillNumericAttributeMap();
 	void fillFormattingAggregatedAttributeMap();
+	void fillAttributeParsers();
 	
 	std::string table_for_single_counter;
 	std::string table_for_all_counters;
 	
-	/// Форматная строка для convertAttributeNumeric.
+	/// Форматная строка для convertAttributeNumeric. Есть для всех атрибутов.
 	std::map<std::string, std::string> numeric_attribute_map;
-	/// Форматная строка для convertAttributeFormatted. Только те атрибуты, для которых недостаточно numeric_attribute_map.
-	std::map<std::string, std::string> formatted_attribute_map;
-	/// Форматная строка для получения выводимого значения из агрегированного числового значения.
+	/// Форматная строка для получения выводимого значения из агрегированного числового значения.ы
 	std::map<std::string, std::string> formatting_aggregated_attribute_map;
+	/// Форматная строка для convertAttributeFormatted.
+	std::map<std::string, std::string> formatted_attribute_map;
+	/// Парсеры значений атрибутов.
+	AttributeMetadatas attribute_metadatas;
 };
 
 }
