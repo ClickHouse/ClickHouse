@@ -72,7 +72,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 		const QueryParseResult::Aggregate & aggregate = query.aggregates[i];
 		std::string s = convertAggregateFunction(aggregate.attribute, aggregate.parameter, aggregate.function);
 		
-		if (i > 0)
+		if (query.key_attributes.size() + i > 0)
 			out_query += ", ";
 		out_query += s + " AS " + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute);
 		selected_expressions.push_back(s);
