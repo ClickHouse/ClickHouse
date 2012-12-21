@@ -43,7 +43,7 @@ struct ContextShared
 	DataTypeFactory data_type_factory;						/// Типы данных.
 	StorageFactory storage_factory;							/// Движки таблиц.
 	FormatFactory format_factory;							/// Форматы.
-	SharedPtr<Dictionaries> dictionaries;					/// Словари Метрики.
+	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	Logger * log;											/// Логгер.
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
@@ -106,7 +106,7 @@ public:
 	const DataTypeFactory & getDataTypeFactory() const						{ return shared->data_type_factory; }
 	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
-	const Dictionaries & getDictionaries();
+	const Dictionaries & getDictionaries() const;
 
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;

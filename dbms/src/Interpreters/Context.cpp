@@ -258,7 +258,7 @@ Context & Context::getGlobalContext()
 }
 
 
-const Dictionaries & Context::getDictionaries()
+const Dictionaries & Context::getDictionaries() const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	

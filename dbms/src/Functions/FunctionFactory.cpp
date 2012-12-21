@@ -13,6 +13,7 @@
 #include <DB/Functions/FunctionsArray.h>
 #include <DB/Functions/FunctionsStringArray.h>
 #include <DB/Functions/FunctionsConditional.h>
+#include <DB/Functions/FunctionsDictionaries.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Functions/FunctionFactory.h>
@@ -145,6 +146,15 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "splitByString")				return new FunctionSplitByString;
 
 	else if (name == "if")							return new FunctionIf;
+
+	else if (name == "regionToCity")				return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "regionToArea")				return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "regionToCountry")				return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "OSToRoot")					return new FunctionOSToRoot(context.getDictionaries().getTechDataHierarchy());
+	else if (name == "SEToRoot")					return new FunctionSEToRoot(context.getDictionaries().getTechDataHierarchy());
+	else if (name == "regionIn")					return new FunctionRegionIn(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "OSIn")						return new FunctionOSIn(context.getDictionaries().getTechDataHierarchy());
+	else if (name == "SEIn")						return new FunctionSEIn(context.getDictionaries().getTechDataHierarchy());
 
 	else
 		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
