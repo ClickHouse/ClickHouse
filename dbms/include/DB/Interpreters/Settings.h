@@ -4,6 +4,8 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Field.h>
 
+#include <DB/Interpreters/Limits.h>
+
 
 namespace DB
 {
@@ -34,6 +36,9 @@ struct Settings
 	size_t distributed_connections_pool_size;
 	/// Максимальное количество попыток соединения с репликами.
 	size_t connections_with_failover_max_tries;
+
+	/// Всевозможные ограничения на выполнение запроса.
+	Limits limits;
 
 	Settings() :
 		max_block_size(DEFAULT_BLOCK_SIZE),
@@ -69,7 +74,7 @@ struct Settings
 		else if (name == "max_distributed_connections") max_distributed_connections = boost::get<UInt64>(value);
 		else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = boost::get<UInt64>(value);
 		else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = boost::get<UInt64>(value);
-		else
+		else if (!limits.trySet(name, value))
 			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 	}
 };
