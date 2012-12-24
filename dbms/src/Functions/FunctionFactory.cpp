@@ -17,6 +17,7 @@
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/FunctionsRound.h>
 
 
 namespace DB
@@ -52,6 +53,10 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "or")							return new FunctionOr;
 	else if (name == "xor")							return new FunctionXor;
 	else if (name == "not")							return new FunctionNot;
+	
+	else if (name == "roundToExp2")					return new FunctionRoundToExp2;
+	else if (name == "roundDuration")					return new FunctionRoundDuration;
+	else if (name == "roundAge")					return new FunctionRoundAge;
 
 	else if (name == "empty")						return new FunctionEmpty;
 	else if (name == "notEmpty")					return new FunctionNotEmpty;

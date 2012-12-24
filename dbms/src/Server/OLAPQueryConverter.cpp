@@ -239,13 +239,13 @@ std::string QueryConverter::convertCondition(const std::string & attribute, unsi
 	if (name == "region_not_in")
 		return "NOT regionIn(" + value + ", " + constant + ")";
 	if (name == "os_in")
-		return "osIn(" + value + ", " + constant + ")";
+		return "OSIn(" + value + ", " + constant + ")";
 	if (name == "os_not_in")
-		return "NOT osIn(" + value + ", " + constant + ")";
+		return "NOT OSIn(" + value + ", " + constant + ")";
 	if (name == "se_in")
-		return "seIn(" + value + ", " + constant + ")";
+		return "SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
 	if (name == "se_not_in")
-		return "NOT seIn(" + value + ", " + constant + ")";
+		return "NOT SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
 	if (name == "interest_has_all_from")
 		return "bitwiseAnd(" + value + ", " + constant + ") == " + constant;
 	if (name == "interest_not_has_all_from")
@@ -409,7 +409,7 @@ void QueryConverter::fillNumericAttributeMap()
 	M("IPNetworkID",          "IPNetworkID")
 	M("ClientTimeZone",       "ClientTimeZone")
 	M("OSID",                 "OS")
-	M("OSMostAncestor",       "osToRoot(OS)")
+	M("OSMostAncestor",       "OSToRoot(OS)")
 	
 	M("ClientIP",             "ClientIP")
 	M("Resolution",           "ResolutionWidth * 16777216 + ResolutionHeight * 256 + ResolutionDepth")
@@ -429,7 +429,7 @@ void QueryConverter::fillNumericAttributeMap()
 	M("WindowClientHeight",   "WindowClientHeight")
 	M("WindowClientHeightInterval","intDiv(WindowClientHeight, 100) * 100")
 	M("SearchEngineID",       "SearchEngineID")
-	M("SEMostAncestor",       "seToRoot(SearchEngineID)")
+	M("SEMostAncestor",       "SEToRoot(toUInt8(SearchEngineID))")
 	M("CodeVersion",          "CodeVersion")
 	
 	M("UserAgent",            "UserAgent * 16777216 + UserAgentMajor * 65536 + UserAgentMinor")
