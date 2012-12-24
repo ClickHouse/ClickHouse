@@ -55,7 +55,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "not")							return new FunctionNot;
 	
 	else if (name == "roundToExp2")					return new FunctionRoundToExp2;
-	else if (name == "roundDuration")					return new FunctionRoundDuration;
+	else if (name == "roundDuration")				return new FunctionRoundDuration;
 	else if (name == "roundAge")					return new FunctionRoundAge;
 
 	else if (name == "empty")						return new FunctionEmpty;

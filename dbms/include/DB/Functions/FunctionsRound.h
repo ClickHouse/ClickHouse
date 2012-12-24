@@ -88,7 +88,7 @@ namespace DB
 	};
 	
 	
-	struct NameRoundToExp2		{ static const char * get() { return "roundToExp"; } };
+	struct NameRoundToExp2		{ static const char * get() { return "roundToExp2"; } };
 	struct NameRoundDuration	{ static const char * get() { return "roundDuration"; } };
 	struct NameRoundAge 		{ static const char * get() { return "roundAge"; } };
 	
