@@ -83,7 +83,7 @@ struct Limits
 
 		else if (name == "max_rows_to_group_by")	max_rows_to_group_by 	= boost::get<UInt64>(value);
 		else if (name == "max_bytes_to_group_by")	max_bytes_to_group_by 	= boost::get<UInt64>(value);
-		else if (name == "group_by_overflow_mode")	group_by_overflow_mode 	= getOverflowMode(boost::get<const String &>(value));
+		else if (name == "group_by_overflow_mode")	group_by_overflow_mode 	= getOverflowModeForGroupBy(boost::get<const String &>(value));
 
 		else if (name == "max_rows_to_sort")		max_rows_to_sort 		= boost::get<UInt64>(value);
 		else if (name == "max_bytes_to_sort")		max_bytes_to_sort 		= boost::get<UInt64>(value);
@@ -120,13 +120,23 @@ struct Limits
 	}
 
 private:
-	OverflowMode getOverflowMode(const String & s)
+	OverflowMode getOverflowModeForGroupBy(const String & s)
 	{
 		if (s == "throw") 	return THROW;
 		if (s == "break") 	return BREAK;
 		if (s == "any")		return ANY;
 
 		throw Exception("Unknown overflow mode: '" + s + "', must be one of 'throw', 'break', 'any'", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
+	}
+	
+	OverflowMode getOverflowMode(const String & s)
+	{
+		OverflowMode mode = getOverflowModeForGroupBy(s);
+		
+		if (mode == ANY)
+			throw Exception("Illegal overflow mode: 'any' is only for 'group_by_overflow_mode'", ErrorCodes::ILLEGAL_OVERFLOW_MODE);
+
+		return mode;
 	}
 };
 

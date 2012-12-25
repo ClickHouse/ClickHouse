@@ -2,9 +2,11 @@
 
 #include <boost/function.hpp>
 
-#include <Poco/Stopwatch.h>
+#include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/Names.h>
+
+#include <DB/Interpreters/Limits.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -17,8 +19,8 @@ namespace DB
 struct BlockStreamProfileInfo
 {
 	bool started;
-	Poco::Stopwatch work_stopwatch;		/// Время вычислений (выполнения функции read())
-	Poco::Stopwatch total_stopwatch;	/// Время с учётом ожидания
+	Stopwatch work_stopwatch;		/// Время вычислений (выполнения функции read())
+	Stopwatch total_stopwatch;	/// Время с учётом ожидания
 
 	size_t rows;
 	size_t blocks;
@@ -79,10 +81,41 @@ public:
 		return is_cancelled;
 	}
 
+	/// Используется подмножество ограничений из Limits.
+	struct LocalLimits
+	{
+		size_t max_rows_to_read;
+		size_t max_bytes_to_read;
+		Limits::OverflowMode read_overflow_mode;
+
+		Poco::Timespan max_execution_time;
+		Limits::OverflowMode timeout_overflow_mode;
+
+		/// В строчках в секунду.
+		size_t min_execution_speed;
+		/// Проверять, что скорость не слишком низкая, после прошествия указанного времени.
+		Poco::Timespan timeout_before_checking_execution_speed;
+
+		LocalLimits()
+			: max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(Limits::THROW),
+			max_execution_time(0), timeout_overflow_mode(Limits::THROW),
+			min_execution_speed(0), timeout_before_checking_execution_speed(0)
+		{
+		}
+	};
+
+	/** Установить ограничения для проверки на каждый блок. */
+	void setLimits(const LocalLimits & limits_)
+	{
+		limits = limits_;
+	}
+
 protected:
 	BlockStreamProfileInfo info;
 	volatile bool is_cancelled;
 	ProgressCallback progress_callback;
+
+	LocalLimits limits;
 
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;

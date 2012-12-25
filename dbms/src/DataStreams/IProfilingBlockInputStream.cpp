@@ -23,7 +23,11 @@ void BlockStreamProfileInfo::update(Block & block)
 
 void BlockStreamProfileInfo::print(std::ostream & ostr) const
 {
-	Poco::Timestamp::TimeDiff nested_elapsed = 0;
+	UInt64 elapsed 			= work_stopwatch.elapsed();
+	UInt64 nested_elapsed	= 0;
+	double elapsed_seconds	= work_stopwatch.elapsedSeconds();
+	double nested_elapsed_seconds = 0;
+	
 	UInt64 nested_rows 		= 0;
 	UInt64 nested_blocks 	= 0;
 	UInt64 nested_bytes 	= 0;
@@ -33,7 +37,11 @@ void BlockStreamProfileInfo::print(std::ostream & ostr) const
 		for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
 		{
 			if ((*it)->work_stopwatch.elapsed() > nested_elapsed)
+			{
 				nested_elapsed = (*it)->work_stopwatch.elapsed();
+				nested_elapsed_seconds = (*it)->work_stopwatch.elapsedSeconds();
+			}
+			
 			nested_rows 	+= (*it)->rows;
 			nested_blocks	+= (*it)->blocks;
 			nested_bytes 	+= (*it)->bytes;
@@ -42,30 +50,30 @@ void BlockStreamProfileInfo::print(std::ostream & ostr) const
 	
 	ostr 	<< std::fixed << std::setprecision(2)
 			<< "Columns: " << column_names << std::endl
-			<< "Elapsed:        " << work_stopwatch.elapsed() / 1000000.0 << " sec. "
-			<< "(" << work_stopwatch.elapsed() * 100.0 / total_stopwatch.elapsed() << "%), " << std::endl;
+			<< "Elapsed:        " << elapsed_seconds << " sec. "
+			<< "(" << elapsed * 100.0 / total_stopwatch.elapsed() << "%), " << std::endl;
 
 	if (!nested_infos.empty())
 	{
-		double self_percents = (work_stopwatch.elapsed() - nested_elapsed) * 100.0 / total_stopwatch.elapsed();
+		double self_percents = (elapsed - nested_elapsed) * 100.0 / total_stopwatch.elapsed();
 		
-		ostr<< "Elapsed (self): " << (work_stopwatch.elapsed() - nested_elapsed) / 1000000.0 << " sec. "
+		ostr<< "Elapsed (self): " << (elapsed_seconds - nested_elapsed_seconds) << " sec. "
 			<< "(" << (self_percents >= 50 ? "\033[1;31m" : (self_percents >= 10 ? "\033[1;33m" : ""))	/// Раскраска больших значений
 				<< self_percents << "%"
 				<< (self_percents >= 10 ? "\033[0m" : "") << "), " << std::endl
-			<< "Rows (in):      " << nested_rows << ", per second: " << nested_rows * 1000000 / work_stopwatch.elapsed() << ", " << std::endl
-			<< "Blocks (in):    " << nested_blocks << ", per second: " << nested_blocks * 1000000.0 / work_stopwatch.elapsed() << ", " << std::endl
+			<< "Rows (in):      " << nested_rows << ", per second: " << nested_rows / elapsed_seconds << ", " << std::endl
+			<< "Blocks (in):    " << nested_blocks << ", per second: " << nested_blocks / elapsed_seconds << ", " << std::endl
 			<< "                " << nested_bytes / 1000000.0 << " MB (memory), "
-				<< nested_bytes / work_stopwatch.elapsed() << " MB/s (memory), " << std::endl;
+				<< nested_bytes * 1000 / elapsed << " MB/s (memory), " << std::endl;
 
 		if (self_percents > 0.1)
-			ostr << "Rows per second (in, self): " << (nested_rows * 1000000 / (work_stopwatch.elapsed() - nested_elapsed))
-				<< ", " << (work_stopwatch.elapsed() - nested_elapsed) * 1000 / nested_rows << " ns/row, " << std::endl;
+			ostr << "Rows per second (in, self): " << (nested_rows / (elapsed_seconds - nested_elapsed_seconds))
+				<< ", " << (elapsed - nested_elapsed) / nested_rows << " ns/row, " << std::endl;
 	}
 		
-	ostr 	<< "Rows (out):     " << rows << ", per second: " << rows * 1000000 / work_stopwatch.elapsed() << ", " << std::endl
-			<< "Blocks (out):   " << blocks << ", per second: " << blocks * 1000000.0 / work_stopwatch.elapsed() << ", " << std::endl
-			<< "                " << bytes / 1000000.0 << " MB (memory), " << bytes / work_stopwatch.elapsed() << " MB/s (memory), " << std::endl
+	ostr 	<< "Rows (out):     " << rows << ", per second: " << rows / elapsed_seconds << ", " << std::endl
+			<< "Blocks (out):   " << blocks << ", per second: " << blocks / elapsed_seconds << ", " << std::endl
+			<< "                " << bytes / 1000000.0 << " MB (memory), " << bytes * 1000 / elapsed << " MB/s (memory), " << std::endl
 			<< "Average block size (out): " << rows / blocks << "." << std::endl;
 }
 
@@ -123,6 +131,43 @@ Block IProfilingBlockInputStream::read()
 	}
 
 	progress(res);
+
+	/// Проверка ограничений.
+	if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
+	{
+		if (limits.read_overflow_mode == Limits::THROW)
+			throw Exception("Limit for rows to read exceeded: read " + Poco::NumberFormatter::format(info.rows)
+				+ " rows, maximum: " + Poco::NumberFormatter::format(limits.max_rows_to_read),
+				ErrorCodes::TOO_MUCH_ROWS);
+
+		if (limits.read_overflow_mode == Limits::THROW)
+			return Block();
+
+		throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	if (limits.max_execution_time != 0
+		&& info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
+	{
+		if (limits.timeout_overflow_mode == Limits::THROW)
+			throw Exception("Timeout exceeded: elapsed " + Poco::NumberFormatter::format(info.total_stopwatch.elapsedSeconds())
+				+ " seconds, maximum: " + Poco::NumberFormatter::format(limits.max_execution_time.totalMicroseconds() / 1000000.0),
+			ErrorCodes::TIMEOUT_EXCEEDED);
+
+		if (limits.timeout_overflow_mode == Limits::THROW)
+			return Block();
+
+		throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	if (limits.min_execution_speed
+		&& info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.timeout_before_checking_execution_speed.totalMicroseconds()) * 1000
+		&& info.rows / info.total_stopwatch.elapsedSeconds() < limits.min_execution_speed)
+	{
+		throw Exception("Query is executing too slow: " + Poco::NumberFormatter::format(info.rows / info.total_stopwatch.elapsedSeconds())
+			+ " rows/sec., minimum: " + Poco::NumberFormatter::format(limits.min_execution_speed),
+			ErrorCodes::TOO_SLOW);
+	}
 	
 	return res;
 }
