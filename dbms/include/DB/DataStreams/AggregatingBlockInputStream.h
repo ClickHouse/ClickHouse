@@ -19,8 +19,9 @@ using Poco::SharedPtr;
 class AggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
-		: input(input_), aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false)
+	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
+		size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
+		: input(input_), aggregator(new Aggregator(keys_, aggregates_, max_rows_to_group_by_, group_by_overflow_mode_)), has_been_read(false)
 	{
 		children.push_back(input);
 	}
@@ -29,7 +30,8 @@ public:
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
+	AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression,
+		size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_);
 
 	String getName() const { return "AggregatingBlockInputStream"; }
 

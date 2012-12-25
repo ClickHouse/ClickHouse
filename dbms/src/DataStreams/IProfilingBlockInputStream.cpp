@@ -141,7 +141,7 @@ Block IProfilingBlockInputStream::read()
 				+ " rows, maximum: " + Poco::NumberFormatter::format(limits.max_rows_to_read),
 				ErrorCodes::TOO_MUCH_ROWS);
 
-		if (limits.read_overflow_mode == Limits::THROW)
+		if (limits.read_overflow_mode == Limits::BREAK)
 			return Block();
 
 		throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);
@@ -155,7 +155,7 @@ Block IProfilingBlockInputStream::read()
 				+ " seconds, maximum: " + Poco::NumberFormatter::format(limits.max_execution_time.totalMicroseconds() / 1000000.0),
 			ErrorCodes::TIMEOUT_EXCEEDED);
 
-		if (limits.timeout_overflow_mode == Limits::THROW)
+		if (limits.timeout_overflow_mode == Limits::BREAK)
 			return Block();
 
 		throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);

@@ -21,8 +21,10 @@ using Poco::SharedPtr;
 class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_, unsigned max_threads_ = 1)
-		: inputs(inputs_), aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false), max_threads(max_threads_), pool(max_threads)
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
+		unsigned max_threads_ = 1, size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		: inputs(inputs_), aggregator(new Aggregator(keys_, aggregates_, max_rows_to_group_by_, group_by_overflow_mode_)),
+		has_been_read(false), max_threads(max_threads_), pool(max_threads)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
@@ -31,7 +33,8 @@ public:
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, ExpressionPtr expression, unsigned max_threads_ = 1)
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, ExpressionPtr expression,
+		unsigned max_threads_ = 1, size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
 		: inputs(inputs_), has_been_read(false), max_threads(max_threads_), pool(max_threads)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
@@ -39,7 +42,7 @@ public:
 		Names key_names;
 		AggregateDescriptions aggregates;
 		expression->getAggregateInfo(key_names, aggregates);
-		aggregator = new Aggregator(key_names, aggregates);
+		aggregator = new Aggregator(key_names, aggregates, max_rows_to_group_by_, group_by_overflow_mode_);
 	}
 
 	String getName() const { return "ParallelAggregatingBlockInputStream"; }

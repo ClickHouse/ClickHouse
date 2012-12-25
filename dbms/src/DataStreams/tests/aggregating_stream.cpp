@@ -117,7 +117,7 @@ int main(int argc, char ** argv)
 		}
 
 		DB::BlockInputStreamPtr stream = new OneBlockInputStream(block);
-		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions);
+		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions, 0, DB::Limits::THROW);
 		stream = new DB::FinalizingAggregatedBlockInputStream(stream);
 
 		DB::WriteBufferFromOStream ob(std::cout);

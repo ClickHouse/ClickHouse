@@ -124,6 +124,13 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	typedef std::vector<Row> Rows;
 	Rows aggregate_arguments(aggregates_size);
 
+	/** Используется, если есть ограничение на максимальное количество строк при агрегации,
+	  *  и если group_by_overflow_mode == ANY.
+	  * В этом случае, новые ключи не добавляются в набор, а производится агрегация только по
+	  *  ключам, которые уже успели попасть в набор.
+	  */
+	bool no_more_keys = false;
+
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
@@ -194,7 +201,16 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				AggregatedDataWithUInt64Key::iterator it;
 				bool inserted;
-				res.emplace(key, it, inserted);
+
+				if (!no_more_keys)
+					res.emplace(key, it, inserted);
+				else
+				{
+					inserted = false;
+					it = res.find(key);
+					if (res.end() == it)
+						continue;
+				}
 				
 				if (inserted)
 				{
@@ -232,7 +248,16 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;
-					res.emplace(ref, it, inserted);
+
+					if (!no_more_keys)
+						res.emplace(ref, it, inserted);
+					else
+					{
+						inserted = false;
+						it = res.find(ref);
+						if (res.end() == it)
+							continue;
+					}
 
 					if (inserted)
 					{
@@ -266,7 +291,16 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;
-					res.emplace(ref, it, inserted);
+
+					if (!no_more_keys)
+						res.emplace(ref, it, inserted);
+					else
+					{
+						inserted = false;
+						it = res.find(ref);
+						if (res.end() == it)
+							continue;
+					}
 
 					if (inserted)
 					{
@@ -299,7 +333,17 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			{
 				AggregatedDataHashed::iterator it;
 				bool inserted;
-				res.emplace(pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes), it, inserted);
+				UInt128 key128 = pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes);
+
+				if (!no_more_keys)
+					res.emplace(key128, it, inserted);
+				else
+				{
+					inserted = false;
+					it = res.find(key128);
+					if (res.end() == it)
+						continue;
+				}
 
 				if (inserted)
 				{
@@ -334,6 +378,9 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				AggregatedData::iterator it = res.find(key);
 				if (it == res.end())
 				{
+					if (no_more_keys)
+						continue;
+					
 					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
 
 					for (size_t j = 0; j < aggregates_size; ++j)
@@ -352,6 +399,21 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		}
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+		/// Проверка ограничений.
+		if (!no_more_keys && max_rows_to_group_by && result.size() > max_rows_to_group_by)
+		{
+			if (group_by_overflow_mode == Limits::THROW)
+				throw Exception("Limit for rows to GROUP BY exceeded: has " + Poco::NumberFormatter::format(result.size())
+					+ " rows, maximum: " + Poco::NumberFormatter::format(max_rows_to_group_by),
+					ErrorCodes::TOO_MUCH_ROWS);
+			else if (group_by_overflow_mode == Limits::BREAK)
+				break;
+			else if (group_by_overflow_mode == Limits::ANY)
+				no_more_keys = true;
+			else
+				throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		}
 	}
 }
 

@@ -17,6 +17,7 @@
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 
 #include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Interpreters/Limits.h>
 
 
 namespace DB
@@ -79,7 +80,23 @@ struct AggregatedDataVariants
 	Type type;
 
 	AggregatedDataVariants() : type(EMPTY) {}
-	bool empty() { return type == EMPTY; }
+	bool empty() const { return type == EMPTY; }
+
+	size_t size() const
+	{
+		switch (type)
+		{
+			case EMPTY:			return 0;
+			case GENERIC:		return generic.size();
+			case WITHOUT_KEY:	return 1;
+			case KEY_64:		return key64.size();
+			case KEY_STRING:	return key_string.size();
+			case HASHED:		return hashed.size();
+
+			default:
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		}
+	}
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
@@ -91,13 +108,19 @@ typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 class Aggregator
 {
 public:
-	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
-		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), initialized(false), log(&Logger::get("Aggregator"))
+	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
+		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), initialized(false),
+		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
+		log(&Logger::get("Aggregator"))
 	{
 	}
 
-	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_)
-		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), initialized(false), log(&Logger::get("Aggregator"))
+	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_,
+		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), initialized(false),
+		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
+		log(&Logger::get("Aggregator"))
 	{
 	}
 
@@ -127,6 +150,9 @@ private:
 	/// Для инициализации от первого блока при конкуррентном использовании.
 	bool initialized;
 	Poco::FastMutex mutex;
+
+	size_t max_rows_to_group_by;
+	Limits::OverflowMode group_by_overflow_mode;
 
 	Block sample;
 

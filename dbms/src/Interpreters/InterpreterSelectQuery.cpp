@@ -270,6 +270,26 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (streams.size() > settings.max_threads)
 		streams = narrowBlockInputStreams(streams, settings.max_threads);
 
+	/** Установка ограничений на чтение данных.
+	  * Они устанавливаются на самые "глубокие" чтения.
+	  * То есть, не должны устанавливаться для чтений из удалённых серверов и подзапросов.
+	  */
+	if (table && !table->isRemote())
+	{
+		IProfilingBlockInputStream::LocalLimits limits;
+		limits.max_rows_to_read = settings.limits.max_rows_to_read;
+		limits.max_bytes_to_read = settings.limits.max_bytes_to_read;
+		limits.read_overflow_mode = settings.limits.read_overflow_mode;
+		limits.max_execution_time = settings.limits.max_execution_time;
+		limits.timeout_overflow_mode = settings.limits.timeout_overflow_mode;
+		limits.min_execution_speed = settings.limits.min_execution_speed;
+		limits.timeout_before_checking_execution_speed = settings.limits.timeout_before_checking_execution_speed;
+		
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+				stream->setLimits(limits);
+	}
+
 	return from_stage;
 }
 
@@ -330,11 +350,13 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, settings.max_threads), settings.asynchronous);
+		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, settings.max_threads,
+			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 		streams.resize(1);
 	}
 	else
-		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, expression), settings.asynchronous);
+		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, expression,
+			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 }
 
 

@@ -12,6 +12,7 @@ namespace DB
   * Используются, чтобы обеспечить более безопасное исполнение запросов из пользовательского интерфейса.
   * В основном, ограничения проверяются на каждый блок (а не на каждую строку). То есть, ограничения могут быть немного нарушены.
   * Почти все ограничения действуют только на SELECT-ы.
+  * Почти все ограничения действуют на каждый поток по отдельности.
   */
 struct Limits
 {
@@ -30,7 +31,6 @@ struct Limits
 	OverflowMode read_overflow_mode;
 
 	size_t max_rows_to_group_by;
-	size_t max_bytes_to_group_by;
 	OverflowMode group_by_overflow_mode;
 	
 	size_t max_rows_to_sort;
@@ -63,7 +63,7 @@ struct Limits
 	/// По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
 	Limits() :
 		max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(THROW),
-		max_rows_to_group_by(0), max_bytes_to_group_by(0), group_by_overflow_mode(THROW),
+		max_rows_to_group_by(0), group_by_overflow_mode(THROW),
 		max_rows_to_sort(0), max_bytes_to_sort(0), sort_overflow_mode(THROW),
 		max_result_rows(0), max_result_bytes(0), result_overflow_mode(THROW),
 		max_execution_time(0), timeout_overflow_mode(THROW),
@@ -82,7 +82,6 @@ struct Limits
 		else if (name == "read_overflow_mode")		read_overflow_mode 		= getOverflowMode(boost::get<const String &>(value));
 
 		else if (name == "max_rows_to_group_by")	max_rows_to_group_by 	= boost::get<UInt64>(value);
-		else if (name == "max_bytes_to_group_by")	max_bytes_to_group_by 	= boost::get<UInt64>(value);
 		else if (name == "group_by_overflow_mode")	group_by_overflow_mode 	= getOverflowModeForGroupBy(boost::get<const String &>(value));
 
 		else if (name == "max_rows_to_sort")		max_rows_to_sort 		= boost::get<UInt64>(value);
