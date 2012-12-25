@@ -63,7 +63,7 @@ struct Limits
 	size_t max_expression_depth;				// TODO
 	size_t max_expression_elements;				// TODO
 
-	bool readonly;								// TODO
+	bool readonly;
 	
 	/// По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
 	Limits() :
