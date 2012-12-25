@@ -133,7 +133,8 @@ Block IProfilingBlockInputStream::read()
 	progress(res);
 
 	/// Проверка ограничений.
-	if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
+	if ((limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
+		|| (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read))
 	{
 		if (limits.read_overflow_mode == Limits::THROW)
 			throw Exception("Limit for rows to read exceeded: read " + Poco::NumberFormatter::format(info.rows)
