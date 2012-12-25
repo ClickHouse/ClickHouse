@@ -29,11 +29,15 @@ namespace DB
 {
 
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_)
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
+	size_t subquery_depth_)
 	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), settings(context.getSettings()), to_stage(to_stage_),
+	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
+	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
+		throw Exception("Too deep subqueries. Maximum: " + Poco::NumberFormatter::format(settings.limits.max_subquery_depth),
+			ErrorCodes::TOO_DEEP_SUBQUERIES);
 }
 
 
@@ -188,6 +192,18 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	}
 
 	executeUnion(streams, expression);
+
+	/// Ограничения на результат
+	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
+	{
+		IProfilingBlockInputStream::LocalLimits limits;
+		limits.max_rows_to_read = settings.limits.max_result_rows;
+		limits.max_bytes_to_read = settings.limits.max_result_bytes;
+		limits.read_overflow_mode = settings.limits.result_overflow_mode;
+
+		stream->setLimits(limits);
+	}
+	
 	return streams[0];
 }
 
@@ -218,7 +234,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
 		table = getTable();
 	else
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context);
+		interpreter_subquery = new InterpreterSelectQuery(query.table, context, QueryProcessingStage::Complete, subquery_depth + 1);
 
 	if (query.sample_size && (!table || !table->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -235,6 +251,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = expression->getRequiredColumns();
+
+	/// Ограничение на количество столбцов для чтения.
+	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
+		throw Exception("Limit for number of columns to read exceeded. "
+			"Requested: " + Poco::NumberFormatter::format(required_columns.size())
+			+ ", maximum: " + Poco::NumberFormatter::format(settings.limits.max_columns_to_read),
+			ErrorCodes::TOO_MUCH_COLUMNS);
 
 	/// Если не указан ни один столбец из таблицы, то будем читать первый попавшийся (чтобы хотя бы знать число строк).
 	if (required_columns.empty())
@@ -444,7 +467,16 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams, Expressio
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = maybeAsynchronous(new PartialSortingBlockInputStream(stream, order_descr), is_async);
+			IProfilingBlockInputStream * sorting_stream = new PartialSortingBlockInputStream(stream, order_descr);
+
+			/// Ограничения на сортировку
+			IProfilingBlockInputStream::LocalLimits limits;
+			limits.max_rows_to_read = settings.limits.max_rows_to_sort;
+			limits.max_bytes_to_read = settings.limits.max_bytes_to_sort;
+			limits.read_overflow_mode = settings.limits.sort_overflow_mode;
+			sorting_stream->setLimits(limits);
+			
+			stream = maybeAsynchronous(sorting_stream, is_async);
 		}
 
 		BlockInputStreamPtr & stream = streams[0];
@@ -456,7 +488,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams, Expressio
 			streams.resize(1);
 		}
 
-		/// Сливаем сортированные блоки
+		/// Сливаем сортированные блоки TODO: таймаут на слияние.
 		stream = maybeAsynchronous(new MergeSortingBlockInputStream(stream, order_descr), is_async);
 
 		/// Оставим только столбцы, нужные для SELECT части

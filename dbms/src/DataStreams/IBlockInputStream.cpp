@@ -28,6 +28,31 @@ String IBlockInputStream::getTreeID() const
 	return s.str();
 }
 
+
+size_t IBlockInputStream::checkDepth(size_t max_depth) const
+{
+	return checkDepthImpl(max_depth, max_depth);
+}
+
+size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t remaining_depth) const
+{
+	if (children.empty())
+		return 0;
+
+	if (remaining_depth == 0)
+		throw Exception("Query pipeline is too deep. Maximum: " + Poco::NumberFormatter::format(max_depth), ErrorCodes::TOO_DEEP_PIPELINE);
+
+	size_t res = 0;
+	for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+	{
+		size_t child_depth = (*it)->checkDepth(remaining_depth - 1);
+		if (child_depth > res)
+			res = child_depth;
+	}
+
+	return res + 1;
+}
+
 	
 void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier)
 {

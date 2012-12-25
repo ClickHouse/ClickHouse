@@ -16,7 +16,8 @@ namespace DB
 class InterpreterSelectQuery
 {
 public:
-	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete);
+	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+		size_t subquery_depth_ = 0);
 
 	/// Выполнить запрос, получить поток блоков для чтения
 	BlockInputStreamPtr execute();
@@ -87,6 +88,7 @@ private:
 	Context context;
 	Settings settings;
 	QueryProcessingStage::Enum to_stage;
+	size_t subquery_depth;
 
 	Logger * log;
 };

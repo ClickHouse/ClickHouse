@@ -41,21 +41,25 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 	}
 	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterInsertQuery interpreter(query_ptr, context);
 		interpreter.execute(remaining_data_istr);
 	}
 	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterCreateQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterDropQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else if (dynamic_cast<ASTRenameQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterRenameQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
@@ -71,11 +75,13 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 	}
 	else if (dynamic_cast<ASTSetQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterSetQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else if (dynamic_cast<ASTOptimizeQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterOptimizeQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
@@ -101,22 +107,26 @@ BlockIO InterpreterQuery::execute()
 	}
 	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterInsertQuery interpreter(query_ptr, context);
 		res.out = interpreter.execute();
 		res.out_sample = interpreter.getSampleBlock();
 	}
 	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterCreateQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterDropQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else if (dynamic_cast<ASTRenameQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterRenameQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
@@ -132,11 +142,13 @@ BlockIO InterpreterQuery::execute()
 	}
 	else if (dynamic_cast<ASTSetQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterSetQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
 	else if (dynamic_cast<ASTOptimizeQuery *>(&*query_ptr))
 	{
+		throwIfReadOnly();
 		InterpreterOptimizeQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}

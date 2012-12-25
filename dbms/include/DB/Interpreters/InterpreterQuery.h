@@ -38,6 +38,12 @@ private:
 	ASTPtr query_ptr;
 	Context context;
 	QueryProcessingStage::Enum stage;
+
+	void throwIfReadOnly()
+	{
+		if (context.getSettingsRef().limits.readonly)
+			throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
+	}
 };
 
 

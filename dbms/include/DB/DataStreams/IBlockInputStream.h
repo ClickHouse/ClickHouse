@@ -59,11 +59,18 @@ public:
 	  */
 	String getTreeID() const;
 
+	/** Проверить глубину конвейера.
+	  * Если задано max_depth и глубина больше - кинуть исключение.
+	  */
+	size_t checkDepth(size_t max_depth) const;
+
 protected:
 	BlockInputStreams children;
 
 private:
 	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = NULL);
+
+	size_t checkDepthImpl(size_t max_depth, size_t remaining_depth) const;
 };
 
 

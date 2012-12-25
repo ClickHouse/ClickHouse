@@ -26,6 +26,10 @@ struct Limits
 				  */
 	};
 
+	/** Ограничения на чтение из самых "глубоких" источников.
+	  * То есть, только в самом глубоком подзапросе.
+	  * При чтении с удалённого сервера, проверяется только на удалённом сервере.
+	  */
 	size_t max_rows_to_read;
 	size_t max_bytes_to_read;
 	OverflowMode read_overflow_mode;
@@ -37,28 +41,29 @@ struct Limits
 	size_t max_bytes_to_sort;
 	OverflowMode sort_overflow_mode;
 
+	/** Ограничение на размер результата.
+	  * Проверяются также для подзапросов и на удалённых серверах.
+	  */
 	size_t max_result_rows;
 	size_t max_result_bytes;
 	OverflowMode result_overflow_mode;
 
-	Poco::Timespan max_execution_time;
+	Poco::Timespan max_execution_time;	// TODO: Проверять также при merge стадии сортировки, при слиянии и финализации агрегатных функций.
 	OverflowMode timeout_overflow_mode;
 
 	size_t min_execution_speed;								/// В строчках в секунду.
 	Poco::Timespan timeout_before_checking_execution_speed;	/// Проверять, что скорость не слишком низкая, после прошествия указанного времени.
 
 	size_t max_columns_to_read;
-	size_t max_temporary_columns;
-	size_t max_temporary_non_const_columns;
+	size_t max_temporary_columns;				// TODO
+	size_t max_temporary_non_const_columns;		// TODO
 
 	size_t max_subquery_depth;
 	size_t max_pipeline_depth;
-	size_t max_expression_depth;
-	size_t max_expression_elements;
+	size_t max_expression_depth;				// TODO
+	size_t max_expression_elements;				// TODO
 
-	bool allow_full_scan_for_table_with_index;
-
-	bool readonly;
+	bool readonly;								// TODO
 	
 	/// По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
 	Limits() :
@@ -70,7 +75,7 @@ struct Limits
 		min_execution_speed(0), timeout_before_checking_execution_speed(0),
 		max_columns_to_read(0), max_temporary_columns(0), max_temporary_non_const_columns(0),
 		max_subquery_depth(100), max_pipeline_depth(1000), max_expression_depth(1000), max_expression_elements(10000),
-		allow_full_scan_for_table_with_index(true), readonly(false)
+		readonly(false)
 	{
 	}
 
@@ -109,8 +114,6 @@ struct Limits
 		else if (name == "max_expression_depth")	max_expression_depth 	= boost::get<UInt64>(value);
 		else if (name == "max_expression_elements")	max_expression_elements = boost::get<UInt64>(value);
 
-		else if (name == "allow_full_scan_for_table_with_index")
-			allow_full_scan_for_table_with_index 							= boost::get<UInt64>(value);
 		else if (name == "readonly")				readonly 				= boost::get<UInt64>(value);
 		else
 			return false;
