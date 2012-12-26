@@ -51,7 +51,7 @@ public:
 			T bit = static_cast<T>(1) << i;
 			if (x & bit)
 			{
-				if (first)
+				if (!first)
 					out.write(",", 1);
 				first = false;
 				writeIntText(bit, out);
