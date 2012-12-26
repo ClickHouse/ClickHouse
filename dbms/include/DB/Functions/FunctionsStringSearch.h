@@ -32,7 +32,7 @@ namespace DB
   * replaceOne(haystack, pattern, replacement) - замена шаблона по заданным правилам, только первое вхождение.
   * replaceAll(haystack, pattern, replacement) - замена шаблона по заданным правилам, все вхождения.
   *
-  * Внимание! На данный момент, аргементы needle, pattern, n, replacement обязаны быть константами.
+  * Внимание! На данный момент, аргументы needle, pattern, n, replacement обязаны быть константами.
   */
 
 
