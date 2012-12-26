@@ -15,9 +15,10 @@
 #include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionsDictionaries.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/Functions/FunctionsRound.h>
+#include <DB/Functions/FunctionsReinterpret.h>
 
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsRound.h>
 
 
 namespace DB
@@ -86,6 +87,20 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "toDateTime")					return new FunctionToDateTime;
 	else if (name == "toString")					return new FunctionToString;
 
+	else if (name == "reinterpretAsUInt8")			return new FunctionReinterpretAsUInt8;
+	else if (name == "reinterpretAsUInt16")		return new FunctionReinterpretAsUInt16;
+	else if (name == "reinterpretAsUInt32")		return new FunctionReinterpretAsUInt32;
+	else if (name == "reinterpretAsUInt64")		return new FunctionReinterpretAsUInt64;
+	else if (name == "reinterpretAsInt8")			return new FunctionReinterpretAsInt8;
+	else if (name == "reinterpretAsInt16")			return new FunctionReinterpretAsInt16;
+	else if (name == "reinterpretAsInt32")			return new FunctionReinterpretAsInt32;
+	else if (name == "reinterpretAsInt64")			return new FunctionReinterpretAsInt64;
+	else if (name == "reinterpretAsFloat32")		return new FunctionReinterpretAsFloat32;
+	else if (name == "reinterpretAsFloat64")		return new FunctionReinterpretAsFloat64;
+	else if (name == "reinterpretAsDate")			return new FunctionReinterpretAsDate;
+	else if (name == "reinterpretAsDateTime")		return new FunctionReinterpretAsDateTime;
+	else if (name == "reinterpretAsString")		return new FunctionReinterpretAsString;
+	
 	else if (name == "toYear")						return new FunctionToYear;
 	else if (name == "toMonth")						return new FunctionToMonth;
 	else if (name == "toDayOfMonth")				return new FunctionToDayOfMonth;
