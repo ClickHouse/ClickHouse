@@ -17,6 +17,7 @@
 #include <DB/Functions/FunctionsMiscellaneous.h>
 #include <DB/Functions/FunctionsRound.h>
 #include <DB/Functions/FunctionsReinterpret.h>
+#include <DB/Functions/FunctionsFormatting.h>
 
 #include <DB/Functions/FunctionFactory.h>
 
@@ -72,6 +73,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "concat")						return new FunctionConcat;
 	else if (name == "substring")					return new FunctionSubstring;
 	else if (name == "substringUTF8")				return new FunctionSubstringUTF8;
+	else if (name == "bitmaskToList")				return new FunctionBitmaskToList;
 
 	else if (name == "toUInt8")						return new FunctionToUInt8;
 	else if (name == "toUInt16")					return new FunctionToUInt16;

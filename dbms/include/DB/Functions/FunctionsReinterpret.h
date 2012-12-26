@@ -84,8 +84,7 @@ public:
 			while (!res.empty() && res[res.length() - 1] == '\0')
 				res.erase(res.end() - 1);
 			
-			block.getByPosition(result).column =
-				new ColumnConstString(col_from->size(), res);
+			block.getByPosition(result).column = new ColumnConstString(col_from->size(), res);
 		}
 		else
 		{
