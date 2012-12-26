@@ -518,8 +518,8 @@ void QueryConverter::fillFormattedAttributeMap()
 	
 	M("WindowClientArea",     "concat(concat(toString(WindowClientWidth),'x'),toString(WindowClientHeight))")
 	
-	M("UserAgent",            "concat(concat(concat(toString(UserAgent), ' '), toString(UserAgentMajor)), UserAgentMinor == 0 ? '' : concat('.', reinterpretAsString(UserAgentMinor)))")
-	M("UserAgentVersion",     "concat(toString(UserAgentMajor), UserAgentMinor == 0 ? '' : concat('.', reinterpretAsString(UserAgentMinor)))")
+	M("UserAgent",            "concat(concat(concat(toString(UserAgent), ' '), toString(UserAgentMajor)), UserAgentMinor == 0 ? '' : concat('.', trimRight(reinterpretAsString(UserAgentMinor))))")
+	M("UserAgentVersion",     "concat(toString(UserAgentMajor), UserAgentMinor == 0 ? '' : concat('.', trimRight(reinterpretAsString(UserAgentMinor))))")
 	M("UserAgentMajor",       "concat(concat(toString(UserAgent), ' '), toString(UserAgentMajor))")
 #undef M	
 }
@@ -530,7 +530,7 @@ void QueryConverter::fillFormattingAggregatedAttributeMap()
 	std::string todate = "toDate(toDateTime(%s))";
 	std::string todatetime = "toDateTime(%s)";
 	std::string cuttime = "substring(toString(toDateTime(%s)), 12, 8)";
-	std::string tostring = "reinterpretAsString(%s)";
+	std::string tostring = "trimRight(reinterpretAsString(%s))";
 
 	M("VisitStartDateTime",   todatetime)
 	M("VisitStartDate",       todate)
@@ -569,8 +569,8 @@ void QueryConverter::fillFormattingAggregatedAttributeMap()
 	
 	M("WindowClientArea",     "concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) % 65536))")
 	
-	M("UserAgent",            "concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)), ' '), toString(intDiv(toUInt32(%[0]s), 65536) % 256)), (toUInt32(%[0]s) % 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) % 65536)))")
-	M("UserAgentVersion",     "concat(toString(intDiv(toUInt32(%[0]s), 65536)), (toUInt32(%[0]s) % 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) % 65536)))")
+	M("UserAgent",            "concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)), ' '), toString(intDiv(toUInt32(%[0]s), 65536) % 256)), (toUInt32(%[0]s) % 65536) == 0 ? '' : concat('.', trimRight(reinterpretAsString(toUInt32(%[0]s) % 65536))))")
+	M("UserAgentVersion",     "concat(toString(intDiv(toUInt32(%[0]s), 65536)), (toUInt32(%[0]s) % 65536) == 0 ? '' : concat('.', trimRight(reinterpretAsString(toUInt32(%[0]s) % 65536))))")
 	M("UserAgentMajor",       "concat(concat(toString(intDiv(toUInt32(%[0]s), 256)), ' '), toString(toUInt32(%[0]s) % 256))")
 	
 	M("Interests",            "bitmaskToList(%s)")

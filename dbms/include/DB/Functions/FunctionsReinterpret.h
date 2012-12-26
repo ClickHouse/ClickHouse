@@ -39,7 +39,7 @@ public:
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		const IDataType * type = &*arguments[0];
-		if (type->isNumeric() &&
+		if (!type->isNumeric() &&
 			!dynamic_cast<const DataTypeDate *>(type) &&
 			!dynamic_cast<const DataTypeDateTime *>(type))
 			throw Exception("Cannot reinterpret " + type->getName() + " as String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
