@@ -138,8 +138,6 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
-		
 		if (ColumnString * col_from = dynamic_cast<ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_res = new ColumnVector<ToFieldType>;
