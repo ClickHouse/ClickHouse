@@ -35,8 +35,8 @@ public:
 		const IDataType * type = &*arguments[0];
 		
 		if (!type->isNumeric() ||
-			!dynamic_cast<const DataTypeFloat32 *>(type) ||
-			!dynamic_cast<const DataTypeFloat64 *>(type))
+			dynamic_cast<const DataTypeFloat32 *>(type) ||
+			dynamic_cast<const DataTypeFloat64 *>(type))
 			throw Exception("Cannot format " + type->getName() + " as bitmask String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
 		return new DataTypeString;
