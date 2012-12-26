@@ -89,8 +89,6 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
-		
 		if (!(	executeType<UInt8>(block, arguments, result)
 			||	executeType<UInt16>(block, arguments, result)
 			||	executeType<UInt32>(block, arguments, result)
