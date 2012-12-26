@@ -61,22 +61,31 @@ public:
 			size_t size = vec_from.size();
 			data_to.resize(size * (sizeof(T) + 1));
 			offsets_to.resize(size);
-			
-			WriteBufferFromVector<UInt8> write_buffer(data_to);
+			int pos = 0;
 			
 			for (size_t i = 0; i < size; ++i)
 			{
-				writePODBinary<T>(vec_from[i], write_buffer);
-				writeChar(0, write_buffer);
-				offsets_to[i] = write_buffer.count();
+				memcpy(&data_to[pos], &vec_from[i], sizeof(T));
+				
+				int len = sizeof(T);
+				while (len > 0 && data_to[pos + len - 1] == '\0')
+					--len;
+				
+				pos += len;
+				data_to[pos++] = '\0';
+				
+				offsets_to[i] = pos;
 			}
-			data_to.resize(write_buffer.count());
+			data_to.resize(pos);
 		}
 		else if (const ColumnConst<T> * col_from = dynamic_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
+			std::string res(reinterpret_cast<const char *>(&col_from->getData()), sizeof(T));
+			while (!res.empty() && res[res.length() - 1] == '\0')
+				res.erase(res.end() - 1);
+			
 			block.getByPosition(result).column =
-				new ColumnConstString(col_from->size(),
-					std::string(reinterpret_cast<const char *>(&col_from->getData()), sizeof(T)));
+				new ColumnConstString(col_from->size(), res);
 		}
 		else
 		{
