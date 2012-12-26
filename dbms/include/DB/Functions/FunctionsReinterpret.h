@@ -132,7 +132,7 @@ public:
 			!dynamic_cast<const DataTypeFixedString *>(type))
 			throw Exception("Cannot reinterpret " + type->getName() + " as " + ToDataType().getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
-		return new DataTypeString;
+		return new ToDataType;
 	}
 	
 	/// Выполнить функцию над блоком.
