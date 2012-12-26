@@ -379,6 +379,31 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool o
 
 		block.insert(column);
 	}
+
+	/// Проверка ограничений на максимальное количество столбцов.
+	
+	const Limits & limits = context.getSettingsRef().limits;
+	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
+		throw Exception("Too much temporary columns: " + block.dumpNames()
+			+ ". Maximum: " + Poco::NumberFormatter::format(limits.max_temporary_columns),
+			ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
+
+	size_t non_const_columns = 0;
+	for (size_t i = 0, size = block.columns(); i < size; ++i)
+		if (!block.getByPosition(i).column->isConst())
+			++non_const_columns;
+
+	if (limits.max_temporary_non_const_columns && non_const_columns > limits.max_temporary_non_const_columns)
+	{
+		std::stringstream list_of_non_const_columns;
+		for (size_t i = 0, size = block.columns(); i < size; ++i)
+			if (!block.getByPosition(i).column->isConst())
+				list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
+		
+		throw Exception("Too much temporary non-const columns: " + list_of_non_const_columns.str()
+			+ ". Maximum: " + Poco::NumberFormatter::format(limits.max_temporary_non_const_columns),
+			ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+	}
 }
 
 
@@ -628,13 +653,13 @@ void Expression::markBeforeArrayJoin(unsigned part_id)
 }
 
 
-void Expression::makeSets()
+void Expression::makeSets(size_t subquery_depth)
 {
-	makeSetsImpl(ast);
+	makeSetsImpl(ast, subquery_depth);
 }
 
 
-void Expression::makeSetsImpl(ASTPtr ast)
+void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth)
 {
 	bool made = false;
 	
@@ -663,7 +688,7 @@ void Expression::makeSetsImpl(ASTPtr ast)
 			if (dynamic_cast<ASTSubquery *>(&*arg))
 			{
 				/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
-			    InterpreterSelectQuery interpreter(arg->children[0], context, QueryProcessingStage::Complete);
+			    InterpreterSelectQuery interpreter(arg->children[0], context, QueryProcessingStage::Complete, subquery_depth + 1);
 				ASTSet * ast_set = new ASTSet(arg->getColumnName());
 				ast_set->set = new Set;
 				ast_set->set->create(interpreter.execute());
@@ -702,23 +727,23 @@ void Expression::makeSetsImpl(ASTPtr ast)
 	if (!made)
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			if (!dynamic_cast<ASTSelectQuery *>(&**it))
-				makeSetsImpl(*it);
+				makeSetsImpl(*it, subquery_depth);
 }
 
 
-void Expression::resolveScalarSubqueries()
+void Expression::resolveScalarSubqueries(size_t subquery_depth)
 {
-	resolveScalarSubqueriesImpl(ast);
+	resolveScalarSubqueriesImpl(ast, subquery_depth);
 }
 
 
-void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast)
+void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth)
 {
 	/// Обход в глубину. Ищем подзапросы.
 	if (ASTSubquery * subquery = dynamic_cast<ASTSubquery *>(&*ast))
 	{
 		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
-	    InterpreterSelectQuery interpreter(subquery->children[0], context, QueryProcessingStage::Complete);
+	    InterpreterSelectQuery interpreter(subquery->children[0], context, QueryProcessingStage::Complete, subquery_depth + 1);
 		BlockInputStreamPtr res_stream = interpreter.execute();
 		Block res_block = res_stream->read();
 
@@ -762,7 +787,7 @@ void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast)
 		if (recurse)
 			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 				if (!dynamic_cast<ASTSelectQuery *>(&**it))	/// А также не опускаемся в подзапросы в секции FROM.
-					resolveScalarSubqueriesImpl(*it);
+					resolveScalarSubqueriesImpl(*it, subquery_depth);
 	}
 }
 

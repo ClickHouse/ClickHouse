@@ -8,6 +8,15 @@ namespace DB
 {
 
 
+static void checkLimits(const IAST & ast, const Limits & limits)
+{
+	if (limits.max_ast_depth)
+		ast.checkDepth(limits.max_ast_depth);
+	if (limits.max_ast_elements)
+		ast.checkSize(limits.max_ast_elements);
+}
+	
+
 void executeQuery(
 	ReadBuffer & istr,
 	WriteBuffer & ostr,
@@ -60,6 +69,9 @@ void executeQuery(
 //	formatAST(*ast, std::cerr);
 //	std::cerr << std::endl;
 
+	/// Проверка ограничений.
+	checkLimits(*ast, context.getSettingsRef().limits);
+
 	InterpreterQuery interpreter(ast, context, stage);
 	interpreter.execute(ostr, &istr, query_plan);
 }
@@ -90,6 +102,9 @@ BlockIO executeQuery(
 
 //	formatAST(*ast, std::cerr);
 //	std::cerr << std::endl;
+
+	/// Проверка ограничений.
+	checkLimits(*ast, context.getSettingsRef().limits);
 
 	InterpreterQuery interpreter(ast, context, stage);
 	return interpreter.execute();

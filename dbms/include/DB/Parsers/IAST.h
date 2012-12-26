@@ -4,6 +4,9 @@
 #include <sstream>
 
 #include <Poco/SharedPtr.h>
+#include <Poco/NumberFormatter.h>
+
+#include <Yandex/Common.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
@@ -77,6 +80,33 @@ public:
 		ostr << indent_str << getID() << ", " << this << ", part_id = " << part_id << std::endl;
 		for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
 			(*it)->dumpTree(ostr, indent + 1);
+	}
+
+	/** Проверить глубину дерева.
+	  * Если задано max_depth и глубина больше - кинуть исключение.
+	  */
+	size_t checkDepth(size_t max_depth) const
+	{
+		size_t res = 0;
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			if (max_depth == 0 || (res = (*it)->checkDepth(max_depth - 1)) > max_depth - 1)
+				throw Exception("AST is too deep. Maximum: " + Poco::NumberFormatter::format(max_depth), ErrorCodes::TOO_DEEP_AST);
+
+		return res + 1;
+	}
+	
+	/** То же самое для общего количества элементов дерева.
+	  */
+	size_t checkSize(size_t max_size) const
+	{
+		size_t res = 1;
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			res += (*it)->checkSize(max_size);
+
+		if (res > max_size)
+			throw Exception("AST is too big. Maximum: " + Poco::NumberFormatter::format(max_size), ErrorCodes::TOO_BIG_AST);
+		
+		return res;
 	}
 };
 

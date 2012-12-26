@@ -55,13 +55,13 @@ struct Limits
 	Poco::Timespan timeout_before_checking_execution_speed;	/// Проверять, что скорость не слишком низкая, после прошествия указанного времени.
 
 	size_t max_columns_to_read;
-	size_t max_temporary_columns;				// TODO
-	size_t max_temporary_non_const_columns;		// TODO
+	size_t max_temporary_columns;
+	size_t max_temporary_non_const_columns;
 
 	size_t max_subquery_depth;
 	size_t max_pipeline_depth;
-	size_t max_expression_depth;				// TODO
-	size_t max_expression_elements;				// TODO
+	size_t max_ast_depth;				/// Проверяются не во время парсинга, 
+	size_t max_ast_elements;			///  а уже после парсинга запроса. TODO: циклы при разборе алиасов в Expression.
 
 	bool readonly;
 	
@@ -74,7 +74,7 @@ struct Limits
 		max_execution_time(0), timeout_overflow_mode(THROW),
 		min_execution_speed(0), timeout_before_checking_execution_speed(0),
 		max_columns_to_read(0), max_temporary_columns(0), max_temporary_non_const_columns(0),
-		max_subquery_depth(100), max_pipeline_depth(1000), max_expression_depth(1000), max_expression_elements(10000),
+		max_subquery_depth(100), max_pipeline_depth(1000), max_ast_depth(1000), max_ast_elements(10000),
 		readonly(false)
 	{
 	}
@@ -111,8 +111,8 @@ struct Limits
 
 		else if (name == "max_subquery_depth")		max_subquery_depth 		= boost::get<UInt64>(value);
 		else if (name == "max_pipeline_depth")		max_pipeline_depth 		= boost::get<UInt64>(value);
-		else if (name == "max_expression_depth")	max_expression_depth 	= boost::get<UInt64>(value);
-		else if (name == "max_expression_elements")	max_expression_elements = boost::get<UInt64>(value);
+		else if (name == "max_ast_depth")			max_ast_depth 			= boost::get<UInt64>(value);
+		else if (name == "max_ast_elements")		max_ast_elements 		= boost::get<UInt64>(value);
 
 		else if (name == "readonly")				readonly 				= boost::get<UInt64>(value);
 		else

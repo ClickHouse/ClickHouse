@@ -70,7 +70,7 @@ protected:
 private:
 	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = NULL);
 
-	size_t checkDepthImpl(size_t max_depth, size_t remaining_depth) const;
+	size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
 
 

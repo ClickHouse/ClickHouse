@@ -148,9 +148,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (to_stage > QueryProcessingStage::FetchColumns)
 	{
 		/// Вычислим подзапросы в секции IN.
-		expression->makeSets();
+		expression->makeSets(subquery_depth);
 		/// А также скалярные подзапросы.
-		expression->resolveScalarSubqueries();
+		expression->resolveScalarSubqueries(subquery_depth);
 		
 		/// Нужно ли агрегировать.
 		bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
