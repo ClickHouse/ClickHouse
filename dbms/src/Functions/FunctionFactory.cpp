@@ -160,6 +160,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "arrayElement")				return new FunctionArrayElement;
 	else if (name == "has")							return new FunctionHas;
 	else if (name == "indexOf")						return new FunctionIndexOf;
+	else if (name == "countEqual")					return new FunctionCountEqual;
 
 	else if (name == "alphaTokens")					return new FunctionAlphaTokens;
 	else if (name == "splitByChar")					return new FunctionSplitByChar;

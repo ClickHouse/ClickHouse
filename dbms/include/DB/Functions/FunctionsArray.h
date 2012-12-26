@@ -250,18 +250,26 @@ public:
 };
 
 
-/// Для реализации функции has и indexOf, соответственно.
+/// Для has.
 struct IndexToOne
 {
 	typedef UInt8 ResultType;
-	static inline UInt8 apply(size_t j) { return 1; }
+	static inline bool apply(size_t j, ResultType & current) { current = 1; return false; }
 };
 
+/// Для indexOf.
 struct IndexIdentity
 {
 	typedef UInt64 ResultType;
 	/// Индекс возвращается начиная с единицы.
-	static inline UInt64 apply(size_t j) { return j + 1; }
+	static inline bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
+};
+
+/// Для countEqual.
+struct IndexCount
+{
+	typedef UInt32 ResultType;
+	static inline bool apply(size_t j, ResultType & current) { ++current; return true; }
 };
 
 
@@ -280,16 +288,18 @@ struct ArrayIndexNumImpl
 		for (size_t i = 0; i < size; ++i)
 		{
 			size_t array_size = offsets[i] - current_offset;
-
+			typename IndexConv::ResultType current = 0;
+			
 			for (size_t j = 0; j < array_size; ++j)
 			{
 				if (data[current_offset + j] == value)
 				{
-					result[i] = IndexConv::apply(j);
-					break;
+					if (!IndexConv::apply(j, current))
+						break;
 				}
 			}
-
+			
+			result[i] = current;
 			current_offset = offsets[i];
 		}
 	}
@@ -311,6 +321,7 @@ struct ArrayIndexStringImpl
 		for (size_t i = 0; i < size; ++i)
 		{
 			size_t array_size = offsets[i] - current_offset;
+			typename IndexConv::ResultType current = 0;
 
 			for (size_t j = 0; j < array_size; ++j)
 			{
@@ -322,11 +333,12 @@ struct ArrayIndexStringImpl
 
 				if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
 				{
-					result[i] = IndexConv::apply(j);
-					break;
+					if (!IndexConv::apply(j, current))
+						break;
 				}
 			}
 
+			result[i] = current;
 			current_offset = offsets[i];
 		}
 	}
@@ -400,13 +412,20 @@ private:
 
 		size_t i = 0;
 		size_t size = arr.size();
+		typename IndexConv::ResultType current = 0;
+		
 		for (; i < size; ++i)
+		{
 			if (arr[i] == value)
-				break;
+			{
+				if (!IndexConv::apply(i, current))
+					break;
+			}
+		}
 
 		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
 			block.getByPosition(0).column->size(),
-			UInt64(i == size ? 0 : IndexConv::apply(i)));
+			static_cast<NearestFieldType<typename IndexConv::ResultType>::Type>(current));
 
 		return true;
 	}
@@ -465,11 +484,13 @@ public:
 };
 
 
-struct NameHas 		{ static const char * get() { return "has"; } };
-struct NameIndexOf	{ static const char * get() { return "indexOf"; } };
+struct NameHas			{ static const char * get() { return "has"; } };
+struct NameIndexOf		{ static const char * get() { return "indexOf"; } };
+struct NameCountEqual	{ static const char * get() { return "countEqual"; } };
 
-typedef FunctionArrayIndex<IndexToOne, 		NameHas>		FunctionHas;
+typedef FunctionArrayIndex<IndexToOne, 		NameHas>	FunctionHas;
 typedef FunctionArrayIndex<IndexIdentity, 	NameIndexOf>	FunctionIndexOf;
+typedef FunctionArrayIndex<IndexCount, 	NameCountEqual>	FunctionCountEqual;
 
 
 }
