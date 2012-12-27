@@ -163,6 +163,9 @@ int Server::main(const std::vector<std::string> & args)
 	{
 		olap_parser = new OLAP::QueryParser();
 		olap_converter = new OLAP::QueryConverter(config);
+
+		Poco::Net::HTTPServerParams * olap_http_params = new Poco::Net::HTTPServerParams;
+		olap_http_params->setTimeout(settings.receive_timeout);
 		
 		Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("olap_http_port")));
 		olap_http_socket.setReceiveTimeout(settings.receive_timeout);
@@ -171,7 +174,7 @@ int Server::main(const std::vector<std::string> & args)
 			new HTTPRequestHandlerFactory<OLAPHTTPHandler>(*this, "OLAPHTTPHandler-factory"),
 			server_pool,
 			olap_http_socket,
-			http_params);
+			olap_http_params);
 	}
 
 	http_server.start();
