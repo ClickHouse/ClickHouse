@@ -28,7 +28,7 @@ public:
 	ASTSetQuery(StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "Set"; };
+	String getID() const { return "Set"; };
 
 	ASTPtr clone() const { return new ASTSetQuery(*this); }
 };

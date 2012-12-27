@@ -18,7 +18,7 @@ public:
 	ASTExpressionList(StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "ExpressionList"; }
+	String getID() const { return "ExpressionList"; }
 
 	ASTPtr clone() const
 	{

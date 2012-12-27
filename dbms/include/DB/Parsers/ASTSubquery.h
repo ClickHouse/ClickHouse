@@ -23,11 +23,11 @@ public:
 	ASTSubquery(StringRange range_) : IAST(range_), return_column_number(0) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "Subquery"; };
+	String getID() const { return "Subquery"; };
 
 	ASTPtr clone() const { return new ASTSubquery(*this); }
 
-	String getColumnName() { return getTreeID(); }
+	String getColumnName() const { return getTreeID(); }
 };
 
 }

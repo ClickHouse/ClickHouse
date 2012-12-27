@@ -18,7 +18,7 @@ public:
 	ASTUseQuery(StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "UseQuery_" + database; };
+	String getID() const { return "UseQuery_" + database; };
 
 	ASTPtr clone() const { return new ASTUseQuery(*this); }
 };

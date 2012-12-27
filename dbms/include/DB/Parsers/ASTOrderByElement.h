@@ -20,7 +20,7 @@ public:
 	ASTOrderByElement(StringRange range_, int direction_) : IAST(range_), direction(direction_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "OrderByElement"; }
+	String getID() const { return "OrderByElement"; }
 
 	ASTPtr clone() const { return new ASTOrderByElement(*this); }
 };

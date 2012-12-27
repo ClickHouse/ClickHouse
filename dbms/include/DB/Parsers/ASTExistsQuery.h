@@ -19,7 +19,7 @@ public:
 	ASTExistsQuery(StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "ExistsQuery_" + database + "_" + table; };
+	String getID() const { return "ExistsQuery_" + database + "_" + table; };
 
 	ASTPtr clone() const { return new ASTExistsQuery(*this); }
 };

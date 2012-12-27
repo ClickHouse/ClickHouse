@@ -31,7 +31,7 @@ public:
 	ASTRenameQuery(StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "Rename"; };
+	String getID() const { return "Rename"; };
 
 	ASTPtr clone() const { return new ASTRenameQuery(*this); }
 };

@@ -26,7 +26,7 @@ public:
 	ASTInsertQuery(StringRange range_) : IAST(range_), data(NULL), end(NULL) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "InsertQuery_" + database + "_" + table; };
+	String getID() const { return "InsertQuery_" + database + "_" + table; };
 
 	ASTPtr clone() const
 	{

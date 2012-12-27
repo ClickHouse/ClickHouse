@@ -19,7 +19,7 @@ public:
 	ASTOptimizeQuery(StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "OptimizeQuery_" + database + "_" + table; };
+	String getID() const { return "OptimizeQuery_" + database + "_" + table; };
 
 	ASTPtr clone() const { return new ASTOptimizeQuery(*this); }
 };

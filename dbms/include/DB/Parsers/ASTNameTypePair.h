@@ -21,7 +21,7 @@ public:
     ASTNameTypePair(StringRange range_) : IAST(range_) {}
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "NameTypePair_" + name; }
+	String getID() const { return "NameTypePair_" + name; }
 
 	ASTPtr clone() const
 	{

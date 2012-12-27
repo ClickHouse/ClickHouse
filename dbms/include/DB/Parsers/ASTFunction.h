@@ -34,7 +34,7 @@ public:
 	ASTFunction() {}
 	ASTFunction(StringRange range_) : IAST(range_) {}
 
-	String getColumnName()
+	String getColumnName() const
 	{
 		std::stringstream s;
 		s << name;
@@ -42,7 +42,7 @@ public:
 		if (parameters)
 		{
 			s << "(";
-			for (ASTs::iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
+			for (ASTs::const_iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
 			{
 				if (it != parameters->children.begin())
 					s << ", ";
@@ -52,7 +52,7 @@ public:
 		}
 
 		s << "(";
-		for (ASTs::iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
+		for (ASTs::const_iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
 		{
 			if (it != arguments->children.begin())
 				s << ", ";
@@ -63,10 +63,10 @@ public:
 		return s.str();
 	}
 
-	String getAlias() { return alias.empty() ? getColumnName() : alias; }
+	String getAlias() const { return alias.empty() ? getColumnName() : alias; }
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "Function_" + name; }
+	String getID() const { return "Function_" + name; }
 
 	ASTPtr clone() const
 	{

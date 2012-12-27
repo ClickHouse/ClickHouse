@@ -13,6 +13,8 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Parsers/StringRange.h>
 
+#include <iostream>
+
 
 namespace DB
 {
@@ -40,13 +42,13 @@ public:
 	virtual ~IAST() {}
 
 	/** Получить каноническое имя столбца, если элемент является столбцом */
-	virtual String getColumnName() { throw Exception("Trying to get name of not a column", ErrorCodes::NOT_A_COLUMN); }
+	virtual String getColumnName() const { throw Exception("Trying to get name of not a column", ErrorCodes::NOT_A_COLUMN); }
 
 	/** Получить алиас, если он есть, или каноническое имя столбца; если элемент является столбцом */
-	virtual String getAlias() { return getColumnName(); }
+	virtual String getAlias() const { return getColumnName(); }
 		
 	/** Получить текст, который идентифицирует этот элемент. */
-	virtual String getID() = 0;
+	virtual String getID() const = 0;
 
 	/** Получить глубокую копию дерева. */
 	virtual SharedPtr<IAST> clone() const = 0;
@@ -54,7 +56,7 @@ public:
 	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
 	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей. 
 	  */
-	String getTreeID()
+	String getTreeID() const
 	{
 		std::stringstream s;
 		s << getID();
@@ -62,7 +64,7 @@ public:
 		if (!children.empty())
 		{
 			s << "(";
-			for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+			for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
 			{
 				if (it != children.begin())
 					s << ", ";
@@ -74,11 +76,11 @@ public:
 		return s.str();
 	}
 
-	void dumpTree(std::ostream & ostr, size_t indent = 0)
+	void dumpTree(std::ostream & ostr, size_t indent = 0) const
 	{
 		String indent_str(indent, '-');
 		ostr << indent_str << getID() << ", " << this << ", part_id = " << part_id << std::endl;
-		for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
 			(*it)->dumpTree(ostr, indent + 1);
 	}
 
@@ -89,8 +91,11 @@ public:
 	{
 		size_t res = 0;
 		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+		{
+			std::cerr << getID() << " " << it->isNull() << std::endl;
 			if (max_depth == 0 || (res = (*it)->checkDepth(max_depth - 1)) > max_depth - 1)
 				throw Exception("AST is too deep. Maximum: " + Poco::NumberFormatter::format(max_depth), ErrorCodes::TOO_DEEP_AST);
+		}
 
 		return res + 1;
 	}

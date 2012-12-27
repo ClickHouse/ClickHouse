@@ -20,7 +20,7 @@ public:
 	ASTShowTablesQuery(StringRange range_) : IAST(range_), databases(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return "ShowTables"; };
+	String getID() const { return "ShowTables"; };
 
 	ASTPtr clone() const { return new ASTShowTablesQuery(*this); }
 };

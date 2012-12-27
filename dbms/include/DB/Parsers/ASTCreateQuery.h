@@ -27,7 +27,7 @@ public:
 	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false), if_not_exists(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
+	String getID() const { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
 
 	ASTPtr clone() const
 	{
