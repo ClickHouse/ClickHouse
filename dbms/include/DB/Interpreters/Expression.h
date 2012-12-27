@@ -15,7 +15,7 @@ namespace DB
 /** Интерпретирует выражение из синтаксического дерева,
   *  в котором присутствуют имена столбцов, константы и обычные функции.
   */
-class Expression
+class Expression : private boost::noncopyable
 {
 public:
 	Expression(const ASTPtr & ast_, const Context & context_) : ast(ast_), context(context_)
