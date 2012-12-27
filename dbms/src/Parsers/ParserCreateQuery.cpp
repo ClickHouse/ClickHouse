@@ -261,7 +261,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		query->as_table = dynamic_cast<ASTIdentifier &>(*as_table).name;
 	query->select = select;
 
-	query->children.push_back(columns);
+	if (columns)
+		query->children.push_back(columns);
 	if (storage)
 		query->children.push_back(storage);
 	if (select)

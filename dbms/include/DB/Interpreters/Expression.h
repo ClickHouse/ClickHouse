@@ -93,7 +93,7 @@ public:
 
 private:
 	ASTPtr ast;
-	const Context & context;
+	const Context context;
 
 	typedef std::set<String> NamesSet;
 	NamesSet required_columns;

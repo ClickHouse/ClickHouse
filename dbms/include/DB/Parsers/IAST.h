@@ -91,11 +91,8 @@ public:
 	{
 		size_t res = 0;
 		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-		{
-			std::cerr << getID() << " " << it->isNull() << std::endl;
 			if (max_depth == 0 || (res = (*it)->checkDepth(max_depth - 1)) > max_depth - 1)
 				throw Exception("AST is too deep. Maximum: " + Poco::NumberFormatter::format(max_depth), ErrorCodes::TOO_DEEP_AST);
-		}
 
 		return res + 1;
 	}
