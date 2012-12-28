@@ -180,9 +180,9 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		return "uniq(" + numeric + ")";
 	
 	if (name == "count_non_zero")
-		return "sum((" + numeric + ") == 0 ? 0 : Sign)";
+		return "sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";
 	if (name == "count_non_minus_one")
-		return "sum((" + numeric + ") == -1 ? 0 : Sign)";
+		return "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign))";
 	
 	std::string format;
 	if (formatting_aggregated_attribute_map.count(attribute))
@@ -195,13 +195,13 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	if (name == "sum")
 		s = "sum((" + numeric + ") * Sign)";
 	if (name == "sum_non_minus_one")
-		s = "sum((" + numeric + ") == -1 ? 0 : (" + numeric + ") * Sign)";
+		s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign)";
 	if (name == "avg")
 		s = "sum((" + numeric + ") * Sign) / sum(Sign)";
 	if (name == "avg_non_zero")
-		s = "sum((" + numeric + ") * Sign) / sum((" + numeric + ") == 0 ? 0 : Sign)";
+		s = "sum((" + numeric + ") * Sign) / sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";
 	if (name == "avg_non_minus_one")
-		s = "sum((" + numeric + ") == -1 ? 0 : (" + numeric + ") * Sign) / sum((" + numeric + ") == -1 ? 0 : Sign)";
+		s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign) / sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign))";
 	if (name == "min")
 		s = "min(" + numeric + ")";
 	if (name == "max")
@@ -452,9 +452,9 @@ void QueryConverter::fillNumericAttributeMap()
 	M("GoalReachesAny",       "GoalReachesAny")
 	M("GoalReachesDepth",     "GoalReachesDepth")
 	M("GoalReachesURL",       "GoalReachesURL")
-	M("ConvertedAny",         "(GoalReachesAny > 1 ? 1 : GoalReachesAny)")
-	M("ConvertedDepth",       "(GoalReachesDepth > 1 ? 1 : GoalReachesDepth)")
-	M("ConvertedURL",         "(GoalReachesURL > 1 ? 1 : GoalReachesURL)")
+	M("ConvertedAny",         "(GoalReachesAny > 1 ? toUInt32(1) : GoalReachesAny)")
+	M("ConvertedDepth",       "(GoalReachesDepth > 1 ? toUInt32(1) : GoalReachesDepth)")
+	M("ConvertedURL",         "(GoalReachesURL > 1 ? toUInt32(1) : GoalReachesURL)")
 	M("GoalReaches",          "countEqual(GoalsReached, %u)")
 	M("Converted",            "has(GoalsReached, %u)")
 	M("CounterID",            "CounterID")
