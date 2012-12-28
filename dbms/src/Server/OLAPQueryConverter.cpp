@@ -184,30 +184,51 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	if (name == "count_non_minus_one")
 		return "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign))";
 	
+	bool trivial_format;
+	
 	std::string format;
 	if (formatting_aggregated_attribute_map.count(attribute))
+	{
 		format = formatting_aggregated_attribute_map[attribute];
+		trivial_format = false;
+	}
 	else
+	{
 		format = "%s";
+		trivial_format = true;
+	}
 
 	std::string s;
+	bool float_value = false;
 	
 	if (name == "sum")
 		s = "sum((" + numeric + ") * Sign)";
 	if (name == "sum_non_minus_one")
 		s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign)";
 	if (name == "avg")
+	{
 		s = "sum((" + numeric + ") * Sign) / sum(Sign)";
+		float_value = true;
+	}
 	if (name == "avg_non_zero")
+	{
 		s = "sum((" + numeric + ") * Sign) / sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";
+		float_value = true;
+	}
 	if (name == "avg_non_minus_one")
+	{
 		s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign) / sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign))";
+		float_value = true;
+	}
 	if (name == "min")
 		s = "min(" + numeric + ")";
 	if (name == "max")
 		s = "max(" + numeric + ")";
 	
-	return Poco::format(format, "(" + s + ")");
+	/// Если агрегатная функция возвращает дробное число, и атрибут имеет нетривиальное форматирование, после агрегации приведем дробное число к целому.
+	bool need_cast = !trivial_format && float_value;
+	
+	return Poco::format(format, std::string() + (need_cast ? "toInt64" : "") + "(" + s + ")");
 }
 
 std::string QueryConverter::convertConstant(const std::string & attribute, const std::string & value)
