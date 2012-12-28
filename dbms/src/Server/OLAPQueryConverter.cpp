@@ -366,11 +366,11 @@ void QueryConverter::fillNumericAttributeMap()
 	M("IsYandex",             "IsYandex")
 	M("UserID",               "UserID")
 	
-	M("UserIDCreateDateTime", "(UserID > 10000000000000000000 OR UserID % 10000000000 > 2000000000 OR UserID % 10000000000 < 1000000000 ? toUInt64(0) : UserID % 10000000000)")
-	M("UserIDCreateDate",     "(UserID > 10000000000000000000 OR UserID % 10000000000 > 2000000000 OR UserID % 10000000000 < 1000000000 ? toUInt64(0) : UserID % 10000000000)")
+	M("UserIDCreateDateTime", "(UserID > 10000000000000000000 OR UserID %% 10000000000 > 2000000000 OR UserID %% 10000000000 < 1000000000 ? toUInt64(0) : UserID %% 10000000000)")
+	M("UserIDCreateDate",     "(UserID > 10000000000000000000 OR UserID %% 10000000000 > 2000000000 OR UserID %% 10000000000 < 1000000000 ? toUInt64(0) : UserID %% 10000000000)")
 	
-	M("UserIDAge",            "(UserID > 10000000000000000000 OR UserID % 10000000000 < 1000000000 OR UserID % 10000000000 > toUInt64(StartTime) ? toInt64(-1) : intDiv(toInt64(StartTime) - UserID % 10000000000, 86400))")
-	M("UserIDAgeInterval",    "(UserID > 10000000000000000000 OR UserID % 10000000000 < 1000000000 OR UserID % 10000000000 > toUInt64(StartTime) ? toInt64(-1) : toInt64(roundToExp2(intDiv(toUInt64(StartTime) - UserID % 10000000000, 86400))))")
+	M("UserIDAge",            "(UserID > 10000000000000000000 OR UserID %% 10000000000 < 1000000000 OR UserID %% 10000000000 > toUInt64(StartTime) ? toInt64(-1) : intDiv(toInt64(StartTime) - UserID %% 10000000000, 86400))")
+	M("UserIDAgeInterval",    "(UserID > 10000000000000000000 OR UserID %% 10000000000 < 1000000000 OR UserID %% 10000000000 > toUInt64(StartTime) ? toInt64(-1) : toInt64(roundToExp2(intDiv(toUInt64(StartTime) - UserID %% 10000000000, 86400))))")
 	M("TotalVisits",          "TotalVisits")
 	M("TotalVisitsInterval",  "roundToExp2(TotalVisits)")
 	M("Age",                  "Age")
@@ -512,7 +512,7 @@ void QueryConverter::fillFormattedAttributeMap()
 	M("TopLevelDomain",       "topLevelDomain(StartURL)")
 	M("URLScheme",            "protocol(StartURL)")
 	
-	M("ClientIP",             "concat(concat(concat(concat(concat(concat(toString(intDiv(ClientIP, 16777216)),'.'),toString(intDiv(ClientIP, 65536) % 256)),'.'),toString(intDiv(ClientIP, 256) % 256)),'.'),toString(ClientIP % 256))")
+	M("ClientIP",             "concat(concat(concat(concat(concat(concat(toString(intDiv(ClientIP, 16777216)),'.'),toString(intDiv(ClientIP, 65536) %% 256)),'.'),toString(intDiv(ClientIP, 256) %% 256)),'.'),toString(ClientIP %% 256))")
 	M("Resolution",           "concat(concat(concat(concat(toString(ResolutionWidth),'x'),toString(ResolutionHeight)),'x'),toString(ResolutionDepth))")
 	M("ResolutionWidthHeight","concat(concat(toString(ResolutionWidth),'x'),toString(ResolutionHeight))")
 	
@@ -563,15 +563,15 @@ void QueryConverter::fillFormattingAggregatedAttributeMap()
 	M("TopLevelDomain",       tostring)
 	M("URLScheme",            tostring)
 	
-	M("ClientIP",             "concat(concat(concat(concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)),'.'),toString(intDiv(toUInt32(%[0]s), 65536) % 256)),'.'),toString(intDiv(toUInt32(%[0]s), 256) % 256)),'.'),toString(toUInt32(%[0]s) % 256))")
-	M("Resolution",           "concat(concat(concat(concat(toString(intDiv(toUInt64(%[0]s), 16777216)),'x'),toString(intDiv(toUInt64(%[0]s), 256) % 65536)),'x'),toString(toUInt64(%[0]s) % 256))")
-	M("ResolutionWidthHeight","concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) % 65536))")
+	M("ClientIP",             "concat(concat(concat(concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)),'.'),toString(intDiv(toUInt32(%[0]s), 65536) %% 256)),'.'),toString(intDiv(toUInt32(%[0]s), 256) %% 256)),'.'),toString(toUInt32(%[0]s) %% 256))")
+	M("Resolution",           "concat(concat(concat(concat(toString(intDiv(toUInt64(%[0]s), 16777216)),'x'),toString(intDiv(toUInt64(%[0]s), 256) %% 65536)),'x'),toString(toUInt64(%[0]s) %% 256))")
+	M("ResolutionWidthHeight","concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) %% 65536))")
 	
-	M("WindowClientArea",     "concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) % 65536))")
+	M("WindowClientArea",     "concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) %% 65536))")
 	
-	M("UserAgent",            "concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)), ' '), toString(intDiv(toUInt32(%[0]s), 65536) % 256)), (toUInt32(%[0]s) % 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) % 65536)))")
-	M("UserAgentVersion",     "concat(toString(intDiv(toUInt32(%[0]s), 65536)), (toUInt32(%[0]s) % 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) % 65536)))")
-	M("UserAgentMajor",       "concat(concat(toString(intDiv(toUInt32(%[0]s), 256)), ' '), toString(toUInt32(%[0]s) % 256))")
+	M("UserAgent",            "concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)), ' '), toString(intDiv(toUInt32(%[0]s), 65536) %% 256)), (toUInt32(%[0]s) %% 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) %% 65536)))")
+	M("UserAgentVersion",     "concat(toString(intDiv(toUInt32(%[0]s), 65536)), (toUInt32(%[0]s) %% 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) %% 65536)))")
+	M("UserAgentMajor",       "concat(concat(toString(intDiv(toUInt32(%[0]s), 256)), ' '), toString(toUInt32(%[0]s) %% 256))")
 	
 	M("Interests",            "bitmaskToList(%s)")
 #undef M
