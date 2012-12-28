@@ -63,7 +63,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 		
 		if (i > 0)
 			out_query += ", ";
-		out_query += s + " AS " + FirstWord(key.attribute);
+		out_query += s + " AS _" + FirstWord(key.attribute);
 		selected_expressions.push_back(s);
 	}
 	
@@ -74,7 +74,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 		
 		if (query.key_attributes.size() + i > 0)
 			out_query += ", ";
-		out_query += s + " AS " + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute);
+		out_query += s + " AS _" + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute);
 		selected_expressions.push_back(s);
 	}
 	
@@ -167,7 +167,7 @@ static bool StartsWith(const std::string & str, const std::string & prefix)
 std::string QueryConverter::convertAggregateFunction(const std::string & attribute, unsigned parameter, const std::string & name)
 {
 	if (name == "count")
-		return "count()";
+		return "sum(Sign)";
 	
 	std::string numeric = convertAttributeNumeric(attribute, parameter);
 	
@@ -180,9 +180,9 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		return "uniq(" + numeric + ")";
 	
 	if (name == "count_non_zero")
-		return "sum((" + numeric + ") == 0 ? 0 : 1)";
+		return "sum((" + numeric + ") == 0 ? 0 : Sign)";
 	if (name == "count_non_minus_one")
-		return "sum((" + numeric + ") == -1 ? 0 : 1)";
+		return "sum((" + numeric + ") == -1 ? 0 : Sign)";
 	
 	std::string format;
 	if (formatting_aggregated_attribute_map.count(attribute))
@@ -193,15 +193,15 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	std::string s;
 	
 	if (name == "sum")
-		s = "sum(" + numeric + ")";
+		s = "sum((" + numeric + ") * Sign)";
 	if (name == "sum_non_minus_one")
-		s = "sum((" + numeric + ") == -1 ? 0 : (" + numeric + "))";
+		s = "sum((" + numeric + ") == -1 ? 0 : (" + numeric + ") * Sign)";
 	if (name == "avg")
-		s = "sum(" + numeric + ") / count()";
+		s = "sum((" + numeric + ") * Sign) / sum(Sign)";
 	if (name == "avg_non_zero")
-		s = "sum(" + numeric + ") / sum((" + numeric + ") == 0 ? 0 : 1)";
+		s = "sum((" + numeric + ") * Sign) / sum((" + numeric + ") == 0 ? 0 : Sign)";
 	if (name == "avg_non_minus_one")
-		s = "sum((" + numeric + ") == -1 ? 0 : (" + numeric + ")) / sum((" + numeric + ") == -1 ? 0 : 1)";
+		s = "sum((" + numeric + ") == -1 ? 0 : (" + numeric + ") * Sign) / sum((" + numeric + ") == -1 ? 0 : Sign)";
 	if (name == "min")
 		s = "min(" + numeric + ")";
 	if (name == "max")
