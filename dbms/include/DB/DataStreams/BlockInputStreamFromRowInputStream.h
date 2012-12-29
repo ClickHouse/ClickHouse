@@ -34,7 +34,7 @@ private:
 	RowInputStreamPtr row_input;
 	const Block sample;
 	size_t max_block_size;
-	bool first_row;
+	size_t total_rows;
 };
 
 }
