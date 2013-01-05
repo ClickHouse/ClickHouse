@@ -118,12 +118,12 @@ int main(int argc, char ** argv)
 		for (DB::AggregatedData::const_iterator it = aggregated_data.begin(); it != aggregated_data.end(); ++it)
 		{
 			for (DB::Row::const_iterator jt = it->first.begin(); jt != it->first.end(); ++jt)
-				std::cout << boost::apply_visitor(DB::FieldVisitorToString(), *jt) << '\t';
+				std::cout << apply_visitor(DB::FieldVisitorToString(), *jt) << '\t';
 
 			for (DB::AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
 			{
 				DB::Field result = (*jt)->getResult();
-				std::cout << boost::apply_visitor(DB::FieldVisitorToString(), result) << '\t';
+				std::cout << apply_visitor(DB::FieldVisitorToString(), result) << '\t';
 			}
 
 			std::cout << '\n';

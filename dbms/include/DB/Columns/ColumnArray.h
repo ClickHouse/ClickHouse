@@ -95,7 +95,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const Array & array = boost::get<const Array &>(x);
+		const Array & array = get<const Array &>(x);
 		size_t size = array.size();
 		for (size_t i = 0; i < size; ++i)
 			data->insert(array[i]);

@@ -28,7 +28,7 @@ public:
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const
 	{
 		/// ColumnType::value_type - более узкий тип. Например, UInt8, когда тип Field - UInt64
-		typename ColumnType::value_type x = boost::get<typename NearestFieldType<FieldType>::Type>(field);
+		typename ColumnType::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
 		writeBinary(x, ostr);
 	}
 	
@@ -66,7 +66,7 @@ public:
 
 	ColumnPtr createConstColumn(size_t size, const Field & field) const
 	{
-		return new ColumnConst<FieldType>(size, boost::get<typename NearestFieldType<FieldType>::Type>(field));
+		return new ColumnConst<FieldType>(size, get<typename NearestFieldType<FieldType>::Type>(field));
 	}
 };
 

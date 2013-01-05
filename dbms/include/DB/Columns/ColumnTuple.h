@@ -57,7 +57,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const Array & arr = boost::get<const Array &>(x);
+		const Array & arr = get<const Array &>(x);
 
 		size_t size = columns.size();
 		if (arr.size() != size)

@@ -58,7 +58,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const Array & array = boost::get<Array &>(x);
+		const Array & array = get<const Array &>(x);
 		if (n != array.size())
 			throw Exception("Size of array doesn't match size of FixedArray column",
 				ErrorCodes::SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN);

@@ -197,7 +197,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			{
 				/// Строим ключ
 				Field field = column[i];
-				UInt64 key = boost::apply_visitor(visitor, field);
+				UInt64 key = apply_visitor(visitor, field);
 
 				AggregatedDataWithUInt64Key::iterator it;
 				bool inserted;
@@ -436,7 +436,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 
 		size_t i = 0;
 		for (AggregateFunctionsPlainPtrs::const_iterator jt = data.begin(); jt != data.end(); ++jt, ++i)
-			res.getByPosition(i).column->insert(*jt);
+			res.getByPosition(i).column->insert(AggregateFunctionPtr(*jt));
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_64)
 	{
@@ -456,7 +456,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 
 			size_t i = 1;
 			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
-				res.getByPosition(i).column->insert(*jt);
+				res.getByPosition(i).column->insert(AggregateFunctionPtr(*jt));
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
@@ -471,7 +471,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 
 			size_t i = 1;
 			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
-				res.getByPosition(i).column->insert(*jt);
+				res.getByPosition(i).column->insert(AggregateFunctionPtr(*jt));
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
@@ -485,7 +485,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				res.getByPosition(i).column->insert(*jt);
 
 			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.second.begin(); jt != it->second.second.end(); ++jt, ++i)
-				res.getByPosition(i).column->insert(*jt);
+				res.getByPosition(i).column->insert(AggregateFunctionPtr(*jt));
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::GENERIC)
@@ -499,7 +499,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				res.getByPosition(i).column->insert(*jt);
 
 			for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
-				res.getByPosition(i).column->insert(*jt);
+				res.getByPosition(i).column->insert(AggregateFunctionPtr(*jt));
 		}
 	}
 	else
@@ -717,7 +717,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			{
 				/// Строим ключ
 				Field field = column[i];
-				UInt64 key = boost::apply_visitor(visitor, field);
+				UInt64 key = apply_visitor(visitor, field);
 
 				AggregatedDataWithUInt64Key::iterator it;
 				bool inserted;

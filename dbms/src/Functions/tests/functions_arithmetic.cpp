@@ -68,7 +68,7 @@ int main(int argc, char ** argv)
 
 		DB::Float64 x = 0;
 		for (size_t i = 0; i < n; ++i)
-			x += boost::get<DB::Float64>((*block.getByPosition(2).column)[i]);
+			x += DB::get<DB::Float64>((*block.getByPosition(2).column)[i]);
 
 		std::cout << x << std::endl;
 	}

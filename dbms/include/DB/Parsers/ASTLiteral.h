@@ -22,12 +22,12 @@ public:
 	ASTLiteral() {}
 	ASTLiteral(StringRange range_, const Field & value_) : IAST(range_), value(value_) {}
 
-	String getColumnName() const { return boost::apply_visitor(FieldVisitorToString(), value); }
+	String getColumnName() const { return apply_visitor(FieldVisitorToString(), value); }
 
 	String getAlias() const { return alias.empty() ? getColumnName() : alias; }
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "Literal_" + boost::apply_visitor(FieldVisitorDump(), value); }
+	String getID() const { return "Literal_" + apply_visitor(FieldVisitorDump(), value); }
 
 	ASTPtr clone() const { return new ASTLiteral(*this); }
 };

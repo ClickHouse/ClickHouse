@@ -20,7 +20,7 @@ public:
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeDateTimeText(boost::get<UInt64>(field), ostr);
+		writeDateTimeText(get<UInt64>(field), ostr);
 	}
 	
 	void deserializeText(Field & field, ReadBuffer & istr) const

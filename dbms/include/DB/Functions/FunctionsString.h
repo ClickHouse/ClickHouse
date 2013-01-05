@@ -1100,8 +1100,8 @@ public:
 		FieldVisitorConvertToNumber<UInt64> converter;
 		Field start_field = (*block.getByPosition(arguments[1]).column)[0];
 		Field length_field = (*block.getByPosition(arguments[2]).column)[0];
-		UInt64 start = boost::apply_visitor(converter, start_field);
-		UInt64 length = boost::apply_visitor(converter, length_field);
+		UInt64 start = apply_visitor(converter, start_field);
+		UInt64 length = apply_visitor(converter, length_field);
 
 		if (start == 0)
 			throw Exception("Second argument of function substring must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);

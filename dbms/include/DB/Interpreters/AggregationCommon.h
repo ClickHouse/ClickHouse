@@ -45,7 +45,7 @@ struct StringHash
 
 
 /** Преобразование значения в 64 бита. Для чисел - однозначное, для строк - некриптографический хэш. */
-class FieldVisitorToUInt64 : public boost::static_visitor<UInt64>
+class FieldVisitorToUInt64 : public StaticVisitor<UInt64>
 {
 public:
 	FieldVisitorToUInt64() {}

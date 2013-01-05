@@ -62,7 +62,7 @@ StoragePtr StorageFactory::get(
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String source_database 		= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String table_name_regexp	= boost::get<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
+		String table_name_regexp	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
 		
 		return new StorageMerge(table_name, columns, source_database, table_name_regexp, context);
 	}
@@ -182,7 +182,7 @@ StoragePtr StorageFactory::get(
 
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
-		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
+		UInt64 index_granularity	= safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 		
 		if (primary_expr_func.name != "tuple")
@@ -221,7 +221,7 @@ StoragePtr StorageFactory::get(
 		
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
-		UInt64 index_granularity	= boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
+		UInt64 index_granularity	= safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
 		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[arg_offset + 3]).name;
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 

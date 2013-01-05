@@ -95,7 +95,7 @@ void Set::create(BlockInputStreamPtr stream)
 			{
 				/// Строим ключ
 				Field field = column[i];
-				UInt64 key = boost::apply_visitor(visitor, field);
+				UInt64 key = apply_visitor(visitor, field);
 				res.insert(key);
 			}
 
@@ -304,7 +304,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 		{
 			/// Строим ключ
 			Field field = column[i];
-			UInt64 key = boost::apply_visitor(visitor, field);
+			UInt64 key = apply_visitor(visitor, field);
 			vec_res[i] = negative ^ (set.end() != set.find(key));
 		}
 	}

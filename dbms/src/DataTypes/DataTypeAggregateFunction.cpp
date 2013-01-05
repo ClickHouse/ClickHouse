@@ -15,7 +15,7 @@ using Poco::SharedPtr;
 
 void DataTypeAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	const AggregateFunctionPtr & value = boost::get<const AggregateFunctionPtr &>(field);
+	const AggregateFunctionPtr & value = get<const AggregateFunctionPtr &>(field);
 	value->serialize(ostr);
 }
 
@@ -95,7 +95,7 @@ ColumnPtr DataTypeAggregateFunction::createColumn() const
 
 ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConst<AggregateFunctionPtr>(size, boost::get<AggregateFunctionPtr>(field));
+	return new ColumnConst<AggregateFunctionPtr>(size, get<AggregateFunctionPtr>(field));
 }
 
 

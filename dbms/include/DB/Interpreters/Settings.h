@@ -60,20 +60,20 @@ struct Settings
 	/// Установить настройку по имени.
 	void set(const String & name, const Field & value)
 	{
-			 if (name == "max_block_size")		max_block_size 		= boost::get<UInt64>(value);
-		else if (name == "max_threads")			max_threads 		= boost::get<UInt64>(value);
-		else if (name == "max_query_size")		max_query_size 		= boost::get<UInt64>(value);
-		else if (name == "asynchronous")		asynchronous 		= boost::get<UInt64>(value);
-		else if (name == "interactive_delay") 	interactive_delay 	= boost::get<UInt64>(value);
-		else if (name == "connect_timeout")		connect_timeout 	= Poco::Timespan(boost::get<UInt64>(value), 0);
-		else if (name == "receive_timeout")		receive_timeout 	= Poco::Timespan(boost::get<UInt64>(value), 0);
-		else if (name == "send_timeout")		send_timeout 		= Poco::Timespan(boost::get<UInt64>(value), 0);
-		else if (name == "poll_interval")		poll_interval 		= boost::get<UInt64>(value);
+			 if (name == "max_block_size")		max_block_size 		= safeGet<UInt64>(value);
+		else if (name == "max_threads")			max_threads 		= safeGet<UInt64>(value);
+		else if (name == "max_query_size")		max_query_size 		= safeGet<UInt64>(value);
+		else if (name == "asynchronous")		asynchronous 		= safeGet<UInt64>(value);
+		else if (name == "interactive_delay") 	interactive_delay 	= safeGet<UInt64>(value);
+		else if (name == "connect_timeout")		connect_timeout 	= Poco::Timespan(safeGet<UInt64>(value), 0);
+		else if (name == "receive_timeout")		receive_timeout 	= Poco::Timespan(safeGet<UInt64>(value), 0);
+		else if (name == "send_timeout")		send_timeout 		= Poco::Timespan(safeGet<UInt64>(value), 0);
+		else if (name == "poll_interval")		poll_interval 		= safeGet<UInt64>(value);
 		else if (name == "connect_timeout_with_failover_ms")
-			connect_timeout_with_failover_ms = Poco::Timespan(boost::get<UInt64>(value) * 1000);
-		else if (name == "max_distributed_connections") max_distributed_connections = boost::get<UInt64>(value);
-		else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = boost::get<UInt64>(value);
-		else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = boost::get<UInt64>(value);
+			connect_timeout_with_failover_ms = Poco::Timespan(safeGet<UInt64>(value) * 1000);
+		else if (name == "max_distributed_connections") max_distributed_connections = safeGet<UInt64>(value);
+		else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = safeGet<UInt64>(value);
+		else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = safeGet<UInt64>(value);
 		else if (!limits.trySet(name, value))
 			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 	}

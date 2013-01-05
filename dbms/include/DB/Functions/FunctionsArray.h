@@ -225,7 +225,7 @@ public:
 		if (!block.getByPosition(arguments[1]).column->isConst())
 			throw Exception("Second argument for function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-		UInt64 index = boost::get<UInt64>((*block.getByPosition(arguments[1]).column)[0]);
+		UInt64 index = safeGet<UInt64>((*block.getByPosition(arguments[1]).column)[0]);
 
 		if (index == 0)
 			throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
@@ -370,7 +370,7 @@ private:
 		ArrayIndexNumImpl<T, IndexConv>::vector(
 			col_nested->getData(),
 			col_array->getOffsets(),
-			boost::get<typename NearestFieldType<T>::Type>(value),
+			safeGet<typename NearestFieldType<T>::Type>(value),
 			col_res->getData());
 
 		return true;
@@ -395,7 +395,7 @@ private:
 			dynamic_cast<const ColumnUInt8 &>(col_nested->getData()).getData(),
 			col_array->getOffsets(),
 			col_nested->getOffsets(),
-			boost::get<const String &>(value),
+			safeGet<const String &>(value),
 			col_res->getData());
 
 		return true;

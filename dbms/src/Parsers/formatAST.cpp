@@ -255,7 +255,7 @@ void formatAST(const ASTSetQuery			& ast, std::ostream & s, size_t indent, bool 
 		if (it != ast.changes.begin())
 			s << ", ";
 
-		s << it->name << " = " << boost::apply_visitor(FieldVisitorToString(), it->value);
+		s << it->name << " = " << apply_visitor(FieldVisitorToString(), it->value);
 	}
 }
 
@@ -373,7 +373,7 @@ void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bo
 
 void formatAST(const ASTLiteral 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	s << boost::apply_visitor(FieldVisitorToString(), ast.value);
+	s << apply_visitor(FieldVisitorToString(), ast.value);
 
 	if (!ast.alias.empty())
 		writeAlias(ast.alias, s, hilite, one_line);

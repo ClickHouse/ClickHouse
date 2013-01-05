@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Для заданного значения Field возвращает минимальный тип данных, позволяющий хранить значение этого типа.
-class FieldToDataType : public boost::static_visitor<DataTypePtr>
+class FieldToDataType : public StaticVisitor<DataTypePtr>
 {
 public:
 	DataTypePtr operator() (const Null 		& x) const
@@ -51,7 +51,7 @@ public:
 	
 	DataTypePtr operator() (const Array 	& x) const
 	{
-		return new DataTypeArray(boost::apply_visitor(FieldToDataType(), x.at(0)));
+		return new DataTypeArray(apply_visitor(FieldToDataType(), x.at(0)));
 	}
 };
 

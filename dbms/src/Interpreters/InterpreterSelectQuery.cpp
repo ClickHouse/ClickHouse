@@ -214,9 +214,9 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 	offset = 0;
 	if (query.limit_length)
 	{
-		length = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
+		length = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
 		if (query.limit_offset)
-			offset = boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
+			offset = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
 	}
 }
 

@@ -16,7 +16,7 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 	{
 		if (i != 0)
 			s << ", ";
-		s << boost::apply_visitor(FieldVisitorToString(), current_key[i]);
+		s << apply_visitor(FieldVisitorToString(), current_key[i]);
 	}
 
 	s << ").";
@@ -85,7 +85,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
 		SortCursor current = queue.top();
 		queue.pop();
 
-		Int8 sign = boost::get<Int64>((*current->all_columns[sign_column_number])[current->pos]);
+		Int8 sign = get<Int64>((*current->all_columns[sign_column_number])[current->pos]);
 		setPrimaryKey(next_key, current);
 
 		if (next_key != current_key)

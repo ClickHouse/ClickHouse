@@ -49,7 +49,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(boost::get<const AggregateFunctionPtr &>(x));
+		data.push_back(get<const AggregateFunctionPtr &>(x));
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const

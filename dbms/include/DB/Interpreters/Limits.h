@@ -82,39 +82,39 @@ struct Limits
 	/// Установить настройку по имени.
 	bool trySet(const String & name, const Field & value)
 	{
-			 if (name == "max_rows_to_read")		max_rows_to_read 		= boost::get<UInt64>(value);
-		else if (name == "max_bytes_to_read")		max_bytes_to_read 		= boost::get<UInt64>(value);
-		else if (name == "read_overflow_mode")		read_overflow_mode 		= getOverflowMode(boost::get<const String &>(value));
+			 if (name == "max_rows_to_read")		max_rows_to_read 		= safeGet<UInt64>(value);
+		else if (name == "max_bytes_to_read")		max_bytes_to_read 		= safeGet<UInt64>(value);
+		else if (name == "read_overflow_mode")		read_overflow_mode 		= getOverflowMode(safeGet<const String &>(value));
 
-		else if (name == "max_rows_to_group_by")	max_rows_to_group_by 	= boost::get<UInt64>(value);
-		else if (name == "group_by_overflow_mode")	group_by_overflow_mode 	= getOverflowModeForGroupBy(boost::get<const String &>(value));
+		else if (name == "max_rows_to_group_by")	max_rows_to_group_by 	= safeGet<UInt64>(value);
+		else if (name == "group_by_overflow_mode")	group_by_overflow_mode 	= getOverflowModeForGroupBy(safeGet<const String &>(value));
 
-		else if (name == "max_rows_to_sort")		max_rows_to_sort 		= boost::get<UInt64>(value);
-		else if (name == "max_bytes_to_sort")		max_bytes_to_sort 		= boost::get<UInt64>(value);
-		else if (name == "sort_overflow_mode")		sort_overflow_mode 		= getOverflowMode(boost::get<const String &>(value));
+		else if (name == "max_rows_to_sort")		max_rows_to_sort 		= safeGet<UInt64>(value);
+		else if (name == "max_bytes_to_sort")		max_bytes_to_sort 		= safeGet<UInt64>(value);
+		else if (name == "sort_overflow_mode")		sort_overflow_mode 		= getOverflowMode(safeGet<const String &>(value));
 
-		else if (name == "max_result_rows")			max_result_rows 		= boost::get<UInt64>(value);
-		else if (name == "max_result_bytes")		max_result_bytes 		= boost::get<UInt64>(value);
-		else if (name == "result_overflow_mode")	result_overflow_mode 	= getOverflowMode(boost::get<const String &>(value));
+		else if (name == "max_result_rows")			max_result_rows 		= safeGet<UInt64>(value);
+		else if (name == "max_result_bytes")		max_result_bytes 		= safeGet<UInt64>(value);
+		else if (name == "result_overflow_mode")	result_overflow_mode 	= getOverflowMode(safeGet<const String &>(value));
 
-		else if (name == "max_execution_time")		max_execution_time 		= Poco::Timespan(boost::get<UInt64>(value), 0);
-		else if (name == "timeout_overflow_mode")	timeout_overflow_mode 	= getOverflowMode(boost::get<const String &>(value));
+		else if (name == "max_execution_time")		max_execution_time 		= Poco::Timespan(safeGet<UInt64>(value), 0);
+		else if (name == "timeout_overflow_mode")	timeout_overflow_mode 	= getOverflowMode(safeGet<const String &>(value));
 
-		else if (name == "min_execution_speed")		min_execution_speed 	= boost::get<UInt64>(value);
+		else if (name == "min_execution_speed")		min_execution_speed 	= safeGet<UInt64>(value);
 		else if (name == "timeout_before_checking_execution_speed")
-			timeout_before_checking_execution_speed 						= Poco::Timespan(boost::get<UInt64>(value), 0);
+			timeout_before_checking_execution_speed 						= Poco::Timespan(safeGet<UInt64>(value), 0);
 
-		else if (name == "max_columns_to_read")		max_columns_to_read 	= boost::get<UInt64>(value);
-		else if (name == "max_temporary_columns")	max_temporary_columns 	= boost::get<UInt64>(value);
+		else if (name == "max_columns_to_read")		max_columns_to_read 	= safeGet<UInt64>(value);
+		else if (name == "max_temporary_columns")	max_temporary_columns 	= safeGet<UInt64>(value);
 		else if (name == "max_temporary_non_const_columns")
-			max_temporary_non_const_columns 								= boost::get<UInt64>(value);
+			max_temporary_non_const_columns 								= safeGet<UInt64>(value);
 
-		else if (name == "max_subquery_depth")		max_subquery_depth 		= boost::get<UInt64>(value);
-		else if (name == "max_pipeline_depth")		max_pipeline_depth 		= boost::get<UInt64>(value);
-		else if (name == "max_ast_depth")			max_ast_depth 			= boost::get<UInt64>(value);
-		else if (name == "max_ast_elements")		max_ast_elements 		= boost::get<UInt64>(value);
+		else if (name == "max_subquery_depth")		max_subquery_depth 		= safeGet<UInt64>(value);
+		else if (name == "max_pipeline_depth")		max_pipeline_depth 		= safeGet<UInt64>(value);
+		else if (name == "max_ast_depth")			max_ast_depth 			= safeGet<UInt64>(value);
+		else if (name == "max_ast_elements")		max_ast_elements 		= safeGet<UInt64>(value);
 
-		else if (name == "readonly")				readonly 				= boost::get<UInt64>(value);
+		else if (name == "readonly")				readonly 				= safeGet<UInt64>(value);
 		else
 			return false;
 

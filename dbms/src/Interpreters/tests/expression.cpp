@@ -36,7 +36,7 @@ void dump(DB::IAST & ast, int level = 0)
 	}
 	else if (DB::ASTLiteral * node = dynamic_cast<DB::ASTLiteral *>(&ast))
 	{
-		std::cout << prefix << node << " Literal, " << boost::apply_visitor(DB::FieldVisitorToString(), node->value)
+		std::cout << prefix << node << " Literal, " << apply_visitor(DB::FieldVisitorToString(), node->value)
 			<< ", type = " << node->type->getName() << std::endl;
 	}
 

@@ -20,7 +20,7 @@ public:
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeDateText(Yandex::DayNum_t(boost::get<UInt64>(field)), ostr);
+		writeDateText(Yandex::DayNum_t(get<UInt64>(field)), ostr);
 	}
 	
 	void deserializeText(Field & field, ReadBuffer & istr) const

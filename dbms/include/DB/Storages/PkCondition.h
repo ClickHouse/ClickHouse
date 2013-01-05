@@ -80,7 +80,7 @@ struct Range
 	bool rightThan(const Field & x)
 	{
 		return (left_bounded
-		? !(boost::apply_visitor(FieldVisitorGreater(), x, left) || (left_included && x == left))
+		? !((x > left) || (left_included && x == left))
 		: false);
 	}
 	
@@ -88,7 +88,7 @@ struct Range
 	bool leftThan(const Field & x)
 	{
 		return (right_bounded
-		? !(boost::apply_visitor(FieldVisitorLess(), x, right) || (right_included && x == right))
+		? !((x < right) || (right_included && x == right))
 		: false);
 	}
 	
@@ -97,16 +97,16 @@ struct Range
 		/// r левее меня.
 		if (r.right_bounded &&
 			left_bounded &&
-			(boost::apply_visitor(FieldVisitorLess(), r.right, left) ||
+			((r.right < left) ||
 			((!left_included || !r.right_included) &&
 			 r.right == left)))
 			return false;
 		/// r правее меня.
 		if (r.left_bounded &&
 			right_bounded &&
-			(boost::apply_visitor(FieldVisitorGreater(), r.left, right) ||
+			((r.left > right) ||
 			((!right_included || !r.left_included) &&
-			r.left== right)))
+			r.left == right)))
 			return false;
 		return true;
 	}
@@ -116,7 +116,7 @@ struct Range
 		/// r начинается левее меня.
 		if (left_bounded &&
 			(!r.left_bounded ||
-			boost::apply_visitor(FieldVisitorLess(), r.left, left) ||
+			(r.left < left) ||
 			(r.left_included &&
 			!left_included &&
 			r.left == left)))
@@ -124,7 +124,7 @@ struct Range
 		/// r заканчивается правее меня.
 		if (right_bounded &&
 			(!r.right_bounded ||
-			boost::apply_visitor(FieldVisitorGreater(), r.right, right) ||
+			(r.right > right) ||
 			(r.right_included &&
 			!right_included &&
 			r.right == right)))
@@ -139,12 +139,12 @@ struct Range
 		if (!left_bounded)
 			str << "(-inf, ";
 		else
-			str << (left_included ? '[' : '(') << boost::apply_visitor(FieldVisitorToString(), left) << ", ";
+			str << (left_included ? '[' : '(') << apply_visitor(FieldVisitorToString(), left) << ", ";
 		
 		if (!right_bounded)
 			str << "+inf)";
 		else
-			str << boost::apply_visitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+			str << apply_visitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
 		
 		return str.str();
 	}

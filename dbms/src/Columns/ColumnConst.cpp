@@ -34,7 +34,7 @@ template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 	size_t array_size = data.size();
 	ColumnPtr nested_column = data.empty()
 		? new ColumnUInt8	/// Для пустого массива непонятно, какого типа будет материализованный столбец. Пусть будет UInt8.
-		: boost::apply_visitor(FieldToDataType(), data.at(0))->createColumn();
+		: apply_visitor(FieldToDataType(), data.at(0))->createColumn();
 
 	ColumnArray * res = new ColumnArray(nested_column);
 	ColumnArray::Offsets_t & offsets = res->getOffsets();

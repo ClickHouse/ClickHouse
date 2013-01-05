@@ -107,7 +107,7 @@ void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size
 
 void DataTypeArray::serializeText(const Field & field, WriteBuffer & ostr) const
 {
-	const Array & arr = boost::get<const Array &>(field);
+	const Array & arr = get<const Array &>(field);
 
 	writeChar('[', ostr);
 	for (size_t i = 0, size = arr.size(); i < size; ++i)
@@ -179,7 +179,7 @@ ColumnPtr DataTypeArray::createColumn() const
 
 ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConst<Array>(size, boost::get<Array>(field));
+	return new ColumnConst<Array>(size, get<const Array &>(field));
 }
 
 }

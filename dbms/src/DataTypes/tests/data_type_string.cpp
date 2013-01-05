@@ -58,8 +58,8 @@ int main(int argc, char ** argv)
 			std::cout << "Reading, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
 
 			std::cout << std::endl
-				<< boost::get<DB::String>((*column)[0]) << std::endl
-				<< boost::get<DB::String>((*column)[n - 1]) << std::endl;
+				<< DB::get<DB::String>((*column)[0]) << std::endl
+				<< DB::get<DB::String>((*column)[n - 1]) << std::endl;
 		}
 	}
 	catch (const DB::Exception & e)

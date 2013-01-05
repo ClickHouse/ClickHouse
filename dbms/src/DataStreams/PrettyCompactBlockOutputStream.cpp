@@ -91,7 +91,7 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 
 			if (col.type->isNumeric())
 			{
-				size_t width = boost::get<UInt64>((*block.getByPosition(columns + j).column)[i]);
+				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
 				for (size_t k = 0; k < max_widths[j] - width; ++k)
 					writeChar(' ', ostr);
 					
@@ -101,7 +101,7 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 			{
 				col.type->serializeTextEscaped((*col.column)[i], ostr);
 
-				size_t width = boost::get<UInt64>((*block.getByPosition(columns + j).column)[i]);
+				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
 				for (size_t k = 0; k < max_widths[j] - width; ++k)
 					writeChar(' ', ostr);
 			}

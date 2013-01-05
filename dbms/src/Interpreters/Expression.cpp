@@ -136,7 +136,7 @@ void Expression::addSemantic(ASTPtr & ast)
 			if (arguments.size() != 2)
 				throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 			
-			node->return_type = func_tuple_elem->getReturnType(argument_types, boost::get<UInt64>(dynamic_cast<ASTLiteral &>(*arguments[1]).value));
+			node->return_type = func_tuple_elem->getReturnType(argument_types, safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*arguments[1]).value));
 		}
 		else
 			node->return_type = node->function->getReturnType(argument_types);
@@ -168,7 +168,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
 	{
-		node->type = boost::apply_visitor(FieldToDataType(), node->value);
+		node->type = apply_visitor(FieldToDataType(), node->value);
 	}
 }
 

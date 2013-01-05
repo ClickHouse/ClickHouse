@@ -23,7 +23,7 @@ public:
 		
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeText(boost::get<typename NearestFieldType<FieldType>::Type>(field), ostr);
+		writeText(get<typename NearestFieldType<FieldType>::Type>(field), ostr);
 	}
 	
 	void deserializeText(Field & field, ReadBuffer & istr) const

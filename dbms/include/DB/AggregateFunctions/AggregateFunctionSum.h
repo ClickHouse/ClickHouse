@@ -67,7 +67,7 @@ public:
 
 	void addOne(const Field & value)
 	{
-		sum += boost::get<T>(value);
+		sum += get<T>(value);
 	}
 
 	void merge(const IAggregateFunction & rhs)

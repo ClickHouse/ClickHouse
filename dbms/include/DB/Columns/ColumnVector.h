@@ -15,7 +15,7 @@ namespace DB
   */
 template <>
 class FieldVisitorConvertToNumber<SharedPtr<IAggregateFunction> >
-	: public boost::static_visitor<SharedPtr<IAggregateFunction> >
+	: public StaticVisitor<SharedPtr<IAggregateFunction> >
 {
 public:
 	typedef SharedPtr<IAggregateFunction> T;
@@ -116,7 +116,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(boost::apply_visitor(FieldVisitorConvertToNumber<typename NearestFieldType<T>::Type>(), x));
+		data.push_back(apply_visitor(FieldVisitorConvertToNumber<typename NearestFieldType<T>::Type>(), x));
 	}
 
 	void insertFrom(const IColumn & src, size_t n)

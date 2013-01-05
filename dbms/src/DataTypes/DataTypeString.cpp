@@ -22,7 +22,7 @@ using Poco::SharedPtr;
 
 void DataTypeString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	const String & s = boost::get<String>(field);
+	const String & s = get<const String &>(field);
 	writeVarUInt(s.size(), ostr);
 	writeString(s, ostr);
 }
@@ -33,7 +33,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 	UInt64 size;
 	readVarUInt(size, istr);
 	field = String();
-	String & s = boost::get<String>(field);
+	String & s = get<String &>(field);
 	s.resize(size);
 	/// непереносимо, но (действительно) быстрее
 	istr.readStrict(const_cast<char*>(s.data()), size);
@@ -105,7 +105,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 
 void DataTypeString::serializeText(const Field & field, WriteBuffer & ostr) const
 {
-	writeString(boost::get<const String &>(field), ostr);
+	writeString(get<const String &>(field), ostr);
 }
 
 
@@ -119,7 +119,7 @@ void DataTypeString::deserializeText(Field & field, ReadBuffer & istr) const
 
 void DataTypeString::serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
 {
-	writeEscapedString(boost::get<const String &>(field), ostr);
+	writeEscapedString(get<const String &>(field), ostr);
 }
 
 
@@ -133,7 +133,7 @@ void DataTypeString::deserializeTextEscaped(Field & field, ReadBuffer & istr) co
 
 void DataTypeString::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
 {
-	writeQuotedString(boost::get<const String &>(field), ostr);
+	writeQuotedString(get<const String &>(field), ostr);
 }
 
 
@@ -153,7 +153,7 @@ ColumnPtr DataTypeString::createColumn() const
 
 ColumnPtr DataTypeString::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConst<String>(size, boost::get<String>(field));
+	return new ColumnConst<String>(size, get<const String &>(field));
 }
 
 }

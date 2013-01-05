@@ -74,7 +74,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	if (database_ast)
 		query->from = dynamic_cast<ASTIdentifier &>(*database_ast).name;
 	if (like_ast)
-		query->like = boost::get<const String &>(dynamic_cast<ASTLiteral &>(*like_ast).value);
+		query->like = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*like_ast).value);
 
 	return true;
 }

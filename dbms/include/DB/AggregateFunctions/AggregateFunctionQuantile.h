@@ -61,12 +61,12 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		level = boost::apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
 	void addOne(const Field & value)
 	{
-		sample.insert(boost::get<typename NearestFieldType<ArgumentFieldType>::Type>(value));
+		sample.insert(get<typename NearestFieldType<ArgumentFieldType>::Type>(value));
 	}
 
 	void merge(const IAggregateFunction & rhs)

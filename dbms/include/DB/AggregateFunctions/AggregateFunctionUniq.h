@@ -74,7 +74,7 @@ public:
 
 	void addOne(const Field & value)
 	{
-		set.insert(AggregateFunctionUniqTraits<T>::hash(boost::get<T>(value)));
+		set.insert(AggregateFunctionUniqTraits<T>::hash(get<T>(value)));
 	}
 
 	void merge(const IAggregateFunction & rhs)
