@@ -260,7 +260,8 @@ private:
 	{
 		which = TypeToEnum<T>::value;
 //		std::cerr << this << " Creating " << getTypeName() << std::endl;
-		new (storage) T(x);
+		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
+		new (ptr) T(x);
 	}
 
 	void create(const Null & x)
