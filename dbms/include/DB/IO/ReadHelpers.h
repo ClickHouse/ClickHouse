@@ -153,6 +153,51 @@ void readIntText(T & x, ReadBuffer & buf)
 		x = -x;
 }
 
+
+/** Более оптимизированная версия (примерно в 1.5 раза на реальных данных).
+  * Отличается тем, что:
+  * - из чисел, начинающихся на ноль, парсится только ноль;
+  * - не поддерживается символ '+' перед числом;
+  * - символы :;<=>? парсятся, как некоторые цифры.
+  */
+template <typename T>
+void readIntTextUnsafe(T & x, ReadBuffer & buf)
+{
+	bool negative = false;
+	x = 0;
+
+	if (unlikely(buf.eof()))
+		throwReadAfterEOF();
+
+	if (std::tr1::is_signed<T>::value && *buf.position() == '-')
+	{
+		++buf.position();
+		negative = true;
+	}
+
+	if (*buf.position() == '0')					/// В реальных данных много нулей.
+	{
+		++buf.position();
+		return;
+	}
+
+	while (!buf.eof())
+	{
+		if ((*buf.position() & 0xF0) == 0x30)	/// Имеет смысл, что это условие находится внутри цикла.
+		{
+			x *= 10;
+			x += *buf.position() & 0x0F;
+			++buf.position();
+		}
+		else
+			break;
+	}
+
+	if (std::tr1::is_signed<T>::value && negative)
+		x = -x;
+}
+
+
 /// грубо
 template <typename T>
 void readFloatText(T & x, ReadBuffer & buf)

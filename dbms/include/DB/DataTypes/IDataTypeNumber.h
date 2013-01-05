@@ -29,7 +29,7 @@ public:
 	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
 		typename NearestFieldType<FieldType>::Type x;
-		readText(x, istr);
+		readIntTextUnsafe(x, istr);
 		field = x;
 	}
 
