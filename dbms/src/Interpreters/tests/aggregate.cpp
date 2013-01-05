@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
 		column_s1.column = new DB::ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
-			column_s1.column->insert(strings[i % 5]);
+			column_s1.column->insert(std::string(strings[i % 5]));
 
 		block.insert(column_s1);
 
@@ -80,7 +80,7 @@ int main(int argc, char ** argv)
 		column_s2.column = new DB::ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
-			column_s2.column->insert(strings[i % 3]);
+			column_s2.column->insert(std::string(strings[i % 3]));
 
 		block.insert(column_s2);
 
