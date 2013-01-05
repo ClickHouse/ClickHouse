@@ -46,7 +46,7 @@ public:
 	inline static void writeBitmask(T x, WriteBuffer & out)
 	{
 		bool first = true;
-		for (int i = 0; i < sizeof(T) * 8; ++i)
+		for (size_t i = 0; i < sizeof(T) * 8; ++i)
 		{
 			T bit = static_cast<T>(1) << i;
 			if (x & bit)
