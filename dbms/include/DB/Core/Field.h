@@ -375,13 +375,13 @@ typename Visitor::ResultType apply_visitor_impl(Visitor & visitor, F & field)
 {
 	switch (field.getType())
 	{
-		case Field::Types::Null: 				return visitor(field.get<Null>());
-		case Field::Types::UInt64: 				return visitor(field.get<UInt64>());
-		case Field::Types::Int64: 				return visitor(field.get<Int64>());
-		case Field::Types::Float64: 			return visitor(field.get<Float64>());
-		case Field::Types::String: 				return visitor(field.get<String>());
-		case Field::Types::AggregateFunction: 	return visitor(field.get<Field::AggregateFunctionPtr>());
-		case Field::Types::Array: 				return visitor(field.get<Field::Array>());
+		case Field::Types::Null: 				return visitor(field.template get<Null>());
+		case Field::Types::UInt64: 				return visitor(field.template get<UInt64>());
+		case Field::Types::Int64: 				return visitor(field.template get<Int64>());
+		case Field::Types::Float64: 			return visitor(field.template get<Float64>());
+		case Field::Types::String: 				return visitor(field.template get<String>());
+		case Field::Types::AggregateFunction: 	return visitor(field.template get<Field::AggregateFunctionPtr>());
+		case Field::Types::Array: 				return visitor(field.template get<Field::Array>());
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -422,13 +422,13 @@ typename Visitor::ResultType apply_binary_visitor_impl2(Visitor & visitor, F1 & 
 {
 	switch (field2.getType())
 	{
-		case Field::Types::Null: 				return visitor(field1, field2.get<Null>());
-		case Field::Types::UInt64: 				return visitor(field1, field2.get<UInt64>());
-		case Field::Types::Int64: 				return visitor(field1, field2.get<Int64>());
-		case Field::Types::Float64: 			return visitor(field1, field2.get<Float64>());
-		case Field::Types::String: 				return visitor(field1, field2.get<String>());
-		case Field::Types::AggregateFunction: 	return visitor(field1, field2.get<Field::AggregateFunctionPtr>());
-		case Field::Types::Array: 				return visitor(field1, field2.get<Field::Array>());
+		case Field::Types::Null: 				return visitor(field1, field2.template get<Null>());
+		case Field::Types::UInt64: 				return visitor(field1, field2.template get<UInt64>());
+		case Field::Types::Int64: 				return visitor(field1, field2.template get<Int64>());
+		case Field::Types::Float64: 			return visitor(field1, field2.template get<Float64>());
+		case Field::Types::String: 				return visitor(field1, field2.template get<String>());
+		case Field::Types::AggregateFunction: 	return visitor(field1, field2.template get<Field::AggregateFunctionPtr>());
+		case Field::Types::Array: 				return visitor(field1, field2.template get<Field::Array>());
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -440,13 +440,13 @@ typename Visitor::ResultType apply_binary_visitor_impl1(Visitor & visitor, F1 & 
 {
 	switch (field1.getType())
 	{
-		case Field::Types::Null: 				return apply_binary_visitor_impl2(visitor, field1.get<Null>(), 		field2);
-		case Field::Types::UInt64: 				return apply_binary_visitor_impl2(visitor, field1.get<UInt64>(), 	field2);
-		case Field::Types::Int64: 				return apply_binary_visitor_impl2(visitor, field1.get<Int64>(), 	field2);
-		case Field::Types::Float64: 			return apply_binary_visitor_impl2(visitor, field1.get<Float64>(), 	field2);
-		case Field::Types::String: 				return apply_binary_visitor_impl2(visitor, field1.get<String>(), 	field2);
-		case Field::Types::AggregateFunction: 	return apply_binary_visitor_impl2(visitor, field1.get<Field::AggregateFunctionPtr>(), field2);
-		case Field::Types::Array: 				return apply_binary_visitor_impl2(visitor, field1.get<Field::Array>(), field2);
+		case Field::Types::Null: 				return apply_binary_visitor_impl2(visitor, field1.template get<Null>(), 		field2);
+		case Field::Types::UInt64: 				return apply_binary_visitor_impl2(visitor, field1.template get<UInt64>(), 	field2);
+		case Field::Types::Int64: 				return apply_binary_visitor_impl2(visitor, field1.template get<Int64>(), 	field2);
+		case Field::Types::Float64: 			return apply_binary_visitor_impl2(visitor, field1.template get<Float64>(), 	field2);
+		case Field::Types::String: 				return apply_binary_visitor_impl2(visitor, field1.template get<String>(), 	field2);
+		case Field::Types::AggregateFunction: 	return apply_binary_visitor_impl2(visitor, field1.template get<Field::AggregateFunctionPtr>(), field2);
+		case Field::Types::Array: 				return apply_binary_visitor_impl2(visitor, field1.template get<Field::Array>(), field2);
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);

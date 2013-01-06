@@ -51,7 +51,7 @@ int main(int argc, char ** argv)
 	std::cerr << DB::apply_visitor(less, field, field2) << std::endl;
 	std::cerr << DB::apply_visitor(less, field2, field) << std::endl;*/
 
-/*	try
+	try
 	{
 		size_t n = argc == 2 ? Poco::NumberParser::parseUnsigned64(argv[1]) : 10000000;
 
@@ -103,21 +103,7 @@ int main(int argc, char ** argv)
 	{
 		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;
-	}*/
-
-	DB::WriteBufferFromFileDescriptor out_buf(STDIN_FILENO);
-
-	DB::Block sample;
-	DB::ColumnWithNameAndType col;
-	col.type = new DB::DataTypeString;
-	sample.insert(col);
-	
-	DB::TabSeparatedRowOutputStream out(out_buf, sample);
-
-	DB::Row row;
-	row.push_back(DB::String("Hello, world!"));
-
-	out.write(row);
+	}
 	
 	return 0;
 }
