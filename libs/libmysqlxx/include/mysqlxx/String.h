@@ -184,6 +184,8 @@ private:
 		}
 		else
 			throwException("Cannot parse Date");
+
+		return 0;	/// чтобы не было warning-а.
 	}
 
 

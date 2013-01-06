@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_ROW_H
-#define MYSQLXX_ROW_H
+#pragma once
 
 #include <mysqlxx/Types.h>
 #include <mysqlxx/String.h>
@@ -22,14 +21,6 @@ class ResultBase;
   */
 class Row
 {
-private:
-	/** @brief Pointer to bool data member, for use by safe bool conversion operator.
-	  * @see http://www.artima.com/cppsource/safebool.html
-	  * Взято из mysql++.
-	  */
-	typedef MYSQL_ROW Row::*private_bool_type;
-	void this_type_does_not_support_comparisons() const {}
-
 public:
 	/** Для возможности отложенной инициализации. */
 	Row() : row(NULL), res(NULL)
@@ -92,22 +83,5 @@ private:
 };
 
 
-/** Следующие две функции генерируют ошибку компиляции при попытке использовать операторы == или !=.
-  */
-template <typename T>
-bool operator!=(const Row & lhs, const T & rhs)
-{
-	lhs.this_type_does_not_support_comparisons();
-	return false;
-}
-
-template <typename T>
-bool operator==(const Row & lhs, const T & rhs)
-{
-	lhs.this_type_does_not_support_comparisons();
-	return false;
-}
 
 }
-
-#endif
