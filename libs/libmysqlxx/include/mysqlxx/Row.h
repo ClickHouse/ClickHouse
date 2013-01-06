@@ -71,11 +71,6 @@ public:
 	  */
 	bool empty() const { return row == NULL; }
 
-	/** Преобразование в bool.
-	  * (Точнее - в тип, который преобразуется в bool, и с которым больше почти ничего нельзя сделать.)
-	  */
-	operator private_bool_type() const	{ return row == NULL ? NULL : &Row::row; }
-
 private:
 	MYSQL_ROW row;
 	ResultBase * res;
