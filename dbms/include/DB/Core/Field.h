@@ -53,6 +53,8 @@ public:
 			Array				= 18,
 		};
 
+		static const int MIN_NON_POD = 16;
+
 		static const char * toString(Which which)
 		{
 			switch (which)
@@ -328,6 +330,9 @@ private:
 	{
 //		std::cerr << this << " Destroying " << getTypeName() << std::endl;
 
+		if (which < Types::MIN_NON_POD)
+			return;
+		
 		switch (which)
 		{
 			case Types::String:
