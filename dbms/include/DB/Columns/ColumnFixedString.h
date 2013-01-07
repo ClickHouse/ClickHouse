@@ -22,7 +22,7 @@ public:
 	/** Создать пустой столбец строк фиксированной длины n */
 	ColumnFixedString(size_t n)
 		: ColumnFixedArray(new ColumnUInt8(), n),
-		char_data(dynamic_cast<ColumnUInt8 &>(*data).getData())
+		char_data(static_cast<ColumnUInt8 &>(*data).getData())
 	{
 	}
 
