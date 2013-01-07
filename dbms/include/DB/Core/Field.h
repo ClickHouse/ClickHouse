@@ -106,6 +106,21 @@ public:
 		create(rhs);
 	}
 
+	/// Создать строку inplace.
+	Field(const char * data, size_t size)
+		: which(Types::String)
+	{
+		String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
+		new (ptr) String(data, size);
+	}
+
+	Field(const unsigned char * data, size_t size)
+		: which(Types::String)
+	{
+		String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
+		new (ptr) String(reinterpret_cast<const char *>(data), size);
+	}
+
 	template <typename T>
 	Field & operator= (const T & rhs)
 	{

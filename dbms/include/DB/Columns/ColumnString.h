@@ -34,7 +34,7 @@ public:
 	
 	Field operator[](size_t n) const
 	{
-		return String(reinterpret_cast<const char *>(&char_data[offsetAt(n)]), sizeAt(n) - 1);
+		return Field(&char_data[offsetAt(n)], sizeAt(n) - 1);
 	}
 
 	StringRef getDataAt(size_t n) const
