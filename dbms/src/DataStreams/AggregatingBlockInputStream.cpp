@@ -30,6 +30,10 @@ Block AggregatingBlockInputStream::readImpl()
 	
 	AggregatedDataVariants data_variants;
 	aggregator->execute(input, data_variants);
+
+	if (isCancelled())
+		return Block();
+		
 	return aggregator->convertToBlock(data_variants);
 }
 

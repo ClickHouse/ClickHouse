@@ -25,6 +25,9 @@ Block MergeSortingBlockInputStream::readImpl()
 	while (Block block = input->read())
 		blocks.push_back(block);
 
+	if (isCancelled())
+		return Block();
+
 	return merge(blocks);
 }
 

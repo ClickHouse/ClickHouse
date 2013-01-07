@@ -71,6 +71,9 @@ protected:
 			if (exceptions[i])
 				exceptions[i]->rethrow();
 
+		if (isCancelled())
+			return Block();
+
 		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
 		return aggregator->convertToBlock(*res);
 	}
