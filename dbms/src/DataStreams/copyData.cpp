@@ -36,8 +36,9 @@ void copyData(IRowInputStream & from, IRowOutputStream & to)
 			to.writeRowBetweenDelimiter();
 		}
 		
-		Row row = from.read();
-		if (row.empty())
+		Row row;
+		bool has_rows = from.read(row);
+		if (!has_rows)
 			break;
 		to.write(row);
 	}

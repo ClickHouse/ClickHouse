@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
+
 #include <DB/Core/Row.h>
 
 
@@ -8,7 +10,7 @@ namespace DB
 
 /** Интерфейс потока для записи данных по строкам (например, для вывода в консоль).
   */
-class IRowOutputStream
+class IRowOutputStream : private boost::noncopyable
 {
 public:
 

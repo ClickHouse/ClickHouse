@@ -67,7 +67,7 @@ using Poco::SharedPtr;
 
 typedef SharedPtr<IAggregateFunction> AggregateFunctionPtr;
 typedef IAggregateFunction* AggregateFunctionPlainPtr;
-typedef std::vector<AggregateFunctionPlainPtr> AggregateFunctionsPlainPtrs;
+typedef AutoArray<AggregateFunctionPlainPtr> AggregateFunctionsPlainPtrs;
 
 template <> struct TypeName<AggregateFunctionPtr> { static std::string get() { return "AggregateFunctionPtr"; } };
 template <> struct NearestFieldType<AggregateFunctionPtr> { typedef AggregateFunctionPtr Type; };

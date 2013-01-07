@@ -20,7 +20,7 @@ class ValuesRowInputStream : public IRowInputStream
 public:
 	ValuesRowInputStream(ReadBuffer & istr_, const Block & sample_);
 
-	Row read();
+	bool read(Row & row);
 
 	RowInputStreamPtr clone() { return new ValuesRowInputStream(istr, sample); }
 

@@ -30,9 +30,10 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 			if (total_rows == 0)
 				row_input->readRowBetweenDelimiter();
 
-			Row row = row_input->read();
+			Row row;
+			bool has_row = row_input->read(row);
 
-			if (row.empty())
+			if (!has_row)
 				return res;
 
 			if (!res)

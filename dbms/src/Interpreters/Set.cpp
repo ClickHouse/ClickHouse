@@ -172,6 +172,7 @@ void Set::create(BlockInputStreamPtr stream)
 					key[j] = (*key_columns[j])[i];
 
 				res.insert(key);
+				key.resize(keys_size);
 			}
 
 			entries = res.size();

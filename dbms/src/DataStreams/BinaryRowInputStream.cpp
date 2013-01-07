@@ -14,24 +14,23 @@ BinaryRowInputStream::BinaryRowInputStream(ReadBuffer & istr_, const Block & sam
 }
 
 
-Row BinaryRowInputStream::read()
+bool BinaryRowInputStream::read(Row & row)
 {
-	Row res;
 	size_t size = data_types.size();
-	res.resize(size);
-	
+	row.resize(size);
+		
 	for (size_t i = 0; i < size; ++i)
 	{
 		if (i == 0 && istr.eof())
 		{
-			res.clear();
-			return res;
+			row.clear();
+			return false;
 		}
 
-		data_types[i]->deserializeBinary(res[i], istr);
+		data_types[i]->deserializeBinary(row[i], istr);
 	}
 
-	return res;
+	return true;
 }
 
 }

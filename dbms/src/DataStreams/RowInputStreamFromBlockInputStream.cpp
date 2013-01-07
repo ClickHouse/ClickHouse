@@ -13,7 +13,7 @@ RowInputStreamFromBlockInputStream::RowInputStreamFromBlockInputStream(BlockInpu
 }
 
 
-Row RowInputStreamFromBlockInputStream::read()
+bool RowInputStreamFromBlockInputStream::read(Row & row)
 {
 	if (pos >= current_rows)
 	{
@@ -23,13 +23,13 @@ Row RowInputStreamFromBlockInputStream::read()
 	}
 
 	size_t columns = current_block.columns();
-	Row row(columns);
+	row.resize(columns);
 
 	for (size_t i = 0; i < columns; ++i)
 		row[i] = (*current_block.getByPosition(i).column)[pos];
 
 	++pos;
-	return row;
+	return true;
 }
 
 }

@@ -1,0 +1,132 @@
+#include <iostream>
+#include <iomanip>
+
+#include <Poco/NumberFormatter.h>
+
+#include <DB/Core/Field.h>
+#include <DB/Interpreters/HashMap.h>
+#include <DB/Common/AutoArray.h>
+
+#include <statdaemons/Stopwatch.h>
+
+
+int main(int argc, char ** argv)
+{
+	{
+		size_t n = 10;
+		typedef std::string T;
+		DB::AutoArray<T> arr(n);
+
+		for (size_t i = 0; i < arr.size(); ++i)
+			arr[i] = "Hello, world! " + Poco::NumberFormatter::format(i);
+
+		for (size_t i = 0; i < arr.size(); ++i)
+			std::cerr << arr[i] << std::endl;
+	}
+
+	std::cerr << std::endl;
+
+	{
+		size_t n = 10;
+		typedef std::string T;
+		DB::AutoArray<T> arr(n, true);
+
+		for (size_t i = 0; i < arr.size(); ++i)
+			new (arr.place(i)) std::string("Hello, world! " + Poco::NumberFormatter::format(i));
+
+		for (size_t i = 0; i < arr.size(); ++i)
+			std::cerr << arr[i] << std::endl;
+	}
+
+	std::cerr << std::endl;
+	
+	{
+		size_t n = 10;
+		typedef std::string T;
+		typedef DB::AutoArray<T> Arr;
+		Arr arr;
+
+		arr.resize(n);
+		for (size_t i = 0; i < arr.size(); ++i)
+			arr[i] = "Hello, world! " + Poco::NumberFormatter::format(i);
+
+		for (size_t i = 0; i < arr.size(); ++i)
+			std::cerr << arr[i] << std::endl;
+
+		std::cerr << std::endl;
+
+		Arr arr2 = arr;
+
+		std::cerr << arr.size() << ", " << arr2.size() << std::endl;
+		
+		for (size_t i = 0; i < arr2.size(); ++i)
+			std::cerr << arr2[i] << std::endl;
+	}
+
+	size_t n = 5;
+	size_t map_size = 1000000;
+	typedef DB::Field T;
+	T field = std::string("Hello, world");
+
+	if (argc == 2 && !strcmp(argv[1], "1"))
+	{
+		typedef DB::AutoArray<T> Arr;
+		typedef DB::HashMap<UInt64, Arr> Map;
+
+		Stopwatch watch;
+
+		Map map;
+		for (size_t i = 0; i < map_size; ++i)
+		{
+			Map::iterator it;
+			bool inserted;
+
+			map.emplace(rand(), it, inserted);
+			if (inserted)
+			{
+				new(&it->second) Arr(n, true);
+
+				for (size_t j = 0; j < n; ++j)
+					new (it->second.place(j)) T(field);
+			}
+		}
+
+		std::cerr << std::fixed << std::setprecision(2)
+			<< "AutoArray. Elapsed: " << watch.elapsedSeconds()
+			<< " (" << map_size / watch.elapsedSeconds() << " rows/sec., "
+			<< "sizeof(Map::value_type) = " << sizeof(Map::value_type)
+			<< std::endl;
+	}
+
+	if (argc == 2 && !strcmp(argv[1], "2"))
+	{
+		typedef std::vector<T> Arr;
+		typedef DB::HashMap<UInt64, Arr> Map;
+
+		Stopwatch watch;
+
+		Map map;
+		for (size_t i = 0; i < map_size; ++i)
+		{
+			Map::iterator it;
+			bool inserted;
+
+			map.emplace(rand(), it, inserted);
+			if (inserted)
+			{
+				new(&it->second) Arr(n);
+
+				for (size_t j = 0; j < n; ++j)
+					it->second[j] = field;
+			}
+		}
+
+		std::cerr << std::fixed << std::setprecision(2)
+			<< "Vector:    Elapsed: " << watch.elapsedSeconds()
+			<< " (" << map_size / watch.elapsedSeconds() << " rows/sec., "
+			<< "sizeof(Map::value_type) = " << sizeof(Map::value_type)
+			<< std::endl;
+	}
+
+	return 0;
+}

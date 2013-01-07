@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include <DB/Common/AutoArray.h>
 #include <DB/Core/Field.h>
 
 
@@ -12,6 +13,6 @@ namespace DB
   * Внимание! Предпочтительно вместо единичных строк хранить блоки столбцов. См. Block.h
   */
 
-typedef std::vector<Field> Row;
+typedef AutoArray<Field> Row;
 
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
+
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
@@ -14,7 +16,7 @@ using Poco::SharedPtr;
 /** Интерфейс потока для чтения данных по блокам из БД.
   * Реляционные операции предполагается делать также реализациями этого интерфейса.
   */
-class IBlockInputStream
+class IBlockInputStream : private boost::noncopyable
 {
 public:
 	typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;

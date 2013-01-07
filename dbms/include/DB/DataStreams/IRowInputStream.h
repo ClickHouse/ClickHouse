@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
+
 #include <DB/Core/Row.h>
 
 
@@ -8,14 +10,14 @@ namespace DB
 
 /** Интерфейс потока для чтения данных по строкам.
   */
-class IRowInputStream
+class IRowInputStream : private boost::noncopyable
 {
 public:
 
 	/** Прочитать следующую строку.
 	  * Если строк больше нет - вернуть пустую строку.
 	  */
-	virtual Row read() = 0;
+	virtual bool read(Row & row) = 0;
 
 	/// Прочитать разделитель
 	virtual void readRowBetweenDelimiter() {};	/// разделитель между строками

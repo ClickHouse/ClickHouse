@@ -18,18 +18,17 @@ ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & sam
 }
 
 
-Row ValuesRowInputStream::read()
+bool ValuesRowInputStream::read(Row & row)
 {
-	Row res;
 	size_t size = data_types.size();
-	res.resize(size);
+	row.resize(size);
 
 	skipWhitespaceIfAny(istr);
 
 	if (istr.eof() || *istr.position() == ';')
 	{
-		res.clear();
-		return res;
+		row.clear();
+		return false;
 	}
 
 	assertString("(", istr);
@@ -40,7 +39,7 @@ Row ValuesRowInputStream::read()
 			assertString(",", istr);
 		
 		skipWhitespaceIfAny(istr);
-		data_types[i]->deserializeTextQuoted(res[i], istr);
+		data_types[i]->deserializeTextQuoted(row[i], istr);
 		skipWhitespaceIfAny(istr);
 	}
 	
@@ -50,7 +49,7 @@ Row ValuesRowInputStream::read()
 	if (!istr.eof() && *istr.position() == ',')
 		++istr.position();
 
-	return res;
+	return true;
 }
 
 }

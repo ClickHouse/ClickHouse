@@ -504,9 +504,11 @@ public:
 		else
 		{
 			/// Читаем индекс.
-			typedef std::vector<Row> Index;
+			typedef AutoArray<Row> Index;
 			size_t key_size = storage.sort_descr.size();
-			Index index(marks_count, Row(key_size));
+			Index index(marks_count);
+			for (size_t i = 0; i < marks_count; ++i)
+				index[i].resize(key_size);
 			
 			{
 				String index_path = path + "primary.idx";

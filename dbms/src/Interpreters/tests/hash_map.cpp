@@ -34,15 +34,15 @@ int main(int argc, char ** argv)
 	data_types_uint64.push_back(new DB::DataTypeUInt64);
 	
 	std::vector<Key> data(n);
-	Value value;
+	Value value(3);
 
 	DB::AggregateFunctionPtr func_count = factory.get("count", data_types_empty);
 	DB::AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64);
 	DB::AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64);
 
-	value.push_back(func_count);
-	value.push_back(func_avg);
-	value.push_back(func_uniq);
+	value[0] = func_count;
+	value[1] = func_avg;
+	value[2] = func_uniq;
 
 	DB::Row row(1);
 	row[0] = DB::UInt64(0);

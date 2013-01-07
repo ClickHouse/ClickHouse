@@ -20,7 +20,7 @@ public:
 	  */
 	TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 
-	Row read();
+	bool read(Row & row);
 	void readPrefix();
 
 	RowInputStreamPtr clone() { return new TabSeparatedRowInputStream(istr, sample, with_names, with_types); }

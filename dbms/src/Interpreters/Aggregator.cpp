@@ -348,6 +348,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				if (inserted)
 				{
 					new(&it->second) AggregatedDataHashed::mapped_type(key, AggregateFunctionsPlainPtrs(aggregates_size));
+					key.resize(keys_size);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second.second[j] = aggregates[j].function->cloneEmpty();
@@ -382,6 +383,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						continue;
 					
 					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
+					key.resize(keys_size);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						it->second[j] = aggregates[j].function->cloneEmpty();

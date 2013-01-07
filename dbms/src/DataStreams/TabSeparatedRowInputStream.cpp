@@ -43,21 +43,20 @@ void TabSeparatedRowInputStream::readPrefix()
 }
 
 
-Row TabSeparatedRowInputStream::read()
+bool TabSeparatedRowInputStream::read(Row & row)
 {
-	Row res;
 	size_t size = data_types.size();
-	res.resize(size);
+	row.resize(size);
 	
 	for (size_t i = 0; i < size; ++i)
 	{
 		if (i == 0 && istr.eof())
 		{
-			res.clear();
-			return res;
+			row.clear();
+			return false;
 		}
 		
-		data_types[i]->deserializeTextEscaped(res[i], istr);
+		data_types[i]->deserializeTextEscaped(row[i], istr);
 
 		/// пропускаем разделители
 		if (i + 1 == size)
@@ -69,7 +68,7 @@ Row TabSeparatedRowInputStream::read()
 			assertString("\t", istr);
 	}
 
-	return res;
+	return true;
 }
 
 }
