@@ -24,6 +24,11 @@ public:
 		return data[n];
 	}
 
+	void get(size_t n, Field & res) const
+	{
+		res = data[n];
+	}
+
 	StringRef getDataAt(size_t n) const
 	{
 		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -49,7 +54,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(get<const AggregateFunctionPtr &>(x));
+		data.push_back(DB::get<const AggregateFunctionPtr &>(x));
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const

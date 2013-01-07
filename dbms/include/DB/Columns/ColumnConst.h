@@ -39,6 +39,7 @@ public:
 	ColumnPtr cloneEmpty() const { return new ColumnConst(0, data); }
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
+	void get(size_t n, Field & res) const { res = typename NearestFieldType<T>::Type(data); }
 	void cut(size_t start, size_t length) { s = length; }
 	void clear() { s = 0; }
 	

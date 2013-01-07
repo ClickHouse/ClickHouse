@@ -169,7 +169,7 @@ void Set::create(BlockInputStreamPtr stream)
 			{
 				/// Строим ключ
 				for (size_t j = 0; j < keys_size; ++j)
-					key[j] = (*key_columns[j])[i];
+					key_columns[j]->get(i, key[j]);
 
 				res.insert(key);
 				key.resize(keys_size);
@@ -369,7 +369,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 		{
 			/// Строим ключ
 			for (size_t j = 0; j < keys_size; ++j)
-				key[j] = (*key_columns[j])[i];
+				key_columns[j]->get(i, key[j]);
 
 			vec_res[i] = negative ^ (set.end() != set.find(key));
 		}

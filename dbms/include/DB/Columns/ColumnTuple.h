@@ -50,6 +50,15 @@ public:
 		return res;
 	}
 
+	void get(size_t n, Field & res) const
+	{
+		size_t size = columns.size();
+		res = Array(size);
+		Array & res_arr = DB::get<Array &>(res);
+		for (size_t i = 0; i < size; ++i)
+			columns[i]->get(n, res_arr[i]);
+	}
+
 	StringRef getDataAt(size_t n) const
 	{
 		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -57,7 +66,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const Array & arr = get<const Array &>(x);
+		const Array & arr = DB::get<const Array &>(x);
 
 		size_t size = columns.size();
 		if (arr.size() != size)

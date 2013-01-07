@@ -37,6 +37,11 @@ public:
 		return Field(&char_data[offsetAt(n)], sizeAt(n) - 1);
 	}
 
+	void get(size_t n, Field & res) const
+	{
+		res.assignString(&char_data[offsetAt(n)], sizeAt(n) - 1);
+	}
+
 	StringRef getDataAt(size_t n) const
 	{
 		return StringRef(&char_data[offsetAt(n)], sizeAt(n));
@@ -44,7 +49,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const String & s = get<const String &>(x);
+		const String & s = DB::get<const String &>(x);
 		size_t old_size = char_data.size();
 		size_t size_to_append = s.size() + 1;
 		

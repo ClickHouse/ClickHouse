@@ -20,6 +20,7 @@ public:
 	ColumnPtr cloneEmpty() const { return new ColumnSet(0, NULL); }
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { throw Exception("Cannot get value from ColumnSet", ErrorCodes::NOT_IMPLEMENTED); }
+	void get(size_t n, Field & res) const { throw Exception("Cannot get value from ColumnSet", ErrorCodes::NOT_IMPLEMENTED); };
 	void cut(size_t start, size_t length) { s = length; }
 	void clear() { s = 0; data = NULL; }
 	void insert(const Field & x) { throw Exception("Cannot insert element into ColumnSet", ErrorCodes::NOT_IMPLEMENTED); }

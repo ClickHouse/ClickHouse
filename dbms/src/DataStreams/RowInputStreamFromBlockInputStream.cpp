@@ -26,7 +26,7 @@ bool RowInputStreamFromBlockInputStream::read(Row & row)
 	row.resize(columns);
 
 	for (size_t i = 0; i < columns; ++i)
-		row[i] = (*current_block.getByPosition(i).column)[pos];
+		current_block.getByPosition(i).column->get(pos, row[i]);
 
 	++pos;
 	return true;

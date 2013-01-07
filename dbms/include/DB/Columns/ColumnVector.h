@@ -90,6 +90,11 @@ public:
 		return typename NearestFieldType<T>::Type(data[n]);
 	}
 
+	void get(size_t n, Field & res) const
+	{
+		res = typename NearestFieldType<T>::Type(data[n]);
+	}
+
 	StringRef getDataAt(size_t n) const
 	{
 		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));

@@ -57,6 +57,17 @@ public:
 		return res;
 	}
 
+	void get(size_t n, Field & res) const
+	{
+		size_t offset = offsetAt(n);
+		size_t size = sizeAt(n);
+		res = Array(size);
+		Array & res_arr = DB::get<Array &>(res);
+		
+		for (size_t i = 0; i < size; ++i)
+			data->get(offset + i, res_arr[i]);
+	}
+
 	StringRef getDataAt(size_t n) const
 	{
 		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -95,7 +106,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const Array & array = get<const Array &>(x);
+		const Array & array = DB::get<const Array &>(x);
 		size_t size = array.size();
 		for (size_t i = 0; i < size; ++i)
 			data->insert(array[i]);

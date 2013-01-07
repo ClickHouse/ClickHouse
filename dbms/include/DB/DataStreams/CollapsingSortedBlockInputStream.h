@@ -60,14 +60,14 @@ private:
 	void setRow(Row & row, SortCursor & cursor)
 	{
 		for (size_t i = 0; i < num_columns; ++i)
-			row[i] = (*cursor->all_columns[i])[cursor->pos];
+			cursor->all_columns[i]->get(cursor->pos, row[i]);
 	}
 
 	/// Сохранить первичный ключ, на который указывает cursor в row.
 	void setPrimaryKey(Row & row, SortCursor & cursor)
 	{
 		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
-			row[i] = (*cursor->sort_columns[i])[cursor->pos];
+			cursor->sort_columns[i]->get(cursor->pos, row[i]);
 	}
 
 	/// Вставить в результат строки для текущего идентификатора "визита".

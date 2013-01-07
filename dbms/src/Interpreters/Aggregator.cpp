@@ -121,7 +121,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	typedef std::vector<Columns> AggregateColumns;
 	AggregateColumns aggregate_columns(aggregates_size);
 
-	typedef std::vector<Row> Rows;
+	typedef AutoArray<Row> Rows;
 	Rows aggregate_arguments(aggregates_size);
 
 	/** Используется, если есть ограничение на максимальное количество строк при агрегации,
@@ -179,7 +179,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					for (size_t j = 0; j < aggregates_size; ++j)
 					{
 						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-							aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+							aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
 
 						res[j]->add(aggregate_arguments[j]);
 					}
@@ -224,7 +224,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				for (size_t j = 0; j < aggregates_size; ++j)
 				{
 					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+						aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
 
 					it->second[j]->add(aggregate_arguments[j]);
 				}
@@ -272,7 +272,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					for (size_t j = 0; j < aggregates_size; ++j)
 					{
 						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-							aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+							aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
 
 						it->second[j]->add(aggregate_arguments[j]);
 					}
@@ -315,7 +315,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					for (size_t j = 0; j < aggregates_size; ++j)
 					{
 						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-							aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+							aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
 
 						it->second[j]->add(aggregate_arguments[j]);
 					}
@@ -358,7 +358,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				for (size_t j = 0; j < aggregates_size; ++j)
 				{
 					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+						aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
 
 					it->second.second[j]->add(aggregate_arguments[j]);
 				}
@@ -374,7 +374,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			{
 				/// Строим ключ
 				for (size_t j = 0; j < keys_size; ++j)
-					key[j] = (*key_columns[j])[i];
+					key_columns[j]->get(i, key[j]);
 
 				AggregatedData::iterator it = res.find(key);
 				if (it == res.end())
@@ -393,7 +393,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				for (size_t j = 0; j < aggregates_size; ++j)
 				{
 					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_arguments[j][k] = (*aggregate_columns[j][k])[i];
+						aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
 
 					it->second[j]->add(aggregate_arguments[j]);
 				}
@@ -838,7 +838,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			{
 				/// Строим ключ
 				for (size_t j = 0; j < keys_size; ++j)
-					key[j] = (*key_columns[j])[i];
+					key_columns[j]->get(i, key[j]);
 
 				AggregatedData::iterator it = res.find(key);
 				if (it == res.end())

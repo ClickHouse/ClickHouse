@@ -45,7 +45,9 @@ public:
 			UInt64				= 1,
 			Int64				= 2,
 			Float64				= 3,
+
 			/// не POD типы
+
 			String				= 16,
 			AggregateFunction 	= 17,	/// Состояние агрегатной функции
 			Array				= 18,
@@ -108,17 +110,25 @@ public:
 
 	/// Создать строку inplace.
 	Field(const char * data, size_t size)
-		: which(Types::String)
 	{
-		String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
-		new (ptr) String(data, size);
+		create(data, size);
 	}
 
 	Field(const unsigned char * data, size_t size)
-		: which(Types::String)
 	{
-		String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
-		new (ptr) String(reinterpret_cast<const char *>(data), size);
+		create(data, size);
+	}
+
+	void assignString(const char * data, size_t size)
+	{
+		destroy();
+		create(data, size);
+	}
+
+	void assignString(const unsigned char * data, size_t size)
+	{
+		destroy();
+		create(data, size);
 	}
 
 	template <typename T>
@@ -301,16 +311,25 @@ private:
 		}
 	}
 
+	void create(const char * data, size_t size)
+	{
+		which = Types::String;
+		String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
+		new (ptr) String(data, size);
+	}
+
+	void create(const unsigned char * data, size_t size)
+	{
+		create(reinterpret_cast<const char *>(data), size);
+	}
+
 
 	void destroy()
 	{
 //		std::cerr << this << " Destroying " << getTypeName() << std::endl;
-		
+
 		switch (which)
 		{
-			default:
-				break;
-				
 			case Types::String:
 				destroy<String>();
 				break;
@@ -320,6 +339,8 @@ private:
 			case Types::Array:
 				destroy<Array>();
 				break;
+			default:
+ 				break;
 		}
 	}
 

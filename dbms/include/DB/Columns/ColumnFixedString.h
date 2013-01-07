@@ -38,6 +38,11 @@ public:
 		return String(reinterpret_cast<const char *>(&char_data[n * index]), n);
 	}
 
+	void get(size_t index, Field & res) const
+	{
+		res.assignString(reinterpret_cast<const char *>(&char_data[n * index]), n);
+	}
+
 	StringRef getDataAt(size_t index) const
 	{
 		return StringRef(&char_data[n * index], n);
@@ -45,7 +50,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const String & s = get<const String &>(x);
+		const String & s = DB::get<const String &>(x);
 
 		if (s.size() > n)
 			throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);

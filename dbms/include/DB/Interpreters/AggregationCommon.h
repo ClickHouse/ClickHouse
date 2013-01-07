@@ -98,7 +98,7 @@ inline UInt128 __attribute__((__always_inline__)) pack128(
 		size_t offset = 0;
 		for (size_t j = 0; j < keys_size; ++j)
 		{
-			key[j] = (*key_columns[j])[i];
+			key_columns[j]->get(i, key[j]);
 			StringRef key_data = key_columns[j]->getDataAt(i);
 			memcpy(key_hash_union.bytes + offset, key_data.data, key_sizes[j]);
 			offset += key_sizes[j];
@@ -110,7 +110,7 @@ inline UInt128 __attribute__((__always_inline__)) pack128(
 
 		for (size_t j = 0; j < keys_size; ++j)
 		{
-			key[j] = (*key_columns[j])[i];
+			key_columns[j]->get(i, key[j]);
 			StringRef key_data = key_columns[j]->getDataAt(i);
 			hash.update(key_data.data, key_data.size);
 		}

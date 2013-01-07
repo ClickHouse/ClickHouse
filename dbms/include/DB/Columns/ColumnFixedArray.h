@@ -46,6 +46,14 @@ public:
 		return res;
 	}
 
+	void get(size_t index, Field & res) const
+	{
+		res = Array(n);
+		Array & res_arr = DB::get<Array &>(res);
+		for (size_t i = n * index; i < n * (index + 1); ++i)
+			data->get(n * index + i, res_arr[i]);
+	}
+
 	StringRef getDataAt(size_t n) const
 	{
 		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -58,7 +66,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		const Array & array = get<const Array &>(x);
+		const Array & array = DB::get<const Array &>(x);
 		if (n != array.size())
 			throw Exception("Size of array doesn't match size of FixedArray column",
 				ErrorCodes::SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN);
