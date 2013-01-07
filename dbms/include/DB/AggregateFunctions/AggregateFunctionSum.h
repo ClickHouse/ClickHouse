@@ -67,7 +67,7 @@ public:
 
 	void addOne(const Field & value)
 	{
-		sum += get<T>(value);
+		sum += get<const T &>(value);
 	}
 
 	void merge(const IAggregateFunction & rhs)

@@ -45,7 +45,7 @@ public:
 
 	void addOne(const Field & value)
 	{
-		sum += get<T>(value);
+		sum += get<const T &>(value);
 		++count;
 	}
 
