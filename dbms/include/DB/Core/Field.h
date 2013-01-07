@@ -326,7 +326,7 @@ private:
 	}
 
 
-	void destroy()
+	__attribute__((__always_inline__)) void destroy()
 	{
 //		std::cerr << this << " Destroying " << getTypeName() << std::endl;
 

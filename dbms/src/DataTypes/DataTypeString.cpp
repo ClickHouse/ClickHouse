@@ -111,9 +111,8 @@ void DataTypeString::serializeText(const Field & field, WriteBuffer & ostr) cons
 
 void DataTypeString::deserializeText(Field & field, ReadBuffer & istr) const
 {
-	String s;
-	readString(s, istr);
-	field = s;
+	field.assignString("", 0);
+	readString(get<String &>(field), istr);
 }
 
 
@@ -125,9 +124,8 @@ void DataTypeString::serializeTextEscaped(const Field & field, WriteBuffer & ost
 
 void DataTypeString::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
 {
-	String s;
-	readEscapedString(s, istr);
-	field = s;
+	field.assignString("", 0);
+	readEscapedString(get<String &>(field), istr);
 }
 
 
@@ -139,9 +137,8 @@ void DataTypeString::serializeTextQuoted(const Field & field, WriteBuffer & ostr
 
 void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 {
-	String s;
-	readQuotedString(s, istr);
-	field = s;
+	field.assignString("", 0);
+	readQuotedString(get<String &>(field), istr);
 }
 
 

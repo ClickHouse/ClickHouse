@@ -77,9 +77,8 @@ void DataTypeFixedString::serializeText(const Field & field, WriteBuffer & ostr)
 
 void DataTypeFixedString::deserializeText(Field & field, ReadBuffer & istr) const
 {
-	String s;
-	readString(s, istr);
-	field = s;
+	field.assignString("", 0);
+	readString(get<String &>(field), istr);
 }
 
 
@@ -91,9 +90,8 @@ void DataTypeFixedString::serializeTextEscaped(const Field & field, WriteBuffer 
 
 void DataTypeFixedString::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
 {
-	String s;
-	readEscapedString(s, istr);
-	field = s;
+	field.assignString("", 0);
+	readEscapedString(get<String &>(field), istr);
 }
 
 
@@ -105,9 +103,8 @@ void DataTypeFixedString::serializeTextQuoted(const Field & field, WriteBuffer &
 
 void DataTypeFixedString::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 {
-	String s;
-	readQuotedString(s, istr);
-	field = s;
+	field.assignString("", 0);
+	readQuotedString(get<String &>(field), istr);
 }
 
 
