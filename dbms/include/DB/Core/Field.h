@@ -24,6 +24,11 @@ using Poco::SharedPtr;
 
 class IAggregateFunction;
 
+/** 32 хватает с запасом (достаточно 28), но выбрано круглое число,
+  * чтобы арифметика при использовании массивов из Field была проще (не содержала умножения).
+  */
+#define DBMS_TOTAL_FIELD_SIZE 32
+
 
 /** Discriminated union из нескольких типов.
   * Сделан для замены boost::variant:
@@ -33,7 +38,7 @@ class IAggregateFunction;
   * Используется для представления единичного значения одного из нескольких типов в оперативке.
   * Внимание! Предпочтительно вместо единичных значений хранить кусочки столбцов. См. Column.h
   */
-class Field
+class __attribute__((aligned(DBMS_TOTAL_FIELD_SIZE))) Field
 {
 public:
 	struct Types
@@ -266,7 +271,8 @@ public:
 	typedef std::vector<Field> Array;
 	
 private:
-	static const size_t storage_size = 24;
+	/// Хватает с запасом
+	static const size_t storage_size = DBMS_TOTAL_FIELD_SIZE - sizeof(Types::Which);
 	
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Null));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(UInt64));
@@ -703,3 +709,7 @@ namespace DB
 	inline void writeText(const Array & x, WriteBuffer & buf) 	{ throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
 	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
 }
+
+
+#undef DBMS_TOTAL_FIELD_SIZE
+

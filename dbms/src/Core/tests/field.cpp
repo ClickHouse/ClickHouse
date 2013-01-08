@@ -15,7 +15,7 @@
 
 int main(int argc, char ** argv)
 {
-/*	DB::FieldVisitorToString to_string;
+	DB::FieldVisitorToString to_string;
 	
 	DB::Field field = DB::UInt64(0);
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
@@ -46,7 +46,7 @@ int main(int argc, char ** argv)
 
 	std::cerr << (field < field2) << std::endl;
 	std::cerr << (field2 < field) << std::endl;
-*/
+
 
 	try
 	{
@@ -101,6 +101,8 @@ int main(int argc, char ** argv)
 		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;
 	}
+	
+	std::cerr << "sizeof(Field) = " << sizeof(DB::Field) << std::endl;
 	
 	return 0;
 }
