@@ -85,8 +85,7 @@ public:
 	}
 
 	/** Не смотря на наличие шаблонного конструктора, этот конструктор всё-равно нужен,
-	  *  так как при его отсутствии, не смотря на наличие шаблонного конструктора,
-	  *  компилятор всё-равно сгенерирует конструктор по-умолчанию.
+	  *  так как при его отсутствии, компилятор всё-равно сгенерирует конструктор по-умолчанию.
 	  */
 	Field(const Field & rhs)
 	{
@@ -104,7 +103,6 @@ public:
 
 	template <typename T>
 	Field(const T & rhs)
-		: which(Types::Null)
 	{
 //		std::cerr << this << " Field::Field(" << Types::toString(TypeToEnum<T>::value) << ")" << std::endl;
 		create(rhs);
@@ -193,7 +191,7 @@ public:
 		
 		switch (which)
 		{
-			case Types::Null: 				return get<Null>() 					< rhs.get<Null>();
+			case Types::Null: 				return false;
 			case Types::UInt64: 			return get<UInt64>() 				< rhs.get<UInt64>();
 			case Types::Int64: 				return get<Int64>() 				< rhs.get<Int64>();
 			case Types::Float64: 			return get<Float64>() 				< rhs.get<Float64>();
@@ -220,7 +218,7 @@ public:
 
 		switch (which)
 		{
-			case Types::Null: 				return get<Null>() 					<= rhs.get<Null>();
+			case Types::Null: 				return true;
 			case Types::UInt64: 			return get<UInt64>() 				<= rhs.get<UInt64>();
 			case Types::Int64: 				return get<Int64>() 				<= rhs.get<Int64>();
 			case Types::Float64: 			return get<Float64>() 				<= rhs.get<Float64>();
@@ -245,10 +243,10 @@ public:
 
 		switch (which)
 		{
-			case Types::Null: 				return get<Null>() 					== rhs.get<Null>();
-			case Types::UInt64: 			return get<UInt64>() 				== rhs.get<UInt64>();
-			case Types::Int64: 				return get<Int64>() 				== rhs.get<Int64>();
-			case Types::Float64: 			return get<Float64>() 				== rhs.get<Float64>();
+			case Types::Null: 				return true;
+			case Types::UInt64:
+			case Types::Int64:
+			case Types::Float64:			return get<UInt64>() 				== rhs.get<UInt64>();
 			case Types::String: 			return get<String>() 				== rhs.get<String>();
 			case Types::AggregateFunction: 	return get<AggregateFunctionPtr>() 	== rhs.get<AggregateFunctionPtr>();
 			case Types::Array: 				return get<Array>() 				== rhs.get<Array>();
@@ -278,7 +276,7 @@ private:
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(AggregateFunctionPtr));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Array));
 
-	char storage[storage_size];
+	char storage[storage_size] __attribute__((aligned(8)));
 	Types::Which which;
 
 
@@ -481,7 +479,7 @@ typename Visitor::ResultType apply_binary_visitor_impl1(Visitor & visitor, F1 & 
 {
 	switch (field1.getType())
 	{
-		case Field::Types::Null: 				return apply_binary_visitor_impl2(visitor, field1.template get<Null>(), 		field2);
+		case Field::Types::Null: 				return apply_binary_visitor_impl2(visitor, field1.template get<Null>(), 	field2);
 		case Field::Types::UInt64: 				return apply_binary_visitor_impl2(visitor, field1.template get<UInt64>(), 	field2);
 		case Field::Types::Int64: 				return apply_binary_visitor_impl2(visitor, field1.template get<Int64>(), 	field2);
 		case Field::Types::Float64: 			return apply_binary_visitor_impl2(visitor, field1.template get<Float64>(), 	field2);
@@ -645,27 +643,6 @@ public:
 	T operator() (const UInt64 	& x) const { return x; }
 	T operator() (const Int64 	& x) const { return x; }
 	T operator() (const Float64 & x) const { return x; }
-};
-
-
-class FieldVisitorLess : public StaticVisitor<bool>
-{
-public:
-	template <typename T, typename U>
-	bool operator() (const T &, const U &) const { return false; }
-
-    template <typename T>
-    bool operator() (const T & lhs, const T & rhs) const { return lhs < rhs; }
-};
-
-class FieldVisitorGreater : public StaticVisitor<bool>
-{
-public:
-	template <typename T, typename U>
-	bool operator() (const T &, const U &) const { return false; }
-
-    template <typename T>
-    bool operator() (const T & lhs, const T & rhs) const { return lhs > rhs; }
 };
 
 

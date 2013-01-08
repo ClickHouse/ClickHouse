@@ -18,7 +18,7 @@ struct AggregateFunctionMinTraits
 
 struct AggregateFunctionMaxTraits
 {
-	static bool better(const Field & lhs, const Field & rhs) { return !(lhs < rhs) && !(lhs == rhs); }
+	static bool better(const Field & lhs, const Field & rhs) { return lhs > rhs; }
 	static String name() { return "max"; }
 };
 

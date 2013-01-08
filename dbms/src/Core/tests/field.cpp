@@ -44,12 +44,9 @@ int main(int argc, char ** argv)
 	DB::get<DB::Field::Array &>(field).push_back(field);
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
 
-	DB::FieldVisitorLess less;
-
 	std::cerr << (field < field2) << std::endl;
 	std::cerr << (field2 < field) << std::endl;
-	std::cerr << DB::apply_visitor(less, field, field2) << std::endl;
-	std::cerr << DB::apply_visitor(less, field2, field) << std::endl;*/
+*/
 
 	try
 	{
