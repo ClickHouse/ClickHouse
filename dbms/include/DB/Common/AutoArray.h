@@ -205,7 +205,7 @@ private:
 
 	void init(size_t size_, bool dont_init_elems)
 	{
-		if (unlikely(!size_))
+		if (!size_)
 		{
 			setEmpty();
 			return;

@@ -87,7 +87,7 @@ private:
 	Logger * log;
 	
 	typedef std::vector<size_t> Sizes;
-	static Type chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 
 	/** Вывести в лог информацию о скорости создания множества.
 	  */

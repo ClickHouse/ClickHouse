@@ -68,13 +68,8 @@ void Aggregator::initialize(Block & block)
 }
 
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
 {
-/*	bool has_strings = false;
-	for (size_t j = 0; j < keys_size; ++j)
-		if (dynamic_cast<const ColumnString *>(&*key_columns[j]) || dynamic_cast<const ColumnFixedString *>(&*key_columns[j]))
-			has_strings = true;*/
-
 	keys_fit_128_bits = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
@@ -97,12 +92,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(Columns & key_c
 
 	/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
 	if (keys_size == 1 && key_columns[0]->isNumeric()
-		&& !dynamic_cast<ColumnFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnFloat64 *>(&*key_columns[0]))
+		&& !dynamic_cast<const ColumnFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnFloat64 *>(key_columns[0])
+		&& !dynamic_cast<const ColumnConstFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnConstFloat64 *>(key_columns[0]))
 		return AggregatedDataVariants::KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
-		&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])))
+		&& (dynamic_cast<const ColumnString *>(key_columns[0]) || dynamic_cast<const ColumnFixedString *>(key_columns[0])
+			|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
 		return AggregatedDataVariants::KEY_STRING;
 
 	/// Если много ключей - будем агрегировать по хэшу от них
@@ -116,9 +113,9 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 {
 	size_t aggregates_size = aggregates.size();
 	Row key(keys_size);
-	Columns key_columns(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
 
-	typedef std::vector<Columns> AggregateColumns;
+	typedef std::vector<ConstColumnPlainPtrs> AggregateColumns;
 	AggregateColumns aggregate_columns(aggregates_size);
 
 	typedef AutoArray<Row> Rows;
@@ -190,7 +187,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		{
 			AggregatedDataWithUInt64Key & res = result.key64;
 			const FieldVisitorToUInt64 visitor;
-			IColumn & column = *key_columns[0];
+			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -233,7 +230,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
 		{
 			AggregatedDataWithStringKey & res = result.key_string;
-			IColumn & column = *key_columns[0];
+			const IColumn & column = *key_columns[0];
 
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 			{
@@ -665,7 +662,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 {
 	size_t aggregates_size = aggregates.size();
 	Row key(keys_size);
-	Columns key_columns(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
 
 	typedef ColumnAggregateFunction::Container_t * AggregateColumn;
 	typedef std::vector<AggregateColumn> AggregateColumns;
@@ -712,7 +709,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		{
 			AggregatedDataWithUInt64Key & res = result.key64;
 			const FieldVisitorToUInt64 visitor;
-			IColumn & column = *key_columns[0];
+			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -741,7 +738,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
 		{
 			AggregatedDataWithStringKey & res = result.key_string;
-			IColumn & column = *key_columns[0];
+			const IColumn & column = *key_columns[0];
 
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
             {

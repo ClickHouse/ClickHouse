@@ -83,7 +83,7 @@ typedef std::vector<size_t> Sizes;
 
 /// Записать набор ключей в UInt128. Либо уложив их подряд, либо вычислив SipHash.
 inline UInt128 __attribute__((__always_inline__)) pack128(
-	size_t i, bool keys_fit_128_bits, size_t keys_size, Row & key, const Columns & key_columns, const Sizes & key_sizes)
+	size_t i, bool keys_fit_128_bits, size_t keys_size, Row & key, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
 {
 	union
 	{

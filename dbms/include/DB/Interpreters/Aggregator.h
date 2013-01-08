@@ -164,7 +164,7 @@ private:
 	void initialize(Block & block);
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
-	AggregatedDataVariants::Type chooseAggregationMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 };
 
 

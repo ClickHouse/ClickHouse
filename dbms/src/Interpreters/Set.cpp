@@ -19,7 +19,7 @@
 namespace DB
 {
 
-Set::Type Set::chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
 {
 	size_t keys_size = key_columns.size();
 
@@ -41,14 +41,14 @@ Set::Type Set::chooseMethod(Columns & key_columns, bool & keys_fit_128_bits, Siz
 
 	/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
 	if (keys_size == 1 && key_columns[0]->isNumeric()
-		&& !dynamic_cast<ColumnFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnFloat64 *>(&*key_columns[0])
-		&& !dynamic_cast<ColumnConstFloat32 *>(&*key_columns[0]) && !dynamic_cast<ColumnConstFloat64 *>(&*key_columns[0]))
+		&& !dynamic_cast<const ColumnFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnFloat64 *>(key_columns[0])
+		&& !dynamic_cast<const ColumnConstFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnConstFloat64 *>(key_columns[0]))
 		return KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
-		&& (dynamic_cast<ColumnString *>(&*key_columns[0]) || dynamic_cast<ColumnFixedString *>(&*key_columns[0])
-			|| dynamic_cast<ColumnConstString *>(&*key_columns[0])))
+		&& (dynamic_cast<const ColumnString *>(key_columns[0]) || dynamic_cast<const ColumnFixedString *>(key_columns[0])
+			|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
 		return KEY_STRING;
 
 	/// Если много ключей - будем строить множество хэшей от них
@@ -67,7 +67,7 @@ void Set::create(BlockInputStreamPtr stream)
 	{
 		size_t keys_size = block.columns();
 		Row key(keys_size);
-		Columns key_columns(keys_size);
+		ConstColumnPlainPtrs key_columns(keys_size);
 		data_types.resize(keys_size);
 		
 		/// Запоминаем столбцы, с которыми будем работать
@@ -88,7 +88,7 @@ void Set::create(BlockInputStreamPtr stream)
 		{
 			SetUInt64 & res = key64;
 			const FieldVisitorToUInt64 visitor;
-			IColumn & column = *key_columns[0];
+			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -104,7 +104,7 @@ void Set::create(BlockInputStreamPtr stream)
 		else if (type == KEY_STRING)
 		{
 			SetString & res = key_string;
-			IColumn & column = *key_columns[0];
+			const IColumn & column = *key_columns[0];
 
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 			{
@@ -275,7 +275,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 	size_t keys_size = arguments.size();
 	Row key(keys_size);
-	Columns key_columns(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
 
 	/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
 	for (size_t i = 0; i < keys_size; ++i)
@@ -298,7 +298,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	{
 		const SetUInt64 & set = key64;
 		const FieldVisitorToUInt64 visitor;
-		IColumn & column = *key_columns[0];
+		const IColumn & column = *key_columns[0];
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
@@ -312,7 +312,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	else if (type == KEY_STRING)
 	{
 		const SetString & set = key_string;
-		IColumn & column = *key_columns[0];
+		const IColumn & column = *key_columns[0];
 
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 		{
