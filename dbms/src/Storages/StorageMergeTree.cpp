@@ -829,7 +829,7 @@ BlockInputStreams StorageMergeTree::read(
 	typedef std::vector<DataPartPtr> PartsList;
 	PartsList parts;
 	
-	/// Выберем куски, в которых могут быть данные, удовлетворяющие key_condition.
+	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition.
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		
