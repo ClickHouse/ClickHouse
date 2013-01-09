@@ -45,7 +45,7 @@ public:
 	{
 		setEmpty();
 	}
-
+	
 	/** Если указать dont_init_elems = true, то не будут вызваны конструкторы по-умолчанию для элементов.
 	  * В этом случае, вы должны вставить все элементы с помощью функции place и placement new,
 	  *  так как для них потом будут вызваны деструкторы.
@@ -53,6 +53,18 @@ public:
 	AutoArray(size_t size_, bool dont_init_elems = false)
 	{
 		init(size_, dont_init_elems);
+	}
+	
+	/** Инициализирует все элементы копирующим конструктором с параметром value.
+	  */
+	AutoArray(size_t size_, const T & value)
+	{
+		init(size_, true);
+		
+		for (size_t i = 0; i < size_; ++i)
+		{
+			new (place(i)) T(value);
+		}
 	}
 
 	/** resize удаляет все существующие элементы.
