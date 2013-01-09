@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <map>
 
 #include <Poco/NumberFormatter.h>
 
@@ -61,6 +62,90 @@ int main(int argc, char ** argv)
 		
 		for (size_t i = 0; i < arr2.size(); ++i)
 			std::cerr << arr2[i] << std::endl;
+	}
+
+	std::cerr << std::endl;
+
+	{
+		size_t n = 10;
+		size_t keys = 10;
+		typedef std::string T;
+		typedef DB::AutoArray<T> Arr;
+		typedef std::map<Arr, T> Map;
+		Map map;
+
+		for (size_t i = 0; i < keys; ++i)
+		{
+			Arr key(n);
+			for (size_t j = 0; j < n; ++j)
+				key[j] = Poco::NumberFormatter::format(rand());
+			
+			map[key] = "Hello, world! " + Poco::NumberFormatter::format(i);
+		}
+
+		for (Map::const_iterator it = map.begin(); it != map.end(); ++it)
+		{
+			std::cerr << "[";
+			for (size_t j = 0; j < n; ++j)
+				std::cerr << (j == 0 ? "" : ", ") << it->first[j];
+			std::cerr << "]";
+			
+			std::cerr << ":\t" << it->second << std::endl;
+		}
+
+		std::cerr << std::endl;
+
+		Map map2 = map;
+
+		for (Map::const_iterator it = map2.begin(); it != map2.end(); ++it)
+		{
+			std::cerr << "[";
+			for (size_t j = 0; j < n; ++j)
+				std::cerr << (j == 0 ? "" : ", ") << it->first[j];
+			std::cerr << "]";
+
+			std::cerr << ":\t" << it->second << std::endl;
+		}
+	}
+
+	std::cerr << std::endl;
+
+	{
+		size_t n = 10;
+		size_t keys = 10;
+		typedef std::string T;
+		typedef DB::AutoArray<T> Arr;
+		typedef std::vector<Arr> Vec;
+		Vec vec;
+
+		for (size_t i = 0; i < keys; ++i)
+		{
+			Arr key(n);
+			for (size_t j = 0; j < n; ++j)
+				key[j] = Poco::NumberFormatter::format(rand());
+
+			vec.push_back(key);
+		}
+
+		for (Vec::const_iterator it = vec.begin(); it != vec.end(); ++it)
+		{
+			std::cerr << "[";
+			for (size_t j = 0; j < n; ++j)
+				std::cerr << (j == 0 ? "" : ", ") << (*it)[j];
+			std::cerr << "]" << std::endl;
+		}
+
+		std::cerr << std::endl;
+
+		Vec vec2 = vec;
+
+		for (Vec::const_iterator it = vec2.begin(); it != vec2.end(); ++it)
+		{
+			std::cerr << "[";
+			for (size_t j = 0; j < n; ++j)
+				std::cerr << (j == 0 ? "" : ", ") << (*it)[j];
+			std::cerr << "]" << std::endl;
+		}
 	}
 
 	size_t n = 5;
