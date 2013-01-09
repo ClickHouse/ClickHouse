@@ -40,19 +40,26 @@ template <typename T>
 class AutoArray
 {
 public:
+	struct DontInitElemsTag {};
+	
 	/// Для отложенного создания.
 	AutoArray()
 	{
 		setEmpty();
 	}
 	
-	/** Если указать dont_init_elems = true, то не будут вызваны конструкторы по-умолчанию для элементов.
+	AutoArray(size_t size_)
+	{
+		init(size_, false);
+	}
+	
+	/** Не будут вызваны конструкторы по-умолчанию для элементов.
 	  * В этом случае, вы должны вставить все элементы с помощью функции place и placement new,
 	  *  так как для них потом будут вызваны деструкторы.
 	  */
-	AutoArray(size_t size_, bool dont_init_elems = false)
+	AutoArray(size_t size_, const DontInitElemsTag & tag)
 	{
-		init(size_, dont_init_elems);
+		init(size_, true);
 	}
 	
 	/** Инициализирует все элементы копирующим конструктором с параметром value.
