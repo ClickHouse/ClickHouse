@@ -30,7 +30,7 @@ int main(int argc, char ** argv)
 	{
 		size_t n = 10;
 		typedef std::string T;
-		DB::AutoArray<T> arr(n, true);
+		DB::AutoArray<T> arr(n, DB::DontInitElemsTag());
 
 		for (size_t i = 0; i < arr.size(); ++i)
 			new (arr.place(i)) std::string("Hello, world! " + Poco::NumberFormatter::format(i));
@@ -169,7 +169,7 @@ int main(int argc, char ** argv)
 			map.emplace(rand(), it, inserted);
 			if (inserted)
 			{
-				new(&it->second) Arr(n, true);
+				new(&it->second) Arr(n, DB::DontInitElemsTag());
 
 				for (size_t j = 0; j < n; ++j)
 					new (it->second.place(j)) T(field);

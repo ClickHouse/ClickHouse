@@ -36,12 +36,12 @@ namespace DB
 
 const size_t empty_auto_array_helper = 0;
 
+struct DontInitElemsTag {};
+
 template <typename T>
 class AutoArray
 {
 public:
-	struct DontInitElemsTag {};
-	
 	/// Для отложенного создания.
 	AutoArray()
 	{
@@ -122,7 +122,7 @@ public:
 
 	/** Можно читать и модифицировать элементы с помощью оператора []
 	  *  только если элементы были инициализированы
-	  *  (то есть, в конструкторе не было указано dont_init_elems = true,
+	  *  (то есть, в конструктор не был передан DontInitElemsTag,
 	  *   или вы их инициализировали с помощью place и placement new).
 	  */
 	T & operator[](size_t i)
