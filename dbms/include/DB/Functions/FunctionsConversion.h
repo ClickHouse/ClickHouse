@@ -84,11 +84,13 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 			vec_to.resize(size);
 
 			for (size_t i = 0; i < size; ++i)
-				vec_to[i] = date_lut.fromDayNum(Yandex::DayNum_t(vec_from[i]));
+			{
+				vec_to[i] = date_lut.safeFromDayNum(Yandex::DayNum_t(vec_from[i]));
+			}
 		}
 		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.fromDayNum(Yandex::DayNum_t(col_from->getData())));
+			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.safeFromDayNum(Yandex::DayNum_t(col_from->getData())));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -121,11 +123,11 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 			vec_to.resize(size);
 
 			for (size_t i = 0; i < size; ++i)
-				vec_to[i] = date_lut.toDayNum(vec_from[i]);
+				vec_to[i] = date_lut.safeToDayNum(vec_from[i]);
 		}
 		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.toDayNum(col_from->getData()));
+			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.safeToDayNum(col_from->getData()));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
