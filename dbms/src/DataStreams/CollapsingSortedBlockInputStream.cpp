@@ -94,6 +94,8 @@ Block CollapsingSortedBlockInputStream::readImpl()
 			insertRows(merged_columns, merged_rows);
 
 			current_key = next_key;
+			next_key.resize(description.size());
+			
 			count_negative = 0;
 			count_positive = 0;
 		}
