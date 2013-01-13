@@ -1,7 +1,10 @@
-
 #include <Yandex/daemon.h>
 
 #include <signal.h>
+#include <cxxabi.h>
+
+#include <typeinfo>
+
 #include <Yandex/logger_useful.h>
 #include <Yandex/mkdir.h>
 #include <Yandex/KillingErrorHandler.h>
@@ -80,6 +83,76 @@ public:
 		}
 	}
 };
+
+
+/** Для использования с помощью std::set_terminate.
+  * Выводит чуть больше информации, чем __gnu_cxx::__verbose_terminate_handler,
+  *  и выводит её в лог, а не в stderr.
+  * См. исходники в libstdc++-v3/libsupc++/vterminate.cc
+  */
+void terminate_handler()
+{
+	Logger * log = &Logger::get("Daemon");
+	
+	static bool terminating = false;
+	if (terminating)
+	{
+		LOG_ERROR(log, "Terminate called recursively");
+		abort();
+	}
+
+	terminating = true;
+
+	std::type_info * t = abi::__cxa_current_exception_type();
+	if (t)
+	{
+		// Note that "name" is the mangled name.
+		char const * name = t->name();
+		{
+			int status = -1;
+			char * dem = 0;
+
+			dem = abi::__cxa_demangle(name, 0, 0, &status);
+
+		    LOG_ERROR(log, "Terminate called after throwing an instance of " << (status == 0 ? dem : name));
+
+			if (status == 0)
+				free(dem);
+		}
+
+		// If the exception is derived from std::exception, we can
+		// give more information.
+		try
+		{
+			throw;
+		}
+		catch (DB::Exception & e)
+		{
+			LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
+			LOG_ERROR(log, "Stack trace:\n\n" << DB::StackTrace().toString());
+		}
+		catch (Poco::Exception & e)
+		{
+			LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
+			LOG_ERROR(log, "Stack trace:\n\n" << DB::StackTrace().toString());
+		}
+		catch (const std::exception & e)
+		{
+			LOG_ERROR(log, "what(): " << e.what());
+			LOG_ERROR(log, "Stack trace:\n\n" << DB::StackTrace().toString());
+		}
+		catch (...)
+		{
+			LOG_ERROR(log, "Stack trace:\n\n" << DB::StackTrace().toString());
+		}
+	}
+	else
+	{
+	    LOG_ERROR(log, "Terminate called without an active exception");
+	}
+
+    abort();
+}
 
 
 void Daemon::reloadConfiguration()
@@ -227,13 +300,16 @@ void Daemon::initialize(Application& self)
 			m_Pid.seed(config().getString("pid"));
 	}
 
-	// Считаем конфигурацию
+	/// Считаем конфигурацию
 	reloadConfiguration();
 
-	// Ставим ErrorHandler для потоков
+	/// Ставим terminate_handler
+	std::set_terminate(terminate_handler);
+
+	/// Ставим ErrorHandler для потоков
 	Poco::ErrorHandler::set(new Yandex::KillingErrorHandler());
 	
-	// Выведем ревизию демона
+	/// Выведем ревизию демона
 	Logger::root().information("Starting daemon with svn revision " + Poco::NumberFormatter::format(SVN_REVISION));
 
 	/// Порт, при получении датаграммы на котором, будить демон.

@@ -249,7 +249,7 @@ void TCPHandler::receiveHello()
 		<< "." << client_version_minor
 		<< "." << client_revision
 		<< (!default_database.empty() ? ", database: " + default_database : "")
-		<< ".")
+		<< ".");
 }
 
 
