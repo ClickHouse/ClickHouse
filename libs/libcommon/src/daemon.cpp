@@ -332,9 +332,22 @@ void Daemon::initialize(Application& self)
 
 	if (is_daemon)
 	{
-		/// Сменим директорию обратно в корень.
-		if (0 != chdir("/"))
-			throw Poco::Exception("Cannot change directory to /");
+		/// Сменим директорию на ту, куда надо писать core файлы.
+		Poco::File opt_cores = "/opt/cores";
+		std::string log_dir = config().getString("logger.log", "");
+		size_t pos_of_last_slash = log_dir.rfind("/");
+		if (pos_of_last_slash != std::string::npos)
+			log_dir.resize(pos_of_last_slash);
+		
+		std::string core_path = config().getString("core_path",
+			opt_cores.exists() && opt_cores.isDirectory()
+				? "/opt/cores/"
+				: (!log_dir.empty()
+					? log_dir
+					: "/opt/"));
+
+		if (0 != chdir(core_path.c_str()))
+			throw Poco::Exception("Cannot change directory to " + core_path);
 	}
 }
 
