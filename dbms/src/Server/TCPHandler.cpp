@@ -57,6 +57,8 @@ void TCPHandler::runImpl()
 	
 	sendHello();
 
+	bool network_error = false;
+
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
@@ -64,7 +66,7 @@ void TCPHandler::runImpl()
 			;
 
 		/// Если требуется завершить работу, или клиент отсоединился.
-		if (Daemon::instance().isCancelled() || in->eof())
+		if (Daemon::instance().isCancelled() || network_error || in->eof())
 			break;
 		
 		Stopwatch watch;
@@ -74,7 +76,6 @@ void TCPHandler::runImpl()
 		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета и клиент ещё не разорвал соединение.
 		  */
 		SharedPtr<DB::Exception> exception;
-		bool network_error = false;
 		
 		try
 		{	
