@@ -2,6 +2,8 @@
 
 #include <boost/bind.hpp>
 
+#include <Poco/Net/NetException.h>
+
 #include <Yandex/Revision.h>
 
 #include <statdaemons/Stopwatch.h>
@@ -17,7 +19,6 @@
 #include <DB/Interpreters/executeQuery.h>
 
 #include "TCPHandler.h"
-#include <Poco/Ext/ThreadNumber.h>
 
 
 namespace DB
@@ -70,9 +71,10 @@ void TCPHandler::runImpl()
 		state.reset();
 
 		/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
-		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета.
+		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета и клиент ещё не разорвал соединение.
 		  */
 		SharedPtr<DB::Exception> exception;
+		bool network_error = false;
 		
 		try
 		{	
@@ -98,7 +100,7 @@ void TCPHandler::runImpl()
 
 			state.reset();
 		}
-		catch (DB::Exception & e)
+		catch (const DB::Exception & e)
 		{
 			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
@@ -107,13 +109,20 @@ void TCPHandler::runImpl()
 			if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
 				throw;
 		}
-		catch (Poco::Exception & e)
+		catch (const Poco::Net::NetException & e)
+		{
+			network_error = true;
+			LOG_ERROR(log, "Poco::Net::NetException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
+			exception = new Exception(e.displayText(), e.code());
+		}
+		catch (const Poco::Exception & e)
 		{
 			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 			exception = new Exception(e.displayText(), e.code());
 		}
-		catch (std::exception & e)
+		catch (const std::exception & e)
 		{
 			LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
 			exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
@@ -124,25 +133,27 @@ void TCPHandler::runImpl()
 			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 
-		// TODO Не пытаться ничего отправить (данные, эксепшен, прогресс), если уже стало ясно, что соединение разорвано.
-		// (возникает ошибка IO Error 32, когда пытаемся снова записать в сокет)
-
-		if (exception)
+		try
 		{
-			sendException(*exception);
+			if (exception && !network_error)
+				sendException(*exception);
+		}
+		catch (...)
+		{
+			/** Не удалось отправить информацию об эксепшене клиенту. */
+		}
 
-			try
-			{
-				state.reset();
-			}
-			catch (...)
-			{
-				/** В процессе обработки запроса было исключение, которое мы поймали и отправили клиенту.
-				  * При уничтожении конвейера выполнения запроса, было второе исключение.
-				  * Например, конвейер мог выполняться в нескольких потоках, и в каждом из них могло возникнуть исключение.
-				  * Проигнорируем его.
-				  */
-			}
+		try
+		{
+			state.reset();
+		}
+		catch (...)
+		{
+			/** В процессе обработки запроса было исключение, которое мы поймали и, возможно, отправили клиенту.
+			  * При уничтожении конвейера выполнения запроса, было второе исключение.
+			  * Например, конвейер мог выполняться в нескольких потоках, и в каждом из них могло возникнуть исключение.
+			  * Проигнорируем его.
+			  */
 		}
 
 		watch.stop();
