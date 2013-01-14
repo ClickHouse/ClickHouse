@@ -1,7 +1,10 @@
 #include <Yandex/daemon.h>
 
+#include <string.h>
 #include <signal.h>
 #include <cxxabi.h>
+#include <execinfo.h>
+#include <ucontext.h>
 
 #include <typeinfo>
 
@@ -85,12 +88,14 @@ public:
 };
 
 
+static bool already_printed_stack_trace = false;
+
 /** Для использования с помощью std::set_terminate.
   * Выводит чуть больше информации, чем __gnu_cxx::__verbose_terminate_handler,
   *  и выводит её в лог, а не в stderr.
   * См. исходники в libstdc++-v3/libsupc++/vterminate.cc
   */
-void terminate_handler()
+static void terminate_handler()
 {
 	Logger * log = &Logger::get("Daemon");
 	
@@ -106,7 +111,7 @@ void terminate_handler()
 	std::type_info * t = abi::__cxa_current_exception_type();
 	if (t)
 	{
-		// Note that "name" is the mangled name.
+		/// Note that "name" is the mangled name.
 		char const * name = t->name();
 		{
 			int status = -1;
@@ -120,8 +125,9 @@ void terminate_handler()
 				free(dem);
 		}
 
-		// If the exception is derived from std::exception, we can
-		// give more information.
+		already_printed_stack_trace = true;
+
+		/// If the exception is derived from std::exception, we can give more information.
 		try
 		{
 			throw;
@@ -152,6 +158,104 @@ void terminate_handler()
 	}
 
     abort();
+}
+
+
+/** Устанавливает обработчик сигнала по-умолчанию, и отправляет себе сигнал sig.
+  * Вызывается изнутри пользовательского обработчика сигнала, чтобы записать core dump.
+  */
+static void call_default_signal_handler(int sig)
+{
+	signal(sig, SIG_DFL);
+	kill(getpid(), sig);
+}
+
+
+/** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
+  */
+static void signal_handler(int sig, siginfo_t * info, void * context)
+{
+	Logger * log = &Logger::get("Daemon");
+	LOG_ERROR(log, "########################################");
+  	LOG_ERROR(log, "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
+
+	if (sig == SIGSEGV)
+	{
+		/// Выводим информацию об адресе и о причине.
+		if (NULL == info->si_addr)
+			LOG_ERROR(log, "Address: NULL pointer.");
+		else
+			LOG_ERROR(log, "Address: " << info->si_addr
+				<< (info->si_code == SEGV_ACCERR ? ". Attempted access has violated the permissions assigned to the memory area." : ""));
+	}
+
+	if (already_printed_stack_trace)
+		call_default_signal_handler(sig);
+
+	void * caller_address = NULL;
+
+#ifdef __x86_64__
+	const ucontext_t * uc = reinterpret_cast<const ucontext_t *>(context);
+
+    /// Get the address at the time the signal was raised from the RIP (x86-64)
+    caller_address = reinterpret_cast<void *>(uc->uc_mcontext.gregs[REG_RIP]);
+#endif
+
+	static const int max_frames = 50;
+	void * frames[max_frames];
+    int frames_size = backtrace(frames, max_frames);
+
+    if (frames_size >= 2)
+	{
+		/// Overwrite sigaction with caller's address
+		if (caller_address && (frames_size < 3 || caller_address != frames[2]))
+		    frames[1] = caller_address;
+
+	    char ** symbols = backtrace_symbols(frames, frames_size);
+
+		if (!symbols)
+		{
+			if (caller_address)
+				LOG_ERROR(log, "Caller address: " << caller_address);
+		}
+		else
+		{
+			for (int i = 1; i < frames_size; ++i)
+			{
+				/// Делаем demangling имён. Имя находится в скобках, до символа '+'.
+
+				char * name_start = NULL;
+				char * name_end = NULL;
+				char * demangled_name = NULL;
+				int status = 0;
+
+				if (NULL != (name_start = strchr(symbols[i], '('))
+					&& NULL != (name_end = strchr(name_start, '+')))
+				{
+					++name_start;
+					*name_end = '\0';
+					demangled_name = abi::__cxa_demangle(name_start, 0, 0, &status);
+					*name_end = '+';
+				}
+
+				std::stringstream res;
+
+				res << i << ". ";
+
+				if (NULL != demangled_name && 0 == status)
+				{
+					res.write(symbols[i], name_start - symbols[i]);
+					res << demangled_name << name_end;
+				}
+				else
+					res << symbols[i];
+
+				LOG_ERROR(log, res.rdbuf());
+			}
+		}
+	}
+
+	call_default_signal_handler(sig);
 }
 
 
@@ -306,6 +410,25 @@ void Daemon::initialize(Application& self)
 	/// Ставим terminate_handler
 	std::set_terminate(terminate_handler);
 
+	/// Ставим обработчик сигналов
+	struct sigaction sa;
+	sa.sa_sigaction = signal_handler;
+	sa.sa_flags = SA_SIGINFO;
+
+	int signals[] = {SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, 0};
+
+	if (sigemptyset(&sa.sa_mask))
+		throw Poco::Exception("Cannot set signal handler.");
+
+	for (size_t i = 0; signals[i]; ++i)
+		if (sigaddset(&sa.sa_mask, signals[i]))
+			throw Poco::Exception("Cannot set signal handler.");
+
+	for (size_t i = 0; signals[i]; ++i)
+		if (sigaction(signals[i], &sa, 0))
+			throw Poco::Exception("Cannot set signal handler.");
+
+
 	/// Ставим ErrorHandler для потоков
 	Poco::ErrorHandler::set(new Yandex::KillingErrorHandler());
 	
@@ -355,7 +478,7 @@ void Daemon::initialize(Application& self)
 void Daemon::exitOnTaskError()
 {
 	Observer<Daemon, TaskFailedNotification> obs(*this, &Daemon::handleNotification);
-        getTaskManager().addObserver(obs);
+	getTaskManager().addObserver(obs);
 }
 
 /// Используется при exitOnTaskError()
