@@ -52,6 +52,25 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			return;
 	}
 
+	/// Проверим, что у всех блоков-источников одинаковая структура.
+	for (Blocks::const_iterator it = source_blocks.begin(); it != source_blocks.end(); ++it)
+	{
+		if (!*it)
+			continue;
+		
+		size_t src_columns = it->columns();
+		size_t dst_columns = merged_block.columns();
+
+		if (src_columns != dst_columns)
+			throw Exception("Merging blocks has different number of columns", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+
+		for (size_t i = 0; i < src_columns; ++i)
+			if (it->getByPosition(i).name != merged_block.getByPosition(i).name
+				|| it->getByPosition(i).type->getName() != merged_block.getByPosition(i).type->getName()
+				|| it->getByPosition(i).column->getName() != merged_block.getByPosition(i).column->getName())
+				throw Exception("Merging blocks has different names or types of columns", ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
+	}
+
 	for (size_t i = 0; i < num_columns; ++i)
 		merged_columns.push_back(&*merged_block.getByPosition(i).column);
 }

@@ -631,7 +631,8 @@ protected:
 			/// Заполним столбцы, для которых нет файлов, значениями по-умолчанию.
 			if (has_missing_columns)
 			{
-				for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+				size_t pos = 0;	/// Позиция, куда надо вставить недостающий столбец.
+				for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it, ++pos)
 				{
 					if (streams.end() == streams.find(*it))
 					{
@@ -645,7 +646,7 @@ protected:
 						column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
 							res.rows(), column.type->getDefault())).convertToFullColumn();
 
-						res.insert(column);
+						res.insert(pos, column);
 					}
 				}
 			}
