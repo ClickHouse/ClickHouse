@@ -86,17 +86,21 @@ public:
 	  */
     AutoArray(const AutoArray & src)
 	{
-//		std::cerr << this << " AutoArray(const AutoArray & src)" << std::endl;
-		*this = src;
+		//std::cerr << this << " AutoArray(const AutoArray & src)" << std::endl;
+
+		setEmpty();
+		data = src.data;
+		const_cast<AutoArray<T> &>(src).setEmpty();
 	}
 
 	AutoArray & operator= (const AutoArray & src)
 	{
-//		std::cerr << this << " operator=(const AutoArray & src)" << std::endl;
+		//std::cerr << this << " operator=(const AutoArray & src)" << std::endl;
+
 		uninit();
 		data = src.data;
 		const_cast<AutoArray<T> &>(src).setEmpty();
-		
+
 		return *this;
 	}
 
