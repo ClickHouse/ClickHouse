@@ -93,6 +93,7 @@ public:
 	AutoArray & operator= (const AutoArray & src)
 	{
 //		std::cerr << this << " operator=(const AutoArray & src)" << std::endl;
+		uninit();
 		data = src.data;
 		const_cast<AutoArray<T> &>(src).setEmpty();
 		
