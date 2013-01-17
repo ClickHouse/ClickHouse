@@ -7,6 +7,10 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/loadMetadata.h>
 
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/copyData.h>
+
 
 namespace DB
 {
@@ -68,16 +72,16 @@ void loadMetadata(Context & context)
 			if (jt.name().compare(jt.name().size() - 4, 4, ".sql"))
 				throw Exception("Incorrect file extension: " + jt.name() + " in metadata directory " + it->path(), ErrorCodes::INCORRECT_FILE_NAME);
 
-			Poco::FileInputStream istr(jt->path());
-			std::stringstream s;
-			s << istr.rdbuf();
-
-			if (!istr.good())
-				throw Exception("Cannot read from file " + jt->path(), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+			String s;
+			{
+				ReadBufferFromFile in(jt->path(), 32768);
+				WriteBufferFromString out(s);
+				copyData(in, out);
+			}
 
 			try
 			{
-				executeCreateQuery(s.str(), context, it.name(), jt->path());
+				executeCreateQuery(s, context, it.name(), jt->path());
 			}
 			catch (const DB::Exception & e)
 			{
