@@ -28,7 +28,8 @@ StoragePtr StorageFactory::get(
 	const String & table_name,
 	Context & context,
 	ASTPtr & query,
-	NamesAndTypesListPtr columns) const
+	NamesAndTypesListPtr columns,
+	bool attach) const
 {
 	if (name == "Log")
 	{
@@ -36,7 +37,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "TinyLog")
 	{
-		return new StorageTinyLog(data_path, table_name, columns);
+		return new StorageTinyLog(data_path, table_name, columns, attach);
 	}
 	else if (name == "Memory")
 	{

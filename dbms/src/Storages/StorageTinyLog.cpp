@@ -162,16 +162,19 @@ void TinyLogBlockOutputStream::write(const Block & block)
 }
 
 
-StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_)
+StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach)
 	: path(path_), name(name_), columns(columns_)
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-	
-	/// создаём файлы, если их нет
-	String full_path = path + escapeForFileName(name) + '/';
-	if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-		throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
+
+	if (!attach)
+	{
+		/// создаём файлы, если их нет
+		String full_path = path + escapeForFileName(name) + '/';
+		if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
+			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
+	}
 
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 		addFile(it->first, *it->second);

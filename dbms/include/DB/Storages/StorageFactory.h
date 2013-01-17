@@ -20,7 +20,8 @@ public:
 		const String & table_name,
 		Context & context,
 		ASTPtr & query,
-		NamesAndTypesListPtr columns) const;
+		NamesAndTypesListPtr columns,
+		bool attach) const;
 };
 
 }

@@ -91,9 +91,10 @@ friend class TinyLogBlockOutputStream;
 public:
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
 	  *  (корректность имён и путей не проверяется)
-	  *  состоящую из указанных столбцов; создать файлы, если их нет.
+	  *  состоящую из указанных столбцов.
+	  * Если не указано attach - создать директорию, если её нет.
 	  */
-	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach);
 
 	std::string getName() const { return "TinyLog"; }
 	std::string getTableName() const { return name; }
