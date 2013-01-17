@@ -32,7 +32,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 }
 	
 
-StoragePtr InterpreterCreateQuery::execute()
+StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
@@ -166,31 +166,34 @@ StoragePtr InterpreterCreateQuery::execute()
 
 		/// Проверка наличия метаданных таблицы на диске и создание метаданных
 
-		if (Poco::File(metadata_path).exists())
+		if (!assume_metadata_exists)
 		{
-			/** Запрос ATTACH TABLE может использоваться, чтобы создать в оперативке ссылку на уже существующую таблицу.
-			  * Это используется, например, при загрузке сервера.
-			  */
-			if (!create.attach)
-				throw Exception("Metadata for table " + database_name + "." + table_name + " already exists.",
-					ErrorCodes::TABLE_METADATA_ALREADY_EXISTS);
-		}
-		else
-		{
-			/// Меняем CREATE на ATTACH и пишем запрос в файл.
-			ASTPtr attach_ptr = query_ptr->clone();
-			ASTCreateQuery & attach = dynamic_cast<ASTCreateQuery &>(*attach_ptr);
-			
-			attach.attach = true;
-			attach.database.clear();
-			attach.as_database.clear();
-			attach.as_table.clear();
-			attach.if_not_exists = false;
-			attach.select = NULL;
-			
-			Poco::FileOutputStream metadata_file(metadata_path);
-			formatAST(attach, metadata_file, 0, false);
-			metadata_file << "\n";
+			if (Poco::File(metadata_path).exists())
+			{
+				/** Запрос ATTACH TABLE может использоваться, чтобы создать в оперативке ссылку на уже существующую таблицу.
+				  * Это используется, например, при загрузке сервера.
+				  */
+				if (!create.attach)
+					throw Exception("Metadata for table " + database_name + "." + table_name + " already exists.",
+						ErrorCodes::TABLE_METADATA_ALREADY_EXISTS);
+			}
+			else
+			{
+				/// Меняем CREATE на ATTACH и пишем запрос в файл.
+				ASTPtr attach_ptr = query_ptr->clone();
+				ASTCreateQuery & attach = dynamic_cast<ASTCreateQuery &>(*attach_ptr);
+
+				attach.attach = true;
+				attach.database.clear();
+				attach.as_database.clear();
+				attach.as_table.clear();
+				attach.if_not_exists = false;
+				attach.select = NULL;
+
+				Poco::FileOutputStream metadata_file(metadata_path);
+				formatAST(attach, metadata_file, 0, false);
+				metadata_file << "\n";
+			}
 		}
 
 		context.addTable(database_name, table_name, res);
