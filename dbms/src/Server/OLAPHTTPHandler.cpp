@@ -65,6 +65,9 @@ namespace DB
 		try
 		{
 			LOG_TRACE(log, "Request URI: " << request.getURI());
+			std::stringstream request_body;
+			request_body << request.stream().rdbuf();
+			LOG_TRACE(log, "Request body: " << request_body.str());
 
 			processQuery(response, request.stream());
 
