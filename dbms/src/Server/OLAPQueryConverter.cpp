@@ -123,7 +123,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 			
 			if (i > 0)
 				out_query += ", ";
-			out_query += selected_expressions[column.index];
+			out_query += selected_expressions[column.index - 1];
 			out_query += " " + convertSortDirection(column.direction);
 		}
 	}
