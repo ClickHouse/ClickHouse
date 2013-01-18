@@ -64,12 +64,15 @@ namespace DB
 	{
 		try
 		{
+			std::ostringstream request_ostream;
+			request_ostream << request.stream().rdbuf();
+			std::string request_string = request_ostream.str();
+			
 			LOG_TRACE(log, "Request URI: " << request.getURI());
-			std::stringstream request_body;
-			request_body << request.stream().rdbuf();
-			LOG_TRACE(log, "Request body: " << request_body.str());
+			LOG_TRACE(log, "Request body: " << request_string);
 
-			processQuery(response, request.stream());
+			std::istringstream request_istream(request_string);
+			processQuery(response, request_istream);
 
 			LOG_INFO(log, "Done processing query");
 		}
