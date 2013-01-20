@@ -15,8 +15,7 @@ template
 	typename Key,
 	typename Hash = default_hash<Key>,
 	typename ZeroTraits = default_zero_traits<Key>,
-	int INITIAL_SIZE_DEGREE = 16,
-	int GROWTH_DEGREE = 2
+	typename GrowthTraits = default_growth_traits
 >
 class HashSet : private boost::noncopyable
 {
@@ -25,7 +24,7 @@ private:
 	friend class iterator;
 	
 	typedef size_t HashValue;
-	typedef HashSet<Key, Hash, ZeroTraits, INITIAL_SIZE_DEGREE, GROWTH_DEGREE> Self;
+	typedef HashSet<Key, Hash, ZeroTraits, GrowthTraits> Self;
 	
 	size_t m_size;			/// Количество элементов
 	UInt8 size_degree;		/// Размер таблицы в виде степени двух
@@ -39,35 +38,61 @@ private:
 #endif
 
 	inline size_t buf_size() const				{ return 1 << size_degree; }
+	inline size_t buf_size_bytes() const		{ return buf_size() * sizeof(Key); }
 	inline size_t max_fill() const				{ return 1 << (size_degree - 1); }
 	inline size_t mask() const					{ return buf_size() - 1; }
 	inline size_t place(HashValue x) const 		{ return x & mask(); }
 
 
-	/// Увеличить размер буфера в 2 ^ GROWTH_DEGREE раз
+	/// Увеличить размер буфера в 2 ^ N раз
 	void resize()
 	{
-		size_t old_size = buf_size();
-		
-		size_degree += GROWTH_DEGREE;
-		Key * new_buf = reinterpret_cast<Key*>(calloc(buf_size(), sizeof(Key)));
-		Key * old_buf = buf;
-		buf = new_buf;
-		
-		for (size_t i = 0; i < old_size; ++i)
-			if (!ZeroTraits::check(old_buf[i]))
-				reinsert(old_buf[i]);
+#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
+		Stopwatch watch;
+#endif
 
-		free(reinterpret_cast<void*>(old_buf));
+		size_t old_size = buf_size();
+		size_t old_size_bytes = buf_size_bytes();
+
+		size_degree += size_degree >= GrowthTraits::GROWTH_CHANGE_THRESHOLD
+			? 1
+			: GrowthTraits::FAST_GROWTH_DEGREE;
+
+		/// Расширим адресное пространство.
+		buf = reinterpret_cast<Key *>(mremap(reinterpret_cast<void *>(buf), old_size_bytes, buf_size_bytes(), MREMAP_MAYMOVE));
+
+		if (MAP_FAILED == buf)
+			throwFromErrno("HashMap: Cannot mremap.");
+
+		/** Теперь некоторые элементы может потребоваться переместить на новое место.
+		  * Элемент может остаться на месте, или переместиться в новое место "справа",
+		  *  или переместиться левее по цепочке разрешения коллизий, из-за того, что элементы левее него были перемещены в новое место "справа".
+		  */
+		for (size_t i = 0; i < old_size; ++i)
+			if (!ZeroTraits::check(buf[i]))
+				reinsert(buf[i]);
+
+#ifdef DBMS_HASH_MAP_DEBUG_RESIZES
+		watch.stop();
+		std::cerr << std::fixed << std::setprecision(3)
+			<< "Resize from " << old_size << " to " << buf_size() << " took " << watch.elapsedSeconds() << " sec."
+			<< std::endl;
+#endif
 	}
 
 
 	/** Вставить в новый буфер значение, которое было в старом буфере.
 	  * Используется при увеличении размера буфера.
 	  */
-	void reinsert(const Key & x)
+	void reinsert(Key & x)
 	{
 		size_t place_value = place(hash(x));
+
+		/// Если элемент на своём месте.
+		if (&x == &buf[place_value])
+			return;
+
+		/// Вычисление нового места, с учётом цепочки разрешения коллизий.
 		while (!ZeroTraits::check(buf[place_value]))
 		{
 			++place_value;
@@ -76,31 +101,39 @@ private:
 			++collisions;
 #endif
 		}
+
+		/// Копирование на новое место и зануление старого.
 		memcpy(&buf[place_value], &x, sizeof(x));
+		ZeroTraits::set(x);
+
+		/// Потом на старое место могут переместиться элементы, которые раньше были в коллизии с этим.
 	}
 
 
 public:
 	typedef Key key_type;
 	typedef Key value_type;
-	
-	
+
+
 	HashSet() :
 		m_size(0),
-		size_degree(INITIAL_SIZE_DEGREE),
+		size_degree(GrowthTraits::INITIAL_SIZE_DEGREE),
 		has_zero(false)
 	{
-		buf = reinterpret_cast<Key*>(calloc(buf_size(), sizeof(Key)));
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-		collisions = 0;
-#endif
+		/// mmap по-умолчанию инициализирует память нулями.
+		buf = reinterpret_cast<Key *>(mmap(NULL, buf_size_bytes(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
+		if (MAP_FAILED == buf)
+			throwFromErrno("HashMap: Cannot mmap.");
 	}
 
 	~HashSet()
 	{
 		for (iterator it = begin(); it != end(); ++it)
 			it->~Key();
-		free(reinterpret_cast<void*>(buf));
+
+		if (0 != munmap(reinterpret_cast<void *>(buf), buf_size_bytes()))
+			throwFromErrno("HashMap: Cannot munmap.");
 	}
 
 

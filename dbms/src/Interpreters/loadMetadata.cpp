@@ -65,6 +65,9 @@ void loadMetadata(Context & context)
 		/// Цикл по таблицам
 		for (Poco::DirectoryIterator jt(it->path()); jt != dir_end; ++jt)
 		{
+			if (jt.name() == ".svn")
+				continue;
+			
 			/// Файлы имеют имена вида table_name.sql
 			if (jt.name().compare(jt.name().size() - 4, 4, ".sql"))
 				throw Exception("Incorrect file extension: " + jt.name() + " in metadata directory " + it->path(), ErrorCodes::INCORRECT_FILE_NAME);
