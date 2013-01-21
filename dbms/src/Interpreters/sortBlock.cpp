@@ -42,9 +42,10 @@ void sortBlock(Block & block, const SortDescription & description)
 	/// Если столбец сортировки один
 	if (description.size() == 1)
 	{
-		IColumn::Permutation perm = (!description[0].column_name.empty()
+		IColumn::Permutation perm;
+		(!description[0].column_name.empty()
 			? block.getByName(description[0].column_name).column
-			: block.getByPosition(description[0].column_number).column)->getPermutation();
+			: block.getByPosition(description[0].column_number).column)->getPermutation(perm);
 
 		if (description[0].direction == -1)
 			for (size_t i = 0, size = perm.size(); i < size / 2; ++i)

@@ -16,21 +16,21 @@ namespace DB
 template<typename A, typename B>
 struct AndImpl
 {
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] && b[i];
 	}
 
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] && b;
 	}
 
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -46,21 +46,21 @@ struct AndImpl
 template<typename A, typename B>
 struct OrImpl
 {
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] || b[i];
 	}
 
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] || b;
 	}
 
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -76,21 +76,21 @@ struct OrImpl
 template<typename A, typename B>
 struct XorImpl
 {
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
+	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = (a[i] && !b[i]) || (!a[i] && b[i]);
 	}
 
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
+	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = (a[i] && !b) || (!a[i] && b);
 	}
 
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
+	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -106,7 +106,7 @@ struct XorImpl
 template<typename A>
 struct NotImpl
 {
-	static void vector(const std::vector<A> & a, std::vector<UInt8> & c)
+	static void vector(const PODArray<A> & a, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)

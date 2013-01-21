@@ -14,11 +14,10 @@ namespace DB
 /** Инициализируется вектором. Пишет данные в него. Когда вектор закончится - увеличивает его размер в два раза.
   * CharType - char или unsigned char.
   */
-template <typename CharType>
+template <typename CharType, typename VectorType = std::vector<CharType> >
 class WriteBufferFromVector : public WriteBuffer
 {
 private:
-	typedef std::vector<CharType> VectorType;
 	VectorType & vector;
 
 	void nextImpl()

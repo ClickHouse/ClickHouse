@@ -41,9 +41,9 @@ struct PositionImpl
 	typedef UInt64 ResultType;
 
 	/// Предполагается, что res нужного размера и инициализирован нулями.
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		const std::string & needle,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
@@ -83,9 +83,9 @@ struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
 	
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		const std::string & needle,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
@@ -260,9 +260,9 @@ struct MatchImpl
 {
 	typedef UInt8 ResultType;
 
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		const std::string & pattern,
-		std::vector<UInt8> & res)
+		PODArray<UInt8> & res)
 	{
 		String strstr_pattern;
 		/// Простой случай, когда выражение LIKE сводится к поиску подстроки в строке

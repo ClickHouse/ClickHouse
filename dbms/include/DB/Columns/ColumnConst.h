@@ -88,12 +88,11 @@ public:
 				: 1);
 	}
 
-	Permutation getPermutation() const
+	void getPermutation(Permutation & res) const
 	{
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
-		return res;
 	}
 
 	StringRef getDataAt(size_t n) const;

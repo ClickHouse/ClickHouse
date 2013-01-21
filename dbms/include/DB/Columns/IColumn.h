@@ -7,6 +7,8 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/StringRef.h>
 
+#include <DB/Common/PODArray.h>
+
 
 namespace DB
 {
@@ -94,13 +96,13 @@ public:
 	/** Оставить только значения, соответствующие фильтру.
 	  * Используется для операции WHERE / HAVING.
 	  */
-	typedef std::vector<UInt8> Filter;
+	typedef PODArray<UInt8> Filter;
 	virtual void filter(const Filter & filt) = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
 	  */
-	typedef std::vector<size_t> Permutation;
+	typedef PODArray<size_t> Permutation;
 	virtual void permute(const Permutation & perm) = 0;
 
 	/** Сравнить (*this)[n] и rhs[m].
@@ -112,13 +114,13 @@ public:
 	/** Получить перестановку чисел, такую, что их порядок соответствует порядку значений в столбце.
 	  * Используется при сортировке.
 	  */
-	virtual Permutation getPermutation() const = 0;
+	virtual void getPermutation(Permutation & res) const = 0;
 
 	/** Размножить все значения столько раз, сколько прописано в offsets.
 	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)
 	  */
 	typedef UInt64 Offset_t;
-	typedef std::vector<Offset_t> Offsets_t;
+	typedef PODArray<Offset_t> Offsets_t;
 	virtual void replicate(const Offsets_t & offsets) = 0;
 
 	/** Очистить */

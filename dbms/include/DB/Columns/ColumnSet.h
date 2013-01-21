@@ -44,12 +44,11 @@ public:
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 	}
 
-	Permutation getPermutation() const
+	void getPermutation(Permutation & res) const
 	{
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
-		return res;
 	}
 
 	void replicate(const Offsets_t & offsets)
