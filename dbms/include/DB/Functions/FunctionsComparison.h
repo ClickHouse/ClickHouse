@@ -39,21 +39,21 @@ namespace DB
 template<typename A, typename B>
 struct EqualsNumImpl
 {
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] == b[i];
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] == b;
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -69,9 +69,9 @@ struct EqualsNumImpl
 struct EqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -82,9 +82,9 @@ struct EqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -95,9 +95,9 @@ struct EqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnArray::Offset_t b_n = b.size();
@@ -110,9 +110,9 @@ struct EqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -123,9 +123,9 @@ struct EqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -133,9 +133,9 @@ struct EqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -146,8 +146,8 @@ struct EqualsStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		ColumnArray::Offset_t a_n = a.size();
@@ -161,8 +161,8 @@ struct EqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
@@ -183,21 +183,21 @@ struct EqualsStringImpl
 template<typename A, typename B>
 struct NotEqualsNumImpl
 {
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] != b[i];
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] != b;
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -213,9 +213,9 @@ struct NotEqualsNumImpl
 struct NotEqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -226,9 +226,9 @@ struct NotEqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -239,9 +239,9 @@ struct NotEqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnArray::Offset_t b_n = b.size();
@@ -254,9 +254,9 @@ struct NotEqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -267,9 +267,9 @@ struct NotEqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -277,9 +277,9 @@ struct NotEqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -290,8 +290,8 @@ struct NotEqualsStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		ColumnArray::Offset_t a_n = a.size();
@@ -305,8 +305,8 @@ struct NotEqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
@@ -327,21 +327,21 @@ struct NotEqualsStringImpl
 template<typename A, typename B>
 struct LessNumImpl
 {
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] < b[i];
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] < b;
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -357,9 +357,9 @@ struct LessNumImpl
 struct LessStringImpl
 {
 	static void string_vector_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -379,9 +379,9 @@ struct LessStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -401,9 +401,9 @@ struct LessStringImpl
 	}
 
 	static void string_vector_constant(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnArray::Offset_t b_n = b.size();
@@ -425,9 +425,9 @@ struct LessStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -447,9 +447,9 @@ struct LessStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -460,9 +460,9 @@ struct LessStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -476,8 +476,8 @@ struct LessStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		ColumnArray::Offset_t a_n = a.size();
@@ -500,8 +500,8 @@ struct LessStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
@@ -525,21 +525,21 @@ struct LessStringImpl
 template<typename A, typename B>
 struct GreaterNumImpl
 {
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] > b[i];
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] > b;
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -555,9 +555,9 @@ struct GreaterNumImpl
 struct GreaterStringImpl
 {
 	static void string_vector_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -577,9 +577,9 @@ struct GreaterStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -599,9 +599,9 @@ struct GreaterStringImpl
 	}
 
 	static void string_vector_constant(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnArray::Offset_t b_n = b.size();
@@ -623,9 +623,9 @@ struct GreaterStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -645,9 +645,9 @@ struct GreaterStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -658,9 +658,9 @@ struct GreaterStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -674,8 +674,8 @@ struct GreaterStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		ColumnArray::Offset_t a_n = a.size();
@@ -698,8 +698,8 @@ struct GreaterStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
@@ -723,21 +723,21 @@ struct GreaterStringImpl
 template<typename A, typename B>
 struct LessOrEqualsNumImpl
 {
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] <= b[i];
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] <= b;
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -753,9 +753,9 @@ struct LessOrEqualsNumImpl
 struct LessOrEqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -775,9 +775,9 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -797,9 +797,9 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnArray::Offset_t b_n = b.size();
@@ -821,9 +821,9 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -843,9 +843,9 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -856,9 +856,9 @@ struct LessOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -872,8 +872,8 @@ struct LessOrEqualsStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		ColumnArray::Offset_t a_n = a.size();
@@ -896,8 +896,8 @@ struct LessOrEqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
@@ -921,21 +921,21 @@ struct LessOrEqualsStringImpl
 template<typename A, typename B>
 struct GreaterOrEqualsNumImpl
 {
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] >= b[i];
 	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
+	static void vector_constant(const std::vector<A> & a, B b, std::vector<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = a[i] >= b;
 	}
 
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
+	static void constant_vector(A a, const std::vector<B> & b, std::vector<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -951,9 +951,9 @@ struct GreaterOrEqualsNumImpl
 struct GreaterOrEqualsStringImpl
 {
 	static void string_vector_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -973,9 +973,9 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -995,9 +995,9 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void string_vector_constant(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_offsets.size();
 		ColumnArray::Offset_t b_n = b.size();
@@ -1019,9 +1019,9 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -1041,9 +1041,9 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
@@ -1054,9 +1054,9 @@ struct GreaterOrEqualsStringImpl
 	}
 
 	static void fixed_string_vector_constant(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c)
+		std::vector<UInt8> & c)
 	{
 		size_t size = a_data.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
@@ -1070,8 +1070,8 @@ struct GreaterOrEqualsStringImpl
 
 	static void constant_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_offsets.size();
 		ColumnArray::Offset_t a_n = a.size();
@@ -1094,8 +1094,8 @@ struct GreaterOrEqualsStringImpl
 
 	static void constant_fixed_string_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c)
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c)
 	{
 		size_t size = b_data.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());

@@ -57,15 +57,14 @@ public:
 };
 
 	
-/** Шаблон столбцов, которые используют для хранения непрерывный кусок памяти.
+/** Шаблон столбцов, которые используют для хранения std::vector.
   */
-template <typename T, typename Container = PODArray<T> >
+template <typename T>
 class ColumnVector : public IColumn
 {
 public:
 	typedef T value_type;
-	typedef Container Container_t;
-	typedef ColumnVector<T, Container> Self;
+	typedef std::vector<value_type> Container_t;
 
 	ColumnVector() {}
 	ColumnVector(size_t n) : data(n) {}
@@ -78,7 +77,7 @@ public:
 
 	ColumnPtr cloneEmpty() const
 	{
-		return new Self;
+		return new ColumnVector<T>;
 	}
 
 	size_t size() const
@@ -106,7 +105,7 @@ public:
 		if (start + length > data.size())
 			throw Exception("Parameters start = "
 				+ Poco::NumberFormatter::format(start) + ", length = "
-				+ Poco::NumberFormatter::format(length) + " are out of bound in ColumnVector<>::cut() method"
+				+ Poco::NumberFormatter::format(length) + " are out of bound in IColumnVector<T>::cut() method"
 				" (data.size() = " + Poco::NumberFormatter::format(data.size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
@@ -127,7 +126,7 @@ public:
 
 	void insertFrom(const IColumn & src, size_t n)
 	{
-		data.push_back(static_cast<const Self &>(src).getData()[n]);
+		data.push_back(static_cast<const ColumnVector<T> &>(src).getData()[n]);
 	}
 
 	void insertDefault()
@@ -175,7 +174,7 @@ public:
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
 	{
-		const Self & rhs = static_cast<const Self &>(rhs_);
+		const ColumnVector<T> & rhs = static_cast<const ColumnVector<T> &>(rhs_);
 		return data[n] < rhs.data[m]
 			? -1
 			: (data[n] == rhs.data[m]
@@ -185,19 +184,21 @@ public:
 
 	struct less
 	{
-		const Self & parent;
-		less(const Self & parent_) : parent(parent_) {}
+		const ColumnVector<T> & parent;
+		less(const ColumnVector<T> & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] < parent.data[rhs]; }
 	};
 
-	void getPermutation(Permutation & res) const
+	Permutation getPermutation() const
 	{
 		size_t s = data.size();
-		res.resize(s);
+		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
 		std::sort(res.begin(), res.end(), less(*this));
+		
+		return res;
 	}
 
 	void replicate(const Offsets_t & offsets)

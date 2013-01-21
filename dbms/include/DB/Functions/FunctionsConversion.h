@@ -162,7 +162,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 			data_to.resize(size * 2);
 			offsets_to.resize(size);
 
-			WriteBufferFromVector<UInt8, PODArray<UInt8> > write_buffer(data_to);
+			WriteBufferFromVector<UInt8> write_buffer(data_to);
 
 			for (size_t i = 0; i < size; ++i)
 			{

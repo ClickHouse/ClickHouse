@@ -137,15 +137,16 @@ public:
 		}
 	};
 
-	void getPermutation(Permutation & res) const
+	Permutation getPermutation() const
 	{
 		size_t rows = size();
-		res.resize(rows);
+		Permutation perm(rows);
 		for (size_t i = 0; i < rows; ++i)
-			res[i] = i;
+			perm[i] = i;
 
 		Less less(columns);
-		std::sort(res.begin(), res.end(), less);
+		std::sort(perm.begin(), perm.end(), less);
+		return perm;
 	}
 
 	void clear()

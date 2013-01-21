@@ -93,14 +93,15 @@ public:
 		}
 	};
 
-	void getPermutation(Permutation & res) const
+	Permutation getPermutation() const
 	{
 		size_t s = size();
-		res.resize(s);
+		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
 		std::sort(res.begin(), res.end(), less(*this));
+		return res;
 	}
 
 	void replicate(const Offsets_t & offsets)

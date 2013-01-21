@@ -10,7 +10,7 @@ namespace DB
 
 /** Столбец, хранящий состояния агрегатных функций.
   */
-class ColumnAggregateFunction : public ColumnVector<AggregateFunctionPtr, std::vector<AggregateFunctionPtr> >
+class ColumnAggregateFunction : public ColumnVector<AggregateFunctionPtr>
 {
 public:
  	std::string getName() const { return "ColumnAggregateFunction"; }
@@ -62,12 +62,13 @@ public:
 		return 0;
 	}
 
-	void getPermutation(Permutation & res) const
+	Permutation getPermutation() const
 	{
 		size_t s = data.size();
-		res.resize(s);
+		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
+		return res;
 	}
 };
 

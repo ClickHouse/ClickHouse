@@ -45,8 +45,8 @@ namespace DB
 template <bool negative = false>
 struct EmptyImpl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		PODArray<UInt8> & res)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res)
 	{
 		size_t size = offsets.size();
 		ColumnArray::Offset_t prev_offset = 1;
@@ -57,14 +57,14 @@ struct EmptyImpl
 		}
 	}
 
-	static void vector_fixed_to_constant(const PODArray<UInt8> & data, size_t n,
+	static void vector_fixed_to_constant(const std::vector<UInt8> & data, size_t n,
 		UInt8 & res)
 	{
 		res = negative ^ (n == 0);
 	}
 
-	static void vector_fixed_to_vector(const PODArray<UInt8> & data, size_t n,
-		PODArray<UInt8> & res)
+	static void vector_fixed_to_vector(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res)
 	{
 	}
 
@@ -73,7 +73,7 @@ struct EmptyImpl
 		res = negative ^ (data.empty());
 	}
 
-	static void array(const ColumnArray::Offsets_t & offsets, PODArray<UInt8> & res)
+	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt8> & res)
 	{
 		size_t size = offsets.size();
 		ColumnArray::Offset_t prev_offset = 0;
@@ -95,8 +95,8 @@ struct EmptyImpl
   */
 struct LengthImpl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		PODArray<UInt64> & res)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -105,14 +105,14 @@ struct LengthImpl
 				: (offsets[i] - 1 - offsets[i - 1]);
 	}
 
-	static void vector_fixed_to_constant(const PODArray<UInt8> & data, size_t n,
+	static void vector_fixed_to_constant(const std::vector<UInt8> & data, size_t n,
 		UInt64 & res)
 	{
 		res = n;
 	}
 
-	static void vector_fixed_to_vector(const PODArray<UInt8> & data, size_t n,
-		PODArray<UInt64> & res)
+	static void vector_fixed_to_vector(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt64> & res)
 	{
 	}
 
@@ -121,7 +121,7 @@ struct LengthImpl
 		res = data.size();
 	}
 
-	static void array(const ColumnArray::Offsets_t & offsets, PODArray<UInt64> & res)
+	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -143,8 +143,8 @@ struct LengthImpl
   */
 struct LengthUTF8Impl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		PODArray<UInt64> & res)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
 
@@ -159,13 +159,13 @@ struct LengthUTF8Impl
 		}
 	}
 
-	static void vector_fixed_to_constant(const PODArray<UInt8> & data, size_t n,
+	static void vector_fixed_to_constant(const std::vector<UInt8> & data, size_t n,
 		UInt64 & res)
 	{
 	}
 
-	static void vector_fixed_to_vector(const PODArray<UInt8> & data, size_t n,
-		PODArray<UInt64> & res)
+	static void vector_fixed_to_vector(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt64> & res)
 	{
 		size_t size = data.size() / n;
 
@@ -186,7 +186,7 @@ struct LengthUTF8Impl
 				++res;
 	}
 
-	static void array(const ColumnArray::Offsets_t & offsets, PODArray<UInt64> & res)
+	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
 	{
 		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -203,16 +203,16 @@ struct LengthUTF8Impl
 template <int F(int)>
 struct LowerUpperImpl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		PODArray<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets.assign(offsets);
+		res_offsets = offsets;
 		array(&*data.begin(), &*data.end(), &*res_data.begin());
 	}
 
-	static void vector_fixed(const PODArray<UInt8> & data, size_t n,
-		PODArray<UInt8> & res_data)
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res_data)
 	{
 		res_data.resize(data.size());
 		array(&*data.begin(), &*data.end(), &*res_data.begin());
@@ -242,16 +242,16 @@ private:
 template <int F(int)>
 struct LowerUpperUTF8Impl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		PODArray<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets.assign(offsets);
+		res_offsets = offsets;
 		array(&*data.begin(), &*data.end(), &*res_data.begin());
 	}
 
-	static void vector_fixed(const PODArray<UInt8> & data, size_t n,
-		PODArray<UInt8> & res_data)
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res_data)
 	{
 		res_data.resize(data.size());
 		array(&*data.begin(), &*data.end(), &*res_data.begin());
@@ -291,11 +291,11 @@ private:
   */
 struct ReverseImpl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		PODArray<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets.assign(offsets);
+		res_offsets = offsets;
 		size_t size = offsets.size();
 
 		ColumnArray::Offset_t prev_offset = 0;
@@ -308,8 +308,8 @@ struct ReverseImpl
 		}
 	}
 
-	static void vector_fixed(const PODArray<UInt8> & data, size_t n,
-		PODArray<UInt8> & res_data)
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res_data)
 	{
 		res_data.resize(data.size());
 		size_t size = data.size() / n;
@@ -334,11 +334,11 @@ struct ReverseImpl
   */
 struct ReverseUTF8Impl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		PODArray<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets.assign(offsets);
+		res_offsets = offsets;
 		size_t size = offsets.size();
 
 		ColumnArray::Offset_t prev_offset = 0;
@@ -374,8 +374,8 @@ struct ReverseUTF8Impl
 		}
 	}
 
-	static void vector_fixed(const PODArray<UInt8> & data, size_t n,
-		PODArray<UInt8> & res_data)
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
+		std::vector<UInt8> & res_data)
 	{
 		throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -417,9 +417,9 @@ struct ReverseUTF8Impl
 struct ConcatImpl
 {
 	static void vector_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b_data.size() - size);
@@ -443,9 +443,9 @@ struct ConcatImpl
 	}
 
 	static void vector_fixed_vector(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b_data.size());
@@ -471,13 +471,13 @@ struct ConcatImpl
 	}
 
 	static void vector_constant(
-		const PODArray<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
 		const std::string & b,
-		PODArray<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b.size() * size);
-		c_offsets.assign(a_offsets);
+		c_offsets = a_offsets;
 
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += b.size() * (i + 1);
@@ -496,9 +496,9 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = b_offsets.size();
 		c_data.resize(a_data.size() + b_data.size());
@@ -522,9 +522,9 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_fixed_vector(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c_data)
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c_data)
 	{
 		size_t size = a_data.size() / a_n;
 		c_data.resize(a_data.size() + b_data.size());
@@ -538,9 +538,9 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_constant(
-		const PODArray<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
 		const std::string & b,
-		PODArray<UInt8> & c_data)
+		std::vector<UInt8> & c_data)
 	{
 		size_t size = a_data.size() / a_n;
 		ColumnArray::Offset_t b_n = b.size();
@@ -556,12 +556,12 @@ struct ConcatImpl
 
 	static void constant_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		PODArray<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
 	{
 		size_t size = b_offsets.size();
 		c_data.resize(b_data.size() + a.size() * size);
-		c_offsets.assign(b_offsets);
+		c_offsets = b_offsets;
 
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += a.size() * (i + 1);
@@ -581,8 +581,8 @@ struct ConcatImpl
 
 	static void constant_fixed_vector(
 		const std::string & a,
-		const PODArray<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		PODArray<UInt8> & c_data)
+		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		std::vector<UInt8> & c_data)
 	{
 		size_t size = b_data.size() / b_n;
 		ColumnArray::Offset_t a_n = a.size();
@@ -610,9 +610,9 @@ struct ConcatImpl
   */
 struct SubstringImpl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		size_t start, size_t length,
-		PODArray<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
@@ -641,9 +641,9 @@ struct SubstringImpl
 		}
 	}
 
-	static void vector_fixed(const PODArray<UInt8> & data, size_t n,
+	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
 		size_t start, size_t length,
-		PODArray<UInt8> & res_data)
+		std::vector<UInt8> & res_data)
 	{
 		if (length == 0 || start + length > n + 1)
 			throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -672,9 +672,9 @@ struct SubstringImpl
   */
 struct SubstringUTF8Impl
 {
-	static void vector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		size_t start, size_t length,
-		PODArray<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
@@ -729,9 +729,9 @@ struct SubstringUTF8Impl
 		}
 	}
 
-	static void vector_fixed(const PODArray<UInt8> & data, ColumnArray::Offset_t n,
+	static void vector_fixed(const std::vector<UInt8> & data, ColumnArray::Offset_t n,
 		size_t start, size_t length,
-		PODArray<UInt8> & res_data)
+		std::vector<UInt8> & res_data)
 	{
 		throw Exception("Cannot apply function substringUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
 	}

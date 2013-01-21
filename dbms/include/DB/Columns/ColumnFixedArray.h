@@ -173,16 +173,16 @@ public:
 		}
 	};
 
-	void getPermutation(Permutation & res) const
+	Permutation getPermutation() const
 	{
-		Permutation nested_perm;
-		data->getPermutation(nested_perm);
+		Permutation nested_perm = data->getPermutation();
 		size_t s = data->size() / n;
-		res.resize(s);
+		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
 		std::sort(res.begin(), res.end(), less(*this, nested_perm));
+		return res;
 	}
 
 	size_t byteSize() const

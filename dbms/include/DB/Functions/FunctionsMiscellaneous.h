@@ -44,7 +44,7 @@ namespace DB
 
 
 template <typename T>
-static void numWidthVector(const PODArray<T> & a, PODArray<UInt64> & c)
+static void numWidthVector(const std::vector<T> & a, std::vector<UInt64> & c)
 {
 	size_t size = a.size();
 	for (size_t i = 0; i < size; ++i)
@@ -81,7 +81,7 @@ inline UInt64 floatWidth(double x)
 }
 
 template <typename T>
-static void floatWidthVector(const PODArray<T> & a, PODArray<UInt64> & c)
+static void floatWidthVector(const std::vector<T> & a, std::vector<UInt64> & c)
 {
 	size_t size = a.size();
 	for (size_t i = 0; i < size; ++i)
@@ -94,8 +94,8 @@ static void floatWidthConstant(T a, UInt64 & c)
 	c = floatWidth(a);
 }
 
-template <> inline void numWidthVector<Float64>(const PODArray<Float64> & a, PODArray<UInt64> & c) { floatWidthVector(a, c); }
-template <> inline void numWidthVector<Float32>(const PODArray<Float32> & a, PODArray<UInt64> & c) { floatWidthVector(a, c); }
+template <> inline void numWidthVector<Float64>(const std::vector<Float64> & a, std::vector<UInt64> & c) { floatWidthVector(a, c); }
+template <> inline void numWidthVector<Float32>(const std::vector<Float32> & a, std::vector<UInt64> & c) { floatWidthVector(a, c); }
 template <> inline void numWidthConstant<Float64>(Float64 a, UInt64 & c) { floatWidthConstant(a, c); }
 template <> inline void numWidthConstant<Float32>(Float32 a, UInt64 & c) { floatWidthConstant(a, c); }
 
@@ -112,7 +112,7 @@ static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
 	return res;
 }
 
-static inline void stringWidthVector(const PODArray<UInt8> & data, const ColumnArray::Offsets_t & offsets, PODArray<UInt64> & res)
+static inline void stringWidthVector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
 {
 	size_t size = offsets.size();
 
@@ -124,7 +124,7 @@ static inline void stringWidthVector(const PODArray<UInt8> & data, const ColumnA
 	}
 }
 
-static inline void stringWidthFixedVector(const PODArray<UInt8> & data, size_t n, PODArray<UInt64> & res)
+static inline void stringWidthFixedVector(const std::vector<UInt8> & data, size_t n, std::vector<UInt64> & res)
 {
 	size_t size = data.size() / n;
 	for (size_t i = 0; i < size; ++i)

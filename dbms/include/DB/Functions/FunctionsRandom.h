@@ -43,7 +43,7 @@ struct RandImpl
 {
 	typedef UInt32 ReturnType;
 	
-	static void execute(PODArray<ReturnType> & res)
+	static void execute(std::vector<ReturnType> & res)
 	{
 		drand48_data rand_state;
 		detail::seed(rand_state);
@@ -62,7 +62,7 @@ struct Rand64Impl
 {
 	typedef UInt64 ReturnType;
 
-	static void execute(PODArray<ReturnType> & res)
+	static void execute(std::vector<ReturnType> & res)
 	{
 		drand48_data rand_state;
 		detail::seed(rand_state);
