@@ -48,7 +48,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 
 		if (const ColumnUInt64 * col = dynamic_cast<const ColumnUInt64 *>(&*column.column))
 		{
-			const ColumnUInt64::Container_t res = col->getData();
+			const ColumnUInt64::Container_t & res = col->getData();
 			for (size_t j = 0; j < rows; ++j)
 				if (res[j] > max_widths[i])
 					max_widths[i] = res[j];
