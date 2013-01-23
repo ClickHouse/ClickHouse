@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/Core/Defines.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/NamesAndTypes.h>
@@ -13,11 +11,12 @@
 
 #include <DB/Parsers/IAST.h>
 
+#include <DB/Storages/StoragePtr.h>
+
 
 namespace DB
 {
 
-using Poco::SharedPtr;
 
 /** Хранилище. Отвечает за:
   * - хранение данных таблицы;
@@ -29,6 +28,8 @@ using Poco::SharedPtr;
 class IStorage : private boost::noncopyable
 {
 public:
+	IStorage() : drop_on_destroy(false) {}
+	
 	/// Основное имя типа таблицы (например, StorageWithoutKey).
 	virtual std::string getName() const = 0;
 
@@ -89,7 +90,14 @@ public:
 	/** Удалить данные таблицы. После вызова этого метода, использование объекта некорректно (его можно лишь уничтожить).
 	  * Если директория с данными есть, то она будет удалена перед вызовом этого метода.
 	  */
-	virtual void drop()
+	void drop()
+	{
+		drop_on_destroy = true;
+	}
+	
+	/** Вызывается сразу перед деструктором.
+	  */
+	virtual void dropImpl()
 	{
 		throw Exception("Method drop() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -130,8 +138,25 @@ public:
 	  *  и содержит только столбцы таблицы.
 	  */
 	void check(const Block & block) const;
-};
+	
+	StoragePtr thisPtr()
+	{
+		if (!this_ptr.lock())
+		{
+			boost::shared_ptr<StoragePtr::Wrapper> p(new StoragePtr::Wrapper(this));
+			this_ptr = p;
+			return StoragePtr(this_ptr);
+		}
+		else
+		{
+			return StoragePtr(this_ptr);
+		}
+	}
+	
+	bool drop_on_destroy;
 
-typedef SharedPtr<IStorage> StoragePtr;
+private:
+	boost::weak_ptr<StoragePtr::Wrapper> this_ptr;
+};
 
 }

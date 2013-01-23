@@ -47,7 +47,7 @@ struct BlockStreamProfileInfo
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	IProfilingBlockInputStream() : is_cancelled(false) {}
+	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr()) : IBlockInputStream(owned_storage_), is_cancelled(false) {}
 	
 	Block read();
 

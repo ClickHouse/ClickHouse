@@ -5,6 +5,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
+#include <DB/Storages/StoragePtr.h>
 
 
 namespace DB
@@ -21,6 +22,12 @@ class IBlockInputStream : private boost::noncopyable
 public:
 	typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
 	typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
+	
+	/** Листовой BlockInputStream обычно требует, чтобы был жив какой-то Storage.
+	  * Переданный сюда указатель на Storage будет просто храниться в этом экземпляре,
+	  *  не позволяя уничтожить Storage раньше этого BlockInputStream.
+	  */
+	IBlockInputStream(StoragePtr owned_storage_ = StoragePtr()) : owned_storage(owned_storage_) {}
 	
 	/** Прочитать следующий блок.
 	  * Если блоков больше нет - вернуть пустой блок (для которого operator bool возвращает false).
@@ -68,6 +75,8 @@ public:
 
 protected:
 	BlockInputStreams children;
+	
+	StoragePtr owned_storage;
 
 private:
 	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = NULL);

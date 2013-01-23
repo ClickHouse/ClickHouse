@@ -52,7 +52,7 @@ namespace DB
 class MergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MergeTreeBlockOutputStream(StorageMergeTree & storage_) : storage(storage_), flags(O_TRUNC | O_CREAT | O_WRONLY)
+	MergeTreeBlockOutputStream(StoragePtr owned_storage) : IBlockOutputStream(owned_storage), storage(reinterpret_cast<StorageMergeTree &>(*owned_storage)), flags(O_TRUNC | O_CREAT | O_WRONLY)
 	{
 	}
 
@@ -115,7 +115,7 @@ public:
 			writePart(it->second.block, it->second.min_date, it->second.max_date);
 	}
 
-	BlockOutputStreamPtr clone() { return new MergeTreeBlockOutputStream(storage); }
+	BlockOutputStreamPtr clone() { return new MergeTreeBlockOutputStream(owned_storage); }
 
 private:
 	StorageMergeTree & storage;
@@ -468,11 +468,13 @@ typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
 class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
+	/// Параметры storage_ и owned_storage разделены, чтобы можно было сделать поток, не владеющий своим storage
+	/// (например, поток, сливаящий куски). В таком случае сам storage должен следить, чтобы не удалить данные, пока их читают.
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
 		size_t block_size_, const Names & column_names_,
 		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
-		const MarkRanges & mark_ranges_)
-		: path(path_), block_size(block_size_), column_names(column_names_),
+		const MarkRanges & mark_ranges_, StoragePtr owned_storage)
+		: IProfilingBlockInputStream(owned_storage), path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
 		mark_ranges(mark_ranges_), current_range(-1), rows_left_in_current_range(0)
 	{
@@ -485,7 +487,7 @@ public:
 	
 	BlockInputStreamPtr clone()
 	{
-		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_ranges);
+		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_ranges, owned_storage);
 	}
 	
 	/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
@@ -810,7 +812,7 @@ StorageMergeTree::~StorageMergeTree()
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 {
-	return new MergeTreeBlockOutputStream(*this);
+	return new MergeTreeBlockOutputStream(thisPtr());
 }
 
 
@@ -1022,7 +1024,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 					
 					streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
 																	  max_block_size, column_names, *this,
-																	  part.data_part, part.ranges));
+																	  part.data_part, part.ranges, thisPtr()));
 					need_marks -= marks_in_part;
 					parts.pop_back();
 					sum_marks_in_parts.pop_back();
@@ -1051,7 +1053,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 				
 				streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
 																  max_block_size, column_names, *this,
-																  part.data_part, ranges_to_get_from_part));
+																  part.data_part, ranges_to_get_from_part, thisPtr()));
 			}
 			
 			if (streams.size() == 1)
@@ -1447,7 +1449,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], ranges), primary_expr));
+			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], ranges, StoragePtr()), primary_expr));
 	}
 
 	BlockInputStreamPtr merged_stream = sign_column.empty()

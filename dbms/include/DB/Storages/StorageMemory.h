@@ -15,9 +15,9 @@ class StorageMemory;
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_);
+	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, StoragePtr owned_storage);
 	String getName() const { return "MemoryBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, begin, end); }
+	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, begin, end, owned_storage); }
 protected:
 	Block readImpl();
 private:
@@ -31,9 +31,9 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MemoryBlockOutputStream(StorageMemory & storage_);
+	MemoryBlockOutputStream(StoragePtr owned_storage);
 	void write(const Block & block);
-	BlockOutputStreamPtr clone() { return new MemoryBlockOutputStream(storage); }
+	BlockOutputStreamPtr clone() { return new MemoryBlockOutputStream(owned_storage); }
 private:
 	StorageMemory & storage;
 };

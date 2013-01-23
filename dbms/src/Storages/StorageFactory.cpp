@@ -33,15 +33,15 @@ StoragePtr StorageFactory::get(
 {
 	if (name == "Log")
 	{
-		return new StorageLog(data_path, table_name, columns);
+		return (new StorageLog(data_path, table_name, columns))->thisPtr();
 	}
 	else if (name == "TinyLog")
 	{
-		return new StorageTinyLog(data_path, table_name, columns, attach);
+		return (new StorageTinyLog(data_path, table_name, columns, attach))->thisPtr();
 	}
 	else if (name == "Memory")
 	{
-		return new StorageMemory(table_name, columns);
+		return (new StorageMemory(table_name, columns))->thisPtr();
 	}
 	else if (name == "Merge")
 	{
@@ -65,7 +65,7 @@ StoragePtr StorageFactory::get(
 		String source_database 		= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		String table_name_regexp	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
 		
-		return new StorageMerge(table_name, columns, source_database, table_name_regexp, context);
+		return (new StorageMerge(table_name, columns, source_database, table_name_regexp, context))->thisPtr();
 	}
 	else if (name == "Distributed")
 	{
@@ -147,11 +147,11 @@ StoragePtr StorageFactory::get(
 			throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 		
 		if (!addresses_with_failover.empty())
-			return new StorageDistributed(table_name, columns, addresses_with_failover, remote_database, remote_table,
-				context.getDataTypeFactory(), context.getSettings());
+			return (new StorageDistributed(table_name, columns, addresses_with_failover, remote_database, remote_table,
+										  context.getDataTypeFactory(), context.getSettings()))->thisPtr();
 		else if (!addresses.empty())
-			return new StorageDistributed(table_name, columns, addresses, remote_database, remote_table,
-				context.getDataTypeFactory(), context.getSettings());
+			return (new StorageDistributed(table_name, columns, addresses, remote_database, remote_table,
+										  context.getDataTypeFactory(), context.getSettings()))->thisPtr();
 		else
 			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 	}
@@ -192,7 +192,7 @@ StoragePtr StorageFactory::get(
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity);
+		return (new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity))->thisPtr();
 	}
 	else if (name == "CollapsingMergeTree")
 	{
@@ -232,7 +232,7 @@ StoragePtr StorageFactory::get(
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity, sign_column_name);
+		return (new StorageMergeTree(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity, sign_column_name))->thisPtr();
 	}
 	else if (name == "SystemNumbers")
 	{
@@ -240,7 +240,7 @@ StoragePtr StorageFactory::get(
 			throw Exception("Storage SystemNumbers only allows one column with name 'number' and type 'UInt64'",
 				ErrorCodes::ILLEGAL_COLUMN);
 
-		return new StorageSystemNumbers(table_name);
+		return (new StorageSystemNumbers(table_name))->thisPtr();
 	}
 	else if (name == "SystemOne")
 	{
@@ -248,7 +248,7 @@ StoragePtr StorageFactory::get(
 			throw Exception("Storage SystemOne only allows one column with name 'dummy' and type 'UInt8'",
 				ErrorCodes::ILLEGAL_COLUMN);
 
-		return new StorageSystemOne(table_name);
+		return (new StorageSystemOne(table_name))->thisPtr();
 	}
 	else
 		throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);

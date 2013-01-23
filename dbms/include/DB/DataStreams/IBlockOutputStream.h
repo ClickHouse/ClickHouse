@@ -5,6 +5,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
+#include <DB/Storages/StoragePtr.h>
 
 
 namespace DB
@@ -18,6 +19,8 @@ using Poco::SharedPtr;
 class IBlockOutputStream : private boost::noncopyable
 {
 public:
+	
+	IBlockOutputStream(StoragePtr owned_storage_ = StoragePtr()) : owned_storage(owned_storage_) {}
 
 	/** Записать блок.
 	  */
@@ -35,6 +38,9 @@ public:
 	virtual SharedPtr<IBlockOutputStream> clone() = 0;
 
 	virtual ~IBlockOutputStream() {}
+	
+protected:
+	StoragePtr owned_storage;
 };
 
 typedef SharedPtr<IBlockOutputStream> BlockOutputStreamPtr;

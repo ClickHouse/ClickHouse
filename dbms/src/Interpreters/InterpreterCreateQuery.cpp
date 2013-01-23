@@ -69,7 +69,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		}
 
 		context.addDatabase(database_name);
-		return NULL;
+		return StoragePtr();
 	}
 
 	StoragePtr res;

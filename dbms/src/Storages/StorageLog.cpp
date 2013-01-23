@@ -25,8 +25,8 @@ namespace DB
 using Poco::SharedPtr;
 
 
-LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_)
-	: block_size(block_size_), column_names(column_names_), storage(storage_), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
+LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage, size_t mark_number_, size_t rows_limit_)
+	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(reinterpret_cast<StorageLog &>(*owned_storage)), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
 {
 }
 
@@ -120,8 +120,8 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 }
 
 
-LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
-	: storage(storage_), lock(storage.rwlock)
+LogBlockOutputStream::LogBlockOutputStream(StoragePtr owned_storage)
+	: IBlockOutputStream(owned_storage), storage(reinterpret_cast<StorageLog &>(*owned_storage)), lock(storage.rwlock)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		addStream(it->first, *it->second);
@@ -325,7 +325,7 @@ BlockInputStreams StorageLog::read(
 		res.push_back(new LogBlockInputStream(
 			max_block_size,
 			column_names,
-			*this,
+			thisPtr(),
 			thread * marks_size / threads,
 			thread == 0
 				? marks[marks_size / threads - 1].rows
@@ -340,7 +340,7 @@ BlockOutputStreamPtr StorageLog::write(
 	ASTPtr query)
 {
 	loadMarks();
-	return new LogBlockOutputStream(*this);
+	return new LogBlockOutputStream(thisPtr());
 }
 
 

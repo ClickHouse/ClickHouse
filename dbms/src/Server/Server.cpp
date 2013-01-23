@@ -124,10 +124,10 @@ int Server::main(const std::vector<std::string> & args)
 	/// Создаём системные таблицы.
 	global_context.addDatabase("system");
 	
-	global_context.addTable("system", "one",		new StorageSystemOne("one"));
-	global_context.addTable("system", "numbers", 	new StorageSystemNumbers("numbers"));
-	global_context.addTable("system", "tables", 	new StorageSystemTables("tables", global_context));
-	global_context.addTable("system", "databases", 	new StorageSystemDatabases("databases", global_context));
+	global_context.addTable("system", "one",		(new StorageSystemOne("one"))->thisPtr());
+	global_context.addTable("system", "numbers", 	(new StorageSystemNumbers("numbers"))->thisPtr());
+	global_context.addTable("system", "tables", 	(new StorageSystemTables("tables", global_context))->thisPtr());
+	global_context.addTable("system", "databases", (new StorageSystemDatabases("databases", global_context))->thisPtr());
 		
 	global_context.setCurrentDatabase(config.getString("default_database", "default"));
 
