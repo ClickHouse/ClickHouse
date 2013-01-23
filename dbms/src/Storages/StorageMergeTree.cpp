@@ -1487,6 +1487,22 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 }
 
 
+void StorageMergeTree::rename(const String & new_path_to_db, const String & new_name)
+{
+	joinMergeThreads();
+	
+	std::string new_full_path = new_path_to_db + escapeForFileName(new_name) + '/';
+	
+	Poco::File(full_path).renameTo(new_full_path);
+	
+	path = new_path_to_db;
+	full_path = new_full_path;
+	name = new_name;
+	
+	increment.setPath(full_path + "increment.txt");
+}
+
+
 void StorageMergeTree::drop()
 {
 	joinMergeThreads();

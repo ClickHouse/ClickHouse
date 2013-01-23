@@ -147,7 +147,7 @@ public:
 
 	void drop();
 	
-//	void rename(const String & new_path_to_db, const String & new_name);
+	void rename(const String & new_path_to_db, const String & new_name);
 
 private:
 	String path;
