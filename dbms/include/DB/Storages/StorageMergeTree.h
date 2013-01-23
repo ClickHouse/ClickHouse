@@ -145,7 +145,7 @@ public:
 		return true;
 	}
 
-	void drop();
+	void dropImpl();
 	
 	void rename(const String & new_path_to_db, const String & new_name);
 

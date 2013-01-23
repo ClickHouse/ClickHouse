@@ -67,7 +67,7 @@ public:
 	BlockOutputStreamPtr write(
 		ASTPtr query);
 
-	void drop();
+	void dropImpl();
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 
 private:

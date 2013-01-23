@@ -58,7 +58,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
-	void drop() {}
+	void dropImpl() {}
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 
 private:

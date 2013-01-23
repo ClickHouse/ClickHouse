@@ -344,7 +344,7 @@ BlockOutputStreamPtr StorageLog::write(
 }
 
 
-void StorageLog::drop()
+void StorageLog::dropImpl()
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
 	

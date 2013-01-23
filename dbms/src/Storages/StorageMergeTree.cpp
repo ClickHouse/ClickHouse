@@ -1505,7 +1505,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 }
 
 
-void StorageMergeTree::drop()
+void StorageMergeTree::dropImpl()
 {
 	joinMergeThreads();
 	
