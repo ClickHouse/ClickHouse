@@ -41,6 +41,7 @@ public:
 	StoragePtr& operator = (const StoragePtr & p)
 	{
 		ptr = p.ptr;
+		return *this;
 	}
 	
 	bool operator == (const IStorage * p)
