@@ -48,6 +48,25 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	if (query.concurrency != 0)
 		new_settings.max_threads = query.concurrency;
 	
+	if (query.max_execution_time != 0)
+		new_settings.limits.max_execution_time = Poco::Timespan(query.max_execution_time, 0);
+	
+	if (query.max_result_size != 0)
+		new_settings.limits.max_rows_to_group_by = query.max_result_size;
+	
+	switch (query.overflow_mode)
+	{
+		case OLAP::OVERFLOW_MODE_THROW:
+			new_settings.limits.group_by_overflow_mode = Limits::THROW;
+			break;
+		case OLAP::OVERFLOW_MODE_BREAK:
+			new_settings.limits.group_by_overflow_mode = Limits::BREAK;
+			break;
+		case OLAP::OVERFLOW_MODE_ANY:
+			new_settings.limits.group_by_overflow_mode = Limits::ANY;
+			break;
+	}
+	
 	inout_context.setSettings(new_settings);
 	
 	/// Составим запрос.
