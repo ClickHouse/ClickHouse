@@ -136,7 +136,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 std::string QueryConverter::convertAttributeFormatted(const std::string & attribute, unsigned parameter)
 {
 	if (formatted_attribute_map.count(attribute))
-		Poco::format(formatted_attribute_map[attribute], parameter);
+		return Poco::format(formatted_attribute_map[attribute], parameter);
 	
 	if (numeric_attribute_map.count(attribute))
 	{
