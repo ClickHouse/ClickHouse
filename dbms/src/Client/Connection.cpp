@@ -260,7 +260,7 @@ Connection::Packet Connection::receivePacket()
 		default:
 			/// Закроем соединение, чтобы не было рассинхронизации.
 			disconnect();
-			throw Exception("Unknown packet from server" + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+			throw Exception("Unknown packet from server " + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 	}
 }
 

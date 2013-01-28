@@ -57,8 +57,6 @@ void TCPHandler::runImpl()
 	
 	sendHello();
 
-	bool network_error = false;
-
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
@@ -66,7 +64,7 @@ void TCPHandler::runImpl()
 			;
 
 		/// Если требуется завершить работу, или клиент отсоединился.
-		if (Daemon::instance().isCancelled() || network_error || in->eof())
+		if (Daemon::instance().isCancelled() || in->eof())
 			break;
 		
 		Stopwatch watch;
@@ -112,7 +110,12 @@ void TCPHandler::runImpl()
 		}
 		catch (const Poco::Net::NetException & e)
 		{
-			network_error = true;
+			/** Сюда мы можем попадать, если была ошибка в соединении с клиентом,
+			  *  или в соединении с удалённым сервером, который использовался для обработки запроса.
+			  * Здесь не получается отличить эти два случая.
+			  * Хотя в одном из них, мы должны отправить эксепшен клиенту, а в другом - не можем.
+			  * Будем пытаться отправить эксепшен клиенту в любом случае - см. ниже.
+			  */
 			LOG_ERROR(log, "Poco::Net::NetException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 			exception = new Exception(e.displayText(), e.code());
@@ -134,14 +137,18 @@ void TCPHandler::runImpl()
 			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 
+		bool network_error = false;
+
 		try
 		{
-			if (exception && !network_error)
+			if (exception)
 				sendException(*exception);
 		}
 		catch (...)
 		{
 			/** Не удалось отправить информацию об эксепшене клиенту. */
+			network_error = true;
+			LOG_WARNING(log, "Client has gone away.");
 		}
 
 		try
@@ -161,6 +168,9 @@ void TCPHandler::runImpl()
 
 		LOG_INFO(log, std::fixed << std::setprecision(3)
 			<< "Processed in " << watch.elapsedSeconds() << " sec.");
+
+		if (network_error)
+			break;
 	}
 }
 
