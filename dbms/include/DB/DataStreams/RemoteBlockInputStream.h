@@ -67,6 +67,13 @@ public:
 
 	~RemoteBlockInputStream()
 	{
+		bool uncaught_exception = std::uncaught_exception();
+
+		/** В случае эксепшена, закрываем соединение, чтобы оно не осталось висеть в рассихронизированном состоянии.
+		  */
+		if (uncaught_exception)
+			connection.disconnect();
+		
 		/** Если одно из:
 		  *   - ничего не начинали делать;
 		  *   - получили все пакеты до EndOfStream;
@@ -74,7 +81,7 @@ public:
 		  *   - объект уничтожается из-за эксепшена;
 		  * - то больше читать ничего не нужно.
 		  */
-		if (!sent_query || finished || got_exception_from_server || std::uncaught_exception())
+		if (!sent_query || finished || got_exception_from_server || uncaught_exception)
 			return;
 
 		/** Если ещё прочитали не все данные, но они больше не нужны.

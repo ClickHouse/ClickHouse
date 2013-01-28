@@ -31,25 +31,19 @@ void Connection::connect()
 		socket.setReceiveTimeout(receive_timeout);
 		socket.setSendTimeout(send_timeout);
 
+		in = new ReadBufferFromPocoSocket(socket);
+		out = new WriteBufferFromPocoSocket(socket);
+
 		connected = true;
 
 		sendHello();
 		receiveHello();
 
-		{
-			String server_name;
-			UInt64 server_version_major = 0;
-			UInt64 server_version_minor = 0;
-			UInt64 server_revision = 0;
-
-			getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
-
-			LOG_TRACE(log, "Connected to " << server_name
-				<< " server version " << server_version_major
-				<< "." << server_version_minor
-				<< "." << server_revision
-				<< ".");
-		}
+		LOG_TRACE(log, "Connected to " << server_name
+			<< " server version " << server_version_major
+			<< "." << server_version_minor
+			<< "." << server_revision
+			<< ".");
 	}
 	catch (Poco::Net::NetException & e)
 	{
@@ -70,13 +64,19 @@ void Connection::connect()
 
 void Connection::disconnect()
 {
+	//LOG_TRACE(log, "Disconnecting (" << getServerAddress() << ")");
+	
 	socket.close();
+	in = NULL;
+	out = NULL;
 	connected = false;
 }
 
 
 void Connection::sendHello()
 {
+	//LOG_TRACE(log, "Sending hello (" << getServerAddress() << ")");
+	
 	writeVarUInt(Protocol::Client::Hello, *out);
 	writeStringBinary((DBMS_NAME " ") + client_name, *out);
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
@@ -90,6 +90,8 @@ void Connection::sendHello()
 
 void Connection::receiveHello()
 {
+	//LOG_TRACE(log, "Receiving hello (" << getServerAddress() << ")");
+	
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
 
@@ -142,6 +144,8 @@ void Connection::forceConnected()
 
 bool Connection::ping()
 {
+	//LOG_TRACE(log, "Ping (" << getServerAddress() << ")");
+	
 	try
 	{
 		UInt64 pong = 0;
@@ -187,6 +191,8 @@ void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage)
 	
 	query_id = query_id_;
 
+	//LOG_TRACE(log, "Sending query (" << getServerAddress() << ")");
+
 	writeVarUInt(Protocol::Client::Query, *out);
 	writeIntBinary(query_id, *out);
 	writeVarUInt(stage, *out);
@@ -205,6 +211,8 @@ void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage)
 
 void Connection::sendCancel()
 {
+	//LOG_TRACE(log, "Sending cancel (" << getServerAddress() << ")");
+	
 	writeVarUInt(Protocol::Client::Cancel, *out);
 	out->next();
 }
@@ -212,6 +220,8 @@ void Connection::sendCancel()
 
 void Connection::sendData(const Block & block)
 {
+	//LOG_TRACE(log, "Sending data (" << getServerAddress() << ")");
+	
 	if (!block_out)
 	{
 		if (compression == Protocol::Compression::Enable)
@@ -237,6 +247,8 @@ bool Connection::poll(size_t timeout_microseconds)
 
 Connection::Packet Connection::receivePacket()
 {
+	//LOG_TRACE(log, "Receiving packet (" << getServerAddress() << ")");
+	
 	Packet res;
 	readVarUInt(res.type, *in);
 
@@ -267,6 +279,8 @@ Connection::Packet Connection::receivePacket()
 
 Block Connection::receiveData()
 {
+	//LOG_TRACE(log, "Receiving data (" << getServerAddress() << ")");
+		
 	if (!block_in)
 	{
 		if (compression == Protocol::Compression::Enable)
@@ -290,6 +304,8 @@ String Connection::getServerAddress() const
 
 SharedPtr<Exception> Connection::receiveException()
 {
+	//LOG_TRACE(log, "Receiving exception (" << getServerAddress() << ")");
+	
 	Exception e;
 	readException(e, *in, "Received from " + getServerAddress());
 	return e.clone();
@@ -298,6 +314,8 @@ SharedPtr<Exception> Connection::receiveException()
 
 Progress Connection::receiveProgress()
 {
+	//LOG_TRACE(log, "Receiving progress (" << getServerAddress() << ")");
+	
 	Progress progress;
 	progress.read(*in);
 	return progress;

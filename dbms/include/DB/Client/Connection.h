@@ -44,7 +44,6 @@ public:
 		Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
 		: host(host_), port(port_), default_database(default_database_), client_name(client_name_), connected(false),
 		server_version_major(0), server_version_minor(0), server_revision(0),
-		socket(), in(new ReadBufferFromPocoSocket(socket)), out(new WriteBufferFromPocoSocket(socket)),
 		query_id(0), compression(compression_), data_type_factory(data_type_factory_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		log(&Logger::get("Connection (" + Poco::Net::SocketAddress(host, port).toString() + ")"))
@@ -86,6 +85,12 @@ public:
 	/// Если ещё не соединено, или соединение разорвано - соединиться. Если не получилось - кинуть исключение.
 	void forceConnected();
 
+	/** Разорвать соединение.
+	  * Это может быть нужно, например, чтобы соединение не осталось висеть в
+	  *  рассинхронизированном состоянии (когда кто-то чего-то продолжает ждать) после эксепшена.
+	  */
+	void disconnect();
+
 private:
 	String host;
 	UInt16 port;
@@ -124,7 +129,6 @@ private:
 	Logger * log;
 
 	void connect();
-	void disconnect();
 	void sendHello();
 	void receiveHello();
 	bool ping();
