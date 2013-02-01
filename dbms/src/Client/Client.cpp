@@ -28,8 +28,10 @@
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/copyData.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 
@@ -367,7 +369,20 @@ private:
 			process(config().getString("query"));
 		else
 		{
-			// TODO
+			/** В случае, если параметр query не задан, то запрос будет читаться из stdin.
+			  * При этом, запрос будет читаться не потоково (целиком в оперативку).
+			  * Поддерживается только один запрос в stdin.
+			  */
+			
+			String stdin_str;
+
+			{
+				ReadBufferFromFileDescriptor in(STDIN_FILENO);
+				WriteBufferFromString out(stdin_str);
+				copyData(in, out);
+			}
+
+			process(stdin_str);
 		}
 	}
 
