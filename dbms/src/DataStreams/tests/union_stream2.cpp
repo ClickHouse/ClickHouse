@@ -40,7 +40,7 @@ int main(int argc, char ** argv)
 		DB::StoragePtr table = context.getTable("default", "hits6");
 
 		DB::QueryProcessingStage::Enum stage;
-		DB::BlockInputStreams streams = table->read(column_names, NULL, stage, settings.max_block_size, settings.max_threads);
+		DB::BlockInputStreams streams = table->read(column_names, NULL, settings, stage, settings.max_block_size, settings.max_threads);
 
 		for (size_t i = 0, size = streams.size(); i < size; ++i)
 			streams[i] = new DB::AsynchronousBlockInputStream(streams[i]);

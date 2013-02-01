@@ -130,6 +130,7 @@ public:
 	void setGlobalContext(Context & context_)								{ global_context = &context_; }
 
 	const Settings & getSettingsRef() const { return settings; };
+	Settings & getSettingsRef() { return settings; };
 };
 
 

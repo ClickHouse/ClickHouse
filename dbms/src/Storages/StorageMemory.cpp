@@ -50,6 +50,7 @@ StorageMemory::StorageMemory(const std::string & name_, NamesAndTypesListPtr col
 BlockInputStreams StorageMemory::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned threads)

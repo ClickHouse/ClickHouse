@@ -22,5 +22,7 @@
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 			128
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 	3
 
+#define DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS				28558
+
 /// Суффикс имени для столбца, содержащего смещения массива.
 #define ARRAY_SIZES_COLUMN_NAME_SUFFIX 							".size"

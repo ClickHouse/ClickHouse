@@ -11,6 +11,8 @@
 
 #include <DB/Parsers/IAST.h>
 
+#include <DB/Interpreters/Settings.h>
+
 #include <DB/Storages/StoragePtr.h>
 
 
@@ -64,12 +66,17 @@ public:
 	  * (Обычно функция только читает столбцы из списка, но в других случаях,
 	  *  например, запрос может быть частично обработан на удалённом сервере.)
 	  *
+	  * settings - настройки на один запрос.
+	  * Обычно Storage не заботится об этих настройках, так как они применяются в интерпретаторе.
+	  * Но, например, при распределённой обработке запроса, настройки передаются на удалённый сервер.
+	  *
 	  * threads - рекомендация, сколько потоков возвращать,
 	  *  если хранилище может возвращать разное количество потоков.
 	  */
 	virtual BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
+		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1)

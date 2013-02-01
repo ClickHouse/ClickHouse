@@ -76,8 +76,13 @@ void TCPHandler::runImpl()
 		SharedPtr<DB::Exception> exception;
 		
 		try
-		{	
-			/// Пакет Query. (Также, если пришёл пакет Ping - обрабатываем его и продолжаем ждать Query.)
+		{
+			/// Восстанавливаем контекст запроса.
+			query_context = connection_context;
+
+			/** Пакет Query. (Также, если пришёл пакет Ping - обрабатываем его и продолжаем ждать Query.)
+			  * Могут прийти настройки на отдельный запрос, которые модифицируют query_context.
+			  */
 			receivePacket();
 
 			/// Обрабатываем Query
@@ -207,7 +212,7 @@ void TCPHandler::processOrdinaryQuery()
 			
 			while (true)
 			{
-				if (async_in.poll(connection_context.getSettingsRef().interactive_delay / 1000))
+				if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
 				{
 					block = async_in.read();
 					break;
@@ -254,7 +259,6 @@ void TCPHandler::receiveHello()
 	String client_name;
 	UInt64 client_version_major = 0;
 	UInt64 client_version_minor = 0;
-	UInt64 client_revision = 0;
 
 	readVarUInt(packet_type, *in);
 	if (packet_type != Protocol::Client::Hello)
@@ -335,6 +339,12 @@ void TCPHandler::receiveQuery()
 	
 	readIntBinary(state.query_id, *in);
 
+	/// Настройки на отдельный запрос.
+	if (client_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
+	{
+		query_context.getSettingsRef().deserialize(*in);
+	}
+
 	readVarUInt(stage, *in);
 	state.stage = QueryProcessingStage::Enum(stage);
 
@@ -343,7 +353,7 @@ void TCPHandler::receiveQuery()
 
 	readStringBinary(state.query, *in);
 
-	state.io = executeQuery(state.query, connection_context, state.stage);
+	state.io = executeQuery(state.query, query_context, state.stage);
 }
 
 
@@ -356,12 +366,12 @@ bool TCPHandler::receiveData()
 		else
 			state.maybe_compressed_in = in;
 
-		state.block_in = connection_context.getFormatFactory().getInput(
+		state.block_in = query_context.getFormatFactory().getInput(
 			"Native",
 			*state.maybe_compressed_in,
 			state.io.out_sample,
-			connection_context.getSettingsRef().max_block_size,
-			connection_context.getDataTypeFactory());
+			query_context.getSettingsRef().max_block_size,
+			query_context.getDataTypeFactory());
 	}
 	
 	/// Прочитать из сети один блок и засунуть его в state.io.out (данные для INSERT-а)
@@ -381,7 +391,7 @@ bool TCPHandler::isQueryCancelled()
 	if (state.is_cancelled || state.sent_all_data)
 		return true;
 
-	if (after_check_cancelled.elapsed() / 1000 < connection_context.getSettingsRef().interactive_delay)
+	if (after_check_cancelled.elapsed() / 1000 < query_context.getSettingsRef().interactive_delay)
 		return false;
 
 	after_check_cancelled.restart();
@@ -421,7 +431,7 @@ void TCPHandler::sendData(Block & block)
 		else
 			state.maybe_compressed_out = out;
 
-		state.block_out = connection_context.getFormatFactory().getOutput(
+		state.block_out = query_context.getFormatFactory().getOutput(
 			"Native",
 			*state.maybe_compressed_out,
 			state.io.in_sample);
@@ -466,7 +476,7 @@ void TCPHandler::sendProgress(size_t rows, size_t bytes)
 	if (state.sent_all_data)
 		return;
 
-	if (after_send_progress.elapsed() / 1000 < connection_context.getSettingsRef().interactive_delay)
+	if (after_send_progress.elapsed() / 1000 < query_context.getSettingsRef().interactive_delay)
 		return;
 
 	after_send_progress.restart();

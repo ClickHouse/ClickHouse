@@ -58,6 +58,7 @@ StorageDistributed::StorageDistributed(
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned threads)
@@ -79,7 +80,7 @@ BlockInputStreams StorageDistributed::read(
 	BlockInputStreams res;
 
 	for (ConnectionPools::iterator it = pools.begin(); it != pools.end(); ++it)
-		res.push_back(new RemoteBlockInputStream((*it)->get(), modified_query, processed_stage));
+		res.push_back(new RemoteBlockInputStream((*it)->get(), modified_query, &settings, processed_stage));
 
 	return res;
 }

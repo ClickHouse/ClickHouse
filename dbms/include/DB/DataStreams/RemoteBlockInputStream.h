@@ -15,21 +15,35 @@ namespace DB
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	RemoteBlockInputStream(Connection & connection_, const String & query_,
+	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
 		: connection(connection_), query(query_), stage(stage_),
 		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
+		if (settings_)
+		{
+			send_settings = true;
+			settings = *settings_;
+		}
+		else
+			send_settings = false;
 	}
 
 	/// Захватывает владение соединением из пула.
-	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_,
+	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
 		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), stage(stage_),
 		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
+		if (settings_)
+		{
+			send_settings = true;
+			settings = *settings_;
+		}
+		else
+			send_settings = false;
 	}
 
 
@@ -38,8 +52,8 @@ public:
 	BlockInputStreamPtr clone()
 	{
 		return pool_entry.isNull()
-			? new RemoteBlockInputStream(connection, query, stage)
-			: new RemoteBlockInputStream(pool_entry, query, stage);
+			? new RemoteBlockInputStream(connection, query, send_settings ? &settings : NULL, stage)
+			: new RemoteBlockInputStream(pool_entry, query, send_settings ? &settings : NULL, stage);
 	}
 
 
@@ -127,7 +141,7 @@ protected:
 	{
 		if (!sent_query)
 		{
-			connection.sendQuery(query, 1, stage);
+			connection.sendQuery(query, 1, stage, send_settings ? &settings : NULL);
 			sent_query = true;
 		}
 
@@ -173,6 +187,8 @@ private:
 	Connection & connection;
 
 	const String query;
+	bool send_settings;
+	Settings settings;
 	QueryProcessingStage::Enum stage;
 
 	/// Отправили запрос (это делается перед получением первого блока).

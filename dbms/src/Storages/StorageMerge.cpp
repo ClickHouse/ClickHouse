@@ -19,6 +19,7 @@ StorageMerge::StorageMerge(
 BlockInputStreams StorageMerge::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned threads)
@@ -52,6 +53,7 @@ BlockInputStreams StorageMerge::read(
 		BlockInputStreams source_streams = (*it)->read(
 			column_names,
 			query,
+			settings,
 			tmp_processed_stage,
 			max_block_size,
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));

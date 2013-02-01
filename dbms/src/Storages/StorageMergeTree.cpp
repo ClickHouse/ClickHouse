@@ -819,6 +819,7 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 BlockInputStreams StorageMergeTree::read(
 	const Names & column_names_to_return,
 	ASTPtr query,
+	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned threads)

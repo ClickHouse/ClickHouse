@@ -283,7 +283,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
- 		streams = table->read(required_columns, query_ptr, from_stage, settings.max_block_size, settings.max_threads);
+ 		streams = table->read(required_columns, query_ptr, settings, from_stage, settings.max_block_size, settings.max_threads);
 	else
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), settings.asynchronous));
 

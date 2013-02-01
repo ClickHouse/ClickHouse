@@ -4,6 +4,11 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Field.h>
 
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
+
 #include <DB/Interpreters/Limits.h>
 
 
@@ -76,6 +81,70 @@ struct Settings
 		else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = safeGet<UInt64>(value);
 		else if (!limits.trySet(name, value))
 			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+	}
+
+	/// Установить настройку по имени. Прочитать сериализованное значение из буфера.
+	void set(const String & name, ReadBuffer & buf)
+	{
+		if (   name == "max_block_size"
+			|| name == "max_threads"
+			|| name == "max_query_size"
+			|| name == "asynchronous"
+			|| name == "interactive_delay"
+			|| name == "connect_timeout"
+			|| name == "receive_timeout"
+			|| name == "send_timeout"
+			|| name == "poll_interval"
+			|| name == "connect_timeout_with_failover_ms"
+			|| name == "max_distributed_connections"
+			|| name == "distributed_connections_pool_size"
+			|| name == "connections_with_failover_max_tries")
+		{
+			UInt64 value = 0;
+			readVarUInt(value, buf);
+			set(name, value);
+		}
+		else if (!limits.trySet(name, buf))
+			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+	}
+
+	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
+	void deserialize(ReadBuffer & buf)
+	{
+		while (true)
+		{
+			String name;
+			readBinary(name, buf);
+
+			/// Пустая строка - это маркер конца настроек.
+			if (name.empty())
+				break;
+
+			set(name, buf);
+		}
+	}
+
+	/// Записать все настройки в буфер.
+	void serialize(WriteBuffer & buf) const
+	{
+		writeStringBinary("max_block_size", buf);						writeVarUInt(max_block_size, buf);
+		writeStringBinary("max_threads", buf);							writeVarUInt(max_threads, buf);
+		writeStringBinary("max_query_size", buf);						writeVarUInt(max_query_size, buf);
+		writeStringBinary("asynchronous", buf);							writeVarUInt(asynchronous, buf);
+		writeStringBinary("interactive_delay", buf);					writeVarUInt(interactive_delay, buf);
+		writeStringBinary("connect_timeout", buf);						writeVarUInt(connect_timeout.totalSeconds(), buf);
+		writeStringBinary("receive_timeout", buf);						writeVarUInt(receive_timeout.totalSeconds(), buf);
+		writeStringBinary("send_timeout", buf);							writeVarUInt(send_timeout.totalSeconds(), buf);
+		writeStringBinary("poll_interval", buf);						writeVarUInt(poll_interval, buf);
+		writeStringBinary("connect_timeout_with_failover_ms", buf);		writeVarUInt(connect_timeout_with_failover_ms.totalMilliseconds(), buf);
+		writeStringBinary("max_distributed_connections", buf);			writeVarUInt(max_distributed_connections, buf);
+		writeStringBinary("distributed_connections_pool_size", buf);	writeVarUInt(distributed_connections_pool_size, buf);
+		writeStringBinary("connections_with_failover_max_tries", buf);	writeVarUInt(connections_with_failover_max_tries, buf);
+
+		limits.serialize(buf);
+
+		/// Пустая строка - это маркер конца настроек.
+		writeStringBinary("", buf);
 	}
 };
 

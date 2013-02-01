@@ -18,7 +18,8 @@ StorageSystemTables::StorageSystemTables(const std::string & name_, const Contex
 
 
 BlockInputStreams StorageSystemTables::read(
-	const Names & column_names, ASTPtr query, QueryProcessingStage::Enum & processed_stage, size_t max_block_size, unsigned threads)
+	const Names & column_names, ASTPtr query, const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage, size_t max_block_size, unsigned threads)
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;

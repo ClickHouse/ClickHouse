@@ -185,7 +185,7 @@ bool Connection::ping()
 }
 
 
-void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage)
+void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage, const Settings * settings)
 {
 	forceConnected();
 	
@@ -195,6 +195,16 @@ void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage)
 
 	writeVarUInt(Protocol::Client::Query, *out);
 	writeIntBinary(query_id, *out);
+
+	/// Настройки на отдельный запрос.
+	if (server_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
+	{
+		if (settings)
+			settings->serialize(*out);
+		else
+			writeStringBinary("", *out);
+	}
+	
 	writeVarUInt(stage, *out);
 	writeVarUInt(compression, *out);
 

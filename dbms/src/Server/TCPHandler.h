@@ -69,10 +69,10 @@ class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
 	TCPHandler(Server & server_, const Poco::Net::StreamSocket & socket_)
-		: Poco::Net::TCPServerConnection(socket_), server(server_)
-		, log(&Logger::get("TCPHandler")), connection_context(server.global_context)
+		: Poco::Net::TCPServerConnection(socket_), server(server_),
+		log(&Logger::get("TCPHandler")), client_revision(0),
+		connection_context(server.global_context), query_context(connection_context)
 	{
-	    LOG_TRACE(log, "In constructor.");
 	}
 
 	void run();
@@ -81,7 +81,10 @@ private:
 	Server & server;
 	Logger * log;
 
+	UInt64 client_revision;
+
 	Context connection_context;
+	Context query_context;
 
 	SharedPtr<ReadBufferFromPocoSocket> in;
 	SharedPtr<WriteBufferFromPocoSocket> out;

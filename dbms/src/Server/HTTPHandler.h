@@ -15,7 +15,6 @@ public:
 		: server(server_)
 		, log(&Logger::get("HTTPHandler"))
 	{
-	    LOG_TRACE(log, "In constructor.");
 	}
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);

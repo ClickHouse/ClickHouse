@@ -302,6 +302,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 BlockInputStreams StorageLog::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned threads)

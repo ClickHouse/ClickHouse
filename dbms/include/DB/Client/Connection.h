@@ -18,6 +18,8 @@
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
+#include <DB/Interpreters/Settings.h>
+
 
 namespace DB
 {
@@ -72,7 +74,9 @@ public:
 	String getServerAddress() const;
 
 	/// query_id не должен быть равен 0.
-	void sendQuery(const String & query, UInt64 query_id_ = 1, UInt64 stage = QueryProcessingStage::Complete);
+	void sendQuery(const String & query, UInt64 query_id_ = 1, UInt64 stage = QueryProcessingStage::Complete,
+		const Settings * settings = NULL);
+	
 	void sendCancel();
 	void sendData(const Block & block);
 

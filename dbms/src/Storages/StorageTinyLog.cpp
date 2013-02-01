@@ -224,6 +224,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_na
 BlockInputStreams StorageTinyLog::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
 	unsigned threads)
