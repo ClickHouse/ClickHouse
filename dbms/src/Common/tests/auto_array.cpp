@@ -213,5 +213,26 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
+	{
+		size_t n = 10000;
+		typedef DB::AutoArray<std::string> Arr;
+		Arr arr1(n);
+		Arr arr2(n);
+
+		for (size_t i = 0; i < n; ++i)
+		{
+			arr1[i] = "Hello, world! " + Poco::NumberFormatter::format(i);
+			arr2[i] = "Goodbye, world! " + Poco::NumberFormatter::format(i);
+		}
+
+		arr2 = arr1;
+		arr1.resize(n);
+
+		std::cerr
+			<< "arr1.size(): " << arr1.size() << ", arr2.size(): " << arr2.size() << std::endl
+			<< "&arr1[0]: " << &arr1[0] << ", &arr2[0]: " << &arr2[0] << std::endl
+			<< "arr1[0]: " << arr1[0] << ", arr2[0]: " << arr2[0] << std::endl;
+	}
+
 	return 0;
 }
