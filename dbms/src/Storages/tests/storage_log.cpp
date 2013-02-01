@@ -67,7 +67,7 @@ int main(int argc, char ** argv)
 
 			DB::QueryProcessingStage::Enum stage;
 
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, stage)[0];
+			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage)[0];
 
 			DB::Block sample;
 			{

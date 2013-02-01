@@ -30,7 +30,7 @@ int main(int argc, char ** argv)
 
 		DB::QueryProcessingStage::Enum stage;
 		
-		DB::LimitBlockInputStream input(table.read(column_names, 0, stage, 10)[0], 10, 96);
+		DB::LimitBlockInputStream input(table.read(column_names, 0, DB::Settings(), stage, 10)[0], 10, 96);
 		DB::TabSeparatedRowOutputStream output(out_buf, sample);
 		
 		DB::copyData(input, output);

@@ -106,7 +106,7 @@ int main(int argc, char ** argv)
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
 			DB::QueryProcessingStage::Enum stage;
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, stage)[0];
+			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage)[0];
 			DB::WriteBufferFromOStream out1(std::cout);
 			DB::CompressedWriteBuffer out2(out1);
 			DB::NativeBlockOutputStream out3(out2);

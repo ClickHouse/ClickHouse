@@ -162,7 +162,7 @@ int main(int argc, char ** argv)
 
 		DB::QueryProcessingStage::Enum stage;
 		
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
+		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
 		in = new DB::PartialSortingBlockInputStream(in, sort_columns);
 		in = new DB::MergeSortingBlockInputStream(in, sort_columns);
 		//in = new DB::LimitBlockInputStream(in, 10);
