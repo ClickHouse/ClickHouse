@@ -245,7 +245,12 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	  *  соединяться и опрашивать только по 8 серверов одновременно.
 	  * Чтобы одновременно опрашивалось больше удалённых серверов,
 	  *  вместо max_threads используется max_distributed_connections.
+	  *
+	  * Сохраним изначальное значение max_threads в settings_for_storage
+	  *  - эти настройки будут переданы на удалённые серверы при распределённой обработке запроса,
+	  *  и там должно быть оригинальное значение max_threads, а не увеличенное.
 	  */
+	Settings settings_for_storage = settings;
 	if (table && table->isRemote())
 		settings.max_threads = settings.max_distributed_connections;
 	
@@ -283,7 +288,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
- 		streams = table->read(required_columns, query_ptr, settings, from_stage, settings.max_block_size, settings.max_threads);
+ 		streams = table->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
 	else
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), settings.asynchronous));
 
