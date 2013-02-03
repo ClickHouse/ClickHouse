@@ -46,7 +46,7 @@
   * PS. Измеряйте всё сами, а то я почти запутался.
   */
 
-#define USE_AUTO_ARRAY	0
+#define USE_AUTO_ARRAY	1
 #define IMITATE_UPDATES	0
 
 

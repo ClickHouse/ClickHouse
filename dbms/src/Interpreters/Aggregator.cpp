@@ -455,7 +455,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			(*aggregate_columns[i])[0] = AggregateFunctionPtr(data[i]);
+			(*aggregate_columns[i])[0] = data[i];
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_64)
 	{
@@ -474,7 +474,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				first_column.insert(it->first);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second[i]);
+				(*aggregate_columns[i])[j] = it->second[i];
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
@@ -488,7 +488,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 			first_column.insert(String(it->first.data, it->first.size));	/// Здесь можно ускорить, сделав метод insertFrom(const char *, size_t size).
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second[i]);
+				(*aggregate_columns[i])[j] = it->second[i];
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
@@ -502,7 +502,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				key_columns[i]->insert(it->second.first[i]);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second.second[i]);
+				(*aggregate_columns[i])[j] = it->second.second[i];
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::GENERIC)
@@ -515,7 +515,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				key_columns[i]->insert(it->first[i]);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second[i]);
+				(*aggregate_columns[i])[j] = it->second[i];
 		}
 	}
 	else

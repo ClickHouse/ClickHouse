@@ -9,10 +9,21 @@ namespace DB
 {
 
 /** Столбец, хранящий состояния агрегатных функций.
+  * Для оптимизации, агрегатные функции хранятся по обычным указателям, а не shared_ptr-ам.
+  * Столбец захватывает владение всеми агрегатными функциями, которые в него переданы
+  *  (уничтожает их в дестркуторе с помощью delete).
+  * Это значит, что вставляемые агрегатные функции должны быть выделены с помощью new,
+  *  и не могут быть захвачены каком-либо smart-ptr-ом.
   */
-class ColumnAggregateFunction : public ColumnVector<AggregateFunctionPtr>
+class ColumnAggregateFunction : public ColumnVector<AggregateFunctionPlainPtr>
 {
 public:
+    ~ColumnAggregateFunction()
+	{
+		for (size_t i = 0, s = data.size(); i < s; ++i)
+			delete data[i];
+	}
+	
  	std::string getName() const { return "ColumnAggregateFunction"; }
 
  	ColumnPtr cloneEmpty() const { return new ColumnAggregateFunction; };
@@ -54,7 +65,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(DB::get<const AggregateFunctionPtr &>(x));
+		data.push_back(DB::get<AggregateFunctionPlainPtr>(x));
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const

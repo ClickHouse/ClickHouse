@@ -50,12 +50,12 @@ public:
 			UInt64				= 1,
 			Int64				= 2,
 			Float64				= 3,
+			AggregateFunction 	= 4,	/// Состояние агрегатной функции
 
 			/// не POD типы
 
 			String				= 16,
-			AggregateFunction 	= 17,	/// Состояние агрегатной функции
-			Array				= 18,
+			Array				= 17,
 		};
 
 		static const int MIN_NON_POD = 16;
@@ -68,8 +68,8 @@ public:
 				case UInt64: 			return "UInt64";
 				case Int64: 			return "Int64";
 				case Float64: 			return "Float64";
+				case AggregateFunction: return "AggregateFunctionPlainPtr";
 				case String: 			return "String";
-				case AggregateFunction: return "AggregateFunctionPtr";
 				case Array: 			return "Array";
 
 				default:
@@ -200,8 +200,8 @@ public:
 			case Types::UInt64: 			return get<UInt64>() 				< rhs.get<UInt64>();
 			case Types::Int64: 				return get<Int64>() 				< rhs.get<Int64>();
 			case Types::Float64: 			return get<Float64>() 				< rhs.get<Float64>();
+			case Types::AggregateFunction: 	return get<AggregateFunctionPlainPtr>() < rhs.get<AggregateFunctionPlainPtr>();
 			case Types::String: 			return get<String>() 				< rhs.get<String>();
-			case Types::AggregateFunction: 	return get<AggregateFunctionPtr>() 	< rhs.get<AggregateFunctionPtr>();
 			case Types::Array: 				return get<Array>() 				< rhs.get<Array>();
 
 			default:
@@ -227,8 +227,8 @@ public:
 			case Types::UInt64: 			return get<UInt64>() 				<= rhs.get<UInt64>();
 			case Types::Int64: 				return get<Int64>() 				<= rhs.get<Int64>();
 			case Types::Float64: 			return get<Float64>() 				<= rhs.get<Float64>();
+			case Types::AggregateFunction: 	return get<AggregateFunctionPlainPtr>() <= rhs.get<AggregateFunctionPlainPtr>();
 			case Types::String: 			return get<String>() 				<= rhs.get<String>();
-			case Types::AggregateFunction: 	return get<AggregateFunctionPtr>() 	<= rhs.get<AggregateFunctionPtr>();
 			case Types::Array: 				return get<Array>() 				<= rhs.get<Array>();
 
 			default:
@@ -252,8 +252,8 @@ public:
 			case Types::UInt64:
 			case Types::Int64:
 			case Types::Float64:			return get<UInt64>() 				== rhs.get<UInt64>();
+			case Types::AggregateFunction: 	return get<AggregateFunctionPlainPtr>() == rhs.get<AggregateFunctionPlainPtr>();
 			case Types::String: 			return get<String>() 				== rhs.get<String>();
-			case Types::AggregateFunction: 	return get<AggregateFunctionPtr>() 	== rhs.get<AggregateFunctionPtr>();
 			case Types::Array: 				return get<Array>() 				== rhs.get<Array>();
 
 			default:
@@ -267,7 +267,7 @@ public:
 	}
 
 
-	typedef SharedPtr<IAggregateFunction> AggregateFunctionPtr;
+	typedef IAggregateFunction * AggregateFunctionPlainPtr;
 	typedef std::vector<Field> Array;
 	
 private:
@@ -278,8 +278,8 @@ private:
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(UInt64));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Int64));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Float64));
+	BOOST_STATIC_ASSERT(storage_size >= sizeof(AggregateFunctionPlainPtr));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(String));
-	BOOST_STATIC_ASSERT(storage_size >= sizeof(AggregateFunctionPtr));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Array));
 
 	char storage[storage_size] __attribute__((aligned(8)));
@@ -311,8 +311,8 @@ private:
 			case Types::UInt64: 			create(x.get<UInt64>());				break;
 			case Types::Int64: 				create(x.get<Int64>());					break;
 			case Types::Float64: 			create(x.get<Float64>());				break;
+			case Types::AggregateFunction: 	create(x.get<AggregateFunctionPlainPtr>()); break;
 			case Types::String: 			create(x.get<String>());				break;
-			case Types::AggregateFunction: 	create(x.get<AggregateFunctionPtr>());	break;
 			case Types::Array: 				create(x.get<Array>());					break;
 		}
 	}
@@ -342,9 +342,6 @@ private:
 			case Types::String:
 				destroy<String>();
 				break;
-			case Types::AggregateFunction:
-				destroy<AggregateFunctionPtr>();
-				break;
 			case Types::Array:
 				destroy<Array>();
 				break;
@@ -362,21 +359,21 @@ private:
 };
 
 
-template <> struct Field::TypeToEnum<Null> 							{ static const Types::Which value = Types::Null; };
-template <> struct Field::TypeToEnum<UInt64> 						{ static const Types::Which value = Types::UInt64; };
-template <> struct Field::TypeToEnum<Int64> 						{ static const Types::Which value = Types::Int64; };
-template <> struct Field::TypeToEnum<Float64> 						{ static const Types::Which value = Types::Float64; };
-template <> struct Field::TypeToEnum<String> 						{ static const Types::Which value = Types::String; };
-template <> struct Field::TypeToEnum<Field::AggregateFunctionPtr> 	{ static const Types::Which value = Types::AggregateFunction; };
-template <> struct Field::TypeToEnum<Field::Array> 					{ static const Types::Which value = Types::Array; };
+template <> struct Field::TypeToEnum<Null> 								{ static const Types::Which value = Types::Null; };
+template <> struct Field::TypeToEnum<UInt64> 							{ static const Types::Which value = Types::UInt64; };
+template <> struct Field::TypeToEnum<Int64> 							{ static const Types::Which value = Types::Int64; };
+template <> struct Field::TypeToEnum<Float64> 							{ static const Types::Which value = Types::Float64; };
+template <> struct Field::TypeToEnum<String> 							{ static const Types::Which value = Types::String; };
+template <> struct Field::TypeToEnum<Field::AggregateFunctionPlainPtr> 	{ static const Types::Which value = Types::AggregateFunction; };
+template <> struct Field::TypeToEnum<Field::Array> 						{ static const Types::Which value = Types::Array; };
 
-template <> struct Field::EnumToType<Field::Types::Null> 				{ typedef Null 					Type; };
-template <> struct Field::EnumToType<Field::Types::UInt64> 				{ typedef UInt64 				Type; };
-template <> struct Field::EnumToType<Field::Types::Int64> 				{ typedef Int64 				Type; };
-template <> struct Field::EnumToType<Field::Types::Float64> 			{ typedef Float64 				Type; };
-template <> struct Field::EnumToType<Field::Types::String> 				{ typedef String 				Type; };
-template <> struct Field::EnumToType<Field::Types::AggregateFunction> 	{ typedef AggregateFunctionPtr 	Type; };
-template <> struct Field::EnumToType<Field::Types::Array> 				{ typedef Array 				Type; };
+template <> struct Field::EnumToType<Field::Types::Null> 				{ typedef Null 						Type; };
+template <> struct Field::EnumToType<Field::Types::UInt64> 				{ typedef UInt64 					Type; };
+template <> struct Field::EnumToType<Field::Types::Int64> 				{ typedef Int64 					Type; };
+template <> struct Field::EnumToType<Field::Types::Float64> 			{ typedef Float64 					Type; };
+template <> struct Field::EnumToType<Field::Types::String> 				{ typedef String 					Type; };
+template <> struct Field::EnumToType<Field::Types::AggregateFunction> 	{ typedef AggregateFunctionPlainPtr	Type; };
+template <> struct Field::EnumToType<Field::Types::Array> 				{ typedef Array 					Type; };
 
 
 template <typename T>
@@ -424,8 +421,8 @@ typename Visitor::ResultType apply_visitor_impl(Visitor & visitor, F & field)
 		case Field::Types::UInt64: 				return visitor(field.template get<UInt64>());
 		case Field::Types::Int64: 				return visitor(field.template get<Int64>());
 		case Field::Types::Float64: 			return visitor(field.template get<Float64>());
+		case Field::Types::AggregateFunction: 	return visitor(field.template get<Field::AggregateFunctionPlainPtr>());
 		case Field::Types::String: 				return visitor(field.template get<String>());
-		case Field::Types::AggregateFunction: 	return visitor(field.template get<Field::AggregateFunctionPtr>());
 		case Field::Types::Array: 				return visitor(field.template get<Field::Array>());
 
 		default:
@@ -471,8 +468,8 @@ typename Visitor::ResultType apply_binary_visitor_impl2(Visitor & visitor, F1 & 
 		case Field::Types::UInt64: 				return visitor(field1, field2.template get<UInt64>());
 		case Field::Types::Int64: 				return visitor(field1, field2.template get<Int64>());
 		case Field::Types::Float64: 			return visitor(field1, field2.template get<Float64>());
+		case Field::Types::AggregateFunction: 	return visitor(field1, field2.template get<Field::AggregateFunctionPlainPtr>());
 		case Field::Types::String: 				return visitor(field1, field2.template get<String>());
-		case Field::Types::AggregateFunction: 	return visitor(field1, field2.template get<Field::AggregateFunctionPtr>());
 		case Field::Types::Array: 				return visitor(field1, field2.template get<Field::Array>());
 
 		default:
@@ -489,8 +486,8 @@ typename Visitor::ResultType apply_binary_visitor_impl1(Visitor & visitor, F1 & 
 		case Field::Types::UInt64: 				return apply_binary_visitor_impl2(visitor, field1.template get<UInt64>(), 	field2);
 		case Field::Types::Int64: 				return apply_binary_visitor_impl2(visitor, field1.template get<Int64>(), 	field2);
 		case Field::Types::Float64: 			return apply_binary_visitor_impl2(visitor, field1.template get<Float64>(), 	field2);
+		case Field::Types::AggregateFunction: 	return apply_binary_visitor_impl2(visitor, field1.template get<Field::AggregateFunctionPlainPtr>(), field2);
 		case Field::Types::String: 				return apply_binary_visitor_impl2(visitor, field1.template get<String>(), 	field2);
-		case Field::Types::AggregateFunction: 	return apply_binary_visitor_impl2(visitor, field1.template get<Field::AggregateFunctionPtr>(), field2);
 		case Field::Types::Array: 				return apply_binary_visitor_impl2(visitor, field1.template get<Field::Array>(), field2);
 
 		default:
@@ -560,7 +557,7 @@ public:
 	String operator() (const UInt64 	& x) const { return "UInt64_" + Poco::NumberFormatter::format(x); }
 	String operator() (const Int64 		& x) const { return "Int64_" + Poco::NumberFormatter::format(x); }
 	String operator() (const Float64 	& x) const { return "Float64_" + Poco::NumberFormatter::format(x); }
-	String operator() (const SharedPtr<IAggregateFunction> & x) const { return "AggregateFunction"; }
+	String operator() (const Field::AggregateFunctionPlainPtr & x) const { return "AggregateFunction"; }
 
 	String operator() (const String 	& x) const
 	{
@@ -594,7 +591,7 @@ public:
 	String operator() (const UInt64 	& x) const { return Poco::NumberFormatter::format(x); }
 	String operator() (const Int64 		& x) const { return Poco::NumberFormatter::format(x); }
 	String operator() (const Float64 	& x) const { return Poco::NumberFormatter::format(x); }
-	String operator() (const SharedPtr<IAggregateFunction> & x) const { return "AggregateFunction"; }
+	String operator() (const Field::AggregateFunctionPlainPtr & x) const { return "AggregateFunction"; }
 
 	String operator() (const String 	& x) const
 	{
@@ -641,9 +638,9 @@ public:
 		throw Exception("Cannot convert Array to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
 	}
 
-	T operator() (const SharedPtr<IAggregateFunction> & x) const
+	T operator() (const Field::AggregateFunctionPlainPtr & x) const
 	{
-		throw Exception("Cannot convert AggregateFunctionPtr to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
+		throw Exception("Cannot convert AggregateFunctionPlainPtr to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
 	}
 
 	T operator() (const UInt64 	& x) const { return x; }
@@ -667,6 +664,7 @@ template <> struct NearestFieldType<Float64> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
 template <> struct NearestFieldType<Array> 		{ typedef Array 	Type; };
 template <> struct NearestFieldType<bool> 		{ typedef UInt64 	Type; };
+template <> struct NearestFieldType<IAggregateFunction*> { typedef IAggregateFunction* Type; };
 
 }
 

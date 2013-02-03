@@ -11,50 +11,21 @@
 namespace DB
 {
 
-/** Специализация - заглушка, которая ничего не делает для агрегатных функций.
-  */
-template <>
-class FieldVisitorConvertToNumber<SharedPtr<IAggregateFunction> >
-	: public StaticVisitor<SharedPtr<IAggregateFunction> >
+
+namespace detail
 {
-public:
-	typedef SharedPtr<IAggregateFunction> T;
-	
-	T operator() (const Null & x) const
-	{
-		throw Exception("Cannot convert NULL to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
-	}
-	
-	T operator() (const String & x) const
-	{
-		throw Exception("Cannot convert String to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
-	}
-	
-	T operator() (const Array & x) const
-	{
-		throw Exception("Cannot convert Array to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
-	}
-	
-	T operator() (const SharedPtr<IAggregateFunction> & x) const
+	template <typename T>
+	T convertUInt64To(UInt64 x)
 	{
 		return x;
 	}
-	
-	T operator() (const UInt64 & x) const
+
+	template <>
+	inline IAggregateFunction * convertUInt64To<IAggregateFunction *>(UInt64 x)
 	{
-		throw Exception("Cannot convert UInt64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
+		throw Exception("Logical error", ErrorCodes::LOGICAL_ERROR);
 	}
-	
-	T operator() (const Int64 & x) const
-	{
-		throw Exception("Cannot convert Int64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
-	}
-	
-	T operator() (const Float64 & x) const
-	{
-		throw Exception("Cannot convert Float64 to Aggregate Function", ErrorCodes::CANNOT_CONVERT_TYPE);
-	}
-};
+}
 
 	
 /** Шаблон столбцов, которые используют для хранения std::vector.
@@ -121,7 +92,8 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(apply_visitor(FieldVisitorConvertToNumber<typename NearestFieldType<T>::Type>(), x));
+		/// Это будет работать для всех числовых типов.
+		data.push_back(detail::convertUInt64To<T>(DB::get<UInt64>(x)));
 	}
 
 	void insertFrom(const IColumn & src, size_t n)

@@ -26,7 +26,7 @@ int main(int argc, char ** argv)
 	field = DB::Null();
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
 
-	field = DB::Field::AggregateFunctionPtr(NULL);
+	field = DB::Field::AggregateFunctionPlainPtr(NULL);
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
 
 	DB::Field field2;
@@ -37,7 +37,7 @@ int main(int argc, char ** argv)
 	array.push_back(DB::UInt64(123));
 	array.push_back(DB::Int64(-123));
 	array.push_back(DB::String("Hello"));
-	array.push_back(DB::Field::AggregateFunctionPtr(NULL));
+	array.push_back(DB::Field::AggregateFunctionPlainPtr(NULL));
 	field = array;
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
 

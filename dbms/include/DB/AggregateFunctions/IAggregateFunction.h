@@ -69,7 +69,4 @@ typedef SharedPtr<IAggregateFunction> AggregateFunctionPtr;
 typedef IAggregateFunction* AggregateFunctionPlainPtr;
 typedef AutoArray<AggregateFunctionPlainPtr> AggregateFunctionsPlainPtrs;
 
-template <> struct TypeName<AggregateFunctionPtr> { static std::string get() { return "AggregateFunctionPtr"; } };
-template <> struct NearestFieldType<AggregateFunctionPtr> { typedef AggregateFunctionPtr Type; };
-
 }

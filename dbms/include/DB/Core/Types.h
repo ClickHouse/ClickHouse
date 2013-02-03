@@ -31,6 +31,8 @@ typedef double Float64;
 typedef std::string String;
 typedef std::vector<String> Strings;
 
+class IAggregateFunction;
+
 
 template <typename T> struct IsNumber 	{ static const bool value = false; };
 
@@ -60,5 +62,6 @@ template <> struct TypeName<Int64> 		{ static std::string get() { return "Int64"
 template <> struct TypeName<Float32> 	{ static std::string get() { return "Float32"; 	} };
 template <> struct TypeName<Float64> 	{ static std::string get() { return "Float64"; 	} };
 template <> struct TypeName<String> 	{ static std::string get() { return "String"; 	} };
+template <> struct TypeName<IAggregateFunction*> { static std::string get() { return "AggregateFunctionPlainPtr"; } };
 
 }

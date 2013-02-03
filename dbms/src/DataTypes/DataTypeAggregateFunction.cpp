@@ -15,15 +15,12 @@ using Poco::SharedPtr;
 
 void DataTypeAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	const AggregateFunctionPtr & value = get<const AggregateFunctionPtr &>(field);
-	value->serialize(ostr);
+	get<AggregateFunctionPlainPtr>(field)->serialize(ostr);
 }
 
 void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-	AggregateFunctionPtr value = function->cloneEmpty();
-	value->deserializeMerge(istr);
-	field = value;
+	throw Exception("Deserialization of individual aggregate functions is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -95,7 +92,7 @@ ColumnPtr DataTypeAggregateFunction::createColumn() const
 
 ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConst<AggregateFunctionPtr>(size, get<AggregateFunctionPtr>(field));
+	throw Exception("Const column with aggregate function is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
