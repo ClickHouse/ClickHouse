@@ -185,6 +185,11 @@ public:
 		return res;
 	}
 
+	void reserve(size_t elems)
+	{
+		data->reserve(n * elems);
+	}
+
 	size_t byteSize() const
 	{
 		return data->byteSize() + sizeof(n);

@@ -1,5 +1,7 @@
 #include <Poco/SharedPtr.h>
 
+#include <DB/Core/Defines.h>
+
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -10,8 +12,6 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
-
-#define DBMS_APPROX_STRING_SIZE 64
 
 
 namespace DB

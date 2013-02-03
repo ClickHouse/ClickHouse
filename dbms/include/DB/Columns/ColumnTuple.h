@@ -149,6 +149,12 @@ public:
 		return perm;
 	}
 
+	void reserve(size_t n)
+	{
+		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
+			(*it)->reserve(n);
+	}
+
 	void clear()
 	{
 		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)

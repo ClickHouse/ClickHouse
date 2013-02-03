@@ -24,5 +24,8 @@
 
 #define DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS				28558
 
+/// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.
+#define DBMS_APPROX_STRING_SIZE 64
+
 /// Суффикс имени для столбца, содержащего смещения массива.
 #define ARRAY_SIZES_COLUMN_NAME_SUFFIX 							".size"

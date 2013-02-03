@@ -253,6 +253,12 @@ public:
 		return res;
 	}
 
+	void reserve(size_t n)
+	{
+		getOffsets().reserve(n);
+		getData().reserve(n);		/// Средний размер массивов тут никак не учитывается. Или считается, что он не больше единицы.
+	}
+
 	size_t byteSize() const
 	{
 		return data->byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);

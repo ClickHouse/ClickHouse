@@ -223,6 +223,11 @@ public:
 		tmp.swap(data);
 	}
 
+	void reserve(size_t n)
+	{
+		data.reserve(n);
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{

@@ -1,5 +1,9 @@
 #include <openssl/md5.h>
 
+#include <iomanip>
+
+#include <statdaemons/Stopwatch.h>
+
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Columns/ColumnString.h>
@@ -423,6 +427,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 
 	LOG_TRACE(log, "Converting aggregated data to block");
 
+	Stopwatch watch;
+
 	/// В какой структуре данных агрегированы данные?
 	if (data_variants.empty())
 		return res;
@@ -433,10 +439,16 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	AggregateColumns aggregate_columns(aggregates_size);
 
 	for (size_t i = 0; i < keys_size; ++i)
+	{
 		key_columns[i] = res.getByPosition(i).column;
+		key_columns[i]->reserve(rows);
+	}
 
 	for (size_t i = 0; i < aggregates_size; ++i)
+	{
 		aggregate_columns[i] = static_cast<ColumnAggregateFunction *>(&*res.getByPosition(i + keys_size).column);
+		aggregate_columns[i]->reserve(rows);
+	}
 
 	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY)
 	{
@@ -511,7 +523,11 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		if (res.getByPosition(i).column->isConst())
 			res.getByPosition(i).column->cut(0, rows);
 
-	LOG_TRACE(log, "Converted aggregated data to block");
+	double elapsed_seconds = watch.elapsedSeconds();
+	LOG_TRACE(log, "Converted aggregated data to block. "
+		<< rows << " rows, " << res.bytes() / 1048576.0 << " MiB"
+		<< " in " << std::fixed << std::setprecision(3) << elapsed_seconds << " sec. "
+		<< " (" << rows / elapsed_seconds << " rows/sec., " << res.bytes() / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
 	return res;
 }

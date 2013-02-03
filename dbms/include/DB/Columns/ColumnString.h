@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include <DB/Core/Defines.h>
+
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnsNumber.h>
 
@@ -213,6 +215,12 @@ public:
 
 		tmp_chars.swap(char_data);
 		tmp_offsets.swap(getOffsets());
+	}
+
+	void reserve(size_t n)
+	{
+		getOffsets().reserve(n);
+		char_data.reserve(n * DBMS_APPROX_STRING_SIZE);
 	}
 };
 
