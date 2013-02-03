@@ -433,7 +433,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	if (data_variants.empty())
 		return res;
 
-	typedef std::vector<ColumnAggregateFunction *> AggregateColumns;
+	typedef std::vector<ColumnAggregateFunction::Container_t *> AggregateColumns;
 	
 	ColumnPlainPtrs key_columns(keys_size);
 	AggregateColumns aggregate_columns(aggregates_size);
@@ -446,8 +446,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
-		aggregate_columns[i] = static_cast<ColumnAggregateFunction *>(&*res.getByPosition(i + keys_size).column);
-		aggregate_columns[i]->reserve(rows);
+		aggregate_columns[i] = &static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column).getData();
+		aggregate_columns[i]->resize(rows);
 	}
 
 	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY)
@@ -455,7 +455,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_columns[i]->insert(AggregateFunctionPtr(data[i]));
+			(*aggregate_columns[i])[0] = AggregateFunctionPtr(data[i]);
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_64)
 	{
@@ -465,7 +465,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		bool is_signed = dynamic_cast<ColumnInt8 *>(&first_column) || dynamic_cast<ColumnInt16 *>(&first_column)
 			|| dynamic_cast<ColumnInt32 *>(&first_column) || dynamic_cast<ColumnInt64 *>(&first_column);
 
-		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it)
+		size_t j = 0;
+		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			if (is_signed)
 				first_column.insert(static_cast<Int64>(it->first));
@@ -473,7 +474,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				first_column.insert(it->first);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_columns[i]->insert(AggregateFunctionPtr(it->second[i]));
+				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second[i]);
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
@@ -481,37 +482,40 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		AggregatedDataWithStringKey & data = data_variants.key_string;
 		IColumn & first_column = *key_columns[0];
 
-		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it)
+		size_t j = 0;
+		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			first_column.insert(String(it->first.data, it->first.size));	/// Здесь можно ускорить, сделав метод insertFrom(const char *, size_t size).
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_columns[i]->insert(AggregateFunctionPtr(it->second[i]));
+				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second[i]);
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
 	{
 		AggregatedDataHashed & data = data_variants.hashed;
 
-		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it)
+		size_t j = 0;
+		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			for (size_t i = 0; i < keys_size; ++i)
 				key_columns[i]->insert(it->second.first[i]);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_columns[i]->insert(AggregateFunctionPtr(it->second.second[i]));
+				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second.second[i]);
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::GENERIC)
 	{
 		AggregatedData & data = data_variants.generic;
-		for (AggregatedData::const_iterator it = data.begin(); it != data.end(); ++it)
+		size_t j = 0;
+		for (AggregatedData::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			for (size_t i = 0; i < keys_size; ++i)
 				key_columns[i]->insert(it->first[i]);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_columns[i]->insert(AggregateFunctionPtr(it->second[i]));
+				(*aggregate_columns[i])[j] = AggregateFunctionPtr(it->second[i]);
 		}
 	}
 	else
