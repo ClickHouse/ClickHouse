@@ -58,12 +58,15 @@ private:
 			? 1
 			: GrowthTraits::FAST_GROWTH_DEGREE;
 
-		/// Расширим адресное пространство.
-		buf = reinterpret_cast<Key *>(mremap(reinterpret_cast<void *>(buf), old_size_bytes, buf_size_bytes(), MREMAP_MAYMOVE));
+		/// Расширим пространство.
+		buf = reinterpret_cast<Key *>(realloc(reinterpret_cast<void *>(buf), buf_size_bytes()));
 
-		if (MAP_FAILED == buf)
-			throwFromErrno("HashMap: Cannot mremap.");
+		if (NULL == buf)
+			throwFromErrno("HashSet: Cannot realloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
+		/// Очистим новый кусок памяти.
+		memset(buf + old_size, 0, buf_size_bytes() - old_size_bytes);
+		
 		/** Теперь некоторые элементы может потребоваться переместить на новое место.
 		  * Элемент может остаться на месте, или переместиться в новое место "справа",
 		  *  или переместиться левее по цепочке разрешения коллизий, из-за того, что элементы левее него были перемещены в новое место "справа".
@@ -120,11 +123,10 @@ public:
 		size_degree(GrowthTraits::INITIAL_SIZE_DEGREE),
 		has_zero(false)
 	{
-		/// mmap по-умолчанию инициализирует память нулями.
-		buf = reinterpret_cast<Key *>(mmap(NULL, buf_size_bytes(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+		buf = reinterpret_cast<Key *>(calloc(buf_size_bytes(), 1));
 
-		if (MAP_FAILED == buf)
-			throwFromErrno("HashMap: Cannot mmap.");
+		if (NULL == buf)
+			throwFromErrno("HashSet: Cannot calloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 	}
 
 	~HashSet()
@@ -132,8 +134,7 @@ public:
 		for (iterator it = begin(); it != end(); ++it)
 			it->~Key();
 
-		if (0 != munmap(reinterpret_cast<void *>(buf), buf_size_bytes()))
-			throwFromErrno("HashMap: Cannot munmap.");
+		free(reinterpret_cast<void *>(buf));
 	}
 
 
