@@ -110,7 +110,7 @@ class Aggregator
 public:
 	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), initialized(false),
+		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -118,7 +118,7 @@ public:
 
 	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), initialized(false),
+		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), aggregates_size(aggregates.size()), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -146,6 +146,7 @@ private:
 	Names key_names;
 	AggregateDescriptions aggregates;
 	size_t keys_size;
+	size_t aggregates_size;
 
 	/// Для инициализации от первого блока при конкуррентном использовании.
 	bool initialized;
