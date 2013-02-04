@@ -11,21 +11,18 @@
 namespace DB
 {
 
-
-namespace detail
+/** Специализация - заглушка, которая ничего не делает для агрегатных функций.
+  */
+template <>
+class FieldVisitorConvertToNumber<IAggregateFunction*> : public StaticVisitor<IAggregateFunction*>
 {
+public:
 	template <typename T>
-	T convertUInt64To(UInt64 x)
-	{
-		return x;
-	}
-
-	template <>
-	inline IAggregateFunction * convertUInt64To<IAggregateFunction *>(UInt64 x)
+	IAggregateFunction* operator() (const T & x) const
 	{
 		throw Exception("Logical error", ErrorCodes::LOGICAL_ERROR);
 	}
-}
+};
 
 	
 /** Шаблон столбцов, которые используют для хранения std::vector.
@@ -92,8 +89,7 @@ public:
 
 	void insert(const Field & x)
 	{
-		/// Это будет работать для всех числовых типов.
-		data.push_back(detail::convertUInt64To<T>(DB::get<UInt64>(x)));
+		data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
 	}
 
 	void insertFrom(const IColumn & src, size_t n)
