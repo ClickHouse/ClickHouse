@@ -1,5 +1,9 @@
 #pragma once
 
+#include <iomanip>
+
+#include <Yandex/logger_useful.h>
+
 #include <DB/Columns/ColumnAggregateFunction.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -17,7 +21,7 @@ class FinalizingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	FinalizingAggregatedBlockInputStream(BlockInputStreamPtr input_)
-		: input(input_)
+		: input(input_), log(&Logger::get("FinalizingAggregatedBlockInputStream"))
 	{
 		children.push_back(input);
 	}
@@ -34,6 +38,9 @@ protected:
 		if (!res)
 			return res;
 
+		LOG_TRACE(log, "Finalizing aggregate functions");
+		Stopwatch watch;
+
 		size_t rows = res.rows();
 		size_t columns = res.columns();
 		for (size_t i = 0; i < columns; ++i)
@@ -44,6 +51,7 @@ protected:
 				ColumnAggregateFunction::Container_t & data = col->getData();
 				column.type = data[0]->getReturnType();
 				ColumnPtr finalized_column = column.type->createColumn();
+				finalized_column->reserve(rows);
 
 				for (size_t j = 0; j < rows; ++j)
 					finalized_column->insert(data[j]->getResult());
@@ -52,11 +60,19 @@ protected:
 			}
 		}
 
+		double elapsed_seconds = watch.elapsedSeconds();
+		LOG_TRACE(log, std::fixed << std::setprecision(3)
+			<< "Finalized aggregate functions. "
+			<< res.rows() << " rows, " << res.bytes() / 1048576.0 << " MiB"
+			<< " in " << elapsed_seconds << " sec."
+			<< " (" << res.rows() / elapsed_seconds << " rows/sec., " << res.bytes() / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
 		return res;
 	}
 
 private:
 	BlockInputStreamPtr input;
+	Logger * log;
 };
 
 }
