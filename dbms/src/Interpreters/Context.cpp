@@ -156,6 +156,7 @@ void Context::detachDatabase(const String & database_name)
 
 	assertDatabaseExists(db);
 	shared->databases.erase(shared->databases.find(db));
+	shared->database_droppers.erase(db);
 }
 
 
@@ -203,6 +204,22 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 	ast_create_query.database = db;
 
 	return ast;
+}
+
+
+DatabaseDropperPtr Context::getDatabaseDropper(const String & name)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	
+	String db = name.empty() ? current_database : name;
+	
+	if (shared->databases.count(db) == 0)
+		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+	
+	if (shared->database_droppers.count(db) == 0)
+		shared->database_droppers[db] = DatabaseDropperPtr(new DatabaseDropper(shared->path +  "data/" + escapeForFileName(db)));
+	
+	return shared->database_droppers[db];
 }
 
 

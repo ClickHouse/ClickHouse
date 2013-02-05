@@ -51,7 +51,10 @@ void InterpreterDropQuery::execute()
 			if (!drop.detach)
 			{
 				StoragePtr table = context.getTable(database_name, table_name);
+				DatabaseDropperPtr database_dropper = context.getDatabaseDropper(database_name);
 				table->path_to_remove_on_drop = data_path;
+				/// Присвоим database_to_drop на случай, если БД попробуют удалить до завершения удаления этой таблицы.
+				table->database_to_drop = database_dropper;
 				table->drop();
 
 				Poco::File(metadata_path).remove();
@@ -69,7 +72,8 @@ void InterpreterDropQuery::execute()
 			if (!drop.detach)
 			{
 				/// Тот, кто удалит директорию с БД, когда все ее таблицы будут удалены.
-				boost::shared_ptr<IStorage::DatabaseDropper> database_dropper(new IStorage::DatabaseDropper(data_path));
+				DatabaseDropperPtr database_dropper = context.getDatabaseDropper(database_name);
+				database_dropper->drop_on_destroy = true;
 				
 				/// Удаление всех таблиц
 				for (Tables::iterator it = context.getDatabases()[database_name].begin(); it != context.getDatabases()[database_name].end(); ++it)

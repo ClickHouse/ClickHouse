@@ -12,6 +12,7 @@
 #include <DB/Parsers/IAST.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/StoragePtr.h>
+#include "DatabaseDropper.h"
 #include <Poco/File.h>
 
 
@@ -157,36 +158,9 @@ public:
 		}
 	}
 	
-	/** Удаляет директорию в деструкторе.
+	/** Не дает удалить БД до удаления таблицы. Присваивается перед удалением таблицы или БД.
 	  */
-	struct DatabaseDropper
-	{
-		DatabaseDropper(const std::string & data_path_) : data_path(data_path_) {}
-		
-		~DatabaseDropper()
-		{
-			if (std::uncaught_exception())
-			{
-				try
-				{
-					LOG_ERROR(&Logger::get("DatabaseDropper"), "Didn't remove database data directory because of uncaught exception.");
-				}
-				catch(...)
-				{
-				}
-			}
-			else
-			{
-				Poco::File(data_path).remove(false);
-			}
-		}
-		
-		std::string data_path;
-	};
-	
-	/** Сюда кладется указатель на базу данных, когда ее нужно удалить (чтобы она удалилась после всех ее таблиц).
-	  */
-	boost::shared_ptr<DatabaseDropper> database_to_drop;
+	DatabaseDropperPtr database_to_drop;
 	
 	bool drop_on_destroy;
 	

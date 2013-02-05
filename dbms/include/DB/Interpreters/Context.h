@@ -30,6 +30,9 @@ typedef std::map<String, StoragePtr> Tables;
 /// имя БД -> таблицы
 typedef std::map<String, Tables> Databases;
 
+/// имя БД -> dropper
+typedef std::map<String, DatabaseDropperPtr> DatabaseDroppers;
+
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Разделяемая часть.
@@ -38,10 +41,11 @@ struct ContextShared
 {
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
+	DatabaseDroppers database_droppers;					/// Reference counter'ы для ленивого удаления БД.
 	FunctionFactory function_factory;						/// Обычные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	DataTypeFactory data_type_factory;						/// Типы данных.
-	StorageFactory storage_factory;							/// Движки таблиц.
+	StorageFactory storage_factory;						/// Движки таблиц.
 	FormatFactory format_factory;							/// Форматы.
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	Logger * log;											/// Логгер.
@@ -95,6 +99,8 @@ public:
 	String getCurrentDatabase() const;
 	void setCurrentDatabase(const String & name);
 
+	DatabaseDropperPtr getDatabaseDropper(const String & name);
+	
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);
 
