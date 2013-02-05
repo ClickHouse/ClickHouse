@@ -16,7 +16,7 @@ StoragePtr::Wrapper::~Wrapper()
 	{
 		try
 		{
-			LOG_ERROR(&Logger::get("StoragePtr"), "Ignored drop table query because of uncaught exception.");
+			LOG_ERROR(&Logger::get("StoragePtr"), "Maybe ignored drop table query because of uncaught exception.");
 		}
 		catch(...)
 		{
@@ -25,7 +25,12 @@ StoragePtr::Wrapper::~Wrapper()
 	else
 	{
 		if (storage && storage->drop_on_destroy)
+		{
 			storage->dropImpl();
+			
+			if (Poco::File(storage->path_to_remove_on_drop).exists())
+				Poco::File(storage->path_to_remove_on_drop).remove(true);
+		}
 	}
 }
 

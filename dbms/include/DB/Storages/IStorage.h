@@ -1,19 +1,18 @@
 #pragma once
 
+#include <Yandex/logger_useful.h>
+
 #include <DB/Core/Defines.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/QueryProcessingStage.h>
-
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-
 #include <DB/Parsers/IAST.h>
-
 #include <DB/Interpreters/Settings.h>
-
 #include <DB/Storages/StoragePtr.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -95,19 +94,15 @@ public:
 	}
 
 	/** Удалить данные таблицы. После вызова этого метода, использование объекта некорректно (его можно лишь уничтожить).
-	  * Если директория с данными есть, то она будет удалена перед вызовом этого метода.
 	  */
 	void drop()
 	{
 		drop_on_destroy = true;
 	}
 	
-	/** Вызывается сразу перед деструктором.
+	/** Вызывается перед удалением директории с данными.
 	  */
-	virtual void dropImpl()
-	{
-		throw Exception("Method drop() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
+	virtual void dropImpl() {}
 
 	/** Переименовать таблицу.
 	  * Переименование имени в файле с метаданными, имени в списке таблиц в оперативке, осуществляется отдельно.
@@ -146,6 +141,8 @@ public:
 	  */
 	void check(const Block & block) const;
 	
+	/** Возвращает владеющий указатель на себя.
+	  */ 
 	StoragePtr thisPtr()
 	{
 		if (!this_ptr.lock())
@@ -160,7 +157,42 @@ public:
 		}
 	}
 	
+	/** Удаляет директорию в деструкторе.
+	  */
+	struct DatabaseDropper
+	{
+		DatabaseDropper(const std::string & data_path_) : data_path(data_path_) {}
+		
+		~DatabaseDropper()
+		{
+			if (std::uncaught_exception())
+			{
+				try
+				{
+					LOG_ERROR(&Logger::get("DatabaseDropper"), "Didn't remove database data directory because of uncaught exception.");
+				}
+				catch(...)
+				{
+				}
+			}
+			else
+			{
+				Poco::File(data_path).remove(false);
+			}
+		}
+		
+		std::string data_path;
+	};
+	
+	/** Сюда кладется указатель на базу данных, когда ее нужно удалить (чтобы она удалилась после всех ее таблиц).
+	  */
+	boost::shared_ptr<DatabaseDropper> database_to_drop;
+	
 	bool drop_on_destroy;
+	
+	/** Директория с данными. Будет удалена после удаления таблицы (после вызова dropImpl).
+	  */
+	std::string path_to_remove_on_drop;
 
 private:
 	boost::weak_ptr<StoragePtr::Wrapper> this_ptr;
