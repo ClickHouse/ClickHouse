@@ -44,29 +44,42 @@ public:
 		return *this;
 	}
 	
-	bool operator == (const IStorage * p)
+	IStorage* get() const
 	{
-		return ptr->storage.get() == p;
+		if (!ptr)
+			return NULL;
+		else
+			return ptr->storage.get();
+	}
+	
+	bool operator == (const IStorage * p) const
+	{
+		return get() == p;
 	}
 	
 	IStorage* operator -> () const
 	{
-		return ptr->storage.get();
+		return get();
 	}
 
 	IStorage& operator * () const
 	{
-		return *ptr->storage.get();
+		return *get();
 	}
 
 	operator IStorage* () const
 	{
-		return ptr->storage.get();
+		return get();
+	}
+	
+	operator bool () const
+	{
+		return ptr;
 	}
 	
 	bool operator ! () const
 	{
-		return !ptr->storage;
+		return !ptr;
 	}
 };
 
