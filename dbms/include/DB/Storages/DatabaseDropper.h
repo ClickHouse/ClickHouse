@@ -9,7 +9,7 @@
 class DatabaseDropper
 {
 public:
-	DatabaseDropper(const std::string & data_path_) : data_path(data_path_), drop_on_destroy(false) {}
+	DatabaseDropper(const std::string & data_path_) : drop_on_destroy(false), data_path(data_path_) {}
 	
 	~DatabaseDropper()
 	{
