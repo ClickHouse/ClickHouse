@@ -59,6 +59,29 @@ void Expression::createAliasesDict(ASTPtr & ast)
 
 void Expression::addSemantic(ASTPtr & ast)
 {
+	SetOfASTs tmp_set;
+	MapOfASTs tmp_map;
+	addSemanticImpl(ast,tmp_map, tmp_set);
+}
+
+
+/// finished_asts - уже обработанные вершины (и на что они заменены)
+/// current_asts - вершины, в текущем стеке вызовов этого метода
+void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts)
+{
+	if (current_asts.count(ast))
+	{
+		throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
+	}
+	if (finished_asts.count(ast))
+	{
+		ast = finished_asts[ast];
+		return;
+	}
+	
+	ASTPtr initial_ast = ast;
+	current_asts.insert(initial_ast);
+	
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
@@ -73,6 +96,7 @@ void Expression::addSemantic(ASTPtr & ast)
 			ast_id->type = it->second;
 			required_columns.insert(function_string);
 			ast = ast_id;
+			current_asts.insert(ast);
 		}
 	}
 	
@@ -80,7 +104,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			addSemantic(*it);
+			addSemanticImpl(*it, finished_asts, current_asts);
 	
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
@@ -88,9 +112,10 @@ void Expression::addSemantic(ASTPtr & ast)
 		for (NamesAndTypesList::const_iterator it = context.getColumns().begin(); it != context.getColumns().end(); ++it)
 			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
 		ast = all_columns;
+		current_asts.insert(ast);
 
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			addSemantic(*it);
+			addSemanticImpl(*it, finished_asts, current_asts);
 	}
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
@@ -156,8 +181,7 @@ void Expression::addSemantic(ASTPtr & ast)
 				/// Заменим его на соответствующий узел дерева
 				ast = jt->second;
 
-				for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-					addSemantic(*it);
+				addSemanticImpl(ast, finished_asts, current_asts);
 			}
 			else
 			{
@@ -170,6 +194,10 @@ void Expression::addSemantic(ASTPtr & ast)
 	{
 		node->type = apply_visitor(FieldToDataType(), node->value);
 	}
+	
+	current_asts.erase(initial_ast);
+	current_asts.erase(ast);
+	finished_asts[initial_ast] = ast;
 }
 
 

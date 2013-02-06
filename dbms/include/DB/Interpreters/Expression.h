@@ -100,6 +100,9 @@ private:
 
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
+	
+	typedef std::set<ASTPtr> SetOfASTs;
+	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 
 
 	NamesAndTypesList::const_iterator findColumn(const String & name);
@@ -109,12 +112,13 @@ private:
 	void createAliasesDict(ASTPtr & ast);
 		
 	/** Для узлов - звёздочек - раскрыть их в список всех столбцов.
-	  * Для узлов - литералов - прописать их типы данных.
+	  * Для узлов - литералов - прописать их типы данных и подставить алиасы.
 	  * Для узлов - функций - прописать ссылки на функции, заменить имена на канонические, прописать и проверить типы.
 	  * Для узлов - идентификаторов - прописать ссылки на их типы.
 	  * Проверить, что все функции применимы для типов их аргументов.
 	  */
 	void addSemantic(ASTPtr & ast);
+	void addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts);
 
 	/** Склеить одинаковые узлы в синтаксическом дереве (превращая его в направленный ациклический граф).
 	  * Это означает, в том числе то, что функции с одними и теми же аргументами, будут выполняться только один раз.
