@@ -118,8 +118,8 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов; создать файлы, если их нет.
 	  */
-	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
-
+	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	
 	std::string getName() const { return "Log"; }
 	std::string getTableName() const { return name; }
 
@@ -157,6 +157,8 @@ private:
 
 	Poco::RWLock rwlock;
 
+	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
 	/** Прочитать файлы с засечками, если они ещё не прочитаны.

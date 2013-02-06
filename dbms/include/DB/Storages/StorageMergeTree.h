@@ -106,7 +106,7 @@ public:
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  */
-	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	static StoragePtr create(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
@@ -281,6 +281,15 @@ private:
 	DataParts data_parts;
 	Poco::FastMutex data_parts_mutex;
 
+	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+				  Context & context_,
+				  ASTPtr & primary_expr_ast_,
+				  const String & date_column_name_,
+				  const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
+				  size_t index_granularity_,
+				  const String & sign_column_ = "",
+				  const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
+	
 	static String getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
 	BlockInputStreams spreadMarkRangesAmongThreads(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size);

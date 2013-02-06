@@ -23,8 +23,8 @@ public:
 
 	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
 	typedef std::vector<Addresses> AddressesWithFailover;
-
-	StorageDistributed(
+	
+	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const Addresses & addresses,		/// Адреса удалённых серверов.
@@ -32,9 +32,9 @@ public:
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const DataTypeFactory & data_type_factory_,
 		const Settings & settings);
-
+	
 	/// Использовать реплики для отказоустойчивости.
-	StorageDistributed(
+	static StoragePtr create(
 		const std::string & name_,					/// Имя таблицы.
 		NamesAndTypesListPtr columns_,				/// Список столбцов.
 		const AddressesWithFailover & addresses,	/// Адреса удалённых серверов с учётом реплик.
@@ -63,6 +63,25 @@ public:
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 
 private:
+	StorageDistributed(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const Addresses & addresses,
+		const String & remote_database_,
+		const String & remote_table_,
+		const DataTypeFactory & data_type_factory_,
+		const Settings & settings);
+	
+	/// Использовать реплики для отказоустойчивости.
+	StorageDistributed(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const AddressesWithFailover & addresses,
+		const String & remote_database_,
+		const String & remote_table_,
+		const DataTypeFactory & data_type_factory_,
+		const Settings & settings);
+	
 	String name;
 	NamesAndTypesListPtr columns;
 	String remote_database;

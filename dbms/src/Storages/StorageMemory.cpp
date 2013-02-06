@@ -46,6 +46,11 @@ StorageMemory::StorageMemory(const std::string & name_, NamesAndTypesListPtr col
 {
 }
 
+StoragePtr StorageMemory::create(const std::string & name_, NamesAndTypesListPtr columns_)
+{
+	return (new StorageMemory(name_, columns_))->thisPtr();
+}
+
 
 BlockInputStreams StorageMemory::read(
 	const Names & column_names,

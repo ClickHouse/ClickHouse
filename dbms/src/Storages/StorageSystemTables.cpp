@@ -16,6 +16,11 @@ StorageSystemTables::StorageSystemTables(const std::string & name_, const Contex
 	columns.push_back(NameAndTypePair("engine", 	new DataTypeString));
 }
 
+StoragePtr StorageSystemTables::create(const std::string & name_, const Context & context_)
+{
+	return (new StorageSystemTables(name_, context_))->thisPtr();
+}
+
 
 BlockInputStreams StorageSystemTables::read(
 	const Names & column_names, ASTPtr query, const Settings & settings,

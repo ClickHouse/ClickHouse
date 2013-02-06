@@ -17,6 +17,11 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 	columns.push_back(NameAndTypePair("dummy", new DataTypeUInt8));
 }
 
+StoragePtr StorageSystemOne::create(const std::string & name_)
+{
+	return (new StorageSystemOne(name_))->thisPtr();
+}
+
 
 BlockInputStreams StorageSystemOne::read(
 	const Names & column_names, ASTPtr query, const Settings & settings,

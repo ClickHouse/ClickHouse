@@ -15,6 +15,16 @@ StorageMerge::StorageMerge(
 {
 }
 
+StoragePtr StorageMerge::create(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const String & source_database_,
+	const String & table_name_regexp_,
+	Context & context_)
+{
+	return (new StorageMerge(name_, columns_, source_database_, table_name_regexp_, context_))->thisPtr();
+}
+
 
 BlockInputStreams StorageMerge::read(
 	const Names & column_names,

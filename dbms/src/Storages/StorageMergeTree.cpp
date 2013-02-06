@@ -803,6 +803,18 @@ StorageMergeTree::StorageMergeTree(
 	loadDataParts();
 }
 
+StoragePtr StorageMergeTree::create(
+	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	Context & context_,
+	ASTPtr & primary_expr_ast_,
+	const String & date_column_name_, const ASTPtr & sampling_expression_,
+	size_t index_granularity_,
+	const String & sign_column_,
+	const StorageMergeTreeSettings & settings_)
+{
+	return (new StorageMergeTree(path_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_, index_granularity_, sign_column_, settings_))->thisPtr();
+}
+
 
 StorageMergeTree::~StorageMergeTree()
 {

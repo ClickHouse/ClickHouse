@@ -180,6 +180,11 @@ StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & na
 		addFile(it->first, *it->second);
 }
 
+StoragePtr StorageTinyLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach)
+{
+	return (new StorageTinyLog(path_, name_, columns_, attach))->thisPtr();
+}
+
 
 void StorageTinyLog::addFile(const String & column_name, const IDataType & type, size_t level)
 {

@@ -33,7 +33,7 @@ private:
 class StorageSystemNumbers : public IStorage
 {
 public:
-	StorageSystemNumbers(const std::string & name_);
+	static StoragePtr create(const std::string & name_);
 	
 	std::string getName() const { return "SystemNumbers"; }
 	std::string getTableName() const { return name; }
@@ -51,6 +51,8 @@ public:
 private:
 	const std::string name;
 	NamesAndTypesList columns;
+	
+	StorageSystemNumbers(const std::string & name_);
 };
 
 }

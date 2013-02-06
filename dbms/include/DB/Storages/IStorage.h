@@ -30,8 +30,6 @@ namespace DB
 class IStorage : private boost::noncopyable
 {
 public:
-	IStorage() : drop_on_destroy(false) {}
-	
 	/// Основное имя типа таблицы (например, StorageWithoutKey).
 	virtual std::string getName() const = 0;
 
@@ -168,6 +166,9 @@ public:
 	  */
 	std::string path_to_remove_on_drop;
 
+protected:
+	IStorage() : drop_on_destroy(false) {}
+	
 private:
 	boost::weak_ptr<StoragePtr::Wrapper> this_ptr;
 };

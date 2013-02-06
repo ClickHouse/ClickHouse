@@ -50,7 +50,7 @@ friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 
 public:
-	StorageMemory(const std::string & name_, NamesAndTypesListPtr columns_);
+	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_);
 
 	std::string getName() const { return "Memory"; }
 	std::string getTableName() const { return name; }
@@ -79,6 +79,8 @@ private:
 	BlocksList data;
 
 	Poco::FastMutex mutex;
+	
+	StorageMemory(const std::string & name_, NamesAndTypesListPtr columns_);
 };
 
 }

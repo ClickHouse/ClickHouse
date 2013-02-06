@@ -210,6 +210,11 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 		addFile(it->first, *it->second);
 }
 
+StoragePtr StorageLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_)
+{
+	return (new StorageLog(path_, name_, columns_))->thisPtr();
+}
+
 
 void StorageLog::addFile(const String & column_name, const IDataType & type, size_t level)
 {

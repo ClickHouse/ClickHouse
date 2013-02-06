@@ -14,6 +14,11 @@ StorageSystemDatabases::StorageSystemDatabases(const std::string & name_, const 
 	columns.push_back(NameAndTypePair("name", new DataTypeString));
 }
 
+StoragePtr StorageSystemDatabases::create(const std::string & name_, const Context & context_)
+{
+	return (new StorageSystemDatabases(name_, context_))->thisPtr();
+}
+
 
 BlockInputStreams StorageSystemDatabases::read(
 	const Names & column_names, ASTPtr query, const Settings & settings,

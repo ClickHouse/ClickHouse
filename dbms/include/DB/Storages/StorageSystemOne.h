@@ -15,7 +15,7 @@ namespace DB
 class StorageSystemOne : public IStorage
 {
 public:
-	StorageSystemOne(const std::string & name_);
+	static StoragePtr create(const std::string & name_);
 	
 	std::string getName() const { return "SystemOne"; }
 	std::string getTableName() const { return name; }
@@ -33,6 +33,8 @@ public:
 private:
 	const std::string name;
 	NamesAndTypesList columns;
+	
+	StorageSystemOne(const std::string & name_);
 };
 
 }

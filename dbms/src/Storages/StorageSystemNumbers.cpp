@@ -45,6 +45,11 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_)
 	columns.push_back(NameAndTypePair("number", new DataTypeUInt64));
 }
 
+StoragePtr StorageSystemNumbers::create(const std::string & name_)
+{
+	return (new StorageSystemNumbers(name_))->thisPtr();
+}
+
 
 BlockInputStreams StorageSystemNumbers::read(
 	const Names & column_names, ASTPtr query, const Settings & settings,

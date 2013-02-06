@@ -54,6 +54,30 @@ StorageDistributed::StorageDistributed(
 	}
 }
 
+StoragePtr StorageDistributed::create(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const StorageDistributed::Addresses & addresses,
+	const String & remote_database_,
+	const String & remote_table_,
+	const DataTypeFactory & data_type_factory_,
+	const Settings & settings)
+{
+	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings))->thisPtr();
+}
+
+StoragePtr StorageDistributed::create(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const StorageDistributed::AddressesWithFailover & addresses,
+	const String & remote_database_,
+	const String & remote_table_,
+	const DataTypeFactory & data_type_factory_,
+	const Settings & settings)
+{
+	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings))->thisPtr();
+}
+
 
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,

@@ -15,7 +15,7 @@ namespace DB
 class StorageMerge : public IStorage
 {
 public:
-	StorageMerge(
+	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
@@ -45,6 +45,13 @@ private:
 	String source_database;
 	OptimizedRegularExpression table_name_regexp;
 	Context context;
+	
+	StorageMerge(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const String & source_database_,
+		const String & table_name_regexp_,
+		Context & context_);
 };
 
 }

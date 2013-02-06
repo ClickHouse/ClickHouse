@@ -94,7 +94,7 @@ public:
 	  *  состоящую из указанных столбцов.
 	  * Если не указано attach - создать директорию, если её нет.
 	  */
-	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach);
+	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach);
 
 	std::string getName() const { return "TinyLog"; }
 	std::string getTableName() const { return name; }
@@ -129,6 +129,8 @@ private:
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
 
+	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach);
+	
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 };
 
