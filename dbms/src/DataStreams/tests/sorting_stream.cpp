@@ -126,7 +126,7 @@ int main(int argc, char ** argv)
 
 		/// создаём объект существующей таблицы хит лога
 
-		DB::StorageLog table("./", "HitLog", names_and_types_list);
+		DB::StoragePtr table = DB::StorageLog::create("./", "HitLog", names_and_types_list);
 
 		/// читаем из неё, сортируем, и пишем в tsv виде в консоль
 
@@ -162,7 +162,7 @@ int main(int argc, char ** argv)
 
 		DB::QueryProcessingStage::Enum stage;
 		
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
+		Poco::SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
 		in = new DB::PartialSortingBlockInputStream(in, sort_columns);
 		in = new DB::MergeSortingBlockInputStream(in, sort_columns);
 		//in = new DB::LimitBlockInputStream(in, 10);

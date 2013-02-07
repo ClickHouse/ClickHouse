@@ -56,14 +56,14 @@ int main(int argc, char ** argv)
 
 		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
 
-		DB::StorageSystemNumbers table("Numbers");
+		DB::StoragePtr table = DB::StorageSystemNumbers::create("Numbers");
 
 		DB::Names column_names;
 		column_names.push_back("number");
 
 		DB::QueryProcessingStage::Enum stage;
 
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage)[0];
+		Poco::SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
 		in = new DB::ExpressionBlockInputStream(in, expression);
 		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 1);

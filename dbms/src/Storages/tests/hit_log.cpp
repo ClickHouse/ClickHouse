@@ -102,7 +102,7 @@ int main(int argc, char ** argv)
 
 		/// создаём таблицу хит лога
 		
-		DB::StorageLog table("./", "HitLog", names_and_types_list);
+		DB::StoragePtr table = DB::StorageLog::create("./", "HitLog", names_and_types_list);
 
 		/// создаём описание, как читать данные из tab separated дампа
 
@@ -122,7 +122,7 @@ int main(int argc, char ** argv)
 			DB::ReadBufferFromIStream in_buf(std::cin);
 		
 			DB::TabSeparatedRowInputStream in(in_buf, sample);
-			SharedPtr<DB::IBlockOutputStream> out = table.write(0);
+			SharedPtr<DB::IBlockOutputStream> out = table->write(0);
 			DB::copyData(in, *out, sample);
 		}
 
@@ -142,7 +142,7 @@ int main(int argc, char ** argv)
 
 			DB::QueryProcessingStage::Enum stage;
 
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage)[0];
+			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
 			DB::TabSeparatedRowOutputStream out(out_buf, sample);
 			DB::copyData(*in, out);
 		}

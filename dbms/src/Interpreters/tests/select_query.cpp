@@ -36,8 +36,8 @@ int main(int argc, char ** argv)
 		DB::loadMetadata(context);
 
 		context.addDatabase("system");
-		context.addTable("system", "one", 		(new DB::StorageSystemOne("one"))->thisPtr());
-		context.addTable("system", "numbers", 	(new DB::StorageSystemNumbers("numbers"))->thisPtr());
+		context.addTable("system", "one", 		DB::StorageSystemOne::create("one"));
+		context.addTable("system", "numbers", 	DB::StorageSystemNumbers::create("numbers"));
 		context.setCurrentDatabase("default");
 
 		DB::ReadBufferFromIStream in(std::cin);

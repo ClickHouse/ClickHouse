@@ -124,7 +124,7 @@ int main(int argc, char ** argv)
 
 		/// создаём объект существующей таблицы хит лога
 
-		DB::StorageLog table("./", "HitLog", names_and_types_list);
+		DB::StoragePtr table = DB::StorageLog::create("./", "HitLog", names_and_types_list);
 
 		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
 
@@ -140,7 +140,7 @@ int main(int argc, char ** argv)
 
 		DB::QueryProcessingStage::Enum stage;
 
-		Poco::SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage)[0];
+		Poco::SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
 		in = new DB::ExpressionBlockInputStream(in, expression);
 		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 4);

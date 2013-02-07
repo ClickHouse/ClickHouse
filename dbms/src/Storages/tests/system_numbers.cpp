@@ -16,7 +16,7 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		DB::StorageSystemNumbers table("Numbers");
+		DB::StoragePtr table = DB::StorageSystemNumbers::create("Numbers");
 
 		DB::Names column_names;
 		column_names.push_back("number");
@@ -30,7 +30,7 @@ int main(int argc, char ** argv)
 
 		DB::QueryProcessingStage::Enum stage;
 		
-		DB::LimitBlockInputStream input(table.read(column_names, 0, DB::Settings(), stage, 10)[0], 10, 96);
+		DB::LimitBlockInputStream input(table->read(column_names, 0, DB::Settings(), stage, 10)[0], 10, 96);
 		DB::TabSeparatedRowOutputStream output(out_buf, sample);
 		
 		DB::copyData(input, output);

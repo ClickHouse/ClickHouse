@@ -25,7 +25,7 @@ int main(int argc, char ** argv)
 		names_and_types->push_back(DB::NameAndTypePair("a", new DB::DataTypeUInt64));
 		names_and_types->push_back(DB::NameAndTypePair("b", new DB::DataTypeUInt8));
 		
-		DB::StorageLog table("./", "test", names_and_types);
+		DB::StoragePtr table = DB::StorageLog::create("./", "test", names_and_types);
 
 		/// пишем в неё
 		{
@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 
 			DB::ColumnWithNameAndType column1;
 			column1.name = "a";
-			column1.type = table.getDataTypeByName("a");
+			column1.type = table->getDataTypeByName("a");
 			column1.column = column1.type->createColumn();
 			DB::ColumnUInt64::Container_t & vec1 = dynamic_cast<DB::ColumnUInt64&>(*column1.column).getData();
 
@@ -45,7 +45,7 @@ int main(int argc, char ** argv)
 
 			DB::ColumnWithNameAndType column2;
 			column2.name = "b";
-			column2.type = table.getDataTypeByName("b");
+			column2.type = table->getDataTypeByName("b");
 			column2.column = column2.type->createColumn();
 			DB::ColumnUInt8::Container_t & vec2 = dynamic_cast<DB::ColumnUInt8&>(*column2.column).getData();
 
@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
 
 			block.insert(column2);
 
-			SharedPtr<DB::IBlockOutputStream> out = table.write(0);
+			SharedPtr<DB::IBlockOutputStream> out = table->write(0);
 			out->write(block);
 		}
 	
@@ -67,7 +67,7 @@ int main(int argc, char ** argv)
 
 			DB::QueryProcessingStage::Enum stage;
 
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage)[0];
+			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
 
 			DB::Block sample;
 			{

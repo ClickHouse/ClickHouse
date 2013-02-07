@@ -23,7 +23,7 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		DB::StorageSystemNumbers table("numbers");
+		DB::StoragePtr table = DB::StorageSystemNumbers::create("numbers");
 
 		DB::Names column_names;
 		column_names.push_back("number");
@@ -33,15 +33,15 @@ int main(int argc, char ** argv)
 		DB::QueryProcessingStage::Enum stage3;
 
 		DB::BlockInputStreams streams;
-		streams.push_back(new DB::LimitBlockInputStream(table.read(column_names, 0, DB::Settings(), stage1, 1)[0], 30, 30000));
-		streams.push_back(new DB::LimitBlockInputStream(table.read(column_names, 0, DB::Settings(), stage2, 1)[0], 30, 2000));
-		streams.push_back(new DB::LimitBlockInputStream(table.read(column_names, 0, DB::Settings(), stage3, 1)[0], 30, 100));
+		streams.push_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Settings(), stage1, 1)[0], 30, 30000));
+		streams.push_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Settings(), stage2, 1)[0], 30, 2000));
+		streams.push_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Settings(), stage3, 1)[0], 30, 100));
 
 		DB::UnionBlockInputStream union_stream(streams, 2);
 
 		DB::FormatFactory format_factory;
 		DB::WriteBufferFromFileDescriptor wb(STDERR_FILENO);
-		DB::Block sample = table.getSampleBlock();
+		DB::Block sample = table->getSampleBlock();
 		DB::BlockOutputStreamPtr out = format_factory.getOutput("TabSeparated", wb, sample);
 
 		while (DB::Block block = union_stream.read())

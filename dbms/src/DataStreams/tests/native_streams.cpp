@@ -100,13 +100,13 @@ int main(int argc, char ** argv)
 
 		/// создаём объект существующей таблицы хит лога
 
-		DB::StorageLog table("./", "HitLog", names_and_types_list);
+		DB::StoragePtr table = DB::StorageLog::create("./", "HitLog", names_and_types_list);
 
 		/// читаем из неё
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
 			DB::QueryProcessingStage::Enum stage;
-			SharedPtr<DB::IBlockInputStream> in = table.read(column_names, 0, DB::Settings(), stage)[0];
+			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
 			DB::WriteBufferFromOStream out1(std::cout);
 			DB::CompressedWriteBuffer out2(out1);
 			DB::NativeBlockOutputStream out3(out2);
@@ -121,7 +121,7 @@ int main(int argc, char ** argv)
 			DB::ReadBufferFromIStream in1(std::cin);
 			DB::CompressedReadBuffer in2(in1);
 			DB::NativeBlockInputStream in3(in2, factory);
-			SharedPtr<DB::IBlockOutputStream> out = table.write(0);
+			SharedPtr<DB::IBlockOutputStream> out = table->write(0);
 			DB::copyData(in3, *out);
 		}
 	}
