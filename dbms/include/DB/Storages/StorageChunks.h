@@ -16,7 +16,7 @@ namespace DB
 class StorageChunks : public StorageLog
 {
 public:
-	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, Context & context);
+	static StoragePtr create(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context);
 	
 	void addReference();
 	void removeReference();

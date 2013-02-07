@@ -9,9 +9,9 @@
 namespace DB
 {
 	
-StoragePtr StorageChunks::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, Context & context_)
+StoragePtr StorageChunks::create(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_)
 {
-	return (new StorageChunks(path_, name_, columns_, context_))->thisPtr();
+	return (new StorageChunks(path_, name_, database_name_, columns_, context_))->thisPtr();
 }
 
 void StorageChunks::addReference()
@@ -72,10 +72,10 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 		marks.push_back(mark);
 	}
 	
-	return StorageLog::write(this, NULL);
+	return StorageLog::write(NULL);
 }
 	
-StorageChunks(const std::string& path_, const std::string& name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_)
+StorageChunks::StorageChunks(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_)
 	: StorageLog(path_, name_, columns_), database_name(database_name_), index_loaded(false), reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"), context(context_) {}
 	
 void StorageChunks::loadIndex()
@@ -94,7 +94,7 @@ void StorageChunks::loadIndex()
 		size_t mark;
 		
 		readStringBinary(name, index);
-		readIntBinary<UInt64>(mark);
+		readIntBinary<UInt64>(mark, index);
 		
 		chunk_indices[name] = marks.size();
 		marks.push_back(mark);
@@ -120,4 +120,6 @@ void StorageChunks::dropThis()
 	
 	InterpreterDropQuery interpreter(query_ptr, context);
 	interpreter.execute();
+}
+
 }
