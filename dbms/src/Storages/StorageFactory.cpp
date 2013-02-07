@@ -16,6 +16,7 @@
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
+#include <DB/Storages/StorageChunks.h>
 
 
 namespace DB
@@ -26,6 +27,7 @@ StoragePtr StorageFactory::get(
 	const String & name,
 	const String & data_path,
 	const String & table_name,
+	const String & database_name,
 	Context & context,
 	ASTPtr & query,
 	NamesAndTypesListPtr columns,
@@ -34,6 +36,10 @@ StoragePtr StorageFactory::get(
 	if (name == "Log")
 	{
 		return StorageLog::create(data_path, table_name, columns);
+	}
+	else if (name == "Chunks")
+	{
+		return StorageChunks::create(data_path, table_name, database_name, columns, context);
 	}
 	else if (name == "TinyLog")
 	{

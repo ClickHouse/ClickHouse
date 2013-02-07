@@ -140,11 +140,29 @@ public:
 	
 	void rename(const String & new_path_to_db, const String & new_name);
 
-private:
+protected:
 	String path;
 	String name;
 	NamesAndTypesListPtr columns;
 
+	Poco::RWLock rwlock;
+	
+	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	
+	void loadMarks();
+	size_t marksCount();
+	
+	BlockInputStreams read(
+		size_t from_mark,
+		size_t to_mark,
+		const Names & column_names,
+		ASTPtr query,
+		const Settings & settings,
+		QueryProcessingStage::Enum & processed_stage,
+		size_t max_block_size = DEFAULT_BLOCK_SIZE,
+		unsigned threads = 1);
+	
+private:
 	/// Данные столбца
 	struct ColumnData
 	{
@@ -154,10 +172,6 @@ private:
 	};
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
-
-	Poco::RWLock rwlock;
-
-	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
 	
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
@@ -165,7 +179,6 @@ private:
 	  * Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
 	  */
 	bool loaded_marks;
-	void loadMarks();
 };
 
 }

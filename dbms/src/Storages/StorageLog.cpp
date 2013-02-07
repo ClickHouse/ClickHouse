@@ -286,6 +286,12 @@ void StorageLog::loadMarks()
 }
 
 
+size_t StorageLog::marksCount()
+{
+	return files.begin()->second.marks.size();
+}
+
+
 void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
@@ -305,6 +311,8 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 
 
 BlockInputStreams StorageLog::read(
+	size_t from_mark,
+	size_t to_mark,
 	const Names & column_names,
 	ASTPtr query,
 	const Settings & settings,
@@ -321,8 +329,11 @@ BlockInputStreams StorageLog::read(
 	const Marks & marks = files.begin()->second.marks;
 	size_t marks_size = marks.size();
 
-	if (threads > marks_size)
-		threads = marks_size;
+	if (to_mark > marks_size || to_mark < from_mark)
+		throw Exception("Marks out of range in StorageLog::read", ErrorCodes::LOGICAL_ERROR);
+	
+	if (threads > to_mark - from_mark)
+		threads = to_mark - from_mark;
 
 	BlockInputStreams res;
 
@@ -332,13 +343,26 @@ BlockInputStreams StorageLog::read(
 			max_block_size,
 			column_names,
 			thisPtr(),
-			thread * marks_size / threads,
-			thread == 0
-				? marks[marks_size / threads - 1].rows
-				: (marks[(thread + 1) * marks_size / threads - 1].rows - marks[thread * marks_size / threads - 1].rows)));
+			from_mark + thread * (to_mark - from_mark) / threads,
+			marks[from_mark + (thread + 1) * (to_mark - from_mark) / threads - 1].rows -
+				(thread == 0
+					? 0
+					: marks[from_mark + thread * (to_mark - from_mark) / threads - 1].rows)));
 	}
 	
 	return res;
+}
+
+
+BlockInputStreams StorageLog::read(
+	const Names & column_names,
+	ASTPtr query,
+	const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage,
+	size_t max_block_size,
+	unsigned threads)
+{
+	return read(0, marksCount(), column_names, query, settings, processed_stage, max_block_size, threads);
 }
 
 	
