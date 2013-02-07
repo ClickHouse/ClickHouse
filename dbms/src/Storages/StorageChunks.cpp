@@ -23,7 +23,7 @@ void StorageChunks::removeReference()
 {
 	Int64 c = reference_counter.add(-1, false);
 	if (c < 0)
-		throw Exception("Negative refcount on table " + getName(), ErrorCodes::NEGATIVE_REFCOUNT);
+		throw Exception("Negative refcount on table " + name, ErrorCodes::NEGATIVE_REFCOUNT);
 	if (c == 0)
 		dropThis();
 }
@@ -46,7 +46,7 @@ BlockInputStreams StorageChunks::readFromChunk(
 		Poco::ScopedReadRWLock lock(rwlock);
 		
 		if (!chunk_indices.count(chunk_name))
-			throw Exception("No chunk " + chunk_name + " in table " + getName(), ErrorCodes::CHUNK_NOT_FOUND);
+			throw Exception("No chunk " + chunk_name + " in table " + name, ErrorCodes::CHUNK_NOT_FOUND);
 		size_t index = chunk_indices[chunk_name];
 		mark1 = marks[index];
 		mark2 = index + 1 == marks.size() ? marksCount() : marks[index + 1];
@@ -64,7 +64,7 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 		Poco::ScopedWriteRWLock lock(rwlock);
 		
 		if (chunk_indices.count(chunk_name))
-			throw Exception("Duplicate chunk name in table " + getName(), ErrorCodes::DUPLICATE_CHUNK_NAME);
+			throw Exception("Duplicate chunk name in table " + name, ErrorCodes::DUPLICATE_CHUNK_NAME);
 		
 		size_t mark = marksCount();
 		chunk_indices[chunk_name] = marks.size();

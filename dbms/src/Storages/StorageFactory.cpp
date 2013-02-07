@@ -17,6 +17,7 @@
 #include <DB/Storages/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageChunks.h>
+#include <DB/Storages/StorageChunkRef.h>
 
 
 namespace DB
@@ -40,6 +41,27 @@ StoragePtr StorageFactory::get(
 	else if (name == "Chunks")
 	{
 		return StorageChunks::create(data_path, table_name, database_name, columns, context);
+	}
+	else if (name == "ChunkRef")
+	{
+		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+		
+		if (args_func.size() != 1)
+			throw Exception("Storage ChunkRef requires exactly 2 parameters"
+			" - names of source database and source table.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+		
+		if (args.size() != 2)
+			throw Exception("Storage ChunkRef requires exactly 2 parameters"
+			" - names of source database and source table.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		String source_database	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
+		String source_table		= dynamic_cast<ASTIdentifier &>(*args[1]).name;
+		
+		return StorageChunkRef::create(table_name, columns, context, source_database, source_table, attach);
 	}
 	else if (name == "TinyLog")
 	{
