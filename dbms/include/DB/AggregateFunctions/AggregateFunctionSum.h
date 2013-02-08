@@ -34,25 +34,24 @@ template <> struct AggregateFunctionSumTraits<Float64>
 	static void read(Float64 & x, ReadBuffer & buf) { readFloatBinary(x, buf); }
 };
 
+
+template <typename T>
+struct AggregateFunctionSumData
+{
+	T sum;
+
+	AggregateFunctionSumData() : sum(0) {}
+};
+
 	
 /// Считает сумму чисел. Параметром шаблона может быть UInt64, Int64 или Float64.
 template <typename T>
-class AggregateFunctionSum : public IUnaryAggregateFunction
+class AggregateFunctionSum : public IUnaryAggregateFunction<AggregateFunctionSumData<T> >
 {
-private:
-	T sum;
-	
 public:
-	AggregateFunctionSum() : sum(0) {}
-
 	String getName() const { return "sum"; }
 	String getTypeID() const { return "sum_" + TypeName<T>::get(); }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		return new AggregateFunctionSum<T>;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return AggregateFunctionSumTraits<T>::getReturnType();
@@ -65,31 +64,32 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
-	void addOne(const Field & value)
+
+	void addOne(AggregateDataPtr place, const Field & value) const
 	{
-		sum += get<const T &>(value);
+		data(place).sum += get<const T &>(value);
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		sum += static_cast<const AggregateFunctionSum<T> &>(rhs).sum;
+		data(place).sum += data(rhs).sum;
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		AggregateFunctionSumTraits<T>::write(sum, buf);
+		AggregateFunctionSumTraits<T>::write(data(place).sum, buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		T tmp;
 		AggregateFunctionSumTraits<T>::read(tmp, buf);
-		sum += tmp;
+		data(place).sum += tmp;
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return sum;
+		return data(place).sum;
 	}
 };
 

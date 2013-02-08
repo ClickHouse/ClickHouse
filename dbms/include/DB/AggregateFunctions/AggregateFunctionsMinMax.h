@@ -23,28 +23,23 @@ struct AggregateFunctionMaxTraits
 };
 
 
+struct AggregateFunctionsMinMaxData
+{
+	Field value;
+};
+
+
 /// Берёт минимальное (или максимальное) значение. Если таких много - то первое попавшееся из них.
 template <typename Traits>
-class AggregateFunctionsMinMax : public IUnaryAggregateFunction
+class AggregateFunctionsMinMax : public IUnaryAggregateFunction<AggregateFunctionsMinMaxData>
 {
 private:
-	bool got;
-	Field value;
 	DataTypePtr type;
 	
 public:
-	AggregateFunctionsMinMax() : got(false) {}
-
 	String getName() const { return Traits::name(); }
 	String getTypeID() const { return Traits::name(); }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		AggregateFunctionsMinMax * res = new AggregateFunctionsMinMax;
-		res->type = type;
-		return res;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return type;
@@ -55,53 +50,57 @@ public:
 		type = argument;
 	}
 
-	void addOne(const Field & value_)
+
+	void addOne(AggregateDataPtr place, const Field & value_) const
 	{
-		if (got)
+		Data & d = data(place);
+
+		if (!d.value.isNull())
 		{
-			if (Traits::better(value_, value))
-				value = value_;
+			if (Traits::better(value_, d.value))
+				d.value = value_;
 		}
 		else
-		{
-			got = true;
-			value = value_;
-		}
+			d.value = value_;
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		if (got)
+		Data & d = data(place);
+		Data & d_rhs = data(rhs);
+		
+		if (!d.value.isNull())
 		{
-			Field value_ = static_cast<const AggregateFunctionsMinMax &>(rhs).value;
-			if (Traits::better(value_, value))
-				value = value_;
+			if (Traits::better(d_rhs.value, d.value))
+				d.value = d_rhs.value;
 		}
 		else
-			value = static_cast<const AggregateFunctionsMinMax &>(rhs).value;
+			d.value = d_rhs.value;
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type->serializeBinary(value, buf);
+		type->serializeBinary(data(place).value, buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		if (got)
+		Data & d = data(place);
+		
+		if (!d.value.isNull())
 		{
 			Field value_;
 			type->deserializeBinary(value_, buf);
-			if (Traits::better(value_, value))
-				value = value_;
+			if (Traits::better(value_, d.value))
+				d.value = value_;
 		}
 		else
-			type->deserializeBinary(value, buf);
+			type->deserializeBinary(d.value, buf);
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return value;
+		return data(place).value;
 	}
 };
 

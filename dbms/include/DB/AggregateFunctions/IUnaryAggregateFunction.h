@@ -8,7 +8,8 @@ namespace DB
 
 /** Интерфейс для агрегатных функций, принимающих одно значение. Это почти все агрегатные функции.
   */
-class IUnaryAggregateFunction : public IAggregateFunction
+template <typename T>
+class IUnaryAggregateFunction : public IAggregateFunctionHelper<T>
 {
 public:
 	void setArguments(const DataTypes & arguments)
@@ -22,12 +23,12 @@ public:
 	virtual void setArgument(const DataTypePtr & argument) = 0;
 
 	/// Добавить значение.
-	void add(const Row & row)
+	void add(AggregateDataPtr place, const Row & row)
 	{
-		addOne(row[0]);
+		addOne(place, row[0]);
 	}
 
-	virtual void addOne(const Field & value) = 0;
+	virtual void addOne(AggregateDataPtr place, const Field & value) = 0;
 };
 
 }

@@ -45,24 +45,22 @@ template <> struct AggregateFunctionUniqTraits<String>
 };
 
 
+struct AggregateFunctionUniqData
+{
+	UniquesHashSet set;
+};
+
+
 /// Приближённо вычисляет количество различных значений.
 template <typename T>
-class AggregateFunctionUniq : public IUnaryAggregateFunction
+class AggregateFunctionUniq : public IUnaryAggregateFunction<AggregateFunctionUniqData>
 {
-private:
-	UniquesHashSet set;
-	
 public:
 	AggregateFunctionUniq() {}
 
 	String getName() const { return "uniq"; }
 	String getTypeID() const { return "uniq_" + TypeName<T>::get(); }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		return new AggregateFunctionUniq<T>;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return new DataTypeUInt64;
@@ -72,31 +70,32 @@ public:
 	{
 	}
 
-	void addOne(const Field & value)
+
+	void addOne(AggregateDataPtr place, const Field & value) const
 	{
-		set.insert(AggregateFunctionUniqTraits<T>::hash(get<const T &>(value)));
+		data(place).set.insert(AggregateFunctionUniqTraits<T>::hash(get<const T &>(value)));
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		set.merge(static_cast<const AggregateFunctionUniq<T> &>(rhs).set);
+		data(place).set.merge(data(rhs).set);
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		set.write(buf);
+		data(place).set.write(buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		UniquesHashSet tmp_set;
 		tmp_set.read(buf);
-		set.merge(tmp_set);
+		data(place).set.merge(tmp_set);
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return set.size();
+		return data(place).set.size();
 	}
 };
 

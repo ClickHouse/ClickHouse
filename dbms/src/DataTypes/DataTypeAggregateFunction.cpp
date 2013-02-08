@@ -15,7 +15,7 @@ using Poco::SharedPtr;
 
 void DataTypeAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	get<AggregateFunctionPlainPtr>(field)->serialize(ostr);
+	throw Exception("Serialization of individual aggregate functions is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
@@ -35,7 +35,7 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 		end = vec.end();
 
 	for (; it != end; ++it)
-		(*it)->serialize(ostr);
+		function->serialize(*it, ostr);
 }
 
 void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
@@ -43,15 +43,24 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 	ColumnAggregateFunction & real_column = dynamic_cast<ColumnAggregateFunction &>(column);
 	ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
+	Arena arena = new Arena;
+	real_column.set(function, arena);
 	vec.reserve(limit);
+
+	size_t size_of_state = function->sizeOfData();
 
 	for (size_t i = 0; i < limit; ++i)
 	{
 		if (istr.eof())
 			break;
 
-		vec.push_back(function->cloneEmpty());
-		vec.back()->deserializeMerge(istr);
+		// TODO может быть, лучше класть с выравниванием
+		AggregateDataPtr place = arena.alloc(size_of_state);
+
+		function->create(place);
+		function->deserializeMerge(place, istr);
+		
+		vec.push_back(place);
 	}
 }
 

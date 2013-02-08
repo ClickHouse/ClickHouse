@@ -10,7 +10,7 @@
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/StringRef.h>
-#include <DB/Core/StringPool.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -36,14 +36,15 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
 
 
 /** Разные структуры данных, которые могут использоваться для агрегации
-  * Для эффективности используются "голые" указатели на IAggregateFunction,
-  *  владение будет захвачено после агрегации (в AggregatingBlockInputStream).
+  * Для эффективности сами данные для агрегации кладутся в пул.
+  * Владение данными (состояний агрегатных функций) и пулом
+  *  захватывается позднее - в функции ConvertToBlock, объектом ColumnAggregateFunction.
   */
-typedef std::map<Row, AggregateFunctionsPlainPtrs> AggregatedData;
-typedef AggregateFunctionsPlainPtrs AggregatedDataWithoutKey;
-typedef HashMap<UInt64, AggregateFunctionsPlainPtrs> AggregatedDataWithUInt64Key;
-typedef HashMap<StringRef, AggregateFunctionsPlainPtrs, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
-typedef HashMap<UInt128, std::pair<Row, AggregateFunctionsPlainPtrs>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
+typedef std::map<Row, AggregateDataPtr> AggregatedData;
+typedef AggregateDataPtr AggregatedDataWithoutKey;
+typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
+typedef HashMap<StringRef, AggregateDataPtr, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
+typedef HashMap<UInt128, std::pair<Row, AggregateDataPtr>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
 
 
 struct AggregatedDataVariants
@@ -59,7 +60,7 @@ struct AggregatedDataVariants
 
 	/// Специализация для случая, когда есть один строковый ключ.
 	AggregatedDataWithStringKey key_string;
-	StringPool string_pool;
+	Arena string_pool;
 
 	/** Агрегирует по 128 битному хэшу от ключа.
 	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.

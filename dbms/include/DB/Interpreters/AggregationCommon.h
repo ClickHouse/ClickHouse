@@ -70,11 +70,6 @@ public:
 	{
 		throw Exception("Cannot aggregate by array", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
 	}
-
-	UInt64 operator() (const SharedPtr<IAggregateFunction> & x) const
-	{
-		throw Exception("Cannot aggregate by state of aggregate function", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
-	}
 };
 
 

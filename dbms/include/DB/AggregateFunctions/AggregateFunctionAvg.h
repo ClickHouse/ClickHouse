@@ -12,25 +12,23 @@ namespace DB
 {
 
 
-/// Считает арифметическое среднее значение чисел. Параметром шаблона может быть UInt64, Int64 или Float64.
-template <typename T>
-class AggregateFunctionAvg : public IUnaryAggregateFunction
+struct AggregateFunctionAvgData
 {
-private:
 	Float64 sum;
 	UInt64 count;
-	
-public:
-	AggregateFunctionAvg() : sum(0), count(0) {}
 
+	AggregateFunctionAvgData() : sum(0), count(0) {}
+};
+
+
+/// Считает арифметическое среднее значение чисел. Параметром шаблона может быть UInt64, Int64 или Float64.
+template <typename T>
+class AggregateFunctionAvg : public IUnaryAggregateFunction<AggregateFunctionAvgData>
+{
+public:
 	String getName() const { return "avg"; }
 	String getTypeID() const { return "avg_" + TypeName<T>::get(); }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		return new AggregateFunctionAvg<T>;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return new DataTypeFloat64;
@@ -43,37 +41,38 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
-	void addOne(const Field & value)
+
+	void addOne(AggregateDataPtr place, const Field & value) const
 	{
-		sum += get<const T &>(value);
-		++count;
+		data(place).sum += get<const T &>(value);
+		++data(place).count;
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		sum += static_cast<const AggregateFunctionAvg<T> &>(rhs).sum;
-		count += static_cast<const AggregateFunctionAvg<T> &>(rhs).count;
+		data(place).sum += data(rhs).sum;
+		data(place).count += data(rhs).count;
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		writeFloatBinary(sum, buf);
-		writeVarUInt(count, buf);
+		writeFloatBinary(data(place).sum, buf);
+		writeVarUInt(data(place).count, buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		Float64 tmp_sum = 0;
 		UInt64 tmp_count = 0;
 		readFloatBinary(tmp_sum, buf);
 		readVarUInt(tmp_count, buf);
-		sum += tmp_sum;
-		count += tmp_count;
+		data(place).sum += tmp_sum;
+		data(place).count += tmp_count;
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return sum / count;
+		return data(place).sum / data(place).count;
 	}
 };
 

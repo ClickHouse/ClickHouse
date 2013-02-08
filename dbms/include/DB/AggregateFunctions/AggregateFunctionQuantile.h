@@ -13,6 +13,13 @@
 namespace DB
 {
 
+template <typename ArgumentFieldType, bool returns_float = true>
+struct AggregateFunctionQuantileData
+{
+	typedef ReservoirSampler<ArgumentFieldType> Sample;
+	Sample sample;
+};
+
 
 /** Приближённо вычисляет квантиль.
   * В качестве типа аргумента может быть только числовой тип (в том числе, дата и дата-с-временем).
@@ -20,13 +27,12 @@ namespace DB
   * Для дат и дат-с-временем returns_float следует задавать равным false.
   */
 template <typename ArgumentFieldType, bool returns_float = true>
-class AggregateFunctionQuantile : public IUnaryAggregateFunction
+class AggregateFunctionQuantile : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType, returns_float> >
 {
 private:
 	typedef AggregateFunctionQuantile<ArgumentFieldType, returns_float> Self;
 	typedef ReservoirSampler<ArgumentFieldType> Sample;
 
-	Sample sample;
 	double level;
 	DataTypePtr type;
 
@@ -35,13 +41,6 @@ public:
 
 	String getName() const { return "quantile"; }
 	String getTypeID() const { return (returns_float ? "quantile_float_" : "quantile_rounded_") + TypeName<ArgumentFieldType>::get(); }
-
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		Self * res = new Self(level);
-		res->type = type;
-		return res;
-	}
 
 	DataTypePtr getReturnType() const
 	{
@@ -64,36 +63,37 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-	void addOne(const Field & value)
+
+	void addOne(AggregateDataPtr place, const Field & value_) const
 	{
-		sample.insert(get<typename NearestFieldType<ArgumentFieldType>::Type>(value));
+		data(place).sample.insert(get<typename NearestFieldType<ArgumentFieldType>::Type>(value));
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		sample.merge(static_cast<const Self &>(rhs).sample);
+		data(place).sample.merge(data(rhs).sample);
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		sample.write(buf);
+		data(place).sample.write(buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		Sample tmp_sample;
 		tmp_sample.read(buf);
-		sample.merge(tmp_sample);
+		data(place).sample.merge(tmp_sample);
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
 		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
 
 		if (returns_float)
-			return Float64(const_cast<Sample &>(sample).quantileInterpolated(level));
+			return Float64(const_cast<Sample &>(data(place).sample).quantileInterpolated(level));
 		else
-			return typename NearestFieldType<ArgumentFieldType>::Type(const_cast<Sample &>(sample).quantileInterpolated(level));
+			return typename NearestFieldType<ArgumentFieldType>::Type(const_cast<Sample &>(data(place).sample).quantileInterpolated(level));
 	}
 };
 

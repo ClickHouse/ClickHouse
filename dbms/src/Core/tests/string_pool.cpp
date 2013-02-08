@@ -7,7 +7,7 @@
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/StringRef.h>
-#include <DB/Core/StringPool.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
@@ -59,7 +59,7 @@ int main(int argc, char ** argv)
 	}
 
 	{
-		DB::StringPool pool;
+		DB::Arena pool;
 		Stopwatch watch;
 		const char * res = NULL;
 
@@ -120,7 +120,7 @@ int main(int argc, char ** argv)
 	}
 
 	{
-		DB::StringPool pool;
+		DB::Arena pool;
 		RefsSet set;
 		Stopwatch watch;
 		
@@ -183,7 +183,7 @@ int main(int argc, char ** argv)
 	}
 
 	{
-		DB::StringPool pool;
+		DB::Arena pool;
 		RefsDenseSet set;
 		set.set_empty_key(RefsDenseSet::key_type());
 		Stopwatch watch;
@@ -231,7 +231,7 @@ int main(int argc, char ** argv)
 	}
 
 	{
-		DB::StringPool pool;
+		DB::Arena pool;
 		RefsHashMap set;
 		Stopwatch watch;
 

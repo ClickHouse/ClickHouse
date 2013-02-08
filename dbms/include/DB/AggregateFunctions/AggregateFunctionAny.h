@@ -9,27 +9,23 @@
 namespace DB
 {
 
+
+struct AggregateFunctionAnyData
+{
+	Field value;
+};
+
+
 /// Берёт первое попавшееся значение
-class AggregateFunctionAny : public IUnaryAggregateFunction
+class AggregateFunctionAny : public IUnaryAggregateFunction<AggregateFunctionAnyData>
 {
 private:
-	bool got;
-	Field value;
 	DataTypePtr type;
 	
 public:
-	AggregateFunctionAny() : got(false) {}
-
 	String getName() const { return "any"; }
 	String getTypeID() const { return "any"; }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		AggregateFunctionAny * res = new AggregateFunctionAny;
-		res->type = type;
-		return res;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return type;
@@ -40,37 +36,43 @@ public:
 		type = argument;
 	}
 
-	void addOne(const Field & value_)
+
+	void addOne(AggregateDataPtr place, const Field & value_) const
 	{
-		if (got)
+		Data & d = data(place);
+
+		if (!d.value.isNull())
 			return;
-		got = true;
-		value = value_;
+		d.value = value_;
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		if (!got)
-			value = static_cast<const AggregateFunctionAny &>(rhs).value;
+		Data & d = data(place);
+
+		if (d.value.isNull())
+			d.value = data(rhs).value;
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type->serializeBinary(value, buf);
+		type->serializeBinary(data(place).value, buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
+		Data & d = data(place);
+
 		Field tmp;
 		type->deserializeBinary(tmp, buf);
-		
-		if (!got)
-			value = tmp;
+
+		if (d.value.isNull())
+			d.value = tmp;
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return value;
+		return data(place).value;
 	}
 };
 

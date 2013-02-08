@@ -9,26 +9,23 @@
 namespace DB
 {
 
+
+struct AggregateFunctionAnyLastData
+{
+	Field value;
+};
+
+
 /// Берёт последнее попавшееся значение
-class AggregateFunctionAnyLast : public IUnaryAggregateFunction
+class AggregateFunctionAnyLast : public IUnaryAggregateFunction<AggregateFunctionAnyLastData>
 {
 private:
-	Field value;
 	DataTypePtr type;
 	
 public:
-	AggregateFunctionAnyLast() {}
-
 	String getName() const { return "anyLast"; }
 	String getTypeID() const { return "anyLast"; }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		AggregateFunctionAnyLast * res = new AggregateFunctionAnyLast;
-		res->type = type;
-		return res;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return type;
@@ -39,29 +36,30 @@ public:
 		type = argument;
 	}
 
-	void addOne(const Field & value_)
+
+	void addOne(AggregateDataPtr place, const Field & value_) const
 	{
-		value = value_;
+		data(place).value = value_;
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		value = static_cast<const AggregateFunctionAnyLast &>(rhs).value;
+		data(place).value = data(rhs).value;
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type->serializeBinary(value, buf);
+		type->serializeBinary(data(place).value, buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		type->deserializeBinary(value, buf);
+		type->deserializeBinary(data(place).value, buf);
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return value;
+		return data(place).value;
 	}
 };
 

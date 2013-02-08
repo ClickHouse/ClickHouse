@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DB/Common/Arena.h>
+
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 
 #include <DB/Columns/ColumnVector.h>
@@ -9,19 +11,31 @@ namespace DB
 {
 
 /** Столбец, хранящий состояния агрегатных функций.
-  * Для оптимизации, агрегатные функции хранятся по обычным указателям, а не shared_ptr-ам.
-  * Столбец захватывает владение всеми агрегатными функциями, которые в него переданы
-  *  (уничтожает их в дестркуторе с помощью delete).
-  * Это значит, что вставляемые агрегатные функции должны быть выделены с помощью new,
-  *  и не могут быть захвачены каком-либо smart-ptr-ом.
+  * Состояния агрегатных функций хранятся в пуле (arena), а в массиве (ColumnVector) хранятся указатели на них.
+  * Столбец захватывает владение пулом и всеми агрегатными функциями,
+  *  которые в него переданы (уничтожает их в дестркуторе).
   */
-class ColumnAggregateFunction : public ColumnVector<AggregateFunctionPlainPtr>
+class ColumnAggregateFunction : public ColumnVector<AggregateDataPtr>
 {
+private:
+	const AggregateFunctionPtr func;
+	SharedPtr<Arena> arena;
 public:
+	ColumnAggregateFunction(AggregateFunctionPtr & func_, SharedPtr<Arena> & arena_)
+	{
+		set(func_, arena_);
+	}
+
+	void set(AggregateFunctionPtr & func_, SharedPtr<Arena> & arena_)
+	{
+		func = func_;
+		arena = arena_;
+	}
+	
     ~ColumnAggregateFunction()
 	{
 		for (size_t i = 0, s = data.size(); i < s; ++i)
-			delete data[i];
+			func->destroy(data[i]);
 	}
 	
  	std::string getName() const { return "ColumnAggregateFunction"; }
@@ -65,7 +79,8 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(DB::get<AggregateFunctionPlainPtr>(x));
+		throw Exception("Method insert is not supported for ColumnAggregateFunction. You must access underlying vector directly.",
+			ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const

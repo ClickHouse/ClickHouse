@@ -13,24 +13,22 @@
 namespace DB
 {
 
+struct AggregateFunctionGroupArrayData
+{
+	Array value;
+};
+	
+
 /// Складывает все значения в массив.
-class AggregateFunctionGroupArray : public IUnaryAggregateFunction
+class AggregateFunctionGroupArray : public IUnaryAggregateFunction<AggregateFunctionGroupArrayData>
 {
 private:
-	Array value;
 	DataTypePtr type;
 	
 public:
 	String getName() const { return "groupArray"; }
 	String getTypeID() const { return "groupArray"; }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		AggregateFunctionGroupArray * res = new AggregateFunctionGroupArray;
-		res->type = type;
-		return res;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return new DataTypeArray(type);
@@ -41,26 +39,27 @@ public:
 		type = argument;
 	}
 
-	void addOne(const Field & value_)
+
+	void addOne(AggregateDataPtr place, const Field & value_) const
 	{
-		value.push_back(value_);
+		data(place).value.push_back(value_);
 	}
 
-	void merge(const IAggregateFunction & rhs)
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
- 		const Array & rhs_value = static_cast<const AggregateFunctionGroupArray &>(rhs).value;
-		value.insert(value.begin(), rhs_value.begin(), rhs_value.end());
+		data(place).value.insert(data(place).value.begin(), data(rhs).value.begin(), data(rhs).value.end());
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
+		const Array & value = data(place).value;
 		size_t size = value.size();
 		writeVarUInt(size, buf);
 		for (size_t i = 0; i < size; ++i)
 			type->serializeBinary(value[i], buf);
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		size_t size = 0;
 		readVarUInt(size, buf);
@@ -68,14 +67,16 @@ public:
 		if (size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE)
 			throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
+		Array & value = data(place).value;
+		
 		value.resize(size);
 		for (size_t i = 0; i < size; ++i)
 			type->deserializeBinary(value[i], buf);
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return value;
+		return data(place).value;
 	}
 };
 

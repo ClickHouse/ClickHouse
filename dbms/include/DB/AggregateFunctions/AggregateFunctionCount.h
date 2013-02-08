@@ -11,56 +11,58 @@
 namespace DB
 {
 
-/// Просто считает, сколько раз её вызвали
-class AggregateFunctionCount : public INullaryAggregateFunction
+struct AggregateFunctionCountData
 {
-private:
 	UInt64 count;
-	
-public:
-	AggregateFunctionCount() : count(0) {}
 
+	AggregateFunctionCountData() : count(0) {}
+};
+
+
+/// Просто считает, сколько раз её вызвали
+class AggregateFunctionCount : public INullaryAggregateFunction<AggregateFunctionCountData>
+{
+public:
 	String getName() const { return "count"; }
 	String getTypeID() const { return "count"; }
 
-	AggregateFunctionPlainPtr cloneEmpty() const
-	{
-		return new AggregateFunctionCount;
-	}
-	
 	DataTypePtr getReturnType() const
 	{
 		return new DataTypeUInt64;
 	}
 
-	void addZero() { ++count; }
 
-	void merge(const IAggregateFunction & rhs)
+	void addZero(AggregateDataPtr place)
 	{
-		count += static_cast<const AggregateFunctionCount &>(rhs).count;
+		++data(place).count;
 	}
 
-	void serialize(WriteBuffer & buf) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		writeVarUInt(count, buf);
+		data(place).count += data(rhs).count;
 	}
 
-	void deserializeMerge(ReadBuffer & buf)
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	{
+		writeVarUInt(data(place).count, buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		UInt64 tmp;
 		readVarUInt(tmp, buf);
-		count += tmp;
+		data(place).count += tmp;
 	}
 
-	Field getResult() const
+	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return count;
+		return data(place).count;
 	}
 
 	/// Для оптимизации
-	void addDelta(UInt64 x)
+	void addDelta(AggregateDataPtr place, UInt64 x)
 	{
-		count += x;
+		data(place).count += x;
 	}
 };
 

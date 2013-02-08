@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string.h>
+#include <memory>
 #include <Yandex/optimization.h>
 
 
@@ -8,20 +9,19 @@ namespace DB
 {
 
 
-/** Пул, в который можно складывать короткие строки.
+/** Пул, в который можно складывать что-нибудь. Например, короткие строки.
   * Сценарий использования:
   * - складываем много строк и запоминаем их адреса;
   * - адреса остаются валидными в течение жизни пула;
   * - при уничтожении пула, вся память освобождается;
   * - память выделяется и освобождается большими кусками;
   * - удаление части данных не предусмотрено;
-  * - строки кладутся без выравнивания.
   */
-class StringPool
+class Arena
 {
 private:
 	/// Непрерывный кусок памяти и указатель на свободное место в нём. Односвязный список.
-	struct Chunk
+	struct Chunk : private std::allocator<char>	/// empty base optimization
 	{
 		char * begin;
 		char * pos;
@@ -31,7 +31,7 @@ private:
 
 		Chunk(size_t size_, Chunk * prev_)
 		{
-			begin = new char[size_];
+			begin = allocate(size_);
 			pos = begin;
 			end = begin + size_;
 			prev = prev_;
@@ -39,9 +39,10 @@ private:
 
 		~Chunk()
 		{
+			deallocate(begin, size());
+
 			if (prev)
 				delete prev;
-			delete[] begin;
 		}
 
 		size_t size() { return end - begin; }
@@ -61,17 +62,17 @@ private:
 	}
 
 public:
-	StringPool(size_t initial_size_ = 4096, size_t growth_factor_ = 2)
+	Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2)
 		: growth_factor(growth_factor_), head(new Chunk(initial_size_, NULL))
 	{
 	}
 
-	~StringPool()
+	~Arena()
 	{
 		delete head;
 	}
 
-	/// Получить кусок памяти. (Полезно, если размер строки заранее известен, но вставить её нужно по частям.)
+	/// Получить кусок памяти, без выравнивания.
 	char * alloc(size_t size)
 	{
 		if (unlikely(head->pos + size > head->end))
@@ -82,7 +83,7 @@ public:
 		return res;
 	}
 
-	/// Вставить строку.
+	/// Вставить строку без выравнивания.
 	const char * insert(const char * data, size_t size)
 	{
 		char * res = alloc(size);

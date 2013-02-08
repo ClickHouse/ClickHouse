@@ -7,7 +7,7 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/Core/ColumnNumbers.h>
-#include <DB/Core/StringPool.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -60,7 +60,7 @@ private:
 
 	/// Специализация для случая, когда есть один строковый ключ.
 	SetString key_string;
-	StringPool string_pool;
+	Arena string_pool;
 
 	/** Сравнивает 128 битные хэши.
 	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
