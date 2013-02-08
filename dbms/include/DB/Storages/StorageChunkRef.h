@@ -29,11 +29,12 @@ public:
 	
 	void dropImpl();
 	
+	String source_database_name;
+	String source_table_name;
+	
 private:
 	String name;
 	NamesAndTypesListPtr columns;
-	String source_database_name;
-	String source_table_name;
 	Context context;
 	
 	StorageChunkRef(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);

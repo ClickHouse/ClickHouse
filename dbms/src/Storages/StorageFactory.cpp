@@ -40,7 +40,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "Chunks")
 	{
-		return StorageChunks::create(data_path, table_name, database_name, columns, context);
+		return StorageChunks::create(data_path, table_name, database_name, columns, context, attach);
 	}
 	else if (name == "ChunkRef")
 	{

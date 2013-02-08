@@ -12,11 +12,17 @@ namespace DB
   * Запись не поддерживается. Для записи используются таблицы типа ChunkMerger.
   * Таблицы типа ChunkRef могут ссылаться на отдельные куски внутри таблицы типа Chunks.
   * Хранит количество ссылающихся таблиц ChunkRef и удаляет себя, когда оно становится нулевым.
+  * После создания счетчик ссылок имеет значение 1.
   */
 class StorageChunks : public StorageLog
 {
 public:
-	static StoragePtr create(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context);
+	static StoragePtr create(const std::string & path_,
+							const std::string & name_,
+							const std::string & database_name_,
+							NamesAndTypesListPtr columns_,
+							Context & context,
+							bool attach);
 	
 	void addReference();
 	void removeReference();
@@ -60,7 +66,12 @@ private:
 	CounterInFile reference_counter;
 	Context context;
 	
-	StorageChunks(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_);
+	StorageChunks(const std::string & path_,
+				const std::string & name_,
+				const std::string & database_name_,
+				NamesAndTypesListPtr columns_,
+				Context & context_,
+				bool attach);
 	
 	void dropThis();
 	

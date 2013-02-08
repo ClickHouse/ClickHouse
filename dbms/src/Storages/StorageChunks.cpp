@@ -9,14 +9,14 @@
 namespace DB
 {
 	
-StoragePtr StorageChunks::create(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_)
+StoragePtr StorageChunks::create(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_, bool attach)
 {
-	return (new StorageChunks(path_, name_, database_name_, columns_, context_))->thisPtr();
+	return (new StorageChunks(path_, name_, database_name_, columns_, context_, attach))->thisPtr();
 }
 
 void StorageChunks::addReference()
 {
-	reference_counter.add(1, true);
+	reference_counter.add(1, false);
 }
 
 void StorageChunks::removeReference()
@@ -75,8 +75,12 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 	return StorageLog::write(NULL);
 }
 	
-StorageChunks::StorageChunks(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_)
-	: StorageLog(path_, name_, columns_), database_name(database_name_), index_loaded(false), reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"), context(context_) {}
+StorageChunks::StorageChunks(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_, bool attach)
+	: StorageLog(path_, name_, columns_), database_name(database_name_), index_loaded(false), reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"), context(context_)
+{
+	if (!attach)
+		reference_counter.add(1, true);
+}
 	
 void StorageChunks::loadIndex()
 {

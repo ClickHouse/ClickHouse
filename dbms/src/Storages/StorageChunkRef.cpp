@@ -19,7 +19,7 @@ BlockInputStreams StorageChunkRef::read(
 {
 	StorageChunks * chunks = getSource();
 	if (chunks == NULL)
-		throw Exception("Referenced table " + source_table_name + " in database " + source_database_name + " doesn't exist", ErrorCodes::NO_SUCH_TABLE);
+		throw Exception("Referenced table " + source_table_name + " in database " + source_database_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 	return chunks->readFromChunk(name, column_names, query, settings, processed_stage, max_block_size, threads);
 }
 	
@@ -38,7 +38,7 @@ StorageChunkRef::StorageChunkRef(const std::string & name_, NamesAndTypesListPtr
 	{
 		StorageChunks * chunks = getSource();
 		if (chunks == NULL)
-			throw Exception("Referenced table " + source_table_name + " in database " + source_database_name + " doesn't exist", ErrorCodes::NO_SUCH_TABLE);
+			throw Exception("Referenced table " + source_table_name + " in database " + source_database_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 		chunks->addReference();
 	}
 }

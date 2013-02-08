@@ -21,7 +21,7 @@ public:
 	  *  (для случая выполнения запроса из существующего файла с метаданными).
 	  */
 	StoragePtr execute(bool assume_metadata_exists = false);
-
+	
 private:
 	ASTPtr query_ptr;
 	Context context;

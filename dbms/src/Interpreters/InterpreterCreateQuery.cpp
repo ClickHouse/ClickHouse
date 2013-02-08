@@ -209,5 +209,4 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	return res;
 }
 
-
 }
