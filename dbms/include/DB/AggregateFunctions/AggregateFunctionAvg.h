@@ -66,7 +66,7 @@ public:
 		Float64 tmp_sum = 0;
 		UInt64 tmp_count = 0;
 		readFloatBinary(tmp_sum, buf);
-		readVarUInt(count, buf);
+		readVarUInt(tmp_count, buf);
 		sum += tmp_sum;
 		count += tmp_count;
 	}
