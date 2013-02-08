@@ -32,7 +32,7 @@ void StorageChunkRef::dropImpl()
 }
 	
 StorageChunkRef::StorageChunkRef(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
-	: name(name_), columns(columns_), context(context_), source_database_name(source_database_name_), source_table_name(source_table_name_)
+	: source_database_name(source_database_name_), source_table_name(source_table_name_), name(name_), columns(columns_), context(context_)
 {
 	if (!attach)
 	{

@@ -151,7 +151,7 @@ void StorageChunkMerger::mergeThread()
 {
 	while (!thread_should_quit)
 	{
-		bool merged;
+		bool merged = false;
 		bool error = true;
 		
 		try
