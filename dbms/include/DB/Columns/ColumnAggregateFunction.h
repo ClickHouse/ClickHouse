@@ -11,25 +11,35 @@ namespace DB
 {
 
 /** Столбец, хранящий состояния агрегатных функций.
-  * Состояния агрегатных функций хранятся в пуле (arena), а в массиве (ColumnVector) хранятся указатели на них.
+  * Состояния агрегатных функций хранятся в пуле (arena),
+  *  (возможно, в нескольких)
+  *  а в массиве (ColumnVector) хранятся указатели на них.
   * Столбец захватывает владение пулом и всеми агрегатными функциями,
   *  которые в него переданы (уничтожает их в дестркуторе).
   */
 class ColumnAggregateFunction : public ColumnVector<AggregateDataPtr>
 {
 private:
+	typedef SharedPtr<Arena> ArenaPtr;
+	typedef std::vector<ArenaPtr> Arenas;
+	
 	const AggregateFunctionPtr func;
-	SharedPtr<Arena> arena;
+	Arenas arenas;
 public:
-	ColumnAggregateFunction(AggregateFunctionPtr & func_, SharedPtr<Arena> & arena_)
+	ColumnAggregateFunction(AggregateFunctionPtr & func_)
 	{
-		set(func_, arena_);
+		set(func_);
 	}
 
-	void set(AggregateFunctionPtr & func_, SharedPtr<Arena> & arena_)
+	void set(AggregateFunctionPtr & func_)
 	{
 		func = func_;
-		arena = arena_;
+	}
+
+	/// Захватить владение ареной.
+	void addArena(ArenaPtr & arena_)
+	{
+		arenas.push_back(arena_);
 	}
 	
     ~ColumnAggregateFunction()

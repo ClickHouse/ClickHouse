@@ -49,6 +49,9 @@ typedef HashMap<UInt128, std::pair<Row, AggregateDataPtr>, UInt128Hash, UInt128Z
 
 struct AggregatedDataVariants
 {
+	/// Пул для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
+	SharedPtr<Arena> aggregates_pool;
+	
 	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
 	AggregatedData generic;
 
@@ -80,7 +83,7 @@ struct AggregatedDataVariants
 	};
 	Type type;
 
-	AggregatedDataVariants() : type(EMPTY) {}
+	AggregatedDataVariants() : aggregates_pool(new Arena), without_key(NULL), type(EMPTY) {}
 	bool empty() const { return type == EMPTY; }
 
 	size_t size() const
@@ -111,7 +114,8 @@ class Aggregator
 public:
 	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()), initialized(false),
+		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
+		total_size_of_aggregate_states(0), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -119,7 +123,8 @@ public:
 
 	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), aggregates_size(aggregates.size()), initialized(false),
+		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), aggregates_size(aggregates.size()),
+		total_size_of_aggregate_states(0), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -146,8 +151,13 @@ private:
 	ColumnNumbers keys;
 	Names key_names;
 	AggregateDescriptions aggregates;
+	std::vector<IAggregateFunction *> aggregate_functions;
 	size_t keys_size;
 	size_t aggregates_size;
+
+	Sizes sizes_of_aggregate_states;	/// Размеры состояний агрегатных функций - для выделения памяти для них в пуле.
+	Sizes offsets_of_aggregate_states;	/// Смещение до n-ой агрегатной функции в строке из агрегатных функций.
+	size_t total_size_of_aggregate_states;	/// Суммарный размер строки из агрегатных функций.
 
 	/// Для инициализации от первого блока при конкуррентном использовании.
 	bool initialized;

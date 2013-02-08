@@ -44,11 +44,6 @@ public:
 		return new DataTypeString;
 	}
 
-	DataTypePtr operator() (const AggregateFunctionPlainPtr 	& x) const
-	{
-		throw Exception("Cannot get DataType for AggregateFunction Field", ErrorCodes::NOT_IMPLEMENTED);
-	}
-	
 	DataTypePtr operator() (const Array 	& x) const
 	{
 		return new DataTypeArray(apply_visitor(FieldToDataType(), x.at(0)));

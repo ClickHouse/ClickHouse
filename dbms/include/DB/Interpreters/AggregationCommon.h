@@ -44,35 +44,6 @@ struct StringHash
 };
 
 
-/** Преобразование значения в 64 бита. Для чисел - однозначное, для строк - некриптографический хэш. */
-class FieldVisitorToUInt64 : public StaticVisitor<UInt64>
-{
-public:
-	FieldVisitorToUInt64() {}
-	
-	UInt64 operator() (const Null 		& x) const { return 0; }
-	UInt64 operator() (const UInt64 	& x) const { return x; }
-	UInt64 operator() (const Int64 		& x) const { return x; }
-
-	UInt64 operator() (const Float64 	& x) const
-	{
-		UInt64 res = 0;
-		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<const char *>(&x), sizeof(x));
-		return res;
-	}
-
-	UInt64 operator() (const String 	& x) const
-	{
-		return CityHash64(x.data(), x.size());
-	}
-
-	UInt64 operator() (const Array 	& x) const
-	{
-		throw Exception("Cannot aggregate by array", ErrorCodes::ILLEGAL_KEY_OF_AGGREGATION);
-	}
-};
-
-
 typedef std::vector<size_t> Sizes;
 
 

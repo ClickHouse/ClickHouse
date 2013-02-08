@@ -87,15 +87,13 @@ void Set::create(BlockInputStreamPtr stream)
 		if (type == KEY_64)
 		{
 			SetUInt64 & res = key64;
-			const FieldVisitorToUInt64 visitor;
 			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
 				/// Строим ключ
-				Field field = column[i];
-				UInt64 key = apply_visitor(visitor, field);
+ 				UInt64 key = get<UInt64>(column[i]);
 				res.insert(key);
 			}
 
@@ -297,15 +295,13 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	if (type == KEY_64)
 	{
 		const SetUInt64 & set = key64;
-		const FieldVisitorToUInt64 visitor;
 		const IColumn & column = *key_columns[0];
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
 		{
 			/// Строим ключ
-			Field field = column[i];
-			UInt64 key = apply_visitor(visitor, field);
+			UInt64 key = get<UInt64>(column[i]);
 			vec_res[i] = negative ^ (set.end() != set.find(key));
 		}
 	}
