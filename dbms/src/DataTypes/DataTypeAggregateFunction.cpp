@@ -43,8 +43,9 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 	ColumnAggregateFunction & real_column = dynamic_cast<ColumnAggregateFunction &>(column);
 	ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
-	Arena arena = new Arena;
-	real_column.set(function, arena);
+	Arena * arena = new Arena;
+	real_column.set(function);
+	real_column.addArena(arena);
 	vec.reserve(limit);
 
 	size_t size_of_state = function->sizeOfData();
@@ -54,8 +55,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 		if (istr.eof())
 			break;
 
-		// TODO может быть, лучше класть с выравниванием
-		AggregateDataPtr place = arena.alloc(size_of_state);
+		AggregateDataPtr place = arena->alloc(size_of_state);
 
 		function->create(place);
 		function->deserializeMerge(place, istr);
@@ -96,7 +96,7 @@ void DataTypeAggregateFunction::deserializeTextQuoted(Field & field, ReadBuffer 
 
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-	return new ColumnAggregateFunction;
+	return new ColumnAggregateFunction(function);
 }
 
 ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field & field) const

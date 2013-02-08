@@ -64,26 +64,26 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const Field & value_) const
+	void addOne(AggregateDataPtr place, const Field & value) const
 	{
-		data(place).sample.insert(get<typename NearestFieldType<ArgumentFieldType>::Type>(value));
+		this->data(place).sample.insert(get<typename NearestFieldType<ArgumentFieldType>::Type>(value));
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).sample.merge(data(rhs).sample);
+		this->data(place).sample.merge(this->data(rhs).sample);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		data(place).sample.write(buf);
+		this->data(place).sample.write(buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		Sample tmp_sample;
 		tmp_sample.read(buf);
-		data(place).sample.merge(tmp_sample);
+		this->data(place).sample.merge(tmp_sample);
 	}
 
 	Field getResult(ConstAggregateDataPtr place) const
@@ -91,9 +91,9 @@ public:
 		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
 
 		if (returns_float)
-			return Float64(const_cast<Sample &>(data(place).sample).quantileInterpolated(level));
+			return Float64(const_cast<Sample &>(this->data(place).sample).quantileInterpolated(level));
 		else
-			return typename NearestFieldType<ArgumentFieldType>::Type(const_cast<Sample &>(data(place).sample).quantileInterpolated(level));
+			return typename NearestFieldType<ArgumentFieldType>::Type(const_cast<Sample &>(this->data(place).sample).quantileInterpolated(level));
 	}
 };
 

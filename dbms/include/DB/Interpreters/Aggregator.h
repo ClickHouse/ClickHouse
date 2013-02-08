@@ -155,7 +155,6 @@ private:
 	size_t keys_size;
 	size_t aggregates_size;
 
-	Sizes sizes_of_aggregate_states;	/// Размеры состояний агрегатных функций - для выделения памяти для них в пуле.
 	Sizes offsets_of_aggregate_states;	/// Смещение до n-ой агрегатной функции в строке из агрегатных функций.
 	size_t total_size_of_aggregate_states;	/// Суммарный размер строки из агрегатных функций.
 

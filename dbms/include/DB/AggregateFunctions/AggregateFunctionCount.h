@@ -32,7 +32,7 @@ public:
 	}
 
 
-	void addZero(AggregateDataPtr place)
+	void addZero(AggregateDataPtr place) const
 	{
 		++data(place).count;
 	}
@@ -60,7 +60,7 @@ public:
 	}
 
 	/// Для оптимизации
-	void addDelta(AggregateDataPtr place, UInt64 x)
+	void addDelta(AggregateDataPtr place, UInt64 x) const
 	{
 		data(place).count += x;
 	}

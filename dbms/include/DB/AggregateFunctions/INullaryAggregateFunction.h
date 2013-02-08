@@ -16,17 +16,17 @@ public:
 	void setArguments(const DataTypes & arguments)
 	{
 		if (arguments.size() != 0)
-			throw Exception("Passed " + Poco::NumberFormatter::format(arguments.size()) + " arguments to nullary aggregate function " + getName(),
+			throw Exception("Passed " + Poco::NumberFormatter::format(arguments.size()) + " arguments to nullary aggregate function " + this->getName(),
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 	}
 
 	/// Добавить значение.
-	void add(AggregateDataPtr place, const Row & row)
+	void add(AggregateDataPtr place, const Row & row) const
 	{
 		addZero(place);
 	}
 
-	virtual void addZero(AggregateDataPtr place) = 0;
+	virtual void addZero(AggregateDataPtr place) const = 0;
 };
 
 }

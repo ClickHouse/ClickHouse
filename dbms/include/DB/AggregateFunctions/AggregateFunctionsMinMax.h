@@ -67,7 +67,7 @@ public:
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
 		Data & d = data(place);
-		Data & d_rhs = data(rhs);
+		const Data & d_rhs = data(rhs);
 		
 		if (!d.value.isNull())
 		{

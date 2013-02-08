@@ -10,6 +10,7 @@
 namespace DB
 {
 
+
 /** Столбец, хранящий состояния агрегатных функций.
   * Состояния агрегатных функций хранятся в пуле (arena),
   *  (возможно, в нескольких)
@@ -17,29 +18,39 @@ namespace DB
   * Столбец захватывает владение пулом и всеми агрегатными функциями,
   *  которые в него переданы (уничтожает их в дестркуторе).
   */
-class ColumnAggregateFunction : public ColumnVector<AggregateDataPtr>
+class ColumnAggregateFunction : public ColumnVectorBase<AggregateDataPtr>
 {
 private:
 	typedef SharedPtr<Arena> ArenaPtr;
 	typedef std::vector<ArenaPtr> Arenas;
 	
-	const AggregateFunctionPtr func;
+	AggregateFunctionPtr func;
 	Arenas arenas;
 public:
-	ColumnAggregateFunction(AggregateFunctionPtr & func_)
+	ColumnAggregateFunction(const AggregateFunctionPtr & func_)
+		: func(func_)
 	{
-		set(func_);
 	}
 
-	void set(AggregateFunctionPtr & func_)
+	ColumnAggregateFunction(const AggregateFunctionPtr & func_, const Arenas & arenas_)
+		: func(func_), arenas(arenas_)
+	{
+	}
+
+	void set(const AggregateFunctionPtr & func_)
 	{
 		func = func_;
 	}
 
 	/// Захватить владение ареной.
-	void addArena(ArenaPtr & arena_)
+	void addArena(ArenaPtr arena_)
 	{
 		arenas.push_back(arena_);
+	}
+
+	AggregateFunctionPtr getFunction()
+	{
+		return func;
 	}
 	
     ~ColumnAggregateFunction()
@@ -50,23 +61,23 @@ public:
 	
  	std::string getName() const { return "ColumnAggregateFunction"; }
 
- 	ColumnPtr cloneEmpty() const { return new ColumnAggregateFunction; };
+ 	ColumnPtr cloneEmpty() const { return new ColumnAggregateFunction(func, arenas); };
 
 	bool isNumeric() const { return false; }
 
 	Field operator[](size_t n) const
 	{
-		return data[n];
+		throw Exception("Method operator[] is not supported for ColumnAggregateFunction. You must access underlying vector directly.", ErrorCodes::NOT_IMPLEMENTED);;
 	}
 
 	void get(size_t n, Field & res) const
 	{
-		res = data[n];
+		throw Exception("Method get is not supported for ColumnAggregateFunction. You must access underlying vector directly.", ErrorCodes::NOT_IMPLEMENTED);;
 	}
 
 	StringRef getDataAt(size_t n) const
 	{
-		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		throw Exception("Method getDataAt is not supported for ColumnAggregateFunction. You must access underlying vector directly.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 	
 	void cut(size_t start, size_t length)
@@ -79,12 +90,35 @@ public:
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
 		if (start == 0)
+		{
+			for (size_t i = length, s = data.size(); i < s; ++i)
+				func->destroy(data[i]);
+			
 			data.resize(length);
+		}
 		else
 		{
+			for (size_t i = 0; i < start; ++i)
+				func->destroy(data[i]);
+			for (size_t i = start + length, s = data.size(); i < s; ++i)
+				func->destroy(data[i]);
+			
 			Container_t tmp(data.begin() + start, data.begin() + start + length);
 			tmp.swap(data);
 		}
+	}
+
+	void clear()
+	{
+		for (size_t i = 0, s = data.size(); i < s; ++i)
+			func->destroy(data[i]);
+		
+		data.clear();
+	}
+
+	void replicate(const Offsets_t & offsets)
+	{
+		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	void insert(const Field & x)

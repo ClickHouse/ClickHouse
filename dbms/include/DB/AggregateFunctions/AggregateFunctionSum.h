@@ -67,29 +67,29 @@ public:
 
 	void addOne(AggregateDataPtr place, const Field & value) const
 	{
-		data(place).sum += get<const T &>(value);
+		this->data(place).sum += get<const T &>(value);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).sum += data(rhs).sum;
+		this->data(place).sum += this->data(rhs).sum;
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		AggregateFunctionSumTraits<T>::write(data(place).sum, buf);
+		AggregateFunctionSumTraits<T>::write(this->data(place).sum, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		T tmp;
 		AggregateFunctionSumTraits<T>::read(tmp, buf);
-		data(place).sum += tmp;
+		this->data(place).sum += tmp;
 	}
 
 	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return data(place).sum;
+		return this->data(place).sum;
 	}
 };
 

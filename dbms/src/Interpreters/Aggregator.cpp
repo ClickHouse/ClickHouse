@@ -39,7 +39,7 @@ void Aggregator::initialize(Block & block)
 
 	aggregate_functions.resize(aggregates_size);
 	for (size_t i = 0; i < aggregates_size; ++i)
-		aggregate_functions[i] = *aggregates[i].function;
+		aggregate_functions[i] = &*aggregates[i].function;
 
 	/// Создадим пример блока, описывающего результат
 	if (!sample)
@@ -74,15 +74,13 @@ void Aggregator::initialize(Block & block)
 				sample.insert(block.getByPosition(i).cloneEmpty());
 
 		/// Инициализируем размеры состояний и смещения для агрегатных функций.
-		sizes_of_aggregate_states.resize(aggregates_size);
 		offsets_of_aggregate_states.resize(aggregates_size);
 		total_size_of_aggregate_states = 0;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 		{
-			sizes_of_aggregate_states[i] = aggregates[i].function->sizeOfData();
-			offsets_of_aggregate_states[i] = current_offset;
-			total_size_of_aggregate_states += sizes_of_aggregate_states[i];
+			offsets_of_aggregate_states[i] = total_size_of_aggregate_states;
+			total_size_of_aggregate_states += aggregates[i].function->sizeOfData();
 		}
 	}	
 }
@@ -406,7 +404,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					if (no_more_keys)
 						continue;
 					
-					it = res.insert(std::make_pair(key, NULL)).first;
+					it = res.insert(AggregatedData::value_type(key, NULL)).first;
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 					key.resize(keys_size);
 
@@ -482,8 +480,6 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
 		column_aggregate_func.addArena(data_variants.aggregates_pool);
 
-		// 
-		
 		aggregate_columns[i] = &column_aggregate_func.getData();
 		aggregate_columns[i]->resize(rows);
 	}
@@ -512,7 +508,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				first_column.insert(it->first);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second[i];
+				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
@@ -526,7 +522,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 			first_column.insert(String(it->first.data, it->first.size));	/// Здесь можно ускорить, сделав метод insertFrom(const char *, size_t size).
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second[i];
+				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
@@ -540,7 +536,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				key_columns[i]->insert(it->second.first[i]);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second.second[i];
+				(*aggregate_columns[i])[j] = it->second.second + offsets_of_aggregate_states[i];
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::GENERIC)
@@ -553,7 +549,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				key_columns[i]->insert(it->first[i]);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second[i];
+				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
 		}
 	}
 	else
@@ -612,11 +608,10 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			AggregatedDataWithoutKey & res_data = res->without_key;
 			AggregatedDataWithoutKey & current_data = current.without_key;
 
-			size_t i = 0;
-			for (AggregateFunctionsPlainPtrs::const_iterator jt = current_data.begin(); jt != current_data.end(); ++jt, ++i)
+			for (size_t i = 0; i < aggregates_size; ++i)
 			{
-				res_data[i]->merge(**jt);
-				delete *jt;
+				aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i]);
+				aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
 			}
 		}
 		else if (res->type == AggregatedDataVariants::KEY_64)
@@ -632,15 +627,14 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 				if (!inserted)
 				{
-					size_t i = 0;
-					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+					for (size_t i = 0; i < aggregates_size; ++i)
 					{
-						res_it->second[i]->merge(**jt);
-						delete *jt;
+						aggregate_functions[i]->merge(res_it->second + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
+						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
 					}
 				}
 				else
-					new(&res_it->second) AggregateFunctionsPlainPtrs(it->second);
+					res_it->second = it->second;
 			}
 		}
 		else if (res->type == AggregatedDataVariants::KEY_STRING)
@@ -656,15 +650,14 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 				if (!inserted)
 				{
-					size_t i = 0;
-					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+					for (size_t i = 0; i < aggregates_size; ++i)
 					{
-						res_it->second[i]->merge(**jt);
-						delete *jt;
+						aggregate_functions[i]->merge(res_it->second + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
+						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
 					}
 				}
 				else
-					new(&res_it->second) AggregateFunctionsPlainPtrs(it->second);
+					res_it->second = it->second;
 			}
 		}
 		else if (res->type == AggregatedDataVariants::HASHED)
@@ -680,11 +673,10 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 				if (!inserted)
 				{
-					size_t i = 0;
-					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.second.begin(); jt != it->second.second.end(); ++jt, ++i)
+					for (size_t i = 0; i < aggregates_size; ++i)
 					{
-						res_it->second.second[i]->merge(**jt);
-						delete *jt;
+						aggregate_functions[i]->merge(res_it->second.second + offsets_of_aggregate_states[i], it->second.second + offsets_of_aggregate_states[i]);
+						aggregate_functions[i]->destroy(it->second.second + offsets_of_aggregate_states[i]);
 					}
 				}
 				else
@@ -698,18 +690,17 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 			for (AggregatedData::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
-				AggregateFunctionsPlainPtrs & res_row = res_data[it->first];
-				if (!res_row.empty())
+				AggregateDataPtr & res_ptr = res_data[it->first];
+				if (res_ptr != NULL)
 				{
-					size_t i = 0;
-					for (AggregateFunctionsPlainPtrs::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt, ++i)
+					for (size_t i = 0; i < aggregates_size; ++i)
 					{
-						res_row[i]->merge(**jt);
-						delete *jt;
+						aggregate_functions[i]->merge(res_ptr + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
+						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
 					}
 				}
 				else
-					res_row = it->second;
+					res_ptr = it->second;
 			}
 		}
 		else
@@ -764,16 +755,17 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
-			if (res.empty())
+			if (!res)
 			{
-				res.resize(aggregates_size);
+				res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+				
 				for (size_t i = 0; i < aggregates_size; ++i)
-					res[i] = aggregates[i].function->cloneEmpty();
+					aggregate_functions[i]->create(res + offsets_of_aggregate_states[i]);
 			}
 
 			/// Добавляем значения
 			for (size_t i = 0; i < aggregates_size; ++i)
-				res[i]->merge(*(*aggregate_columns[i])[0]);
+				aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
 		}
 		else if (result.type == AggregatedDataVariants::KEY_64)
 		{
@@ -792,15 +784,15 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 				if (inserted)
 				{
-					new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
-						it->second[j] = aggregates[j].function->cloneEmpty();
+						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 				}
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					it->second[j]->merge(*(*aggregate_columns[j])[i]);
+					aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
@@ -826,15 +818,15 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 					if (inserted)
 					{
 						it->first.data = result.string_pool.insert(ref.data, ref.size);
-						new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+						it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 						for (size_t j = 0; j < aggregates_size; ++j)
-							it->second[j] = aggregates[j].function->cloneEmpty();
+							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 					}
 
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						it->second[j]->merge(*(*aggregate_columns[j])[i]);
+						aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 				}
 			}
 			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -855,15 +847,15 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 					if (inserted)
 					{
 						it->first.data = result.string_pool.insert(ref.data, ref.size);
-						new(&it->second) AggregateFunctionsPlainPtrs(aggregates_size);
+						it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 						for (size_t j = 0; j < aggregates_size; ++j)
-							it->second[j] = aggregates[j].function->cloneEmpty();
+							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 					}
 
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						it->second[j]->merge(*(*aggregate_columns[j])[i]);
+						aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 				}
 			}
 			else
@@ -882,16 +874,17 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 				if (inserted)
 				{
-					new(&it->second) AggregatedDataHashed::mapped_type(key, AggregateFunctionsPlainPtrs(aggregates_size));
+					new(&it->second) AggregatedDataHashed::mapped_type(key, NULL);
+					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 					key.resize(keys_size);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
-						it->second.second[j] = aggregates[j].function->cloneEmpty();
+						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
 				}
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					it->second.second[j]->merge(*(*aggregate_columns[j])[i]);
+					aggregate_functions[i]->merge(it->second.second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::GENERIC)
@@ -909,16 +902,17 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 				AggregatedData::iterator it = res.find(key);
 				if (it == res.end())
 				{
-					it = res.insert(std::make_pair(key, AggregateFunctionsPlainPtrs(aggregates_size))).first;
+					it = res.insert(AggregatedData::value_type(key, NULL)).first;
+					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 					key.resize(keys_size);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
-						it->second[j] = aggregates[j].function->cloneEmpty();
+						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 				}
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					it->second[j]->merge(*(*aggregate_columns[j])[i]);
+					aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
 		else

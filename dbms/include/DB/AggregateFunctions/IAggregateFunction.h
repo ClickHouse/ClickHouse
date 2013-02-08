@@ -56,7 +56,7 @@ public:
 	/** Функции по работе с данными. */
 
 	/** Создать пустые данные для агрегации с помощью placement new в заданном месте.
-	  * Вы должны будете уничтожить их с помощью метода destroyData.
+	  * Вы должны будете уничтожить их с помощью метода destroy.
 	  */
 	virtual void create(AggregateDataPtr place) const = 0;
 
@@ -64,10 +64,10 @@ public:
 	virtual void destroy(AggregateDataPtr place) const = 0;
 
 	/// Получить sizeof структуры с данными.
-	virtual void sizeOfData() const = 0;
+	virtual size_t sizeOfData() const = 0;
 
 	/// Как должна быть выровнена структура с данными.
-	virtual void alignOfData() const = 0;
+	virtual size_t alignOfData() const = 0;
 
 	/// Добавить значение.
 	virtual void add(AggregateDataPtr place, const Row & row) const = 0;
@@ -95,7 +95,7 @@ protected:
 	typedef T Data;
 	
 	static Data & data(AggregateDataPtr place) 				{ return *reinterpret_cast<Data*>(place); }
-	static const Data & data(ConstAggregateDataPtr place)	{ return *reinterpret_cast<const Data*>(place); }
+	static const Data & data(ConstAggregateDataPtr place) 	{ return *reinterpret_cast<const Data*>(place); }
 	
 public:
 	/** Создать пустые данные для агрегации с помощью placement new в заданном месте.
@@ -113,13 +113,13 @@ public:
 	}
 
 	/// Получить sizeof структуры с данными.
-	void sizeOfData() const
+	size_t sizeOfData() const
 	{
 		return sizeof(Data);
 	}
 
 	/// Как должна быть выровнена структура с данными.
-	void alignOfData() const
+	size_t alignOfData() const
 	{
 		return __alignof__(Data);
 	}

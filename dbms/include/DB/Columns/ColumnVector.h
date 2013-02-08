@@ -11,56 +11,26 @@
 namespace DB
 {
 
-/** Специализация - заглушка, которая ничего не делает для агрегатных функций.
-  */
-template <>
-class FieldVisitorConvertToNumber<IAggregateFunction*> : public StaticVisitor<IAggregateFunction*>
-{
-public:
-	template <typename T>
-	IAggregateFunction* operator() (const T & x) const
-	{
-		throw Exception("Logical error", ErrorCodes::LOGICAL_ERROR);
-	}
-};
 
-	
 /** Шаблон столбцов, которые используют для хранения std::vector.
   */
 template <typename T>
-class ColumnVector : public IColumn
+class ColumnVectorBase : public IColumn
 {
 public:
 	typedef T value_type;
 	typedef std::vector<value_type> Container_t;
 
-	ColumnVector() {}
-	ColumnVector(size_t n) : data(n) {}
-
- 	std::string getName() const { return "ColumnVector<" + TypeName<T>::get() + ">"; }
+	ColumnVectorBase() {}
+	ColumnVectorBase(size_t n) : data(n) {}
 
 	bool isNumeric() const { return IsNumber<T>::value; }
 
 	size_t sizeOfField() const { return sizeof(T); }
 
-	ColumnPtr cloneEmpty() const
-	{
-		return new ColumnVector<T>;
-	}
-
 	size_t size() const
 	{
 		return data.size();
-	}
-	
-	Field operator[](size_t n) const
-	{
-		return typename NearestFieldType<T>::Type(data[n]);
-	}
-
-	void get(size_t n, Field & res) const
-	{
-		res = typename NearestFieldType<T>::Type(data[n]);
 	}
 
 	StringRef getDataAt(size_t n) const
@@ -87,14 +57,9 @@ public:
 		}
 	}
 
-	void insert(const Field & x)
-	{
-		data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
-	}
-
 	void insertFrom(const IColumn & src, size_t n)
 	{
-		data.push_back(static_cast<const ColumnVector<T> &>(src).getData()[n]);
+		data.push_back(static_cast<const ColumnVectorBase<T> &>(src).getData()[n]);
 	}
 
 	void insertDefault()
@@ -142,7 +107,7 @@ public:
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
 	{
-		const ColumnVector<T> & rhs = static_cast<const ColumnVector<T> &>(rhs_);
+		const ColumnVectorBase<T> & rhs = static_cast<const ColumnVectorBase<T> &>(rhs_);
 		return data[n] < rhs.data[m]
 			? -1
 			: (data[n] == rhs.data[m]
@@ -152,8 +117,8 @@ public:
 
 	struct less
 	{
-		const ColumnVector<T> & parent;
-		less(const ColumnVector<T> & parent_) : parent(parent_) {}
+		const ColumnVectorBase<T> & parent;
+		less(const ColumnVectorBase<T> & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] < parent.data[rhs]; }
 	};
 
@@ -209,6 +174,40 @@ public:
 
 protected:
 	Container_t data;
+};
+
+
+/** Реализация для числовых типов.
+  * (Есть ещё ColumnAggregateFunction.)
+  */
+template <typename T>
+class ColumnVector : public ColumnVectorBase<T>
+{
+public:
+	ColumnVector() {}
+	ColumnVector(size_t n) : ColumnVectorBase<T>(n) {}
+
+ 	std::string getName() const { return "ColumnVector<" + TypeName<T>::get() + ">"; }
+
+	ColumnPtr cloneEmpty() const
+	{
+		return new ColumnVector<T>;
+	}
+
+	Field operator[](size_t n) const
+	{
+		return typename NearestFieldType<T>::Type(this->data[n]);
+	}
+
+	void get(size_t n, Field & res) const
+	{
+		res = typename NearestFieldType<T>::Type(this->data[n]);
+	}
+
+	void insert(const Field & x)
+	{
+		this->data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
+	}
 };
 
 

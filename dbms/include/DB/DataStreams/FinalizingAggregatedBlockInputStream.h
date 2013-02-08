@@ -49,23 +49,27 @@ protected:
 			if (ColumnAggregateFunction * col = dynamic_cast<ColumnAggregateFunction *>(&*column.column))
 			{
 				ColumnAggregateFunction::Container_t & data = col->getData();
-				column.type = data[0]->getReturnType();
+				IAggregateFunction * func = col->getFunction();
+				column.type = func->getReturnType();
 				ColumnPtr finalized_column = column.type->createColumn();
 				finalized_column->reserve(rows);
 
 				for (size_t j = 0; j < rows; ++j)
-					finalized_column->insert(data[j]->getResult());
+					finalized_column->insert(func->getResult(data[j]));
 
 				column.column = finalized_column;
 			}
 		}
 
 		double elapsed_seconds = watch.elapsedSeconds();
-		LOG_TRACE(log, std::fixed << std::setprecision(3)
-			<< "Finalized aggregate functions. "
-			<< res.rows() << " rows, " << res.bytes() / 1048576.0 << " MiB"
-			<< " in " << elapsed_seconds << " sec."
-			<< " (" << res.rows() / elapsed_seconds << " rows/sec., " << res.bytes() / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+		if (elapsed_seconds > 0.001)
+		{
+			LOG_TRACE(log, std::fixed << std::setprecision(3)
+				<< "Finalized aggregate functions. "
+				<< res.rows() << " rows, " << res.bytes() / 1048576.0 << " MiB"
+				<< " in " << elapsed_seconds << " sec."
+				<< " (" << res.rows() / elapsed_seconds << " rows/sec., " << res.bytes() / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+		}
 
 		return res;
 	}
