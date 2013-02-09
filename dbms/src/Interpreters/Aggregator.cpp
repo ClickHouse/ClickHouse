@@ -182,7 +182,8 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		if (result.empty())
 		{
 			result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
-			LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+			result.keys_size = keys_size;
+			LOG_TRACE(log, "Aggregation method: " << result.getMethodName() << ", keys_fit_128_bits: " << (keys_fit_128_bits ? "true" : "false"));
 		}
 
 		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
@@ -374,10 +375,17 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				if (inserted)
 				{
-					new(&it->second) AggregatedDataHashed::mapped_type(key, NULL);
-					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-					key.resize(keys_size);
+					/// Выделяем место для ключей в пуле.
+					char * keys_place = result.keys_pool.alloc(keys_size * sizeof(Field));
+					it->second.first = reinterpret_cast<Field*>(keys_place);
 
+					/// Деструктивно переносим туда ключи. Делается допущение о том, что Field является relocatable типом.
+					memcpy(keys_place, reinterpret_cast<const char *>(&key[0]), keys_size * sizeof(Field));
+					/// А также, что field, инициализированный нулями, содержит значение Null.
+					memset(reinterpret_cast<char *>(&key[0]), 0, keys_size * sizeof(Field));
+					
+					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+					
 					for (size_t j = 0; j < aggregates_size; ++j)
 						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
 				}
@@ -675,7 +683,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			AggregatedDataHashed & res_data = res->hashed;
 			AggregatedDataHashed & current_data = current.hashed;
 
-			for (AggregatedDataHashed::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
+			for (AggregatedDataHashed::iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
 				AggregatedDataHashed::iterator res_it;
 				bool inserted;
@@ -690,7 +698,10 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					}
 				}
 				else
-					new(&res_it->second) AggregatedDataHashed::mapped_type(it->second);
+				{
+					res_it->second = it->second;
+					it->second.first = NULL;
+				}
 			}
 		}
 		else if (res->type == AggregatedDataVariants::GENERIC)
@@ -761,6 +772,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		bool keys_fit_128_bits = false;
 		Sizes key_sizes;
 		result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
+		result.keys_size = keys_size;
 
 		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
 		{
@@ -884,9 +896,16 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 				if (inserted)
 				{
-					new(&it->second) AggregatedDataHashed::mapped_type(key, NULL);
+					/// Выделяем место для ключей в пуле.
+					char * keys_place = result.keys_pool.alloc(keys_size * sizeof(Field));
+					it->second.first = reinterpret_cast<Field*>(keys_place);
+
+					/// Деструктивно переносим туда ключи. Делается допущение о том, что Field является relocatable типом.
+					memcpy(keys_place, reinterpret_cast<const char *>(&key[0]), keys_size * sizeof(Field));
+					/// А также, что field, инициализированный нулями, содержит значение Null.
+					memset(reinterpret_cast<char *>(&key[0]), 0, keys_size * sizeof(Field));
+					
 					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-					key.resize(keys_size);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);

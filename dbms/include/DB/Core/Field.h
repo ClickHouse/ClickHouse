@@ -49,7 +49,7 @@ public:
 			Int64				= 2,
 			Float64				= 3,
 
-			/// не POD типы
+			/// не POD типы. Для них предполагается relocatable.
 
 			String				= 16,
 			Array				= 17,

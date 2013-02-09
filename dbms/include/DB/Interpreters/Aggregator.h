@@ -44,7 +44,7 @@ typedef std::map<Row, AggregateDataPtr> AggregatedData;
 typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
 typedef HashMap<StringRef, AggregateDataPtr, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
-typedef HashMap<UInt128, std::pair<Row, AggregateDataPtr>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
+typedef HashMap<UInt128, std::pair<Field*, AggregateDataPtr>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
 
 
 struct AggregatedDataVariants
@@ -72,6 +72,8 @@ struct AggregatedDataVariants
 	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 	  */ 
 	AggregatedDataHashed hashed;
+	Arena keys_pool;	// TODO: складывать ключи в пул не в виде Field, а в виде плоского набора байт.
+	size_t keys_size;
 
 	enum Type
 	{
@@ -86,6 +88,18 @@ struct AggregatedDataVariants
 
 	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()), without_key(NULL), type(EMPTY) {}
 	bool empty() const { return type == EMPTY; }
+
+	~AggregatedDataVariants()
+	{
+		if (type == HASHED)
+		{
+			/// Уничтожаем ключи из keys_pool.
+			for (AggregatedDataHashed::iterator it = hashed.begin(); it != hashed.end(); ++it)
+				if (it->second.first != NULL)	/// Они могли быть перенесены в другой AggregatedDataVariants, с занулением указателя.
+					for (size_t i = 0; i < keys_size; ++i)
+						it->second.first[i].~Field();
+		}
+	}
 
 	size_t size() const
 	{
@@ -156,7 +170,10 @@ public:
 	/// Преобразовать структуру данных агрегации в блок.
 	Block convertToBlock(AggregatedDataVariants & data_variants);
 
-	/// Объединить несколько структур данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
+	/** Объединить несколько структур данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
+	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить, пока не будет вызвана функция convertToBlock.
+	  * Это нужно, так как в слитом результате могут остаться указатели на память в пуле, которым владеют другие структуры агрегации.
+	  */
 	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants);
 
 	/** Объединить несколько агрегированных блоков в одну структуру данных.

@@ -66,7 +66,7 @@ public:
 	/// Получить sizeof структуры с данными.
 	virtual size_t sizeOfData() const = 0;
 
-	/// Как должна быть выровнена структура с данными.
+	/// Как должна быть выровнена структура с данными. NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
 	virtual size_t alignOfData() const = 0;
 
 	/// Добавить значение.
@@ -98,27 +98,22 @@ protected:
 	static const Data & data(ConstAggregateDataPtr place) 	{ return *reinterpret_cast<const Data*>(place); }
 	
 public:
-	/** Создать пустые данные для агрегации с помощью placement new в заданном месте.
-	  * Вы должны будете уничтожить их с помощью метода destroyData.
-	  */
 	void create(AggregateDataPtr place) const
 	{
 		new (place) Data;
 	}
 
-	/// Уничтожить данные для агрегации.
 	void destroy(AggregateDataPtr place) const
 	{
 		data(place).~Data();
 	}
 
-	/// Получить sizeof структуры с данными.
 	size_t sizeOfData() const
 	{
 		return sizeof(Data);
 	}
 
-	/// Как должна быть выровнена структура с данными.
+	/// NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
 	size_t alignOfData() const
 	{
 		return __alignof__(Data);
