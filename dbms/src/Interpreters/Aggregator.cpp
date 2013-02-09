@@ -478,7 +478,9 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	{
 		/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
 		ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
-		column_aggregate_func.addArena(data_variants.aggregates_pool);
+
+		for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
+			column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
 
 		aggregate_columns[i] = &column_aggregate_func.getData();
 		aggregate_columns[i]->resize(rows);
@@ -589,6 +591,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 	{
 		rows += data_variants[i]->size();
 		AggregatedDataVariants & current = *data_variants[i];
+
+		res->aggregates_pools.insert(res->aggregates_pools.end(), current.aggregates_pools.begin(), current.aggregates_pools.end());
 
 		if (current.empty())
 			continue;

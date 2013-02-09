@@ -49,8 +49,9 @@ typedef HashMap<UInt128, std::pair<Row, AggregateDataPtr>, UInt128Hash, UInt128Z
 
 struct AggregatedDataVariants
 {
-	/// Пул для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
-	SharedPtr<Arena> aggregates_pool;
+	/// Пулы для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
+	Arenas aggregates_pools;
+	Arena * aggregates_pool;	/// Последний пул, который используется для аллокации.
 	
 	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
 	AggregatedData generic;
@@ -83,7 +84,7 @@ struct AggregatedDataVariants
 	};
 	Type type;
 
-	AggregatedDataVariants() : aggregates_pool(new Arena), without_key(NULL), type(EMPTY) {}
+	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()), without_key(NULL), type(EMPTY) {}
 	bool empty() const { return type == EMPTY; }
 
 	size_t size() const

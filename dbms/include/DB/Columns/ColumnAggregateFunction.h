@@ -21,9 +21,6 @@ namespace DB
 class ColumnAggregateFunction : public ColumnVectorBase<AggregateDataPtr>
 {
 private:
-	typedef SharedPtr<Arena> ArenaPtr;
-	typedef std::vector<ArenaPtr> Arenas;
-	
 	AggregateFunctionPtr func;
 	Arenas arenas;
 public:

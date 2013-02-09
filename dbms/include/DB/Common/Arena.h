@@ -2,6 +2,8 @@
 
 #include <string.h>
 #include <memory>
+#include <vector>
+#include <Poco/SharedPtr.h>
 #include <Yandex/optimization.h>
 
 
@@ -91,6 +93,9 @@ public:
 		return res;
 	}
 };
+
+typedef Poco::SharedPtr<Arena> ArenaPtr;
+typedef std::vector<ArenaPtr> Arenas;
 
 
 }
