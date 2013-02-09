@@ -35,8 +35,6 @@
   * Если USE_AUTO_ARRAY = 0, то DB::HashMap уверенно обгоняет всех.
   * Если USE_AUTO_ARRAY = 1, то DB::HashMap чуть менее серьёзно (20%) обгоняет google::dense_hash_map.
   *
-  * Если IMITATE_UPDATES = 1, то будет производиться обновление агрегатных функций, что сглаживает разницу между разными тестами.
-  *
   * При использовании DB::HashMap, AutoArray имеет довольно серьёзное (40%) преимущество перед std::vector.
   * А при использовании других хэш-таблиц, AutoArray ещё более серьёзно обгоняет std::vector
   *  (до трёх c половиной раз в случае std::unordered_map и google::sparse_hash_map).
@@ -44,10 +42,13 @@
   * DB::HashMap, в отличие от google::dense_hash_map, гораздо больше зависит от качества хэш-функции.
   *
   * PS. Измеряйте всё сами, а то я почти запутался.
+  *
+  * PPS. Сейчас при агрегации не используется массив агрегатных функций в качестве значений.
+  * Состояния агрегатных функций были отделены от интерфейса для манипуляции с ними, и кладутся в пул.
+  * Но в этом тесте осталось нечто похожее на старый сценарий использования хэш-таблиц при агрегации.
   */
 
 #define USE_AUTO_ARRAY	1
-#define IMITATE_UPDATES	0
 
 
 int main(int argc, char ** argv)
@@ -55,9 +56,9 @@ int main(int argc, char ** argv)
 	typedef DB::UInt64 Key;
 
 #if USE_AUTO_ARRAY
-	typedef DB::AggregateFunctionsPlainPtrs Value;
+	typedef DB::AutoArray<DB::IAggregateFunction*> Value;
 #else
-	typedef std::vector<DB::AggregateFunctionPlainPtr> Value;
+	typedef std::vector<DB::IAggregateFunction*> Value;
 #endif
 
 	size_t n = argc < 2 ? 10000000 : atoi(argv[1]);
@@ -133,11 +134,6 @@ int main(int argc, char ** argv)
 				new(&it->second) Value(value);
 				INIT;
 			}
-#if IMITATE_UPDATES
-			it->second[0]->add(row);
-			it->second[1]->add(row);
-			it->second[2]->add(row);
-#endif
 		}
 
 		watch.stop();
@@ -161,11 +157,6 @@ int main(int argc, char ** argv)
 		{
 			it = map.insert(std::make_pair(data[i], value)).first;
 			INIT;
-#if IMITATE_UPDATES
-			it->second[0]->add(row);
-			it->second[1]->add(row);
-			it->second[2]->add(row);
-#endif
 		}
 
 		watch.stop();
@@ -187,11 +178,6 @@ int main(int argc, char ** argv)
 		{
 			it = map.insert(std::make_pair(data[i], value)).first;
 			INIT;
-#if IMITATE_UPDATES
-			it->second[0]->add(row);
-			it->second[1]->add(row);
-			it->second[2]->add(row);
-#endif
 		}
 
 		watch.stop();
@@ -212,11 +198,6 @@ int main(int argc, char ** argv)
 		{
 			map.insert(std::make_pair(data[i], value));
 			INIT;
-#if IMITATE_UPDATES
-			it->second[0]->add(row);
-			it->second[1]->add(row);
-			it->second[2]->add(row);
-#endif
 		}
 
 		watch.stop();
