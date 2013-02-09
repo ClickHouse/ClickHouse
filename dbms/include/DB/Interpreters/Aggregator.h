@@ -49,6 +49,7 @@ typedef HashMap<UInt128, std::pair<Field*, AggregateDataPtr>, UInt128Hash, UInt1
 
 struct AggregatedDataVariants
 {
+	// TODO exception safety при работе с агрегатными функциями и ключами в пуле
 	/// Пулы для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
 	Arenas aggregates_pools;
 	Arena * aggregates_pool;	/// Последний пул, который используется для аллокации.
