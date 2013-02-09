@@ -102,6 +102,22 @@ struct AggregatedDataVariants
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 		}
 	}
+
+	const char * getMethodName() const
+	{
+		switch (type)
+		{
+			case EMPTY:			return "EMPTY";
+			case GENERIC:		return "GENERIC";
+			case WITHOUT_KEY:	return "WITHOUT_KEY";
+			case KEY_64:		return "KEY_64";
+			case KEY_STRING:	return "KEY_STRING";
+			case HASHED:		return "HASHED";
+
+			default:
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		}
+	}
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;

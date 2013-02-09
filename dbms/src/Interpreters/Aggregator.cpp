@@ -149,9 +149,13 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 	Stopwatch watch;
 
-	/// Читаем все данные
 	size_t src_rows = 0;
 	size_t src_bytes = 0;
+
+	bool keys_fit_128_bits = false;
+	Sizes key_sizes;
+
+	/// Читаем все данные
 	while (Block block = stream->read())
 	{
 		initialize(block);
@@ -175,9 +179,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		size_t rows = block.rows();
 
 		/// Каким способом выполнять агрегацию?
-		bool keys_fit_128_bits = false;
-		Sizes key_sizes;
-		result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
+		if (result.empty())
+		{
+			result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
+			LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+		}
 
 		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
 		{
