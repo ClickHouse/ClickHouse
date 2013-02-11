@@ -66,6 +66,8 @@ private:
 	CounterInFile reference_counter;
 	Context context;
 	
+	Logger * log;
+	
 	StorageChunks(const std::string & path_,
 				const std::string & name_,
 				const std::string & database_name_,

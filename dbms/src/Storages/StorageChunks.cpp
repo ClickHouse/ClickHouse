@@ -76,7 +76,7 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 }
 	
 StorageChunks::StorageChunks(const std::string & path_, const std::string & name_, const std::string & database_name_, NamesAndTypesListPtr columns_, Context & context_, bool attach)
-	: StorageLog(path_, name_, columns_), database_name(database_name_), index_loaded(false), reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"), context(context_)
+	: StorageLog(path_, name_, columns_), database_name(database_name_), index_loaded(false), reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"), context(context_), log(&Logger::get("StorageChunks"))
 {
 	if (!attach)
 		reference_counter.add(1, true);
@@ -119,6 +119,8 @@ void StorageChunks::appendChunkToIndex(const std::string & chunk_name, size_t ma
 
 void StorageChunks::dropThis()
 {
+	LOG_TRACE(log, "Table " << name << " will drop itself.");
+	
 	ASTDropQuery * query = new ASTDropQuery();
 	ASTPtr query_ptr = query;
 	query->detach = false;
