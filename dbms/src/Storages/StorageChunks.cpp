@@ -91,6 +91,10 @@ void StorageChunks::loadIndex()
 	index_loaded = true;
 	
 	String index_path = path + escapeForFileName(name) + "/chunks.chn";
+	
+	if (!Poco::File(index_path).exists())
+		return;
+
 	ReadBufferFromFile index(index_path, 4096);
 	while (!index.eof())
 	{
