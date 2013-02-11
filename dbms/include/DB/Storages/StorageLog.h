@@ -149,7 +149,10 @@ protected:
 	
 	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
 	
+	/// Нельзя вызывать с залоченным на запись rwlock.
 	void loadMarks();
+	
+	/// Можно вызывать при любом состоянии rwlock.
 	size_t marksCount();
 	
 	BlockInputStreams read(
