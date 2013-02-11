@@ -284,7 +284,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		query->storage = engine;
 		engine->name = "Chunks";
 		
-		InterpreterCreateQuery interpreter(query, context);
+		InterpreterCreateQuery interpreter(query_ptr, context);
 		new_storage_ptr = interpreter.execute();
 	}
 	
