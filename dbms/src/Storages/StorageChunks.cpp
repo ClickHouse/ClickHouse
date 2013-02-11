@@ -109,11 +109,11 @@ void StorageChunks::loadIndex()
 	}
 }
 
-void StorageChunks::appendChunkToIndex(const std::string & name, size_t mark)
+void StorageChunks::appendChunkToIndex(const std::string & chunk_name, size_t mark)
 {
 	String index_path = path + escapeForFileName(name) + "/chunks.chn";
 	WriteBufferFromFile index(index_path, 4096, O_APPEND | O_CREAT | O_WRONLY);
-	writeStringBinary(name, index);
+	writeStringBinary(chunk_name, index);
 	writeIntBinary<UInt64>(mark, index);
 }
 

@@ -76,7 +76,7 @@ private:
 	void dropThis();
 	
 	void loadIndex();
-	void appendChunkToIndex(const std::string & name, size_t mark);
+	void appendChunkToIndex(const std::string & chunk_name, size_t mark);
 };
 	
 }
