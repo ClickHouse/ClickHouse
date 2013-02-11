@@ -18,6 +18,7 @@
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageChunks.h>
 #include <DB/Storages/StorageChunkRef.h>
+#include <DB/Storages/StorageChunkMerger.h>
 
 
 namespace DB
@@ -62,6 +63,33 @@ StoragePtr StorageFactory::get(
 		String source_table		= dynamic_cast<ASTIdentifier &>(*args[1]).name;
 		
 		return StorageChunkRef::create(table_name, columns, context, source_database, source_table, attach);
+	}
+	else if (name == "ChunkMerger")
+	{
+		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+		
+		do
+		{
+			if (args_func.size() != 1)
+				break;
+			
+			ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+			
+			if (args.size() != 2)
+				break;
+			
+			String source_database = dynamic_cast<ASTIdentifier &>(*args[0]).name;
+			String source_table_name_regexp = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
+			String destination_database = dynamic_cast<ASTIdentifier &>(*args[2]).name;
+			String destination_name_prefix = dynamic_cast<ASTIdentifier &>(*args[3]).name;
+			size_t chunks_to_merge = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[4]).value);
+			
+			return StorageChunkMerger::create(database_name, table_name, columns, source_database, source_table_name_regexp, destination_database, destination_name_prefix, chunks_to_merge, context);
+		} while(false);
+		
+		throw Exception("Storage ChunkMerger requires exactly 5 parameters:"
+			" source database, regexp for source table names, destination database, destination tables name prefix, number of chunks to merge.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 	}
 	else if (name == "TinyLog")
 	{

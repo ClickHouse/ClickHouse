@@ -23,7 +23,7 @@ public:
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
-		const std::string & destination_database_, /// Префикс имен создаваемых таблиц типа Chunks.
+		const std::string & destination_database_, /// БД для создаваемых таблиц типа Chunks.
 		const std::string & destination_name_prefix_, /// Префикс имен создаваемых таблиц типа Chunks.
 		size_t chunks_to_merge_,			/// Сколько чанков сливать в одну группу.
 		Context & context_);				/// Известные таблицы.
