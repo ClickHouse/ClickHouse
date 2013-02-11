@@ -340,6 +340,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		for (size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index)
 		{
 			StoragePtr src_storage = chunks[chunk_index];
+			std::string src_name = src_storage->getTableName();
 			
 			/// Если таблицу успели удалить, ничего не делаем.
 			if (!context.getDatabases()[source_database].count(src_storage->getTableName()))
@@ -365,7 +366,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 				create_query->attach = false;
 				create_query->if_not_exists = false;
 				create_query->database = source_database;
-				create_query->table = src_storage->getTableName();
+				create_query->table = src_name;
 				
 				ASTFunction * ast_storage = new ASTFunction;
 				create_query->storage = ast_storage;
@@ -381,7 +382,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 			catch(...)
 			{
-				LOG_ERROR(log, "Chunk " + src_storage->getTableName() + " was removed but not replaced: data is lost!");
+				LOG_ERROR(log, "Chunk " + src_name + " was removed but not replaced. Its data is stored in table " << new_table_name << ". You may need to resolve this manually.");
 				
 				throw;
 			}
