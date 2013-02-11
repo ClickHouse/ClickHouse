@@ -215,7 +215,6 @@ bool StorageChunkMerger::maybeMergeSomething()
 	Storages chunks = selectChunksToMerge();
 	if (chunks.empty())
 		return false;
-	LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << ".");
 	mergeChunks(chunks);
 	return true;
 }
@@ -272,6 +271,8 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		if (!context.getDatabases().count(destination_database))
 			throw Exception("Destination database " + destination_database + " for table " + name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 		new_table_name = MakeNameUnique(new_table_name, context.getDatabases()[destination_database]);
+		
+		LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << " to new table " << new_table_name << ".");
 		
 		/// Составим запрос для создания Chunks таблицы.
 		ASTPtr query_ptr = context.getCreateQuery(this_database, name);
