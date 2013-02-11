@@ -288,7 +288,6 @@ void StorageLog::loadMarks()
 
 size_t StorageLog::marksCount()
 {
-	loadMarks();
 	return files.begin()->second.marks.size();
 }
 
@@ -363,10 +362,11 @@ BlockInputStreams StorageLog::read(
 	size_t max_block_size,
 	unsigned threads)
 {
+	loadMarks();
 	return read(0, marksCount(), column_names, query, settings, processed_stage, max_block_size, threads);
 }
 
-	
+
 BlockOutputStreamPtr StorageLog::write(
 	ASTPtr query)
 {
