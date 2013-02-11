@@ -215,6 +215,7 @@ bool StorageChunkMerger::maybeMergeSomething()
 	Storages chunks = selectChunksToMerge();
 	if (chunks.empty())
 		return false;
+	LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << ".");
 	mergeChunks(chunks);
 	return true;
 }
