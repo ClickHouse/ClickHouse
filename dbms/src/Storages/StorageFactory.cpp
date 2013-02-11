@@ -75,7 +75,7 @@ StoragePtr StorageFactory::get(
 			
 			ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 			
-			if (args.size() != 2)
+			if (args.size() != 5)
 				break;
 			
 			String source_database = dynamic_cast<ASTIdentifier &>(*args[0]).name;
