@@ -61,7 +61,7 @@ void Expression::createAliasesDict(ASTPtr & ast)
 			createAliasesDict(*it);
 	
 	std::string * alias = GetAlias(ast);
-	if (alias)
+	if (alias && !alias->empty())
 	{
 		if (aliases.count(*alias))
 		{
