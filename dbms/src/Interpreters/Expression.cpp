@@ -65,7 +65,7 @@ void Expression::createAliasesDict(ASTPtr & ast)
 	{
 		if (aliases.count(*alias))
 		{
-			throw Exception("Multiple expressions with the same alias", ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+			throw Exception("Multiple expressions with the same alias " + *alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 		}
 		else
 		{
