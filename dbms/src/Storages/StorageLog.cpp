@@ -345,7 +345,7 @@ BlockInputStreams StorageLog::read(
 			thisPtr(),
 			from_mark + thread * (to_mark - from_mark) / threads,
 			marks[from_mark + (thread + 1) * (to_mark - from_mark) / threads - 1].rows -
-				(thread == 0
+				((thread == 0 && from_mark == 0)
 					? 0
 					: marks[from_mark + thread * (to_mark - from_mark) / threads - 1].rows)));
 	}

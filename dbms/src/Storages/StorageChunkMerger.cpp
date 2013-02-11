@@ -392,6 +392,8 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 	while(false);
 	
 	new_storage->removeReference();
+	
+	LOG_TRACE(log, "Merged chunks.");
 }
 	
 }
