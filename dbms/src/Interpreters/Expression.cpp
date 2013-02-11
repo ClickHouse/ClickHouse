@@ -521,7 +521,7 @@ void Expression::getSampleBlockImpl(ASTPtr ast, Block & res)
 	{
 		if (ident->kind == ASTIdentifier::Column)
 		{
-			col.name = ident->name;
+			col.name = ident->getAlias();
 			col.type = ident->type;
 			res.insert(col);
 		}
