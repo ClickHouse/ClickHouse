@@ -32,6 +32,27 @@ NamesAndTypesList::const_iterator Expression::findColumn(const String & name)
 }
 
 
+static std::string * GetAlias(ASTPtr & ast)
+{
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		return &node->alias;
+	}
+	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		return &node->alias;
+	}
+	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
+	{
+		return &node->alias;
+	}
+	else
+	{
+		return NULL;
+	}
+}
+
+
 void Expression::createAliasesDict(ASTPtr & ast)
 {
 	/// Обход снизу-вверх. Не опускаемся в подзапросы.
@@ -39,20 +60,17 @@ void Expression::createAliasesDict(ASTPtr & ast)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
 			createAliasesDict(*it);
 	
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	std::string * alias = GetAlias(ast);
+	if (alias)
 	{
-		if (!node->alias.empty())
-			aliases[node->alias] = ast;
-	}
-	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
-	{
-		if (!node->alias.empty())
-			aliases[node->alias] = ast;
-	}
-	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
-	{
-		if (!node->alias.empty())
-			aliases[node->alias] = ast;
+		if (aliases.count(*alias))
+		{
+			throw Exception("Multiple expressions with the same alias", ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+		}
+		else
+		{
+			aliases[*alias] = ast;
+		}
 	}
 }
 
@@ -245,9 +263,33 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 		{
 			String tree_id = (*it)->getTreeID();
 			if (subtrees.end() == subtrees.find(tree_id))
+			{
 				subtrees[tree_id] = *it;
+			}
 			else
+			{
+				/// Перед заменой поддерева запомним алиас.
+				std::string * alias_ptr = GetAlias(*it);
+				std::string initial_alias;
+				if (alias_ptr)
+					initial_alias = *alias_ptr;
+				
 				*it = subtrees[tree_id];
+				
+				/// Объединим два алиаса.
+				alias_ptr = GetAlias(*it);
+				if (alias_ptr)
+				{
+					if (alias_ptr->empty())
+					{
+						*alias_ptr = initial_alias;
+					}
+					else if (!initial_alias.empty())
+					{
+						throw Exception("Multiple aliases for the same expression", ErrorCodes::MULTIPLE_ALIASES_FOR_EXPRESSION);
+					}
+				}
+			}
 		}
 	}
 }
