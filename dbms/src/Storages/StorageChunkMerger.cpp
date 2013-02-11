@@ -373,7 +373,8 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 				ast_storage->name = "ChunkRef";
 				
 				ASTExpressionList * engine_params = new ASTExpressionList;
-				ast_storage->children.push_back(engine_params);
+				ast_storage->parameters = engine_params;
+				ast_storage->children.push_back(ast_storage->parameters);
 				engine_params->children.push_back(NewIdentifier(destination_database, ASTIdentifier::Database));
 				engine_params->children.push_back(NewIdentifier(new_table_name, ASTIdentifier::Table));
 				

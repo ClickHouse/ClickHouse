@@ -175,15 +175,15 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 		throw Exception("Metadata file " + metadata_path + " for table " + db + "." + table_name + " doesn't exist.",
 			ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
 
-	String query;
+	StringPtr query = new String();
 	{
 		ReadBufferFromFile in(metadata_path);
-		WriteBufferFromString out(query);
+		WriteBufferFromString out(*query);
 		copyData(in, out);
 	}
 
-	const char * begin = query.data();
-	const char * end = begin + query.size();
+	const char * begin = query->data();
+	const char * end = begin + query->size();
 	const char * pos = begin;
 
 	ParserCreateQuery parser;
@@ -202,6 +202,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;
 	ast_create_query.database = db;
+	ast_create_query.query_string = query;
 
 	return ast;
 }
