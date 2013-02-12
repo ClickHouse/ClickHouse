@@ -63,9 +63,9 @@ void Expression::createAliasesDict(ASTPtr & ast)
 	std::string * alias = GetAlias(ast);
 	if (alias && !alias->empty())
 	{
-		if (aliases.count(*alias))
+		if (aliases.count(*alias) && ast != aliases[*alias])
 		{
-			throw Exception("Multiple expressions with the same alias " + *alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+			throw Exception("Differnt expressions with the same alias " + *alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 		}
 		else
 		{
@@ -284,9 +284,9 @@ void Expression::glueTreeImpl(ASTPtr ast, Subtrees & subtrees)
 					{
 						*alias_ptr = initial_alias;
 					}
-					else if (!initial_alias.empty())
+					else if (!initial_alias.empty() && initial_alias != *alias_ptr)
 					{
-						throw Exception("Multiple aliases for the same expression", ErrorCodes::MULTIPLE_ALIASES_FOR_EXPRESSION);
+						throw Exception("Multiple aliases " + initial_alias + " and " + *alias_ptr + " for the same expression", ErrorCodes::MULTIPLE_ALIASES_FOR_EXPRESSION);
 					}
 				}
 			}
