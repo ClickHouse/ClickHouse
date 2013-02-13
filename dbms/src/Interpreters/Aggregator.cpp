@@ -823,7 +823,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
+					aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
@@ -857,7 +857,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
+						aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 				}
 			}
 			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -886,7 +886,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
+						aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 				}
 			}
 			else
@@ -922,7 +922,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[i]->merge(it->second.second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
+					aggregate_functions[j]->merge(it->second.second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::GENERIC)
@@ -950,7 +950,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[i]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
+					aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
 		else
