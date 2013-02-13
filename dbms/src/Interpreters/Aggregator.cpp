@@ -26,6 +26,26 @@ void Aggregator::initialize(Block & block)
 		return;
 
 	initialized = true;
+
+	aggregate_functions.resize(aggregates_size);
+	for (size_t i = 0; i < aggregates_size; ++i)
+		aggregate_functions[i] = &*aggregates[i].function;
+
+	/// Инициализируем размеры состояний и смещения для агрегатных функций.
+	offsets_of_aggregate_states.resize(aggregates_size);
+	total_size_of_aggregate_states = 0;
+
+	for (size_t i = 0; i < aggregates_size; ++i)
+	{
+		offsets_of_aggregate_states[i] = total_size_of_aggregate_states;
+		total_size_of_aggregate_states += aggregates[i].function->sizeOfData();
+	}
+
+	/** Всё остальное - только если передан непустой block.
+	  * (всё остальное не нужно в методе merge блоков с готовыми состояниями агрегатных функций).
+	  */
+	if (!block)
+		return;
 	
 	/// Преобразуем имена столбцов в номера, если номера не заданы
 	if (keys.empty() && !key_names.empty())
@@ -36,10 +56,6 @@ void Aggregator::initialize(Block & block)
 		if (it->arguments.empty() && !it->argument_names.empty())
 			for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
 				it->arguments.push_back(block.getPositionByName(*jt));
-
-	aggregate_functions.resize(aggregates_size);
-	for (size_t i = 0; i < aggregates_size; ++i)
-		aggregate_functions[i] = &*aggregates[i].function;
 
 	/// Создадим пример блока, описывающего результат
 	if (!sample)
@@ -72,16 +88,6 @@ void Aggregator::initialize(Block & block)
 		for (size_t i = 0; i < columns; ++i)
 			if (block.getByPosition(i).column->isConst())
 				sample.insert(block.getByPosition(i).cloneEmpty());
-
-		/// Инициализируем размеры состояний и смещения для агрегатных функций.
-		offsets_of_aggregate_states.resize(aggregates_size);
-		total_size_of_aggregate_states = 0;
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-		{
-			offsets_of_aggregate_states[i] = total_size_of_aggregate_states;
-			total_size_of_aggregate_states += aggregates[i].function->sizeOfData();
-		}
 	}	
 }
 
@@ -749,6 +755,9 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	typedef ColumnAggregateFunction::Container_t * AggregateColumn;
 	typedef std::vector<AggregateColumn> AggregateColumns;
 	AggregateColumns aggregate_columns(aggregates_size);
+
+	Block empty_block;
+	initialize(empty_block);
 
 	/// Читаем все данные
 	while (Block block = stream->read())
