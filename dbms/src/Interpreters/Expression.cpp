@@ -63,7 +63,7 @@ void Expression::createAliasesDict(ASTPtr & ast)
 	std::string * alias = GetAlias(ast);
 	if (alias && !alias->empty())
 	{
-		if (aliases.count(*alias) && ast != aliases[*alias])
+		if (aliases.count(*alias) && ast->getTreeID() != aliases[*alias]->getTreeID())
 		{
 			throw Exception("Different expressions with the same alias " + *alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 		}
