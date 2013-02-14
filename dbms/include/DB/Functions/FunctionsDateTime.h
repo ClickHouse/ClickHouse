@@ -128,7 +128,7 @@ struct ToTimeImpl
 
 struct ToStartOfMinuteImpl
 {
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfMinute(t); }
+	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfMinuteInaccurate(t); }
 	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -137,7 +137,7 @@ struct ToStartOfMinuteImpl
 
 struct ToStartOfHourImpl
 {
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfHour(t); }
+	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfHourInaccurate(t); }
 	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
