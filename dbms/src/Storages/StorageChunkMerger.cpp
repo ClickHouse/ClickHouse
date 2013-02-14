@@ -7,12 +7,14 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
+#include <DB/DataStreams/AddingDefaultBlockInputStream.h>
 
 
 namespace DB
@@ -260,8 +262,54 @@ static ASTPtr NewIdentifier(const std::string & name, ASTIdentifier::Kind kind)
 	return res;
 }
 
+static std::string FormatColumnsForCreateQuery(NamesAndTypesList & columns)
+{
+	std::string res;
+	res += "(";
+	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+	{
+		if (it != columns.begin())
+			res += ", ";
+		res += it->first;
+		res += " ";
+		res += it->second->getName();
+	}
+	res += ")";
+	return res;
+}
+
 void StorageChunkMerger::mergeChunks(const Storages & chunks)
 {
+	typedef std::map<std::string, DataTypePtr> ColumnsMap;
+	
+	/// Объединим множества столбцов сливаемых чанков.
+	ColumnsMap known_columns_types(columns->begin(), columns->end());
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
+	*required_columns = *columns;
+	
+	for (size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index)
+	{
+		const NamesAndTypesList & current_columns = chunks[chunk_index]->getColumnsList();
+		
+		for (NamesAndTypesList::const_iterator it = current_columns.begin(); it != current_columns.end(); ++it)
+		{
+			const std::string & name = it->first;
+			const DataTypePtr & type = it->second;
+			if (known_columns_types.count(name))
+			{
+				if (type->getName() != known_columns_types[name]->getName())
+					throw Exception("Different types of column " + name + " in different chunks", ErrorCodes::TYPE_MISMATCH);
+			}
+			else
+			{
+				known_columns_types[name] = type;
+				required_columns->push_back(*it);
+			}
+		}
+	}
+	
+	std::string formatted_columns = FormatColumnsForCreateQuery(*required_columns);
+	
 	/// Атомарно выберем таблице уникальное имя и создадим ее.
 	std::string new_table_name = MakeName(destination_name_prefix, chunks[0]->getTableName(), chunks.back()->getTableName());
 	StoragePtr new_storage_ptr;
@@ -275,31 +323,42 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << " to new table " << new_table_name << ".");
 		
 		/// Составим запрос для создания Chunks таблицы.
-		ASTPtr query_ptr = context.getCreateQuery(this_database, name);
-		ASTCreateQuery * query = dynamic_cast<ASTCreateQuery *>(&*query_ptr);
-		query->attach = false;
-		query->if_not_exists = false;
-		query->database = destination_database;
-		query->table = new_table_name;
-		ASTFunction * engine = new ASTFunction;
-		query->storage = engine;
-		engine->name = "Chunks";
+		std::string create_query = "CREATE TABLE " + destination_database + "." + new_table_name + " " + formatted_columns + " ENGINE = Chunks";
 		
-		InterpreterCreateQuery interpreter(query_ptr, context);
+		/// Распарсим запрос.
+		const char * begin = create_query.data();
+		const char * end = begin + create_query.size();
+		const char * pos = begin;
+		
+		ParserCreateQuery parser;
+		ASTPtr ast_create_query;
+		String expected;
+		bool parse_res = parser.parse(pos, end, ast_create_query, expected);
+		
+		/// Распарсенный запрос должен заканчиваться на конец входных данных.
+		if (!parse_res || pos != end)
+			throw DB::Exception("Syntax error while parsing create query made by ChunkMerger."
+			" The query is \"" + create_query + "\"."
+			+ " Failed at position " + Poco::NumberFormatter::format(pos - begin) + ": "
+			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
+			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+			DB::ErrorCodes::LOGICAL_ERROR);
+		
+		/// Выполним запрос.
+		InterpreterCreateQuery interpreter(ast_create_query, context);
 		new_storage_ptr = interpreter.execute();
 	}
 	
 	/// Скопируем данные в новую таблицу.
 	StorageChunks * new_storage = dynamic_cast<StorageChunks *>(&*new_storage_ptr);
 	
-	Names column_names;
-	for (NamesAndTypesList::iterator it = columns->begin(); it != columns->end(); ++it)
-		column_names.push_back(it->first);
-	
 	for (size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index)
 	{
 		StoragePtr src_storage = chunks[chunk_index];
 		BlockOutputStreamPtr output = new_storage->writeToNewChunk(src_storage->getTableName());
+		
+		const NamesAndTypesList & src_columns = src_storage->getColumnsList();
+		Names src_column_names;
 		
 		ASTSelectQuery * select_query = new ASTSelectQuery;
 		ASTPtr select_query_ptr;
@@ -312,18 +371,21 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		select_query->table = NewIdentifier(src_storage->getTableName(), ASTIdentifier::Table);
 		ASTExpressionList * select_list = new ASTExpressionList;
 		select_query->select_expression_list = select_list;
-		for (size_t i = 0; i < column_names.size(); ++i)
-			select_list->children.push_back(NewIdentifier(column_names[i], ASTIdentifier::Column));
+		for (NamesAndTypesList::const_iterator it = src_columns.begin(); it != src_columns.end(); ++it)
+		{
+			src_column_names.push_back(it->first);
+			select_list->children.push_back(NewIdentifier(it->first, ASTIdentifier::Column));
+		}
 		
 		QueryProcessingStage::Enum processed_stage;
 		
 		BlockInputStreams input_streams = src_storage->read(
-			column_names,
+			src_column_names,
 			select_query_ptr,
 			context.getSettingsRef(),
 			processed_stage);
 		
-		BlockInputStreamPtr input = new ConcatBlockInputStream(input_streams);
+		BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
 		
 		copyData(*input, *output);
 	}
