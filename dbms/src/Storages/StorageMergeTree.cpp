@@ -1248,7 +1248,8 @@ void StorageMergeTree::mergeThread(bool while_can)
 	try
 	{
 		std::vector<DataPartPtr> parts;
-		while (selectPartsToMerge(parts))
+		while (selectPartsToMerge(parts, false) ||
+			   selectPartsToMerge(parts, true))
 		{
 			mergeParts(parts);
 
@@ -1299,17 +1300,22 @@ void StorageMergeTree::joinMergeThreads()
 /// Из всех таких выбираем отрезок с минимальным максимумом размера.
 /// Из всех таких выбираем отрезок с минимальным минимумом размера.
 /// Из всех таких выбираем отрезок с максимальной длиной.
-bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
+bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool merge_anything_for_old_months)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
+	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+	
 	size_t min_max = -1U;
 	size_t min_min = -1U;
 	int max_len = 0;
 	DataParts::iterator best_begin;
 	bool found = false;
+	
+	Yandex::DayNum_t now_day = date_lut.toDayNum(time(0));
+	Yandex::DayNum_t now_month = date_lut.toFirstDayNumOfMonth(now_day);
 		
 	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
 	/// Нужно для определения максимальности по включению.
@@ -1348,6 +1354,9 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 		Yandex::DayNum_t month = first_part->left_month;
 		UInt64 cur_id = first_part->right;
 		
+		/// Этот месяц кончился хотя бы день назад.
+		bool is_old_month = now_day - now_month >= 1 && now_month > month;
+		
 		/// Правый конец отрезка.
 		DataParts::iterator jt = it;
 		for (++jt; jt != data_parts.end() && cur_len < static_cast<int>(settings.max_parts_to_merge_at_once); ++jt)
@@ -1376,7 +1385,8 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts)
 			
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= 2 &&
-				static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts)
+				(static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts ||
+				(is_old_month && merge_anything_for_old_months))) /// За старый месяц объединяем что угодно, если разрешено.
 			{
 				cur_longest_max = cur_max;
 				cur_longest_min = cur_min;

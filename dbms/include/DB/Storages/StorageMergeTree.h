@@ -305,7 +305,8 @@ private:
 	/// Если while_can, объединяет в цикле, пока можно; иначе выбирает и объединяет только одну пару кусков.
 	void mergeThread(bool while_can);
 	/// Сразу помечает их как currently_merging.
-	bool selectPartsToMerge(std::vector<DataPartPtr> & parts);
+	/// Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
+	bool selectPartsToMerge(std::vector<DataPartPtr> & parts, bool merge_anything_for_old_months);
 	void mergeParts(std::vector<DataPartPtr> parts);
 	
 	/// Дождаться, пока фоновые потоки закончат слияния.
