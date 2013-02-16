@@ -2,7 +2,7 @@
 
 #include <DB/DataStreams/IBlockOutputStream.h>
 
-#define PRETTY_FORMAT_DEFAULT_MAX_ROWS 1000
+#define PRETTY_FORMAT_DEFAULT_MAX_ROWS 10000
 
 
 namespace DB
