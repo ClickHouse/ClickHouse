@@ -112,11 +112,17 @@ struct DivideFloatingImpl
 };
 
 
-template <typename T>
-inline void throwIfZero(T x)
+template <typename A, typename B>
+inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
-	if (unlikely(x == 0))
-		throw Exception("Division by zero", ErrorCodes::DIVISION_BY_ZERO);
+	/// Возможно, лучше вместо проверок использовать siglongjmp?
+	
+	if (unlikely(b == 0))
+		throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+
+	/// http://avva.livejournal.com/2548306.html
+	if (unlikely(std::tr1::is_signed<A>::value && std::tr1::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
+		throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
 template<typename A, typename B>
@@ -126,7 +132,7 @@ struct DivideIntegralImpl
 
 	static inline ResultType apply(A a, B b)
 	{
-		throwIfZero(b);
+		throwIfDivisionLeadsToFPE(a, b);
 		return static_cast<ResultType>(a) / b;
 	}
 };
@@ -138,7 +144,7 @@ struct ModuloImpl
 
 	static inline ResultType apply(A a, B b)
 	{
-		throwIfZero(typename NumberTraits::ToInteger<A>::Type(b));
+		throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
 		return typename NumberTraits::ToInteger<A>::Type(a)
 			% typename NumberTraits::ToInteger<A>::Type(b);
 	}
