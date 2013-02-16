@@ -47,6 +47,11 @@ public:
 	{
 		throw Exception("Cannot insert element into constant column " + getName(), ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 	}
+
+	void insertData(const char * pos, size_t length)
+	{
+		throw Exception("Cannot insert element into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
 	
 	void insertDefault() { ++s; }
 

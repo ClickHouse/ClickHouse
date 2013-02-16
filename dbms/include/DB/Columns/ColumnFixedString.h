@@ -72,6 +72,13 @@ public:
 		memcpy(&char_data[old_size], &src.char_data[n * index], n);
 	}
 
+	void insertData(const char * pos, size_t length)
+	{
+		size_t old_size = char_data.size();
+		char_data.resize(old_size + n);
+		memcpy(&char_data[old_size], pos, n);
+	}
+
 	void insertDefault()
 	{
 		char_data.resize(char_data.size() + n);

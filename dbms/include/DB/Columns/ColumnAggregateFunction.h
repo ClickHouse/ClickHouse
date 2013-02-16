@@ -76,6 +76,11 @@ public:
 	{
 		throw Exception("Method getDataAt is not supported for ColumnAggregateFunction. You must access underlying vector directly.", ErrorCodes::NOT_IMPLEMENTED);
 	}
+
+	void insertData(const char * pos, size_t length)
+	{
+		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
 	
 	void cut(size_t start, size_t length)
 	{

@@ -73,6 +73,15 @@ public:
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size_to_append);
 	}
 
+	void insertData(const char * pos, size_t length)
+	{
+		size_t old_size = char_data.size();
+
+		char_data.resize(old_size + length);
+		memcpy(&char_data[old_size], pos, length);
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + length);
+	}
+
 	void filter(const Filter & filt)
 	{
 		size_t size = getOffsets().size();

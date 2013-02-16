@@ -130,10 +130,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	if (keys_size == 0)
 		return AggregatedDataVariants::WITHOUT_KEY;
 
-	/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
-	if (keys_size == 1 && key_columns[0]->isNumeric()
-		&& !dynamic_cast<const ColumnFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnFloat64 *>(key_columns[0])
-		&& !dynamic_cast<const ColumnConstFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnConstFloat64 *>(key_columns[0]))
+	/// Если есть один ключ, который помещается в 64 бита
+	if (keys_size == 1 && key_columns[0]->isNumeric())
 		return AggregatedDataVariants::KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
@@ -298,7 +296,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				for (size_t i = 0; i < rows; ++i)
 				{
 					/// Строим ключ
-					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
+					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1]));
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;
@@ -538,16 +536,11 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		AggregatedDataWithUInt64Key & data = data_variants.key64;
 
 		IColumn & first_column = *key_columns[0];
-		bool is_signed = dynamic_cast<ColumnInt8 *>(&first_column) || dynamic_cast<ColumnInt16 *>(&first_column)
-			|| dynamic_cast<ColumnInt32 *>(&first_column) || dynamic_cast<ColumnInt64 *>(&first_column);
 
 		size_t j = 0;
 		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
-			if (is_signed)
-				first_column.insert(static_cast<Int64>(it->first));
-			else
-				first_column.insert(it->first);
+			first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
 
 			for (size_t i = 0; i < aggregates_size; ++i)
 				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
@@ -561,7 +554,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		size_t j = 0;
 		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
-			first_column.insert(String(it->first.data, it->first.size));	/// Здесь можно ускорить, сделав метод insertFrom(const char *, size_t size).
+			first_column.insertData(it->first.data, it->first.size);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
 				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
@@ -869,7 +862,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 				for (size_t i = 0; i < rows; ++i)
 				{
 					/// Строим ключ
-					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
+					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1]));
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;

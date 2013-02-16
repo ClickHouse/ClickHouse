@@ -62,6 +62,11 @@ public:
 		data.push_back(static_cast<const ColumnVectorBase<T> &>(src).getData()[n]);
 	}
 
+	void insertData(const char * pos, size_t length)
+	{
+		data.push_back(*reinterpret_cast<const T *>(pos));
+	}
+
 	void insertDefault()
 	{
 		data.push_back(T());
