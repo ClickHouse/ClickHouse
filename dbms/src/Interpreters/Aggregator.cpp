@@ -18,6 +18,22 @@ namespace DB
 {
 
 
+AggregatedDataVariants::~AggregatedDataVariants()
+{
+	if (type == HASHED)
+	{
+		/// Уничтожаем ключи из keys_pool.
+		for (AggregatedDataHashed::iterator it = hashed.begin(); it != hashed.end(); ++it)
+			if (it->second.first != NULL)	/// Они могли быть перенесены в другой AggregatedDataVariants, с занулением указателя.
+				for (size_t i = 0; i < keys_size; ++i)
+					it->second.first[i].~Field();
+	}
+
+	if (aggregator)
+		aggregator->destroyAggregateStates(*this);
+}
+
+
 void Aggregator::initialize(Block & block)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
@@ -165,6 +181,10 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	while (Block block = stream->read())
 	{
 		initialize(block);
+
+		/// result будет уничтожать состояния агрегатных функций в деструкторе
+		result.aggregator = this;
+		
 		src_rows += block.rows();
 		src_bytes += block.bytes();
 
@@ -577,6 +597,9 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	else
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
+	/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе
+	data_variants.aggregator = NULL;
+
 	/// Изменяем размер столбцов-констант в блоке.
 	size_t columns = res.columns();
 	for (size_t i = 0; i < columns; ++i)
@@ -732,6 +755,9 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		}
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+		/// current не будет уничтожать состояния агрегатных функций в деструкторе
+		current.aggregator = NULL;
 	}
 
 	double elapsed_seconds = watch.elapsedSeconds();
@@ -758,6 +784,9 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 	Block empty_block;
 	initialize(empty_block);
+
+	/// result будет уничтожать состояния агрегатных функций в деструкторе
+	result.aggregator = this;
 
 	/// Читаем все данные
 	while (Block block = stream->read())
@@ -960,5 +989,54 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	}
 }
 
+
+void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
+{
+	if (result.size() == 0)
+		return;
+
+	LOG_TRACE(log, "Destroying aggregate states in case of exception");
+
+	/// В какой структуре данных агрегированы данные?
+	if (result.type == AggregatedDataVariants::WITHOUT_KEY)
+	{
+		AggregatedDataWithoutKey & res_data = result.without_key;
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
+	}
+	else if (result.type == AggregatedDataVariants::KEY_64)
+	{
+		AggregatedDataWithUInt64Key & res_data = result.key64;
+
+		for (AggregatedDataWithUInt64Key::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
+	}
+	else if (result.type == AggregatedDataVariants::KEY_STRING)
+	{
+		AggregatedDataWithStringKey & res_data = result.key_string;
+
+		for (AggregatedDataWithStringKey::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
+	}
+	else if (result.type == AggregatedDataVariants::HASHED)
+	{
+		AggregatedDataHashed & res_data = result.hashed;
+
+		for (AggregatedDataHashed::iterator it = res_data.begin(); it != res_data.end(); ++it)
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->destroy(it->second.second + offsets_of_aggregate_states[i]);
+	}
+	else if (result.type == AggregatedDataVariants::GENERIC)
+	{
+		AggregatedData & res_data = result.generic;
+
+		for (AggregatedData::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
+	}
+}
 
 }

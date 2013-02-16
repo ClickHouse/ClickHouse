@@ -46,13 +46,32 @@ typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
 typedef HashMap<StringRef, AggregateDataPtr, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
 typedef HashMap<UInt128, std::pair<Field*, AggregateDataPtr>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
 
+class Aggregator;
+
 
 struct AggregatedDataVariants
 {
-	// TODO exception safety при работе с агрегатными функциями и ключами в пуле
+	/** Работа с состояниями агрегатных функций в пуле устроена следующим (неудобным) образом:
+	  * - при агрегации, состояния создаются в пуле с помощью функции IAggregateFunction::create (внутри - placement new произвольной структуры);
+	  * - они должны быть затем уничтожены с помощью IAggregateFunction::destroy (внутри - вызов деструктора произвольной структуры);
+	  * - если агрегация завершена, то, в функции Aggregator::convertToBlock, указатели на состояния агрегатных функций
+	  *   записываются в ColumnAggregateFunction; ColumnAggregateFunction "захватывает владение" ими, то есть - вызывает destroy в своём деструкторе.
+	  * - если при агрегации, до вызова Aggregator::convertToBlock вылетело исключение, то состояния агрегатных функций всё-равно должны быть уничтожены,
+	  *   иначе для сложных состояний (наприемер, AggregateFunctionUniq), будут утечки памяти;
+	  * - чтобы, в этом случае, уничтожить состояния, в деструкторе вызывается метод Aggregator::destroyAggregateStates,
+	  *   но только если переменная aggregator (см. ниже) не NULL;
+	  * - то есть, пока вы не передали владение состояниями агрегатных функций в ColumnAggregateFunction, установите переменную aggregator,
+	  *   чтобы при возникновении исключения, состояния были корректно уничтожены.
+	  *
+	  * PS. Это можно исправить, сделав пул, который знает о том, какие состояния агрегатных функций и в каком порядке в него уложены, и умеет сам их уничтожать.
+	  * Но это вряд ли можно просто сделать, так как в этот же пул планируется класть строки переменной длины.
+	  * В этом случае, пул не сможет знать, по каким смещениям хранятся объекты.
+	  */
+	Aggregator * aggregator;
+	
 	/// Пулы для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
 	Arenas aggregates_pools;
-	Arena * aggregates_pool;	/// Последний пул, который используется для аллокации.
+	Arena * aggregates_pool;	/// Пул, который сейчас используется для аллокации.
 	
 	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
 	AggregatedData generic;
@@ -87,20 +106,10 @@ struct AggregatedDataVariants
 	};
 	Type type;
 
-	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()), without_key(NULL), type(EMPTY) {}
+	AggregatedDataVariants() : aggregator(NULL), aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()), without_key(NULL), type(EMPTY) {}
 	bool empty() const { return type == EMPTY; }
 
-	~AggregatedDataVariants()
-	{
-		if (type == HASHED)
-		{
-			/// Уничтожаем ключи из keys_pool.
-			for (AggregatedDataHashed::iterator it = hashed.begin(); it != hashed.end(); ++it)
-				if (it->second.first != NULL)	/// Они могли быть перенесены в другой AggregatedDataVariants, с занулением указателя.
-					for (size_t i = 0; i < keys_size; ++i)
-						it->second.first[i].~Field();
-		}
-	}
+	~AggregatedDataVariants();
 
 	size_t size() const
 	{
@@ -183,6 +192,8 @@ public:
 	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
 private:
+	friend struct AggregatedDataVariants;
+	
 	ColumnNumbers keys;
 	Names key_names;
 	AggregateDescriptions aggregates;
@@ -211,6 +222,11 @@ private:
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
 	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+
+	/** Вызвать методы destroy для состояний агрегатных функций.
+	  * Используется в обработчике исключений при агрегации, так как RAII в данном случае не применим.
+	  */
+	void destroyAggregateStates(AggregatedDataVariants & result);
 };
 
 
