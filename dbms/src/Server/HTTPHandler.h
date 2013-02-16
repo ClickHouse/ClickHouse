@@ -24,7 +24,7 @@ private:
 
 	Logger * log;
 
- 	void processQuery(Poco::Net::NameValueCollection & params, Poco::Net::HTTPServerResponse & response, std::istream & istr);
+ 	void processQuery(Poco::Net::NameValueCollection & params, Poco::Net::HTTPServerResponse & response, std::istream & istr, bool readonly);
 };
 
 }

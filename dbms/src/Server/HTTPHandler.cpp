@@ -40,11 +40,12 @@ struct HTMLForm : public Poco::Net::HTMLForm
 };
 
 
-void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Net::HTTPServerResponse & response, std::istream & istr)
+void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Net::HTTPServerResponse & response, std::istream & istr, bool readonly)
 {
 	BlockInputStreamPtr query_plan;
 	
-	/** Часть запроса может быть передана в параметре query, а часть - POST-ом.
+	/** Часть запроса может быть передана в параметре query, а часть - POST-ом
+	  *  (точнее - в теле запроса, а метод не обязательно должен быть POST).
 	  * В таком случае, считается, что запрос - параметр query, затем перевод строки, а затем - данные POST-а.
 	  */
 	std::string query_param = params.get("query", "");
@@ -88,6 +89,9 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Ne
 		new_settings.max_threads = Poco::NumberParser::parseUnsigned(params.get("max_threads"));
 	if (params.has("database"))
 		context.setCurrentDatabase(params.get("database"));
+
+	if (readonly)
+		new_settings.limits.readonly = true;
 
 	context.setSettings(new_settings);
 
@@ -137,7 +141,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		
 		HTMLForm params(request);
 		std::istream & istr = request.stream();
-		processQuery(params, response, istr);
+		bool readonly = request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET;
+		processQuery(params, response, istr, readonly);
 
 		LOG_INFO(log, "Done processing query");
 	}
