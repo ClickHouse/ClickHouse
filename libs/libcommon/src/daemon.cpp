@@ -302,13 +302,13 @@ void Daemon::buildLoggers()
 		std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
 
 		// splitter
-		SplitterChannel *split = new SplitterChannel();
+		Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
 		// set up two channel chains
-		PatternFormatterWithOwnThreadNumber *pf = new PatternFormatterWithOwnThreadNumber(format);
+		Poco::AutoPtr<PatternFormatterWithOwnThreadNumber> pf = new PatternFormatterWithOwnThreadNumber(format);
 		pf->setProperty("times", "local");
-		FormattingChannel *log = new FormattingChannel(pf);
-		FileChannel *file = new FileChannel();
+		Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
+		Poco::AutoPtr<FileChannel> file = new FileChannel;
 		file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
 		file->setProperty("rotation", config().getRawString("logger.size", "100M"));
 		file->setProperty("archive", "number");
@@ -321,12 +321,12 @@ void Daemon::buildLoggers()
 		if (config().hasProperty("logger.errorlog"))
 		{
 			std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
-			Poco::LevelFilterChannel *level = new Poco::LevelFilterChannel();
+			Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
 			level->setLevel(Message::PRIO_NOTICE);
-			PatternFormatterWithOwnThreadNumber *pf = new PatternFormatterWithOwnThreadNumber(format);
+			Poco::AutoPtr<PatternFormatterWithOwnThreadNumber> pf = new PatternFormatterWithOwnThreadNumber(format);
 			pf->setProperty("times", "local");
-			FormattingChannel *errorlog = new FormattingChannel(pf);
-			FileChannel *errorfile = new FileChannel();
+			Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
+			Poco::AutoPtr<FileChannel> errorfile = new FileChannel;
 			errorfile->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
 			errorfile->setProperty("rotation", config().getRawString("logger.size", "100M"));
 			errorfile->setProperty("archive", "number");
@@ -345,10 +345,10 @@ void Daemon::buildLoggers()
 	else
 	{
 		// Выводим на консоль
-		ConsoleChannel * file = new ConsoleChannel();
-		PatternFormatterWithOwnThreadNumber * pf = new PatternFormatterWithOwnThreadNumber(format);
+		Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
+		Poco::AutoPtr<PatternFormatterWithOwnThreadNumber> pf = new PatternFormatterWithOwnThreadNumber(format);
 		pf->setProperty("times", "local");
-		FormattingChannel * log = new FormattingChannel(pf);
+		Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 		log->setChannel(file);
 
 		logger().close();
