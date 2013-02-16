@@ -41,11 +41,11 @@ struct ContextShared
 {
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
-	DatabaseDroppers database_droppers;					/// Reference counter'ы для ленивого удаления БД.
+	DatabaseDroppers database_droppers;						/// Reference counter'ы для ленивого удаления БД.
 	FunctionFactory function_factory;						/// Обычные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	DataTypeFactory data_type_factory;						/// Типы данных.
-	StorageFactory storage_factory;						/// Движки таблиц.
+	StorageFactory storage_factory;							/// Движки таблиц.
 	FormatFactory format_factory;							/// Форматы.
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	Logger * log;											/// Логгер.
@@ -71,6 +71,7 @@ private:
 	String current_database;								/// Текущая БД.
 	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;										/// Настройки выполнения запроса.
+	ProgressCallback progress_callback;						/// Колбек для отслеживания прогресса выполнения запроса.
 	
 	Context * session_context;								/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
 	Context * global_context;								/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
@@ -137,6 +138,10 @@ public:
 
 	const Settings & getSettingsRef() const { return settings; };
 	Settings & getSettingsRef() { return settings; };
+
+	void setProgressCallback(ProgressCallback callback);
+	/// Используется в InterpreterSelectQuery, чтобы передать его в IProfilingBlockInputStream.
+	ProgressCallback getProgressCallback() const;
 };
 
 

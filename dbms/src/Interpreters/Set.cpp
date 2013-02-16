@@ -260,8 +260,6 @@ void Set::create(DataTypes & types, ASTPtr node)
 
 void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const
 {
-	LOG_TRACE(log, "Checking set membership for block.");
-
 	ColumnUInt8 * c_res = new ColumnUInt8;
 	block.getByPosition(result).column = c_res;
 	ColumnUInt8::Container_t & vec_res = c_res->getData();
@@ -372,8 +370,6 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	}
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-
-	LOG_TRACE(log, "Checked set membership for block.");
 }
 
 }

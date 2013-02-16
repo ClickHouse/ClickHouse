@@ -57,6 +57,8 @@ void TCPHandler::runImpl()
 	
 	sendHello();
 
+	connection_context.setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
+
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
@@ -89,10 +91,6 @@ void TCPHandler::runImpl()
 			
 			after_check_cancelled.restart();
 			after_send_progress.restart();
-
-			LOG_DEBUG(log, "Query ID: " << state.query_id);
-			LOG_DEBUG(log, "Query: " << state.query);
-			LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(state.stage));
 
 			/// Запрос требует приёма данных от клиента?
 			if (state.io.out)
@@ -199,7 +197,6 @@ void TCPHandler::processOrdinaryQuery()
 	if (state.io.in)
 	{
 		AsynchronousBlockInputStream async_in(state.io.in);
-		async_in.setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
 
 		std::stringstream query_pipeline;
 		async_in.dumpTree(query_pipeline);
@@ -352,6 +349,10 @@ void TCPHandler::receiveQuery()
 	state.compression = Protocol::Compression::Enum(compression);
 
 	readStringBinary(state.query, *in);
+
+	LOG_DEBUG(log, "Query ID: " << state.query_id);
+	LOG_DEBUG(log, "Query: " << state.query);
+	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(state.stage));
 
 	state.io = executeQuery(state.query, query_context, state.stage);
 }

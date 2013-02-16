@@ -286,4 +286,16 @@ const Dictionaries & Context::getDictionaries() const
 	return *shared->dictionaries;
 }
 
+
+void Context::setProgressCallback(ProgressCallback callback)
+{
+	/// Колбек устанавливается на сессию или на запрос. В сессии одновременно обрабатывается только один запрос. Поэтому блокировка не нужна.
+	progress_callback = callback;
+}
+
+ProgressCallback Context::getProgressCallback() const
+{
+	return progress_callback;
+}
+
 }

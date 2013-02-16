@@ -193,7 +193,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	executeUnion(streams, expression);
 
-	/// Ограничения на результат
+	/// Ограничения на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
 	{
 		IProfilingBlockInputStream::LocalLimits limits;
@@ -202,8 +202,10 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		limits.read_overflow_mode = settings.limits.result_overflow_mode;
 
 		stream->setLimits(limits);
+
+		stream->setProgressCallback(context.getProgressCallback());
 	}
-	
+
 	return streams[0];
 }
 

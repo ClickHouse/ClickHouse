@@ -62,7 +62,6 @@ public:
 	  * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
 	  * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
 	  */
-	typedef boost::function<void(size_t, size_t)> ProgressCallback;
 	void setProgressCallback(ProgressCallback callback);
 
 	virtual void progress(Block & block);
