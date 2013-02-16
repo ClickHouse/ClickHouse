@@ -705,7 +705,7 @@ private:
 			size_t elapsed_ns = watch.elapsed();
 			if (elapsed_ns)
 				message << " ("
-					<< rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
+					<< rows_read_on_server * 1000000000.0 / elapsed_ns << " rows/s., "
 					<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 			else
 				message << ". ";
