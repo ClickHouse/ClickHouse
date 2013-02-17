@@ -988,7 +988,7 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	if (result.size() == 0)
 		return;
 
-	LOG_TRACE(log, "Destroying aggregate states in case of exception");
+	LOG_TRACE(log, "Destroying aggregate states because query execution was cancelled");
 
 	/// В какой структуре данных агрегированы данные?
 	if (result.type == AggregatedDataVariants::WITHOUT_KEY)
