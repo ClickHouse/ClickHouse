@@ -1,3 +1,5 @@
+#include <Poco/NumberParser.h>
+
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
@@ -118,6 +120,45 @@ bool Limits::trySet(const String & name, ReadBuffer & buf)
 		readBinary(value, buf);
 
 		if (!trySet(name, value))
+			throw Exception("Logical error: unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+	}
+	else
+		return false;
+
+	return true;
+}
+
+bool Limits::trySet(const String & name, const String & value)
+{
+	if (   name == "max_rows_to_read"
+		|| name == "max_bytes_to_read"
+		|| name == "max_rows_to_group_by"
+		|| name == "max_rows_to_sort"
+		|| name == "max_bytes_to_sort"
+		|| name == "max_result_rows"
+		|| name == "max_result_bytes"
+		|| name == "max_execution_time"
+		|| name == "min_execution_speed"
+		|| name == "timeout_before_checking_execution_speed"
+		|| name == "max_columns_to_read"
+		|| name == "max_temporary_columns"
+		|| name == "max_temporary_non_const_columns"
+		|| name == "max_subquery_depth"
+		|| name == "max_pipeline_depth"
+		|| name == "max_ast_depth"
+		|| name == "max_ast_elements"
+		|| name == "readonly")
+	{
+		if (!trySet(name, Poco::NumberParser::parseUnsigned64(value)))
+			throw Exception("Logical error: unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+	}
+	else if (name == "read_overflow_mode"
+		|| name == "group_by_overflow_mode"
+		|| name == "sort_overflow_mode"
+		|| name == "result_overflow_mode"
+		|| name == "timeout_overflow_mode")
+	{
+		if (!trySet(name, Field(value)))
 			throw Exception("Logical error: unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 	}
 	else

@@ -96,26 +96,8 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.setPath(config.getString("path"));
 
 	/// Загружаем настройки.
-	Settings settings;
-
-	settings.asynchronous 		= config.getBool("asynchronous", 	settings.asynchronous);
-	settings.max_block_size 	= config.getInt("max_block_size", 	settings.max_block_size);
-	settings.max_query_size 	= config.getInt("max_query_size", 	settings.max_query_size);
-	settings.max_threads 		= config.getInt("max_threads", 		settings.max_threads);
-	settings.interactive_delay 	= config.getInt("interactive_delay", settings.interactive_delay);
-	settings.connect_timeout 	= Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0);
-	settings.connect_timeout_with_failover_ms
-		= Poco::Timespan(config.getInt("connect_timeout_with_failover_ms", DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS) * 1000);
-	settings.receive_timeout 	= Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0);
-	settings.send_timeout 		= Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0);
-	settings.poll_interval		= config.getInt("poll_interval", 	settings.poll_interval);
-	settings.max_distributed_connections = config.getInt("max_distributed_connections", settings.max_distributed_connections);
-	settings.distributed_connections_pool_size =
-		config.getInt("distributed_connections_pool_size", settings.distributed_connections_pool_size);
-	settings.connections_with_failover_max_tries =
-		config.getInt("connections_with_failover_max_tries", settings.connections_with_failover_max_tries);
-
-	global_context.setSettings(settings);
+	Settings & settings = global_context.getSettingsRef();
+	settings.setProfile(config.getString("default_profile", "default"));
 
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(global_context);

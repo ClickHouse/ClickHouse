@@ -82,8 +82,11 @@ struct Limits
 	/// Установить настройку по имени.
 	bool trySet(const String & name, const Field & value);
 
-	/// Установить настройку по имени. Прочитать сериализованное значение из буфера.
+	/// Установить настройку по имени. Прочитать сериализованное в бинарном виде значение из буфера (для межсерверного взаимодействия).
 	bool trySet(const String & name, ReadBuffer & buf);
+
+	/// Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
+	bool trySet(const String & name, const String & value);
 
 private:
 	friend class Settings;

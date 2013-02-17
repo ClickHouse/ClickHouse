@@ -1,9 +1,14 @@
+#include <Poco/NumberParser.h>
+
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/Interpreters/Settings.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/Application.h>
 
 
 namespace DB
@@ -25,6 +30,7 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "max_distributed_connections") max_distributed_connections = safeGet<UInt64>(value);
 	else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = safeGet<UInt64>(value);
 	else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = safeGet<UInt64>(value);
+	else if (name == "profile") 			setProfile(get<const String &>(value));
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 }
@@ -49,8 +55,55 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		readVarUInt(value, buf);
 		set(name, value);
 	}
+	else if (name == "profile")
+	{
+		String value;
+		readBinary(value, buf);
+		setProfile(value);
+	}
 	else if (!limits.trySet(name, buf))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+}
+
+void Settings::set(const String & name, const String & value)
+{
+	if (   name == "max_block_size"
+		|| name == "max_threads"
+		|| name == "max_query_size"
+		|| name == "asynchronous"
+		|| name == "interactive_delay"
+		|| name == "connect_timeout"
+		|| name == "receive_timeout"
+		|| name == "send_timeout"
+		|| name == "poll_interval"
+		|| name == "connect_timeout_with_failover_ms"
+		|| name == "max_distributed_connections"
+		|| name == "distributed_connections_pool_size"
+		|| name == "connections_with_failover_max_tries")
+	{
+		set(name, Poco::NumberParser::parseUnsigned64(value));
+	}
+	else if (name == "profile")
+	{
+		setProfile(value);
+	}
+	else if (!limits.trySet(name, value))
+		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+}
+
+void Settings::setProfile(const String & profile_name)
+{
+	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
+	String elem = "profiles." + profile_name;
+	
+	if (!config.has(elem))
+		throw Exception("There is no profile '" + profile_name + "' in configuration file.", ErrorCodes::THERE_IS_NO_PROFILE);
+
+	Poco::Util::AbstractConfiguration::Keys config_keys;
+	config.keys(elem, config_keys);
+
+	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
+		set(*it, config.getString(elem + "." + *it));
 }
 
 void Settings::deserialize(ReadBuffer & buf)
