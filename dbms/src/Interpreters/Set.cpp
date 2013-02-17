@@ -351,7 +351,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
-			vec_res[i] = negative ^ (set.end() != set.find(pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes)));
+			vec_res[i] = negative ^ (set.end() != set.find(pack128(i, keys_fit_128_bits, keys_size, key_columns, key_sizes)));
 	}
 	else if (type == GENERIC)
 	{
