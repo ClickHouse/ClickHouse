@@ -200,18 +200,6 @@ static std::string MakeName(const std::string & prefix, const std::string & firs
 	return prefix + first_chunk + "_" + last_chunk.substr(lcp);
 }
 
-static std::string MakeNameUnique(const std::string & name, const Tables & existing_tables)
-{
-	if (!existing_tables.count(name))
-		return name;
-	for (size_t i = 1;; ++i)
-	{
-		std::string new_name = name + "_" + Poco::NumberFormatter::format(i);
-		if (!existing_tables.count(new_name))
-			return new_name;
-	}
-}
-
 bool StorageChunkMerger::maybeMergeSomething()
 {
 	Storages chunks = selectChunksToMerge();
@@ -318,9 +306,19 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		
 		if (!context.getDatabases().count(destination_database))
 			throw Exception("Destination database " + destination_database + " for table " + name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-		new_table_name = MakeNameUnique(new_table_name, context.getDatabases()[destination_database]);
 		
 		LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << " to new table " << new_table_name << ".");
+		
+		/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
+		std::string drop_query = "DROP TABLE IF EXISTS " + destination_database + "." + new_table_name;
+		ASTDropQuery * drop_ast = new ASTDropQuery;
+		ASTPtr drop_ptr = drop_ast;
+		drop_ast->database = destination_database;
+		drop_ast->detach = false;
+		drop_ast->if_exists = true;
+		drop_ast->table = new_table_name;
+		InterpreterDropQuery drop_interpreter(drop_ptr, context);
+		drop_interpreter.execute();
 		
 		/// Составим запрос для создания Chunks таблицы.
 		std::string create_query = "CREATE TABLE " + destination_database + "." + new_table_name + " " + formatted_columns + " ENGINE = Chunks";
@@ -345,8 +343,8 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			DB::ErrorCodes::LOGICAL_ERROR);
 		
 		/// Выполним запрос.
-		InterpreterCreateQuery interpreter(ast_create_query, context);
-		new_storage_ptr = interpreter.execute();
+		InterpreterCreateQuery create_interpreter(ast_create_query, context);
+		new_storage_ptr = create_interpreter.execute();
 	}
 	
 	/// Скопируем данные в новую таблицу.
