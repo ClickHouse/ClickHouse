@@ -83,7 +83,7 @@ inline void readStringBinary(std::string & s, DB::ReadBuffer & buf, size_t MAX_S
 		throw Poco::Exception("Too large string size.");
 
 	s.resize(size);
-	buf.readStrict(const_cast<char *>(s.data()), size);
+	buf.readStrict(&s[0], size);
 }
 
 
