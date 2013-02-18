@@ -34,7 +34,7 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
 	String & s = get<String &>(field);
 	s.resize(n);
 	/// непереносимо, но (действительно) быстрее
-	istr.readStrict(const_cast<char*>(s.data()), n);
+	istr.readStrict(&s[0], n);
 }
 
 
