@@ -408,6 +408,9 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			if (!context.getDatabases()[source_database].count(src_storage->getTableName()))
 				continue;
 			
+			/// Перед удалением таблицы запомним запрос для ее создания.
+			ASTPtr create_query_ptr = context.getCreateQuery(source_database, src_storage->getTableName());
+			
 			/// Роняем исходную таблицу.
 			ASTDropQuery * drop_query = new ASTDropQuery();
 			ASTPtr drop_query_ptr = drop_query;
@@ -423,12 +426,9 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			///  (если бы ChunkRef хранил что-то в директории с данными, тут возникли бы проблемы, потому что данные src_storage еще не удалены).
 			try
 			{
-				ASTPtr create_query_ptr = context.getCreateQuery(this_database, name);
 				ASTCreateQuery * create_query = dynamic_cast<ASTCreateQuery *>(&*create_query_ptr);
 				create_query->attach = false;
 				create_query->if_not_exists = false;
-				create_query->database = source_database;
-				create_query->table = src_name;
 				
 				ASTFunction * ast_storage = new ASTFunction;
 				create_query->storage = ast_storage;
