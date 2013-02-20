@@ -173,6 +173,8 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 	{
 		++buf.position();
 		negative = true;
+		if (unlikely(buf.eof()))
+			throwReadAfterEOF();
 	}
 
 	if (*buf.position() == '0')					/// В реальных данных много нулей.
