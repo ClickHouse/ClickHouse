@@ -143,10 +143,19 @@ StorageChunkMerger::StorageChunkMerger(
 {
 }
 
-StorageChunkMerger::~StorageChunkMerger()
+void StorageChunkMerger::dropImpl()
 {
 	thread_should_quit = true;
 	merge_thread.join();
+}
+
+StorageChunkMerger::~StorageChunkMerger()
+{
+	if (!thread_should_quit)
+	{
+		thread_should_quit = true;
+		merge_thread.join();
+	}
 }
 
 void StorageChunkMerger::mergeThread()
