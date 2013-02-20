@@ -28,7 +28,7 @@ Block MemoryBlockInputStream::readImpl()
 
 
 MemoryBlockOutputStream::MemoryBlockOutputStream(StoragePtr owned_storage)
-	: IBlockOutputStream(owned_storage), storage(reinterpret_cast<StorageMemory &>(owned_storage))
+	: IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageMemory &>(*owned_storage))
 {
 }
 
