@@ -652,10 +652,10 @@ private:
 			{
 				String current_format = format;
 
-				/// Формат может быть указан в SELECT запросе.
-				if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*parsed_query))
-					if (select->format)
-						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*select->format))
+				/// Формат может быть указан в запросе.
+				if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
+					if (query_with_output->format)
+						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*query_with_output->format))
 							current_format = id->name;
 				
 				block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);

@@ -2,6 +2,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTExistsQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/BlockIO.h>
@@ -33,7 +34,8 @@ public:
 	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf)
 	{
 		Block sample = getSampleBlock();
-		String format_name = "TabSeparated";
+		ASTPtr format_ast = dynamic_cast<ASTExistsQuery &>(*query_ptr).format;
+		String format_name = format_ast ? dynamic_cast<ASTIdentifier &>(*format_ast).name : "TabSeparated";
 
 		BlockInputStreamPtr in = executeImpl();
 		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);

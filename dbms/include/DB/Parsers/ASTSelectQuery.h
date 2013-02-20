@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTQueryWithOutput.h>
 
 
 namespace DB
@@ -9,7 +10,7 @@ namespace DB
 
 /** SELECT запрос
   */
-class ASTSelectQuery : public IAST
+class ASTSelectQuery : public ASTQueryWithOutput
 {
 public:
 	ASTPtr select_expression_list;
@@ -22,10 +23,9 @@ public:
 	ASTPtr order_expression_list;
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
-	ASTPtr format;
 
 	ASTSelectQuery() {}
-	ASTSelectQuery(StringRange range_) : IAST(range_) {}
+	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "SelectQuery"; };

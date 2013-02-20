@@ -16,11 +16,13 @@ bool ParserExistsQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_exists("EXISTS", true, true);
 	ParserString s_table("TABLE", true, true);
+	ParserString s_format("FORMAT", true, true);
 	ParserString s_dot(".");
 	ParserIdentifier name_p;
 
 	ASTPtr database;
 	ASTPtr table;
+	ASTPtr format;
 
 	ws.ignore(pos, end);
 
@@ -49,6 +51,19 @@ bool ParserExistsQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	}
 
 	ws.ignore(pos, end);
+	
+	if (s_format.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+		
+		ParserIdentifier format_p;
+		
+		if (!format_p.parse(pos, end, format, expected))
+			return false;
+		dynamic_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
+		
+		ws.ignore(pos, end);
+	}
 
 	ASTExistsQuery * query = new ASTExistsQuery(StringRange(begin, pos));
 	node = query;
@@ -57,6 +72,11 @@ bool ParserExistsQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
 	if (table)
 		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+	if (format)
+	{
+		query->format = format;
+		query->children.push_back(format);
+	}
 
 	return true;
 }

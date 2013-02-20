@@ -1,6 +1,7 @@
 #include <DB/IO/ReadBufferFromString.h>
 
 #include <DB/Parsers/ASTShowTablesQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/InterpreterShowTablesQuery.h>
@@ -22,9 +23,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 {
 	ASTShowTablesQuery query = dynamic_cast<const ASTShowTablesQuery &>(*query_ptr);
 	
+	String format_or_nothing;
+	if (query.format)
+		format_or_nothing = " FORMAT " + dynamic_cast<ASTIdentifier &>(*query.format).name;
+	
 	/// SHOW DATABASES
 	if (query.databases)
-		return "SELECT name FROM system.databases";
+		return "SELECT name FROM system.databases" + format_or_nothing;
 
 	String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
 	context.assertDatabaseExists(database);
@@ -34,6 +39,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 	if (!query.like.empty())
 		rewritten_query << " AND name LIKE " << mysqlxx::quote << query.like;
+	
+	rewritten_query << format_or_nothing;
 
 	return rewritten_query.str();
 }

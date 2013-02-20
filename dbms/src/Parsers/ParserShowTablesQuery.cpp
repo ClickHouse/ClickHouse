@@ -21,11 +21,13 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	ParserString s_databases("DATABASES", true, true);
 	ParserString s_from("FROM", true, true);
 	ParserString s_like("LIKE", true, true);
+	ParserString s_format("FORMAT", true, true);
 	ParserStringLiteral like_p;
 	ParserIdentifier name_p;
 
-	ASTPtr like_ast;
-	ASTPtr database_ast;
+	ASTPtr like;
+	ASTPtr database;
+	ASTPtr format;
 
 	ws.ignore(pos, end);
 
@@ -52,7 +54,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	{
 		ws.ignore(pos, end);
 
-		if (!name_p.parse(pos, end, database_ast, expected))
+		if (!name_p.parse(pos, end, database, expected))
 			return false;
 	}
 
@@ -62,19 +64,37 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	{
 		ws.ignore(pos, end);
 
-		if (!like_p.parse(pos, end, like_ast, expected))
+		if (!like_p.parse(pos, end, like, expected))
 			return false;
 	}
 
 	ws.ignore(pos, end);
+	
+	if (s_format.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+		
+		ParserIdentifier format_p;
+		
+		if (!format_p.parse(pos, end, format, expected))
+			return false;
+		dynamic_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
+		
+		ws.ignore(pos, end);
+	}
 
 	ASTShowTablesQuery * query = new ASTShowTablesQuery(StringRange(begin, pos));
 	node = query;
 
-	if (database_ast)
-		query->from = dynamic_cast<ASTIdentifier &>(*database_ast).name;
-	if (like_ast)
-		query->like = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*like_ast).value);
+	if (database)
+		query->from = dynamic_cast<ASTIdentifier &>(*database).name;
+	if (like)
+		query->like = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*like).value);
+	if (format)
+	{
+		query->format = format;
+		query->children.push_back(format);
+	}
 
 	return true;
 }
