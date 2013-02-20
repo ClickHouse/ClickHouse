@@ -53,12 +53,20 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		if (format.empty())
 			format = "Values";
 
-		/// Данные могут содержаться в распарсенной и ещё не распарсенной части запроса.
-		ConcatReadBuffer::ReadBuffers buffers;
-		ReadBuffer buf1(const_cast<char *>(query.data), query.end - query.data, 0);
+		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
 
-		buffers.push_back(&buf1);
-		if (remaining_data_istr)
+		/// Если данных нет.
+		bool has_remaining_data = remaining_data_istr && !remaining_data_istr->eof();
+			
+		if (!query.data && !has_remaining_data)
+			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+
+		ConcatReadBuffer::ReadBuffers buffers;
+		ReadBuffer buf1(const_cast<char *>(query.data), query.data ? query.end - query.data : 0, 0);
+
+		if (query.data)
+			buffers.push_back(&buf1);
+		if (has_remaining_data)
 			buffers.push_back(remaining_data_istr);
 
 		ConcatReadBuffer istr(buffers);
