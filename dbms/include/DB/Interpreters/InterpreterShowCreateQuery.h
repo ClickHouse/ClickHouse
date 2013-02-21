@@ -36,7 +36,7 @@ namespace DB
 		BlockInputStreamPtr executeAndFormat(WriteBuffer & buf)
 		{
 			Block sample = getSampleBlock();
-			ASTPtr format_ast = dynamic_cast<ASTExistsQuery &>(*query_ptr).format;
+			ASTPtr format_ast = dynamic_cast<ASTShowCreateQuery &>(*query_ptr).format;
 			String format_name = format_ast ? dynamic_cast<ASTIdentifier &>(*format_ast).name : "TabSeparated";
 			
 			BlockInputStreamPtr in = executeImpl();

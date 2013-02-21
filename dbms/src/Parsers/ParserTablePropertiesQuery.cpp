@@ -30,7 +30,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	ASTPtr query_ptr;
 
 	ws.ignore(pos, end);
-
+	
 	if (s_exists.ignore(pos, end, expected))
 	{
 		query_ptr = new ASTExistsQuery;
@@ -41,6 +41,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	}
 	else if (s_show.ignore(pos, end, expected))
 	{
+		ws.ignore(pos, end);
+		
 		if (!s_create.ignore(pos, end, expected))
 		{
 			pos = begin;
@@ -53,7 +55,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	{
 		return false;
 	}
-
+	
+	
 	ws.ignore(pos, end);
 
 	if (!s_table.ignore(pos, end, expected))
