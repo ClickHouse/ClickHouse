@@ -234,7 +234,7 @@ private:
 		catch (const Poco::Exception & e)
 		{
 			std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-			return e.code();
+			return ErrorCodes::POCO_EXCEPTION;
 		}
 		catch (const std::exception & e)
 		{
