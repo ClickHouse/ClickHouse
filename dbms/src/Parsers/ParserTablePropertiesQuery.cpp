@@ -17,7 +17,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	ParserString s_exists("EXISTS", true, true);
 	ParserString s_describe("DESCRIBE", true, true);
 	ParserString s_desc("DESC", true, true);
-	ParserString s_show_create("SHOW CREATE", true, true);
+	ParserString s_show("SHOW", true, true);
+	ParserString s_create("CREATE", true, true);
 	ParserString s_table("TABLE", true, true);
 	ParserString s_format("FORMAT", true, true);
 	ParserString s_dot(".");
@@ -38,8 +39,14 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	{
 		query_ptr = new ASTDescribeQuery;
 	}
-	else if (s_show_create.ignore(pos, end, expected))
+	else if (s_show.ignore(pos, end, expected))
 	{
+		if (!s_create.ignore(pos, end, expected))
+		{
+			pos = begin;
+			return false;
+		}
+		
 		query_ptr = new ASTShowCreateQuery;
 	}
 	else

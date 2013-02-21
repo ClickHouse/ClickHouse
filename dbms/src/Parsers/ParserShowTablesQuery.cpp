@@ -43,11 +43,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	{
 		query->databases = true;
 	}
-	else
+	else if (s_tables.ignore(pos, end, expected))
 	{
-		if (!s_tables.ignore(pos, end, expected))
-			return false;
-
 		ws.ignore(pos, end);
 
 		if (s_from.ignore(pos, end, expected))
@@ -67,6 +64,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 			if (!like_p.parse(pos, end, like, expected))
 				return false;
 		}
+	}
+	else
+	{
+		pos = begin;
+		return false;
 	}
 	
 	ws.ignore(pos, end);
