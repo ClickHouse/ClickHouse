@@ -289,18 +289,19 @@ void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent,
 	if (ast.databases)
 	{
 		s << (hilite ? hilite_keyword : "") << "SHOW DATABASES" << (hilite ? hilite_none : "");
-		return;
 	}
-	
-	s << (hilite ? hilite_keyword : "") << "SHOW TABLES" << (hilite ? hilite_none : "");
+	else
+	{
+		s << (hilite ? hilite_keyword : "") << "SHOW TABLES" << (hilite ? hilite_none : "");
 
-	if (!ast.from.empty())
-		s << (hilite ? hilite_keyword : "") << " FROM " << (hilite ? hilite_none : "")
-			<< backQuoteIfNeed(ast.from);
+		if (!ast.from.empty())
+			s << (hilite ? hilite_keyword : "") << " FROM " << (hilite ? hilite_none : "")
+				<< backQuoteIfNeed(ast.from);
 
-	if (!ast.like.empty())
-		s << (hilite ? hilite_keyword : "") << " LIKE " << (hilite ? hilite_none : "")
-			<< mysqlxx::quote << ast.like;
+		if (!ast.like.empty())
+			s << (hilite ? hilite_keyword : "") << " LIKE " << (hilite ? hilite_none : "")
+				<< mysqlxx::quote << ast.like;
+	}
 			
 	if (ast.format)
 	{
