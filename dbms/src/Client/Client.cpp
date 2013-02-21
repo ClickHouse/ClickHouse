@@ -177,6 +177,9 @@ private:
 
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
+	
+	/// Последнее полученное от сервера исключение.
+	ExceptionPtr last_exception;
 
 	Stopwatch watch;
 
@@ -226,22 +229,22 @@ private:
 				<< std::endl
 				<< "Stack trace:" << std::endl
 				<< e.getStackTrace().toString();
-			return 1;
+			return e.code();
 		}
 		catch (const Poco::Exception & e)
 		{
 			std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-			return 1;
+			return e.code();
 		}
 		catch (const std::exception & e)
 		{
 			std::cerr << "std::exception: " << e.what() << std::endl;
-			return 1;
+			return ErrorCodes::STD_EXCEPTION;
 		}
 		catch (...)
 		{
 			std::cerr << "Unknown exception" << std::endl;
-			return 1;
+			return ErrorCodes::UNKNOWN_EXCEPTION;
 		}
 	}
 	
@@ -297,11 +300,18 @@ private:
 			loop();
 
 			std::cout << "Bye." << std::endl;
+			
+			return 0;
 		}
 		else
+		{
 			nonInteractive();
-
-		return 0;
+			
+			if (last_exception)
+				return last_exception->code();
+			
+			return 0;
+		}
 	}
 
 
@@ -600,6 +610,7 @@ private:
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
+				last_exception = packet.exception;
 				return false;
 
 			case Protocol::Server::EndOfStream:
