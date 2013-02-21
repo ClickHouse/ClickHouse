@@ -172,21 +172,21 @@ void StorageChunkMerger::mergeThread()
 		}
 		catch (const DB::Exception & e)
 		{
-			LOG_ERROR(log, "StorageChunkMerger at " << name << " failed to merge: DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
+			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 		}
 		catch (const Poco::Exception & e)
 		{
-			LOG_ERROR(log, "StorageChunkMerger at " << name << " failed to merge: Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 		}
 		catch (const std::exception & e)
 		{
-			LOG_ERROR(log, "StorageChunkMerger at " << name << " failed to merge: std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
+			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
 		}
 		catch (...)
 		{
-			LOG_ERROR(log, "StorageChunkMerger at " << name << " failed to merge: unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
+			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 		
 		if (thread_should_quit)
