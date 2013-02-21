@@ -28,6 +28,9 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	ASTPtr like;
 	ASTPtr database;
 	ASTPtr format;
+	
+	ASTShowTablesQuery * query = new ASTShowTablesQuery;
+	ASTPtr query_ptr = query;
 
 	ws.ignore(pos, end);
 
@@ -38,36 +41,34 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 
 	if (s_databases.ignore(pos, end))
 	{
-		ASTShowTablesQuery * query = new ASTShowTablesQuery(StringRange(begin, pos));
 		query->databases = true;
-		node = query;
-		
-		return true;
 	}
-
-	if (!s_tables.ignore(pos, end, expected))
-		return false;
-
-	ws.ignore(pos, end);
-
-	if (s_from.ignore(pos, end, expected))
+	else
 	{
+		if (!s_tables.ignore(pos, end, expected))
+			return false;
+
 		ws.ignore(pos, end);
 
-		if (!name_p.parse(pos, end, database, expected))
-			return false;
-	}
+		if (s_from.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
 
-	ws.ignore(pos, end);
+			if (!name_p.parse(pos, end, database, expected))
+				return false;
+		}
 
-	if (s_like.ignore(pos, end, expected))
-	{
 		ws.ignore(pos, end);
 
-		if (!like_p.parse(pos, end, like, expected))
-			return false;
-	}
+		if (s_like.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
 
+			if (!like_p.parse(pos, end, like, expected))
+				return false;
+		}
+	}
+	
 	ws.ignore(pos, end);
 	
 	if (s_format.ignore(pos, end, expected))
@@ -83,9 +84,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 		ws.ignore(pos, end);
 	}
 
-	ASTShowTablesQuery * query = new ASTShowTablesQuery(StringRange(begin, pos));
-	node = query;
-
+	query->range = StringRange(begin, pos);
+	
 	if (database)
 		query->from = dynamic_cast<ASTIdentifier &>(*database).name;
 	if (like)
@@ -95,6 +95,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 		query->format = format;
 		query->children.push_back(format);
 	}
+	
+	node = query_ptr;
 
 	return true;
 }
