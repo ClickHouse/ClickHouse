@@ -57,6 +57,8 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(SetQuery)
 	DISPATCH(OptimizeQuery)
 	DISPATCH(ExistsQuery)
+	DISPATCH(ShowCreateQuery)
+	DISPATCH(DescribeQuery)
 	DISPATCH(ExpressionList)
 	DISPATCH(Function)
 	DISPATCH(Identifier)
