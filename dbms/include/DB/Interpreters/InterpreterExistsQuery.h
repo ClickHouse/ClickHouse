@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
-#include <DB/Parsers/ASTExistsQuery.h>
+#include <DB/Parsers/TablePropertiesQueriesASTs.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/DataStreams/OneBlockInputStream.h>

@@ -7,7 +7,7 @@
 #include <DB/Parsers/ASTUseQuery.h>
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTOptimizeQuery.h>
-#include <DB/Parsers/ASTExistsQuery.h>
+#include <DB/Parsers/TablePropertiesQueriesASTs.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
@@ -19,6 +19,8 @@
 #include <DB/Interpreters/InterpreterSetQuery.h>
 #include <DB/Interpreters/InterpreterOptimizeQuery.h>
 #include <DB/Interpreters/InterpreterExistsQuery.h>
+#include <DB/Interpreters/InterpreterDescribeQuery.h>
+#include <DB/Interpreters/InterpreterShowCreateQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
 
 
@@ -90,6 +92,16 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 		InterpreterExistsQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
+	else if (dynamic_cast<ASTShowCreateQuery *>(&*query_ptr))
+	{
+		InterpreterShowCreateQuery interpreter(query_ptr, context);
+		query_plan = interpreter.executeAndFormat(ostr);
+	}
+	else if (dynamic_cast<ASTDescribeQuery *>(&*query_ptr))
+	{
+		InterpreterDescribeQuery interpreter(query_ptr, context);
+		query_plan = interpreter.executeAndFormat(ostr);
+	}
 	else
 		throw Exception("Unknown type of query: " + query_ptr->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 }
@@ -155,6 +167,16 @@ BlockIO InterpreterQuery::execute()
 	else if (dynamic_cast<ASTExistsQuery *>(&*query_ptr))
 	{
 		InterpreterExistsQuery interpreter(query_ptr, context);
+		res = interpreter.execute();
+	}
+	else if (dynamic_cast<ASTShowCreateQuery *>(&*query_ptr))
+	{
+		InterpreterShowCreateQuery interpreter(query_ptr, context);
+		res = interpreter.execute();
+	}
+	else if (dynamic_cast<ASTDescribeQuery *>(&*query_ptr))
+	{
+		InterpreterDescribeQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
 	else

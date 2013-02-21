@@ -19,6 +19,10 @@ struct ColumnWithNameAndType
 	ColumnPtr column;
 	DataTypePtr type;
 	String name;
+	
+	ColumnWithNameAndType() {}
+	ColumnWithNameAndType(const ColumnPtr & column_, const DataTypePtr & type_, const String name_)
+		: column(column_), type(type_), name(name_) {}
 
 	ColumnWithNameAndType cloneEmpty() const
 	{

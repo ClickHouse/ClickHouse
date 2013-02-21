@@ -225,10 +225,33 @@ void formatAST(const ASTOptimizeQuery		& ast, std::ostream & s, size_t indent, b
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 }
 
+void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << name << " " << (hilite ? hilite_none : "")
+	<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
+	
+	if (ast.format)
+	{
+		std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
+		std::string nl_or_ws = one_line ? " " : "\n";
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "FORMAT " << (hilite ? hilite_none : "");
+		formatAST(*ast.format, s, indent, hilite, one_line);
+	}
+}
+
 void formatAST(const ASTExistsQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	s << (hilite ? hilite_keyword : "") << "EXISTS TABLE " << (hilite ? hilite_none : "")
-		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
+	formatAST(ast, "EXISTS TABLE", s, indent, hilite, one_line);
+}
+
+void formatAST(const ASTDescribeQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	formatAST(ast, "DESCRIBE TABLE", s, indent, hilite, one_line);
+}
+
+void formatAST(const ASTShowCreateQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	formatAST(ast, "SHOW CREATE TABLE", s, indent, hilite, one_line);
 }
 
 void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
@@ -276,6 +299,14 @@ void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent,
 	if (!ast.like.empty())
 		s << (hilite ? hilite_keyword : "") << " LIKE " << (hilite ? hilite_none : "")
 			<< mysqlxx::quote << ast.like;
+			
+	if (ast.format)
+	{
+		std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
+		std::string nl_or_ws = one_line ? " " : "\n";
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "FORMAT " << (hilite ? hilite_none : "");
+		formatAST(*ast.format, s, indent, hilite, one_line);
+	}
 }
 
 void formatAST(const ASTUseQuery				& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)

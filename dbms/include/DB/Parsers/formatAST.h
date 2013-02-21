@@ -12,7 +12,7 @@
 #include <DB/Parsers/ASTUseQuery.h>
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTOptimizeQuery.h>
-#include <DB/Parsers/ASTExistsQuery.h>
+#include <DB/Parsers/TablePropertiesQueriesASTs.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -36,18 +36,21 @@ void formatAST(const ASTCreateQuery 	& ast, std::ostream & s, size_t indent = 0,
 void formatAST(const ASTDropQuery 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTInsertQuery 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTRenameQuery 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
-void formatAST(const ASTShowTablesQuery	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTShowTablesQuery & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTUseQuery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTSetQuery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTOptimizeQuery	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
-void formatAST(const ASTExistsQuery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
-void formatAST(const ASTExpressionList 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTExistsQuery	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTDescribeQuery	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTShowCreateQuery & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTExpressionList & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTFunction 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
-void formatAST(const ASTIdentifier 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTIdentifier 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTLiteral 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTNameTypePair	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTAsterisk		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTOrderByElement	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTSubquery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
+void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 
 }

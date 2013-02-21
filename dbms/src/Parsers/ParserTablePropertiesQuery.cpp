@@ -1,20 +1,23 @@
 #include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTExistsQuery.h>
+#include <DB/Parsers/TablePropertiesQueriesASTs.h>
 
 #include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ParserExistsQuery.h>
+#include <DB/Parsers/ParserTablePropertiesQuery.h>
 
 
 namespace DB
 {
 
 
-bool ParserExistsQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	Pos begin = pos;
 
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_exists("EXISTS", true, true);
+	ParserString s_describe("DESCRIBE", true, true);
+	ParserString s_desc("DESC", true, true);
+	ParserString s_show_create("SHOW CREATE", true, true);
 	ParserString s_table("TABLE", true, true);
 	ParserString s_format("FORMAT", true, true);
 	ParserString s_dot(".");
@@ -23,11 +26,26 @@ bool ParserExistsQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ASTPtr database;
 	ASTPtr table;
 	ASTPtr format;
+	ASTPtr query_ptr;
 
 	ws.ignore(pos, end);
 
-	if (!s_exists.ignore(pos, end, expected))
+	if (s_exists.ignore(pos, end, expected))
+	{
+		query_ptr = new ASTExistsQuery;
+	}
+	else if (s_describe.ignore(pos, end, expected) || s_desc.ignore(pos, end, expected))
+	{
+		query_ptr = new ASTDescribeQuery;
+	}
+	else if (s_show_create.ignore(pos, end, expected))
+	{
+		query_ptr = new ASTShowCreateQuery;
+	}
+	else
+	{
 		return false;
+	}
 
 	ws.ignore(pos, end);
 
@@ -65,9 +83,10 @@ bool ParserExistsQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ws.ignore(pos, end);
 	}
 
-	ASTExistsQuery * query = new ASTExistsQuery(StringRange(begin, pos));
-	node = query;
+	ASTQueryWithTableAndOutput * query = dynamic_cast<ASTQueryWithTableAndOutput *>(&*query_ptr);
 
+	query->range = StringRange(begin, pos);
+	
 	if (database)
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
 	if (table)
@@ -77,6 +96,8 @@ bool ParserExistsQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		query->format = format;
 		query->children.push_back(format);
 	}
+	
+	node = query_ptr;
 
 	return true;
 }
