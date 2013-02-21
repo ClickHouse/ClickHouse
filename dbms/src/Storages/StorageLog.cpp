@@ -26,7 +26,7 @@ using Poco::SharedPtr;
 
 
 LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage, size_t mark_number_, size_t rows_limit_)
-	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(reinterpret_cast<StorageLog &>(*owned_storage)), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
+	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(dynamic_cast<StorageLog &>(*owned_storage)), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
 {
 }
 
@@ -121,7 +121,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 
 
 LogBlockOutputStream::LogBlockOutputStream(StoragePtr owned_storage)
-	: IBlockOutputStream(owned_storage), storage(reinterpret_cast<StorageLog &>(*owned_storage)), lock(storage.rwlock)
+	: IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageLog &>(*owned_storage)), lock(storage.rwlock)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		addStream(it->first, *it->second);
