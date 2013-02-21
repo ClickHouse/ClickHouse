@@ -68,7 +68,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(OrderByElement)
 	DISPATCH(Subquery)
 	else
-		throw DB::Exception("Unknown element in AST: " + std::string(ast.range.first, ast.range.second - ast.range.first),
+		throw DB::Exception("Unknown element in AST: " + ast.getID() + " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'",
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 	
 #undef DISPATCH
@@ -243,17 +243,17 @@ void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::os
 
 void formatAST(const ASTExistsQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	formatAST(ast, "EXISTS TABLE", s, indent, hilite, one_line);
+	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "EXISTS TABLE", s, indent, hilite, one_line);
 }
 
 void formatAST(const ASTDescribeQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	formatAST(ast, "DESCRIBE TABLE", s, indent, hilite, one_line);
+	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "DESCRIBE TABLE", s, indent, hilite, one_line);
 }
 
 void formatAST(const ASTShowCreateQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
-	formatAST(ast, "SHOW CREATE TABLE", s, indent, hilite, one_line);
+	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "SHOW CREATE TABLE", s, indent, hilite, one_line);
 }
 
 void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
