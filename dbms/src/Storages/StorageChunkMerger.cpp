@@ -151,16 +151,15 @@ void StorageChunkMerger::dropImpl()
 
 StorageChunkMerger::~StorageChunkMerger()
 {
-	if (!thread_should_quit)
-	{
-		thread_should_quit = true;
-		merge_thread.join();
-	}
+	merge_thread.detach();
 }
 
 void StorageChunkMerger::mergeThread()
 {
-	while (!thread_should_quit)
+	/// Не дает удалить this посреди итерации.
+	StoragePtr this_ptr = thisPtr();
+	
+	while (!thread_should_quit && this_ptr.use_count() > 1)
 	{
 		bool merged = false;
 		bool error = true;

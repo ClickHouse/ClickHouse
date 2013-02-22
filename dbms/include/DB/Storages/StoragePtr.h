@@ -52,6 +52,11 @@ public:
 			return ptr->storage.get();
 	}
 	
+	size_t use_count() const
+	{
+		return ptr.use_count();
+	}
+	
 	bool operator == (const IStorage * p) const
 	{
 		return get() == p;
