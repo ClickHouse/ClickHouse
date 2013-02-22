@@ -774,7 +774,9 @@ void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth)
 				DataTypes set_element_types;
 				ASTPtr & left_arg = args.children[0];
 
-				if (ASTFunction * left_arg_tuple = dynamic_cast<ASTFunction *>(&*left_arg))
+				ASTFunction * left_arg_tuple = dynamic_cast<ASTFunction *>(&*left_arg);
+
+				if (left_arg_tuple && left_arg_tuple->name == "tuple")
 					for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
 						it != left_arg_tuple->arguments->children.end();
 						++it)
