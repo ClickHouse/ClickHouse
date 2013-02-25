@@ -160,7 +160,7 @@ public:
 		TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(storage);
 		return *ptr;
 	};
-	
+
 	template <typename T> const T & get() const
 	{
 		typedef typename std::tr1::remove_reference<T>::type TWithoutRef;
@@ -191,7 +191,7 @@ public:
 			return true;
 		if (which > rhs.which)
 			return false;
-		
+
 		switch (which)
 		{
 			case Types::Null: 				return false;
@@ -263,11 +263,11 @@ public:
 
 
 	typedef std::vector<Field> Array;
-	
+
 private:
 	/// Хватает с запасом
 	static const size_t storage_size = DBMS_TOTAL_FIELD_SIZE - sizeof(Types::Which);
-	
+
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Null));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(UInt64));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Int64));
@@ -328,7 +328,7 @@ private:
 
 		if (which < Types::MIN_NON_POD)
 			return;
-		
+
 		switch (which)
 		{
 			case Types::String:
@@ -653,7 +653,7 @@ namespace mysqlxx
 {
 	inline std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Array & value)
 	{
-		throw Poco::Exception("Cannot escape Array with mysqlxx::escape.");
+		return res.ostr << apply_visitor(DB::FieldVisitorToString(), value);
 	}
 
 	inline std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value)
