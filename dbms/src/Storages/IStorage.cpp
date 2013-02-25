@@ -97,14 +97,23 @@ void IStorage::check(const Names & column_names) const
 }
 
 
-void IStorage::check(const Block & block) const
+void IStorage::check(const Block & block, bool need_all) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
 	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
 	
+	typedef std::tr1::unordered_set<String> NameSet;
+	NameSet names_in_block;
+	
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
+
+		if (names_in_block.count(column.name))
+			throw Exception("Duplicate column  " + column.name + " in block",
+							ErrorCodes::DUPLICATE_COLUMN);
+
+		names_in_block.insert(column.name);
 
 		NamesAndTypesMap::const_iterator it = columns_map.find(column.name);
 		if (columns_map.end() == it)
@@ -116,6 +125,15 @@ void IStorage::check(const Block & block) const
 			throw Exception("Type mismatch for column " + column.name + " in table " + getTableName()
 				+ ". Column has type " + it->second->getName() + ", got type " + column.type->getName(),
 				ErrorCodes::TYPE_MISMATCH);
+	}
+	
+	if (need_all && names_in_block.size() < columns_map.size())
+	{
+		for (NamesAndTypesList::iterator it = available_columns.begin(); it != available_columns.end(); ++it)
+		{
+			if (!names_in_block.count(it->first))
+				throw Exception("Expected column " + it->first, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+		}
 	}
 }
 

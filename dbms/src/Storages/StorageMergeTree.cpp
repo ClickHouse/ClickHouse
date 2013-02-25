@@ -58,7 +58,7 @@ public:
 
 	void write(const Block & block)
 	{
-		storage.check(block);
+		storage.check(block, true);
 
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 

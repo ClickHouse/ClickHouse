@@ -35,7 +35,7 @@ MemoryBlockOutputStream::MemoryBlockOutputStream(StoragePtr owned_storage)
 
 void MemoryBlockOutputStream::write(const Block & block)
 {
-	storage.check(block);
+	storage.check(block, true);
 	Poco::ScopedLock<Poco::FastMutex> lock(storage.mutex);
 	storage.data.push_back(block);
 }

@@ -152,7 +152,7 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 
 void TinyLogBlockOutputStream::write(const Block & block)
 {
-	storage.check(block);
+	storage.check(block, true);
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
