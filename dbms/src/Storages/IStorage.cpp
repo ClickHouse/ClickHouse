@@ -129,7 +129,7 @@ void IStorage::check(const Block & block, bool need_all) const
 	
 	if (need_all && names_in_block.size() < columns_map.size())
 	{
-		for (NamesAndTypesList::iterator it = available_columns.begin(); it != available_columns.end(); ++it)
+		for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
 		{
 			if (!names_in_block.count(it->first))
 				throw Exception("Expected column " + it->first, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
