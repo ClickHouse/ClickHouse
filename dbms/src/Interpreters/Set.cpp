@@ -267,7 +267,11 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 	/// Если множество пусто
 	if (data_types.empty())
+	{
+		if (negative)
+			memset(&vec_res[0], 1, vec_res.size());
 		return;
+	}
 
 	size_t keys_size = arguments.size();
 	Row key(keys_size);
