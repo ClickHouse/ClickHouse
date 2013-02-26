@@ -372,12 +372,6 @@ void StorageLog::loadMarks()
 }
 
 
-void StorageLog::writeAllMarks()
-{
-	
-}
-
-
 size_t StorageLog::marksCount()
 {
 	return files.begin()->second.marks.size();
