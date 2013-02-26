@@ -1,4 +1,5 @@
 #include <map>
+#include <Poco/Path.h>
 
 #include <DB/Common/escapeForFileName.h>
 
