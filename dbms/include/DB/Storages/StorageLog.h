@@ -81,26 +81,29 @@ private:
 
 	struct Stream
 	{
-		Stream(const std::string & data_path, const std::string & marks_path) :
+		Stream(const std::string & data_path) :
 			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY),
-			compressed(plain),
-			marks(marks_path, 4096, O_APPEND | O_CREAT | O_WRONLY)
+			compressed(plain)
 		{
 			plain_offset = Poco::File(data_path).getSize();
 		}
 		
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
-		WriteBufferFromFile marks;
 
 		size_t plain_offset;	/// Сколько байт было в файле на момент создания LogBlockOutputStream.
 	};
 
+	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;
+	
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
 	FileStreams streams;
+	
+	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void writeData(const String & name, const IDataType & type, const IColumn & column, size_t level = 0);
+	void writeData(const String & name, const IDataType & type, const IColumn & column, MarksForColumns & out_marks, size_t level = 0);
+	void writeMarks(MarksForColumns marks);
 };
 
 
@@ -136,8 +139,6 @@ public:
 	BlockOutputStreamPtr write(
 		ASTPtr query);
 
-	void dropImpl();
-	
 	void rename(const String & new_path_to_db, const String & new_name);
 
 protected:
@@ -149,8 +150,13 @@ protected:
 	
 	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
 	
+	/// Прочитать файлы с засечками, если они ещё не прочитаны.
+	/// Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
 	/// Нельзя вызывать с залоченным на запись rwlock.
 	void loadMarks();
+	
+	/// Записать засечки. Используется только для конвертации файлов засечек из старого формата в новый (для обратной совместимости).
+	void writeAllMarks();
 	
 	/// Можно вызывать при любом состоянии rwlock.
 	size_t marksCount();
@@ -169,18 +175,22 @@ private:
 	/// Данные столбца
 	struct ColumnData
 	{
+		/// Задает номер столбца в файле с засечками.
+		/// Не обязательно совпадает с номером столбца среди столбцов таблицы: здесь нумеруются также столбцы с длинами массивов.
+		size_t column_index;
+		
 		Poco::File data_file;
-		Poco::File marks_file;
 		Marks marks;
 	};
 	typedef std::map<String, ColumnData> Files_t;
-	Files_t files;
+	Files_t files; /// name -> data
+	Names column_names; /// column_index -> name
 	
+	Poco::File marks_file;
+	
+	/// Порядок добавления файлов не должен меняться: он соответствует порядку столбцов в файле с засечками.
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
-	/** Прочитать файлы с засечками, если они ещё не прочитаны.
-	  * Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
-	  */
 	bool loaded_marks;
 };
 
