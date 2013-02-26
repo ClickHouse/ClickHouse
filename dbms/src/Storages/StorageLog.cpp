@@ -130,7 +130,7 @@ LogBlockOutputStream::LogBlockOutputStream(StoragePtr owned_storage)
 
 void LogBlockOutputStream::write(const Block & block)
 {
-	storage.check(block);
+	storage.check(block, true);
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
@@ -304,8 +304,8 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
-		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
-		it->second.marks_file = Poco::File(path + escapeForFileName(name) + '/' + escapeForFileName(it->first) + DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION);
+		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
+		it->second.marks_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.marks_file.path()).getFileName());
 	}
 }
 
