@@ -125,6 +125,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "match")						return new FunctionMatch;
 	else if (name == "like")						return new FunctionLike;
 	else if (name == "notLike")						return new FunctionNotLike;
+	else if (name == "extract")						return new FunctionExtract;
 
 	else if (name == "halfMD5")						return new FunctionHalfMD5;
 	else if (name == "cityHash64")					return new FunctionCityHash64;
