@@ -369,7 +369,7 @@ private:
 			while (ws > 0 && IsWhitespace(line[ws-1]))
 				--ws;
 			
-			if (ws == 0)
+			if (ws == 0 && query.empty())
 				continue;
 			
 			bool ends_with_semicolon = line[ws - 1] == ';';
