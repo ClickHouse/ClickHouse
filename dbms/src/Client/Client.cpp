@@ -360,7 +360,7 @@ private:
 	void loop()
 	{
 		String query;
-		while (char * line_ = readline(query.empty() ? ":) " : ";-) "))
+		while (char * line_ = readline(query.empty() ? ":) " : ":-] "))
 		{
 			String line = line_;
 			free(line_);
