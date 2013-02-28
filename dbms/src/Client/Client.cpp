@@ -385,7 +385,7 @@ private:
 			
 			query += line;
 			
-			if (!ends_with_backslash && (ends_with_semicolon || !config().getBool("multiline")))
+			if (!ends_with_backslash && (ends_with_semicolon || !config().hasOption("multiline")))
 			{
 				if (!process(query))
 					break;
