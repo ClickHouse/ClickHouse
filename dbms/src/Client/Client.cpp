@@ -350,25 +350,51 @@ private:
 		}
 	}
 
+	
+	static bool IsWhitespace(char c)
+	{
+		return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+	}
+	
 
 	void loop()
 	{
-		while (char * line_ = readline(":) "))
+		String query;
+		while (char * line_ = readline(query.empty() ? ":) " : ";-) "))
 		{
-			String line(line_);
+			String line = line_;
 			free(line_);
-
-			if (line.empty())
+			
+			size_t ws = line.size();
+			while (ws > 0 && IsWhitespace(line[ws-1]))
+				--ws;
+			
+			if (ws == 0)
 				continue;
-
-			if (!process(line))
-				break;
+			
+			bool ends_with_semicolon = line[ws - 1] == ';';
+			bool ends_with_backslash = line[ws - 1] == '\\';
 			
 			add_history(line.c_str());
-
-			int res = append_history(1, history_file.c_str());
-			if (res)
+			
+			if (append_history(1, history_file.c_str()))
 				throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
+			
+			if (ends_with_backslash)
+				line = line.substr(0, ws - 1);
+			
+			query += line;
+			
+			if (!ends_with_backslash && (ends_with_semicolon || !config().getBool("multiline")))
+			{
+				if (!process(query))
+					break;
+				query = "";
+			}
+			else
+			{
+				query += '\n';
+			}
 		}
 	}
 
@@ -780,6 +806,12 @@ private:
 				.repeatable(false)
 				.argument("<string>")
 				.binding("database"));
+		
+		options.addOption(
+			Poco::Util::Option("multiline", "m")
+				.required(false)
+				.repeatable(false)
+				.binding("multiline"));
 	}
 };
 
