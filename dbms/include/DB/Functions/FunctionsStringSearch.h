@@ -313,7 +313,7 @@ struct MatchImpl
 
 
 /** Применяет регексп и достаёт:
-  * - первый subpattern, если в regexp-е *есть subpattern;
+  * - первый subpattern, если в regexp-е есть subpattern;
   * - нулевой subpattern (сматчившуюся часть, иначе);
   * - если не сматчилось - пустую строку.
   */
@@ -328,7 +328,7 @@ struct ExtractImpl
 		
 		const OptimizedRegularExpression & regexp = Regexps::get(pattern);
 
-		int capture = regexp.getRE2()->NumberOfCapturingGroups() > 0 ? 1 : 0;
+		int capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
 		OptimizedRegularExpression::MatchVec matches;
 		matches.reserve(capture + 1);
 		size_t prev_offset = 0;
@@ -487,7 +487,7 @@ public:
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
-			std::string res = 0;
+			std::string res;
 			Impl::constant(col->getData(), col_needle->getData(), res);
 			
 			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
