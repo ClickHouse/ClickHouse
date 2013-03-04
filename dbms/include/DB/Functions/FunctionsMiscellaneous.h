@@ -25,20 +25,21 @@ namespace DB
 
 /** Вспомогательные функции:
   *
-  * visibleWidth(x) - вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.
+  * visibleWidth(x)	- вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.
   * 
-  * toTypeName(x) 	- получить имя типа
-  * blockSize()     - получить размер блока
-  * materialize(x)  - материализовать константу
+  * toTypeName(x)	- получить имя типа
+  * blockSize()		- получить размер блока
+  * materialize(x)	- материализовать константу
   * ignore(...)		- функция, принимающая любые аргументы, и всегда возвращающая 0.
+  * sleep(seconds)	- спит указанное количество секунд каждый блок.
   *
-  * in(x, set)      - функция для вычисления оператора IN
-  * notIn(x, set)   -  и NOT IN.
+  * in(x, set)		- функция для вычисления оператора IN
+  * notIn(x, set)	-  и NOT IN.
   *
   * tuple(x, y, ...) - функция, позволяющая сгруппировать несколько столбцов
   * tupleElement(tuple, n) - функция, позволяющая достать столбец из tuple.
   *
-  * arrayJoin(arr)  - особая функция - выполнить её напрямую нельзя;
+  * arrayJoin(arr)	- особая функция - выполнить её напрямую нельзя;
   *                   используется только чтобы получить тип результата соответствующего выражения.
   */
 
@@ -365,6 +366,44 @@ public:
 	{
 		size_t size = block.getByPosition(0).column->size();
 		block.getByPosition(result).column = ColumnConstUInt64(size, size).convertToFullColumn();
+	}
+};
+
+
+class FunctionSleep : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "sleep";
+	}
+	
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		if (!dynamic_cast<const DataTypeFloat64 *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return new DataTypeUInt8;
+	}
+	
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		ColumnConst<Float64> * column = dynamic_cast<ColumnConst<Float64> *>(&*block.getByPosition(arguments[0]).column);
+		if (column == NULL)
+			throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+		
+		usleep(static_cast<unsigned>(column->getData() * 1e6));
+		
+		block.getByPosition(result).column = ColumnConst<UInt8>(column->size(), 0).convertToFullColumn();
 	}
 };
 

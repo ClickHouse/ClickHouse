@@ -454,16 +454,16 @@ public:
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-			
-			if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
-				throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-			
-			if (!dynamic_cast<const DataTypeString *>(&*arguments[1]))
-				throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-			
-			return new DataTypeString;
+		
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[1]))
+			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return new DataTypeString;
 	}
 	
 	/// Выполнить функцию над блоком.
