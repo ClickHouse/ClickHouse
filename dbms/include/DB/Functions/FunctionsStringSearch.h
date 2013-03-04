@@ -338,10 +338,10 @@ struct ExtractImpl
 		{
 			size_t cur_offset = offsets[i];
 			
-			regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
-			const OptimizedRegularExpression::Match & match = matches[capture];
-			if (match.offset != std::string::npos)
+			unsigned count = regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
+			if (count > capture && matches[capture].offset != std::string::npos)
 			{
+				const OptimizedRegularExpression::Match & match = matches[capture];
 				res_data.resize(res_offset + match.length + 1);
 				memcpy(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
 				res_offset += match.length;
