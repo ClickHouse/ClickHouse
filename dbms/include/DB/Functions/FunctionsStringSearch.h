@@ -358,16 +358,6 @@ struct ExtractImpl
 			prev_offset = cur_offset;
 		}
 	}
-	
-	static void constant(const std::string & data, const std::string & pattern, std::string & res)
-	{
-		std::vector<UInt8> vdata(data.begin(), data.end());
-		ColumnArray::Offsets_t offsets(1, data.size());
-		std::vector<UInt8> res_vdata;
-		ColumnArray::Offsets_t res_offsets;
-		vector(vdata, offsets, pattern, res_vdata, res_offsets);
-		res = std::string(res_vdata.begin(), res_vdata.end() - 1);
-	}
 };
 
 
@@ -487,8 +477,14 @@ public:
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
-			std::string res;
-			Impl::constant(col->getData(), col_needle->getData(), res);
+			const std::string & data = col->getData();
+			std::vector<UInt8> vdata(data.c_str(), data.c_str() + data.size() + 1);
+			ColumnArray::Offsets_t offsets(1, vdata.size());
+			std::vector<UInt8> res_vdata;
+			ColumnArray::Offsets_t res_offsets;
+			Impl::vector(vdata, offsets, col_needle->getData(), res_vdata, res_offsets);
+			
+			std::string res = std::string(res_vdata.begin(), res_vdata.end() - 1);
 			
 			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
 			block.getByPosition(result).column = col_res;

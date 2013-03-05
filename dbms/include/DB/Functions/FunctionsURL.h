@@ -4,6 +4,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/FunctionsString.h>
+#include "FunctionsStringSearch.h"
 
 
 namespace DB
@@ -256,6 +257,78 @@ struct ExtractWWW
 };
 
 
+struct ExtractURLParameterImpl
+{
+	static void vector(const std::vector<UInt8> & data,
+					    const ColumnArray::Offsets_t & offsets,
+					    std::string pattern,
+						std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	{
+		res_data.reserve(data.size()  / 5);
+		res_offsets.resize(offsets.size());
+		
+		pattern += '=';
+		const char * param_str = pattern.c_str();
+		size_t param_len = pattern.size();
+		
+		std::string and_pattern = '&' + pattern;
+		const char * and_param_str = and_pattern.c_str();
+		size_t and_param_len = and_pattern.size();
+		
+		size_t prev_offset = 0;
+		size_t res_offset = 0;
+		
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			size_t cur_offset = offsets[i];
+			
+			const char * pos = NULL;
+			
+			do
+			{
+				const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
+				
+				const char * begin = strchr(str, '?');
+				if (begin == NULL)
+					break;
+				++begin;
+				
+				if (!strncmp(begin, param_str, param_len))
+				{
+					pos = begin + param_len;
+					break;
+				}
+				
+				pos = strstr(begin, and_param_str);
+				if (pos != NULL)
+					pos += and_param_len;
+			} while (false);
+			
+			if (pos != NULL)
+			{
+				const char * end = strpbrk(pos, "&#");
+				if (end == NULL)
+					end = pos + strlen(pos);
+				
+				res_data.resize(res_offset + (end - pos) + 1);
+				memcpy(&res_data[res_offset], pos, end - pos);
+				res_offset += end - pos;
+			}
+			else
+			{
+				res_data.resize(res_offset + 1);
+			}
+			
+			res_data[res_offset] = 0;
+			++res_offset;
+			res_offsets[i] = res_offset;
+			
+			prev_offset = cur_offset;
+		}
+	}
+};
+
+
 /** Выделить кусок строки, используя Extractor.
   */
 template <typename Extractor>
@@ -372,19 +445,22 @@ struct NameCutQueryString				{ static const char * get() { return "cutQueryStrin
 struct NameCutFragment 					{ static const char * get() { return "cutFragment"; } };
 struct NameCutQueryStringAndFragment 	{ static const char * get() { return "cutQueryStringAndFragment"; } };
 
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 				NameProtocol>	 		FunctionProtocol;
+struct NameExtractURLParameter 		{ static const char * get() { return "extractURLParameter"; } };
+
+typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 			NameProtocol>	 		FunctionProtocol;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 			FunctionDomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >, 		NameDomainWithoutWWW>	FunctionDomainWithoutWWW;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, 		NameTopLevelDomain>		FunctionTopLevelDomain;
-typedef FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 					NamePath>				FunctionPath;
+typedef FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 				NamePath>				FunctionPath;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>		FunctionQueryString;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>			FunctionFragment;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>	FunctionQueryStringAndFragment;
 
 typedef FunctionStringToString<CutSubstringImpl<ExtractWWW>, 						NameCutWWW>				FunctionCutWWW;
 typedef FunctionStringToString<CutSubstringImpl<ExtractQueryString<false> >, 		NameCutQueryString>		FunctionCutQueryString;
-typedef FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 			NameCutFragment>		FunctionCutFragment;
+typedef FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 		NameCutFragment>		FunctionCutFragment;
 typedef FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>	FunctionCutQueryStringAndFragment;
 
+typedef FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter> FunctionExtractURLParameter;
 
 }
