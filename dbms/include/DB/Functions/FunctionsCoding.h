@@ -172,7 +172,7 @@ public:
 			res |= value << offset;
 			++pos;
 		}
-		if (*pos != '\0')
+		if (*(pos - 1) != '\0')
 			return 0;
 		return res;
 	}
