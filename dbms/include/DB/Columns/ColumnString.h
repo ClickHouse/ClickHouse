@@ -17,10 +17,13 @@ namespace DB
   */
 class ColumnString : public ColumnArray
 {
-private:
-	ColumnUInt8::Container_t & char_data;
-
 public:
+	typedef ColumnUInt8::Container_t DataVector_t;
+
+private:
+	DataVector_t & char_data;
+
+public:	
 	/** Создать пустой столбец строк, с типом значений */
 	ColumnString()
 		: ColumnArray(new ColumnUInt8()),
@@ -34,6 +37,9 @@ public:
 	{
 		return new ColumnString;
 	}
+	
+	ColumnUInt8::Container_t & getDataVector() { return char_data; }
+	const ColumnUInt8::Container_t & getDataVector() const { return char_data; }
 	
 	Field operator[](size_t n) const
 	{

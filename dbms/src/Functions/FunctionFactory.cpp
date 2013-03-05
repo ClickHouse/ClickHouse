@@ -133,6 +133,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "intHash32")					return new FunctionIntHash32;
 	
 	else if (name == "IPv4NumToString")			return new FunctionIPv4NumToString;
+	else if (name == "IPv4StringToNum")			return new FunctionIPv4StringToNum;
 
 	else if (name == "rand")						return new FunctionRand;
 	else if (name == "rand64")						return new FunctionRand64;

@@ -124,5 +124,92 @@ public:
 			ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
+
+class FunctionIPv4StringToNum : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "IPv4StringToNum";
+	}
+	
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return new DataTypeUInt32;
+	}
+	
+	static inline bool isDigit(char c)
+	{
+		return c >= '0' && c <= '9';
+	}
+	
+	static UInt32 parseIPv4(const char * pos)
+	{
+		UInt32 res = 0;
+		for (int offset = 24; offset >= 0; offset -= 8)
+		{
+			UInt32 value = 0;
+			size_t len = 0;
+			while (isDigit(*pos) && len <= 3)
+			{
+				value = value * 10 + (*pos - '0');
+				++len;
+				++pos;
+			}
+			if (len == 0 || value > 255 || (offset > 0 && *pos != '.'))
+				return 0;
+			res |= value << offset;
+			++pos;
+		}
+		if (*pos != '\0')
+			return 0;
+		return res;
+	}
+	
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr column = block.getByPosition(arguments[0]).column;
+		
+		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
+		{
+			ColumnVector<UInt32> * col_res = new ColumnVector<UInt32>;
+			block.getByPosition(result).column = col_res;
+			
+			ColumnVector<UInt32>::Container_t & vec_res = col_res->getData();
+			vec_res.resize(col->size());
+			
+			const ColumnString::DataVector_t & vec_src = col->getDataVector();
+			const ColumnString::Offsets_t & offsets_src = col->getOffsets();
+			size_t prev_offset = 0;
+			
+			for (size_t i = 0; i < vec_res.size(); ++i)
+			{
+				vec_res[i] = parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]));
+				prev_offset = offsets_src[i];
+			}
+		}
+		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
+		{
+			ColumnConst<UInt32> * col_res = new ColumnConst<UInt32>(col->size(), parseIPv4(col->getData().c_str()));
+			block.getByPosition(result).column = col_res;
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			+ " of argument of function " + getName(),
+							ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
 	
 }
