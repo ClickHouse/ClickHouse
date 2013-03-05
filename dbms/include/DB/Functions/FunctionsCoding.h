@@ -47,6 +47,20 @@ public:
 		return new DataTypeString;
 	}
 	
+	/// Быстрее, чем std::reverse.
+	static void reverseString(char *begin, char * end)
+	{
+		--end;
+		while (end > begin)
+		{
+			char c = *begin;
+			*begin = *end;
+			*end = c;
+			++begin;
+			--end;
+		}
+	}
+	
 	static void formatIP(UInt32 ip, char *& out)
 	{
 		char * begin = out;
@@ -76,7 +90,7 @@ public:
 		}
 		
 		/// И развернем.
-		std::reverse(begin, out);
+		reverseString(begin, out);
 		
 		*(out++) = '\0';
 	}
