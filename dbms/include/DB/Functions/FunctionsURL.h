@@ -271,10 +271,6 @@ struct ExtractURLParameterImpl
 		const char * param_str = pattern.c_str();
 		size_t param_len = pattern.size();
 		
-		std::string and_pattern = '&' + pattern;
-		const char * and_param_str = and_pattern.c_str();
-		size_t and_param_len = and_pattern.size();
-		
 		size_t prev_offset = 0;
 		size_t res_offset = 0;
 		
@@ -291,22 +287,22 @@ struct ExtractURLParameterImpl
 				const char * begin = strchr(str, '?');
 				if (begin == NULL)
 					break;
-				++begin;
 				
-				if (!strncmp(begin, param_str, param_len))
+				pos = strstr(begin + 1, param_str);
+				if (pos == NULL)
+					break;
+				if (pos != begin + 1 && *(pos - 1) != ';' && *(pos - 1) != '&')
 				{
-					pos = begin + param_len;
+					pos = NULL;
 					break;
 				}
 				
-				pos = strstr(begin, and_param_str);
-				if (pos != NULL)
-					pos += and_param_len;
+				pos += param_len;
 			} while (false);
 			
 			if (pos != NULL)
 			{
-				const char * end = strpbrk(pos, "&#");
+				const char * end = strpbrk(pos, "&;#");
 				if (end == NULL)
 					end = pos + strlen(pos);
 				
