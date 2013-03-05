@@ -151,6 +151,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "cutFragment")				return new FunctionCutFragment;
 	else if (name == "cutQueryStringAndFragment")	return new FunctionCutQueryStringAndFragment;
 	else if (name == "extractURLParameter")		return new FunctionExtractURLParameter;
+	else if (name == "extractURLParameters")		return new FunctionExtractURLParameters;
 
 	else if (name == "visibleWidth")				return new FunctionVisibleWidth;
 	else if (name == "toTypeName")					return new FunctionToTypeName;

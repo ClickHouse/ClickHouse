@@ -4,7 +4,8 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/FunctionsString.h>
-#include "FunctionsStringSearch.h"
+#include <DB/Functions/FunctionsStringSearch.h>
+#include <DB/Functions/FunctionsStringArray.h>
 
 
 namespace DB
@@ -325,6 +326,69 @@ struct ExtractURLParameterImpl
 };
 
 
+class ExtractURLParametersImpl
+{
+private:
+	Pos pos;
+	Pos end;
+	bool first;
+	
+public:
+	static String getName() { return "extractURLParameters"; }
+	
+	static void checkArguments(const DataTypes & arguments)
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+	
+	void init(Block & block, const ColumnNumbers & arguments) {}
+	
+	/// Вызывается для каждой следующей строки.
+	void set(Pos pos_, Pos end_)
+	{
+		pos = pos_;
+		end = end_;
+		first = true;
+	}
+	
+	/// Получить следующий токен, если есть, или вернуть false.
+	bool get(Pos & token_begin, Pos & token_end)
+	{
+		if (pos == NULL)
+			return false;
+		
+		if (first)
+		{
+			first = false;
+			pos = strchr(pos, '?');
+			if (pos == NULL)
+				return false;
+			++pos;
+		}
+		
+		token_begin = pos;
+		pos = strchr(pos, '=');
+		if (pos == NULL)
+			return false;
+		++pos;
+		pos = strpbrk(pos, "&;#");
+		if (pos == NULL)
+			token_end = end;
+		else
+			token_end = pos++;
+		
+		return true;
+	}
+};
+
+
 /** Выделить кусок строки, используя Extractor.
   */
 template <typename Extractor>
@@ -458,5 +522,6 @@ typedef FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 		Name
 typedef FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>	FunctionCutQueryStringAndFragment;
 
 typedef FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter> FunctionExtractURLParameter;
+typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
 
 }
