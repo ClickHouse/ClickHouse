@@ -18,6 +18,7 @@
 #include <DB/Functions/FunctionsRound.h>
 #include <DB/Functions/FunctionsReinterpret.h>
 #include <DB/Functions/FunctionsFormatting.h>
+#include <DB/Functions/FunctionsCoding.h>
 
 #include <DB/Functions/FunctionFactory.h>
 
@@ -130,6 +131,8 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "halfMD5")						return new FunctionHalfMD5;
 	else if (name == "cityHash64")					return new FunctionCityHash64;
 	else if (name == "intHash32")					return new FunctionIntHash32;
+	
+	else if (name == "IPv4NumToString")			return new FunctionIPv4NumToString;
 
 	else if (name == "rand")						return new FunctionRand;
 	else if (name == "rand64")						return new FunctionRand64;
