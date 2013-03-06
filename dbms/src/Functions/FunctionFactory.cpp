@@ -187,6 +187,9 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "regionIn")					return new FunctionRegionIn(context.getDictionaries().getRegionsHierarchy());
 	else if (name == "OSIn")						return new FunctionOSIn(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEIn")						return new FunctionSEIn(context.getDictionaries().getTechDataHierarchy());
+	else if (name == "regionHierarchy")			return new FunctionRegionHierarchy(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "OSHierarchy")				return new FunctionOSHierarchy(context.getDictionaries().getTechDataHierarchy());
+	else if (name == "SEHierarchy")				return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
 
 	else
 		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
