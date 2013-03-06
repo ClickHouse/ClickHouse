@@ -330,7 +330,7 @@ public:
 			T cur = col_from->getData();
 			while (cur)
 			{
-				res.push_back(static_cast<NearestFieldType<T>::Type>(cur));
+				res.push_back(static_cast<typename NearestFieldType<T>::Type>(cur));
 				cur = Transform::toParent(cur, dict);
 			}
 			
