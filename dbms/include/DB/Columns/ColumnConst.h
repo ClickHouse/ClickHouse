@@ -127,8 +127,8 @@ typedef ColumnConst<Array> ColumnConstArray;
 template <typename T> ColumnConst<T>::ColumnConst(size_t s_, const T & data_) : s(s_), data(data_) {}
 template <typename T> ColumnConst<T>::ColumnConst(size_t s_, const T & data_, DataTypePtr nested_type_) { throw Exception("Can't create non-array ColumnConst with nested type", ErrorCodes::LOGICAL_ERROR); }
 
-template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_) { throw Exception("Can't create ColumnConst<Array> without nested type", ErrorCodes::LOGICAL_ERROR); }
-template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_, DataTypePtr nested_type_) : s(s_), data(data_), nested_type(nested_type_) {}
+template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_);
+template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_, DataTypePtr nested_type_);
 
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const

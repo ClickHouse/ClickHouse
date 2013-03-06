@@ -6,6 +6,10 @@
 
 namespace DB
 {
+	
+template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_) { throw Exception("Can't create ColumnConst<Array> without nested type", ErrorCodes::LOGICAL_ERROR); }
+template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_, DataTypePtr nested_type_) : s(s_), data(data_), nested_type(nested_type_) {}
+
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 {
@@ -47,5 +51,6 @@ template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 
 	return res;
 }
+
 
 }
