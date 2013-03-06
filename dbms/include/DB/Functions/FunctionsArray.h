@@ -54,7 +54,7 @@ public:
 		for (size_t i = 0, size = arguments.size(); i < size; ++i)
 			arr.push_back((*block.getByPosition(arguments[i]).column)[0]);
 
-		block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(arguments[0]).column->size(), arr);
+		block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(arguments[0]).column->size(), arr, block.getByPosition(arguments[0]).type);
 	}
 };
 

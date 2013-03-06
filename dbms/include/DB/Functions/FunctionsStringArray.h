@@ -306,7 +306,7 @@ public:
 			while (generator.get(token_begin, token_end))
 				dst.push_back(String(token_begin, token_end - token_begin));
 
-			block.getByPosition(result).column = new ColumnConstArray(col_const_str->size(), dst);
+			block.getByPosition(result).column = new ColumnConstArray(col_const_str->size(), dst, new DataTypeString);
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments.back()).column->getName()
@@ -317,8 +317,8 @@ public:
 };
 
 
-typedef FunctionTokens<AlphaTokensImpl>		FunctionAlphaTokens;
-typedef FunctionTokens<SplitByCharImpl>		FunctionSplitByChar;
+typedef FunctionTokens<AlphaTokensImpl>	FunctionAlphaTokens;
+typedef FunctionTokens<SplitByCharImpl>	FunctionSplitByChar;
 typedef FunctionTokens<SplitByStringImpl>	FunctionSplitByString;
 
 }

@@ -7,6 +7,7 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/IColumn.h>
+#include <DB/DataTypes/IDataType.h>
 
 
 namespace DB
@@ -31,7 +32,9 @@ class ColumnConst : public IColumnConst
 public:
 	typedef T Type;
 	
-	ColumnConst(size_t s_, const T & data_) : s(s_), data(data_) {}
+	ColumnConst(size_t s_, const T & data_);
+	
+	ColumnConst(size_t s_, const T & data_, DataTypePtr nested_type_);
 
 	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const { return IsNumber<T>::value; }
@@ -113,11 +116,19 @@ public:
 private:
 	size_t s;
 	T data;
+	DataTypePtr nested_type; /// Только для массивов.
 };
 
 
 typedef ColumnConst<String> ColumnConstString;
 typedef ColumnConst<Array> ColumnConstArray;
+
+
+template <typename T> ColumnConst<T>::ColumnConst(size_t s_, const T & data_) : s(s_), data(data_) {}
+template <typename T> ColumnConst<T>::ColumnConst(size_t s_, const T & data_, DataTypePtr nested_type_) { throw Exception("Can't create non-array ColumnConst with nested type", ErrorCodes::LOGICAL_ERROR); }
+
+template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_) { throw Exception("Can't create ColumnConst<Array> without nested type", ErrorCodes::LOGICAL_ERROR); }
+template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_, DataTypePtr nested_type_) : s(s_), data(data_), nested_type(nested_type_) {}
 
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
@@ -149,16 +160,16 @@ template <typename T> StringRef getDataAtImpl(size_t n, const T & data)
 	return StringRef(reinterpret_cast<const char *>(&data), sizeof(data));
 }
 
-template <> inline StringRef ColumnConst<UInt8	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<UInt8		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<UInt16	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<UInt32	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<UInt64	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<Int8	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<Int16	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<Int32	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<Int64	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<Float32>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<Float64>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int8		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int16		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int32		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Int64		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Float32	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<Float64	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 
 
 }

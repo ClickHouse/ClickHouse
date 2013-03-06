@@ -334,7 +334,7 @@ public:
 				cur = Transform::toParent(cur, dict);
 			}
 			
-			block.getByPosition(result).column = new ColumnConstArray(col_from->size(), res);
+			block.getByPosition(result).column = new ColumnConstArray(col_from->size(), res, new DataTypeFromFieldType<T>::Type);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
