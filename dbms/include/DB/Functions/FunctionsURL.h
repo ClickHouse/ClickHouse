@@ -342,78 +342,6 @@ public:
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
-			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	
-	void init(Block & block, const ColumnNumbers & arguments) {}
-	
-	/// Вызывается для каждой следующей строки.
-	void set(Pos pos_, Pos end_)
-	{
-		pos = pos_;
-		end = end_;
-		first = true;
-	}
-	
-	/// Получить следующий токен, если есть, или вернуть false.
-	bool get(Pos & token_begin, Pos & token_end)
-	{
-		if (pos == NULL)
-			return false;
-		
-		if (first)
-		{
-			first = false;
-			pos = strchr(pos, '?');
-			if (pos == NULL)
-				return false;
-			++pos;
-		}
-		
-		token_begin = pos;
-		pos = strchr(pos, '=');
-		if (pos == NULL)
-			return false;
-		++pos;
-		pos = strpbrk(pos, "&;#");
-		if (pos == NULL)
-		{
-			token_end = end;
-		}
-		else
-		{
-			token_end = pos;
-			
-			if (*pos == '#')
-				pos = NULL;
-			else
-				++pos;
-		}
-		
-		return true;
-	}
-};
-
-
-class URLHierarchyImpl
-{
-private:
-	Pos pos;
-	Pos end;
-	bool first;
-	
-public:
-	static String getName() { return "extractURLParameters"; }
-	
-	static void checkArguments(const DataTypes & arguments)
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 			
 			if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
 				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
@@ -455,6 +383,97 @@ public:
 			token_end = end;
 		else
 			token_end = pos++;
+		
+		return true;
+	}
+};
+
+
+class URLHierarchyImpl
+{
+private:
+	Pos begin;
+	Pos pos;
+	Pos end;
+	
+public:
+	static String getName() { return "URLHierarchy"; }
+	
+	static void checkArguments(const DataTypes & arguments)
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+			if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+	
+	void init(Block & block, const ColumnNumbers & arguments) {}
+	
+	/// Вызывается для каждой следующей строки.
+	void set(Pos pos_, Pos end_)
+	{
+		begin = pos = pos_;
+		end = end_;
+	}
+	
+	/// Получить следующий токен, если есть, или вернуть false.
+	bool get(Pos & token_begin, Pos & token_end)
+	{
+		/// Код из URLParser.
+		
+		if (pos == end)
+			return false;
+		
+		if (pos == begin)
+		{
+			/// Распарсим всё, что идёт до пути
+			
+			/// Предположим, что протокол уже переведён в нижний регистр.
+			while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
+				++pos;
+			
+			/** Будем вычислять иерархию только для URL-ов, в которых есть протокол, и после него идут два слеша.
+			 * (http, file - подходят, mailto, magnet - не подходят), и после двух слешей ещё хоть что-нибудь есть
+			 * Для остальных просто вернём полный URL как единственный элемент иерархии.
+			 */
+			if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+			{
+				pos = end;
+				token_begin = begin;
+				token_end = end;
+				return true;
+			}
+			
+			/// Доменом для простоты будем считать всё, что после протокола и двух слешей, до следующего слеша или до ? или до #
+			while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
+				++pos;
+			
+			if (pos != end)
+				++pos;
+			
+			token_begin = begin;
+			token_end = pos;
+			
+			return true;
+		}
+		
+		/// Идём до следующего / или ? или #, пропуская все те, что вначале.
+		while (pos < end && (*pos == '/' || *pos == '?' || *pos == '#'))
+			++pos;
+		if (pos == end)
+			return false;
+		while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
+			++pos;
+		
+		if (pos != end)
+			++pos;
+		
+		token_begin = begin;
+		token_end = pos;
 		
 		return true;
 	}
@@ -595,5 +614,7 @@ typedef FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<fa
 
 typedef FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter> FunctionExtractURLParameter;
 typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
+typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
+typedef FunctionTokens<URLHierarchyImpl> FunctionURLHierarchy;
 
 }
