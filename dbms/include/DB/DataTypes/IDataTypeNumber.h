@@ -26,12 +26,7 @@ public:
 		writeText(get<typename NearestFieldType<FieldType>::Type>(field), ostr);
 	}
 	
-	void deserializeText(Field & field, ReadBuffer & istr) const
-	{
-		typename NearestFieldType<FieldType>::Type x;
-		readIntTextUnsafe(x, istr);
-		field = x;
-	}
+	inline void deserializeText(Field & field, ReadBuffer & istr) const;
 
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
 	{
@@ -60,5 +55,26 @@ public:
 		return typename NearestFieldType<FieldType>::Type();
 	}
 };
+
+template <typename FType> inline void IDataTypeNumber<FType>::deserializeText(Field & field, ReadBuffer & istr) const
+{
+	typename NearestFieldType<FieldType>::Type x;
+	readIntTextUnsafe(x, istr);
+	field = x;
+}
+
+template <> inline void IDataTypeNumber<Float64>::deserializeText(Field & field, ReadBuffer & istr) const
+{
+	Float64 x;
+	readText(x, istr);
+	field = x;
+}
+template <> inline void IDataTypeNumber<Float32>::deserializeText(Field & field, ReadBuffer & istr) const
+{
+	Float64 x;
+	readText(x, istr);
+	field = x;
+}
+
 
 }
