@@ -379,9 +379,10 @@ public:
 		else if(col_const_in)
 		{
 			const std::string & src = col_const_in->getData();
-			std::string res(src.size() * 2 + 1, '\0');
+			std::string res(src.size() * 2, '\0');
 			char * pos = &res[0];
 			const UInt8 * src_ptr = reinterpret_cast<const UInt8 *>(src.c_str());
+			/// Запишем ноль в res[res.size()]. Начиная с C++11, это корректно.
 			executeOneString(src_ptr, src_ptr + src.size(), pos);
 			
 			col_res = new ColumnConstString(col_const_in->size(), res);
