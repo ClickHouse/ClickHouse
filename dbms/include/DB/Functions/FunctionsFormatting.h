@@ -34,10 +34,10 @@ public:
 			
 		const IDataType * type = &*arguments[0];
 		
-		if (!dynamic_cast<const DataTypeUInt8>(type) &&
-			!dynamic_cast<const DataTypeUInt16>(type) &&
-			!dynamic_cast<const DataTypeUInt32>(type) &&
-			!dynamic_cast<const DataTypeUInt64>(type))
+		if (!dynamic_cast<const DataTypeUInt8 *>(type) &&
+			!dynamic_cast<const DataTypeUInt16 *>(type) &&
+			!dynamic_cast<const DataTypeUInt32 *>(type) &&
+			!dynamic_cast<const DataTypeUInt64 *>(type))
 			throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
 		return new DataTypeString;
