@@ -508,7 +508,7 @@ public:
 			std::string res(src.size(), '\0');
 			char * pos = &res[0];
 			unhexOne(src.c_str(), src.c_str() + src.size(), pos);
-			res = res.substr(0, pos - src.c_str());
+			res = res.substr(0, pos - &res[0] - 1);
 			
 			block.getByPosition(result).column = new ColumnConstString(col->size(), res);
 		}
