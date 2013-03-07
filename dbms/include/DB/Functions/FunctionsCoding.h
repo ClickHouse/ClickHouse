@@ -470,7 +470,7 @@ public:
 	{
 		const ColumnPtr column = &*block.getByPosition(arguments[0]).column;
 		
-		if (const ColumnString * col = dynamic_cast<const ColumnString *>(column))
+		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
@@ -502,7 +502,7 @@ public:
 			
 			out_vec.resize(pos - begin);
 		}
-		else if(const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(column))
+		else if(const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
 			const std::string & src = col->getData();
 			std::string res(src.size(), '\0');
