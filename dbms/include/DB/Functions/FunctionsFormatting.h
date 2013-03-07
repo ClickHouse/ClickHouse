@@ -37,7 +37,11 @@ public:
 		if (!dynamic_cast<const DataTypeUInt8 *>(type) &&
 			!dynamic_cast<const DataTypeUInt16 *>(type) &&
 			!dynamic_cast<const DataTypeUInt32 *>(type) &&
-			!dynamic_cast<const DataTypeUInt64 *>(type))
+			!dynamic_cast<const DataTypeUInt64 *>(type) &&
+			!dynamic_cast<const DataTypeInt8 *>(type) &&
+			!dynamic_cast<const DataTypeInt16 *>(type) &&
+			!dynamic_cast<const DataTypeInt32 *>(type) &&
+			!dynamic_cast<const DataTypeInt64 *>(type))
 			throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
 		return new DataTypeString;

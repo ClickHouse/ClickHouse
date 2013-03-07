@@ -542,7 +542,11 @@ public:
 		if (!dynamic_cast<const DataTypeUInt8 *>(&*arguments[0]) &&
 			!dynamic_cast<const DataTypeUInt16 *>(&*arguments[0]) &&
 			!dynamic_cast<const DataTypeUInt32 *>(&*arguments[0]) &&
-			!dynamic_cast<const DataTypeUInt64 *>(&*arguments[0]))
+			!dynamic_cast<const DataTypeUInt64 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeInt8 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeInt16 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeInt32 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeInt64 *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
@@ -615,7 +619,11 @@ public:
 		if (tryExecute<UInt8>(in_column, out_column) ||
 			tryExecute<UInt16>(in_column, out_column) ||
 			tryExecute<UInt32>(in_column, out_column) ||
-			tryExecute<UInt64>(in_column, out_column))
+			tryExecute<UInt64>(in_column, out_column) ||
+			tryExecute<Int8>(in_column, out_column) ||
+			tryExecute<Int16>(in_column, out_column) ||
+			tryExecute<Int32>(in_column, out_column) ||
+			tryExecute<Int64>(in_column, out_column))
 			return;
 		
 		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
