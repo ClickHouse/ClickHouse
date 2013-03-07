@@ -134,6 +134,7 @@ FunctionPtr FunctionFactory::get(
 	
 	else if (name == "IPv4NumToString")			return new FunctionIPv4NumToString;
 	else if (name == "IPv4StringToNum")			return new FunctionIPv4StringToNum;
+	else if (name == "hex")							return new FunctionHex;
 
 	else if (name == "rand")						return new FunctionRand;
 	else if (name == "rand64")						return new FunctionRand64;

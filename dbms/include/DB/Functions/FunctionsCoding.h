@@ -18,10 +18,17 @@ namespace DB
 	
 /** Функции кодирования:
 	* 
-	* IPv4NumToString(num) - см. ниже.
-	* IPv4StringToNum(string) - преобразуют, например, '192.168.0.1' в 3232235521 и наоборот.
+	* IPv4NumToString(num) - См. ниже.
+	* IPv4StringToNum(string) - Преобразуют, например, '192.168.0.1' в 3232235521 и наоборот.
+	* 
+	* hex(x) -	Возвращает hex; буквы заглавные; префиксов 0x или суффиксов h нет.
+	* 			Для чисел возвращает строку переменной длины - hex в "человеческом" (big endian) формате, с вырезанием старших нулей, но только по целым байтам. Для дат и дат-с-временем - как для чисел.
+	* 			Например, hex(257) = '0101'.
 	*/
 
+
+/// Включая нулевой символ в конце.
+#define MAX_UINT_HEX_LENGTH 20
 
 class FunctionIPv4NumToString : public IFunction
 {
@@ -209,6 +216,198 @@ public:
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+class FunctionHex : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "hex";
+	}
+	
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeDate *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeDateTime *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt8 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt16 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt32 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt64 *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return new DataTypeString;
+	}
+	
+	template <typename T>
+	void executeOneUInt(T x, char *& out)
+	{
+		const char digit[17] = "0123456789ABCDEF";
+		bool was_nonzero = false;
+		for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
+		{
+			UInt8 byte = static_cast<UInt8>((x >> offset) & 255);
+			
+			/// Ведущие нули.
+			if (byte == 0 && !was_nonzero && offset)
+				continue;
+			
+			*(out++) = digit[byte >> 4];
+			*(out++) = digit[byte & 15];
+		}
+		*(out++) = '\0';
+	}
+	
+	template <typename T>
+	bool tryExecuteUInt(const IColumn * col, ColumnPtr & col_res)
+	{
+		const ColumnVector<T> * col_vec = dynamic_cast<const ColumnVector<T> *>(col);
+		const ColumnConst<T> * col_const = dynamic_cast<const ColumnConst<T> *>(col);
+		
+		if (col_vec)
+		{
+			ColumnString * col_str = new ColumnString;
+			col_res = col_str;
+			ColumnString::DataVector_t & out_vec = col_str->getDataVector();
+			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+			
+			const typename ColumnVector<T>::Container_t & in_vec = col_vec->getData();
+			
+			size_t size = in_vec.size();
+			out_offsets.resize(size);
+			out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH);
+			
+			size_t pos = 0;
+			for (size_t i = 0; i < size; ++i)
+			{
+				/// Ручной экспоненциальный рост, чтобы не полагаться на линейное амортизированное время работы resize (его никто не гарантирует).
+				if (pos + MAX_UINT_HEX_LENGTH < out_vec.size())
+					out_vec.resize(out_vec.size() * 2 + MAX_UINT_HEX_LENGTH);
+				
+				char * begin = reinterpret_cast<char *>(&out_vec[pos]);
+				char * end = begin;
+				executeOneUInt<T>(in_vec[i], end);
+				
+				pos += end - begin;
+				out_offsets[i] = pos;
+			}
+			
+			out_vec.resize(pos);
+			
+			return true;
+		}
+		else if(col_const)
+		{
+			char buf[MAX_UINT_HEX_LENGTH];
+			char * pos = buf;
+			executeOneUInt<T>(col_const->getData(), pos);
+			
+			col_res = new ColumnConstString(col_const->size(), buf);
+			
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	
+	void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
+	{
+		const char digit[17] = "0123456789ABCDEF";
+		while (pos < end)
+		{
+			UInt8 byte = *(pos++);
+			*(out++) = digit[byte >> 4];
+			*(out++) = digit[byte & 15];
+		}
+		*(out++) = '\0';
+	}
+	
+	bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
+	{
+		const ColumnString * col_str_in = dynamic_cast<const ColumnString *>(col);
+		const ColumnConstString * col_const_in = dynamic_cast<const ColumnConstString *>(col);
+		
+		if (col_str_in)
+		{
+			ColumnString * col_str = new ColumnString;
+			col_res = col_str;
+			ColumnString::DataVector_t & out_vec = col_str->getDataVector();
+			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+			
+			const ColumnString::DataVector_t & in_vec = col_str_in->getDataVector();
+			const ColumnString::Offsets_t & in_offsets = col_str_in->getOffsets();
+			
+			size_t size = in_offsets.size();
+			out_offsets.resize(size);
+			out_vec.resize(in_vec.size() * 2 - size);
+			
+			char * begin = reinterpret_cast<char *>(&out_vec[0]);
+			char * pos = begin;
+			size_t prev_offset = 0;
+			
+			for (size_t i = 0; i < size; ++i)
+			{
+				size_t new_offset = in_offsets[i];
+				
+				executeOneString(&in_vec[prev_offset], &in_vec[new_offset - 1], pos);
+				
+				out_offsets[i] = pos - begin;
+				
+				prev_offset = new_offset;
+			}
+			
+			if (out_offsets.back() != out_vec.size())
+				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+			
+			return true;
+		}
+		else if(col_const_in)
+		{
+			const std::string & src = col_const_in->getData();
+			std::string res(src.size() * 2 + 1, '\0');
+			char * pos = &res[0];
+			const UInt8 * src_ptr = reinterpret_cast<const UInt8 *>(src.c_str());
+			executeOneString(src_ptr, src_ptr + src.size(), pos);
+			
+			col_res = new ColumnConstString(col_const_in->size(), res);
+			
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const IColumn * column = &*block.getByPosition(arguments[0]).column;
+		ColumnPtr & res_column = block.getByPosition(result).column;
+		
+		if (tryExecuteUInt<UInt8>(column, res_column) ||
+			tryExecuteUInt<UInt16>(column, res_column) ||
+			tryExecuteUInt<UInt32>(column, res_column) ||
+			tryExecuteUInt<UInt64>(column, res_column) ||
+			tryExecuteString(column, res_column))
+			return;
+		
+		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 	
