@@ -263,6 +263,8 @@ public:
 			if (byte == 0 && !was_nonzero && offset)
 				continue;
 			
+			was_nonzero = true;
+			
 			*(out++) = digit[byte >> 4];
 			*(out++) = digit[byte & 15];
 		}
