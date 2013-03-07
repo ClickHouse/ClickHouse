@@ -75,6 +75,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "substring")					return new FunctionSubstring;
 	else if (name == "substringUTF8")				return new FunctionSubstringUTF8;
 	else if (name == "bitmaskToList")				return new FunctionBitmaskToList;
+	else if (name == "bitmaskToArray")				return new FunctionBitmaskToArray;
 
 	else if (name == "toUInt8")						return new FunctionToUInt8;
 	else if (name == "toUInt16")					return new FunctionToUInt16;

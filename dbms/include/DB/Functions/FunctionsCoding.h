@@ -521,4 +521,107 @@ public:
 	}
 };
 
+
+class FunctionBitmaskToArray : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "bitmaskToArray";
+	}
+	
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+		if (!dynamic_cast<const DataTypeUInt8 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt16 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt32 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt64 *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return new DataTypeArray(arguments[0]);
+	}
+	
+	template <typename T>
+	bool tryExecute(const IColumn * column, ColumnPtr & out_column)
+	{
+		if (const ColumnVector<T> * col_from = dynamic_cast<const ColumnVector<T> *>(column))
+		{
+			ColumnVector<T> * col_values = new ColumnVector<T>;
+			ColumnArray * col_array = new ColumnArray(col_values);
+			out_column = col_array;
+			
+			ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
+			typename ColumnVector<T>::Container_t & res_values = col_values->getData();
+			
+			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+			size_t size = vec_from.size();
+			res_offsets.resize(size);
+			res_values.reserve(size * 2);
+			
+			for (size_t row = 0; row < size; ++row)
+			{
+				T x = vec_from[row];
+				for (size_t i = 0; i < sizeof(T) * 8; ++i)
+				{
+					T bit = static_cast<T>(1) << i;
+					if (x & bit)
+					{
+						res_values.push_back(bit);
+					}
+				}
+				res_offsets[row] = res_values.size();
+			}
+			
+			return true;
+		}
+		else if (const ColumnConst<T> * col_from = dynamic_cast<const ColumnConst<T> *>(column))
+		{
+			Array res;
+			
+			T x = col_from->getData();
+			for (size_t i = 0; i < sizeof(T) * 8; ++i)
+			{
+				T bit = static_cast<T>(1) << i;
+				if (x & bit)
+				{
+					res.push_back(static_cast<UInt64>(bit));
+				}
+			}
+			
+			out_column = new ColumnConstArray(col_from->size(), res, new typename DataTypeFromFieldType<T>::Type);
+			
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const IColumn * in_column = &*block.getByPosition(arguments[0]).column;
+		ColumnPtr & out_column = block.getByPosition(result).column;
+		
+		if (tryExecute<UInt8>(in_column, out_column) ||
+			tryExecute<UInt16>(in_column, out_column) ||
+			tryExecute<UInt32>(in_column, out_column) ||
+			tryExecute<UInt64>(in_column, out_column))
+			return;
+		
+		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
 }
