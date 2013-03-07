@@ -468,7 +468,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnPtr * column = &*block.getByPosition(arguments[0]).column;
+		const ColumnPtr column = &*block.getByPosition(arguments[0]).column;
 		
 		if (const ColumnString * col = dynamic_cast<const ColumnString *>(column))
 		{
