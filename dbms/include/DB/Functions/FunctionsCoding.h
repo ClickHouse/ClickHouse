@@ -17,14 +17,16 @@ namespace DB
 {
 	
 /** Функции кодирования:
-	* 
-	* IPv4NumToString(num) - См. ниже.
-	* IPv4StringToNum(string) - Преобразуют, например, '192.168.0.1' в 3232235521 и наоборот.
-	* 
-	* hex(x) -	Возвращает hex; буквы заглавные; префиксов 0x или суффиксов h нет.
-	* 			Для чисел возвращает строку переменной длины - hex в "человеческом" (big endian) формате, с вырезанием старших нулей, но только по целым байтам. Для дат и дат-с-временем - как для чисел.
-	* 			Например, hex(257) = '0101'.
-	*/
+  * 
+  * IPv4NumToString(num) - См. ниже.
+  * IPv4StringToNum(string) - Преобразуют, например, '192.168.0.1' в 3232235521 и наоборот.
+  * 
+  * hex(x) -	Возвращает hex; буквы заглавные; префиксов 0x или суффиксов h нет.
+  * 			Для чисел возвращает строку переменной длины - hex в "человеческом" (big endian) формате, с вырезанием старших нулей, но только по целым байтам. Для дат и дат-с-временем - как для чисел.
+  * 			Например, hex(257) = '0101'.
+  * unhex(string) -	Возвращает строку, hex от которой равен string с точностью до регистра и отбрасывания одного ведущего нуля.
+  * 				Если такой строки не существует, оставляет за собой право вернуть любой мусор.
+  */
 
 
 /// Включая нулевой символ в конце.
@@ -410,6 +412,117 @@ public:
 		
 		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 						+ " of argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+class FunctionUnhex : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "unhex";
+	}
+	
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return new DataTypeString;
+	}
+	
+	UInt8 undigitUnsafe(char c)
+	{
+		if (c <= '9')
+			return c - '0';
+		if (c <= 'Z')
+			return c - ('A' - 10);
+		return c - ('a' - 10);
+	}
+	
+	void unhexOne(const char * pos, const char * end, char *& out)
+	{
+		if ((end - pos) & 1)
+		{
+			*(out++) = undigitUnsafe(*(pos++));
+		}
+		while (pos < end)
+		{
+			UInt8 major = undigitUnsafe(*(pos++));
+			UInt8 minor = undigitUnsafe(*(pos++));
+			*(out++) = (major << 4) | minor;
+		}
+		*(out++) = '\0';
+	}
+	
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr * column = &*block.getByPosition(arguments[0]).column;
+		
+		if (const ColumnString * col = dynamic_cast<const ColumnString *>(column))
+		{
+			ColumnString * col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+			
+			ColumnString::DataVector_t & out_vec = col_res->getDataVector();
+			ColumnString::Offsets_t & out_offsets = col_res->getOffsets();
+			
+			const ColumnString::DataVector_t & in_vec = col->getDataVector();
+			const ColumnString::Offsets_t & in_offsets = col->getOffsets();
+			
+			size_t size = in_offsets.size();
+			out_offsets.resize(size);
+			out_vec.resize(in_vec.size() / 2 + size);
+			
+			char * begin = reinterpret_cast<char *>(&out_vec[0]);
+			char * pos = begin;
+			size_t prev_offset = 0;
+			
+			for (size_t i = 0; i < size; ++i)
+			{
+				size_t new_offset = in_offsets[i];
+				
+				unhexOne(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]), pos);
+				
+				out_offsets[i] = pos - begin;
+				
+				prev_offset = new_offset;
+			}
+			
+			out_vec.resize(pos - begin);
+			
+			return true;
+		}
+		else if(const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(column))
+		{
+			const std::string & src = col->getData();
+			std::string res(src.size(), '\0');
+			char * pos = &res[0];
+			unhexOne(src.c_str(), src.c_str() + src.size(), pos);
+			res = res.substr(0, pos - src.c_str());
+			
+			block.getByPosition(result).column = new ColumnConstString(col->size(), res);
+			
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+		
+		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		+ " of argument of function " + getName(),
 						ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
