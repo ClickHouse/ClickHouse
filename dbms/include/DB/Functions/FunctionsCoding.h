@@ -296,7 +296,7 @@ public:
 			for (size_t i = 0; i < size; ++i)
 			{
 				/// Ручной экспоненциальный рост, чтобы не полагаться на линейное амортизированное время работы resize (его никто не гарантирует).
-				if (pos + MAX_UINT_HEX_LENGTH < out_vec.size())
+				if (pos + MAX_UINT_HEX_LENGTH > out_vec.size())
 					out_vec.resize(out_vec.size() * 2 + MAX_UINT_HEX_LENGTH);
 				
 				char * begin = reinterpret_cast<char *>(&out_vec[pos]);
