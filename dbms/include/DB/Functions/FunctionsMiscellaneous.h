@@ -387,7 +387,12 @@ public:
 			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
-		if (!dynamic_cast<const DataTypeFloat64 *>(&*arguments[0]))
+		if (!dynamic_cast<const DataTypeFloat64 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeFloat32 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt64 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt32 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt16 *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeUInt8 *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
@@ -397,13 +402,34 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		ColumnConst<Float64> * column = dynamic_cast<ColumnConst<Float64> *>(&*block.getByPosition(arguments[0]).column);
-		if (column == NULL)
+		IColumn * col = &*block.getByPosition(arguments[0]).column;
+		double seconds;
+		size_t size;
+		
+		if (ColumnConst<Float64> * column = dynamic_cast<ColumnConst<Float64> *>(col))
+			size = column->size(), seconds = column->getData();
+		
+		else if (ColumnConst<Float32> * column = dynamic_cast<ColumnConst<Float32> *>(col))
+			size = column->size(), seconds = static_cast<double>(column->getData());
+		
+		else if (ColumnConst<UInt64> * column = dynamic_cast<ColumnConst<UInt64> *>(col))
+			size = column->size(), seconds = static_cast<double>(column->getData());
+		
+		else if (ColumnConst<UInt32> * column = dynamic_cast<ColumnConst<UInt32> *>(col))
+			size = column->size(), seconds = static_cast<double>(column->getData());
+		
+		else if (ColumnConst<UInt16> * column = dynamic_cast<ColumnConst<UInt16> *>(col))
+			size = column->size(), seconds = static_cast<double>(column->getData());
+		
+		else if (ColumnConst<UInt8> * column = dynamic_cast<ColumnConst<UInt8> *>(col))
+			size = column->size(), seconds = static_cast<double>(column->getData());
+		
+		else
 			throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 		
-		usleep(static_cast<unsigned>(column->getData() * 1e6));
+		usleep(static_cast<unsigned>(seconds * 1e6));
 		
-		block.getByPosition(result).column = ColumnConst<UInt8>(column->size(), 0).convertToFullColumn();
+		block.getByPosition(result).column = ColumnConst<UInt8>(size, 0).convertToFullColumn();
 	}
 };
 
