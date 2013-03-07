@@ -51,16 +51,15 @@ public:
 	inline static void writeBitmask(T x, WriteBuffer & out)
 	{
 		bool first = true;
-		for (size_t i = 0; i < sizeof(T) * 8; ++i)
+		while (x)
 		{
-			T bit = static_cast<T>(1) << i;
-			if (x & bit)
-			{
-				if (!first)
-					out.write(",", 1);
-				first = false;
-				writeIntText(bit, out);
-			}
+			T y = (x & (x - 1));
+			T bit = x ^ y;
+			x = y;
+			if (!first)
+				out.write(",", 1);
+			first = false;
+			writeIntText(bit, out);
 		}
 	}
 	

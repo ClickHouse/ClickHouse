@@ -573,13 +573,12 @@ public:
 			for (size_t row = 0; row < size; ++row)
 			{
 				T x = vec_from[row];
-				for (size_t i = 0; i < sizeof(T) * 8; ++i)
+				while (x)
 				{
-					T bit = static_cast<T>(1) << i;
-					if (x & bit)
-					{
-						res_values.push_back(bit);
-					}
+					T y = (x & (x - 1));
+					T bit = x ^ y;
+					x = y;
+					res_values.push_back(bit);
 				}
 				res_offsets[row] = res_values.size();
 			}
