@@ -47,7 +47,7 @@ private:
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void readData(const String & name, const IDataType & type, IColumn & column, size_t level = 0);
+	void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level = 0);
 };
 
 
