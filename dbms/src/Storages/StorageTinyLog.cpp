@@ -88,7 +88,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 }
 
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t level, size_t limit)
+void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level)
 {
 	/// Для массивов требуется сначала десериализовать размеры, а потом значения.
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
