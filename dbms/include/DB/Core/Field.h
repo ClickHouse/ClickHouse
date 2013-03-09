@@ -15,6 +15,8 @@
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -677,16 +679,113 @@ namespace DB
 {
 	class ReadBuffer;
 	class WriteBuffer;
+	
+	/// Предполагается что у всех элементов массива одинаковый тип.
+	inline void readBinary(Array & x, ReadBuffer & buf)
+	{
+		size_t size;
+		UInt8 type;
+		DB::readBinary(type, buf);
+		DB::readBinary(size, buf);
 
-	inline void readBinary(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+		for (size_t index = 0; index < size; ++index)
+		{
+			switch (type)
+			{
+				case Field::Types::Null:
+				{
+					x.push_back(DB::Field());
+					break;
+				}
+				case Field::Types::UInt64:
+				{
+					UInt64 value;
+					DB::readVarUInt(value, buf);
+					x.push_back(value);
+					break;
+				}
+				case Field::Types::Int64:
+				{
+					Int64 value;
+					DB::readVarInt(value, buf);
+					x.push_back(value);
+					break;
+				}
+				case Field::Types::Float64:
+				{
+					Float64 value;
+					DB::readFloatBinary(value, buf);
+					x.push_back(value);
+					break;
+				}
+				case Field::Types::String:
+				{
+					std::string value;
+					DB::readStringBinary(value, buf);
+					x.push_back(value);
+					break;
+				}
+				case Field::Types::Array:
+				{
+					Array value;
+					DB::readBinary(value, buf);
+					x.push_back(value);
+					break;
+				}
+			};
+		}
+	}
+	
 	inline void readText(Array & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 	inline void readQuoted(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
-	inline void writeBinary(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
+	/// Предполагается что у всех элементов массива одинаковый тип.
+	inline void writeBinary(const Array & x, WriteBuffer & buf)
+	{
+		UInt8 type = Field::Types::Null;
+		size_t size = x.size();
+		if (size)
+			type = x.front().getType();
+		DB::writeBinary(type, buf);
+		DB::writeBinary(size, buf);
+		
+		for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+		{
+			switch (type)
+			{
+				case Field::Types::Null: break;
+				case Field::Types::UInt64:
+				{
+					DB::writeVarUInt(get<UInt64>(*it), buf);
+					break;
+				}
+				case Field::Types::Int64:
+				{
+					DB::writeVarInt(get<Int64>(*it), buf);
+					break;
+				}
+				case Field::Types::Float64:
+				{
+					DB::writeFloatBinary(get<Float64>(*it), buf);
+					break;
+				}
+				case Field::Types::String:
+				{
+					DB::writeStringBinary(get<std::string>(*it), buf);
+					break;
+				}
+				case Field::Types::Array:
+				{
+					DB::writeBinary(get<Array>(*it), buf);
+					break;
+				}
+			};
+		}
+	}
+	
 	inline void writeText(const Array & x, WriteBuffer & buf) 	{ throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
 	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
 }
 
 
 #undef DBMS_TOTAL_FIELD_SIZE
-
