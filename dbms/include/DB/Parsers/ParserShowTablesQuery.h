@@ -7,7 +7,7 @@ namespace DB
 {
 
 /** Запрос типа такого:
-  * SHOW TABLES [FROM db] [LIKE 'str']
+  * SHOW TABLES [FROM db] [[NOT] LIKE 'str']
   * или
   * SHOW DATABASES.
   */

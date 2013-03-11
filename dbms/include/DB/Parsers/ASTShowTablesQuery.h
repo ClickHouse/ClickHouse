@@ -16,9 +16,10 @@ public:
 	bool databases;
 	String from;
 	String like;
+	bool not_like;
 
-	ASTShowTablesQuery() : databases(false) {}
-	ASTShowTablesQuery(StringRange range_) : ASTQueryWithOutput(range_), databases(false) {}
+	ASTShowTablesQuery() : databases(false), not_like(false) {}
+	ASTShowTablesQuery(StringRange range_) : ASTQueryWithOutput(range_), databases(false), not_like(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "ShowTables"; };

@@ -38,7 +38,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 	rewritten_query << "SELECT name FROM system.tables WHERE database = " << mysqlxx::quote << database;
 
 	if (!query.like.empty())
-		rewritten_query << " AND name LIKE " << mysqlxx::quote << query.like;
+		rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << mysqlxx::quote << query.like;
 	
 	rewritten_query << format_or_nothing;
 

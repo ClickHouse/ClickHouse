@@ -20,6 +20,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 	ParserString s_tables("TABLES", true, true);
 	ParserString s_databases("DATABASES", true, true);
 	ParserString s_from("FROM", true, true);
+	ParserString s_not("NOT", true, true);
 	ParserString s_like("LIKE", true, true);
 	ParserString s_format("FORMAT", true, true);
 	ParserStringLiteral like_p;
@@ -57,6 +58,9 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 
 		ws.ignore(pos, end);
 
+		if (s_not.ignore(pos, end, expected))
+			query->not_like = true;
+		
 		if (s_like.ignore(pos, end, expected))
 		{
 			ws.ignore(pos, end);
@@ -64,6 +68,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 			if (!like_p.parse(pos, end, like, expected))
 				return false;
 		}
+		else if (query->not_like)
+			return false;
 	}
 	else
 	{
