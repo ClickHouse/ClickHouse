@@ -783,8 +783,13 @@ namespace DB
 		}
 	}
 	
-	inline void writeText(const Array & x, WriteBuffer & buf) 	{ throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
-	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array.", ErrorCodes::NOT_IMPLEMENTED); }
+	inline void writeText(const Array & x, WriteBuffer & buf)
+	{
+		DB::String res = apply_visitor(DB::FieldVisitorToString(), DB::Field(x));
+		buf.write(res.data(), res.size());
+	}
+	
+	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }
 
 
