@@ -296,7 +296,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 				String current_type_name = type->getName();
 				String known_type_name = known_columns_types[name]->getName();
 				if (current_type_name != known_type_name)
-					throw Exception("Different types of column " + name + " in different chunks: type " + current_type_name + " in chunk " + chunks[chunk_index]->getTableName() + ", type " + known_type_name + " somewhere else", ErrorCodes::TYPE_MISMATCH);
+					throw Exception("Different types of column " + name + " in different chunks: type " + current_type_name + " in chunk " + chunks[chunk_index]->getTableName() + ", type " + known_type_name + " somewhere between " + chunks[0]->getTableName() + " and " + chunks.back()->getTableName(), ErrorCodes::TYPE_MISMATCH);
 			}
 			else
 			{
