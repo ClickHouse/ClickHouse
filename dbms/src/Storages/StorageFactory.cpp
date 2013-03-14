@@ -75,20 +75,26 @@ StoragePtr StorageFactory::get(
 			
 			ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 			
-			if (args.size() != 5)
+			if (args.size() < 3 || args.size() > 5)
 				break;
 			
 			String source_database = dynamic_cast<ASTIdentifier &>(*args[0]).name;
 			String source_table_name_regexp = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
-			String destination_database = dynamic_cast<ASTIdentifier &>(*args[2]).name;
-			String destination_name_prefix = dynamic_cast<ASTIdentifier &>(*args[3]).name;
-			size_t chunks_to_merge = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[4]).value);
+			size_t chunks_to_merge = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
+			
+			String destination_name_prefix = "group_";
+			String destination_database = source_database;
+			
+			if (args.size() > 3)
+				destination_name_prefix = dynamic_cast<ASTIdentifier &>(*args[3]).name;
+			if (args.size() > 4)
+				destination_database = dynamic_cast<ASTIdentifier &>(*args[4]).name;
 			
 			return StorageChunkMerger::create(database_name, table_name, columns, source_database, source_table_name_regexp, destination_database, destination_name_prefix, chunks_to_merge, context);
 		} while(false);
 		
-		throw Exception("Storage ChunkMerger requires exactly 5 parameters:"
-			" source database, regexp for source table names, destination database, destination tables name prefix, number of chunks to merge.",
+		throw Exception("Storage ChunkMerger requires from 3 to 5 parameters:"
+			" source database, regexp for source table names, number of chunks to merge, [destination tables name prefix, [destination database]].",
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 	}
 	else if (name == "TinyLog")
