@@ -293,8 +293,10 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			const DataTypePtr & type = it->second;
 			if (known_columns_types.count(name))
 			{
-				if (type->getName() != known_columns_types[name]->getName())
-					throw Exception("Different types of column " + name + " in different chunks", ErrorCodes::TYPE_MISMATCH);
+				String current_type_name = type->getName();
+				String known_type_name = known_columns_types[name]->getName();
+				if (current_type_name != known_type_name)
+					throw Exception("Different types of column " + name + " in different chunks: type " + current_type_name + " in chunk " + chunks[chunk_index]->getName() + ", type " + known_type_name + " somewhere else", ErrorCodes::TYPE_MISMATCH);
 			}
 			else
 			{
