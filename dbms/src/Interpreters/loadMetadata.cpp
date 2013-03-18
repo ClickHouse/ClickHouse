@@ -46,6 +46,9 @@ static void executeCreateQuery(const String & query, Context & context, const St
 
 void loadMetadata(Context & context)
 {
+	/// Создадим все таблицы атомарно (иначе какой-нибудь движок таблицы может успеть в фоновом потоке попытаться выполнить запрос).
+	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	
 	/// Здесь хранятся определения таблиц
 	String path = context.getPath() + "metadata";
 
