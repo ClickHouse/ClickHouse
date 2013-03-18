@@ -24,10 +24,11 @@ namespace DB
   *
   * match(haystack, pattern)	- поиск по регулярному выражению re2; возвращает 0 или 1.
   *
-  * TODO:
-  * extract(haystack, pattern)	- вынимает первый subpattern, (или нулевой, если первого нет) согласно регулярному выражению re2;
-  * 							  возвращает пустую строку, если не матчится.
-  * extract(haystack, pattern, n) - вынимает n-ый subpattern; возвращает пустую строку, если не матчится.
+  * Применяет регексп re2 и достаёт:
+  * - первый subpattern, если в regexp-е есть subpattern;
+  * - нулевой subpattern (сматчившуюся часть, иначе);
+  * - если не сматчилось - пустую строку.
+  * extract(haystack, pattern)
   *
   * replaceOne(haystack, pattern, replacement) - замена шаблона по заданным правилам, только первое вхождение.
   * replaceAll(haystack, pattern, replacement) - замена шаблона по заданным правилам, все вхождения.
@@ -312,11 +313,6 @@ struct MatchImpl
 };
 
 
-/** Применяет регексп и достаёт:
-  * - первый subpattern, если в regexp-е есть subpattern;
-  * - нулевой subpattern (сматчившуюся часть, иначе);
-  * - если не сматчилось - пустую строку.
-  */
 struct ExtractImpl
 {
 	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,

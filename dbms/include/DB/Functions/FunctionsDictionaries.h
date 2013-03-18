@@ -17,11 +17,16 @@ namespace DB
 /** Функции, использующие словари Яндекс.Метрики
   * - словари регионов, операционных систем, поисковых систем.
   *
-  * regionToCity, regionToArea, regionToCountry,
-  * OSToRoot,
-  * SEToRoot,
+  * Подняться по дереву до определенного уровня.
+  *  regionToCity, regionToArea, regionToCountry,
+  *  OSToRoot,
+  *  SEToRoot,
   *
-  * regionIn, SEIn, OSIn.
+  * Является ли первый идентификатор потомком второго.
+  *  regionIn, SEIn, OSIn.
+  * 
+  * Получить массив идентификаторов регионов, состоящий из исходного и цепочки родителей. Порядок implementation defined.
+  *  regionHierarchy, OSHierarchy, SEHierarchy.
   */
 
 
