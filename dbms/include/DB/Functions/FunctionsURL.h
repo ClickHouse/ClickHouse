@@ -386,14 +386,15 @@ struct CutURLParameterImpl
 				/// Захватим ';' или '&' до или после параметра.
 				if (*end_pos == ';' || *end_pos == '&')
 					++end_pos;
-				else if (*(begin_pos-1) == ';' || *(begin_pos) == '&')
+				else if (*(begin_pos - 1) == ';' || *(begin_pos - 1) == '&')
 					--begin_pos;
 			} while (false);
 			
-			res_data.resize(res_offset + (url_end - url_begin) + 1);
+			size_t cut_length = (url_end - url_begin) - (end_pos - begin_pos);
+			res_data.resize(res_offset + cut_length + 1);
 			memcpy(&res_data[res_offset], url_begin, begin_pos - url_begin);
 			memcpy(&res_data[res_offset] + (begin_pos - url_begin), end_pos, url_end - end_pos);
-			res_offset += url_end - url_begin + 1;
+			res_offset += cut_length + 1;
 			res_data[res_offset - 1] = 0;
 			res_offsets[i] = res_offset;
 			
