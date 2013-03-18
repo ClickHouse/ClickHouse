@@ -37,7 +37,16 @@ namespace DB
   * Извлечь значение параметра в URL, если он есть. Вернуть пустую строку, если его нет.
   * Если таких параметров много - вернуть значение первого. Значение не разэскейпливается.
   *
-  *  getURLParameter(URL, parameter)
+  *  extractURLParameter(URL, name)
+  * 
+  * Извлечь все параметры из URL в виде массива строк вида name=value.
+  *  extractURLParameters(URL)
+  * 
+  * Убрать указанный параметр из URL.
+  *  cutURLParameter(URL, name)
+  * 
+  * Получить массив иерархии URL. См. функцию nextURLInHierarchy в URLParser.
+  *  URLHierarchy(URL)
   */
 
 typedef const char * Pos;
@@ -326,6 +335,74 @@ struct ExtractURLParameterImpl
 };
 
 
+struct CutURLParameterImpl
+{
+	static void vector(const std::vector<UInt8> & data,
+					    const ColumnArray::Offsets_t & offsets,
+					    std::string pattern,
+						std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	{
+		res_data.reserve(data.size());
+		res_offsets.resize(offsets.size());
+		
+		pattern += '=';
+		const char * param_str = pattern.c_str();
+		size_t param_len = pattern.size();
+		
+		size_t prev_offset = 0;
+		size_t res_offset = 0;
+		
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			size_t cur_offset = offsets[i];
+			
+			const char * url_begin = reinterpret_cast<const char *>(&data[prev_offset]);
+			const char * url_end = reinterpret_cast<const char *>(&data[cur_offset]) - 1;
+			const char * begin_pos = url_begin;
+			const char * end_pos = begin_pos;
+			
+			do
+			{
+				const char * begin = strchr(url_begin, '?');
+				if (begin == NULL)
+					break;
+				
+				const char * pos = strstr(begin + 1, param_str);
+				if (pos == NULL)
+					break;
+				if (pos != begin + 1 && *(pos - 1) != ';' && *(pos - 1) != '&')
+				{
+					pos = NULL;
+					break;
+				}
+				
+				begin_pos = pos;
+				end_pos = begin_pos + param_len;
+				
+				/// Пропустим значение.
+				while (*end_pos && *end_pos != ';' && *end_pos != '&' && *end_pos != '#')
+					++end_pos;
+				
+				/// Захватим ';' или '&' до или после параметра.
+				if (*end_pos == ';' || *end_pos == '&')
+					++end_pos;
+				else if (*(begin_pos-1) == ';' || *(begin_pos) == '&')
+					--begin_pos;
+			} while (false);
+			
+			res_data.resize(res_offset + (url_end - url_begin) + 1);
+			memcpy(&res_data[res_offset], url_begin, begin_pos - url_begin);
+			memcpy(&res_data[res_offset] + (begin_pos - url_begin), end_pos, url_end - end_pos);
+			res_offset += url_end - url_begin + 1;
+			res_data[res_offset - 1] = 0;
+			res_offsets[i] = res_offset;
+			
+			prev_offset = cur_offset;
+		}
+	}
+};
+
+
 class ExtractURLParametersImpl
 {
 private:
@@ -597,6 +674,7 @@ struct NameCutFragment 					{ static const char * get() { return "cutFragment"; 
 struct NameCutQueryStringAndFragment 	{ static const char * get() { return "cutQueryStringAndFragment"; } };
 
 struct NameExtractURLParameter 		{ static const char * get() { return "extractURLParameter"; } };
+struct NameCutURLParameter 				{ static const char * get() { return "cutURLParameter"; } };
 
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 			NameProtocol>	 		FunctionProtocol;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 			FunctionDomain;
@@ -613,6 +691,7 @@ typedef FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 		Name
 typedef FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>	FunctionCutQueryStringAndFragment;
 
 typedef FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter> FunctionExtractURLParameter;
+typedef FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter> FunctionCutURLParameter;
 typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
 typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
 typedef FunctionTokens<URLHierarchyImpl> FunctionURLHierarchy;
