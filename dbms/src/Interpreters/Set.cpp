@@ -272,6 +272,9 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			memset(&vec_res[0], 1, vec_res.size());
 		return;
 	}
+	
+	if (data_types.size() != arguments.size())
+		throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
 	size_t keys_size = arguments.size();
 	Row key(keys_size);
