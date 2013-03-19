@@ -375,8 +375,6 @@ private:
 			bool ends_with_semicolon = line[ws - 1] == ';';
 			bool ends_with_backslash = line[ws - 1] == '\\';
 			
-			add_history(line.c_str());
-			
 			if (append_history(1, history_file.c_str()))
 				throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 			
@@ -387,6 +385,8 @@ private:
 			
 			if (!ends_with_backslash && (ends_with_semicolon || !config().hasOption("multiline")))
 			{
+				add_history(query.c_str());
+				
 				if (!process(query))
 					break;
 				query = "";
