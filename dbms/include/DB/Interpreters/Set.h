@@ -42,7 +42,7 @@ public:
 	  * Записать результат в столбец в позиции result.
 	  */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
-
+	
 private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
 	  *  одного или нескольких столбцов значений множеству.
@@ -89,6 +89,12 @@ private:
 	typedef std::vector<size_t> Sizes;
 	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 
+	/// Если в левой части IN стоит массив. Проверяем, что хоть один элемент массива лежит в множестве.
+	void executeArray(const IColumn * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
+	
+	/// Если в левой части набор столбцов тех же типов, что элементы множества.
+	void executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const;
+	
 	/** Вывести в лог информацию о скорости создания множества.
 	  */
 	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries);

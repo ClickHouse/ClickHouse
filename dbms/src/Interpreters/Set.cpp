@@ -14,6 +14,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Set.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -273,35 +274,53 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 		return;
 	}
 	
-	if (data_types.size() != arguments.size())
-		throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-
-	size_t keys_size = arguments.size();
-	Row key(keys_size);
-	ConstColumnPlainPtrs key_columns(keys_size);
-
-	/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
-	for (size_t i = 0; i < keys_size; ++i)
+	DataTypeArray * array_type = dynamic_cast<DataTypeArray *>(&*block.getByPosition(arguments[0]).type);
+	
+	if (array_type)
 	{
-		key_columns[i] = block.getByPosition(arguments[i]).column;
-
-		if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
-			throw Exception("Types in section IN doesn't match.", ErrorCodes::TYPE_MISMATCH);
+		if (data_types.size() != 1 || arguments.size() != 1)
+			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+		if (array_type->getNestedType()->getName() != data_types[0]->getName())
+			throw Exception("Types in section IN don't match.", ErrorCodes::TYPE_MISMATCH);
+		
+		executeArray(&*block.getByPosition(arguments[0]).column, vec_res, negative);
 	}
+	else
+	{
+		if (data_types.size() != arguments.size())
+			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+		
+		/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
+		ConstColumnPlainPtrs key_columns(arguments.size());
+		for (size_t i = 0; i < arguments.size(); ++i)
+		{
+			key_columns[i] = block.getByPosition(arguments[i]).column;
+			
+			if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
+				throw Exception("Types in section IN don't match.", ErrorCodes::TYPE_MISMATCH);
+		}
+		
+		executeOrdinary(key_columns, vec_res, negative);
+	}
+}
 
-	size_t rows = block.rows();
+void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const
+{
+	size_t keys_size = data_types.size();
+	size_t rows = key_columns[0]->size();
+	Row key(keys_size);
 
 	/// Какую структуру данных для множества использовать?
 	bool keys_fit_128_bits = false;
 	Sizes key_sizes;
 	if (type != chooseMethod(key_columns, keys_fit_128_bits, key_sizes))
 		throw Exception("Incompatible columns in IN section", ErrorCodes::INCOMPATIBLE_COLUMNS);
-
+	
 	if (type == KEY_64)
 	{
 		const SetUInt64 & set = key64;
 		const IColumn & column = *key_columns[0];
-
+		
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -314,12 +333,12 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	{
 		const SetString & set = key_string;
 		const IColumn & column = *key_columns[0];
-
+		
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 		{
 			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
 			const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
-
+			
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -332,7 +351,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 		{
 			size_t n = column_string->getN();
 			const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
-
+			
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -355,7 +374,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	else if (type == HASHED)
 	{
 		const SetHashed & set = hashed;
-
+		
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
 			vec_res[i] = negative ^ (set.end() != set.find(pack128(i, keys_fit_128_bits, keys_size, key_columns, key_sizes)));
@@ -364,19 +383,24 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	{
 		/// Общий способ
 		const SetGeneric & set = generic;
-
+		
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
 		{
 			/// Строим ключ
 			for (size_t j = 0; j < keys_size; ++j)
 				key_columns[j]->get(i, key[j]);
-
+			
 			vec_res[i] = negative ^ (set.end() != set.find(key));
 		}
 	}
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+}
+
+void Set::executeArray(const IColumn * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
+{
+	throw Exception("Array in the left part of IN is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }
