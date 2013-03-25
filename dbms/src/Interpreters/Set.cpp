@@ -414,11 +414,13 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 		{
 			UInt8 res = 0;
 			/// Для всех элементов
-			for (size_t j = prev_offset; j < offsets[i] && !res; ++j)
+			for (size_t j = prev_offset; j < offsets[i]; ++j)
 			{
 				/// Строим ключ
 				UInt64 key = get<UInt64>(nested_column[j]);
 				res |= negative ^ (set.end() != set.find(key));
+				if (res)
+					break;
 			}
 			vec_res[i] = res;
 			prev_offset = offsets[i];
@@ -446,6 +448,8 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 					size_t end = nested_offsets[j];
 					StringRef ref(&data[begin], end - begin - 1);
 					res |= negative ^ (set.end() != set.find(ref));
+					if (res)
+						break;
 				}
 				vec_res[i] = res;
 				prev_offset = offsets[i];
@@ -467,6 +471,8 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 					/// Строим ключ
 					StringRef ref(&data[j * n], n);
 					res |= negative ^ (set.end() != set.find(ref));
+					if (res)
+						break;
 				}
 				vec_res[i] = res;
 				prev_offset = offsets[i];
@@ -490,6 +496,8 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 			{
 				/// Строим ключ
 				res |= negative ^ (set.end() != set.find(pack128(j, keys_fit_128_bits, 1, nested_columns, key_sizes)));
+				if (res)
+					break;
 			}
 			vec_res[i] = res;
 			prev_offset = offsets[i];
@@ -511,6 +519,8 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 			{
 				nested_column.get(j, key[0]);
 				res |= negative ^ (set.end() != set.find(key));
+				if (res)
+					break;
 			}
 			vec_res[i] = res;
 			prev_offset = offsets[i];
@@ -534,7 +544,7 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 	UInt8 res = 0;
 	
 	/// Для всех элементов
-	for (size_t j = 0; j < values.size() && !res; ++j)
+	for (size_t j = 0; j < values.size(); ++j)
 	{
 		if (type == KEY_64)
 		{
@@ -555,6 +565,9 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 		}
 		else
 			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+		
+		if (res)
+			break;
 	}
 	
 	/// Для всех строчек
