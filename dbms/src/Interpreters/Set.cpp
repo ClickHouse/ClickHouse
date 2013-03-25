@@ -556,6 +556,10 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 		else
 			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
+	
+	/// Для всех строчек
+	for (size_t i = 0; i < rows; ++i)
+		vec_res[i] = res;
 }
 
 }
