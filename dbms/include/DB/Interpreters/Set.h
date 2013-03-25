@@ -15,6 +15,8 @@
 
 #include <DB/Interpreters/HashSet.h>
 #include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnArray.h>
 
 
 namespace DB
@@ -78,6 +80,9 @@ private:
 		HASHED		= 4,
 	};
 	Type type;
+	
+	bool keys_fit_128_bits;
+	Sizes key_sizes;
 
 	/** Типы данных, из которых было создано множество.
 	  * При проверке на принадлежность множеству, типы проверяемых столбцов должны с ними совпадать.
@@ -86,11 +91,11 @@ private:
 	
 	Logger * log;
 	
-	typedef std::vector<size_t> Sizes;
-	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+	static Type chooseMethod(const DataTypes & key_types, bool & keys_fit_128_bits, Sizes & key_sizes);
 
 	/// Если в левой части IN стоит массив. Проверяем, что хоть один элемент массива лежит в множестве.
-	void executeArray(const IColumn * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
+	void executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
+	void executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
 	
 	/// Если в левой части набор столбцов тех же типов, что элементы множества.
 	void executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const;

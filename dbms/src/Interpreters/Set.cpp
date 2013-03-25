@@ -15,41 +15,42 @@
 
 #include <DB/Interpreters/Set.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
 
 
 namespace DB
 {
 
-Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+Set::Type Set::chooseMethod(const DataTypes & key_types, bool & keys_fit_128_bits, Sizes & key_sizes)
 {
-	size_t keys_size = key_columns.size();
+	size_t keys_size = key_types.size();
 
 	keys_fit_128_bits = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		if (!key_columns[j]->isNumeric())
+		if (!key_types[j]->isNumeric())
 		{
 			keys_fit_128_bits = false;
 			break;
 		}
-		key_sizes[j] = key_columns[j]->sizeOfField();
+		key_sizes[j] = key_types[j]->getSizeOfField();
 		keys_bytes += key_sizes[j];
 	}
 	if (keys_bytes > 16)
 		keys_fit_128_bits = false;
 
 	/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
-	if (keys_size == 1 && key_columns[0]->isNumeric()
-		&& !dynamic_cast<const ColumnFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnFloat64 *>(key_columns[0])
-		&& !dynamic_cast<const ColumnConstFloat32 *>(key_columns[0]) && !dynamic_cast<const ColumnConstFloat64 *>(key_columns[0]))
+	if (keys_size == 1 && key_types[0]->isNumeric()
+		&& !dynamic_cast<const DataTypeFloat32 *>(&*key_types[0]) && !dynamic_cast<const DataTypeFloat64 *>(&*key_types[0]))
 		return KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
-		&& (dynamic_cast<const ColumnString *>(key_columns[0]) || dynamic_cast<const ColumnFixedString *>(key_columns[0])
-			|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
+		&& (dynamic_cast<const DataTypeString *>(&*key_types[0]) || dynamic_cast<const DataTypeFixedString *>(&*key_types[0])))
 		return KEY_STRING;
 
 	/// Если много ключей - будем строить множество хэшей от них
@@ -81,9 +82,8 @@ void Set::create(BlockInputStreamPtr stream)
 		size_t rows = block.rows();
 
 		/// Какую структуру данных для множества использовать?
-		bool keys_fit_128_bits = false;
-		Sizes key_sizes;
-		type = chooseMethod(key_columns, keys_fit_128_bits, key_sizes);
+		keys_fit_128_bits = false;
+		type = chooseMethod(data_types, keys_fit_128_bits, key_sizes);
 
 		if (type == KEY_64)
 		{
@@ -283,7 +283,13 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 		if (array_type->getNestedType()->getName() != data_types[0]->getName())
 			throw Exception("Types in section IN don't match.", ErrorCodes::TYPE_MISMATCH);
 		
-		executeArray(&*block.getByPosition(arguments[0]).column, vec_res, negative);
+		IColumn * in_column = &*block.getByPosition(arguments[0]).column;
+		if (ColumnConstArray * col = dynamic_cast<ColumnConstArray *>(in_column))
+			executeConstArray(col, vec_res, negative);
+		else if (ColumnArray * col = dynamic_cast<ColumnArray *>(in_column))
+			executeArray(col, vec_res, negative);
+		else
+			throw Exception("Unexpeced array column type: " + in_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 	}
 	else
 	{
@@ -310,12 +316,6 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 	size_t rows = key_columns[0]->size();
 	Row key(keys_size);
 
-	/// Какую структуру данных для множества использовать?
-	bool keys_fit_128_bits = false;
-	Sizes key_sizes;
-	if (type != chooseMethod(key_columns, keys_fit_128_bits, key_sizes))
-		throw Exception("Incompatible columns in IN section", ErrorCodes::INCOMPATIBLE_COLUMNS);
-	
 	if (type == KEY_64)
 	{
 		const SetUInt64 & set = key64;
@@ -398,9 +398,164 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 }
 
-void Set::executeArray(const IColumn * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
+void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
 {
-	throw Exception("Array in the left part of IN is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
+	size_t rows = key_column->size();
+	const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
+	const IColumn & nested_column = key_column->getData();
+	
+	if (type == KEY_64)
+	{
+		const SetUInt64 & set = key64;
+
+		size_t prev_offset = 0;
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			UInt8 res = 0;
+			/// Для всех элементов
+			for (size_t j = prev_offset; j < offsets[i] && !res; ++j)
+			{
+				/// Строим ключ
+				UInt64 key = get<UInt64>(nested_column[j]);
+				res |= negative ^ (set.end() != set.find(key));
+			}
+			vec_res[i] = res;
+			prev_offset = offsets[i];
+		}
+	}
+	else if (type == KEY_STRING)
+	{
+		const SetString & set = key_string;
+		
+		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&nested_column))
+		{
+			const ColumnString::Offsets_t & nested_offsets = column_string->getOffsets();
+			const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+			
+			size_t prev_offset = 0;
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				UInt8 res = 0;
+				/// Для всех элементов
+				for (size_t j = prev_offset; j < offsets[i]; ++j)
+				{
+					/// Строим ключ
+					size_t begin = j == 0 ? 0 : nested_offsets[j - 1];
+					size_t end = nested_offsets[j];
+					StringRef ref(&data[begin], end - begin - 1);
+					res |= negative ^ (set.end() != set.find(ref));
+				}
+				vec_res[i] = res;
+				prev_offset = offsets[i];
+			}
+		}
+		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&nested_column))
+		{
+			size_t n = column_string->getN();
+			const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+			
+			size_t prev_offset = 0;
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				UInt8 res = 0;
+				/// Для всех элементов
+				for (size_t j = prev_offset; j < offsets[i]; ++j)
+				{
+					/// Строим ключ
+					StringRef ref(&data[j * n], n);
+					res |= negative ^ (set.end() != set.find(ref));
+				}
+				vec_res[i] = res;
+				prev_offset = offsets[i];
+			}
+		}
+		else
+			throw Exception("Illegal type of column when looking for Array(String) key: " + nested_column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+	}
+	else if (type == HASHED)
+	{
+		const SetHashed & set = hashed;
+		ConstColumnPlainPtrs nested_columns(1, &nested_column);
+		
+		size_t prev_offset = 0;
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			UInt8 res = 0;
+			/// Для всех элементов
+			for (size_t j = prev_offset; j < offsets[i]; ++j)
+			{
+				/// Строим ключ
+				res |= negative ^ (set.end() != set.find(pack128(j, keys_fit_128_bits, 1, nested_columns, key_sizes)));
+			}
+			vec_res[i] = res;
+			prev_offset = offsets[i];
+		}
+	}
+	else if (type == GENERIC)
+	{
+		/// Общий способ
+		const SetGeneric & set = generic;
+		
+		Row key(1);
+		size_t prev_offset = 0;
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			UInt8 res = 0;
+			/// Для всех элементов
+			for (size_t j = prev_offset; j < offsets[i]; ++j)
+			{
+				nested_column.get(j, key[0]);
+				res |= negative ^ (set.end() != set.find(key));
+			}
+			vec_res[i] = res;
+			prev_offset = offsets[i];
+		}
+	}
+	else
+		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+}
+
+void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
+{
+	if (type == HASHED)
+	{
+		ColumnPtr full_column = key_column->convertToFullColumn();
+		executeArray(dynamic_cast<ColumnArray *>(&*full_column), vec_res, negative);
+		return;
+	}
+	
+	size_t rows = key_column->size();
+	Array values = key_column->getData();
+	UInt8 res = 0;
+	
+	/// Для всех элементов
+	for (size_t j = 0; j < values.size() && !res; ++j)
+	{
+		if (type == KEY_64)
+		{
+			const SetUInt64 & set = key64;
+			UInt64 key = get<UInt64>(values[j]);
+			res |= negative ^ (set.end() != set.find(key));
+		}
+		else if (type == KEY_STRING)
+		{
+			const SetString & set = key_string;
+			res |= negative ^ (set.end() != set.find(StringRef(get<String>(values[j]))));
+		}
+		else if (type == GENERIC)
+		{
+			const SetGeneric & set = generic;
+			Row key(1, values[j]);
+			res |= negative ^ (set.end() != set.find(key));
+		}
+		else
+			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 }
 
 }
