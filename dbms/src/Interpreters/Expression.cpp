@@ -777,12 +777,20 @@ void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth)
 				ASTFunction * left_arg_tuple = dynamic_cast<ASTFunction *>(&*left_arg);
 
 				if (left_arg_tuple && left_arg_tuple->name == "tuple")
+				{
 					for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
 						it != left_arg_tuple->arguments->children.end();
 						++it)
 						set_element_types.push_back(getType(*it));
+				}
 				else
-					set_element_types.push_back(getType(left_arg));
+				{
+					DataTypePtr left_type = getType(left_arg);
+					if (DataTypeArray * array_type = dynamic_cast<DataTypeArray *>(&*left_type))
+						set_element_types.push_back(array_type->getNestedType());
+					else
+						set_element_types.push_back(left_type);
+				}
 
 				ASTSet * ast_set = new ASTSet(arg->getColumnName());
 				ast_set->set = new Set;
