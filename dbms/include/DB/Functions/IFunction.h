@@ -33,7 +33,7 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	virtual DataTypePtr getReturnType(const DataTypes & arguments) const = 0;
 
-	/// Выполнить функцию над блоком.
+	/// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
 	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
 };
 

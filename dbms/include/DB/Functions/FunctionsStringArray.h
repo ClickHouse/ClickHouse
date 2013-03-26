@@ -218,9 +218,6 @@ public:
 template <typename Generator>
 class FunctionTokens : public IFunction
 {
-private:
-	Generator generator;
-	
 public:
 	/// Получить имя функции.
 	String getName() const
@@ -231,7 +228,7 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		generator.checkArguments(arguments);
+		Generator::checkArguments(arguments);
 		
 		return new DataTypeArray(new DataTypeString);
 	}
@@ -239,6 +236,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		Generator generator;
 		generator.init(block, arguments);
 
 		const ColumnString * col_str = dynamic_cast<const ColumnString *>(&*block.getByPosition(arguments.back()).column);
