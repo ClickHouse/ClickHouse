@@ -165,16 +165,17 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		}
 		else if (from_stage <= QueryProcessingStage::WithMergeableState && to_stage > QueryProcessingStage::WithMergeableState)
 		{
-			/// Части могут пересекаться из-за склеивания поддеревьев. Здесь это не мешает.
+			expression->markBeforeAggregation(0, PART_AFTER_AGGREGATING);
 			if (query.order_expression_list)
 				setPartID(query.order_expression_list, PART_ORDER);
 			if (query.having_expression)
 				setPartID(query.having_expression, PART_HAVING);
 
+			/// Выполним подзапросы в тех частях запроса, которые выполняются локально.
 			/// Вычислим подзапросы в секции IN.
-			expression->makeSets(subquery_depth, PART_SELECT | PART_HAVING | PART_ORDER);
+			expression->makeSets(subquery_depth, PART_AFTER_AGGREGATING | PART_HAVING | PART_ORDER);
 			/// А также скалярные подзапросы.
-			expression->resolveScalarSubqueries(subquery_depth, PART_SELECT | PART_HAVING | PART_ORDER);
+			expression->resolveScalarSubqueries(subquery_depth, PART_AFTER_AGGREGATING | PART_HAVING | PART_ORDER);
 		}
 
 		if (from_stage <= QueryProcessingStage::WithMergeableState
@@ -376,7 +377,7 @@ void InterpreterSelectQuery::executeArrayJoin(BlockInputStreams & streams, Expre
 
 void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionPtr & expression)
 {
-	expression->markBeforeAggregation(PART_BEFORE_AGGREGATING);
+	expression->markBeforeAggregation(PART_BEFORE_AGGREGATING, 0);
 
 	if (query.group_expression_list)
 		setPartID(query.group_expression_list, PART_GROUP);

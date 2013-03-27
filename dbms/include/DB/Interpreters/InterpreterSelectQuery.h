@@ -62,6 +62,7 @@ private:
 		PART_ORDER 	= 32,
 		PART_BEFORE_AGGREGATING = 64,	/// Под агрегатной функцией
 		PART_BEFORE_ARRAY_JOIN = 128,	/// Под функцией arrayJoin
+		PART_AFTER_AGGREGATING = 256,	/// Вне агрегатной функции
 	};
 
 

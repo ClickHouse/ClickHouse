@@ -656,7 +656,7 @@ bool Expression::hasAggregates()
 }
 
 
-void Expression::markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, bool below)
+void Expression::markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below)
 {
 	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
 		if (func->aggregate_function)
@@ -664,16 +664,18 @@ void Expression::markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, 
 	
 	if (below)
 		ast->part_id |= before_part_id;
+	else
+		ast->part_id |= after_part_id;
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			markBeforeAggregationImpl(*it, before_part_id, below);
+			markBeforeAggregationImpl(*it, before_part_id, after_part_id, below);
 }
 
 
-void Expression::markBeforeAggregation(unsigned before_part_id)
+void Expression::markBeforeAggregation(unsigned before_part_id, unsigned after_part_id)
 {
-	markBeforeAggregationImpl(ast, before_part_id);
+	markBeforeAggregationImpl(ast, before_part_id, after_part_id);
 }
 
 

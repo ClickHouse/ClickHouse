@@ -80,7 +80,7 @@ public:
 	/** Пометить то, что должно быть вычислено до агрегирования одним part_id,
 	  * а то, что должно быть вычислено после агрегирования, а также сами агрегатные функции - другим part_id.
 	  */
-	void markBeforeAggregation(unsigned before_part_id);
+	void markBeforeAggregation(unsigned before_part_id, unsigned after_part_id);
 
 	/** Получить информацию об операции arrayJoin, если она есть.
 	  * Если есть - в column_name будет записано имя столбца, находящегося внутри arrayJoin.
@@ -143,7 +143,7 @@ private:
 
 	bool hasAggregatesImpl(ASTPtr ast);
 
-	void markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, bool below = false);
+	void markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, unsigned after_part_id, bool below = false);
 
 	void makeSetsImpl(ASTPtr ast, size_t subquery_depth, unsigned part_id);
 
