@@ -179,7 +179,8 @@ ColumnPtr DataTypeArray::createColumn() const
 
 ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConst<Array>(size, get<const Array &>(field), nested);
+	/// Последним аргументом нельзя отдать this.
+	return new ColumnConstArray(size, get<const Array &>(field), new DataTypeArray(nested));
 }
 
 }

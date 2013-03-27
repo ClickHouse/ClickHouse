@@ -32,10 +32,10 @@ class ColumnConst : public IColumnConst
 public:
 	typedef T Type;
 	
-	ColumnConst(size_t s_, const T & data_);
+	/// Для ColumnConst<Array> data_type_ должен быть ненулевым.
+	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
+	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr()) : s(s_), data(data_), data_type(data_type_) {}
 	
-	ColumnConst(size_t s_, const T & data_, DataTypePtr nested_type_);
-
 	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const { return IsNumber<T>::value; }
 	size_t sizeOfField() const { return sizeof(T); }
@@ -116,19 +116,12 @@ public:
 private:
 	size_t s;
 	T data;
-	DataTypePtr nested_type; /// Только для массивов.
+	DataTypePtr data_type;
 };
 
 
 typedef ColumnConst<String> ColumnConstString;
 typedef ColumnConst<Array> ColumnConstArray;
-
-
-template <typename T> ColumnConst<T>::ColumnConst(size_t s_, const T & data_) : s(s_), data(data_) {}
-template <typename T> ColumnConst<T>::ColumnConst(size_t s_, const T & data_, DataTypePtr nested_type_) { throw Exception("Can't create non-array ColumnConst with nested type", ErrorCodes::LOGICAL_ERROR); }
-
-template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_);
-template <> ColumnConst<Array>::ColumnConst(size_t s_, const Array & data_, DataTypePtr nested_type_);
 
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const

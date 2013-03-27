@@ -601,7 +601,7 @@ public:
 				}
 			}
 			
-			out_column = new ColumnConstArray(col_from->size(), res, new typename DataTypeFromFieldType<T>::Type);
+			out_column = new ColumnConstArray(col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
 			
 			return true;
 		}

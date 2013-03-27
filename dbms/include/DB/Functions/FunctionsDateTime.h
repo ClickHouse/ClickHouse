@@ -436,7 +436,7 @@ public:
 		{
 			Array const_res;
 			TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
-			block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(0).column->size(), const_res, new DataTypeDateTime);
+			block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(0).column->size(), const_res, new DataTypeArray(new DataTypeDateTime));
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()

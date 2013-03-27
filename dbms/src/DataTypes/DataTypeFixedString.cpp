@@ -116,7 +116,7 @@ ColumnPtr DataTypeFixedString::createColumn() const
 
 ColumnPtr DataTypeFixedString::createConstColumn(size_t size, const Field & field) const
 {
-	return new ColumnConst<String>(size, get<const String &>(field));
+	return new ColumnConstString(size, get<const String &>(field), clone());
 }
 
 }

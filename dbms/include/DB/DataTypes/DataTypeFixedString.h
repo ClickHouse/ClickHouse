@@ -31,6 +31,11 @@ public:
 	{
 		return new DataTypeFixedString(n);
 	}
+	
+	size_t getN() const
+	{
+		return n;
+	}
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
 	void deserializeBinary(Field & field, ReadBuffer & istr) const;
