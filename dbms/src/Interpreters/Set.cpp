@@ -281,7 +281,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 		if (data_types.size() != 1 || arguments.size() != 1)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 		if (array_type->getNestedType()->getName() != data_types[0]->getName())
-			throw Exception("Types in section IN don't match.", ErrorCodes::TYPE_MISMATCH);
+			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 		
 		IColumn * in_column = &*block.getByPosition(arguments[0]).column;
 		if (ColumnConstArray * col = dynamic_cast<ColumnConstArray *>(in_column))
@@ -303,7 +303,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			key_columns[i] = block.getByPosition(arguments[i]).column;
 			
 			if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
-				throw Exception("Types in section IN don't match.", ErrorCodes::TYPE_MISMATCH);
+				throw Exception("Types of column " + Poco::NumberFormatter::format(i + 1) + " in section IN don't match: " + data_types[i]->getName() + " on the right, " + block.getByPosition(arguments[i]).type->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 		}
 		
 		executeOrdinary(key_columns, vec_res, negative);
