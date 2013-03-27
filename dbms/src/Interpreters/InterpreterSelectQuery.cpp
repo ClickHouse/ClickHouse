@@ -166,7 +166,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		else if (from_stage <= QueryProcessingStage::WithMergeableState && to_stage > QueryProcessingStage::WithMergeableState)
 		{
 			/// Части могут пересекаться из-за склеивания поддеревьев. Здесь это не мешает.
-			setPartID(query.select_expression_list, PART_SELECT);
 			if (query.order_expression_list)
 				setPartID(query.order_expression_list, PART_ORDER);
 			if (query.having_expression)
