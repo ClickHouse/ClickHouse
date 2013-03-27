@@ -34,14 +34,14 @@ public:
 	  * Заменяет узлы ASTSubquery на узлы ASTSet.
 	  * Следует вызывать перед execute, если в выражении могут быть множества.
 	  */
-	void makeSets(size_t subquery_depth = 0);
+	void makeSets(size_t subquery_depth = 0, unsigned part_id = 0);
 
 	/** Выполнить подзапросы не в секциях IN и FROM и преобразовать их в константы.
 	  * Поддерживаются только независимые подзапросы.
 	  * Следует вызывать перед execute, если в выражении могут быть скалярные подзапросы.
 	  * Заменяет узлы ASTSubquery на узлы ASTLiteral или tuple.
 	  */
-	void resolveScalarSubqueries(size_t subquery_depth = 0);
+	void resolveScalarSubqueries(size_t subquery_depth = 0, unsigned part_id = 0);
 
 	/** Выполнить выражение над блоком. Блок должен содержать все столбцы - идентификаторы.
 	  * Функция добавляет в блок новые столбцы - результаты вычислений.
@@ -145,9 +145,9 @@ private:
 
 	void markBeforeAggregationImpl(ASTPtr ast, unsigned before_part_id, bool below = false);
 
-	void makeSetsImpl(ASTPtr ast, size_t subquery_depth);
+	void makeSetsImpl(ASTPtr ast, size_t subquery_depth, unsigned part_id);
 
-	void resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth);
+	void resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth, unsigned part_id);
 
 	bool getArrayJoinInfoImpl(ASTPtr ast, String & column_name);
 

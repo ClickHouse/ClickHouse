@@ -723,13 +723,13 @@ void Expression::markBeforeArrayJoin(unsigned part_id)
 }
 
 
-void Expression::makeSets(size_t subquery_depth)
+void Expression::makeSets(size_t subquery_depth, unsigned part_id)
 {
-	makeSetsImpl(ast, subquery_depth);
+	makeSetsImpl(ast, subquery_depth, part_id);
 }
 
 
-void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth)
+void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth, unsigned part_id)
 {
 	bool made = false;
 	
@@ -738,6 +738,10 @@ void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth)
 	{
 		if (func->name == "in" || func->name == "notIn")
 		{
+			/// Проверим, что мы в правильной части дерева.
+			if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
+				return;
+			
 			made = true;
 			
 			if (func->children.size() != 1)
@@ -807,21 +811,25 @@ void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth)
 	if (!made)
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			if (!dynamic_cast<ASTSelectQuery *>(&**it))
-				makeSetsImpl(*it, subquery_depth);
+				makeSetsImpl(*it, subquery_depth, part_id);
 }
 
 
-void Expression::resolveScalarSubqueries(size_t subquery_depth)
+void Expression::resolveScalarSubqueries(size_t subquery_depth, unsigned part_id)
 {
-	resolveScalarSubqueriesImpl(ast, subquery_depth);
+	resolveScalarSubqueriesImpl(ast, subquery_depth, part_id);
 }
 
 
-void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth)
+void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth, unsigned part_id)
 {
 	/// Обход в глубину. Ищем подзапросы.
 	if (ASTSubquery * subquery = dynamic_cast<ASTSubquery *>(&*ast))
 	{
+		/// Проверим, что мы в правильной части дерева.
+		if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
+			return;
+		
 		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
 	    InterpreterSelectQuery interpreter(subquery->children[0], context, QueryProcessingStage::Complete, subquery_depth + 1);
 		BlockInputStreamPtr res_stream = interpreter.execute();
@@ -867,7 +875,7 @@ void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth
 		if (recurse)
 			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 				if (!dynamic_cast<ASTSelectQuery *>(&**it))	/// А также не опускаемся в подзапросы в секции FROM.
-					resolveScalarSubqueriesImpl(*it, subquery_depth);
+					resolveScalarSubqueriesImpl(*it, subquery_depth, part_id);
 	}
 }
 

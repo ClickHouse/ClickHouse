@@ -147,21 +147,35 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	if (to_stage > QueryProcessingStage::FetchColumns)
 	{
-		/// Вычислим подзапросы в секции IN.
-		expression->makeSets(subquery_depth);
-		/// А также скалярные подзапросы.
-		expression->resolveScalarSubqueries(subquery_depth);
-		
 		/// Нужно ли агрегировать.
 		bool need_aggregate = expression->hasAggregates() || query.group_expression_list;
 		
 		if (from_stage < QueryProcessingStage::WithMergeableState)
 		{
+			/// Вычислим подзапросы в секции IN.
+			expression->makeSets(subquery_depth);
+			/// А также скалярные подзапросы.
+			expression->resolveScalarSubqueries(subquery_depth);
+			
 			executeArrayJoin(streams, expression);
 			executeWhere(streams, expression);
 
 			if (need_aggregate)
 				executeAggregation(streams, expression);
+		}
+		else if (from_stage <= QueryProcessingStage::WithMergeableState && to_stage > QueryProcessingStage::WithMergeableState)
+		{
+			/// Части могут пересекаться из-за склеивания поддеревьев. Здесь это не мешает.
+			setPartID(query.select_expression_list, PART_SELECT);
+			if (query.order_expression_list)
+				setPartID(query.order_expression_list, PART_ORDER);
+			if (query.having_expression)
+				setPartID(query.having_expression, PART_HAVING);
+
+			/// Вычислим подзапросы в секции IN.
+			expression->makeSets(subquery_depth, PART_SELECT | PART_HAVING | PART_ORDER);
+			/// А также скалярные подзапросы.
+			expression->resolveScalarSubqueries(subquery_depth, PART_SELECT | PART_HAVING | PART_ORDER);
 		}
 
 		if (from_stage <= QueryProcessingStage::WithMergeableState
