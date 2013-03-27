@@ -797,7 +797,7 @@ void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth)
 				ast_set->set->create(set_element_types, set_func->arguments);
 				arg = ast_set;
 			}
-			else
+			else if (!dynamic_cast<ASTSet *>(&*arg))
 				throw Exception("Incorrect type of 2nd argument for function IN. Must be subquery or set of values.",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
