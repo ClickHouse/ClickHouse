@@ -740,10 +740,6 @@ void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth, unsigned part_i
 	{
 		if (func->name == "in" || func->name == "notIn")
 		{
-			/// Проверим, что мы в правильной части дерева.
-			if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
-				return;
-			
 			made = true;
 			
 			if (func->children.size() != 1)
@@ -755,6 +751,14 @@ void Expression::makeSetsImpl(ASTPtr ast, size_t subquery_depth, unsigned part_i
 			if (args.children.size() != 2)
 				throw Exception("Function IN requires exactly 2 arguments",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+			/// В левом аргументе IN могут быть вложенные секции IN.
+			if (!dynamic_cast<ASTSelectQuery *>(&*args.children[0]))
+				makeSetsImpl(args.children[0], subquery_depth, part_id);
+			
+			/// Проверим, что мы в правильной части дерева.
+			if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
+				return;
 				
 			/** Нужно преобразовать правый аргумент в множество.
 			  * Это может быть перечисление значений или подзапрос.
@@ -867,13 +871,25 @@ void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth
 	}
 	else
 	{
-		/// Обходим рекурсивно, но не опускаемся в секции IN.
+		/// Обходим рекурсивно, но не опускаемся в правую часть секции IN.
 		bool recurse = true;
 
 		if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
+		{
 			if (func->name == "in" || func->name == "notIn")
+			{
 				recurse = false;
-
+				
+				if (func->children.size() == 1)
+				{
+					ASTExpressionList * args = dynamic_cast<ASTExpressionList *>(&*func->children[0]);
+					if (args && args->children.size() == 2)
+					{
+						resolveScalarSubqueriesImpl(args->children[0], subquery_depth, part_id);
+					}
+				}
+			}
+		}
 		if (recurse)
 			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 				if (!dynamic_cast<ASTSelectQuery *>(&**it))	/// А также не опускаемся в подзапросы в секции FROM.
