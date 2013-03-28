@@ -2,9 +2,9 @@
 
 #include <string>
 #include <vector>
-#include <boost/strong_typedef.hpp>
 #include <Poco/Types.h>
 #include <Poco/SharedPtr.h>
+#include <Yandex/strong_typedef.h>
 
 
 namespace DB
@@ -13,7 +13,7 @@ namespace DB
 /** Типы данных для представления значений из БД в оперативке.
   */
 
-BOOST_STRONG_TYPEDEF(char, Null);
+STRONG_TYPEDEF(char, Null);
 
 typedef Poco::UInt8 UInt8;
 typedef Poco::UInt16 UInt16;
