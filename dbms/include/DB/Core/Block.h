@@ -51,6 +51,9 @@ public:
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;
 
+	ColumnWithNameAndType & unsafeGetByPosition(size_t position) { return *index_by_position[position]; }
+	const ColumnWithNameAndType & unsafeGetByPosition(size_t position) const { return *index_by_position[position]; }
+
 	ColumnWithNameAndType & getByName(const std::string & name);
 	const ColumnWithNameAndType & getByName(const std::string & name) const;
 
