@@ -20,10 +20,11 @@ Connection::Connection(
 	const char* user,
 	const char* password,
 	unsigned port,
-	unsigned timeout)
+	unsigned timeout,
+	unsigned rw_timeout)
 {
 	is_connected = false;
-	connect(db, server, user, password, port);
+	connect(db, server, user, password, port, timeout, rw_timeout);
 }
 
 Connection::~Connection()
@@ -37,7 +38,8 @@ void Connection::connect(const char* db,
 	const char* user,
 	const char* password,
 	unsigned port,
-	unsigned timeout)
+	unsigned timeout,
+	unsigned rw_timeout)
 {
 	if (is_connected)
 		disconnect();
@@ -50,6 +52,12 @@ void Connection::connect(const char* db,
 
 	/// Установим таймауты
 	if (mysql_options(&driver, MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<const char *>(&timeout)))
+		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+
+	if (mysql_options(&driver, MYSQL_OPT_READ_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
+		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+
+	if (mysql_options(&driver, MYSQL_OPT_WRITE_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
 		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
 
 	/** Включаем возможность использовать запрос LOAD DATA LOCAL INFILE с серверами,
