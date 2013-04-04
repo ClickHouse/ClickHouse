@@ -148,7 +148,7 @@ public:
 					Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
 				app.logger().information("MYSQL: Reconnecting to " + pool->description);
-				data->conn.connect(pool->config_name);
+				data->conn.connect(pool->db.c_str(), pool->server.c_str(), pool->user.c_str(), pool->password.c_str(), pool->port);
 			}
 			while (!data->conn.ping());
 
@@ -180,19 +180,47 @@ public:
 	};
 
 	/**
-	 * @param ConfigName		Имя параметра в конфигурационном файле.
-	 * @param DefConn			Количество подключений по-умолчанию
-	 * @param MaxConn			Максимальное количество подключений
-	 * @param AllowMultiQueries	Не используется.
+	 * @param config_name			Имя параметра в конфигурационном файле
+	 * @param default_connections_	Количество подключений по-умолчанию
+	 * @param max_connections_		Максимальное количество подключений
+	 * @param init_connect_			Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251"
 	 */
-	Pool(const std::string & config_name_,
+	Pool(const std::string & config_name,
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
 		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-			const std::string & init_connect_ = "")
+		 const std::string & init_connect_ = "")
 		: default_connections(default_connections_), max_connections(max_connections_), init_connect(init_connect_),
-		initialized(false), config_name(config_name_), was_successful(false)
+		initialized(false), was_successful(false)
 	{
+		Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
+
+		db 			= cfg.getString(config_name + ".db", "");
+		server 		= cfg.getString(config_name + ".host");
+		user 		= cfg.getString(config_name + ".user");
+		password	= cfg.getString(config_name + ".password");
+		port		= cfg.getInt   (config_name + ".port");
 	}
+	
+	/**
+	 * @param db_					Имя БД
+	 * @param server_				Хост для подключения
+	 * @param user_					Имя пользователя
+	 * @param password_				Пароль
+	 * @param port_					Порт для подключения
+	 * @param default_connections_	Количество подключений по-умолчанию
+	 * @param max_connections_		Максимальное количество подключений
+	 * @param init_connect_			Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251"
+	 */
+	Pool(const std::string & db_,
+		 const std::string & server_,
+		 const std::string & user_ = "",
+		 const std::string & password_ = "",
+		 unsigned port_ = 0,
+		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+		 const std::string & init_connect_ = "")
+	: default_connections(default_connections_), max_connections(max_connections_), init_connect(init_connect_),
+	initialized(false), db(db_), server(server_), user(user_), password(password_), port(port_), was_successful(false) {}
 
 	~Pool()
 	{
@@ -285,10 +313,15 @@ private:
 	Connections connections;
 	/** Замок для доступа к списку соединений. */
 	Poco::FastMutex lock;
-	/** Имя раздела в конфигурационном файле. */
-	std::string config_name;
 	/** Описание соединения. */
 	std::string description;
+	
+	/** Параметры подключения. **/
+	std::string db;
+	std::string server;
+	std::string user;
+	std::string password;
+	unsigned port;
 
 	/** Хотя бы один раз было успешное соединение. */
 	bool was_successful;
@@ -298,13 +331,7 @@ private:
 	{
 		if (!initialized)
 		{
-			Poco::Util::Application & app = Poco::Util::Application::instance();
-			Poco::Util::LayeredConfiguration & cfg = app.config();
-
-			description = cfg.getString(config_name + ".db", "")
-				+ "@" + cfg.getString(config_name + ".host")
-				+ ":" + cfg.getString(config_name + ".port")
-				+ " as user " + cfg.getString(config_name + ".user");
+			description = db + "@" + server + ":" + Poco::NumberFormatter::format(port) + " as user " + user;
 
 			for (unsigned i = 0; i < default_connections; i++)
 				allocConnection();
@@ -323,7 +350,7 @@ private:
 		try
 		{
 			app.logger().information("MYSQL: Connecting to " + description);
-			conn->conn.connect(config_name);
+			conn->conn.connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port);
 		}
 		catch (mysqlxx::ConnectionFailed & e)
 		{
