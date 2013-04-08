@@ -3,7 +3,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/NumberParser.h>
-#include <Poco/Ext/scopedTry.h>
+#include <Poco/Ext/ScopedTry.h>
 
 #include <Yandex/time2str.h>
 
