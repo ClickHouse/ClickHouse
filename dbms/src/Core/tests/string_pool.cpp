@@ -2,7 +2,7 @@
 #include <fstream>
 #include <iomanip>
 #include <tr1/unordered_map>
-#include <google/dense_hash_map>
+#include <sparsehash/dense_hash_map>
 
 #include <statdaemons/Stopwatch.h>
 
