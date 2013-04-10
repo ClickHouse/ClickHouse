@@ -249,7 +249,7 @@ public:
 		}
 		else if (col_const1 && col_const2)
 		{
-			block.getByPosition(result).column = new ColumnConst<T>(col_const1->size(),
+			block.getByPosition(result).column = new ColumnConst<UInt8>(col_const1->size(),
 				Transform::apply(col_const1->getData(), col_const2->getData(), *owned_dict));
 		}
 		else
