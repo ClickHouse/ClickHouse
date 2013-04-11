@@ -148,11 +148,16 @@ public:
 					Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
 				app.logger().information("MYSQL: Reconnecting to " + pool->description);
-				data->conn.connect(pool->db.c_str(), pool->server.c_str(), pool->user.c_str(), pool->password.c_str(), pool->port);
+				data->conn.connect(
+					pool->db.c_str(),
+					pool->server.c_str(),
+					pool->user.c_str(),
+					pool->password.c_str(),
+					pool->port,
+					pool->connect_timeout,
+					pool->rw_timeout);
 			}
 			while (!data->conn.ping());
-
-			pool->afterConnect(data->conn);
 		}
 
 		/** Переподключается к базе данных в случае необходимости. Если не удалось - вернуть false. */
@@ -183,13 +188,11 @@ public:
 	 * @param config_name			Имя параметра в конфигурационном файле
 	 * @param default_connections_	Количество подключений по-умолчанию
 	 * @param max_connections_		Максимальное количество подключений
-	 * @param init_connect_			Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251"
 	 */
 	Pool(const std::string & config_name,
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
-		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-		 const std::string & init_connect_ = "")
-		: default_connections(default_connections_), max_connections(max_connections_), init_connect(init_connect_),
+		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS)
+		: default_connections(default_connections_), max_connections(max_connections_),
 		initialized(false), was_successful(false)
 	{
 		Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
@@ -198,7 +201,16 @@ public:
 		server 		= cfg.getString(config_name + ".host");
 		user 		= cfg.getString(config_name + ".user");
 		password	= cfg.getString(config_name + ".password");
-		port		= cfg.getInt   (config_name + ".port");
+		port		= cfg.getInt(config_name + ".port");
+
+		connect_timeout = cfg.getInt(config_name + ".connect_timeout",
+				cfg.getInt("mysql_connect_timeout",
+					MYSQLXX_DEFAULT_TIMEOUT));
+
+		rw_timeout =
+			cfg.getInt(config_name + ".rw_timeout",
+				cfg.getInt("mysql_rw_timeout",
+					MYSQLXX_DEFAULT_TIMEOUT));
 	}
 	
 	/**
@@ -209,18 +221,19 @@ public:
 	 * @param port_					Порт для подключения
 	 * @param default_connections_	Количество подключений по-умолчанию
 	 * @param max_connections_		Максимальное количество подключений
-	 * @param init_connect_			Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251"
 	 */
 	Pool(const std::string & db_,
 		 const std::string & server_,
 		 const std::string & user_ = "",
 		 const std::string & password_ = "",
 		 unsigned port_ = 0,
+		 unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
+		 unsigned rw_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
-		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-		 const std::string & init_connect_ = "")
-	: default_connections(default_connections_), max_connections(max_connections_), init_connect(init_connect_),
-	initialized(false), db(db_), server(server_), user(user_), password(password_), port(port_), was_successful(false) {}
+		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS)
+	: default_connections(default_connections_), max_connections(max_connections_),
+	initialized(false), db(db_), server(server_), user(user_), password(password_), port(port_),
+	connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), was_successful(false) {}
 
 	~Pool()
 	{
@@ -301,8 +314,6 @@ protected:
 	unsigned default_connections;
 	/** Максимально возможное количество соедиений. */
 	unsigned max_connections;
-	/** Запрос, выполняющийся сразу после соединения с БД. Пример: "SET NAMES cp1251". */
-	std::string init_connect;
 
 private:
 	/** Признак того, что мы инициализированы. */
@@ -322,6 +333,8 @@ private:
 	std::string user;
 	std::string password;
 	unsigned port;
+	unsigned connect_timeout;
+	unsigned rw_timeout;
 
 	/** Хотя бы один раз было успешное соединение. */
 	bool was_successful;
@@ -350,7 +363,15 @@ private:
 		try
 		{
 			app.logger().information("MYSQL: Connecting to " + description);
-			conn->conn.connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port);
+
+			conn->conn.connect(
+				db.c_str(),
+				server.c_str(),
+				user.c_str(),
+				password.c_str(),
+				port,
+				connect_timeout,
+				rw_timeout);
 		}
 		catch (mysqlxx::ConnectionFailed & e)
 		{
@@ -375,25 +396,8 @@ private:
 		}
 
 		was_successful = true;
-		afterConnect(conn->conn);
 		connections.push_back(conn);
 		return conn;
-	}
-
-
-	/** Действия, выполняемые после соединения. */
-	void afterConnect(mysqlxx::Connection & conn)
-	{
-		Poco::Util::Application & app = Poco::Util::Application::instance();
-
-		/// Инициализирующий запрос (например, установка другой кодировки)
-		if (!init_connect.empty())
-		{
-			mysqlxx::Query q = conn.query();
-			q << init_connect;
-			app.logger().trace(q.str());
-			q.execute();
-		}
 	}
 };
 
