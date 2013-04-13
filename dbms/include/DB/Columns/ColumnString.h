@@ -53,6 +53,11 @@ public:
 
 	StringRef getDataAt(size_t n) const
 	{
+		return StringRef(&char_data[offsetAt(n)], sizeAt(n) - 1);
+	}
+
+	StringRef getDataAtWithTerminatingZero(size_t n) const
+	{
 		return StringRef(&char_data[offsetAt(n)], sizeAt(n));
 	}
 
@@ -80,6 +85,16 @@ public:
 	}
 
 	void insertData(const char * pos, size_t length)
+	{
+		size_t old_size = char_data.size();
+
+		char_data.resize(old_size + length + 1);
+		memcpy(&char_data[old_size], pos, length);
+		char_data[old_size + length] = 0;
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + length + 1);
+	}
+
+	void insertDataWithTerminatingZero(const char * pos, size_t length)
 	{
 		size_t old_size = char_data.size();
 

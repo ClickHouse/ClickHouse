@@ -77,7 +77,7 @@ inline UInt128 __attribute__((__always_inline__)) pack128(
 		for (size_t j = 0; j < keys_size; ++j)
 		{
 			key_columns[j]->get(i, key[j]);
-			StringRef key_data = key_columns[j]->getDataAt(i);
+			StringRef key_data = key_columns[j]->getDataAtWithTerminatingZero(i);
 			hash.update(key_data.data, key_data.size);
 		}
 
@@ -115,7 +115,7 @@ inline UInt128 __attribute__((__always_inline__)) pack128(
 
 		for (size_t j = 0; j < keys_size; ++j)
 		{
-			StringRef key_data = key_columns[j]->getDataAt(i);
+			StringRef key_data = key_columns[j]->getDataAtWithTerminatingZero(i);
 			hash.update(key_data.data, key_data.size);
 		}
 

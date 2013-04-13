@@ -296,7 +296,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				for (size_t i = 0; i < rows; ++i)
 				{
 					/// Строим ключ
-					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1]));
+					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;
@@ -862,7 +862,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 				for (size_t i = 0; i < rows; ++i)
 				{
 					/// Строим ключ
-					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1]));
+					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;

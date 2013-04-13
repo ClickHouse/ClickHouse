@@ -105,6 +105,7 @@ public:
 	}
 
 	StringRef getDataAt(size_t n) const;
+	StringRef getDataAtWithTerminatingZero(size_t n) const;
 
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }
@@ -154,15 +155,26 @@ template <typename T> StringRef getDataAtImpl(size_t n, const T & data)
 }
 
 template <> inline StringRef ColumnConst<UInt8		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<UInt16	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<UInt32	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
-template <> inline StringRef ColumnConst<UInt64	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<UInt16		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<UInt32		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+template <> inline StringRef ColumnConst<UInt64		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<Int8		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<Int16		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<Int32		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<Int64		>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<Float32	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
 template <> inline StringRef ColumnConst<Float64	>::getDataAt(size_t n) const { return getDataAtImpl(n, data); }
+
+
+template <typename T> StringRef ColumnConst<T>::getDataAtWithTerminatingZero(size_t n) const
+{
+	return getDataAt(n);
+}
+
+template <> inline StringRef ColumnConst<String>::getDataAtWithTerminatingZero(size_t n) const
+{
+	return StringRef(data.data(), data.size() + 1);
+}
 
 
 }
