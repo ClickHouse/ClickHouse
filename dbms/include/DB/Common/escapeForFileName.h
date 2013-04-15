@@ -30,7 +30,7 @@ inline std::string escapeForFileName(const std::string & s)
 	return res;
 }
 
-std::string unescapeForFileName(const std::string & s)
+inline std::string unescapeForFileName(const std::string & s)
 {
 	std::string res;
 	const char * pos = s.data();
