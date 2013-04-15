@@ -198,11 +198,19 @@ inline void writeEscapedString(const String & s, WriteBuffer & buf)
 
 
 template <char c>
-void writeAnyQuotedString(const String & s, WriteBuffer & buf)
+void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
 {
 	writeChar(c, buf);
-	writeAnyEscapedString<c>(s, buf);
+	writeAnyEscapedString<c>(begin, end, buf);
 	writeChar(c, buf);
+}
+
+
+
+template <char c>
+void writeAnyQuotedString(const String & s, WriteBuffer & buf)
+{
+	writeAnyQuotedString<c>(s.data(), s.data() + s.size(), buf);
 }
 
 
