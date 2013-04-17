@@ -60,7 +60,7 @@ struct IAttributeMetadata
 /// округление до степени двух или 0, если аргумент - 0.
 inline UInt64 roundToExp2(UInt64 x)
 {
-	return x == 0 ? 0 : (1 << static_cast<UInt64>(log2(static_cast<double>(x))));
+	return x == 0 ? 0 : (1ULL << static_cast<UInt64>(log2(static_cast<double>(x))));
 }
 
 
