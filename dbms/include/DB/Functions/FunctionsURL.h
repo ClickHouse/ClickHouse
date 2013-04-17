@@ -566,10 +566,10 @@ struct ExtractSubstringImpl
 	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
 		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
 	{
-		res_data.reserve(data.size() * Extractor::getReserveLengthForElement());
 		size_t size = offsets.size();
 		res_offsets.resize(size);
-
+		res_data.reserve(size * Extractor::getReserveLengthForElement());
+		
 		size_t prev_offset = 0;
 		size_t res_offset = 0;
 
