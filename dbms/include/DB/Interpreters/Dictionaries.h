@@ -8,13 +8,14 @@
 #include <Yandex/logger_useful.h>
 #include <statdaemons/RegionsHierarchy.h>
 #include <statdaemons/TechDataHierarchy.h>
+#include <statdaemons/CategoriesHierarchy.h>
 
 
 namespace DB
 {
 
 using Poco::SharedPtr;
-	
+
 /// Словари Метрики, которые могут использоваться в функциях.
 
 class Dictionaries
@@ -22,6 +23,7 @@ class Dictionaries
 private:
 	Yandex::MultiVersion<RegionsHierarchy> regions_hierarchy;
 	Yandex::MultiVersion<TechDataHierarchy> tech_data_hierarchy;
+	Yandex::MultiVersion<CategoriesHierarchy> categories_hierarchy;
 
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
@@ -46,9 +48,12 @@ private:
 			Yandex::MultiVersion<TechDataHierarchy>::Version new_tech_data_hierarchy = new TechDataHierarchy;
 			Yandex::MultiVersion<RegionsHierarchy>::Version new_regions_hierarchy = new RegionsHierarchy;
 			new_regions_hierarchy->reload();
-
+			Yandex::MultiVersion<CategoriesHierarchy>::Version new_categories_hierarchy = new CategoriesHierarchy;
+			new_categories_hierarchy->reload();
+			
 			tech_data_hierarchy.set(new_tech_data_hierarchy);
 			regions_hierarchy.set(new_regions_hierarchy);
+			categories_hierarchy.set(new_categories_hierarchy);
 		}
 		catch (const Poco::Exception & e)
 		{
@@ -100,6 +105,11 @@ public:
 	Yandex::MultiVersion<TechDataHierarchy>::Version getTechDataHierarchy() const
 	{
 		return tech_data_hierarchy.get();
+	}
+	
+	Yandex::MultiVersion<CategoriesHierarchy>::Version getCategoriesHierarchy() const
+	{
+		return categories_hierarchy.get();
 	}
 };
 

@@ -9,6 +9,7 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Functions/IFunction.h>
+#include <statdaemons/CategoriesHierarchy.h>
 
 
 namespace DB
@@ -21,12 +22,14 @@ namespace DB
   *  regionToCity, regionToArea, regionToCountry,
   *  OSToRoot,
   *  SEToRoot,
+  *  categoryToRoot,
+  *  categoryToSecondLevel
   *
   * Является ли первый идентификатор потомком второго.
-  *  regionIn, SEIn, OSIn.
+  *  regionIn, SEIn, OSIn, categoryIn.
   * 
   * Получить массив идентификаторов регионов, состоящий из исходного и цепочки родителей. Порядок implementation defined.
-  *  regionHierarchy, OSHierarchy, SEHierarchy.
+  *  regionHierarchy, OSHierarchy, SEHierarchy, categoryHierarchy.
   */
 
 
@@ -55,6 +58,16 @@ struct SEToRootImpl
 	static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToMostAncestor(x); }
 };
 
+struct CategoryToRootImpl
+{
+	static UInt16 apply(UInt16 x, const CategoriesHierarchy & hierarchy) { return hierarchy.toMostAncestor(x); }
+};
+
+struct CategoryToSecondLevelImpl
+{
+	static UInt16 apply(UInt16 x, const CategoriesHierarchy & hierarchy) { return hierarchy.toSecondLevel(x); }
+};
+
 struct RegionInImpl
 {
 	static bool apply(UInt32 x, UInt32 y, const RegionsHierarchy & hierarchy) { return hierarchy.in(x, y); }
@@ -70,6 +83,11 @@ struct SEInImpl
 	static bool apply(UInt32 x, UInt32 y, const TechDataHierarchy & hierarchy) { return hierarchy.isSEIn(x, y); }
 };
 
+struct CategoryInImpl
+{
+	static bool apply(UInt16 x, UInt16 y, const CategoriesHierarchy & hierarchy) { return hierarchy.in(x, y); }
+};
+
 struct RegionHierarchyImpl
 {
 	static UInt32 toParent(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toParent(x); }
@@ -83,6 +101,11 @@ struct OSHierarchyImpl
 struct SEHierarchyImpl
 {
 	static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToParent(x); }
+};
+
+struct CategoryHierarchyImpl
+{
+	static UInt16 toParent(UInt16 x, const CategoriesHierarchy & hierarchy) { return hierarchy.toParent(x); }
 };
 
 
@@ -354,28 +377,36 @@ struct NameRegionToArea 	{ static const char * get() { return "regionToArea"; } 
 struct NameRegionToCountry 	{ static const char * get() { return "regionToCountry"; } };
 struct NameOSToRoot 		{ static const char * get() { return "OSToRoot"; } };
 struct NameSEToRoot 		{ static const char * get() { return "SEToRoot"; } };
+struct NameCategoryToRoot 	{ static const char * get() { return "categoryToRoot"; } };
+struct NameCategoryToSecondLevel { static const char * get() { return "categoryToSecondLevel"; } };
 
 struct NameRegionIn 		{ static const char * get() { return "regionIn"; } };
 struct NameOSIn 			{ static const char * get() { return "OSIn"; } };
 struct NameSEIn 			{ static const char * get() { return "SEIn"; } };
+struct NameCategoryIn 		{ static const char * get() { return "categoryIn"; } };
 
 struct NameRegionHierarchy	{ static const char * get() { return "regionHierarchy"; } };
-struct NameOSHierarchy	{ static const char * get() { return "OSHierarchy"; } };
-struct NameSEHierarchy	{ static const char * get() { return "SEHierarchy"; } };
+struct NameOSHierarchy		{ static const char * get() { return "OSHierarchy"; } };
+struct NameSEHierarchy		{ static const char * get() { return "SEHierarchy"; } };
+struct NameCategoryHierarchy{ static const char * get() { return "categoryHierarchy"; } };
 
 
-typedef FunctionTransformWithDictionary<UInt32,	RegionToCityImpl, RegionsHierarchy, NameRegionToCity> 		FunctionRegionToCity;
-typedef FunctionTransformWithDictionary<UInt32,	RegionToAreaImpl, RegionsHierarchy, NameRegionToArea> 		FunctionRegionToArea;
-typedef FunctionTransformWithDictionary<UInt32,	RegionToCountryImpl, RegionsHierarchy, NameRegionToCountry> FunctionRegionToCountry;
-typedef FunctionTransformWithDictionary<UInt8,	OSToRootImpl, TechDataHierarchy, NameOSToRoot> 				FunctionOSToRoot;
-typedef FunctionTransformWithDictionary<UInt8,	SEToRootImpl, TechDataHierarchy, NameSEToRoot> 				FunctionSEToRoot;
+typedef FunctionTransformWithDictionary<UInt32,	RegionToCityImpl,	RegionsHierarchy,	NameRegionToCity> 		FunctionRegionToCity;
+typedef FunctionTransformWithDictionary<UInt32,	RegionToAreaImpl,	RegionsHierarchy,	NameRegionToArea> 		FunctionRegionToArea;
+typedef FunctionTransformWithDictionary<UInt32,	RegionToCountryImpl,RegionsHierarchy,	NameRegionToCountry> 	FunctionRegionToCountry;
+typedef FunctionTransformWithDictionary<UInt8,		OSToRootImpl,		TechDataHierarchy,	NameOSToRoot> 			FunctionOSToRoot;
+typedef FunctionTransformWithDictionary<UInt8,		SEToRootImpl,		TechDataHierarchy,	NameSEToRoot>			FunctionSEToRoot;
+typedef FunctionTransformWithDictionary<UInt16,	CategoryToRootImpl,	CategoriesHierarchy,NameCategoryToRoot>	FunctionCategoryToRoot;
+typedef FunctionTransformWithDictionary<UInt16,CategoryToSecondLevelImpl,CategoriesHierarchy,NameCategoryToSecondLevel> FunctionCategoryToSecondLevel;
 
-typedef FunctionIsInWithDictionary<UInt32,	RegionInImpl, RegionsHierarchy, NameRegionIn> 						FunctionRegionIn;
-typedef FunctionIsInWithDictionary<UInt8,	OSInImpl, TechDataHierarchy, NameOSIn> 							FunctionOSIn;
-typedef FunctionIsInWithDictionary<UInt8,	SEInImpl, TechDataHierarchy, NameSEIn> 							FunctionSEIn;
+typedef FunctionIsInWithDictionary<UInt32,	RegionInImpl,	RegionsHierarchy,	NameRegionIn> 						FunctionRegionIn;
+typedef FunctionIsInWithDictionary<UInt8,	OSInImpl,		TechDataHierarchy,	NameOSIn> 							FunctionOSIn;
+typedef FunctionIsInWithDictionary<UInt8,	SEInImpl,		TechDataHierarchy,	NameSEIn> 							FunctionSEIn;
+typedef FunctionIsInWithDictionary<UInt16,	CategoryInImpl,	CategoriesHierarchy,NameCategoryIn>					FunctionCategoryIn;
 
-typedef FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchy, NameRegionHierarchy>	FunctionRegionHierarchy;
-typedef FunctionHierarchyWithDictionary<UInt8, OSHierarchyImpl, TechDataHierarchy, NameOSHierarchy>			FunctionOSHierarchy;
-typedef FunctionHierarchyWithDictionary<UInt8, SEHierarchyImpl, TechDataHierarchy, NameSEHierarchy>			FunctionSEHierarchy;
+typedef FunctionHierarchyWithDictionary<UInt32,	RegionHierarchyImpl,	RegionsHierarchy, NameRegionHierarchy>	FunctionRegionHierarchy;
+typedef FunctionHierarchyWithDictionary<UInt8,		OSHierarchyImpl,		TechDataHierarchy, NameOSHierarchy>	FunctionOSHierarchy;
+typedef FunctionHierarchyWithDictionary<UInt8,		SEHierarchyImpl,		TechDataHierarchy, NameSEHierarchy>	FunctionSEHierarchy;
+typedef FunctionHierarchyWithDictionary<UInt16,	CategoryHierarchyImpl,	CategoriesHierarchy, NameCategoryHierarchy>FunctionCategoryHierarchy;
 
 }
