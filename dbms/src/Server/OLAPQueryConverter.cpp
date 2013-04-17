@@ -286,6 +286,10 @@ std::string QueryConverter::convertCondition(const std::string & attribute, unsi
 		return "SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
 	if (name == "se_not_in")
 		return "NOT SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
+	if (name == "category_in")
+		return "categoryIn(" + value + ", " + constant + ")";
+	if (name == "category_not_in")
+		return "NOT categoryIn(" + value + ", " + constant + ")";
 	if (name == "interest_has_all_from")
 		return "bitwiseAnd(" + value + ", " + constant + ") == " + constant;
 	if (name == "interest_not_has_all_from")
@@ -339,7 +343,7 @@ std::string QueryConverter::getHavingSection()
 void QueryConverter::fillNumericAttributeMap()
 {
 #define M(a, b) numeric_attribute_map[a] = b;
-	M("Dummy",                "0")
+	M("DummyAttribute",       "0")
 	M("VisitStartDateTime",   "toUInt32(StartTime)")
 	M("VisitStartDate",       "toUInt32(toDateTime(StartDate))")
 	M("VisitStartWeek",       "toUInt32(toDateTime(toMonday(StartDate)))")
@@ -389,6 +393,13 @@ void QueryConverter::fillNumericAttributeMap()
 	M("RegionCity",           "regionToCity(RegionID)")
 	M("RegionArea",           "regionToArea(RegionID)")
 	M("RegionCountry",        "regionToCountry(RegionID)")
+	M("URLRegionID",          "URLRegionID")
+	M("URLRegionCity",        "regionToCity(URLRegionID)")
+	M("URLRegionArea",        "regionToArea(URLRegionID)")
+	M("URLRegionCountry",     "regionToCountry(URLRegionID)")
+	M("URLCategoryID",        "URLCategoryID")
+	M("URLCategoryMostAncestor", "categoryToRoot(URLCategoryID)")
+	M("URLCategorySecondLevel",  "categoryToSecondLevel(URLCategoryID)")
 	M("TraficSourceID",       "TraficSourceID")
 	M("IsNewUser",            "FirstVisit == StartTime")
 	M("UserNewness",          "intDiv(toUInt64(StartTime)-toUInt64(FirstVisit), 86400)")
@@ -469,7 +480,7 @@ void QueryConverter::fillNumericAttributeMap()
 	M("WindowClientHeight",   "WindowClientHeight")
 	M("WindowClientHeightInterval","intDiv(WindowClientHeight, 100) * 100")
 	M("SearchEngineID",       "SearchEngineID")
-	M("SEMostAncestor",       "SEToRoot(toUInt8(SearchEngineID))")
+	M("SearchEngineMostAncestor", "SEToRoot(toUInt8(SearchEngineID))")
 	M("CodeVersion",          "CodeVersion")
 	
 	M("UserAgent",            "UserAgent * 16777216 + UserAgentMajor * 65536 + UserAgentMinor")
@@ -523,6 +534,8 @@ void QueryConverter::fillNumericAttributeMap()
 	M("UTMTermHash",          "UTMTermHash")
 	M("FromHash",             "FromHash")
 	M("CLID",                 "CLID")
+	
+	M("SocialSourceNetworkID","SocialSourceNetworkID")
 #undef M
 }
 
@@ -550,7 +563,7 @@ void QueryConverter::fillFormattedAttributeMap()
 	M("Silverlight",          "concat(concat(concat(concat(concat(concat(toString(SilverlightVersion1), '.'), toString(SilverlightVersion2)), '.'), toString(SilverlightVersion3)), '.'), toString(SilverlightVersion4))")
 	M("MobilePhoneModel",     "MobilePhoneModel")
 	
-	M("ClientIP",             "concat(concat(concat(concat(concat(concat(toString(intDiv(ClientIP, 16777216)),'.'),toString(intDiv(ClientIP, 65536) %% 256)),'.'),toString(intDiv(ClientIP, 256) %% 256)),'.'),toString(ClientIP %% 256))")
+	M("ClientIP",             "IPv4NumToString(ClientIP)")
 	M("Resolution",           "concat(concat(concat(concat(toString(ResolutionWidth),'x'),toString(ResolutionHeight)),'x'),toString(ResolutionDepth))")
 	M("ResolutionWidthHeight","concat(concat(toString(ResolutionWidth),'x'),toString(ResolutionHeight))")
 	
@@ -601,7 +614,7 @@ void QueryConverter::fillFormattingAggregatedAttributeMap()
 	M("TopLevelDomain",       tostring)
 	M("URLScheme",            tostring)
 	
-	M("ClientIP",             "concat(concat(concat(concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)),'.'),toString(intDiv(toUInt32(%[0]s), 65536) %% 256)),'.'),toString(intDiv(toUInt32(%[0]s), 256) %% 256)),'.'),toString(toUInt32(%[0]s) %% 256))")
+	M("ClientIP",             "IPv4NumToString(%[0]s)")
 	M("Resolution",           "concat(concat(concat(concat(toString(intDiv(toUInt64(%[0]s), 16777216)),'x'),toString(intDiv(toUInt64(%[0]s), 256) %% 65536)),'x'),toString(toUInt64(%[0]s) %% 256))")
 	M("ResolutionWidthHeight","concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) %% 65536))")
 	
