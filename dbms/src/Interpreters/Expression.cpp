@@ -124,6 +124,13 @@ void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfA
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
 			addSemanticImpl(*it, finished_asts, current_asts);
 	
+	/// Если секция WHERE или HAVING состоит одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
+	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
+	{
+		addSemanticImpl(select->where_expression, finished_asts, current_asts);
+		addSemanticImpl(select->having_expression, finished_asts, current_asts);
+	}
+	
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
 		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
