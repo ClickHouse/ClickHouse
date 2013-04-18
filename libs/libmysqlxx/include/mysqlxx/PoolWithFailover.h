@@ -94,7 +94,6 @@ namespace mysqlxx
 			{
 				Poco::Util::AbstractConfiguration::Keys replica_keys;
 				cfg.keys(config_name, replica_keys);
-				std::map<int, Replicas> replicas_by_priority;
 				for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = replica_keys.begin(); it != replica_keys.end(); ++it)
 				{
 					if (it->size() < std::string("replica").size() || it->substr(0, std::string("replica").size()) != "replica")
