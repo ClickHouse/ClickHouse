@@ -51,22 +51,20 @@ inline std::string unescapeForFileName(const std::string & s)
 	
 	while (pos != end)
 	{
-		char c = *pos;
-		
-		if (c != '%')
-			res += c;
+		if (*pos != '%')
+			res += *pos;
 		else
 		{
 			/// пропустим '%'
 			if (++pos == end) break;
-			c = *pos;
 			
-			char val = unhex(val) * 16;
+			char val = unhex(*pos) * 16;
 			
 			if (++pos == end) break;
-			c = *pos;
 			
-			res += unhex(val);
+			val += unhex(*pos);
+			
+			res += val;
 		}
 		
 		++pos;
