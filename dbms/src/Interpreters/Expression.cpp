@@ -127,8 +127,10 @@ void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfA
 	/// Если секция WHERE или HAVING состоит одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
-		addSemanticImpl(select->where_expression, finished_asts, current_asts);
-		addSemanticImpl(select->having_expression, finished_asts, current_asts);
+		if (select->where_expression)
+			addSemanticImpl(select->where_expression, finished_asts, current_asts);
+		if (select->having_expression)
+			addSemanticImpl(select->having_expression, finished_asts, current_asts);
 	}
 	
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
