@@ -30,6 +30,19 @@ inline std::string escapeForFileName(const std::string & s)
 	return res;
 }
 
+inline char unhex(char c)
+{
+	switch (c)
+	{
+		case '0' ... '9':
+			return c - '0';
+		case 'A' ... 'F':
+			return c - 'A' + 10;
+		default:
+			return 0;
+	}
+}
+
 inline std::string unescapeForFileName(const std::string & s)
 {
 	std::string res;
@@ -48,31 +61,12 @@ inline std::string unescapeForFileName(const std::string & s)
 			if (++pos == end) break;
 			c = *pos;
 			
-			char val = 0;
-			
-			switch (c)
-			{
-				case '0' ... '9':
-					val = (c - '0') * 16;
-					break;
-				case 'A' ... 'F':
-					val = (c - 'A' + 10) * 16;
-					break;
-			};
+			char val = unhex(val) * 16;
 			
 			if (++pos == end) break;
 			c = *pos;
 			
-			switch (c)
-			{
-				case '0' ... '9':
-					val += (c - '0');
-					break;
-				case 'A' ... 'F':
-					val += c - 'A' + 10;
-					break;
-			};
-			res += val;
+			res += unhex(val);
 		}
 		
 		++pos;
