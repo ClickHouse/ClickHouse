@@ -3,6 +3,11 @@
 #include "Pool.h"
 
 
+#define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS	1
+#define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS		16
+#define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES			3
+
+
 namespace mysqlxx
 {
 	
@@ -62,8 +67,8 @@ namespace mysqlxx
 		
 		ReplicasByPriority replicas_by_priority;
 		
-		/// Максимально возможное количество соедиений с каждой репликой.
-		unsigned max_connections;
+		/// Количество попыток подключения.
+		size_t max_tries;
 		/// Mutex для доступа к списку реплик.
 		Poco::FastMutex mutex;
 		
@@ -72,11 +77,15 @@ namespace mysqlxx
 		
 		/**
 		 * @param config_name		Имя параметра в конфигурационном файле.
-		 * @param max_connections_	Максимальное количество подключений к какждой реплике
+		 * @param default_connections	Количество подключений по умолчанию к какждой реплике.
+		 * @param max_connections	Максимальное количество подключений к какждой реплике.
+		 * @param max_tries_		Количество попыток подключения.
 		 */
 		PoolWithFailover(const std::string & config_name,
-			unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS)
-			: max_connections(max_connections_)
+			unsigned default_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+			unsigned max_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+			size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES)
+			: max_tries(max_tries_)
 		{
 			Poco::Util::Application & app = Poco::Util::Application::instance();
 			Poco::Util::AbstractConfiguration & cfg = app.config();
@@ -91,13 +100,13 @@ namespace mysqlxx
 					if (it->size() < std::string("replica").size() || it->substr(0, std::string("replica").size()) != "replica")
 						throw Poco::Exception("Unknown element in config: " + *it + ", expected replica");
 					std::string replica_name = config_name + "." + *it;
-					Replica replica(new Pool(replica_name, 0, max_connections), cfg.getInt(replica_name + ".priority", 0));
+					Replica replica(new Pool(replica_name, default_connections, max_connections), cfg.getInt(replica_name + ".priority", 0));
 					replicas_by_priority[replica.priority].push_back(replica);
 				}
 			}
 			else
 			{
-				replicas_by_priority[0].push_back(Replica(new Pool(config_name, 0, max_connections), 0));
+				replicas_by_priority[0].push_back(Replica(new Pool(config_name, default_connections, max_connections), 0));
 			}
 		}
 		
@@ -108,38 +117,45 @@ namespace mysqlxx
 			Poco::Util::Application & app = Poco::Util::Application::instance();
 			
 			/// Если к какой-то реплике не подключились, потому что исчерпан лимит соединений, можно подождать и подключиться к ней.
-			Replica * full_pool;
+			Replica * full_pool = NULL;
 			
-			for (ReplicasByPriority::reverse_iterator it = replicas_by_priority.rbegin(); it != replicas_by_priority.rend(); ++it)
+			for (size_t try_no = 0; try_no < max_tries; ++try_no)
 			{
-				Replicas & replicas = it->second;
-				for (size_t i = 0; i < replicas.size(); ++i)
+				full_pool = NULL;
+				
+				for (ReplicasByPriority::reverse_iterator it = replicas_by_priority.rbegin(); it != replicas_by_priority.rend(); ++it)
 				{
-					Replica & replica = replicas[i];
-					
-					try
+					Replicas & replicas = it->second;
+					for (size_t i = 0; i < replicas.size(); ++i)
 					{
-						Entry entry = replica.pool->tryGet();
+						Replica & replica = replicas[i];
 						
-						if (!entry.isNull())
+						try
 						{
-							/// Переместим все пройденные реплики в конец очереди.
-							/// Пройденные реплики с другим приоритетом перемещать незачем.
-							std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+							Entry entry = replica.pool->tryGet();
 							
-							return entry;
+							if (!entry.isNull())
+							{
+								/// Переместим все пройденные реплики в конец очереди.
+								/// Пройденные реплики с другим приоритетом перемещать незачем.
+								std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+								
+								return entry;
+							}
 						}
-					}
-					catch (Poco::Exception & e)
-					{
-						if (e.displayText() == "mysqlxx::Pool is full")
+						catch (Poco::Exception & e)
 						{
-							full_pool = &replica;
+							if (e.displayText() == "mysqlxx::Pool is full")
+							{
+								full_pool = &replica;
+							}
+							
+							app.logger().error("Connection to " + replica.pool->getDescription() + " failed: " + e.displayText());
 						}
-						
-						app.logger().error("Connection to " + replica.pool->getDescription() + " failed: " + e.displayText());
 					}
 				}
+				
+				app.logger().error("Connection to all replicas failed " + Poco::NumberFormatter::format(try_no + 1) + " times");
 			}
 			
 			if (full_pool)
