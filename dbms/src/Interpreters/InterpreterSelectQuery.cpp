@@ -255,6 +255,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (query.sample_size && (!table || !table->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 	
+	if (query.final && (!table || !table->supportsFinal()))
+		throw Exception("Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+	
 	/** При распределённой обработке запроса, в потоках почти не делается вычислений,
 	  *  а делается ожидание и получение данных с удалённых серверов.
 	  * Если у нас 20 удалённых серверов, а max_threads = 8, то было бы не очень хорошо

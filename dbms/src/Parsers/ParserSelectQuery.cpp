@@ -22,6 +22,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_select("SELECT", true, true);
 	ParserString s_from("FROM", true, true);
 	ParserString s_where("WHERE", true, true);
+	ParserString s_final("FINAL", true, true);
 	ParserString s_sample("SAMPLE", true, true);
 	ParserString s_group("GROUP", true, true);
 	ParserString s_by("BY", true, true);
@@ -92,6 +93,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		}
 		else
 			return false;
+	}
+	
+	/// FINAL
+	if (s_final.ignore(pos, end, expected))
+	{
+		select_query->final = true;
+		
+		ws.ignore(pos, end);
 	}
 
 	/// SAMPLE number

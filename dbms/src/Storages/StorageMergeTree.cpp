@@ -962,7 +962,16 @@ BlockInputStreams StorageMergeTree::read(
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
 			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
 	
-	BlockInputStreams res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names_to_read, max_block_size);
+	BlockInputStreams res;
+	
+	if (select.final)
+	{
+		res = spreadMarkRangesAmongThreadsCollapsing(parts_with_ranges, threads, column_names_to_read, max_block_size);
+	}
+	else
+	{
+		res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names_to_read, max_block_size);
+	}
 	
 	if (select.sample_size)
 	{
@@ -1080,6 +1089,24 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 	}
 	
 	return res;
+}
+
+
+/// Распределить засечки между потоками и создать потоки так, чтобы в ответе все данные были сколлапсированы.
+BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsCollapsing(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
+{
+	BlockInputStreams streams;
+	
+	for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+	{
+		RangesInDataPart & part = parts[part_index];
+		
+		streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
+													 max_block_size, column_names, *this,
+													 part.data_part, part.ranges, thisPtr()));
+	}
+	
+	return BlockInputStreams(1, new CollapsingSortedBlockInputStream(streams, sort_descr, sign_column, max_block_size));
 }
 
 

@@ -16,6 +16,7 @@ public:
 	ASTPtr select_expression_list;
 	ASTPtr database;
 	ASTPtr table;	/// Идентификатор или подзапрос (рекурсивно ASTSelectQuery)
+	bool final;
 	ASTPtr sample_size;
 	ASTPtr where_expression;
 	ASTPtr group_expression_list;
@@ -24,8 +25,8 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 
-	ASTSelectQuery() {}
-	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_) {}
+	ASTSelectQuery() : final(false) {}
+	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_), final(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "SelectQuery"; };
