@@ -1101,9 +1101,9 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsCollapsing(Range
 	{
 		RangesInDataPart & part = parts[part_index];
 		
-		streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
+		streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
 													 max_block_size, column_names, *this,
-													 part.data_part, part.ranges, thisPtr()));
+													 part.data_part, part.ranges, thisPtr()), primary_expr));
 	}
 	
 	return BlockInputStreams(1, new CollapsingSortedBlockInputStream(streams, sort_descr, sign_column, max_block_size));
