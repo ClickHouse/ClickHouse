@@ -1092,7 +1092,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 }
 
 
-/// Распределить засечки между потоками и создать потоки так, чтобы в ответе все данные были сколлапсированы.
+/// Распределить засечки между потоками и сделать, чтобы в ответе все данные были сколлапсированы.
 BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsCollapsing(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
 {
 	BlockInputStreams streams;
