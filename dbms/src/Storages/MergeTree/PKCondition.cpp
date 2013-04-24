@@ -1,4 +1,4 @@
-#include <DB/Storages/PkCondition.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 namespace DB
