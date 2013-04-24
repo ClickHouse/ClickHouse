@@ -265,21 +265,21 @@ private:
 			return;
 		
 		/// Для массивов используются отдельные потоки для размеров.
-			if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
-			{
-				String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
-				String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
-				
-				streams.insert(std::make_pair(size_name, new Stream(
-					path + escaped_size_name,
-					mark_number)));
-				
-				addStream(name, *type_arr->getNestedType(), mark_number, level + 1);
-			}
-			else
-				streams.insert(std::make_pair(name, new Stream(
-					path + escaped_column_name,
-					mark_number)));
+		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		{
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			
+			streams.insert(std::make_pair(size_name, new Stream(
+				path + escaped_size_name,
+				mark_number)));
+			
+			addStream(name, *type_arr->getNestedType(), mark_number, level + 1);
+		}
+		else
+			streams.insert(std::make_pair(name, new Stream(
+				path + escaped_column_name,
+				mark_number)));
 	}
 	
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0)
