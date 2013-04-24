@@ -210,7 +210,7 @@ public:
 		rw_timeout =
 			cfg.getInt(config_name + ".rw_timeout",
 				cfg.getInt("mysql_rw_timeout",
-					MYSQLXX_DEFAULT_TIMEOUT));
+					MYSQLXX_DEFAULT_RW_TIMEOUT));
 	}
 	
 	/**
@@ -228,7 +228,7 @@ public:
 		 const std::string & password_ = "",
 		 unsigned port_ = 0,
 		 unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
-		 unsigned rw_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
+		 unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
 		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS)
 	: default_connections(default_connections_), max_connections(max_connections_),

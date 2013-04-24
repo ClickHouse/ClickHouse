@@ -10,6 +10,7 @@
 #include <mysqlxx/Query.h>
 
 #define MYSQLXX_DEFAULT_TIMEOUT 60
+#define MYSQLXX_DEFAULT_RW_TIMEOUT 1800
 
 
 namespace mysqlxx
@@ -64,7 +65,7 @@ public:
 		const char* password = 0,
 		unsigned port = 0,
 		unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
-		unsigned rw_timeout = MYSQLXX_DEFAULT_TIMEOUT);
+		unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
 	/** Конструктор-помошник. Создать соединение, считав все параметры из секции config_name конфигурации.
 	  * Можно использовать, если вы используете Poco::Util::Application из библиотеки Poco.
@@ -84,7 +85,7 @@ public:
 		const char * password,
 		unsigned port,
 		unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
-		unsigned rw_timeout = MYSQLXX_DEFAULT_TIMEOUT);
+		unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
 	void connect(const std::string & config_name)
 	{
@@ -104,7 +105,7 @@ public:
 		unsigned rw_timeout =
 			cfg.getInt(config_name + ".rw_timeout",
 				cfg.getInt("mysql_rw_timeout",
-					MYSQLXX_DEFAULT_TIMEOUT));
+					MYSQLXX_DEFAULT_RW_TIMEOUT));
 
 		connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port, timeout, rw_timeout);
 	}
