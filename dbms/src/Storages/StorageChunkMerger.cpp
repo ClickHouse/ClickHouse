@@ -320,7 +320,6 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << " to new table " << new_table_name << ".");
 		
 		/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
-		std::string drop_query = "DROP TABLE IF EXISTS " + destination_database + "." + new_table_name;
 		ASTDropQuery * drop_ast = new ASTDropQuery;
 		ASTPtr drop_ptr = drop_ast;
 		drop_ast->database = destination_database;
@@ -369,7 +368,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		Names src_column_names;
 		
 		ASTSelectQuery * select_query = new ASTSelectQuery;
-		ASTPtr select_query_ptr;
+		ASTPtr select_query_ptr = select_query;
 		
 		/// Запрос, вынимающий нужные столбцы.
 		ASTPtr select_expression_list;

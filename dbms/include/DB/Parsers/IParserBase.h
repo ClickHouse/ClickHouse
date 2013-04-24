@@ -23,12 +23,7 @@ public:
 
 		Pos begin = pos;
 		bool res = parseImpl(pos, end, node, expected);
-		if (res)
-		{
-			String s(begin, pos - begin);
-			//std::cerr << getName() << ": " << s << std::endl;
-		}
-		
+
 		return res;
 	}
 protected:
