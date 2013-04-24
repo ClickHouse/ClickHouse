@@ -253,6 +253,11 @@ BlockInputStreams StorageMergeTree::read(
 	
 	if (select.final)
 	{
+		std::vector<String> add_columns = primary_expr->getRequiredColumns();
+		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+		std::sort(column_names_to_read.begin(), column_names_to_read.end());
+		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+		
 		res = spreadMarkRangesAmongThreadsCollapsing(parts_with_ranges, threads, column_names_to_read, max_block_size);
 	}
 	else
@@ -379,7 +384,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 }
 
 
-/// Распределить засечки между потоками и сделать, чтобы в ответе все данные были сколлапсированы.
+/// Распределить засечки между потоками и сделать, чтобы в ответе (почти) все данные были сколлапсированы (модификатор FINAL).
 BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsCollapsing(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
 {
 	BlockInputStreams streams;
