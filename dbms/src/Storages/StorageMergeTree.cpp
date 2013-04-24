@@ -387,18 +387,29 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 /// Распределить засечки между потоками и сделать, чтобы в ответе (почти) все данные были сколлапсированы (модификатор FINAL).
 BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsCollapsing(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
 {
-	BlockInputStreams streams;
+	BlockInputStreams res;
+	BlockInputStreams to_collapse;
 	
 	for (size_t part_index = 0; part_index < parts.size(); ++part_index)
 	{
 		RangesInDataPart & part = parts[part_index];
 		
-		streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
-													 max_block_size, column_names, *this,
-													 part.data_part, part.ranges, thisPtr()), primary_expr));
+		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
+									  max_block_size, column_names, *this,
+								part.data_part, part.ranges, thisPtr());
+		
+		if (part.data_part->size * index_granularity >= settings.min_rows_to_skip_collapsing)
+			res.push_back(source_stream);
+		else
+			to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
 	}
 	
-	return BlockInputStreams(1, new CollapsingSortedBlockInputStream(streams, sort_descr, sign_column, max_block_size));
+	if (to_collapse.size() == 1)
+		res.push_back(to_collapse[0]);
+	else if (to_collapse.size() > 1)
+		res.push_back(new CollapsingSortedBlockInputStream(to_collapse, sort_descr, sign_column, max_block_size));
+	
+	return res;
 }
 
 
