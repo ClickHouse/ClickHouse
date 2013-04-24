@@ -20,10 +20,7 @@ public:
 	bool parse(Pos & pos, Pos end, ASTPtr & node, String & expected)
 	{
 		expected = getName();
-
-		Pos begin = pos;
 		bool res = parseImpl(pos, end, node, expected);
-
 		return res;
 	}
 protected:
