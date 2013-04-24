@@ -123,6 +123,7 @@ public:
 
 	std::string getName() const { return sign_column.empty() ? "MergeTree" : "CollapsingMergeTree"; }
 	std::string getTableName() const { return name; }
+	std::string getSignColumnName() const { return sign_column; }
 	bool supportsSampling() const { return !!sampling_expression; }
 	bool supportsFinal() const { return !sign_column.empty(); }
 

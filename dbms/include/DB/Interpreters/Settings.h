@@ -36,6 +36,9 @@ struct Settings
 	size_t distributed_connections_pool_size;
 	/// Максимальное количество попыток соединения с репликами.
 	size_t connections_with_failover_max_tries;
+	/// Переписывать запросы SELECT из CollapsingMergeTree с агрегатными функциями
+	/// для автоматического учета поля Sign
+	bool sign_rewrite;
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
@@ -53,7 +56,8 @@ struct Settings
 		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
-		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES)
+		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
+		sign_rewrite(false)
 	{
 	}
 

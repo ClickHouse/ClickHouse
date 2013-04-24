@@ -30,6 +30,7 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "max_distributed_connections") max_distributed_connections = safeGet<UInt64>(value);
 	else if (name == "distributed_connections_pool_size") distributed_connections_pool_size = safeGet<UInt64>(value);
 	else if (name == "connections_with_failover_max_tries") connections_with_failover_max_tries = safeGet<UInt64>(value);
+	else if (name == "sign_rewrite")		sign_rewrite 		= safeGet<UInt64>(value);
 	else if (name == "profile") 			setProfile(get<const String &>(value));
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
@@ -49,7 +50,8 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		|| name == "connect_timeout_with_failover_ms"
 		|| name == "max_distributed_connections"
 		|| name == "distributed_connections_pool_size"
-		|| name == "connections_with_failover_max_tries")
+		|| name == "connections_with_failover_max_tries"
+		|| name == "sign_rewrite")
 	{
 		UInt64 value = 0;
 		readVarUInt(value, buf);
@@ -79,7 +81,8 @@ void Settings::set(const String & name, const String & value)
 		|| name == "connect_timeout_with_failover_ms"
 		|| name == "max_distributed_connections"
 		|| name == "distributed_connections_pool_size"
-		|| name == "connections_with_failover_max_tries")
+		|| name == "connections_with_failover_max_tries"
+		|| name == "sign_rewrite")
 	{
 		set(name, Poco::NumberParser::parseUnsigned64(value));
 	}
@@ -136,6 +139,7 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("max_distributed_connections", buf);			writeVarUInt(max_distributed_connections, buf);
 	writeStringBinary("distributed_connections_pool_size", buf);	writeVarUInt(distributed_connections_pool_size, buf);
 	writeStringBinary("connections_with_failover_max_tries", buf);	writeVarUInt(connections_with_failover_max_tries, buf);
+	writeStringBinary("sign_rewrite", buf);						writeVarUInt(sign_rewrite, buf);
 
 	limits.serialize(buf);
 
