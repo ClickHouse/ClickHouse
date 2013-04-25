@@ -212,6 +212,7 @@ BlockInputStreams StorageMergeTree::read(
 
 		filter_expression = new Expression(filter_function, context);
 		
+		/// Добавим столбцы, нужные для sampling_expression.
 		std::vector<String> add_columns = filter_expression->getRequiredColumns();
 		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
@@ -253,8 +254,10 @@ BlockInputStreams StorageMergeTree::read(
 	
 	if (select.final)
 	{
+		/// Добавим столбцы, нужные для вычисления первичного ключа и знака.
 		std::vector<String> add_columns = primary_expr->getRequiredColumns();
 		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+		column_names_to_read.push_back(sign_column);
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 		
