@@ -4,11 +4,13 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
 #include <Poco/NumberParser.h>
+#include <Poco/ConsoleChannel.h>
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
+#include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -24,6 +26,9 @@ int main(int argc, char ** argv)
 	
 	try
 	{
+		Logger::root().setChannel(new Poco::ConsoleChannel(std::cerr));
+		Logger::root().setLevel("trace");
+		
 		Block block1;
 
 		{
@@ -32,12 +37,14 @@ int main(int argc, char ** argv)
 			column1.type = new DataTypeInt8;
 			column1.column = new ColumnInt8;
 			column1.column->insert(DB::Int64(1));
+			column1.column->insert(DB::Int64(-1));
 			block1.insert(column1);
 
 			ColumnWithNameAndType column2;
 			column2.name = "CounterID";
 			column2.type = new DataTypeUInt32;
 			column2.column = new ColumnUInt32;
+			column2.column->insert(DB::UInt64(123));
 			column2.column->insert(DB::UInt64(123));
 			block1.insert(column2);
 		}
@@ -50,12 +57,14 @@ int main(int argc, char ** argv)
 			column1.type = new DataTypeInt8;
 			column1.column = new ColumnInt8;
 			column1.column->insert(DB::Int64(1));
+			column1.column->insert(DB::Int64(1));
 			block2.insert(column1);
 
 			ColumnWithNameAndType column2;
 			column2.name = "CounterID";
 			column2.type = new DataTypeUInt32;
 			column2.column = new ColumnUInt32;
+			column2.column->insert(DB::UInt64(123));
 			column2.column->insert(DB::UInt64(456));
 			block2.insert(column2);
 		}
@@ -68,17 +77,14 @@ int main(int argc, char ** argv)
 		SortColumnDescription col_descr("CounterID", 1);
 		descr.push_back(col_descr);
 
-		CollapsingSortedBlockInputStream collapsed(inputs, descr, "Sign", 1048576);
+		//CollapsingSortedBlockInputStream collapsed(inputs, descr, "Sign", 1048576);
+		CollapsingFinalBlockInputStream collapsed(inputs, descr, "Sign");
 
-		std::cerr << std::endl << "!!!!!!!!!!!!!!!!!!!!" << std::endl << std::endl;
-		Block res = collapsed.read();
-		std::cerr << std::endl << "!!!!!!!!!!!!!!!!!!!!" << std::endl << std::endl;
-
-/*		FormatFactory formats;
+		FormatFactory formats;
 		WriteBufferFromFileDescriptor out_buf(STDERR_FILENO);
 		BlockOutputStreamPtr output = formats.getOutput("TabSeparated", out_buf, block1);
 
-		copyData(collapsed, *output);*/
+		copyData(collapsed, *output);
 	}
 	catch (const Exception & e)
 	{

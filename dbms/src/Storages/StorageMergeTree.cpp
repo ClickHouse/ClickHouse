@@ -25,6 +25,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
+#include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
@@ -261,7 +262,7 @@ BlockInputStreams StorageMergeTree::read(
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 		
-		res = spreadMarkRangesAmongThreadsCollapsing(parts_with_ranges, threads, column_names_to_read, max_block_size);
+		res = spreadMarkRangesAmongThreadsFinal(parts_with_ranges, threads, column_names_to_read, max_block_size);
 	}
 	else
 	{
@@ -388,7 +389,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 
 
 /// Распределить засечки между потоками и сделать, чтобы в ответе (почти) все данные были сколлапсированы (модификатор FINAL).
-BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsCollapsing(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
+BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
 {
 	BlockInputStreams res;
 	BlockInputStreams to_collapse;
@@ -410,7 +411,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsCollapsing(Range
 	if (to_collapse.size() == 1)
 		res.push_back(to_collapse[0]);
 	else if (to_collapse.size() > 1)
-		res.push_back(new CollapsingSortedBlockInputStream(to_collapse, sort_descr, sign_column, max_block_size));
+		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, sort_descr, sign_column));
 	
 	return res;
 }
