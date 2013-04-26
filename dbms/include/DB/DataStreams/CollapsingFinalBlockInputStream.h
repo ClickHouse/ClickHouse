@@ -226,7 +226,7 @@ private:
 	
 	Queue queue;
 	
-	Cursor current;			/// Текущий первичный ключ.
+	Cursor previous;
 	
 	Cursor first_negative;	/// Первая отрицательная строка для текущего первичного ключа.
 	Cursor last_positive;	/// Последняя положительная строка для текущего первичного ключа.

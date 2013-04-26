@@ -7,7 +7,7 @@ namespace DB
 CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 {
 	/// Нужно обезвредить все MergingBlockPtr, чтобы они не пытались класть блоки в output_blocks.
-	current.block.cancel();
+	previous.block.cancel();
 	first_negative.block.cancel();
 	last_positive.block.cancel();
 	
@@ -63,7 +63,7 @@ void CollapsingFinalBlockInputStream::commitCurrent()
 		
 		first_negative = Cursor();
 		last_positive = Cursor();
-		current = Cursor();
+		previous = Cursor();
 	}
 	
 	count_negative = 0;
@@ -85,44 +85,59 @@ Block CollapsingFinalBlockInputStream::readImpl()
 	{
 		while (!queue.empty() && output_blocks.empty())
 		{
-			Cursor next = queue.top();
+			Cursor current = queue.top();
 			queue.pop();
 			
-			if (!next.equal(current))
-			{
-				commitCurrent();
-				current = next;
-			}
+			bool has_next = !queue.empty();
+			Cursor next = has_next ? queue.top() : Cursor();
 			
-			Int8 sign = next.getSign();
-			if (sign == 1)
+			/// Будем продвигаться в текущем блоке, не используя очередь, пока возможно.
+			while (true)
 			{
-				last_positive = next;
-				++count_positive;
-			}
-			else if (sign == -1)
-			{
-				if (!count_negative)
-					first_negative = next;
-				++count_negative;
-			}
-			else
-				reportBadSign(sign);
-			
-			if (next.isLast())
-			{
-				fetchNextBlock(next.block->stream_index);
-				
-				/// Все потоки кончились. Обработаем последний ключ.
-				if (queue.empty())
+				if (!current.equal(previous))
 				{
 					commitCurrent();
+					previous = current;
 				}
-			}
-			else
-			{
-				next.next();
-				queue.push(next);
+				
+				Int8 sign = current.getSign();
+				if (sign == 1)
+				{
+					last_positive = current;
+					++count_positive;
+				}
+				else if (sign == -1)
+				{
+					if (!count_negative)
+						first_negative = current;
+					++count_negative;
+				}
+				else
+					reportBadSign(sign);
+				
+				if (current.isLast())
+				{
+					fetchNextBlock(current.block->stream_index);
+					
+					/// Все потоки кончились. Обработаем последний ключ.
+					if (!has_next)
+					{
+						commitCurrent();
+					}
+					
+					break;
+				}
+				else
+				{
+					current.next();
+					
+					if (has_next && !(next < current))
+					{
+						queue.push(current);
+						
+						break;
+					}
+				}
 			}
 		}
 		
