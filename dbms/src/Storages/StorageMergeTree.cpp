@@ -391,6 +391,10 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 /// Распределить засечки между потоками и сделать, чтобы в ответе (почти) все данные были сколлапсированы (модификатор FINAL).
 BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
 {
+	ExpressionPtr sign_filter_expression;
+	String sign_filter_column;
+	createPositiveSignCondition(sign_filter_expression, sign_filter_column);
+	
 	BlockInputStreams res;
 	BlockInputStreams to_collapse;
 	
@@ -403,7 +407,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 								part.data_part, part.ranges, thisPtr());
 		
 		if (part.data_part->size * index_granularity >= settings.min_rows_to_skip_collapsing)
-			res.push_back(source_stream);
+			res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(source_stream, sign_filter_expression), sign_filter_column));
 		else
 			to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
 	}
@@ -414,6 +418,38 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, sort_descr, sign_column));
 	
 	return res;
+}
+
+
+void StorageMergeTree::createPositiveSignCondition(ExpressionPtr & out_expression, String & out_column)
+{
+	ASTFunction * function = new ASTFunction;
+	ASTPtr function_ptr = function;
+	
+	ASTExpressionList * arguments = new ASTExpressionList;
+	ASTPtr arguments_ptr = arguments;
+	
+	ASTIdentifier * sign = new ASTIdentifier;
+	ASTPtr sign_ptr = sign;
+	
+	ASTLiteral * one = new ASTLiteral;
+	ASTPtr one_ptr = one;
+	
+	function->name = "equals";
+	function->arguments = arguments_ptr;
+	function->children.push_back(arguments_ptr);
+	
+	arguments->children.push_back(sign_ptr);
+	arguments->children.push_back(one_ptr);
+	
+	sign->name = sign_column;
+	sign->kind = ASTIdentifier::Column;
+	
+	one->type = new DataTypeInt8;
+	one->value = Field(static_cast<Int64>(1));
+	
+	out_expression = new Expression(function_ptr, context);
+	out_column = function->getColumnName();
 }
 
 

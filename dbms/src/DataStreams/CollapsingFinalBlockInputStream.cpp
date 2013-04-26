@@ -8,7 +8,6 @@ CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 {
 	/// Нужно обезвредить все MergingBlockPtr, чтобы они не пытались класть блоки в output_blocks.
 	previous.block.cancel();
-	first_negative.block.cancel();
 	last_positive.block.cancel();
 	
 	while (!queue.empty())
@@ -49,10 +48,6 @@ void CollapsingFinalBlockInputStream::commitCurrent()
 {
 	if (count_positive || count_negative)
 	{
-		if (count_positive <= count_negative)
-		{
-			first_negative.addToFilter();
-		}
 		if (count_positive >= count_negative)
 		{
 			last_positive.addToFilter();
@@ -61,7 +56,6 @@ void CollapsingFinalBlockInputStream::commitCurrent()
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
 			reportBadCounts();
 		
-		first_negative = Cursor();
 		last_positive = Cursor();
 		previous = Cursor();
 	}
@@ -108,8 +102,6 @@ Block CollapsingFinalBlockInputStream::readImpl()
 				}
 				else if (sign == -1)
 				{
-					if (!count_negative)
-						first_negative = current;
 					++count_negative;
 				}
 				else

@@ -8,8 +8,9 @@
 namespace DB
 {
 
-/// То же, что CollapsingSortedBlockInputStream, но выдает строки в произвольном порядке.
-/// Входные потоки по-прежнему должны быть упорядочены.
+/// Схлопывает одинаковые строки с противоположным знаком примерно как CollapsingSortedBlockInputStream.
+/// Выдает строки в произвольном порядке (входные потоки по-прежнему должны быть упорядочены).
+/// Выдает только строки с положительным знаком.
 class CollapsingFinalBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -226,9 +227,7 @@ private:
 	
 	Queue queue;
 	
-	Cursor previous;
-	
-	Cursor first_negative;	/// Первая отрицательная строка для текущего первичного ключа.
+	Cursor previous;		/// Текущий первичный ключ.
 	Cursor last_positive;	/// Последняя положительная строка для текущего первичного ключа.
 	
 	size_t count_positive;	/// Количество положительных строк для текущего первичного ключа.

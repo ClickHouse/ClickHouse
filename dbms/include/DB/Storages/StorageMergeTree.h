@@ -301,6 +301,9 @@ private:
 	BlockInputStreams spreadMarkRangesAmongThreads(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size);
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size);
 	
+	/// Создать выражение "Sign == 1".
+	void createPositiveSignCondition(ExpressionPtr & out_expression, String & out_column);
+	
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
 
