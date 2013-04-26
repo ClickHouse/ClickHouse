@@ -197,6 +197,9 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		name == "sequental_uniq" ||
 		StartsWith(name, "uniq_approx"))
 		return "uniq(" + numeric + ")";
+
+	if (name == "uniq_state")
+		return "uniqState(" + numeric + ")";
 	
 	if (name == "count_non_zero")
 		return "sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";

@@ -97,6 +97,27 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "uniqState")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		String argument_type_name = argument_types[0]->getName();
+
+		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
+			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
+			|| argument_type_name == "Date" || argument_type_name == "DateTime")
+			return new AggregateFunctionUniqState<UInt64>;
+		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
+			|| argument_type_name == "Int32" || argument_type_name == "Int64")
+			return new AggregateFunctionUniqState<Int64>;
+		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
+			return new AggregateFunctionUniqState<Float64>;
+		else if (argument_type_name == "String" || 0 == argument_type_name.compare(0, strlen("FixedString"), "FixedString"))
+			return new AggregateFunctionUniqState<String>;
+		else
+			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 	else if (name == "median" || name == "quantile")
 	{
 		if (argument_types.size() != 1)
@@ -173,6 +194,19 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 		else
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 	}
+	else if (0 == type_id.compare(0, strlen("uniqState_"), "uniqState_"))
+	{
+		if (0 == type_id.compare(strlen("uniqState_"), strlen("UInt64"), "UInt64"))
+			return new AggregateFunctionUniqState<UInt64>;
+		else if (0 == type_id.compare(strlen("uniqState_"), strlen("Int64"), "Int64"))
+			return new AggregateFunctionUniqState<Int64>;
+		else if (0 == type_id.compare(strlen("uniqState_"), strlen("Float64"), "Float64"))
+			return new AggregateFunctionUniqState<Float64>;
+		else if (0 == type_id.compare(strlen("uniqState_"), strlen("String"), "String"))
+			return new AggregateFunctionUniqState<String>;
+		else
+			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+	}
 	else if (0 == type_id.compare(0, strlen("quantile_float_"), "quantile_float_"))
 	{
 		if 		(0 == type_id.compare(strlen("quantile_float_"), strlen("UInt8"), 	"UInt8"))	return new AggregateFunctionQuantile<UInt8>;
@@ -221,6 +255,7 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 		("sum")
 		("avg")
 		("uniq")
+		("uniqState")
 		("groupArray")
 		("median")
 		("quantile")

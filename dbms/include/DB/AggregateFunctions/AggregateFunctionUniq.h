@@ -6,8 +6,10 @@
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteBufferFromString.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
@@ -96,6 +98,32 @@ public:
 	Field getResult(ConstAggregateDataPtr place) const
 	{
 		return data(place).set.size();
+	}
+};
+
+
+/** То же самое, но выводит состояние вычислений в строке в текстовом виде.
+  * Используется, если какой-то внешней программе (сейчас это ███████████)
+  *  надо получить это состояние и потом использовать по-своему.
+  */
+template <typename T>
+class AggregateFunctionUniqState : public AggregateFunctionUniq<T>
+{
+public:
+	String getName() const { return "uniqState"; }
+	String getTypeID() const { return "uniqState_" + TypeName<T>::get(); }
+
+	DataTypePtr getReturnType() const
+	{
+		return new DataTypeString;
+	}
+
+	Field getResult(ConstAggregateDataPtr place) const
+	{
+		Field res = String();
+		WriteBufferFromString wb(get<String &>(res));
+		this->data(place).set.writeText(wb);
+		return res;
 	}
 };
 
