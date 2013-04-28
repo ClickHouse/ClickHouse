@@ -15,7 +15,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <Yandex/logger_useful.h>
-#include <Yandex/daemon.h>
+#include <statdaemons/daemon.h>
 
 #include <DB/Interpreters/Context.h>
 #include "OLAPQueryParser.h"

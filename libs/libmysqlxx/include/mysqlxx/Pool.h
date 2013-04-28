@@ -13,9 +13,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <Yandex/logger_useful.h>
-#include <Yandex/daemon.h>
-
-#include <Yandex/daemon.h>
+#include <statdaemons/daemon.h>
 
 #include <mysqlxx/Connection.h>
 
