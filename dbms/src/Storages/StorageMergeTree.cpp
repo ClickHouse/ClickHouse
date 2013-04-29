@@ -413,7 +413,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 	}
 	
 	if (to_collapse.size() == 1)
-		res.push_back(to_collapse[0]);
+		res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
 	else if (to_collapse.size() > 1)
 		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, sort_descr, sign_column));
 	
