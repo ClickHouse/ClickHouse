@@ -5,6 +5,9 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTExpressionList.h>
+
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Aggregator.h>
 
@@ -18,7 +21,7 @@ namespace DB
 class Expression : private boost::noncopyable
 {
 public:
-	Expression(const ASTPtr & ast_, const Context & context_) : ast(ast_), context(context_)
+	Expression(const ASTPtr & ast_, const Context & context_) : ast(ast_), context(context_), storage(getTable())
 	{
 		createAliasesDict(ast);
 		addSemantic(ast);
@@ -94,6 +97,10 @@ public:
 private:
 	ASTPtr ast;
 	const Context context;
+	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
+	const StoragePtr storage;
+	/// Имя поля Sign в таблице. Непусто, если нужно осуществлять sign-rewrite
+	String sign_column_name;
 
 	typedef std::set<String> NamesSet;
 	NamesSet required_columns;
@@ -161,6 +168,25 @@ private:
 
 	/// Получить тип у функции, идентификатора или литерала.
 	DataTypePtr getType(ASTPtr ast);
+	
+	/// Получить список типов аргументов
+	DataTypes getArgumentTypes(const ASTExpressionList & exp_list);
+	
+	/// Получить таблицу, из которой идет запрос
+	StoragePtr getTable();
+	
+	/// Получить имя столбца Sign
+	String getSignColumnName();
+	
+	/// Проверить нужно ли переписывать агрегатные функции для учета Sign
+	bool needSignRewrite();
+	
+	void considerSignRewrite(ASTPtr & ast);
+	
+	ASTPtr createSignColumn();
+	ASTPtr rewriteCount();	
+	ASTPtr rewriteSum(const ASTFunction * node);
+	ASTPtr rewriteAvg(const ASTFunction * node);
 };
 
 typedef SharedPtr<Expression> ExpressionPtr;

@@ -17,6 +17,8 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/Expression.h>
 
+#include <DB/Storages/StorageMergeTree.h>
+
 
 namespace DB
 {
@@ -75,10 +77,170 @@ void Expression::createAliasesDict(ASTPtr & ast)
 }
 
 
+StoragePtr Expression::getTable()
+{
+	if (const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*ast))
+	{
+		if (select->table && !dynamic_cast<const ASTSelectQuery *>(&*select->table))
+		{
+			const String & database = select->database ? 
+				dynamic_cast<const ASTIdentifier &>(*select->database).name :
+				context.getCurrentDatabase();
+			const String & table = dynamic_cast<const ASTIdentifier &>(*select->table).name;
+			return context.getTable(database, table);
+		}
+	}
+	return StoragePtr();
+}
+
+
+bool Expression::needSignRewrite()
+{
+	if (context.getSettingsRef().sign_rewrite && storage)
+		if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(&*storage))
+			return merge_tree->getName() == "CollapsingMergeTree";
+	return false;
+}
+
+
+String Expression::getSignColumnName()
+{
+	return dynamic_cast<const StorageMergeTree *>(&*storage)->getSignColumnName();
+}
+
+
+DataTypes Expression::getArgumentTypes(const ASTExpressionList & exp_list)
+{
+	DataTypes argument_types(exp_list.children.size());
+	for (ASTs::const_iterator it = exp_list.children.begin(); it != exp_list.children.end(); ++it)
+		argument_types.push_back(getType(*it));
+	return argument_types;
+}
+
+
+ASTPtr Expression::createSignColumn()
+{
+	ASTIdentifier * p_sign_column = new ASTIdentifier;
+	ASTIdentifier & sign_column = *p_sign_column;
+	ASTPtr sign_column_node = new ASTIdentifier(ast->range, sign_column_name);
+	sign_column.type = findColumn(sign_column_name)->second;
+	return sign_column_node;
+}
+
+
+/// Заменяем count() на sum(Sign)
+ASTPtr Expression::rewriteCount()
+{
+	DataTypePtr sign_type = storage->getDataTypeByName(sign_column_name);
+	DataTypes argument_types(1, sign_type);
+	
+	/// 'Sign'
+	ASTExpressionList * p_exp_list = new ASTExpressionList;
+	ASTExpressionList & exp_list = *p_exp_list;
+	ASTPtr exp_list_node = p_exp_list;
+	exp_list.children.push_back(createSignColumn());
+	
+	/// sum(Sign)
+	ASTFunction * p_sum = new ASTFunction;
+	ASTFunction & sum = *p_sum;
+	ASTPtr sum_node = p_sum;
+	sum.arguments = exp_list_node;
+	sum.children.push_back(exp_list_node);	
+	sum.aggregate_function = context.getAggregateFunctionFactory().get("sum", argument_types);
+	sum.return_type = sum.aggregate_function->getReturnType();
+	
+	required_columns.insert(sign_column_name);
+	
+	return sum_node;
+}
+
+
+/// Заменяем sum(x) на sum(x * Sign)
+ASTPtr Expression::rewriteSum(const ASTFunction * node)
+{	
+	/// 'x', 'Sign'
+	ASTExpressionList * p_mult_exp_list = new ASTExpressionList;
+	ASTExpressionList & mult_exp_list = *p_mult_exp_list;
+	ASTPtr mult_exp_list_node = p_mult_exp_list;
+	mult_exp_list.children.push_back(createSignColumn());
+	mult_exp_list.children.push_back(node->arguments);
+	
+	/// x * Sign
+	ASTFunction * p_mult = new ASTFunction;
+	ASTFunction & mult = *p_mult;
+	ASTPtr mult_node = p_mult;
+	mult.function = context.getFunctionFactory().get("multiply", context);
+	mult.arguments = mult_exp_list_node;
+	mult.children.push_back(mult_exp_list_node);
+	mult.return_type = mult.function->getReturnType(getArgumentTypes(mult_exp_list));
+	
+	/// 'x * Sign'
+	ASTExpressionList * p_exp_list = new ASTExpressionList;
+	ASTExpressionList & exp_list = *p_exp_list;
+	ASTPtr exp_list_node = p_exp_list;
+	exp_list.children.push_back(mult_node);
+	
+	DataTypes argument_types(1, mult.return_type);
+	
+	/// sum(x * Sign)
+	ASTFunction * p_sum = new ASTFunction;
+	ASTFunction & sum = *p_sum;
+	ASTPtr sum_node = p_sum;
+	sum.arguments = exp_list_node;
+	sum.children.push_back(exp_list_node);	
+	sum.aggregate_function = context.getAggregateFunctionFactory().get("sum", argument_types);
+	sum.return_type = sum.aggregate_function->getReturnType();
+	
+	required_columns.insert(sign_column_name);
+	
+	return sum_node;
+}
+
+
+/// Заменяем avg(x) на sum(Sign * x) / sum(Sign)
+ASTPtr Expression::rewriteAvg(const ASTFunction * node)
+{
+	/// 'sum(Sign * x)', 'sum(Sign)'
+	ASTExpressionList * p_div_exp_list = new ASTExpressionList;
+	ASTExpressionList & div_exp_list = *p_div_exp_list;
+	ASTPtr div_exp_list_node = p_div_exp_list;
+	div_exp_list.children.push_back(rewriteSum(node));
+	div_exp_list.children.push_back(rewriteCount());	
+	
+	/// sum(Sign * x) / sum(Sign)
+	ASTFunction * p_div = new ASTFunction;
+	ASTFunction & div = *p_div;
+	ASTPtr div_node = p_div;		
+	div.function = context.getFunctionFactory().get("divide", context);
+	div.arguments = div_exp_list_node;
+	div.children.push_back(div_exp_list_node);
+	div.return_type = div.function->getReturnType(getArgumentTypes(div_exp_list));
+	
+	required_columns.insert(sign_column_name);
+	
+	return div_node;
+}
+
+
+void Expression::considerSignRewrite(ASTPtr & ast)
+{
+	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
+	const String & name = node->aggregate_function->getName();
+	if (name == "count")
+		ast = rewriteCount();
+	if (name == "sum")
+		ast = rewriteSum(node);
+	if (name == "avg")
+		ast = rewriteAvg(node);
+}
+
+
 void Expression::addSemantic(ASTPtr & ast)
 {
 	SetOfASTs tmp_set;
 	MapOfASTs tmp_map;
+	if (needSignRewrite())
+		sign_column_name = getSignColumnName();
 	addSemanticImpl(ast,tmp_map, tmp_set);
 }
 
@@ -181,6 +343,9 @@ void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfA
 			
 			node->aggregate_function->setArguments(argument_types);
 			node->return_type = node->aggregate_function->getReturnType();
+			
+			if (!sign_column_name.empty())
+				considerSignRewrite(ast);
 		}
 		else if (FunctionTupleElement * func_tuple_elem = dynamic_cast<FunctionTupleElement *>(&*node->function))
 		{
@@ -215,6 +380,10 @@ void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfA
 				node->type = it->second;
 				required_columns.insert(node->name);
 			}
+			
+			/// Проверим имеет ли смысл sign-rewrite
+			if (node->name == sign_column_name)
+				throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
 		}
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))

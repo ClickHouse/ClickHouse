@@ -36,8 +36,9 @@ struct Settings
 	size_t distributed_connections_pool_size;
 	/// Максимальное количество попыток соединения с репликами.
 	size_t connections_with_failover_max_tries;
-	/// Переписывать запросы SELECT из CollapsingMergeTree с агрегатными функциями
-	/// для автоматического учета поля Sign
+	/** Переписывать запросы SELECT из CollapsingMergeTree с агрегатными функциями
+	 * для автоматического учета поля Sign
+	 */
 	bool sign_rewrite;
 
 	/// Всевозможные ограничения на выполнение запроса.
