@@ -123,7 +123,8 @@ ASTPtr Expression::createSignColumn()
 	ASTIdentifier * p_sign_column = new ASTIdentifier;
 	ASTIdentifier & sign_column = *p_sign_column;
 	ASTPtr sign_column_node = new ASTIdentifier(ast->range, sign_column_name);
-	sign_column.type = findColumn(sign_column_name)->second;
+	sign_column.name = sign_column_name;
+	sign_column.type = storage->getDataTypeByName(sign_column_name);
 	return sign_column_node;
 }
 
@@ -144,9 +145,10 @@ ASTPtr Expression::rewriteCount()
 	ASTFunction * p_sum = new ASTFunction;
 	ASTFunction & sum = *p_sum;
 	ASTPtr sum_node = p_sum;
+	sum.name = "sum";
 	sum.arguments = exp_list_node;
 	sum.children.push_back(exp_list_node);	
-	sum.aggregate_function = context.getAggregateFunctionFactory().get("sum", argument_types);
+	sum.aggregate_function = context.getAggregateFunctionFactory().get(sum.name, argument_types);
 	sum.return_type = sum.aggregate_function->getReturnType();
 	
 	required_columns.insert(sign_column_name);
@@ -163,13 +165,14 @@ ASTPtr Expression::rewriteSum(const ASTFunction * node)
 	ASTExpressionList & mult_exp_list = *p_mult_exp_list;
 	ASTPtr mult_exp_list_node = p_mult_exp_list;
 	mult_exp_list.children.push_back(createSignColumn());
-	mult_exp_list.children.push_back(node->arguments);
+	mult_exp_list.children.push_back(node->arguments->children[0]);
 	
 	/// x * Sign
 	ASTFunction * p_mult = new ASTFunction;
 	ASTFunction & mult = *p_mult;
 	ASTPtr mult_node = p_mult;
-	mult.function = context.getFunctionFactory().get("multiply", context);
+	mult.name = "multiply";
+	mult.function = context.getFunctionFactory().get(mult.name, context);
 	mult.arguments = mult_exp_list_node;
 	mult.children.push_back(mult_exp_list_node);
 	mult.return_type = mult.function->getReturnType(getArgumentTypes(mult_exp_list));
@@ -186,9 +189,10 @@ ASTPtr Expression::rewriteSum(const ASTFunction * node)
 	ASTFunction * p_sum = new ASTFunction;
 	ASTFunction & sum = *p_sum;
 	ASTPtr sum_node = p_sum;
+	sum.name = "sum";
 	sum.arguments = exp_list_node;
 	sum.children.push_back(exp_list_node);	
-	sum.aggregate_function = context.getAggregateFunctionFactory().get("sum", argument_types);
+	sum.aggregate_function = context.getAggregateFunctionFactory().get(sum.name, argument_types);
 	sum.return_type = sum.aggregate_function->getReturnType();
 	
 	required_columns.insert(sign_column_name);
@@ -210,8 +214,9 @@ ASTPtr Expression::rewriteAvg(const ASTFunction * node)
 	/// sum(Sign * x) / sum(Sign)
 	ASTFunction * p_div = new ASTFunction;
 	ASTFunction & div = *p_div;
-	ASTPtr div_node = p_div;		
-	div.function = context.getFunctionFactory().get("divide", context);
+	ASTPtr div_node = p_div;
+	div.name = "divide";
+	div.function = context.getFunctionFactory().get(div.name, context);
 	div.arguments = div_exp_list_node;
 	div.children.push_back(div_exp_list_node);
 	div.return_type = div.function->getReturnType(getArgumentTypes(div_exp_list));
