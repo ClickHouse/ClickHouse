@@ -403,8 +403,8 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 		RangesInDataPart & part = parts[part_index];
 		
 		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
-									  max_block_size, column_names, *this,
-								part.data_part, part.ranges, thisPtr());
+																			max_block_size, column_names, *this,
+																			part.data_part, part.ranges, thisPtr());
 		
 		if (part.data_part->size * index_granularity >= settings.min_rows_to_skip_collapsing)
 			res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(source_stream, sign_filter_expression), sign_filter_column));
