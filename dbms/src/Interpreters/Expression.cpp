@@ -111,7 +111,7 @@ String Expression::getSignColumnName()
 
 DataTypes Expression::getArgumentTypes(const ASTExpressionList & exp_list)
 {
-	DataTypes argument_types(exp_list.children.size());
+	DataTypes argument_types;
 	for (ASTs::const_iterator it = exp_list.children.begin(); it != exp_list.children.end(); ++it)
 		argument_types.push_back(getType(*it));
 	return argument_types;
@@ -120,16 +120,15 @@ DataTypes Expression::getArgumentTypes(const ASTExpressionList & exp_list)
 
 ASTPtr Expression::createSignColumn()
 {
-	ASTIdentifier * p_sign_column = new ASTIdentifier;
+	ASTIdentifier * p_sign_column = new ASTIdentifier(ast->range, sign_column_name);
 	ASTIdentifier & sign_column = *p_sign_column;
-	ASTPtr sign_column_node = new ASTIdentifier(ast->range, sign_column_name);
+	ASTPtr sign_column_node = p_sign_column;
 	sign_column.name = sign_column_name;
 	sign_column.type = storage->getDataTypeByName(sign_column_name);
 	return sign_column_node;
 }
 
 
-/// Заменяем count() на sum(Sign)
 ASTPtr Expression::rewriteCount()
 {
 	DataTypePtr sign_type = storage->getDataTypeByName(sign_column_name);
@@ -157,7 +156,6 @@ ASTPtr Expression::rewriteCount()
 }
 
 
-/// Заменяем sum(x) на sum(x * Sign)
 ASTPtr Expression::rewriteSum(const ASTFunction * node)
 {	
 	/// 'x', 'Sign'
@@ -201,7 +199,6 @@ ASTPtr Expression::rewriteSum(const ASTFunction * node)
 }
 
 
-/// Заменяем avg(x) на sum(Sign * x) / sum(Sign)
 ASTPtr Expression::rewriteAvg(const ASTFunction * node)
 {
 	/// 'sum(Sign * x)', 'sum(Sign)'
