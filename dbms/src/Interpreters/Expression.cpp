@@ -129,7 +129,7 @@ ASTPtr Expression::createSignColumn()
 }
 
 
-ASTPtr Expression::rewriteCount()
+ASTPtr Expression::rewriteCount(const ASTFunction * node)
 {
 	DataTypePtr sign_type = storage->getDataTypeByName(sign_column_name);
 	DataTypes argument_types(1, sign_type);
@@ -145,6 +145,7 @@ ASTPtr Expression::rewriteCount()
 	ASTFunction & sum = *p_sum;
 	ASTPtr sum_node = p_sum;
 	sum.name = "sum";
+	sum.alias = node->alias;
 	sum.arguments = exp_list_node;
 	sum.children.push_back(exp_list_node);	
 	sum.aggregate_function = context.getAggregateFunctionFactory().get(sum.name, argument_types);
@@ -188,6 +189,7 @@ ASTPtr Expression::rewriteSum(const ASTFunction * node)
 	ASTFunction & sum = *p_sum;
 	ASTPtr sum_node = p_sum;
 	sum.name = "sum";
+	sum.alias = node->alias;
 	sum.arguments = exp_list_node;
 	sum.children.push_back(exp_list_node);	
 	sum.aggregate_function = context.getAggregateFunctionFactory().get(sum.name, argument_types);
@@ -206,13 +208,14 @@ ASTPtr Expression::rewriteAvg(const ASTFunction * node)
 	ASTExpressionList & div_exp_list = *p_div_exp_list;
 	ASTPtr div_exp_list_node = p_div_exp_list;
 	div_exp_list.children.push_back(rewriteSum(node));
-	div_exp_list.children.push_back(rewriteCount());	
+	div_exp_list.children.push_back(rewriteCount(node));	
 	
 	/// sum(Sign * x) / sum(Sign)
 	ASTFunction * p_div = new ASTFunction;
 	ASTFunction & div = *p_div;
 	ASTPtr div_node = p_div;
 	div.name = "divide";
+	div.alias = node->alias;
 	div.function = context.getFunctionFactory().get(div.name, context);
 	div.arguments = div_exp_list_node;
 	div.children.push_back(div_exp_list_node);
@@ -229,7 +232,7 @@ void Expression::considerSignRewrite(ASTPtr & ast)
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
 	const String & name = node->aggregate_function->getName();
 	if (name == "count")
-		ast = rewriteCount();
+		ast = rewriteCount(node);
 	if (name == "sum")
 		ast = rewriteSum(node);
 	if (name == "avg")

@@ -181,11 +181,16 @@ private:
 	/// Проверить нужно ли переписывать агрегатные функции для учета Sign
 	bool needSignRewrite();
 	
+	/// Попробовать переписать агрегатную функцию для учета Sign
 	void considerSignRewrite(ASTPtr & ast);
 	
 	ASTPtr createSignColumn();
-	ASTPtr rewriteCount();	
+	
+	/// Заменить count() на sum(Sign)
+	ASTPtr rewriteCount(const ASTFunction * node);
+	/// Заменить sum(x) на sum(x * Sign)
 	ASTPtr rewriteSum(const ASTFunction * node);
+	/// Заменить avg(x) на sum(Sign * x) / sum(Sign)
 	ASTPtr rewriteAvg(const ASTFunction * node);
 };
 
