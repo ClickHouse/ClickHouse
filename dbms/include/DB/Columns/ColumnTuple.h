@@ -160,12 +160,6 @@ public:
 			(*it)->reserve(n);
 	}
 
-	void clear()
-	{
-		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
-			(*it)->clear();
-	}
-
 	size_t byteSize() const
 	{
 		size_t res = 0;

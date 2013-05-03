@@ -72,11 +72,6 @@ public:
 		data.push_back(T());
 	}
 
-	void clear()
-	{
-		data.clear();
-	}
-
 	void filter(const Filter & filt)
 	{
 		size_t size = data.size();

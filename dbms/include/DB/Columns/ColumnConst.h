@@ -44,7 +44,6 @@ public:
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
 	void get(size_t n, Field & res) const { res = typename NearestFieldType<T>::Type(data); }
 	void cut(size_t start, size_t length) { s = length; }
-	void clear() { s = 0; }
 	
 	void insert(const Field & x)
 	{

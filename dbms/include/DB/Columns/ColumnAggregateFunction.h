@@ -110,14 +110,6 @@ public:
 		}
 	}
 
-	void clear()
-	{
-		for (size_t i = 0, s = data.size(); i < s; ++i)
-			func->destroy(data[i]);
-		
-		data.clear();
-	}
-
 	void replicate(const Offsets_t & offsets)
 	{
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);

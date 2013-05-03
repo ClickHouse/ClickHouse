@@ -28,9 +28,8 @@ public:
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
 	ColumnArray(ColumnPtr nested_column)
-		: data(nested_column), offsets(new ColumnOffsets_t)
+		: data(nested_column->cloneEmpty()), offsets(new ColumnOffsets_t)
 	{
-		data->clear();
 	}
 
 	std::string getName() const { return "ColumnArray(" + data->getName() + ")"; }
@@ -134,12 +133,6 @@ public:
 	{
 		data->insertDefault();
 		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
-	}
-
-	void clear()
-	{
-		data->clear();
-		getOffsets().clear();
 	}
 
 	void filter(const Filter & filt)

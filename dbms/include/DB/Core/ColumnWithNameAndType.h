@@ -29,7 +29,7 @@ struct ColumnWithNameAndType
 		ColumnWithNameAndType res;
 
 		res.name = name;
-		res.type = type;
+		res.type = type->clone();
 		if (column)
 			res.column = column->cloneEmpty();
 

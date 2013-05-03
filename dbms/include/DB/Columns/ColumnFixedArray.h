@@ -21,9 +21,8 @@ class ColumnFixedArray : public IColumn
 public:
 	/** Создать пустой столбец массивов фиксированного размера n, со типом значений, как в столбце nested_column */
 	ColumnFixedArray(ColumnPtr nested_column, size_t n_)
-		: data(nested_column), n(n_)
+		: data(nested_column->cloneEmpty()), n(n_)
 	{
-		clear();
 	}
 
 	std::string getName() const { return "ColumnFixedArray(" + data->getName() + ")"; }
@@ -96,11 +95,6 @@ public:
 	{
 		for (size_t i = 0; i < n; ++i)
 			data->insertDefault();
-	}
-
-	void clear()
-	{
-		data->clear();
 	}
 
 	/** Более эффективные методы манипуляции */

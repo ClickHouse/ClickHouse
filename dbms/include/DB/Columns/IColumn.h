@@ -144,9 +144,6 @@ public:
 	typedef std::vector<Offset_t> Offsets_t;
 	virtual void replicate(const Offsets_t & offsets) = 0;
 
-	/** Очистить */
-	virtual void clear() = 0;
-
 	/** Если возможно - зарезервировать место для указанного количества элементов. Если невозможно или не поддерживается - ничего не делать.
 	  * Функция влияет только на производительность.
 	  */
