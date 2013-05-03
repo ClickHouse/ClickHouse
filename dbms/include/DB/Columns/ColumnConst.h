@@ -43,7 +43,11 @@ public:
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
 	void get(size_t n, Field & res) const { res = typename NearestFieldType<T>::Type(data); }
-	void cut(size_t start, size_t length) { s = length; }
+
+	ColumnPtr cut(size_t start, size_t length) const
+	{
+		return new ColumnConst<T>(length, data, data_type);
+	}
 	
 	void insert(const Field & x)
 	{
@@ -57,7 +61,7 @@ public:
 	
 	void insertDefault() { ++s; }
 
-	void filter(const Filter & filt)
+	ColumnPtr filter(const Filter & filt) const
 	{
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -66,23 +70,26 @@ public:
 		for (Filter::const_iterator it = filt.begin(); it != filt.end(); ++it)
 			if (*it)
 				++new_size;
-		s = new_size;
+			
+		return new ColumnConst<T>(new_size, data, data_type);
 	}
 
-	void replicate(const Offsets_t & offsets)
+	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		if (s != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		s = offsets.back();
+		return new ColumnConst<T>(offsets.back(), data, data_type);
 	}
 
 	size_t byteSize() const { return sizeof(data) + sizeof(s); }
 
-	void permute(const Permutation & perm)
+	ColumnPtr permute(const Permutation & perm) const
 	{
 		if (s != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		return new ColumnConst<T>(s, data, data_type);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const

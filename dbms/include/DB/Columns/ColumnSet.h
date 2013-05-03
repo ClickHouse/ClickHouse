@@ -21,7 +21,6 @@ public:
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { throw Exception("Cannot get value from ColumnSet", ErrorCodes::NOT_IMPLEMENTED); }
 	void get(size_t n, Field & res) const { throw Exception("Cannot get value from ColumnSet", ErrorCodes::NOT_IMPLEMENTED); };
-	void cut(size_t start, size_t length) { s = length; }
 	void insert(const Field & x) { throw Exception("Cannot insert element into ColumnSet", ErrorCodes::NOT_IMPLEMENTED); }
 	void insertDefault() { ++s; }
 	size_t byteSize() const { return 0; }
@@ -29,19 +28,27 @@ public:
 	StringRef getDataAt(size_t n) const { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	void insertData(const char * pos, size_t length) { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
-	void filter(const Filter & filt)
+	ColumnPtr cut(size_t start, size_t length) const
+	{
+		return new ColumnSet(length, data);
+	}
+
+	ColumnPtr filter(const Filter & filt) const
 	{
 		size_t new_size = 0;
 		for (Filter::const_iterator it = filt.begin(); it != filt.end(); ++it)
 			if (*it)
 				++new_size;
-		s = new_size;
+
+		return new ColumnSet(new_size, data);
 	}
 
-	void permute(const Permutation & perm)
+	ColumnPtr permute(const Permutation & perm) const
 	{
 		if (s != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		return new ColumnSet(s, data);
 	}
 
 	Permutation getPermutation() const
@@ -52,10 +59,12 @@ public:
 		return res;
 	}
 
-	void replicate(const Offsets_t & offsets)
+	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		if (s != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		return new ColumnSet(offsets.back(), data);
 	}
 
 

@@ -111,14 +111,17 @@ public:
 		return res;
 	}
 
-	void replicate(const Offsets_t & offsets)
+	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		size_t col_size = size();
 		if (col_size != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnUInt8::Container_t tmp;
-		tmp.reserve(n * offsets.back());
+		ColumnFixedString * res_ = new ColumnFixedString(n);
+		ColumnPtr res = res_;
+		
+		ColumnUInt8::Container_t & res_chars = res_->char_data;
+		res_chars.reserve(n * offsets.back());
 
 		Offset_t prev_offset = 0;
 		for (size_t i = 0; i < col_size; ++i)
@@ -128,10 +131,10 @@ public:
 
 			for (size_t j = 0; j < size_to_replicate; ++j)
 				for (size_t k = 0; k < n; ++k)
-					tmp.push_back(char_data[i * n + k]);
+					res_chars.push_back(char_data[i * n + k]);
 		}
 
-		tmp.swap(char_data);
+		return res;
 	}
 };
 

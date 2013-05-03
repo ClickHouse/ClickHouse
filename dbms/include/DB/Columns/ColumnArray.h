@@ -77,14 +77,10 @@ public:
 		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void cut(size_t start, size_t length)
+	ColumnPtr cut(size_t start, size_t length) const
 	{
 		if (length == 0)
-		{
-			data->cut(0, 0);
-			Offsets_t().swap(getOffsets());
-			return;
-		}
+			return new ColumnArray(data);
 		
 		if (start + length > getOffsets().size())
 			throw Exception("Parameter out of bound in IColumnArray::cut() method.",
@@ -93,19 +89,25 @@ public:
 		size_t nested_offset = offsetAt(start);
 		size_t nested_length = getOffsets()[start + length - 1] - nested_offset;
 
-		data->cut(nested_offset, nested_length);
+		ColumnArray * res_ = new ColumnArray(data);
+		ColumnPtr res = res_;
+		
+		res_->data = data->cut(nested_offset, nested_length);
+		Offsets_t & res_offsets = res_->getOffsets();
 
 		if (start == 0)
-			getOffsets().resize(length);
+		{
+			res_offsets.assign(getOffsets().begin(), getOffsets().begin() + length);
+		}
 		else
 		{
-			Offsets_t tmp(length);
+			res_offsets.resize(length);
 
 			for (size_t i = 0; i < length; ++i)
-				tmp[i] = getOffsets()[start + i] - nested_offset;
-			
-			tmp.swap(getOffsets());
+				res_offsets[i] = getOffsets()[start + i] - nested_offset;
 		}
+
+		return res;
 	}
 
 	void insert(const Field & x)
@@ -135,24 +137,27 @@ public:
 		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
 	}
 
-	void filter(const Filter & filt)
+	ColumnPtr filter(const Filter & filt) const
 	{
 		size_t size = getOffsets().size();
 		if (size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
-			return;
+			return new ColumnArray(data);
 
 		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
 		Filter nested_filt(getOffsets().back());
 		for (size_t i = 0; i < size; ++i)
 			if (filt[i])
 				memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
-		data->filter(nested_filt);
-				
-		Offsets_t tmp;
-		tmp.reserve(size);
+
+		ColumnArray * res_ = new ColumnArray(data);
+		ColumnPtr res = res_;
+		res_->data = data->filter(nested_filt);
+
+		Offsets_t & res_offsets = res_->getOffsets();
+		res_offsets.reserve(size);
 
 		size_t current_offset = 0;
 		for (size_t i = 0; i < size; ++i)
@@ -160,30 +165,34 @@ public:
 			if (filt[i])
 			{
 				current_offset += sizeAt(i);
-				tmp.push_back(current_offset);
+				res_offsets.push_back(current_offset);
 			}
 		}
 
-		tmp.swap(getOffsets());
+		return res;
 	}
 
-	void replicate(const Offsets_t & offsets)
+	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		throw Exception("Replication of column Array is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void permute(const Permutation & perm)
+	ColumnPtr permute(const Permutation & perm) const
 	{
 		size_t size = getOffsets().size();
 		if (size != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
-			return;
+ 			return new ColumnArray(data);
 
 		Permutation nested_perm(getOffsets().back());
 
-		Offsets_t tmp_offsets(size);
+		ColumnArray * res_ = new ColumnArray(data);
+		ColumnPtr res = res_;
+
+		Offsets_t & res_offsets = res_->getOffsets();
+		res_offsets.resize(size);
 		size_t current_offset = 0;
 
 		for (size_t i = 0; i < size; ++i)
@@ -191,11 +200,12 @@ public:
 			for (size_t j = 0; j < sizeAt(perm[i]); ++j)
 				nested_perm[current_offset + j] = offsetAt(perm[i]) + j;
 			current_offset += sizeAt(perm[i]);
-			tmp_offsets[i] = current_offset;
+			res_offsets[i] = current_offset;
 		}
 
-		data->permute(nested_perm);
-		tmp_offsets.swap(getOffsets());
+		res_->data = data->permute(nested_perm);
+
+		return res;
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const

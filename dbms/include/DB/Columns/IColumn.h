@@ -75,7 +75,7 @@ public:
 	/** Удалить всё кроме диапазона элементов.
 	  * Используется, например, для операции LIMIT.
 	  */
-	virtual void cut(size_t start, size_t length) = 0;
+	virtual SharedPtr<IColumn> cut(size_t start, size_t length) const = 0;
 
 	/** Вставить значение в конец столбца (количество значений увеличится на 1).
 	  * Используется для преобразования из строк в блоки (например, при чтении значений из текстового дампа)
@@ -118,13 +118,13 @@ public:
 	  * Используется для операции WHERE / HAVING.
 	  */
 	typedef std::vector<UInt8> Filter;
-	virtual void filter(const Filter & filt) = 0;
+	virtual SharedPtr<IColumn> filter(const Filter & filt) const = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
 	  */
 	typedef std::vector<size_t> Permutation;
-	virtual void permute(const Permutation & perm) = 0;
+	virtual SharedPtr<IColumn> permute(const Permutation & perm) const = 0;
 
 	/** Сравнить (*this)[n] и rhs[m].
 	  * Вернуть отрицательное число, 0, или положительное число, если меньше, равно, или больше, соответственно.
@@ -142,7 +142,7 @@ public:
 	  */
 	typedef UInt64 Offset_t;
 	typedef std::vector<Offset_t> Offsets_t;
-	virtual void replicate(const Offsets_t & offsets) = 0;
+	virtual SharedPtr<IColumn> replicate(const Offsets_t & offsets) const = 0;
 
 	/** Если возможно - зарезервировать место для указанного количества элементов. Если невозможно или не поддерживается - ничего не делать.
 	  * Функция влияет только на производительность.

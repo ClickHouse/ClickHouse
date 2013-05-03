@@ -597,7 +597,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	size_t columns = res.columns();
 	for (size_t i = 0; i < columns; ++i)
 		if (res.getByPosition(i).column->isConst())
-			res.getByPosition(i).column->cut(0, rows);
+			res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
 	double elapsed_seconds = watch.elapsedSeconds();
 	LOG_TRACE(log, std::fixed << std::setprecision(3)

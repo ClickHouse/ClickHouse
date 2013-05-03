@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_COLUMN_FIXED_ARRAY_H
-#define DBMS_CORE_COLUMN_FIXED_ARRAY_H
+#pragma once
 
 #include <Poco/SharedPtr.h>
 
@@ -19,7 +18,7 @@ using Poco::SharedPtr;
 class ColumnFixedArray : public IColumn
 {
 public:
-	/** Создать пустой столбец массивов фиксированного размера n, со типом значений, как в столбце nested_column */
+	/** Создать пустой столбец массивов фиксированного размера n, с типом значений, как в столбце nested_column */
 	ColumnFixedArray(ColumnPtr nested_column, size_t n_)
 		: data(nested_column->cloneEmpty()), n(n_)
 	{
@@ -63,9 +62,12 @@ public:
 		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void cut(size_t start, size_t length)
+	ColumnPtr cut(size_t start, size_t length) const
 	{
-		data->cut(n * start, n * length);
+		ColumnFixedArray * res_ = new ColumnFixedArray(data, n);
+		ColumnPtr res = res_;
+		res_->data = data->cut(n * start, n * length);
+		return res;
 	}
 
 	void insert(const Field & x)
@@ -103,42 +105,50 @@ public:
 		return *data;
 	}
 
-	void filter(const Filter & filt)
+	ColumnPtr filter(const Filter & filt) const
 	{
 		size_t size = this->size();
 		if (size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
-			return;
+			return new ColumnFixedArray(data, n);
 
 		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
 		Filter nested_filt(size * n);
 		for (size_t i = 0; i < size; ++i)
 			if (filt[i])
 				memset(&nested_filt[i * n], 1, n);
-		data->filter(nested_filt);
+
+		ColumnFixedArray * res_ = new ColumnFixedArray(data, n);
+		ColumnPtr res = res_;
+		res_->data = data->filter(nested_filt);
+		return res;
 	}
 
-	void replicate(const Offsets_t & offsets)
+	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		throw Exception("Replication of column FixedArray is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void permute(const Permutation & perm)
+	ColumnPtr permute(const Permutation & perm) const
 	{
 		size_t size = this->size();
 		if (size != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
-			return;
+			return new ColumnFixedArray(data, n);
 
 		Permutation nested_perm(size * n);
 		for (size_t i = 0; i < size; ++i)
 			for (size_t j = 0; j < n; ++j)
 				nested_perm[i * n + j] = perm[i] * n + j;
-		data->permute(nested_perm);
+
+		ColumnFixedArray * res_ = new ColumnFixedArray(data, n);
+		ColumnPtr res = res_;
+		res_->data = data->permute(nested_perm);
+		return res;
 	}
 
 	int compareAt(size_t p1, size_t p2, const IColumn & rhs_) const
@@ -211,5 +221,3 @@ protected:
 
 
 }
-
-#endif

@@ -79,9 +79,9 @@ Block FilterBlockInputStream::readImpl()
 		{
 			if (i != static_cast<size_t>(filter_column))
 			{
-				IColumn & current_column = *res.getByPosition(i).column;
-				current_column.filter(filter);
-				if (current_column.empty())
+				ColumnWithNameAndType & current_column = res.getByPosition(i);
+				current_column.column = current_column.column->filter(filter);
+				if (current_column.column->empty())
 					break;
 			}
 		}

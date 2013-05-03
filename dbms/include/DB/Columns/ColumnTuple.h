@@ -100,13 +100,45 @@ public:
 	}
 
 
-	/** В следующих функциях ничего не делаем, так как столбцы - элементы tuple обычно содержатся в блоке вместе с tuple,
-	  *  и соответствующие операции применяются к ним также. То есть, операции будут применены к tuple автоматически.
-	  */
-	void cut(size_t start, size_t length) {}
-	void filter(const Filter & filt) {}
-	void permute(const Permutation & perm) {}
-	void replicate(const Offsets_t & offsets) {}
+	ColumnPtr cut(size_t start, size_t length) const
+	{
+		Block res_block = data.cloneEmpty();
+		
+		for (size_t i = 0; i < columns.size(); ++i)
+			res_block.getByPosition(i).column = data.getByPosition(i).column->cut(start, length);
+
+		return new ColumnTuple(res_block);
+	}
+
+	ColumnPtr filter(const Filter & filt) const
+	{
+		Block res_block = data.cloneEmpty();
+
+		for (size_t i = 0; i < columns.size(); ++i)
+			res_block.getByPosition(i).column = data.getByPosition(i).column->filter(filt);
+
+		return new ColumnTuple(res_block);
+	}
+
+	ColumnPtr permute(const Permutation & perm) const
+	{
+		Block res_block = data.cloneEmpty();
+
+		for (size_t i = 0; i < columns.size(); ++i)
+			res_block.getByPosition(i).column = data.getByPosition(i).column->permute(perm);
+
+		return new ColumnTuple(res_block);
+	}
+	
+	ColumnPtr replicate(const Offsets_t & offsets) const
+	{
+		Block res_block = data.cloneEmpty();
+
+		for (size_t i = 0; i < columns.size(); ++i)
+			res_block.getByPosition(i).column = data.getByPosition(i).column->replicate(offsets);
+
+		return new ColumnTuple(res_block);
+	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs) const
 	{

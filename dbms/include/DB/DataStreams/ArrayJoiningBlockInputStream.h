@@ -84,7 +84,7 @@ protected:
 				block.insert(i, result);
 			}
 			else
-				current.column->replicate(dynamic_cast<const ColumnArray &>(*array).getOffsets());
+				current.column = current.column->replicate(dynamic_cast<const ColumnArray &>(*array).getOffsets());
 		}
 
 		return block;

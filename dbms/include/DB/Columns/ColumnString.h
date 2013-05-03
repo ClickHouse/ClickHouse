@@ -24,7 +24,7 @@ private:
 	DataVector_t & char_data;
 
 public:	
-	/** Создать пустой столбец строк, с типом значений */
+	/** Создать пустой столбец строк */
 	ColumnString()
 		: ColumnArray(new ColumnUInt8()),
 		char_data(static_cast<ColumnUInt8 &>(*data).getData())
@@ -103,19 +103,22 @@ public:
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + length);
 	}
 
-	void filter(const Filter & filt)
+	ColumnPtr filter(const Filter & filt) const
 	{
 		size_t size = getOffsets().size();
 		if (size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
-			return;
+			return new ColumnString;
 
-		ColumnUInt8::Container_t tmp_chars;
-		Offsets_t tmp_offsets;
-		tmp_chars.reserve(char_data.size());
-		tmp_offsets.reserve(size);
+		ColumnString * res_ = new ColumnString;
+		ColumnPtr res = res_;
+
+		ColumnUInt8::Container_t & res_chars = res_->char_data;
+		Offsets_t & res_offsets = res_->getOffsets();
+		res_chars.reserve(char_data.size());
+		res_offsets.reserve(size);
 
 		Offset_t current_new_offset = 0;
 
@@ -128,27 +131,32 @@ public:
 			size_t string_size = getOffsets()[i] - string_offset;
 
 			current_new_offset += string_size;
-			tmp_offsets.push_back(current_new_offset);
+			res_offsets.push_back(current_new_offset);
 
-			tmp_chars.resize(tmp_chars.size() + string_size);
-			memcpy(&tmp_chars[tmp_chars.size() - string_size], &char_data[string_offset], string_size);
+			res_chars.resize(res_chars.size() + string_size);
+			memcpy(&res_chars[res_chars.size() - string_size], &char_data[string_offset], string_size);
 		}
 
-		tmp_chars.swap(char_data);
-		tmp_offsets.swap(getOffsets());
+		return res;
 	}
 
-	void permute(const Permutation & perm)
+	ColumnPtr permute(const Permutation & perm) const
 	{
 		size_t size = getOffsets().size();
 		if (size != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
-			return;
+			return new ColumnString;
 
-		ColumnUInt8::Container_t tmp_chars(char_data.size());
-		Offsets_t tmp_offsets(size);
+		ColumnString * res_ = new ColumnString;
+		ColumnPtr res = res_;
+
+		ColumnUInt8::Container_t & res_chars = res_->char_data;
+		Offsets_t & res_offsets = res_->getOffsets();
+
+		res_chars.resize(char_data.size());
+		res_offsets.resize(size);
 
 		Offset_t current_new_offset = 0;
 
@@ -158,14 +166,13 @@ public:
 			size_t string_offset = j == 0 ? 0 : getOffsets()[j - 1];
 			size_t string_size = getOffsets()[j] - string_offset;
 
-			memcpy(&tmp_chars[current_new_offset], &char_data[string_offset], string_size);
+			memcpy(&res_chars[current_new_offset], &char_data[string_offset], string_size);
 
 			current_new_offset += string_size;
-			tmp_offsets[i] = current_new_offset;
+			res_offsets[i] = current_new_offset;
 		}
 
-		tmp_chars.swap(char_data);
-		tmp_offsets.swap(getOffsets());
+		return res;
 	}
 
 	void insertDefault()
@@ -210,16 +217,19 @@ public:
 		return res;
 	}
 
-	void replicate(const Offsets_t & replicate_offsets)
+	ColumnPtr replicate(const Offsets_t & replicate_offsets) const
 	{
 		size_t col_size = size();
 		if (col_size != replicate_offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnUInt8::Container_t tmp_chars;
-		Offsets_t tmp_offsets;
-		tmp_chars.reserve(char_data.size() / col_size * replicate_offsets.back());
-		tmp_offsets.reserve(replicate_offsets.back());
+		ColumnString * res_ = new ColumnString;
+		ColumnPtr res = res_;
+
+		ColumnUInt8::Container_t & res_chars = res_->char_data;
+		Offsets_t & res_offsets = res_->getOffsets();
+		res_chars.reserve(char_data.size() / col_size * replicate_offsets.back());
+		res_offsets.reserve(replicate_offsets.back());
 
 		Offset_t prev_replicate_offset = 0;
 		Offset_t prev_string_offset = 0;
@@ -233,18 +243,17 @@ public:
 			for (size_t j = 0; j < size_to_replicate; ++j)
 			{
 				current_new_offset += string_size;
-				tmp_offsets.push_back(current_new_offset);
+				res_offsets.push_back(current_new_offset);
 
-				tmp_chars.resize(tmp_chars.size() + string_size);
-				memcpy(&tmp_chars[tmp_chars.size() - string_size], &char_data[prev_string_offset], string_size);
+				res_chars.resize(res_chars.size() + string_size);
+				memcpy(&res_chars[res_chars.size() - string_size], &char_data[prev_string_offset], string_size);
 			}
 
 			prev_replicate_offset = replicate_offsets[i];
 			prev_string_offset = getOffsets()[i];
 		}
 
-		tmp_chars.swap(char_data);
-		tmp_offsets.swap(getOffsets());
+		return res;
 	}
 
 	void reserve(size_t n)

@@ -52,7 +52,7 @@ void sortBlock(Block & block, const SortDescription & description)
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column->permute(perm);
+			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm);
 	}
 	else
 	{
@@ -66,7 +66,7 @@ void sortBlock(Block & block, const SortDescription & description)
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column->permute(perm);
+			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm);
 	}
 }
 

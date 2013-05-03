@@ -82,35 +82,22 @@ public:
 		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 	
-	void cut(size_t start, size_t length)
+	ColumnPtr cut(size_t start, size_t length) const
 	{
-		if (start + length > data.size())
-			throw Exception("Parameters start = "
-				+ Poco::NumberFormatter::format(start) + ", length = "
-				+ Poco::NumberFormatter::format(length) + " are out of bound in IColumnVector<T>::cut() method"
-				" (data.size() = " + Poco::NumberFormatter::format(data.size()) + ").",
-				ErrorCodes::PARAMETER_OUT_OF_BOUND);
-
-		if (start == 0)
-		{
-			for (size_t i = length, s = data.size(); i < s; ++i)
-				func->destroy(data[i]);
-			
-			data.resize(length);
-		}
-		else
-		{
-			for (size_t i = 0; i < start; ++i)
-				func->destroy(data[i]);
-			for (size_t i = start + length, s = data.size(); i < s; ++i)
-				func->destroy(data[i]);
-			
-			Container_t tmp(data.begin() + start, data.begin() + start + length);
-			tmp.swap(data);
-		}
+		throw Exception("Method cut is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void replicate(const Offsets_t & offsets)
+	ColumnPtr filter(const Filter & filter) const
+	{
+		throw Exception("Method filter is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	ColumnPtr permute(const Permutation & perm) const
+	{
+		throw Exception("Method permute is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}

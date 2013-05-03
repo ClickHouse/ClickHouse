@@ -17,6 +17,8 @@ namespace DB
 template <typename T>
 class ColumnVectorBase : public IColumn
 {
+private:
+	typedef ColumnVectorBase<T> Self;
 public:
 	typedef T value_type;
 	typedef std::vector<value_type> Container_t;
@@ -38,28 +40,9 @@ public:
 		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
 	}
 	
-	void cut(size_t start, size_t length)
-	{
-		if (start + length > data.size())
-			throw Exception("Parameters start = "
-				+ Poco::NumberFormatter::format(start) + ", length = "
-				+ Poco::NumberFormatter::format(length) + " are out of bound in IColumnVector<T>::cut() method"
-				" (data.size() = " + Poco::NumberFormatter::format(data.size()) + ").",
-				ErrorCodes::PARAMETER_OUT_OF_BOUND);
-
-		if (start == 0)
-			data.resize(length);
-		else
-		{
-			Container_t tmp(length);
-			memcpy(&tmp[0], &data[start], length * sizeof(data[0]));
-			tmp.swap(data);
-		}
-	}
-
 	void insertFrom(const IColumn & src, size_t n)
 	{
-		data.push_back(static_cast<const ColumnVectorBase<T> &>(src).getData()[n]);
+		data.push_back(static_cast<const Self &>(src).getData()[n]);
 	}
 
 	void insertData(const char * pos, size_t length)
@@ -72,42 +55,14 @@ public:
 		data.push_back(T());
 	}
 
-	void filter(const Filter & filt)
-	{
-		size_t size = data.size();
-		if (size != filt.size())
-			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-		
-		Container_t tmp;
-		tmp.reserve(size);
-		
-		for (size_t i = 0; i < size; ++i)
-			if (filt[i])
-				tmp.push_back(data[i]);
-
-		tmp.swap(data);
-	}
-
 	size_t byteSize() const
 	{
 		return data.size() * sizeof(data[0]);
 	}
 
-	void permute(const Permutation & perm)
-	{
-		size_t size = data.size();
-		if (size != perm.size())
-			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		Container_t tmp(size);
-		for (size_t i = 0; i < size; ++i)
-			tmp[i] = data[perm[i]];
-		tmp.swap(data);
-	}
-
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
 	{
-		const ColumnVectorBase<T> & rhs = static_cast<const ColumnVectorBase<T> &>(rhs_);
+		const Self & rhs = static_cast<const Self &>(rhs_);
 		return data[n] < rhs.data[m]
 			? -1
 			: (data[n] == rhs.data[m]
@@ -117,8 +72,8 @@ public:
 
 	struct less
 	{
-		const ColumnVectorBase<T> & parent;
-		less(const ColumnVectorBase<T> & parent_) : parent(parent_) {}
+		const Self & parent;
+		less(const Self & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] < parent.data[rhs]; }
 	};
 
@@ -132,28 +87,6 @@ public:
 		std::sort(res.begin(), res.end(), less(*this));
 		
 		return res;
-	}
-
-	void replicate(const Offsets_t & offsets)
-	{
-		size_t size = data.size();
-		if (size != offsets.size())
-			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		Container_t tmp;
-		tmp.reserve(offsets.back());
-
-		Offset_t prev_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			size_t size_to_replicate = offsets[i] - prev_offset;
-			prev_offset = offsets[i];
-
-			for (size_t j = 0; j < size_to_replicate; ++j)
-				tmp.push_back(data[i]);
-		}
-
-		tmp.swap(data);
 	}
 
 	void reserve(size_t n)
@@ -183,6 +116,8 @@ protected:
 template <typename T>
 class ColumnVector : public ColumnVectorBase<T>
 {
+private:
+	typedef ColumnVector<T> Self;
 public:
 	ColumnVector() {}
 	ColumnVector(size_t n) : ColumnVectorBase<T>(n) {}
@@ -207,6 +142,77 @@ public:
 	void insert(const Field & x)
 	{
 		this->data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
+	}
+
+	ColumnPtr cut(size_t start, size_t length) const
+	{
+		if (start + length > this->data.size())
+			throw Exception("Parameters start = "
+				+ Poco::NumberFormatter::format(start) + ", length = "
+				+ Poco::NumberFormatter::format(length) + " are out of bound in IColumnVector<T>::cut() method"
+				" (data.size() = " + Poco::NumberFormatter::format(this->data.size()) + ").",
+				ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+		Self * res = new Self(length);
+		memcpy(&res->getData()[0], &this->data[start], length * sizeof(this->data[0]));
+		return res;
+	}
+
+	ColumnPtr filter(const IColumn::Filter & filt) const
+	{
+		size_t size = this->data.size();
+		if (size != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Self * res_ = new Self;
+		ColumnPtr res = res_;
+		typename Self::Container_t & res_data = res_->getData();
+		res_data.reserve(size);
+
+		for (size_t i = 0; i < size; ++i)
+			if (filt[i])
+				res_data.push_back(this->data[i]);
+
+		return res;
+	}
+
+	ColumnPtr permute(const IColumn::Permutation & perm) const
+	{
+		size_t size = this->data.size();
+		if (size != perm.size())
+			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Self * res_ = new Self(size);
+		ColumnPtr res = res_;
+		typename Self::Container_t & res_data = res_->getData();
+		for (size_t i = 0; i < size; ++i)
+			res_data[i] = this->data[perm[i]];
+
+		return res;
+	}
+
+	ColumnPtr replicate(const IColumn::Offsets_t & offsets) const
+	{
+		size_t size = this->data.size();
+		if (size != offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Self * res_ = new Self;
+		ColumnPtr res = res_;
+		typename Self::Container_t & res_data = res_->getData();
+		res_data.reserve(offsets.back());
+
+		IColumn::Offset_t prev_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t size_to_replicate = offsets[i] - prev_offset;
+			prev_offset = offsets[i];
+
+			for (size_t j = 0; j < size_to_replicate; ++j)
+				res_data.push_back(this->data[i]);
+		}
+
+		return res;
 	}
 };
 
