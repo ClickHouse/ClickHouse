@@ -16,6 +16,7 @@
 
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Interpreters/Expression.h>
@@ -44,31 +45,6 @@ void dump(DB::IAST & ast, int level = 0)
 	for (DB::ASTs::iterator it = children.begin(); it != children.end(); ++it)
 		dump(**it, level + 1);
 }
-
-
-class OneBlockInputStream : public DB::IBlockInputStream
-{
-private:
-	const DB::Block & block;
-	bool has_been_read;
-public:
-	OneBlockInputStream(const DB::Block & block_) : block(block_), has_been_read(false) {}
-
-	DB::Block read()
-	{
-		if (!has_been_read)
-		{
-			has_been_read = true;
-			return block;
-		}
-		else
-			return DB::Block();
-	}
-
-	DB::String getName() const { return "OneBlockInputStream"; }
-
-	DB::BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
-};
 
 
 int main(int argc, char ** argv)
@@ -168,7 +144,7 @@ int main(int argc, char ** argv)
 				<< std::endl;
 		}
 		
-		OneBlockInputStream * is = new OneBlockInputStream(block);
+		DB::OneBlockInputStream * is = new DB::OneBlockInputStream(block);
 		DB::LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
 		DB::WriteBufferFromOStream out_buf(std::cout);
 		DB::TabSeparatedRowOutputStream os(out_buf, block);

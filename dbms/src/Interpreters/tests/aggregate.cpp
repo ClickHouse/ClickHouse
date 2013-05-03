@@ -9,36 +9,11 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 
 #include <DB/Interpreters/Aggregator.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-
-
-class OneBlockInputStream : public DB::IBlockInputStream
-{
-private:
-	const DB::Block & block;
-	bool has_been_read;
-public:
-	OneBlockInputStream(const DB::Block & block_) : block(block_), has_been_read(false) {}
-
-	DB::Block read()
-	{
-		if (!has_been_read)
-		{
-			has_been_read = true;
-			return block;
-		}
-		else
-			return DB::Block();
-	}
-
-	DB::String getName() const { return "OneBlockInputStream"; }
-
-	DB::BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
-};
 
 
 int main(int argc, char ** argv)
@@ -84,7 +59,7 @@ int main(int argc, char ** argv)
 
 		block.insert(column_s2);
 
-		DB::BlockInputStreamPtr stream = new OneBlockInputStream(block);
+		DB::BlockInputStreamPtr stream = new DB::OneBlockInputStream(block);
 		DB::AggregatedDataVariants aggregated_data_variants;
 
 		DB::ColumnNumbers key_column_numbers;

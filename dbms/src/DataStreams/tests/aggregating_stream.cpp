@@ -17,34 +17,10 @@
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-
-
-class OneBlockInputStream : public DB::IBlockInputStream
-{
-private:
-	const DB::Block & block;
-	bool has_been_read;
-public:
-	OneBlockInputStream(const DB::Block & block_) : block(block_), has_been_read(false) {}
-
-	DB::Block read()
-	{
-		if (!has_been_read)
-		{
-			has_been_read = true;
-			return block;
-		}
-		else
-			return DB::Block();
-	}
-
-	DB::String getName() const { return "OneBlockInputStream"; }
-
-	DB::BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
-};
 
 
 int main(int argc, char ** argv)
@@ -116,7 +92,7 @@ int main(int argc, char ** argv)
 			sample.insert(col);
 		}
 
-		DB::BlockInputStreamPtr stream = new OneBlockInputStream(block);
+		DB::BlockInputStreamPtr stream = new DB::OneBlockInputStream(block);
 		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions, 0, DB::Limits::THROW);
 		stream = new DB::FinalizingAggregatedBlockInputStream(stream);
 
