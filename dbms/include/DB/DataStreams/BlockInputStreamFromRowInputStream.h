@@ -27,6 +27,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new BlockInputStreamFromRowInputStream(row_input, sample, max_block_size); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << this;
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 

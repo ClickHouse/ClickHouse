@@ -29,6 +29,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new AsynchronousBlockInputStream(in); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Asynchronous(" << in->getID() << ")";
+		return res.str();
+	}
+
 
 	/** Ждать готовность данных не более заданного таймаута. Запустить получение данных, если нужно.
 	  * Если функция вернула true - данные готовы и можно делать read(); нельзя вызвать функцию сразу ещё раз.

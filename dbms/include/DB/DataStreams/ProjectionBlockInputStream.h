@@ -33,6 +33,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new ProjectionBlockInputStream(input, expression, without_duplicates_and_aliases, part_id, subtree); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Projection(" << input->getID() << ", " << expression->getProjectionID(without_duplicates_and_aliases, part_id, subtree) << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{

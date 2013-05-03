@@ -494,6 +494,15 @@ void Expression::execute(Block & block, unsigned part_id, bool only_consts)
 }
 
 
+String Expression::getExecutionID(unsigned part_id) const
+{
+	std::stringstream res;
+	NamesSet known_names;
+	getExecutionIDImpl(ast, part_id, res, known_names);
+	return res.str();
+}
+
+
 void Expression::clearTemporaries(Block & block)
 {
 	clearTemporariesImpl(ast, block);
@@ -660,11 +669,45 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool o
 }
 
 
+void Expression::getExecutionIDImpl(ASTPtr ast, unsigned part_id, std::stringstream & res, NamesSet & known_names) const
+{
+	/// Обход снизу-вверх. Не опускаемся в подзапросы.
+	for (ASTs::const_iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<const ASTSelectQuery *>(&**it))
+			getExecutionIDImpl(*it, part_id, res, known_names);
+
+	/// Если это - не указанная часть дерева.
+	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
+		return;
+
+	if (dynamic_cast<ASTFunction *>(&*ast)
+		|| dynamic_cast<ASTLiteral *>(&*ast)
+		|| dynamic_cast<ASTSet *>(&*ast))
+	{
+		String name = ast->getColumnName();
+		if (known_names.end() == known_names.find(name))
+		{
+			res << (known_names.empty() ? "" : ", ") << name;
+			known_names.insert(name);
+		}
+	}
+}
+
+
 Block Expression::projectResult(Block & block, bool without_duplicates_and_aliases, unsigned part_id, ASTPtr subtree)
 {
 	Block res;
 	collectFinalColumns(subtree ? subtree : ast, block, res, without_duplicates_and_aliases, part_id);
 	return res;
+}
+
+
+String Expression::getProjectionID(bool without_duplicates_and_aliases, unsigned part_id, ASTPtr subtree) const
+{
+	std::stringstream res;
+	NamesSet known_names;
+	getProjectionIDImpl(subtree ? subtree : ast, without_duplicates_and_aliases, part_id, res, known_names);
+	return res.str();
 }
 
 
@@ -699,6 +742,48 @@ void Expression::collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool 
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			if (!dynamic_cast<ASTSelectQuery *>(&**it))
 				collectFinalColumns(*it, src, dst, without_duplicates_and_aliases, part_id);
+}
+
+
+void Expression::getProjectionIDImpl(ASTPtr ast, bool without_duplicates_and_aliases, unsigned part_id, std::stringstream & res, NamesSet & known_names) const
+{
+	/// Обход в глубину, который не заходит внутрь функций и подзапросов.
+	if (!((ast->part_id & part_id) || (ast->part_id == 0 && part_id == 0)))
+	{
+		if (!dynamic_cast<ASTFunction *>(&*ast))
+			for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+				if (!dynamic_cast<ASTSelectQuery *>(&**it))
+					getProjectionIDImpl(*it, without_duplicates_and_aliases, part_id, res, known_names);
+		return;
+	}
+
+	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		if (ident->kind == ASTIdentifier::Column)
+		{
+			String name = without_duplicates_and_aliases ? ast->getColumnName() : ast->getAlias();
+
+			if (!without_duplicates_and_aliases || known_names.end() == known_names.find(name))
+			{
+				res << (known_names.empty() ? "" : ", ") << name;
+				known_names.insert(name);
+			}
+		}
+	}
+	else if (dynamic_cast<ASTLiteral *>(&*ast) || dynamic_cast<ASTFunction *>(&*ast))
+	{
+		String name = without_duplicates_and_aliases ? ast->getColumnName() : ast->getAlias();
+
+		if (!without_duplicates_and_aliases || known_names.end() == known_names.find(name))
+		{
+			res << (known_names.empty() ? "" : ", ") << name;
+			known_names.insert(name);
+		}
+	}
+	else
+		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+			if (!dynamic_cast<ASTSelectQuery *>(&**it))
+				getProjectionIDImpl(*it, without_duplicates_and_aliases, part_id, res, known_names);
 }
 
 

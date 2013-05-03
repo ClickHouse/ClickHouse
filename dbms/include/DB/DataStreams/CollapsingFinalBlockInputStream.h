@@ -25,14 +25,31 @@ public:
 	String getName() const { return "CollapsingFinalBlockInputStream"; }
 	
 	BlockInputStreamPtr clone() { return new CollapsingFinalBlockInputStream(inputs, description, sign_column); }
-	
+
+	String getID() const
+	{
+		std::stringstream res;
+		res << "CollapsingFinal(inputs";
+
+		for (size_t i = 0; i < inputs.size(); ++i)
+			res << ", " << inputs[i]->getID();
+
+		res << ", description";
+
+		for (size_t i = 0; i < description.size(); ++i)
+			res << ", " << description[i].getID();
+
+		res << ", sign_column, " << sign_column << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
-	
+
 private:
 	struct MergingBlock;
 	typedef std::vector<MergingBlock*> BlockPlainPtrs;
-	
+
 	struct MergingBlock : boost::noncopyable
 	{
 		MergingBlock(Block block_,

@@ -20,6 +20,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new NativeBlockInputStream(istr, data_type_factory); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << this;
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 

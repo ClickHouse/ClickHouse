@@ -36,6 +36,19 @@ public:
 	LogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage, size_t mark_number_, size_t rows_limit_);
 	String getName() const { return "LogBlockInputStream"; }
 	BlockInputStreamPtr clone() { return new LogBlockInputStream(block_size, column_names, owned_storage, mark_number, rows_limit); }
+
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Log(" << owned_storage->getTableName() << ", " << &*owned_storage << ", " << mark_number << ", " << rows_limit;
+
+		for (size_t i = 0; i < column_names.size(); ++i)
+			res << ", " << column_names[i];
+
+		res << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 private:

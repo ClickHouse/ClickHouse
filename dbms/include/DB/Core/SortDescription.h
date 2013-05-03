@@ -22,6 +22,14 @@ struct SortColumnDescription
 
 	SortColumnDescription(String column_name_, int direction_)
 		: column_name(column_name_), column_number(0), direction(direction_) {}
+
+	/// Для IBlockInputStream.
+	String getID() const
+	{
+		std::stringstream res;
+		res << column_name << ", " << column_number << ", " << direction;
+		return res.str();
+	}
 };
 
 /// Описание правила сортировки по нескольким столбцам.

@@ -25,6 +25,18 @@ public:
 
 	BlockInputStreamPtr clone() { return new MergeSortingBlockInputStream(input, description); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "MergeSorting(" << input->getID();
+		
+		for (size_t i = 0; i < description.size(); ++i)
+			res << ", " << description[i].getID();
+		
+		res << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 

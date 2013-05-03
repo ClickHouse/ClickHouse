@@ -54,6 +54,25 @@ public:
 
 	BlockInputStreamPtr clone() { return new UnionBlockInputStream(children, max_threads); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Union(";
+
+		Strings children_ids(children.size());
+		for (size_t i = 0; i < children.size(); ++i)
+			children_ids[i] = children[i]->getID();
+
+		/// Порядок не имеет значения.
+		std::sort(children_ids.begin(), children_ids.end());
+
+		for (size_t i = 0; i < children_ids.size(); ++i)
+			res << (i == 0 ? "" : ", ") << children_ids[i];
+
+		res << ")";
+		return res.str();
+	}
+
 	~UnionBlockInputStream()
 	{
 		LOG_TRACE(log, "Waiting for threads to finish");

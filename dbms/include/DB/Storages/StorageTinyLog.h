@@ -23,6 +23,19 @@ public:
 	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage);
 	String getName() const { return "TinyLogBlockInputStream"; }
 	BlockInputStreamPtr clone() { return new TinyLogBlockInputStream(block_size, column_names, owned_storage); }
+
+	String getID() const
+	{
+		std::stringstream res;
+		res << "TinyLog(" << owned_storage->getTableName() << ", " << &*owned_storage;
+		
+		for (size_t i = 0; i < column_names.size(); ++i)
+			res << ", " << column_names[i];
+
+		res << ")";
+		return res.str();
+	}
+	
 protected:
 	Block readImpl();
 private:

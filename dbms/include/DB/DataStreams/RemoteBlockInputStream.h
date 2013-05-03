@@ -56,6 +56,12 @@ public:
 			: new RemoteBlockInputStream(pool_entry, query, send_settings ? &settings : NULL, stage);
 	}
 
+	String getID() const
+	{
+		// TODO
+		return "";
+	}
+
 
 	/** Отменяем умолчальное уведомление о прогрессе,
 	  * так как колбэк прогресса вызывается самостоятельно.

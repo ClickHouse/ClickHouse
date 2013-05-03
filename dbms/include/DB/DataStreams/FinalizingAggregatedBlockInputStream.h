@@ -30,6 +30,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new FinalizingAggregatedBlockInputStream(input); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "FinalizingAggregated(" << input->getID() << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{

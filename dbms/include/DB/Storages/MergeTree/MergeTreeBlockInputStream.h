@@ -1,6 +1,8 @@
 #pragma once
 
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
@@ -32,6 +34,23 @@ public:
 	BlockInputStreamPtr clone()
 	{
 		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_ranges, owned_storage);
+	}
+
+	String getID() const
+	{
+		std::stringstream res;
+		res << "MergeTree(" << owned_storage->getTableName() << ", " << path << ", columns";
+
+		for (size_t i = 0; i < column_names.size(); ++i)
+			res << ", " << column_names[i];
+
+		res << ", marks";
+
+		for (size_t i = 0; i < mark_ranges.size(); ++i)
+			res << ", " << mark_ranges[i].begin << ", " << mark_ranges[i].end;
+
+		res << ")";
+		return res.str();
 	}
 	
 	/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.

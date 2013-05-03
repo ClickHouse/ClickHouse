@@ -23,6 +23,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new MaterializingBlockInputStream(input); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Materializing(" << input->getID() << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{

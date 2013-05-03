@@ -1032,4 +1032,29 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	}
 }
 
+
+String Aggregator::getID() const
+{
+	std::stringstream res;
+	
+	if (keys.empty())
+	{
+		res << "key_names";
+		for (size_t i = 0; i < key_names.size(); ++i)
+			res << ", " << key_names[i];
+	}
+	else
+	{
+		res << "keys";
+		for (size_t i = 0; i < keys.size(); ++i)
+			res << ", " << keys[i];
+	}
+
+	res << ", aggregates";
+	for (size_t i = 0; i < aggregates.size(); ++i)
+		res << ", " << aggregates[i].column_name;
+
+	return res.str();
+}
+
 }

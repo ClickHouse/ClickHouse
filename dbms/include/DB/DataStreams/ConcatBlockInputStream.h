@@ -26,6 +26,25 @@ public:
 
 	BlockInputStreamPtr clone() { return new ConcatBlockInputStream(children); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Concat(";
+
+		Strings children_ids(children.size());
+		for (size_t i = 0; i < children.size(); ++i)
+			children_ids[i] = children[i]->getID();
+
+		/// Будем считать, что порядок конкатенации блоков не имеет значения.
+		std::sort(children_ids.begin(), children_ids.end());
+
+		for (size_t i = 0; i < children_ids.size(); ++i)
+			res << (i == 0 ? "" : ", ") << children_ids[i];
+
+		res << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{

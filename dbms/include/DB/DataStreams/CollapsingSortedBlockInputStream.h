@@ -36,6 +36,23 @@ public:
 
 	BlockInputStreamPtr clone() { return new CollapsingSortedBlockInputStream(inputs, description, sign_column, max_block_size); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "CollapsingSorted(inputs";
+
+		for (size_t i = 0; i < inputs.size(); ++i)
+			res << ", " << inputs[i]->getID();
+
+		res << ", description";
+
+		for (size_t i = 0; i < description.size(); ++i)
+			res << ", " << description[i].getID();
+
+		res << ", sign_column, " << sign_column << ")";
+		return res.str();
+	}
+
 protected:
 	/// Может возвращаться на 1 больше записей, чем max_block_size.
 	Block readImpl();

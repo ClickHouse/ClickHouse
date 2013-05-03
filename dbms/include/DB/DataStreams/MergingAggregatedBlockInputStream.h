@@ -33,6 +33,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new MergingAggregatedBlockInputStream(*this); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "MergingAggregated(" << input->getID() << ", " << aggregator->getID() << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 

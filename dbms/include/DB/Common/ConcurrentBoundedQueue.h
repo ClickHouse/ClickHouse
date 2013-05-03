@@ -5,6 +5,8 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
+#include <DB/Core/Types.h>
+
 
 /** Очень простая thread-safe очередь ограниченной длины.
   * Если пытаться вынуть элемент из пустой очереди, то поток блокируется, пока очередь не станет непустой.
@@ -45,9 +47,9 @@ public:
 		empty_count.set();
 	}
 
-	bool tryPush(const T & x)
+	bool tryPush(const T & x, DB::UInt64 milliseconds = 0)
 	{
-		if (empty_count.tryWait(0))
+		if (empty_count.tryWait(milliseconds))
 		{
 			{
 				Poco::ScopedLock<Poco::Mutex> lock(mutex);
@@ -59,9 +61,9 @@ public:
 		return false;
 	}
 
-	bool tryPop(T & x)
+	bool tryPop(T & x, DB::UInt64 milliseconds = 0)
 	{
-		if (fill_count.tryWait(0))
+		if (fill_count.tryWait(milliseconds))
 		{
 			{
 				Poco::ScopedLock<Poco::Mutex> lock(mutex);

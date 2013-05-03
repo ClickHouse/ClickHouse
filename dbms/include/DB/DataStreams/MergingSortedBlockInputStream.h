@@ -30,6 +30,28 @@ public:
 
 	BlockInputStreamPtr clone() { return new MergingSortedBlockInputStream(inputs, description, max_block_size); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "MergingSorted(";
+
+		Strings children_ids(children.size());
+		for (size_t i = 0; i < children.size(); ++i)
+			children_ids[i] = children[i]->getID();
+
+		/// Порядок не имеет значения.
+		std::sort(children_ids.begin(), children_ids.end());
+
+		for (size_t i = 0; i < children_ids.size(); ++i)
+			res << (i == 0 ? "" : ", ") << children_ids[i];
+
+		for (size_t i = 0; i < description.size(); ++i)
+			res << ", " << description[i].getID();
+
+		res << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 	

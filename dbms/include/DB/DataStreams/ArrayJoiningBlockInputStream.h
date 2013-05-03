@@ -52,6 +52,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new ArrayJoiningBlockInputStream(input, array_column); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "ArrayJoining(" << input->getID() << ", " << array_column << ", " << array_column_name << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{

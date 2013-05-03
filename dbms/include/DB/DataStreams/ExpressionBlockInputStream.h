@@ -33,6 +33,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new ExpressionBlockInputStream(input, expression, part_id); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Expression(" << input->getID() << ", " << expression->getExecutionID(part_id) << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{

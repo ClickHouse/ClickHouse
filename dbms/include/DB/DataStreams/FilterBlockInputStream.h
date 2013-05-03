@@ -26,6 +26,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new FilterBlockInputStream(input, filter_column); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Filter(" << input->getID() << ", " << filter_column << ", " << filter_column_name << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 

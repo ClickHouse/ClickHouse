@@ -22,6 +22,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << this;
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{

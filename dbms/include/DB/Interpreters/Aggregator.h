@@ -191,6 +191,9 @@ public:
 	  */
 	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
+	/// Для IBlockInputStream.
+	String getID() const;
+
 private:
 	friend struct AggregatedDataVariants;
 	

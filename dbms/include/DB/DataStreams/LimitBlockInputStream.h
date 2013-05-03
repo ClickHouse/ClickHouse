@@ -22,6 +22,13 @@ public:
 
 	BlockInputStreamPtr clone() { return new LimitBlockInputStream(input, limit, offset); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Limit(" << input->getID() << ", " << limit << ", " << offset << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 

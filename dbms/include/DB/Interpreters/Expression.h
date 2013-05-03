@@ -54,6 +54,11 @@ public:
 	  */
 	void execute(Block & block, unsigned part_id = 0, bool only_consts = false);
 
+	/** Получить строку, однозначно идентифицирующую действия, которые делает функция execute.
+	  * Используется для получения идентификатора ExpressionBlockInputStream.
+	  */
+	String getExecutionID(unsigned part_id = 0) const;
+
 	/** Убрать из блока столбцы, которые больше не нужны.
 	  */
 	void clearTemporaries(Block & block);
@@ -63,6 +68,11 @@ public:
 	  * Вернуть новый блок, в котором эти столбцы расположены в правильном порядке.
 	  */
 	Block projectResult(Block & block, bool without_duplicates_and_aliases = false, unsigned part_id = 0, ASTPtr subtree = NULL);
+
+	/** Получить строку, однозначно идентифицирующую действия, которые делает функция projectResult.
+	  * Используется для получения идентификатора ProjectionBlockInputStream.
+	  */
+	String getProjectionID(bool without_duplicates_and_aliases = false, unsigned part_id = 0, ASTPtr subtree = NULL) const;
 
 	/** Получить список типов столбцов результата.
 	  */
@@ -140,7 +150,11 @@ private:
 
 	void executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool only_consts);
 
+	void getExecutionIDImpl(ASTPtr ast, unsigned part_id, std::stringstream & res, NamesSet & known_names) const;
+
 	void collectFinalColumns(ASTPtr ast, Block & src, Block & dst, bool without_duplicates, unsigned part_id);
+
+	void getProjectionIDImpl(ASTPtr ast, bool without_duplicates_and_aliases, unsigned part_id, std::stringstream & res, NamesSet & known_names) const;
 
 	void getReturnTypesImpl(ASTPtr ast, DataTypes & res);
 

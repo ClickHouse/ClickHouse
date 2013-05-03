@@ -18,6 +18,19 @@ public:
 	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, StoragePtr owned_storage);
 	String getName() const { return "MemoryBlockInputStream"; }
 	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, begin, end, owned_storage); }
+
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Memory(" << owned_storage->getTableName() << ", " << &*owned_storage << ", " << &*begin << ", " << &*end;
+
+		for (size_t i = 0; i < column_names.size(); ++i)
+			res << ", " << column_names[i];
+
+		res << ")";
+		return res.str();
+	}
+	
 protected:
 	Block readImpl();
 private:

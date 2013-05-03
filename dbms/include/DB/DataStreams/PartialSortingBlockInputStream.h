@@ -24,6 +24,18 @@ public:
 
 	BlockInputStreamPtr clone() { return new PartialSortingBlockInputStream(input, description); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "PartialSorting(" << input->getID();
+
+		for (size_t i = 0; i < description.size(); ++i)
+			res << ", " << description[i].getID();
+
+		res << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl();
 

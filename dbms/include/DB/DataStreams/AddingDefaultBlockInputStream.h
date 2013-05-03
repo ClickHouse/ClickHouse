@@ -30,6 +30,18 @@ public:
 
 	BlockInputStreamPtr clone() { return new AddingDefaultBlockInputStream(input, required_columns); }
 
+	String getID() const
+	{
+		std::stringstream res;
+		res << "AddingDefault(" << input->getID();
+
+		for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
+			res << ", " << it->first << ", " << it->second->getName();
+
+		res << ")";
+		return res.str();
+	}
+
 protected:
 	Block readImpl()
 	{
