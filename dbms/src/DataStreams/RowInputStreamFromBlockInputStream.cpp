@@ -18,6 +18,9 @@ bool RowInputStreamFromBlockInputStream::read(Row & row)
 	if (pos >= current_rows)
 	{
 		current_block = block_input->read();
+		if (!current_block)
+			return false;
+		
 		current_rows = current_block.rows();
 		pos = 0;
 	}

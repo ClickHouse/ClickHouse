@@ -22,7 +22,7 @@ typedef std::vector<const IColumn *> ConstColumnPlainPtrs;
 
 /** Интерфейс для хранения столбцов значений в оперативке.
   */
-class IColumn
+class IColumn : private boost::noncopyable
 {
 public:
 	/** Имя столбца. Для информационных сообщений.
