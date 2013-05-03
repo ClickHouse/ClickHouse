@@ -14,6 +14,8 @@ namespace DB
 /** Cтолбeц значений типа "строка".
   * Отличается от массива UInt8 только получением элемента (в виде String, а не Array),
   *  а также тем, что завершающие нули для строк тоже хранятся.
+  *
+  * TODO: Отделить от ColumnArray.
   */
 class ColumnString : public ColumnArray
 {
@@ -101,6 +103,40 @@ public:
 		char_data.resize(old_size + length);
 		memcpy(&char_data[old_size], pos, length);
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + length);
+	}
+
+	ColumnPtr cut(size_t start, size_t length) const
+	{
+		if (length == 0)
+			return new ColumnString;
+
+		if (start + length > getOffsets().size())
+			throw Exception("Parameter out of bound in IColumnString::cut() method.",
+				ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+		size_t nested_offset = offsetAt(start);
+		size_t nested_length = getOffsets()[start + length - 1] - nested_offset;
+
+		ColumnString * res_ = new ColumnString;
+		ColumnPtr res = res_;
+
+		ColumnPtr tmp_data = data->cut(nested_offset, nested_length);
+		res_->char_data.swap(static_cast<ColumnUInt8 &>(*tmp_data).getData());
+		Offsets_t & res_offsets = res_->getOffsets();
+
+		if (start == 0)
+		{
+			res_offsets.assign(getOffsets().begin(), getOffsets().begin() + length);
+		}
+		else
+		{
+			res_offsets.resize(length);
+
+			for (size_t i = 0; i < length; ++i)
+				res_offsets[i] = getOffsets()[start + i] - nested_offset;
+		}
+
+		return res;
 	}
 
 	ColumnPtr filter(const Filter & filt) const

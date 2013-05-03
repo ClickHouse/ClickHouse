@@ -111,6 +111,55 @@ public:
 		return res;
 	}
 
+	ColumnPtr cut(size_t start, size_t length) const
+	{
+		ColumnFixedString * res_ = new ColumnFixedString(n);
+		ColumnPtr res = res_;
+		res_->data = data->cut(n * start, n * length);
+		return res;
+	}
+
+	ColumnPtr filter(const Filter & filt) const
+	{
+		size_t size = this->size();
+		if (size != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return new ColumnFixedString(n);
+
+		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
+		Filter nested_filt(size * n);
+		for (size_t i = 0; i < size; ++i)
+			if (filt[i])
+				memset(&nested_filt[i * n], 1, n);
+
+		ColumnFixedString * res_ = new ColumnFixedString(n);
+		ColumnPtr res = res_;
+		res_->data = data->filter(nested_filt);
+		return res;
+	}
+
+	ColumnPtr permute(const Permutation & perm) const
+	{
+		size_t size = this->size();
+		if (size != perm.size())
+			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (size == 0)
+			return new ColumnFixedString(n);
+
+		Permutation nested_perm(size * n);
+		for (size_t i = 0; i < size; ++i)
+			for (size_t j = 0; j < n; ++j)
+				nested_perm[i * n + j] = perm[i] * n + j;
+
+		ColumnFixedString * res_ = new ColumnFixedString(n);
+		ColumnPtr res = res_;
+		res_->data = data->permute(nested_perm);
+		return res;
+	}
+
 	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		size_t col_size = size();

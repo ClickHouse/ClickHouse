@@ -14,6 +14,8 @@ namespace DB
 using Poco::SharedPtr;
 
 /** Cтолбeц значений типа "массив фиксированного размера".
+  *
+  * TODO: Удалить, так как не нужно.
   */
 class ColumnFixedArray : public IColumn
 {
