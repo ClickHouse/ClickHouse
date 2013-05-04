@@ -47,18 +47,4 @@ void copyData(IRowInputStream & from, IRowOutputStream & to)
 	to.writeSuffix();
 }
 
-
-void copyData(IBlockInputStream & from, IRowOutputStream & to)
-{
-	RowInputStreamFromBlockInputStream row_input(from.clone());
-	copyData(row_input, to);
-}
-
-
-void copyData(IRowInputStream & from, IBlockOutputStream & to, const Block & sample)
-{
-	BlockInputStreamFromRowInputStream block_input(from.clone(), sample);
-	copyData(block_input, to);
-}
-
 }

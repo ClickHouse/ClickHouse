@@ -24,8 +24,6 @@ public:
 
 	String getName() const { return "FilterBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new FilterBlockInputStream(input, filter_column); }
-
 	String getID() const
 	{
 		std::stringstream res;
@@ -37,7 +35,7 @@ protected:
 	Block readImpl();
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	ssize_t filter_column;
 	String filter_column_name;
 };

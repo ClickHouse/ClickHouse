@@ -16,6 +16,8 @@
 
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -121,29 +123,22 @@ int main(int argc, char ** argv)
 		{
 			DB::ReadBufferFromIStream in_buf(std::cin);
 		
-			DB::TabSeparatedRowInputStream in(in_buf, sample);
-			SharedPtr<DB::IBlockOutputStream> out = table->write(0);
-			DB::copyData(in, *out, sample);
+			DB::RowInputStreamPtr in_ = new DB::TabSeparatedRowInputStream(in_buf, sample);
+			DB::BlockInputStreamFromRowInputStream in(in_, sample);
+			DB::BlockOutputStreamPtr out = table->write(0);
+			DB::copyData(in, *out);
 		}
 
 		/// читаем из неё
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
-/*
-			DB::Names column_names;
-			boost::assign::push_back(column_names)
-				("UniqID");
-
-			SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
-			boost::assign::push_back(*data_types)
-				(new DB::DataTypeUInt64);
-*/
 			DB::WriteBufferFromOStream out_buf(std::cout);
 
 			DB::QueryProcessingStage::Enum stage;
 
-			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
-			DB::TabSeparatedRowOutputStream out(out_buf, sample);
+			DB::BlockInputStreamPtr in = table->read(column_names, 0, DB::Settings(), stage)[0];
+			DB::RowOutputStreamPtr out_ = new DB::TabSeparatedRowOutputStream(out_buf, sample);
+			DB::BlockOutputStreamFromRowOutputStream out(out_);
 			DB::copyData(*in, out);
 		}
 	}

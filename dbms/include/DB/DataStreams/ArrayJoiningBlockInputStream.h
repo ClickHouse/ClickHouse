@@ -37,20 +37,20 @@ class ArrayJoiningBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	ArrayJoiningBlockInputStream(BlockInputStreamPtr input_, ssize_t array_column_)
-		: input(input_), array_column(array_column_)
+		: array_column(array_column_)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	ArrayJoiningBlockInputStream(BlockInputStreamPtr input_, const String & array_column_name_)
-		: input(input_), array_column(-1), array_column_name(array_column_name_)
+		: array_column(-1), array_column_name(array_column_name_)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 	
 	String getName() const { return "ArrayJoiningBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ArrayJoiningBlockInputStream(input, array_column); }
 
 	String getID() const
 	{
@@ -98,7 +98,7 @@ protected:
 	}
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	ssize_t array_column;
 	String array_column_name;
 };

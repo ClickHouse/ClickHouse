@@ -52,8 +52,6 @@ public:
 
 	String getName() const { return "UnionBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new UnionBlockInputStream(children, max_threads); }
-
 	String getID() const
 	{
 		std::stringstream res;

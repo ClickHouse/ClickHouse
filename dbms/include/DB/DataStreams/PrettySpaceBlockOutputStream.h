@@ -16,7 +16,6 @@ public:
 
 	void write(const Block & block);
 	void writeSuffix();
-	BlockOutputStreamPtr clone() { return new PrettySpaceBlockOutputStream(ostr); }
 };
 
 }

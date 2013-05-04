@@ -14,12 +14,7 @@ class TabSeparatedBlockOutputStream : public IBlockOutputStream
 {
 public:
 	TabSeparatedBlockOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
-	
-	/** Записать блок.
-	  */
 	void write(const Block & block);
-
-	BlockOutputStreamPtr clone() { return new TabSeparatedBlockOutputStream(ostr); }
 
 private:
 	WriteBuffer & ostr;

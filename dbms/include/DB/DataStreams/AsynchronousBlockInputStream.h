@@ -20,14 +20,13 @@ namespace DB
 class AsynchronousBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	AsynchronousBlockInputStream(BlockInputStreamPtr in_) : in(in_), pool(1), started(false)
+	AsynchronousBlockInputStream(BlockInputStreamPtr in_) : pool(1), started(false)
 	{
-		children.push_back(in);
+		children.push_back(in_);
+		in = &*children.back();
 	}
 
 	String getName() const { return "AsynchronousBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new AsynchronousBlockInputStream(in); }
 
 	String getID() const
 	{
@@ -59,7 +58,7 @@ public:
 	}
 
 protected:
-	BlockInputStreamPtr in;
+	IBlockInputStream * in;
 	boost::threadpool::pool pool;
 	Poco::Event ready;
 	bool started;

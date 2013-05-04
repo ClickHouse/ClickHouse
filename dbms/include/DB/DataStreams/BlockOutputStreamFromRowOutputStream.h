@@ -18,8 +18,6 @@ public:
 	void writePrefix() { row_output->writePrefix(); }
 	void writeSuffix() { row_output->writeSuffix(); }
 
-	BlockOutputStreamPtr clone() { return new BlockOutputStreamFromRowOutputStream(row_output); }
-
 private:
 	RowOutputStreamPtr row_output;
 	bool first_row;

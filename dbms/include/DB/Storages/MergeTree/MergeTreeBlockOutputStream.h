@@ -71,8 +71,6 @@ public:
 			writePart(it->second.block, it->second.min_date, it->second.max_date);
 	}
 	
-	BlockOutputStreamPtr clone() { return new MergeTreeBlockOutputStream(owned_storage); }
-	
 private:
 	StorageMergeTree & storage;
 	

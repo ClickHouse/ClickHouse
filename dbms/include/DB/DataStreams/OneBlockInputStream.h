@@ -20,8 +20,6 @@ public:
 
 	String getName() const { return "OneBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new OneBlockInputStream(block); }
-
 	String getID() const
 	{
 		std::stringstream res;

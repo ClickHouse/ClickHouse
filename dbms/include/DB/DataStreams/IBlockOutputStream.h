@@ -31,12 +31,6 @@ public:
 	virtual void writePrefix() {}
 	virtual void writeSuffix() {}
 
-	/** Создать копию объекта.
-	  * Предполагается, что функция вызывается только до использования объекта (сразу после создания, до вызова других методов),
-	  *  только для того, чтобы можно было преобразовать параметр, переданный по ссылке в shared ptr.
-	  */
-	virtual SharedPtr<IBlockOutputStream> clone() = 0;
-
 	virtual ~IBlockOutputStream() {}
 	
 protected:

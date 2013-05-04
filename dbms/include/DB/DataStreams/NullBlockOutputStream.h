@@ -12,7 +12,6 @@ class NullBlockOutputStream : public IBlockOutputStream
 {
 public:
 	void write(const Block & block) {}
-	BlockOutputStreamPtr clone() { return new NullBlockOutputStream; }
 };
 
 }

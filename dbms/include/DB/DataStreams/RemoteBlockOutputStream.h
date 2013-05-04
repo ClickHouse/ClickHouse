@@ -71,9 +71,6 @@ public:
 				+ String(Protocol::Server::toString(Protocol::Server::Enum(packet.type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 
-
-	BlockOutputStreamPtr clone() { return new RemoteBlockOutputStream(connection, query); }
-
 private:
 	Connection & connection;
 	String query;

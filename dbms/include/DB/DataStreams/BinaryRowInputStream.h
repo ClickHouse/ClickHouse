@@ -19,8 +19,6 @@ public:
 
 	bool read(Row & row);
 
-	RowInputStreamPtr clone() { return new BinaryRowInputStream(istr, sample); }
-
 private:
 	ReadBuffer & istr;
 	const Block sample;

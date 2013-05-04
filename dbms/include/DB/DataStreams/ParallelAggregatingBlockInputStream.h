@@ -23,7 +23,7 @@ class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
 		unsigned max_threads_ = 1, size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: inputs(inputs_), aggregator(new Aggregator(keys_, aggregates_, max_rows_to_group_by_, group_by_overflow_mode_)),
+		: aggregator(new Aggregator(keys_, aggregates_, max_rows_to_group_by_, group_by_overflow_mode_)),
 		has_been_read(false), max_threads(max_threads_), pool(max_threads)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
@@ -35,7 +35,7 @@ public:
 	  */
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, ExpressionPtr expression,
 		unsigned max_threads_ = 1, size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: inputs(inputs_), has_been_read(false), max_threads(max_threads_), pool(max_threads)
+		: has_been_read(false), max_threads(max_threads_), pool(max_threads)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 		
@@ -46,8 +46,6 @@ public:
 	}
 
 	String getName() const { return "ParallelAggregatingBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ParallelAggregatingBlockInputStream(*this); }
 
 	String getID() const
 	{
@@ -76,13 +74,13 @@ protected:
 
 		has_been_read = true;
 
-		ManyAggregatedDataVariants many_data(inputs.size());
-		Exceptions exceptions(inputs.size());
+		ManyAggregatedDataVariants many_data(children.size());
+		Exceptions exceptions(children.size());
 
 		for (size_t i = 0, size = many_data.size(); i < size; ++i)
 		{
 			many_data[i] = new AggregatedDataVariants;
-			pool.schedule(boost::bind(&ParallelAggregatingBlockInputStream::calculate, this, boost::ref(inputs[i]), boost::ref(*many_data[i]), boost::ref(exceptions[i])));
+			pool.schedule(boost::bind(&ParallelAggregatingBlockInputStream::calculate, this, boost::ref(children[i]), boost::ref(*many_data[i]), boost::ref(exceptions[i])));
 		}
 		pool.wait();
 
@@ -98,10 +96,6 @@ protected:
 	}
 
 private:
-	ParallelAggregatingBlockInputStream(const ParallelAggregatingBlockInputStream & src)
-		: inputs(src.inputs), aggregator(src.aggregator), has_been_read(src.has_been_read) {}
-	
-	BlockInputStreams inputs;
 	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;
 	size_t max_threads;

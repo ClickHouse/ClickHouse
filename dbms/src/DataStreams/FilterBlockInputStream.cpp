@@ -8,15 +8,17 @@ namespace DB
 
 	
 FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_)
-	: input(input_), filter_column(filter_column_)
+	: filter_column(filter_column_)
 {
-	children.push_back(input);
+	children.push_back(input_);
+	input = &*children.back();
 }
 
 FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, const String & filter_column_name_)
-	: input(input_), filter_column(-1), filter_column_name(filter_column_name_)
+	: filter_column(-1), filter_column_name(filter_column_name_)
 {
-	children.push_back(input);
+	children.push_back(input_);
+	input = &*children.back();
 }
 
 

@@ -20,8 +20,6 @@ public:
 	
 	String getName() const { return "LimitBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new LimitBlockInputStream(input, limit, offset); }
-
 	String getID() const
 	{
 		std::stringstream res;
@@ -33,7 +31,7 @@ protected:
 	Block readImpl();
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	size_t limit;
 	size_t offset;
 	size_t pos;

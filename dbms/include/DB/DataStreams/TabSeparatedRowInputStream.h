@@ -23,8 +23,6 @@ public:
 	bool read(Row & row);
 	void readPrefix();
 
-	RowInputStreamPtr clone() { return new TabSeparatedRowInputStream(istr, sample, with_names, with_types); }
-
 private:
 	ReadBuffer & istr;
 	const Block sample;

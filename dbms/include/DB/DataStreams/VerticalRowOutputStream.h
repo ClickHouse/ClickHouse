@@ -25,8 +25,6 @@ public:
 	void writeRowStartDelimiter();
 	void writeRowBetweenDelimiter();
 
-	RowOutputStreamPtr clone() { return new VerticalRowOutputStream(ostr, sample); }
-
 private:
 	WriteBuffer & ostr;
 	const Block sample;

@@ -17,7 +17,6 @@ public:
 	PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_ = false, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS);
 	void write(const Block & block);
 	void writeSuffix();
-	BlockOutputStreamPtr clone() { return new PrettyBlockOutputStream(ostr); }
 
 protected:
 	typedef std::vector<size_t> Widths_t;

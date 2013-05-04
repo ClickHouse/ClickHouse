@@ -25,8 +25,6 @@ public:
 
 	String getName() const { return "BlockInputStreamFromRowInputStream"; }
 
-	BlockInputStreamPtr clone() { return new BlockInputStreamFromRowInputStream(row_input, sample, max_block_size); }
-
 	String getID() const
 	{
 		std::stringstream res;

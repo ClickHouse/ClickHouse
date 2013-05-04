@@ -15,7 +15,6 @@ public:
 		: PrettyBlockOutputStream(ostr_, no_escapes_, max_rows_) {}
 
 	void write(const Block & block);
-	BlockOutputStreamPtr clone() { return new PrettyCompactBlockOutputStream(ostr); }
 };
 
 }

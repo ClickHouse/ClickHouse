@@ -18,8 +18,6 @@ public:
 	
 	String getName() const { return "NativeBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new NativeBlockInputStream(istr, data_type_factory); }
-
 	String getID() const
 	{
 		std::stringstream res;

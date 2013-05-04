@@ -22,8 +22,6 @@ public:
 
 	bool read(Row & row);
 
-	RowInputStreamPtr clone() { return new ValuesRowInputStream(istr, sample); }
-
 private:
 	ReadBuffer & istr;
 	const Block sample;

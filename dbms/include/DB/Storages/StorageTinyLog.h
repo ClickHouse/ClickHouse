@@ -22,7 +22,6 @@ class TinyLogBlockInputStream : public IProfilingBlockInputStream
 public:
 	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage);
 	String getName() const { return "TinyLogBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new TinyLogBlockInputStream(block_size, column_names, owned_storage); }
 
 	String getID() const
 	{
@@ -69,7 +68,6 @@ class TinyLogBlockOutputStream : public IBlockOutputStream
 public:
 	TinyLogBlockOutputStream(StoragePtr owned_storage);
 	void write(const Block & block);
-	BlockOutputStreamPtr clone() { return new TinyLogBlockOutputStream(owned_storage); }
 private:
 	StorageTinyLog & storage;
 

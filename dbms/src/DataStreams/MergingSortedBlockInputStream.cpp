@@ -20,7 +20,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			if (*it)
 				continue;
 
-			*it = inputs[i]->read();
+			*it = children[i]->read();
 
 			if (!*it)
 				continue;
@@ -78,11 +78,11 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 Block MergingSortedBlockInputStream::readImpl()
 {
-	if (!inputs.size())
+	if (!children.size())
 		return Block();
 	
-	if (inputs.size() == 1)
-		return inputs[0]->read();
+	if (children.size() == 1)
+		return children[0]->read();
 
 	size_t merged_rows = 0;
 	Block merged_block;
@@ -117,7 +117,7 @@ Block MergingSortedBlockInputStream::readImpl()
 			return merged_block;
 	}
 
-	inputs.clear();
+	children.clear();
 	return merged_block;
 }
 
@@ -130,7 +130,7 @@ void MergingSortedBlockInputStream::fetchNextBlock(const SortCursor & current)
 	{
 		if (&cursors[i] == current.impl)
 		{
-			source_blocks[i] = inputs[i]->read();
+			source_blocks[i] = children[i]->read();
 			if (source_blocks[i])
 			{
 				cursors[i].reset(source_blocks[i]);

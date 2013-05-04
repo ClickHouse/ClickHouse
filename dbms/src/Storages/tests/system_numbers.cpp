@@ -6,6 +6,7 @@
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
@@ -31,7 +32,8 @@ int main(int argc, char ** argv)
 		DB::QueryProcessingStage::Enum stage;
 		
 		DB::LimitBlockInputStream input(table->read(column_names, 0, DB::Settings(), stage, 10)[0], 10, 96);
-		DB::TabSeparatedRowOutputStream output(out_buf, sample);
+		DB::RowOutputStreamPtr output_ = new DB::TabSeparatedRowOutputStream(out_buf, sample);
+		DB::BlockOutputStreamFromRowOutputStream output(output_);
 		
 		DB::copyData(input, output);
 	}

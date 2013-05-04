@@ -20,6 +20,7 @@
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -168,7 +169,8 @@ int main(int argc, char ** argv)
 		//in = new DB::LimitBlockInputStream(in, 10);
 
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, sample);
+		DB::RowOutputStreamPtr out_ = new DB::TabSeparatedRowOutputStream(ob, sample);
+		DB::BlockOutputStreamFromRowOutputStream out(out_);
 
 		DB::copyData(*in, out);
 

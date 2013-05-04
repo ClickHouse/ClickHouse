@@ -13,6 +13,7 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -64,13 +65,14 @@ int main(int argc, char ** argv)
 		in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 		
 		DB::WriteBufferFromOStream out1(std::cout);
-		DB::TabSeparatedRowOutputStream out2(out1, expression->getSampleBlock());
+		DB::RowOutputStreamPtr out2 = new DB::TabSeparatedRowOutputStream(out1, expression->getSampleBlock());
+		DB::BlockOutputStreamFromRowOutputStream out(out2);
 
 		{
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 
-			DB::copyData(*in, out2);
+			DB::copyData(*in, out);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)

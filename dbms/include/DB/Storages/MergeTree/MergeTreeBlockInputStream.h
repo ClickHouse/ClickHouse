@@ -30,11 +30,6 @@ public:
 	}
 	
 	String getName() const { return "MergeTreeBlockInputStream"; }
-	
-	BlockInputStreamPtr clone()
-	{
-		return new MergeTreeBlockInputStream(path, block_size, column_names, storage, owned_data_part, mark_ranges, owned_storage);
-	}
 
 	String getID() const
 	{

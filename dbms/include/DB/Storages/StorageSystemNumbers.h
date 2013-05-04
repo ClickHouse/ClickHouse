@@ -17,7 +17,6 @@ class NumbersBlockInputStream : public IProfilingBlockInputStream
 public:
 	NumbersBlockInputStream(size_t block_size_);
 	String getName() const { return "NumbersBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new NumbersBlockInputStream(block_size); }
 	String getID() const { return "Numbers"; }
 protected:
 	Block readImpl();

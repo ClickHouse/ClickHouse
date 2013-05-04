@@ -17,6 +17,7 @@
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -97,13 +98,14 @@ int main(int argc, char ** argv)
 		stream = new DB::FinalizingAggregatedBlockInputStream(stream);
 
 		DB::WriteBufferFromOStream ob(std::cout);
-		DB::TabSeparatedRowOutputStream out(ob, sample);
+		DB::RowOutputStreamPtr row_out = new DB::TabSeparatedRowOutputStream(ob, sample);
+		DB::BlockOutputStreamPtr out = new DB::BlockOutputStreamFromRowOutputStream(row_out);
 		
 		{
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 
-			DB::copyData(*stream, out);
+			DB::copyData(*stream, *out);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)

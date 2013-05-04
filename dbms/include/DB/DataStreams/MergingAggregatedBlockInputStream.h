@@ -19,9 +19,10 @@ class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
-		: input(input_), aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false)
+		: aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	/** keys берутся из GROUP BY части запроса
@@ -30,8 +31,6 @@ public:
 	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
 
 	String getName() const { return "MergingAggregatedBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new MergingAggregatedBlockInputStream(*this); }
 
 	String getID() const
 	{
@@ -47,7 +46,7 @@ private:
 	MergingAggregatedBlockInputStream(const MergingAggregatedBlockInputStream & src)
 		: input(src.input), aggregator(src.aggregator), has_been_read(src.has_been_read) {}
 	
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;
 };

@@ -16,6 +16,7 @@
 
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedBlockOutputStream.h>
+#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -113,9 +114,10 @@ int main(int argc, char ** argv)
 			DB::ReadBufferFromIStream in_buf(std::cin);
 			DB::WriteBufferFromOStream out_buf(std::cout);
 		
-			DB::TabSeparatedRowInputStream in(in_buf, sample);
+			DB::RowInputStreamPtr row_in = new DB::TabSeparatedRowInputStream(in_buf, sample);
+			DB::BlockInputStreamFromRowInputStream in(row_in, sample);
 			DB::TabSeparatedBlockOutputStream out(out_buf);
-			DB::copyData(in, out, sample);
+			DB::copyData(in, out);
 		}
 	}
 	catch (const DB::Exception & e)

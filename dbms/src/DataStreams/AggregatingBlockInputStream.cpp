@@ -9,9 +9,10 @@ namespace DB
 
 AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression,
 	size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
-	: input(input_), has_been_read(false)
+	: has_been_read(false)
 {
-	children.push_back(input);
+	children.push_back(input_);
+	input = &*children.back();
 
 	Names key_names;
 	AggregateDescriptions aggregates;

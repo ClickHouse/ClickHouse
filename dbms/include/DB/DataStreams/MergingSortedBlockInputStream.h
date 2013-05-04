@@ -18,17 +18,15 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
-		: inputs(inputs_), description(description_), max_block_size(max_block_size_), first(true),
-		num_columns(0), source_blocks(inputs.size()), cursors(inputs.size()), log(&Logger::get("MergingSortedBlockInputStream"))
+		: description(description_), max_block_size(max_block_size_), first(true),
+		num_columns(0), source_blocks(inputs_.size()), cursors(inputs_.size()), log(&Logger::get("MergingSortedBlockInputStream"))
 	{
-		children.insert(children.end(), inputs.begin(), inputs.end());
+		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
 
 	void readSuffix();
 
 	String getName() const { return "MergingSortedBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new MergingSortedBlockInputStream(inputs, description, max_block_size); }
 
 	String getID() const
 	{
@@ -62,7 +60,6 @@ protected:
 	void fetchNextBlock(const SortCursor & current);
 	
 	
-	BlockInputStreams inputs;
 	SortDescription description;
 	size_t max_block_size;
 

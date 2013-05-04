@@ -35,7 +35,7 @@ void CollapsingFinalBlockInputStream::reportBadSign(Int8 sign)
 
 void CollapsingFinalBlockInputStream::fetchNextBlock(size_t input_index)
 {
-	BlockInputStreamPtr stream = inputs[input_index];
+	BlockInputStreamPtr stream = children[input_index];
 	Block block = stream->read();
 	if (!block)
 		return;
@@ -68,7 +68,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
 {
 	if (first)
 	{
-		for (size_t i = 0; i < inputs.size(); ++i)
+		for (size_t i = 0; i < children.size(); ++i)
 			fetchNextBlock(i);
 
 		first = false;

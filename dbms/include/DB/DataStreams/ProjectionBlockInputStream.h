@@ -24,14 +24,13 @@ public:
 		bool without_duplicates_and_aliases_ = false,
 		unsigned part_id_ = 0,
 		ASTPtr subtree_ = NULL)
-		: input(input_), expression(expression_), without_duplicates_and_aliases(without_duplicates_and_aliases_), part_id(part_id_), subtree(subtree_)
+		: expression(expression_), without_duplicates_and_aliases(without_duplicates_and_aliases_), part_id(part_id_), subtree(subtree_)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	String getName() const { return "ProjectionBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ProjectionBlockInputStream(input, expression, without_duplicates_and_aliases, part_id, subtree); }
 
 	String getID() const
 	{
@@ -51,7 +50,7 @@ protected:
 	}
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	ExpressionPtr expression;
 	bool without_duplicates_and_aliases;
 	unsigned part_id;

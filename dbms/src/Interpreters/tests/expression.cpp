@@ -17,6 +17,7 @@
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Interpreters/Expression.h>
@@ -147,7 +148,8 @@ int main(int argc, char ** argv)
 		DB::OneBlockInputStream * is = new DB::OneBlockInputStream(block);
 		DB::LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
 		DB::WriteBufferFromOStream out_buf(std::cout);
-		DB::TabSeparatedRowOutputStream os(out_buf, block);
+		DB::RowOutputStreamPtr os_ = new DB::TabSeparatedRowOutputStream(out_buf, block);
+		DB::BlockOutputStreamFromRowOutputStream os(os_);
 
 		DB::copyData(lis, os);
 	}

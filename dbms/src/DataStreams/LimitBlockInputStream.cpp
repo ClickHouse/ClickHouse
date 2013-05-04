@@ -9,9 +9,10 @@ namespace DB
 using Poco::SharedPtr;
 
 LimitBlockInputStream::LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_)
-	: input(input_), limit(limit_), offset(offset_), pos(0)
+	: limit(limit_), offset(offset_), pos(0)
 {
-	children.push_back(input);
+	children.push_back(input_);
+	input = &*children.back();
 }
 
 

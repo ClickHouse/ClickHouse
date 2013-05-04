@@ -21,14 +21,13 @@ class FinalizingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	FinalizingAggregatedBlockInputStream(BlockInputStreamPtr input_)
-		: input(input_), log(&Logger::get("FinalizingAggregatedBlockInputStream"))
+		: log(&Logger::get("FinalizingAggregatedBlockInputStream"))
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	String getName() const { return "FinalizingAggregatedBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new FinalizingAggregatedBlockInputStream(input); }
 
 	String getID() const
 	{
@@ -82,7 +81,7 @@ protected:
 	}
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	Logger * log;
 };
 

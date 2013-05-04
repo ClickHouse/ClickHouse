@@ -6,6 +6,7 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -84,7 +85,8 @@ int main(int argc, char ** argv)
 			DB::WriteBufferFromOStream out_buf(std::cout);
 			
 			DB::LimitBlockInputStream in_limit(in, 10);
-			DB::TabSeparatedRowOutputStream output(out_buf, sample);
+			DB::RowOutputStreamPtr output_ = new DB::TabSeparatedRowOutputStream(out_buf, sample);
+			DB::BlockOutputStreamFromRowOutputStream output(output_);
 			
 			DB::copyData(in_limit, output);
 		}

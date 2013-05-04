@@ -20,8 +20,6 @@ public:
 	void writeField(const Field & field);
 	void writeRowEndDelimiter();
 
-	RowOutputStreamPtr clone() { return new BinaryRowOutputStream(ostr, sample); }
-
 protected:
 	WriteBuffer & ostr;
 	const Block sample;

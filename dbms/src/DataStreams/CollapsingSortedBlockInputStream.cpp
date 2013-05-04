@@ -54,11 +54,11 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 
 Block CollapsingSortedBlockInputStream::readImpl()
 {
-	if (!inputs.size())
+	if (!children.size())
 		return Block();
 	
-	if (inputs.size() == 1)
-		return inputs[0]->read();
+	if (children.size() == 1)
+		return children[0]->read();
 
 	size_t merged_rows = 0;
 	Block merged_block;
@@ -135,7 +135,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
 	/// Запишем данные для последнего визита.
 	insertRows(merged_columns, merged_rows);
 
-	inputs.clear();
+	children.clear();
 	return merged_block;
 }
 

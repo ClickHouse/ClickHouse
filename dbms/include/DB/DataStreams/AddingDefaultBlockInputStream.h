@@ -21,14 +21,13 @@ public:
 	AddingDefaultBlockInputStream(
 		BlockInputStreamPtr input_,
 		NamesAndTypesListPtr required_columns_)
-		: input(input_), required_columns(required_columns_)
+		: required_columns(required_columns_)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	String getName() const { return "AddingDefaultBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new AddingDefaultBlockInputStream(input, required_columns); }
 
 	String getID() const
 	{
@@ -66,7 +65,7 @@ protected:
 	}
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	NamesAndTypesListPtr required_columns;
 };
 

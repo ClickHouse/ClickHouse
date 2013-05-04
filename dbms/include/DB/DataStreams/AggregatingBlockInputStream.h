@@ -21,9 +21,10 @@ class AggregatingBlockInputStream : public IProfilingBlockInputStream
 public:
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
 		size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
-		: input(input_), aggregator(new Aggregator(keys_, aggregates_, max_rows_to_group_by_, group_by_overflow_mode_)), has_been_read(false)
+		: aggregator(new Aggregator(keys_, aggregates_, max_rows_to_group_by_, group_by_overflow_mode_)), has_been_read(false)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	/** keys берутся из GROUP BY части запроса
@@ -34,8 +35,6 @@ public:
 		size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_);
 
 	String getName() const { return "AggregatingBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new AggregatingBlockInputStream(*this); }
 
 	String getID() const
 	{
@@ -51,7 +50,7 @@ private:
 	AggregatingBlockInputStream(const AggregatingBlockInputStream & src)
 		: input(src.input), aggregator(src.aggregator), has_been_read(src.has_been_read) {}
 	
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;
 };

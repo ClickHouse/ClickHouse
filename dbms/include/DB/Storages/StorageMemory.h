@@ -17,7 +17,6 @@ class MemoryBlockInputStream : public IProfilingBlockInputStream
 public:
 	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, StoragePtr owned_storage);
 	String getName() const { return "MemoryBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new MemoryBlockInputStream(column_names, begin, end, owned_storage); }
 
 	String getID() const
 	{
@@ -46,7 +45,6 @@ class MemoryBlockOutputStream : public IBlockOutputStream
 public:
 	MemoryBlockOutputStream(StoragePtr owned_storage);
 	void write(const Block & block);
-	BlockOutputStreamPtr clone() { return new MemoryBlockOutputStream(owned_storage); }
 private:
 	StorageMemory & storage;
 };

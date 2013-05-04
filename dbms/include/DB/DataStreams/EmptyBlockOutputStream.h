@@ -17,8 +17,6 @@ public:
 	{
 		throw Exception("Cannot write to EmptyBlockOutputStream", ErrorCodes::CANNOT_WRITE_TO_EMPTY_BLOCK_OUTPUT_STREAM);
 	}
-	
-	BlockOutputStreamPtr clone() { return new EmptyBlockOutputStream(); }
 };
 
 }

@@ -81,8 +81,6 @@ public:
 		/// А добавление нового куска в набор (и удаление исходных кусков) сделает вызывающая сторона.
 	}
 	
-	BlockOutputStreamPtr clone() { throw Exception("Cannot clone MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED); }
-	
 	/// Сколько засечек уже записано.
 	size_t marksCount()
 	{

@@ -24,14 +24,13 @@ class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression_, unsigned part_id_ = 0, bool clear_temporaries_ = false)
-		: input(input_), expression(expression_), part_id(part_id_), clear_temporaries(clear_temporaries_)
+		: expression(expression_), part_id(part_id_), clear_temporaries(clear_temporaries_)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	String getName() const { return "ExpressionBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new ExpressionBlockInputStream(input, expression, part_id); }
 
 	String getID() const
 	{
@@ -56,7 +55,7 @@ protected:
 	}
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	ExpressionPtr expression;
 	unsigned part_id;
 	bool clear_temporaries;

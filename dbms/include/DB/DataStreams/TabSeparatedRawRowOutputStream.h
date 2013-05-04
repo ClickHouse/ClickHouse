@@ -20,8 +20,6 @@ public:
 		data_types[field_number]->serializeText(field, ostr);
 		++field_number;
 	}
-
-	RowOutputStreamPtr clone() { return new TabSeparatedRawRowOutputStream(ostr, sample, with_names, with_types); }
 };
 
 }

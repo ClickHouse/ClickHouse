@@ -35,7 +35,6 @@ class LogBlockInputStream : public IProfilingBlockInputStream
 public:
 	LogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage, size_t mark_number_, size_t rows_limit_);
 	String getName() const { return "LogBlockInputStream"; }
-	BlockInputStreamPtr clone() { return new LogBlockInputStream(block_size, column_names, owned_storage, mark_number, rows_limit); }
 
 	String getID() const
 	{
@@ -87,7 +86,6 @@ class LogBlockOutputStream : public IBlockOutputStream
 public:
 	LogBlockOutputStream(StoragePtr owned_storage);
 	void write(const Block & block);
-	BlockOutputStreamPtr clone() { return new LogBlockOutputStream(owned_storage); }
 private:
 	StorageLog & storage;
 	Poco::ScopedWriteRWLock lock;

@@ -16,23 +16,24 @@ class CollapsingFinalBlockInputStream : public IProfilingBlockInputStream
 public:
 	CollapsingFinalBlockInputStream(BlockInputStreams inputs_, SortDescription & description_,
 									 const String & sign_column_)
-		: inputs(inputs_), description(description_), sign_column(sign_column_),
+		: description(description_), sign_column(sign_column_),
 		log(&Logger::get("CollapsingSortedBlockInputStream")),
-		first(true), count_positive(0), count_negative(0), blocks_fetched(0), blocks_output(0) {}
+		first(true), count_positive(0), count_negative(0), blocks_fetched(0), blocks_output(0)
+	{
+		children.insert(children.end(), inputs_.begin(), inputs_.end());
+	}
 	
 	~CollapsingFinalBlockInputStream();
 	
 	String getName() const { return "CollapsingFinalBlockInputStream"; }
 	
-	BlockInputStreamPtr clone() { return new CollapsingFinalBlockInputStream(inputs, description, sign_column); }
-
 	String getID() const
 	{
 		std::stringstream res;
 		res << "CollapsingFinal(inputs";
 
-		for (size_t i = 0; i < inputs.size(); ++i)
-			res << ", " << inputs[i]->getID();
+		for (size_t i = 0; i < children.size(); ++i)
+			res << ", " << children[i]->getID();
 
 		res << ", description";
 
@@ -232,7 +233,6 @@ private:
 	
 	typedef std::priority_queue<Cursor> Queue;
 	
-	BlockInputStreams inputs;
 	SortDescription description;
 	String sign_column;
 	

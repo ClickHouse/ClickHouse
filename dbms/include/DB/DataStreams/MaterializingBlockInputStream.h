@@ -14,14 +14,12 @@ class MaterializingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MaterializingBlockInputStream(BlockInputStreamPtr input_)
-		: input(input_)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	String getName() const { return "MaterializingBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new MaterializingBlockInputStream(input); }
 
 	String getID() const
 	{
@@ -50,7 +48,7 @@ protected:
 	}
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 };
 
 }

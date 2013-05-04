@@ -15,14 +15,13 @@ class PartialSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	PartialSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_)
-		: input(input_), description(description_)
+		: description(description_)
 	{
-		children.push_back(input);
+		children.push_back(input_);
+		input = &*children.back();
 	}
 
 	String getName() const { return "PartialSortingBlockInputStream"; }
-
-	BlockInputStreamPtr clone() { return new PartialSortingBlockInputStream(input, description); }
 
 	String getID() const
 	{
@@ -40,7 +39,7 @@ protected:
 	Block readImpl();
 
 private:
-	BlockInputStreamPtr input;
+	IBlockInputStream * input;
 	SortDescription description;
 };
 

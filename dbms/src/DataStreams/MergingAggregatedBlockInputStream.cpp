@@ -8,9 +8,10 @@ namespace DB
 
 
 MergingAggregatedBlockInputStream::MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression)
-	: input(input_), has_been_read(false)
+	: has_been_read(false)
 {
-	children.push_back(input);
+	children.push_back(input_);
+	input = &*children.back();
 
 	Names key_names;
 	AggregateDescriptions aggregates;

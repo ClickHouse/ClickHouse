@@ -34,15 +34,13 @@ public:
 
 	String getName() const { return "CollapsingSortedBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new CollapsingSortedBlockInputStream(inputs, description, sign_column, max_block_size); }
-
 	String getID() const
 	{
 		std::stringstream res;
 		res << "CollapsingSorted(inputs";
 
-		for (size_t i = 0; i < inputs.size(); ++i)
-			res << ", " << inputs[i]->getID();
+		for (size_t i = 0; i < children.size(); ++i)
+			res << ", " << children[i]->getID();
 
 		res << ", description";
 

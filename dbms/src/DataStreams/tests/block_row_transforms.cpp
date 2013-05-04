@@ -18,6 +18,7 @@
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 
@@ -45,11 +46,12 @@ int main(int argc, char ** argv)
 		DB::ReadBufferFromIStream in_buf(istr);
 		DB::WriteBufferFromOStream out_buf(ostr);
 
-		DB::TabSeparatedRowInputStream row_input(in_buf, sample);
-		DB::BlockInputStreamFromRowInputStream block_input(row_input.clone(), sample);
-		DB::TabSeparatedRowOutputStream row_output(out_buf, sample);
+		DB::RowInputStreamPtr row_input = new DB::TabSeparatedRowInputStream(in_buf, sample);
+		DB::BlockInputStreamFromRowInputStream block_input(row_input, sample);
+		DB::RowOutputStreamPtr row_output = new DB::TabSeparatedRowOutputStream(out_buf, sample);
+		DB::BlockOutputStreamFromRowOutputStream block_output(row_output);
 
-		DB::copyData(block_input, row_output);
+		DB::copyData(block_input, block_output);
 	}
 	catch (const DB::Exception & e)
 	{

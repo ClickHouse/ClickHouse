@@ -24,8 +24,6 @@ public:
 
 	String getName() const { return "ConcatBlockInputStream"; }
 
-	BlockInputStreamPtr clone() { return new ConcatBlockInputStream(children); }
-
 	String getID() const
 	{
 		std::stringstream res;

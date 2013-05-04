@@ -49,17 +49,12 @@ public:
 
 	String getName() const { return "RemoteBlockInputStream"; }
 
-	BlockInputStreamPtr clone()
-	{
-		return pool_entry.isNull()
-			? new RemoteBlockInputStream(connection, query, send_settings ? &settings : NULL, stage)
-			: new RemoteBlockInputStream(pool_entry, query, send_settings ? &settings : NULL, stage);
-	}
 
 	String getID() const
 	{
-		// TODO
-		return "";
+		std::stringstream res;
+		res << this;
+		return res.str();
 	}
 
 
