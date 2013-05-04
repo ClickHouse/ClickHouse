@@ -15,11 +15,10 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteIntText.h>
 #include <DB/IO/VarInt.h>
 
 #define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
-/// 20 цифр или 19 цифр и знак
-#define WRITE_HELPERS_MAX_INT_WIDTH 20U
 
 
 namespace DB
@@ -67,53 +66,6 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 	writeChar(x ? '1' : '0', buf);
 }
 
-
-template <typename T>
-void writeIntText(T x, WriteBuffer & buf)
-{
-	char tmp[WRITE_HELPERS_MAX_INT_WIDTH];
-	bool negative = false;
-
-	if (x == 0)
-	{
-		writeChar('0', buf);
-		return;
-	}
-
-	/// Особый случай для самого маленького отрицательного числа
-	if (unlikely(std::tr1::is_signed<T>::value && x == std::numeric_limits<T>::min()))
-	{
-		if (sizeof(x) == 1)
-			buf.write("-128", 4);
-		else if (sizeof(x) == 2)
-			buf.write("-32768", 6);
-		else if (sizeof(x) == 4)
-			buf.write("-2147483648", 11);
-		else
-			buf.write("-9223372036854775808", 20);
-		return;
-	}
-
-	if (x < 0)
-	{
-		x = -x;
-		negative = true;
-	}
-
-	char * pos;
-	for (pos = tmp + WRITE_HELPERS_MAX_INT_WIDTH - 1; x != 0; --pos)
-	{
-		*pos = '0' + x % 10;
-		x /= 10;
-	}
-
-	if (negative)
-		*pos = '-';
-	else
-		++pos;
-
-	buf.write(pos, tmp + WRITE_HELPERS_MAX_INT_WIDTH - pos);
-}
 
 template <typename T>
 void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION)
