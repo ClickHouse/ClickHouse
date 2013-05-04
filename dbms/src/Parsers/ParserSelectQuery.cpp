@@ -26,6 +26,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_sample("SAMPLE", true, true);
 	ParserString s_group("GROUP", true, true);
 	ParserString s_by("BY", true, true);
+	ParserString s_with("WITH", true, true);
+	ParserString s_totals("TOTALS", true, true);
 	ParserString s_having("HAVING", true, true);
 	ParserString s_order("ORDER", true, true);
 	ParserString s_limit("LIMIT", true, true);
@@ -138,6 +140,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			return false;
 
 		ws.ignore(pos, end);
+
+		/// WITH TOTALS
+		if (s_with.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+			if (!s_totals.ignore(pos, end, expected))
+				return false;
+
+			select_query->group_by_with_totals = true;
+
+			ws.ignore(pos, end);
+		}
 	}
 
 	/// HAVING expr

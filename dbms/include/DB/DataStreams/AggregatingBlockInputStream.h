@@ -20,8 +20,8 @@ class AggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
-		size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
-		: aggregator(new Aggregator(keys_, aggregates_, max_rows_to_group_by_, group_by_overflow_mode_)), has_been_read(false)
+		bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
+		: aggregator(new Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_)), has_been_read(false)
 	{
 		children.push_back(input_);
 	}
@@ -31,7 +31,7 @@ public:
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression,
-		size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_);
+		bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_);
 
 	String getName() const { return "AggregatingBlockInputStream"; }
 

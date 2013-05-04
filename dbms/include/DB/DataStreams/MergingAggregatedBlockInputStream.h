@@ -18,8 +18,8 @@ using Poco::SharedPtr;
 class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_)
-		: aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false)
+	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_, bool with_totals_)
+		: aggregator(new Aggregator(keys_, aggregates_, with_totals_)), has_been_read(false)
 	{
 		children.push_back(input_);
 	}
@@ -27,7 +27,7 @@ public:
 	/** keys берутся из GROUP BY части запроса
 	  * Агрегатные функции ищутся везде в выражении.
 	  */
-	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression);
+	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression, bool with_totals_);
 
 	String getName() const { return "MergingAggregatedBlockInputStream"; }
 

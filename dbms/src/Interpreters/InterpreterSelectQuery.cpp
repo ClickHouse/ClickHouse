@@ -397,12 +397,12 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, settings.max_threads,
-			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
+		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, expression, query.group_by_with_totals,
+			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 		streams.resize(1);
 	}
 	else
-		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, expression,
+		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, expression, query.group_by_with_totals,
 			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 }
 
@@ -426,7 +426,7 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams,
 	streams.resize(1);
 
 	/// Теперь объединим агрегированные блоки
-	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], expression), settings.asynchronous);
+	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], expression, query.group_by_with_totals), settings.asynchronous);
 }
 
 

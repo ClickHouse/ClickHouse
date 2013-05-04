@@ -210,7 +210,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			LOG_TRACE(log, "Aggregation method: " << result.getMethodName() << ", keys_fit_128_bits: " << (keys_fit_128_bits ? "true" : "false"));
 		}
 
-		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
+		if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (!res)
@@ -240,7 +240,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-		else if (result.type == AggregatedDataVariants::KEY_64)
+		if (result.type == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res = result.key64;
 			const IColumn & column = *key_columns[0];
@@ -524,20 +524,25 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		aggregate_columns[i]->resize(rows);
 	}
 
-	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY)
+	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
 	{
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 			(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+
+		/// Для тотальных агрегатов вместо ключей пишутся значения по-умолчанию (нули, пустые строки).
+		if (with_totals)
+			for (size_t i = 0; i < keys_size; ++i)
+				key_columns[i]->insertDefault();
 	}
-	else if (data_variants.type == AggregatedDataVariants::KEY_64)
+	if (data_variants.type == AggregatedDataVariants::KEY_64)
 	{
 		AggregatedDataWithUInt64Key & data = data_variants.key64;
 
 		IColumn & first_column = *key_columns[0];
 
-		size_t j = 0;
+		size_t j = with_totals ? 1 : 0;
 		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
@@ -551,7 +556,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		AggregatedDataWithStringKey & data = data_variants.key_string;
 		IColumn & first_column = *key_columns[0];
 
-		size_t j = 0;
+		size_t j = with_totals ? 1 : 0;
 		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			first_column.insertData(it->first.data, it->first.size);
@@ -564,7 +569,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	{
 		AggregatedDataHashed & data = data_variants.hashed;
 
-		size_t j = 0;
+		size_t j = with_totals ? 1 : 0;
 		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			for (size_t i = 0; i < keys_size; ++i)
@@ -577,7 +582,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	else if (data_variants.type == AggregatedDataVariants::GENERIC)
 	{
 		AggregatedData & data = data_variants.generic;
-		size_t j = 0;
+		size_t j = with_totals ? 1 : 0;
 		for (AggregatedData::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			for (size_t i = 0; i < keys_size; ++i)
@@ -643,7 +648,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
 
 		/// В какой структуре данных агрегированы данные?
-		if (res->type == AggregatedDataVariants::WITHOUT_KEY)
+		if (res->type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
 		{
 			AggregatedDataWithoutKey & res_data = res->without_key;
 			AggregatedDataWithoutKey & current_data = current.without_key;
@@ -654,7 +659,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 				aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
 			}
 		}
-		else if (res->type == AggregatedDataVariants::KEY_64)
+		if (res->type == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res_data = res->key64;
 			AggregatedDataWithUInt64Key & current_data = current.key64;
@@ -805,7 +810,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
 		result.keys_size = keys_size;
 
-		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
+		if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (!res)
@@ -820,13 +825,13 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
 		}
-		else if (result.type == AggregatedDataVariants::KEY_64)
+		if (result.type == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res = result.key64;
 			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
+			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
 			{
 				/// Строим ключ
 				UInt64 key = get<UInt64>(column[i]);
@@ -859,7 +864,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
                 const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
 
 				/// Для всех строчек
-				for (size_t i = 0; i < rows; ++i)
+				for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
 				{
 					/// Строим ключ
 					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
@@ -888,7 +893,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
                 const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
 
 				/// Для всех строчек
-				for (size_t i = 0; i < rows; ++i)
+				for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
 				{
 					/// Строим ключ
 					StringRef ref(&data[i * n], n);
@@ -919,7 +924,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			AggregatedDataHashed & res = result.hashed;
 
 			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
+			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
 			{
 				AggregatedDataHashed::iterator it;
 				bool inserted;
@@ -953,7 +958,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			AggregatedData & res = result.generic;
 
 			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
+			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
 			{
 				/// Строим ключ
 				for (size_t j = 0; j < keys_size; ++j)
@@ -991,14 +996,14 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	LOG_TRACE(log, "Destroying aggregate states because query execution was cancelled");
 
 	/// В какой структуре данных агрегированы данные?
-	if (result.type == AggregatedDataVariants::WITHOUT_KEY)
+	if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
 	{
 		AggregatedDataWithoutKey & res_data = result.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 			aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
-	else if (result.type == AggregatedDataVariants::KEY_64)
+	if (result.type == AggregatedDataVariants::KEY_64)
 	{
 		AggregatedDataWithUInt64Key & res_data = result.key64;
 

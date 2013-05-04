@@ -8,7 +8,7 @@ namespace DB
 
 
 AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression,
-	size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
+	bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
 	: has_been_read(false)
 {
 	children.push_back(input_);
@@ -16,7 +16,7 @@ AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr inp
 	Names key_names;
 	AggregateDescriptions aggregates;
 	expression->getAggregateInfo(key_names, aggregates);
-	aggregator = new Aggregator(key_names, aggregates, max_rows_to_group_by_, group_by_overflow_mode_);
+	aggregator = new Aggregator(key_names, aggregates, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_);
 }
 
 

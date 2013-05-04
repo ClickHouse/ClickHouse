@@ -133,6 +133,9 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "GROUP BY " << (hilite ? hilite_none : "");
 		formatAST(*ast.group_expression_list, s, indent, hilite, one_line);
+
+		if (ast.group_by_with_totals)
+			s << (hilite ? hilite_keyword : "") << " WITH TOTALS" << (hilite ? hilite_none : "");
 	}
 
 	if (ast.having_expression)

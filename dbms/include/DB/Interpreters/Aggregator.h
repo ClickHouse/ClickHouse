@@ -76,7 +76,9 @@ struct AggregatedDataVariants
 	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
 	AggregatedData generic;
 
-	/// Специализация для случая, когда ключи отсутствуют.
+	/** Специализация для случая, когда ключи отсутствуют.
+	  * А также в этой стркутуре хранятся "тотальные" агрегаты, когда указано with_totals (GROUP BY ... WITH TOTALS в запросе).
+	  */
 	AggregatedDataWithoutKey without_key;
 
 	/// Специализация для случая, когда есть один числовой ключ.
@@ -116,11 +118,11 @@ struct AggregatedDataVariants
 		switch (type)
 		{
 			case EMPTY:			return 0;
-			case GENERIC:		return generic.size();
+			case GENERIC:		return generic.size() 		+ (without_key != NULL);
 			case WITHOUT_KEY:	return 1;
-			case KEY_64:		return key64.size();
-			case KEY_STRING:	return key_string.size();
-			case HASHED:		return hashed.size();
+			case KEY_64:		return key64.size() 		+ (without_key != NULL);
+			case KEY_STRING:	return key_string.size() 	+ (without_key != NULL);
+			case HASHED:		return hashed.size() 		+ (without_key != NULL);
 
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -153,19 +155,19 @@ typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 class Aggregator
 {
 public:
-	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
+	Aggregator(const ColumnNumbers & keys_, AggregateDescriptions & aggregates_, bool with_totals_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
 		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
-		total_size_of_aggregate_states(0), initialized(false),
+		with_totals(with_totals_), total_size_of_aggregate_states(0), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
 	}
 
-	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_,
+	Aggregator(const Names & key_names_, AggregateDescriptions & aggregates_, bool with_totals_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
 		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), aggregates_size(aggregates.size()),
-		total_size_of_aggregate_states(0), initialized(false),
+		with_totals(with_totals_), total_size_of_aggregate_states(0), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -203,6 +205,7 @@ private:
 	std::vector<IAggregateFunction *> aggregate_functions;
 	size_t keys_size;
 	size_t aggregates_size;
+	bool with_totals;
 
 	Sizes offsets_of_aggregate_states;	/// Смещение до n-ой агрегатной функции в строке из агрегатных функций.
 	size_t total_size_of_aggregate_states;	/// Суммарный размер строки из агрегатных функций.
