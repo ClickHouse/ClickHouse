@@ -12,7 +12,6 @@ LimitBlockInputStream::LimitBlockInputStream(BlockInputStreamPtr input_, size_t 
 	: limit(limit_), offset(offset_), pos(0)
 {
 	children.push_back(input_);
-	input = &*children.back();
 }
 
 
@@ -28,7 +27,7 @@ Block LimitBlockInputStream::readImpl()
 
 	do
 	{
-		res = input->read();
+		res = children.back()->read();
 		if (!res)
 			return res;
 		rows = res.rows();

@@ -12,7 +12,6 @@ AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr inp
 	: has_been_read(false)
 {
 	children.push_back(input_);
-	input = &*children.back();
 
 	Names key_names;
 	AggregateDescriptions aggregates;
@@ -28,9 +27,9 @@ Block AggregatingBlockInputStream::readImpl()
 		return Block();
 
 	has_been_read = true;
-	
+
 	AggregatedDataVariants data_variants;
-	aggregator->execute(input, data_variants);
+	aggregator->execute(children.back(), data_variants);
 
 	if (isCancelled())
 		return Block();

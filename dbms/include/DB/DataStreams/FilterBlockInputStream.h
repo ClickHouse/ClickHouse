@@ -27,7 +27,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Filter(" << input->getID() << ", " << filter_column << ", " << filter_column_name << ")";
+		res << "Filter(" << children.back()->getID() << ", " << filter_column << ", " << filter_column_name << ")";
 		return res.str();
 	}
 
@@ -35,7 +35,6 @@ protected:
 	Block readImpl();
 
 private:
-	IBlockInputStream * input;
 	ssize_t filter_column;
 	String filter_column_name;
 };

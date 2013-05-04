@@ -11,14 +11,12 @@ FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize
 	: filter_column(filter_column_)
 {
 	children.push_back(input_);
-	input = &*children.back();
 }
 
 FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, const String & filter_column_name_)
 	: filter_column(-1), filter_column_name(filter_column_name_)
 {
 	children.push_back(input_);
-	input = &*children.back();
 }
 
 
@@ -27,7 +25,7 @@ Block FilterBlockInputStream::readImpl()
 	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
 	while (1)
 	{
-		Block res = input->read();
+		Block res = children.back()->read();
 		if (!res)
 			return res;
 

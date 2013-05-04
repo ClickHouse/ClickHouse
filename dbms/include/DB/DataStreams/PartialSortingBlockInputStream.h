@@ -18,7 +18,6 @@ public:
 		: description(description_)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	String getName() const { return "PartialSortingBlockInputStream"; }
@@ -26,7 +25,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "PartialSorting(" << input->getID();
+		res << "PartialSorting(" << children.back()->getID();
 
 		for (size_t i = 0; i < description.size(); ++i)
 			res << ", " << description[i].getID();
@@ -39,7 +38,6 @@ protected:
 	Block readImpl();
 
 private:
-	IBlockInputStream * input;
 	SortDescription description;
 };
 

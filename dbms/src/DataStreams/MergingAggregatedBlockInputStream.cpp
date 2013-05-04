@@ -11,7 +11,6 @@ MergingAggregatedBlockInputStream::MergingAggregatedBlockInputStream(BlockInputS
 	: has_been_read(false)
 {
 	children.push_back(input_);
-	input = &*children.back();
 
 	Names key_names;
 	AggregateDescriptions aggregates;
@@ -29,7 +28,7 @@ Block MergingAggregatedBlockInputStream::readImpl()
 	has_been_read = true;
 	
 	AggregatedDataVariants data_variants;
-	aggregator->merge(input, data_variants);
+	aggregator->merge(children.back(), data_variants);
 	return aggregator->convertToBlock(data_variants);
 }
 

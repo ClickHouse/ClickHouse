@@ -27,7 +27,6 @@ public:
 		: expression(expression_), part_id(part_id_), clear_temporaries(clear_temporaries_)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	String getName() const { return "ExpressionBlockInputStream"; }
@@ -35,14 +34,14 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Expression(" << input->getID() << ", " << expression->getExecutionID(part_id) << ")";
+		res << "Expression(" << children.back()->getID() << ", " << expression->getExecutionID(part_id) << ")";
 		return res.str();
 	}
 
 protected:
 	Block readImpl()
 	{
-		Block res = input->read();
+		Block res = children.back()->read();
 		if (!res)
 			return res;
 
@@ -55,7 +54,6 @@ protected:
 	}
 
 private:
-	IBlockInputStream * input;
 	ExpressionPtr expression;
 	unsigned part_id;
 	bool clear_temporaries;

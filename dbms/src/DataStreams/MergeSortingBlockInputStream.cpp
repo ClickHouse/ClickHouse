@@ -22,7 +22,7 @@ Block MergeSortingBlockInputStream::readImpl()
 	has_been_read = true;
 
 	Blocks blocks;
-	while (Block block = input->read())
+	while (Block block = children.back()->read())
 		blocks.push_back(block);
 
 	if (isCancelled())

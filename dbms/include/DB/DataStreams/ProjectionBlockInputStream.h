@@ -27,7 +27,6 @@ public:
 		: expression(expression_), without_duplicates_and_aliases(without_duplicates_and_aliases_), part_id(part_id_), subtree(subtree_)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	String getName() const { return "ProjectionBlockInputStream"; }
@@ -35,14 +34,14 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Projection(" << input->getID() << ", " << expression->getProjectionID(without_duplicates_and_aliases, part_id, subtree) << ")";
+		res << "Projection(" << children.back()->getID() << ", " << expression->getProjectionID(without_duplicates_and_aliases, part_id, subtree) << ")";
 		return res.str();
 	}
 
 protected:
 	Block readImpl()
 	{
-		Block res = input->read();
+		Block res = children.back()->read();
 		if (!res)
 			return res;
 
@@ -50,7 +49,6 @@ protected:
 	}
 
 private:
-	IBlockInputStream * input;
 	ExpressionPtr expression;
 	bool without_duplicates_and_aliases;
 	unsigned part_id;

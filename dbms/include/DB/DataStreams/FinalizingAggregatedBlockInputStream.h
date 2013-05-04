@@ -24,7 +24,6 @@ public:
 		: log(&Logger::get("FinalizingAggregatedBlockInputStream"))
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	String getName() const { return "FinalizingAggregatedBlockInputStream"; }
@@ -32,14 +31,14 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "FinalizingAggregated(" << input->getID() << ")";
+		res << "FinalizingAggregated(" << children.back()->getID() << ")";
 		return res.str();
 	}
 
 protected:
 	Block readImpl()
 	{
-		Block res = input->read();
+		Block res = children.back()->read();
 
 		if (!res)
 			return res;
@@ -81,7 +80,6 @@ protected:
 	}
 
 private:
-	IBlockInputStream * input;
 	Logger * log;
 };
 

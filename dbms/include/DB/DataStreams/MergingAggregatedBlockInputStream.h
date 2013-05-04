@@ -22,7 +22,6 @@ public:
 		: aggregator(new Aggregator(keys_, aggregates_)), has_been_read(false)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	/** keys берутся из GROUP BY части запроса
@@ -35,7 +34,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "MergingAggregated(" << input->getID() << ", " << aggregator->getID() << ")";
+		res << "MergingAggregated(" << children.back()->getID() << ", " << aggregator->getID() << ")";
 		return res.str();
 	}
 
@@ -43,10 +42,6 @@ protected:
 	Block readImpl();
 
 private:
-	MergingAggregatedBlockInputStream(const MergingAggregatedBlockInputStream & src)
-		: input(src.input), aggregator(src.aggregator), has_been_read(src.has_been_read) {}
-	
-	IBlockInputStream * input;
 	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;
 };

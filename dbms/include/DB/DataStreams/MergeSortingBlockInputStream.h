@@ -19,7 +19,6 @@ public:
 		: description(description_), has_been_read(false), log(&Logger::get("MergeSortingBlockInputStream"))
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	String getName() const { return "MergeSortingBlockInputStream"; }
@@ -27,7 +26,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "MergeSorting(" << input->getID();
+		res << "MergeSorting(" << children.back()->getID();
 		
 		for (size_t i = 0; i < description.size(); ++i)
 			res << ", " << description[i].getID();
@@ -40,7 +39,6 @@ protected:
 	Block readImpl();
 
 private:
-	IBlockInputStream * input;
 	SortDescription description;
 
 	/// Всё было прочитано.

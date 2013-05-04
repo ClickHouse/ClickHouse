@@ -23,7 +23,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Limit(" << input->getID() << ", " << limit << ", " << offset << ")";
+		res << "Limit(" << children.back()->getID() << ", " << limit << ", " << offset << ")";
 		return res.str();
 	}
 
@@ -31,7 +31,6 @@ protected:
 	Block readImpl();
 
 private:
-	IBlockInputStream * input;
 	size_t limit;
 	size_t offset;
 	size_t pos;

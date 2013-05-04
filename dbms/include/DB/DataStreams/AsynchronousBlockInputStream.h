@@ -23,7 +23,6 @@ public:
 	AsynchronousBlockInputStream(BlockInputStreamPtr in_) : pool(1), started(false)
 	{
 		children.push_back(in_);
-		in = &*children.back();
 	}
 
 	String getName() const { return "AsynchronousBlockInputStream"; }
@@ -31,7 +30,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Asynchronous(" << in->getID() << ")";
+		res << "Asynchronous(" << children.back()->getID() << ")";
 		return res.str();
 	}
 
@@ -58,7 +57,6 @@ public:
 	}
 
 protected:
-	IBlockInputStream * in;
 	boost::threadpool::pool pool;
 	Poco::Event ready;
 	bool started;
@@ -105,7 +103,7 @@ protected:
 	{
 		try
 		{
-			block = in->read();
+			block = children.back()->read();
 		}
 		catch (const Exception & e)
 		{

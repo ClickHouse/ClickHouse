@@ -16,7 +16,6 @@ public:
 	MaterializingBlockInputStream(BlockInputStreamPtr input_)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	String getName() const { return "MaterializingBlockInputStream"; }
@@ -24,14 +23,14 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Materializing(" << input->getID() << ")";
+		res << "Materializing(" << children.back()->getID() << ")";
 		return res.str();
 	}
 
 protected:
 	Block readImpl()
 	{
-		Block res = input->read();
+		Block res = children.back()->read();
 
 		if (!res)
 			return res;
@@ -46,9 +45,6 @@ protected:
 
 		return res;
 	}
-
-private:
-	IBlockInputStream * input;
 };
 
 }

@@ -72,11 +72,6 @@ public:
 	/// Получить количество строк и байт, прочитанных в листовых источниках.
 	void getLeafRowsBytes(size_t & rows, size_t & bytes);
 
-	/** Получить текст, который идентифицирует этот источник и всё поддерево.
-	  * Обычно он содержит идентификатор источника и getTreeID от всех детей.
-	  */
-	String getTreeID() const;
-
 	/** Проверить глубину конвейера.
 	  * Если задано max_depth и глубина больше - кинуть исключение.
 	  */
@@ -84,13 +79,18 @@ public:
 
 protected:
 	BlockInputStreams children;
-	
+
 	StoragePtr owned_storage;
 
 private:
 	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = NULL);
 
 	size_t checkDepthImpl(size_t max_depth, size_t level) const;
+
+	/** Получить текст, который идентифицирует этот источник и всё поддерево.
+	  * В отличие от getID - без учёта параметров.
+	  */
+	String getTreeID() const;
 };
 
 

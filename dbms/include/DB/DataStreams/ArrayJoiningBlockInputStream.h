@@ -40,14 +40,12 @@ public:
 		: array_column(array_column_)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	ArrayJoiningBlockInputStream(BlockInputStreamPtr input_, const String & array_column_name_)
 		: array_column(-1), array_column_name(array_column_name_)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 	
 	String getName() const { return "ArrayJoiningBlockInputStream"; }
@@ -55,14 +53,14 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "ArrayJoining(" << input->getID() << ", " << array_column << ", " << array_column_name << ")";
+		res << "ArrayJoining(" << children.back()->getID() << ", " << array_column << ", " << array_column_name << ")";
 		return res.str();
 	}
 
 protected:
 	Block readImpl()
 	{
-		Block block = input->read();
+		Block block = children.back()->read();
 
 		if (!block)
 			return block;
@@ -98,7 +96,6 @@ protected:
 	}
 
 private:
-	IBlockInputStream * input;
 	ssize_t array_column;
 	String array_column_name;
 };

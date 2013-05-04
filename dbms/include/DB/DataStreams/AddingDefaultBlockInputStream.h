@@ -24,7 +24,6 @@ public:
 		: required_columns(required_columns_)
 	{
 		children.push_back(input_);
-		input = &*children.back();
 	}
 
 	String getName() const { return "AddingDefaultBlockInputStream"; }
@@ -32,7 +31,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "AddingDefault(" << input->getID();
+		res << "AddingDefault(" << children.back()->getID();
 
 		for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
 			res << ", " << it->first << ", " << it->second->getName();
@@ -44,7 +43,7 @@ public:
 protected:
 	Block readImpl()
 	{
-		Block res = input->read();
+		Block res = children.back()->read();
 		if (!res)
 			return res;
 
@@ -65,7 +64,6 @@ protected:
 	}
 
 private:
-	IBlockInputStream * input;
 	NamesAndTypesListPtr required_columns;
 };
 
