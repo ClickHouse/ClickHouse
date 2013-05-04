@@ -3,6 +3,7 @@
 #include <DB/Parsers/IAST.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -36,31 +37,32 @@ public:
 
 	String getColumnName() const
 	{
-		std::stringstream s;
-		s << name;
+		String res;
+		WriteBufferFromString wb(res);
+		writeString(name, wb);
 
 		if (parameters)
 		{
-			s << "(";
+			writeChar('(', wb);
 			for (ASTs::const_iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
 			{
 				if (it != parameters->children.begin())
-					s << ", ";
-				s << (*it)->getColumnName();
+					writeString(", ", wb);
+				writeString((*it)->getColumnName(), wb);
 			}
-			s << ")";
+			writeChar(')', wb);
 		}
 
-		s << "(";
+		writeChar('(', wb);
 		for (ASTs::const_iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
 		{
 			if (it != arguments->children.begin())
-				s << ", ";
-			s << (*it)->getColumnName();
+				writeString(", ", wb);
+			writeString((*it)->getColumnName(), wb);
 		}
-		s << ")";
-		
-		return s.str();
+		writeChar(')', wb);
+
+		return res;
 	}
 
 	String getAlias() const { return alias.empty() ? getColumnName() : alias; }
