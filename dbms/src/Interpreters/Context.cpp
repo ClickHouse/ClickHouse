@@ -231,6 +231,13 @@ Settings Context::getSettings() const
 }
 
 
+Limits Context::getLimits() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return settings.limits;
+}
+
+
 void Context::setSettings(const Settings & settings_)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);

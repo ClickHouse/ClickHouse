@@ -78,10 +78,10 @@ private:
 
 public:
 	Context() : shared(new ContextShared), session_context(NULL), global_context(NULL) {}
-	
+
 	String getPath() const;
 	void setPath(const String & path);
-	
+
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
 	bool isTableExist(const String & database_name, const String & table_name) const;
 	bool isDatabaseExist(const String & database_name) const;
@@ -104,6 +104,8 @@ public:
 	
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);
+
+	Limits getLimits() const;
 
 	/// Установить настройку по имени.
 	void setSetting(const String & name, const Field & value);

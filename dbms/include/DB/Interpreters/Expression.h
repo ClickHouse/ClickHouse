@@ -21,11 +21,17 @@ namespace DB
 class Expression : private boost::noncopyable
 {
 public:
-	Expression(const ASTPtr & ast_, const Context & context_) : ast(ast_), context(context_), storage(getTable())
+	Expression(const ASTPtr & ast_, const Context & context_)
+		: ast(ast_), context(context_), settings(context.getSettings()), columns(context.getColumns()), storage(getTable())
 	{
-		createAliasesDict(ast);
-		addSemantic(ast);
-		glueTree(ast);
+		init();
+	}
+
+	/// columns - список известных столбцов (которых можно достать из таблицы).
+	Expression(const ASTPtr & ast_, const Context & context_, const NamesAndTypesList & columns_)
+		: ast(ast_), context(context_), settings(context.getSettings()), columns(columns_), storage(getTable())
+	{
+		init();
 	}
 
 	/** Получить список столбцов, которых необходимо прочитать из таблицы, чтобы выполнить выражение.
@@ -106,7 +112,11 @@ public:
 
 private:
 	ASTPtr ast;
-	const Context context;
+	const Context & context;
+	Settings settings;
+	/// Известные столбцы.
+	NamesAndTypesList columns;
+	
 	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
 	const StoragePtr storage;
 	/// Имя поля Sign в таблице. Непусто, если нужно осуществлять sign-rewrite
@@ -121,6 +131,13 @@ private:
 	typedef std::set<ASTPtr> SetOfASTs;
 	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 
+
+	void init()
+	{
+		createAliasesDict(ast);
+		addSemantic(ast);
+		glueTree(ast);
+	}
 
 	NamesAndTypesList::const_iterator findColumn(const String & name);
 

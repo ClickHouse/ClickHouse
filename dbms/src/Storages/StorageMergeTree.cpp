@@ -82,9 +82,7 @@ StorageMergeTree::StorageMergeTree(
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
 
-	Context tmp_context = context;
-	tmp_context.setColumns(*columns);
-	primary_expr = new Expression(primary_expr_ast, tmp_context);
+	primary_expr = new Expression(primary_expr_ast, context, *columns);
 	primary_key_sample = primary_expr->getSampleBlock();
 
 	merge_threads = new boost::threadpool::pool(settings.merging_threads);

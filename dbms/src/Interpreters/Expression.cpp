@@ -27,7 +27,7 @@ namespace DB
 NamesAndTypesList::const_iterator Expression::findColumn(const String & name)
 {
 	NamesAndTypesList::const_iterator it;
-	for (it = context.getColumns().begin(); it != context.getColumns().end(); ++it)
+	for (it = columns.begin(); it != columns.end(); ++it)
 		if (it->first == name)
 			break;
 	return it;
@@ -96,7 +96,7 @@ StoragePtr Expression::getTable()
 
 bool Expression::needSignRewrite()
 {
-	if (context.getSettingsRef().sign_rewrite && storage)
+	if (settings.sign_rewrite && storage)
 		if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(&*storage))
 			return merge_tree->getName() == "CollapsingMergeTree";
 	return false;
@@ -275,7 +275,7 @@ void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfA
 		  */
 		String function_string = node->getColumnName();
 		NamesAndTypesList::const_iterator it = findColumn(function_string);
-		if (context.getColumns().end() != it)
+		if (columns.end() != it)
 		{
 			ASTIdentifier * ast_id = new ASTIdentifier(node->range, std::string(node->range.first, node->range.second));
 			ast_id->type = it->second;
@@ -303,7 +303,7 @@ void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfA
 	if (dynamic_cast<ASTAsterisk *>(&*ast))
 	{
 		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
-		for (NamesAndTypesList::const_iterator it = context.getColumns().begin(); it != context.getColumns().end(); ++it)
+		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
 		ast = all_columns;
 		current_asts.insert(ast);
@@ -368,7 +368,7 @@ void Expression::addSemanticImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfA
 		if (node->kind == ASTIdentifier::Column)
 		{
 			NamesAndTypesList::const_iterator it = findColumn(node->name);
-			if (it == context.getColumns().end())
+			if (it == columns.end())
 			{
 				/// Если это алиас
 				Aliases::const_iterator jt = aliases.find(node->name);
@@ -643,8 +643,8 @@ void Expression::executeImpl(ASTPtr ast, Block & block, unsigned part_id, bool o
 	}
 
 	/// Проверка ограничений на максимальное количество столбцов.
-	
-	const Limits & limits = context.getSettingsRef().limits;
+
+	const Limits & limits = settings.limits;
 	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
 		throw Exception("Too much temporary columns: " + block.dumpNames()
 			+ ". Maximum: " + Poco::NumberFormatter::format(limits.max_temporary_columns),
