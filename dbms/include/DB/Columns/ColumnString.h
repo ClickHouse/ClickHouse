@@ -127,7 +127,7 @@ public:
 		ColumnString * res_ = new ColumnString;
 		ColumnPtr res = res_;
 
-		res_->chars.resize(length);
+		res_->chars.resize(nested_length);
 		memcpy(&res_->chars[0], &chars[nested_offset], nested_length);
 		
 		Offsets_t & res_offsets = res_->offsets;
