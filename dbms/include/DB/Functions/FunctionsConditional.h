@@ -66,17 +66,17 @@ struct StringIfImpl
 {
 	static void vector_vector(
 		const std::vector<UInt8> & cond,
-		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & a_data, const ColumnString::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnString::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
 		c_data.reserve(std::max(a_data.size(), b_data.size()));
 		
-		ColumnArray::Offset_t a_prev_offset = 0;
-		ColumnArray::Offset_t b_prev_offset = 0;
-		ColumnArray::Offset_t c_prev_offset = 0;
+		ColumnString::Offset_t a_prev_offset = 0;
+		ColumnString::Offset_t b_prev_offset = 0;
+		ColumnString::Offset_t c_prev_offset = 0;
 		
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -104,16 +104,16 @@ struct StringIfImpl
 
 	static void vector_constant(
 		const std::vector<UInt8> & cond,
-		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnString::Offsets_t & a_offsets,
 		const String & b,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
 		c_data.reserve(a_data.size());
 
-		ColumnArray::Offset_t a_prev_offset = 0;
-		ColumnArray::Offset_t c_prev_offset = 0;
+		ColumnString::Offset_t a_prev_offset = 0;
+		ColumnString::Offset_t c_prev_offset = 0;
 
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -141,15 +141,15 @@ struct StringIfImpl
 	static void constant_vector(
 		const std::vector<UInt8> & cond,
 		const String & a,
-		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & b_data, const ColumnString::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
 		c_data.reserve(b_data.size());
 
-		ColumnArray::Offset_t b_prev_offset = 0;
-		ColumnArray::Offset_t c_prev_offset = 0;
+		ColumnString::Offset_t b_prev_offset = 0;
+		ColumnString::Offset_t c_prev_offset = 0;
 
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -177,13 +177,13 @@ struct StringIfImpl
 	static void constant_constant(
 		const std::vector<UInt8> & cond,
 		const String & a, const String & b,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
 		c_data.reserve((std::max(a.size(), b.size()) + 1) * size);
 
-		ColumnArray::Offset_t c_prev_offset = 0;
+		ColumnString::Offset_t c_prev_offset = 0;
 
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -249,26 +249,26 @@ private:
 		ColumnString * col_res = new ColumnString;
 		block.getByPosition(result).column = col_res;
 
-		std::vector<UInt8> & res_vec = dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData();
-		ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
+		ColumnString::Chars_t & res_vec = col_res->getChars();
+		ColumnString::Offsets_t & res_offsets = col_res->getOffsets();
 
 		if (col_then && col_else)
 			StringIfImpl::vector_vector(
 				cond_col->getData(),
-				dynamic_cast<const ColumnUInt8 &>(col_then->getData()).getData(), col_then->getOffsets(),
-				dynamic_cast<const ColumnUInt8 &>(col_else->getData()).getData(), col_else->getOffsets(),
+				col_then->getChars(), col_then->getOffsets(),
+				col_else->getChars(), col_else->getOffsets(),
 				res_vec, res_offsets);
 		else if (col_then && col_else_const)
 			StringIfImpl::vector_constant(
 				cond_col->getData(),
-				dynamic_cast<const ColumnUInt8 &>(col_then->getData()).getData(), col_then->getOffsets(),
+				col_then->getChars(), col_then->getOffsets(),
 				col_else_const->getData(),
 				res_vec, res_offsets);
 		else if (col_then_const && col_else)
 			StringIfImpl::constant_vector(
 				cond_col->getData(),
 				col_then_const->getData(),
-				dynamic_cast<const ColumnUInt8 &>(col_else->getData()).getData(), col_else->getOffsets(),
+				col_else->getChars(), col_else->getOffsets(),
 				res_vec, res_offsets);
 		else if (col_then_const && col_else_const)
 			StringIfImpl::constant_constant(

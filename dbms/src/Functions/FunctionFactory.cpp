@@ -50,14 +50,14 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "less")						return new FunctionLess;
 	else if (name == "greater")						return new FunctionGreater;
 	else if (name == "lessOrEquals")				return new FunctionLessOrEquals;
-	else if (name == "greaterOrEquals")			return new FunctionGreaterOrEquals;
+	else if (name == "greaterOrEquals")				return new FunctionGreaterOrEquals;
 
 	else if (name == "and")							return new FunctionAnd;
 	else if (name == "or")							return new FunctionOr;
 	else if (name == "xor")							return new FunctionXor;
 	else if (name == "not")							return new FunctionNot;
 	
-	else if (name == "roundToExp2")				return new FunctionRoundToExp2;
+	else if (name == "roundToExp2")					return new FunctionRoundToExp2;
 	else if (name == "roundDuration")				return new FunctionRoundDuration;
 	else if (name == "roundAge")					return new FunctionRoundAge;
 
@@ -70,7 +70,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "lowerUTF8")					return new FunctionLowerUTF8;
 	else if (name == "upperUTF8")					return new FunctionUpperUTF8;
 	else if (name == "reverse")						return new FunctionReverse;
-	else if (name == "reverseUTF8")				return new FunctionReverseUTF8;
+	else if (name == "reverseUTF8")					return new FunctionReverseUTF8;
 	else if (name == "concat")						return new FunctionConcat;
 	else if (name == "substring")					return new FunctionSubstring;
 	else if (name == "substringUTF8")				return new FunctionSubstringUTF8;
@@ -92,9 +92,9 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "toString")					return new FunctionToString;
 
 	else if (name == "reinterpretAsUInt8")			return new FunctionReinterpretAsUInt8;
-	else if (name == "reinterpretAsUInt16")		return new FunctionReinterpretAsUInt16;
-	else if (name == "reinterpretAsUInt32")		return new FunctionReinterpretAsUInt32;
-	else if (name == "reinterpretAsUInt64")		return new FunctionReinterpretAsUInt64;
+	else if (name == "reinterpretAsUInt16")			return new FunctionReinterpretAsUInt16;
+	else if (name == "reinterpretAsUInt32")			return new FunctionReinterpretAsUInt32;
+	else if (name == "reinterpretAsUInt64")			return new FunctionReinterpretAsUInt64;
 	else if (name == "reinterpretAsInt8")			return new FunctionReinterpretAsInt8;
 	else if (name == "reinterpretAsInt16")			return new FunctionReinterpretAsInt16;
 	else if (name == "reinterpretAsInt32")			return new FunctionReinterpretAsInt32;
@@ -103,19 +103,19 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "reinterpretAsFloat64")		return new FunctionReinterpretAsFloat64;
 	else if (name == "reinterpretAsDate")			return new FunctionReinterpretAsDate;
 	else if (name == "reinterpretAsDateTime")		return new FunctionReinterpretAsDateTime;
-	else if (name == "reinterpretAsString")		return new FunctionReinterpretAsString;
+	else if (name == "reinterpretAsString")			return new FunctionReinterpretAsString;
 
 	else if (name == "toYear")						return new FunctionToYear;
 	else if (name == "toMonth")						return new FunctionToMonth;
 	else if (name == "toDayOfMonth")				return new FunctionToDayOfMonth;
-	else if (name == "toDayOfWeek")				return new FunctionToDayOfWeek;
+	else if (name == "toDayOfWeek")					return new FunctionToDayOfWeek;
 	else if (name == "toHour")						return new FunctionToHour;
 	else if (name == "toMinute")					return new FunctionToMinute;
 	else if (name == "toSecond")					return new FunctionToSecond;
 	else if (name == "toMonday")					return new FunctionToMonday;
 	else if (name == "toStartOfMonth")				return new FunctionToStartOfMonth;
 	else if (name == "toStartOfYear")				return new FunctionToStartOfYear;
-	else if (name == "toStartOfMinute")			return new FunctionToStartOfMinute;
+	else if (name == "toStartOfMinute")				return new FunctionToStartOfMinute;
 	else if (name == "toStartOfHour")				return new FunctionToStartOfHour;
 	else if (name == "toTime")						return new FunctionToTime;
 	else if (name == "now")							return new FunctionNow;
@@ -133,8 +133,8 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "cityHash64")					return new FunctionCityHash64;
 	else if (name == "intHash32")					return new FunctionIntHash32;
 	
-	else if (name == "IPv4NumToString")			return new FunctionIPv4NumToString;
-	else if (name == "IPv4StringToNum")			return new FunctionIPv4StringToNum;
+	else if (name == "IPv4NumToString")				return new FunctionIPv4NumToString;
+	else if (name == "IPv4StringToNum")				return new FunctionIPv4StringToNum;
 	else if (name == "hex")							return new FunctionHex;
 	else if (name == "unhex")						return new FunctionUnhex;
 
@@ -146,23 +146,23 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "domainWithoutWWW")			return new FunctionDomainWithoutWWW;
 	else if (name == "topLevelDomain")				return new FunctionTopLevelDomain;
 	else if (name == "path")						return new FunctionPath;
-	else if (name == "queryString")				return new FunctionQueryString;
+	else if (name == "queryString")					return new FunctionQueryString;
 	else if (name == "fragment")					return new FunctionFragment;
 	else if (name == "queryStringAndFragment")		return new FunctionQueryStringAndFragment;
 	else if (name == "cutWWW")						return new FunctionCutWWW;
 	else if (name == "cutQueryString")				return new FunctionCutQueryString;
-	else if (name == "cutFragment")				return new FunctionCutFragment;
+	else if (name == "cutFragment")					return new FunctionCutFragment;
 	else if (name == "cutQueryStringAndFragment")	return new FunctionCutQueryStringAndFragment;
-	else if (name == "extractURLParameter")		return new FunctionExtractURLParameter;
+	else if (name == "extractURLParameter")			return new FunctionExtractURLParameter;
 	else if (name == "extractURLParameters")		return new FunctionExtractURLParameters;
-	else if (name == "cutURLParameter")			return new FunctionCutURLParameter;
+	else if (name == "cutURLParameter")				return new FunctionCutURLParameter;
 	else if (name == "URLHierarchy")				return new FunctionURLHierarchy;
 
 	else if (name == "visibleWidth")				return new FunctionVisibleWidth;
 	else if (name == "toTypeName")					return new FunctionToTypeName;
 	else if (name == "blockSize")					return new FunctionBlockSize;
 	else if (name == "sleep")						return new FunctionSleep;
-	else if (name == "materialize")				return new FunctionMaterialize;
+	else if (name == "materialize")					return new FunctionMaterialize;
 	else if (name == "ignore")						return new FunctionIgnore;
 	else if (name == "arrayJoin")					return new FunctionArrayJoin;
 
@@ -177,15 +177,15 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "indexOf")						return new FunctionIndexOf;
 	else if (name == "countEqual")					return new FunctionCountEqual;
 
-	else if (name == "alphaTokens")				return new FunctionAlphaTokens;
-	else if (name == "splitByChar")				return new FunctionSplitByChar;
+	else if (name == "alphaTokens")					return new FunctionAlphaTokens;
+	else if (name == "splitByChar")					return new FunctionSplitByChar;
 	else if (name == "splitByString")				return new FunctionSplitByString;
 
 	else if (name == "if")							return new FunctionIf;
 
 	else if (name == "regionToCity")				return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchy());
 	else if (name == "regionToArea")				return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchy());
-	else if (name == "regionToCountry")			return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "regionToCountry")				return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchy());
 	else if (name == "OSToRoot")					return new FunctionOSToRoot(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEToRoot")					return new FunctionSEToRoot(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryToRoot")				return new FunctionCategoryToRoot(context.getDictionaries().getCategoriesHierarchy());
@@ -194,9 +194,9 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "OSIn")						return new FunctionOSIn(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEIn")						return new FunctionSEIn(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryIn")					return new FunctionCategoryIn(context.getDictionaries().getCategoriesHierarchy());
-	else if (name == "regionHierarchy")			return new FunctionRegionHierarchy(context.getDictionaries().getRegionsHierarchy());
-	else if (name == "OSHierarchy")				return new FunctionOSHierarchy(context.getDictionaries().getTechDataHierarchy());
-	else if (name == "SEHierarchy")				return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
+	else if (name == "regionHierarchy")				return new FunctionRegionHierarchy(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "OSHierarchy")					return new FunctionOSHierarchy(context.getDictionaries().getTechDataHierarchy());
+	else if (name == "SEHierarchy")					return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryHierarchy")			return new FunctionCategoryHierarchy(context.getDictionaries().getCategoriesHierarchy());
 
 	else

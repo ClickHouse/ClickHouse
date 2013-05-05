@@ -72,7 +72,7 @@ public:
 			block.getByPosition(result).column = col_to;
 			
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
-			ColumnUInt8::Container_t & data_to = dynamic_cast<ColumnUInt8 &>(col_to->getData()).getData();
+			ColumnString::Chars_t & data_to = col_to->getChars();
 			ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
 			size_t size = vec_from.size();
 			data_to.resize(size * 2);

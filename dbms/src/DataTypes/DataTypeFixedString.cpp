@@ -1,6 +1,5 @@
 #include <Poco/SharedPtr.h>
 
-#include <DB/Columns/ColumnFixedArray.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
@@ -40,8 +39,7 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
 
 void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnFixedArray & column_array = dynamic_cast<const ColumnFixedArray &>(column);
-	const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_array.getData()).getData();
+	const ColumnFixedString::Chars_t & data = dynamic_cast<const ColumnFixedString &>(column).getChars();
 
 	size_t size = data.size() / n;
 
@@ -54,8 +52,7 @@ void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & 
 
 void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnFixedArray & column_array = dynamic_cast<ColumnFixedArray &>(column);
-	ColumnUInt8::Container_t & data = dynamic_cast<ColumnUInt8 &>(column_array.getData()).getData();
+	ColumnFixedString::Chars_t & data = dynamic_cast<ColumnFixedString &>(column).getChars();
 
 	size_t max_bytes = limit * n;
 	data.resize(max_bytes);

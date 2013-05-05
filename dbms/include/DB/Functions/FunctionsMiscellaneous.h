@@ -115,7 +115,7 @@ static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
 	return res;
 }
 
-static inline void stringWidthVector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
+static inline void stringWidthVector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
 {
 	size_t size = offsets.size();
 
@@ -229,13 +229,13 @@ public:
 		else if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
 		{
 			ColumnUInt64 * res = new ColumnUInt64(rows);
-			stringWidthVector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(), res->getData());
+			stringWidthVector(col->getChars(), col->getOffsets(), res->getData());
 			block.getByPosition(result).column = res;
 		}
 		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
 		{
 			ColumnUInt64 * res = new ColumnUInt64(rows);
-			stringWidthFixedVector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(), res->getData());
+			stringWidthFixedVector(col->getChars(), col->getN(), res->getData());
 			block.getByPosition(result).column = res;
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))

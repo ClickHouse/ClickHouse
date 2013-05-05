@@ -292,7 +292,7 @@ public:
 	ColumnPtr & getOffsetsColumn() { return offsets; }
 	const ColumnPtr & getOffsetsColumn() const { return offsets; }
 
-protected:
+private:
 	ColumnPtr data;
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 

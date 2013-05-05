@@ -3,6 +3,7 @@
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnFixedString.h>
 
 
@@ -17,7 +18,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 		ColumnString * res = new ColumnString;
 		ColumnPtr res_ptr = res;
 		ColumnString::Offsets_t & offsets = res->getOffsets();
-		ColumnUInt8::Container_t & vec = dynamic_cast<ColumnVector<UInt8> &>(res->getData()).getData();
+		ColumnString::Chars_t & vec = res->getChars();
 
 		size_t string_size = data.size() + 1;
 		size_t offset = 0;
@@ -42,7 +43,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 
 		ColumnFixedString * res = new ColumnFixedString(n);
 		ColumnPtr res_ptr = res;
-		ColumnUInt8::Container_t & vec = dynamic_cast<ColumnVector<UInt8> &>(res->getData()).getData();
+		ColumnFixedString::Chars_t & vec = res->getChars();
 
 		vec.resize(n * s, 0);
 		size_t offset = 0;

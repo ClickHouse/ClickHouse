@@ -56,7 +56,7 @@ public:
 			block.getByPosition(result).column = col_to;
 			
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
-			ColumnUInt8::Container_t & data_to = dynamic_cast<ColumnUInt8 &>(col_to->getData()).getData();
+			ColumnString::Chars_t & data_to = col_to->getChars();
 			ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
 			size_t size = vec_from.size();
 			data_to.resize(size * (sizeof(T) + 1));
@@ -149,7 +149,7 @@ public:
 			ColumnVector<ToFieldType> * col_res = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_res;
 			
-			ColumnUInt8::Container_t & data_from = dynamic_cast<ColumnUInt8 &>(col_from->getData()).getData();
+			ColumnString::Chars_t & data_from = col_from->getChars();
 			ColumnString::Offsets_t & offsets_from = col_from->getOffsets();
 			size_t size = offsets_from.size();
 			typename ColumnVector<ToFieldType>::Container_t & vec_res = col_res->getData();
@@ -169,7 +169,7 @@ public:
 			ColumnVector<ToFieldType> * col_res = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_res;
 			
-			ColumnUInt8::Container_t & data_from = dynamic_cast<ColumnUInt8 &>(col_from->getData()).getData();
+			ColumnString::Chars_t & data_from = col_from->getChars();
 			size_t step = col_from->getN();
 			size_t size = data_from.size() / step;
 			typename ColumnVector<ToFieldType>::Container_t & vec_res = col_res->getData();

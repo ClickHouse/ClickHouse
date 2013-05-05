@@ -24,8 +24,8 @@ int main(int argc, char ** argv)
 
 		{
 			Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
-			DB::ColumnUInt8::Container_t & data = dynamic_cast<DB::ColumnUInt8 &>(column->getData()).getData();
-			DB::ColumnArray::Offsets_t & offsets = column->getOffsets();
+			DB::ColumnString::Chars_t & data = column->getChars();
+			DB::ColumnString::Offsets_t & offsets = column->getOffsets();
 			
 			data.resize(n * size);
 			offsets.resize(n);

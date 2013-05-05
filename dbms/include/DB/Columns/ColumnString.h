@@ -4,105 +4,112 @@
 
 #include <DB/Core/Defines.h>
 
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/IColumn.h>
 
 
 namespace DB
 {
 
 /** Cтолбeц значений типа "строка".
-  * Отличается от массива UInt8 только получением элемента (в виде String, а не Array),
-  *  а также тем, что завершающие нули для строк тоже хранятся.
-  *
-  * TODO: Отделить от ColumnArray.
   */
-class ColumnString : public ColumnArray
+class ColumnString : public IColumn
 {
 public:
-	typedef ColumnUInt8::Container_t DataVector_t;
+	typedef std::vector<UInt8> Chars_t;
 
 private:
-	DataVector_t & char_data;
+	/// По индексу i находится смещение до начала i + 1 -го элемента.
+	Offsets_t offsets;
 
+	/// Байты строк, уложенные подряд. Строки хранятся с завершающим нулевым байтом.
+	Chars_t chars;
+
+	size_t __attribute__((__always_inline__)) offsetAt(size_t i) const	{ return i == 0 ? 0 : offsets[i - 1]; }
+
+	/// Размер, включая завершающий нулевой байт.
+	size_t __attribute__((__always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
+	
 public:	
 	/** Создать пустой столбец строк */
-	ColumnString()
-		: ColumnArray(new ColumnUInt8()),
-		char_data(static_cast<ColumnUInt8 &>(*data).getData())
-	{
-	}
+	ColumnString() {}
 
 	std::string getName() const { return "ColumnString"; }
+
+	size_t size() const
+	{
+		return offsets.size();
+	}
+
+	size_t byteSize() const
+	{
+		return chars.size() + offsets.size() * sizeof(offsets[0]);
+	}
 
 	ColumnPtr cloneEmpty() const
 	{
 		return new ColumnString;
 	}
-	
-	ColumnUInt8::Container_t & getDataVector() { return char_data; }
-	const ColumnUInt8::Container_t & getDataVector() const { return char_data; }
-	
+
 	Field operator[](size_t n) const
 	{
-		return Field(&char_data[offsetAt(n)], sizeAt(n) - 1);
+		return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
 	}
 
 	void get(size_t n, Field & res) const
 	{
-		res.assignString(&char_data[offsetAt(n)], sizeAt(n) - 1);
+		res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
 	}
 
 	StringRef getDataAt(size_t n) const
 	{
-		return StringRef(&char_data[offsetAt(n)], sizeAt(n) - 1);
+		return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
 	}
 
 	StringRef getDataAtWithTerminatingZero(size_t n) const
 	{
-		return StringRef(&char_data[offsetAt(n)], sizeAt(n));
+		return StringRef(&chars[offsetAt(n)], sizeAt(n));
 	}
 
 	void insert(const Field & x)
 	{
 		const String & s = DB::get<const String &>(x);
-		size_t old_size = char_data.size();
+		size_t old_size = chars.size();
 		size_t size_to_append = s.size() + 1;
 		
-		char_data.resize(old_size + size_to_append);
-		memcpy(&char_data[old_size], s.c_str(), size_to_append);
-		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size_to_append);
+		chars.resize(old_size + size_to_append);
+		memcpy(&chars[old_size], s.c_str(), size_to_append);
+		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
 	}
 
 	void insertFrom(const IColumn & src_, size_t n)
 	{
 		const ColumnString & src = static_cast<const ColumnString &>(src_);
-		size_t old_size = char_data.size();
+		size_t old_size = chars.size();
 		size_t size_to_append = src.sizeAt(n);
 		size_t offset = src.offsetAt(n);
 		
-		char_data.resize(old_size + size_to_append);
-		memcpy(&char_data[old_size], &src.char_data[offset], size_to_append);
-		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size_to_append);
+		chars.resize(old_size + size_to_append);
+		memcpy(&chars[old_size], &src.chars[offset], size_to_append);
+		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
 	}
 
 	void insertData(const char * pos, size_t length)
 	{
-		size_t old_size = char_data.size();
+		size_t old_size = chars.size();
 
-		char_data.resize(old_size + length + 1);
-		memcpy(&char_data[old_size], pos, length);
-		char_data[old_size + length] = 0;
-		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + length + 1);
+		chars.resize(old_size + length + 1);
+		memcpy(&chars[old_size], pos, length);
+		chars[old_size + length] = 0;
+		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length + 1);
 	}
 
 	void insertDataWithTerminatingZero(const char * pos, size_t length)
 	{
-		size_t old_size = char_data.size();
+		size_t old_size = chars.size();
 
-		char_data.resize(old_size + length);
-		memcpy(&char_data[old_size], pos, length);
-		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + length);
+		chars.resize(old_size + length);
+		memcpy(&chars[old_size], pos, length);
+		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length);
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const
@@ -110,30 +117,31 @@ public:
 		if (length == 0)
 			return new ColumnString;
 
-		if (start + length > getOffsets().size())
+		if (start + length > offsets.size())
 			throw Exception("Parameter out of bound in IColumnString::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
 		size_t nested_offset = offsetAt(start);
-		size_t nested_length = getOffsets()[start + length - 1] - nested_offset;
+		size_t nested_length = offsets[start + length - 1] - nested_offset;
 
 		ColumnString * res_ = new ColumnString;
 		ColumnPtr res = res_;
 
-		ColumnPtr tmp_data = data->cut(nested_offset, nested_length);
-		res_->char_data.swap(static_cast<ColumnUInt8 &>(*tmp_data).getData());
-		Offsets_t & res_offsets = res_->getOffsets();
+		res_->chars.resize(length);
+		memcpy(&res_->chars[0], &chars[nested_offset], nested_length);
+		
+		Offsets_t & res_offsets = res_->offsets;
 
 		if (start == 0)
 		{
-			res_offsets.assign(getOffsets().begin(), getOffsets().begin() + length);
+			res_offsets.assign(offsets.begin(), offsets.begin() + length);
 		}
 		else
 		{
 			res_offsets.resize(length);
 
 			for (size_t i = 0; i < length; ++i)
-				res_offsets[i] = getOffsets()[start + i] - nested_offset;
+				res_offsets[i] = offsets[start + i] - nested_offset;
 		}
 
 		return res;
@@ -141,7 +149,7 @@ public:
 
 	ColumnPtr filter(const Filter & filt) const
 	{
-		size_t size = getOffsets().size();
+		size_t size = offsets.size();
 		if (size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
@@ -151,9 +159,9 @@ public:
 		ColumnString * res_ = new ColumnString;
 		ColumnPtr res = res_;
 
-		ColumnUInt8::Container_t & res_chars = res_->char_data;
-		Offsets_t & res_offsets = res_->getOffsets();
-		res_chars.reserve(char_data.size());
+		Chars_t & res_chars = res_->chars;
+		Offsets_t & res_offsets = res_->offsets;
+		res_chars.reserve(chars.size());
 		res_offsets.reserve(size);
 
 		Offset_t current_new_offset = 0;
@@ -163,14 +171,14 @@ public:
 			if (!filt[i])
 				continue;
 			
-			size_t string_offset = i == 0 ? 0 : getOffsets()[i - 1];
-			size_t string_size = getOffsets()[i] - string_offset;
+			size_t string_offset = i == 0 ? 0 : offsets[i - 1];
+			size_t string_size = offsets[i] - string_offset;
 
 			current_new_offset += string_size;
 			res_offsets.push_back(current_new_offset);
 
 			res_chars.resize(res_chars.size() + string_size);
-			memcpy(&res_chars[res_chars.size() - string_size], &char_data[string_offset], string_size);
+			memcpy(&res_chars[res_chars.size() - string_size], &chars[string_offset], string_size);
 		}
 
 		return res;
@@ -178,7 +186,7 @@ public:
 
 	ColumnPtr permute(const Permutation & perm) const
 	{
-		size_t size = getOffsets().size();
+		size_t size = offsets.size();
 		if (size != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
@@ -188,10 +196,10 @@ public:
 		ColumnString * res_ = new ColumnString;
 		ColumnPtr res = res_;
 
-		ColumnUInt8::Container_t & res_chars = res_->char_data;
-		Offsets_t & res_offsets = res_->getOffsets();
+		Chars_t & res_chars = res_->chars;
+		Offsets_t & res_offsets = res_->offsets;
 
-		res_chars.resize(char_data.size());
+		res_chars.resize(chars.size());
 		res_offsets.resize(size);
 
 		Offset_t current_new_offset = 0;
@@ -199,10 +207,10 @@ public:
 		for (size_t i = 0; i < size; ++i)
 		{
 			size_t j = perm[i];
-			size_t string_offset = j == 0 ? 0 : getOffsets()[j - 1];
-			size_t string_size = getOffsets()[j] - string_offset;
+			size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+			size_t string_size = offsets[j] - string_offset;
 
-			memcpy(&res_chars[current_new_offset], &char_data[string_offset], string_size);
+			memcpy(&res_chars[current_new_offset], &chars[string_offset], string_size);
 
 			current_new_offset += string_size;
 			res_offsets[i] = current_new_offset;
@@ -213,8 +221,8 @@ public:
 
 	void insertDefault()
 	{
-		char_data.push_back(0);
-		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
+		chars.push_back(0);
+		offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
@@ -226,8 +234,8 @@ public:
 		  * Замечу, что завершающий нулевой байт всегда есть.
 		  */
 		return strcmp(
-			reinterpret_cast<const char *>(&char_data[offsetAt(n)]),
-			reinterpret_cast<const char *>(&rhs.char_data[rhs.offsetAt(m)]));
+			reinterpret_cast<const char *>(&chars[offsetAt(n)]),
+			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]));
 	}
 
 	struct less
@@ -237,14 +245,14 @@ public:
 		bool operator()(size_t lhs, size_t rhs) const
 		{
 			return 0 > strcmp(
-				reinterpret_cast<const char *>(&parent.char_data[parent.offsetAt(lhs)]),
-				reinterpret_cast<const char *>(&parent.char_data[parent.offsetAt(rhs)]));
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]),
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]));
 		}
 	};
 
 	Permutation getPermutation() const
 	{
-		size_t s = getOffsets().size();
+		size_t s = offsets.size();
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
@@ -262,9 +270,9 @@ public:
 		ColumnString * res_ = new ColumnString;
 		ColumnPtr res = res_;
 
-		ColumnUInt8::Container_t & res_chars = res_->char_data;
-		Offsets_t & res_offsets = res_->getOffsets();
-		res_chars.reserve(char_data.size() / col_size * replicate_offsets.back());
+		Chars_t & res_chars = res_->chars;
+		Offsets_t & res_offsets = res_->offsets;
+		res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
 		res_offsets.reserve(replicate_offsets.back());
 
 		Offset_t prev_replicate_offset = 0;
@@ -274,7 +282,7 @@ public:
 		for (size_t i = 0; i < col_size; ++i)
 		{
 			size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-			size_t string_size = getOffsets()[i] - prev_string_offset;
+			size_t string_size = offsets[i] - prev_string_offset;
 
 			for (size_t j = 0; j < size_to_replicate; ++j)
 			{
@@ -282,11 +290,11 @@ public:
 				res_offsets.push_back(current_new_offset);
 
 				res_chars.resize(res_chars.size() + string_size);
-				memcpy(&res_chars[res_chars.size() - string_size], &char_data[prev_string_offset], string_size);
+				memcpy(&res_chars[res_chars.size() - string_size], &chars[prev_string_offset], string_size);
 			}
 
 			prev_replicate_offset = replicate_offsets[i];
-			prev_string_offset = getOffsets()[i];
+			prev_string_offset = offsets[i];
 		}
 
 		return res;
@@ -294,9 +302,16 @@ public:
 
 	void reserve(size_t n)
 	{
-		getOffsets().reserve(n);
-		char_data.reserve(n * DBMS_APPROX_STRING_SIZE);
+		offsets.reserve(n);
+		chars.reserve(n * DBMS_APPROX_STRING_SIZE);
 	}
+
+
+	Chars_t & getChars() { return chars; }
+	const Chars_t & getChars() const { return chars; }
+
+	Offsets_t & getOffsets() { return offsets; }
+	const Offsets_t & getOffsets() const { return offsets; }
 };
 
 

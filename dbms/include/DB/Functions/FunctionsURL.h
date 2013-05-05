@@ -270,9 +270,9 @@ struct ExtractWWW
 struct ExtractURLParameterImpl
 {
 	static void vector(const std::vector<UInt8> & data,
-					    const ColumnArray::Offsets_t & offsets,
+					    const ColumnString::Offsets_t & offsets,
 					    std::string pattern,
-						std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+						std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size()  / 5);
 		res_offsets.resize(offsets.size());
@@ -338,9 +338,9 @@ struct ExtractURLParameterImpl
 struct CutURLParameterImpl
 {
 	static void vector(const std::vector<UInt8> & data,
-					    const ColumnArray::Offsets_t & offsets,
+					    const ColumnString::Offsets_t & offsets,
 					    std::string pattern,
-						std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+						std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		res_offsets.resize(offsets.size());
@@ -563,8 +563,8 @@ public:
 template <typename Extractor>
 struct ExtractSubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		size_t size = offsets.size();
 		res_offsets.resize(size);
@@ -613,8 +613,8 @@ struct ExtractSubstringImpl
 template <typename Extractor>
 struct CutSubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();

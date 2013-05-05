@@ -168,11 +168,11 @@ private:
 		block.getByPosition(result).column = col_res;
 
 		ArrayElementStringImpl::vector(
-			dynamic_cast<const ColumnUInt8 &>(col_nested->getData()).getData(),
+			col_nested->getChars(),
 			col_array->getOffsets(),  
 			col_nested->getOffsets(),
 			index,
-			dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData(),
+			col_res->getChars(),
 			col_res->getOffsets());
 
 		return true;
@@ -392,7 +392,7 @@ private:
 		block.getByPosition(result).column = col_res;
 
 		ArrayIndexStringImpl<IndexConv>::vector(
-			dynamic_cast<const ColumnUInt8 &>(col_nested->getData()).getData(),
+			col_nested->getChars(),
 			col_array->getOffsets(),
 			col_nested->getOffsets(),
 			safeGet<const String &>(value),

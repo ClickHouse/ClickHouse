@@ -2,29 +2,29 @@
 
 #include <string.h> // memcpy
 
-#include <DB/Columns/ColumnFixedArray.h>
-#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/IColumn.h>
 
 
 namespace DB
 {
 
 /** Cтолбeц значений типа "строка фиксированной длины".
-  * Отличается от массива UInt8 фиксированной длины только получением элемента (в виде String, а не Array)
   * Если вставить строку меньшей длины, то она будет дополнена нулевыми байтами.
   */
-class ColumnFixedString : public ColumnFixedArray
+class ColumnFixedString : public IColumn
 {
+public:
+	typedef std::vector<UInt8> Chars_t;
+
 private:
-	ColumnUInt8::Container_t & char_data;
+	/// Размер строк.
+	const size_t n;
+	/// Байты строк, уложенные подряд. Строки хранятся без завершающего нулевого байта.
+	Chars_t chars;
 
 public:
 	/** Создать пустой столбец строк фиксированной длины n */
-	ColumnFixedString(size_t n)
-		: ColumnFixedArray(new ColumnUInt8(), n),
-		char_data(static_cast<ColumnUInt8 &>(*data).getData())
-	{
-	}
+	ColumnFixedString(size_t n_) : n(n_) {}
 
 	std::string getName() const { return "ColumnFixedString"; }
 
@@ -32,20 +32,30 @@ public:
 	{
 		return new ColumnFixedString(n);
 	}
+
+	size_t size() const
+	{
+		return chars.size() / n;
+	}
+	
+	size_t byteSize() const
+	{
+		return chars.size() + sizeof(n);
+	}
 	
 	Field operator[](size_t index) const
 	{
-		return String(reinterpret_cast<const char *>(&char_data[n * index]), n);
+		return String(reinterpret_cast<const char *>(&chars[n * index]), n);
 	}
 
 	void get(size_t index, Field & res) const
 	{
-		res.assignString(reinterpret_cast<const char *>(&char_data[n * index]), n);
+		res.assignString(reinterpret_cast<const char *>(&chars[n * index]), n);
 	}
 
 	StringRef getDataAt(size_t index) const
 	{
-		return StringRef(&char_data[n * index], n);
+		return StringRef(&chars[n * index], n);
 	}
 
 	void insert(const Field & x)
@@ -55,9 +65,9 @@ public:
 		if (s.size() > n)
 			throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
 		
-		size_t old_size = char_data.size();
-		char_data.resize(old_size + n);
-		memcpy(&char_data[old_size], s.data(), s.size());
+		size_t old_size = chars.size();
+		chars.resize(old_size + n);
+		memcpy(&chars[old_size], s.data(), s.size());
 	}
 
 	void insertFrom(const IColumn & src_, size_t index)
@@ -67,27 +77,27 @@ public:
 		if (n != src.getN())
 			throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN);
 
-		size_t old_size = char_data.size();
-		char_data.resize(old_size + n);
-		memcpy(&char_data[old_size], &src.char_data[n * index], n);
+		size_t old_size = chars.size();
+		chars.resize(old_size + n);
+		memcpy(&chars[old_size], &src.chars[n * index], n);
 	}
 
 	void insertData(const char * pos, size_t length)
 	{
-		size_t old_size = char_data.size();
-		char_data.resize(old_size + n);
-		memcpy(&char_data[old_size], pos, n);
+		size_t old_size = chars.size();
+		chars.resize(old_size + n);
+		memcpy(&chars[old_size], pos, n);
 	}
 
 	void insertDefault()
 	{
-		char_data.resize(char_data.size() + n);
+		chars.resize(chars.size() + n);
 	}
 
 	int compareAt(size_t p1, size_t p2, const IColumn & rhs_) const
 	{
 		const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
-		return memcmp(&char_data[p1 * n], &rhs.char_data[p2 * n], n);
+		return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
 	}
 
 	struct less
@@ -96,7 +106,7 @@ public:
 		less(const ColumnFixedString & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			return 0 > memcmp(&parent.char_data[lhs * parent.n], &parent.char_data[rhs * parent.n], parent.n);
+			return 0 > memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
 		}
 	};
 
@@ -115,48 +125,54 @@ public:
 	{
 		ColumnFixedString * res_ = new ColumnFixedString(n);
 		ColumnPtr res = res_;
-		res_->data = data->cut(n * start, n * length);
+		res_->chars.resize(n * length);
+		memcpy(&res_->chars[0], &chars[n * start], n * length);
 		return res;
 	}
 
-	ColumnPtr filter(const Filter & filt) const
+	ColumnPtr filter(const IColumn::Filter & filt) const
 	{
-		size_t size = this->size();
-		if (size != filt.size())
+		size_t col_size = size();
+		if (col_size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		if (size == 0)
-			return new ColumnFixedString(n);
-
-		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
-		Filter nested_filt(size * n);
-		for (size_t i = 0; i < size; ++i)
-			if (filt[i])
-				memset(&nested_filt[i * n], 1, n);
 
 		ColumnFixedString * res_ = new ColumnFixedString(n);
 		ColumnPtr res = res_;
-		res_->data = data->filter(nested_filt);
+		res_->chars.reserve(chars.size());
+
+		size_t offset = 0;
+		for (size_t i = 0; i < col_size; ++i, offset += n)
+		{
+			if (filt[i])
+			{
+				res_->chars.resize(res_->chars.size() + n);
+				memcpy(&res_->chars[res_->chars.size() - n], &chars[offset], n);
+			}
+		}
+
 		return res;
 	}
 
 	ColumnPtr permute(const Permutation & perm) const
 	{
-		size_t size = this->size();
-		if (size != perm.size())
+		size_t col_size = size();
+		if (col_size != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		if (size == 0)
+		if (col_size == 0)
 			return new ColumnFixedString(n);
-
-		Permutation nested_perm(size * n);
-		for (size_t i = 0; i < size; ++i)
-			for (size_t j = 0; j < n; ++j)
-				nested_perm[i * n + j] = perm[i] * n + j;
 
 		ColumnFixedString * res_ = new ColumnFixedString(n);
 		ColumnPtr res = res_;
-		res_->data = data->permute(nested_perm);
+
+		Chars_t & res_chars = res_->chars;
+
+		res_chars.resize(chars.size());
+
+		size_t offset = 0;
+		for (size_t i = 0; i < col_size; ++i, offset += n)
+			memcpy(&res_chars[offset], &chars[perm[i] * n], n);
+
 		return res;
 	}
 
@@ -169,7 +185,7 @@ public:
 		ColumnFixedString * res_ = new ColumnFixedString(n);
 		ColumnPtr res = res_;
 		
-		ColumnUInt8::Container_t & res_chars = res_->char_data;
+		Chars_t & res_chars = res_->chars;
 		res_chars.reserve(n * offsets.back());
 
 		Offset_t prev_offset = 0;
@@ -180,11 +196,17 @@ public:
 
 			for (size_t j = 0; j < size_to_replicate; ++j)
 				for (size_t k = 0; k < n; ++k)
-					res_chars.push_back(char_data[i * n + k]);
+					res_chars.push_back(chars[i * n + k]);
 		}
 
 		return res;
 	}
+
+
+	Chars_t & getChars() { return chars; }
+	const Chars_t & getChars() const { return chars; }
+
+	size_t getN() const { return n; }
 };
 
 

@@ -42,7 +42,7 @@ struct PositionImpl
 	typedef UInt64 ResultType;
 
 	/// Предполагается, что res нужного размера и инициализирован нулями.
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
 		std::vector<UInt64> & res)
 	{
@@ -84,7 +84,7 @@ struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
 	
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
 		std::vector<UInt64> & res)
 	{
@@ -261,7 +261,7 @@ struct MatchImpl
 {
 	typedef UInt8 ResultType;
 
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		const std::string & pattern,
 		std::vector<UInt8> & res)
 	{
@@ -315,9 +315,9 @@ struct MatchImpl
 
 struct ExtractImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 					   const std::string & pattern,
-					   std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+					   std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size()  / 5);
 		res_offsets.resize(offsets.size());
@@ -405,7 +405,7 @@ public:
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->size());
-			Impl::vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(), col_needle->getData(), vec_res);
+			Impl::vector(col->getChars(), col->getOffsets(), col_needle->getData(), vec_res);
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
@@ -467,17 +467,17 @@ public:
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
 			
-			ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData();
+			ColumnString::Chars_t & vec_res = col_res->getChars();
 			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
-			Impl::vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(), col_needle->getData(), vec_res, offsets_res);
+			Impl::vector(col->getChars(), col->getOffsets(), col_needle->getData(), vec_res, offsets_res);
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
 			const std::string & data = col->getData();
 			std::vector<UInt8> vdata(data.c_str(), data.c_str() + data.size() + 1);
-			ColumnArray::Offsets_t offsets(1, vdata.size());
+			ColumnString::Offsets_t offsets(1, vdata.size());
 			std::vector<UInt8> res_vdata;
-			ColumnArray::Offsets_t res_offsets;
+			ColumnString::Offsets_t res_offsets;
 			Impl::vector(vdata, offsets, col_needle->getData(), res_vdata, res_offsets);
 			
 			std::string res = std::string(res_vdata.begin(), res_vdata.end() - 1);

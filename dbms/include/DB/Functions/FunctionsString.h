@@ -9,6 +9,7 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
@@ -45,11 +46,11 @@ namespace DB
 template <bool negative = false>
 struct EmptyImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		std::vector<UInt8> & res)
 	{
 		size_t size = offsets.size();
-		ColumnArray::Offset_t prev_offset = 1;
+		ColumnString::Offset_t prev_offset = 1;
 		for (size_t i = 0; i < size; ++i)
 		{
 			res[i] = negative ^ (offsets[i] == prev_offset);
@@ -73,10 +74,10 @@ struct EmptyImpl
 		res = negative ^ (data.empty());
 	}
 
-	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt8> & res)
+	static void array(const ColumnString::Offsets_t & offsets, std::vector<UInt8> & res)
 	{
 		size_t size = offsets.size();
-		ColumnArray::Offset_t prev_offset = 0;
+		ColumnString::Offset_t prev_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			res[i] = negative ^ (offsets[i] == prev_offset);
@@ -95,7 +96,7 @@ struct EmptyImpl
   */
 struct LengthImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
@@ -121,7 +122,7 @@ struct LengthImpl
 		res = data.size();
 	}
 
-	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
+	static void array(const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -143,12 +144,12 @@ struct LengthImpl
   */
 struct LengthUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		std::vector<UInt64> & res)
 	{
 		size_t size = offsets.size();
 
-		ColumnArray::Offset_t prev_offset = 0;
+		ColumnString::Offset_t prev_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			res[i] = 0;
@@ -186,7 +187,7 @@ struct LengthUTF8Impl
 				++res;
 	}
 
-	static void array(const ColumnArray::Offsets_t & offsets, std::vector<UInt64> & res)
+	static void array(const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
 	{
 		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -203,8 +204,8 @@ struct LengthUTF8Impl
 template <int F(int)>
 struct LowerUpperImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
@@ -242,8 +243,8 @@ private:
 template <int F(int)>
 struct LowerUpperUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
@@ -291,14 +292,14 @@ private:
   */
 struct ReverseImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
 		size_t size = offsets.size();
 
-		ColumnArray::Offset_t prev_offset = 0;
+		ColumnString::Offset_t prev_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
@@ -334,17 +335,17 @@ struct ReverseImpl
   */
 struct ReverseUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets = offsets;
 		size_t size = offsets.size();
 
-		ColumnArray::Offset_t prev_offset = 0;
+		ColumnString::Offset_t prev_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			ColumnArray::Offset_t j = prev_offset;
+			ColumnString::Offset_t j = prev_offset;
 			while (j < offsets[i] - 1)
 			{
 				if (data[j] < 0xBF)
@@ -417,17 +418,17 @@ struct ReverseUTF8Impl
 struct ConcatImpl
 {
 	static void vector_vector(
-		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & a_data, const ColumnString::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, const ColumnString::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b_data.size() - size);
 		c_offsets.resize(size);
 
-		ColumnArray::Offset_t offset = 0;
-		ColumnArray::Offset_t a_offset = 0;
-		ColumnArray::Offset_t b_offset = 0;
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
+		ColumnString::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
@@ -443,17 +444,17 @@ struct ConcatImpl
 	}
 
 	static void vector_fixed_vector(
-		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
-		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & a_data, const ColumnString::Offsets_t & a_offsets,
+		const std::vector<UInt8> & b_data, ColumnString::Offset_t b_n,
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b_data.size());
 		c_offsets.resize(size);
 
-		ColumnArray::Offset_t offset = 0;
-		ColumnArray::Offset_t a_offset = 0;
-		ColumnArray::Offset_t b_offset = 0;
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
+		ColumnString::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
@@ -471,9 +472,9 @@ struct ConcatImpl
 	}
 
 	static void vector_constant(
-		const std::vector<UInt8> & a_data, const ColumnArray::Offsets_t & a_offsets,
+		const std::vector<UInt8> & a_data, const ColumnString::Offsets_t & a_offsets,
 		const std::string & b,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b.size() * size);
@@ -482,8 +483,8 @@ struct ConcatImpl
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += b.size() * (i + 1);
 
-		ColumnArray::Offset_t offset = 0;
-		ColumnArray::Offset_t a_offset = 0;
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
@@ -496,17 +497,17 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_vector(
-		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & a_data, ColumnString::Offset_t a_n,
+		const std::vector<UInt8> & b_data, const ColumnString::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = b_offsets.size();
 		c_data.resize(a_data.size() + b_data.size());
 		c_offsets.resize(size);
 
-		ColumnArray::Offset_t offset = 0;
-		ColumnArray::Offset_t a_offset = 0;
-		ColumnArray::Offset_t b_offset = 0;
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
+		ColumnString::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], &a_data[a_offset], a_n);
@@ -522,13 +523,13 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_fixed_vector(
-		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
-		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		const std::vector<UInt8> & a_data, ColumnString::Offset_t a_n,
+		const std::vector<UInt8> & b_data, ColumnString::Offset_t b_n,
 		std::vector<UInt8> & c_data)
 	{
 		size_t size = a_data.size() / a_n;
 		c_data.resize(a_data.size() + b_data.size());
-		ColumnArray::Offset_t c_n = a_n + b_n;
+		ColumnString::Offset_t c_n = a_n + b_n;
 
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -538,13 +539,13 @@ struct ConcatImpl
 	}
 
 	static void fixed_vector_constant(
-		const std::vector<UInt8> & a_data, ColumnArray::Offset_t a_n,
+		const std::vector<UInt8> & a_data, ColumnString::Offset_t a_n,
 		const std::string & b,
 		std::vector<UInt8> & c_data)
 	{
 		size_t size = a_data.size() / a_n;
-		ColumnArray::Offset_t b_n = b.size();
-		ColumnArray::Offset_t c_n = a_n + b_n;
+		ColumnString::Offset_t b_n = b.size();
+		ColumnString::Offset_t c_n = a_n + b_n;
 		c_data.resize(a_data.size() + size * b_n);
 
 		for (size_t i = 0; i < size; ++i)
@@ -556,8 +557,8 @@ struct ConcatImpl
 
 	static void constant_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, const ColumnArray::Offsets_t & b_offsets,
-		std::vector<UInt8> & c_data, ColumnArray::Offsets_t & c_offsets)
+		const std::vector<UInt8> & b_data, const ColumnString::Offsets_t & b_offsets,
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = b_offsets.size();
 		c_data.resize(b_data.size() + a.size() * size);
@@ -566,8 +567,8 @@ struct ConcatImpl
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += a.size() * (i + 1);
 
-		ColumnArray::Offset_t offset = 0;
-		ColumnArray::Offset_t b_offset = 0;
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t b_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			memcpy(&c_data[offset], a.data(), a.size());
@@ -581,12 +582,12 @@ struct ConcatImpl
 
 	static void constant_fixed_vector(
 		const std::string & a,
-		const std::vector<UInt8> & b_data, ColumnArray::Offset_t b_n,
+		const std::vector<UInt8> & b_data, ColumnString::Offset_t b_n,
 		std::vector<UInt8> & c_data)
 	{
 		size_t size = b_data.size() / b_n;
-		ColumnArray::Offset_t a_n = a.size();
-		ColumnArray::Offset_t c_n = a_n + b_n;
+		ColumnString::Offset_t a_n = a.size();
+		ColumnString::Offset_t c_n = a_n + b_n;
 		c_data.resize(size * a_n + b_data.size());
 
 		for (size_t i = 0; i < size; ++i)
@@ -610,16 +611,16 @@ struct ConcatImpl
   */
 struct SubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		size_t start, size_t length,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		ColumnArray::Offset_t prev_offset = 0;
-		ColumnArray::Offset_t res_offset = 0;
+		ColumnString::Offset_t prev_offset = 0;
+		ColumnString::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
 			if (start + prev_offset >= offsets[i] + 1)
@@ -672,22 +673,22 @@ struct SubstringImpl
   */
 struct SubstringUTF8Impl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets,
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
 		size_t start, size_t length,
-		std::vector<UInt8> & res_data, ColumnArray::Offsets_t & res_offsets)
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		ColumnArray::Offset_t prev_offset = 0;
-		ColumnArray::Offset_t res_offset = 0;
+		ColumnString::Offset_t prev_offset = 0;
+		ColumnString::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			ColumnArray::Offset_t j = prev_offset;
-			ColumnArray::Offset_t pos = 1;
-			ColumnArray::Offset_t bytes_start = 0;
-			ColumnArray::Offset_t bytes_length = 0;
+			ColumnString::Offset_t j = prev_offset;
+			ColumnString::Offset_t pos = 1;
+			ColumnString::Offset_t bytes_start = 0;
+			ColumnString::Offset_t bytes_length = 0;
 			while (j < offsets[i] - 1)
 			{
 				if (pos == start)
@@ -729,7 +730,7 @@ struct SubstringUTF8Impl
 		}
 	}
 
-	static void vector_fixed(const std::vector<UInt8> & data, ColumnArray::Offset_t n,
+	static void vector_fixed(const std::vector<UInt8> & data, ColumnString::Offset_t n,
 		size_t start, size_t length,
 		std::vector<UInt8> & res_data)
 	{
@@ -743,10 +744,10 @@ struct SubstringUTF8Impl
 		if (start + length > data.size() + 1)
 			throw Exception("Index out of bound for function substring of constant value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		ColumnArray::Offset_t j = 0;
-		ColumnArray::Offset_t pos = 1;
-		ColumnArray::Offset_t bytes_start = 0;
-		ColumnArray::Offset_t bytes_length = 0;
+		ColumnString::Offset_t j = 0;
+		ColumnString::Offset_t pos = 1;
+		ColumnString::Offset_t bytes_start = 0;
+		ColumnString::Offset_t bytes_length = 0;
 		while (j < data.size())
 		{
 			if (pos == start)
@@ -812,7 +813,7 @@ public:
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->size());
-			Impl::vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(), vec_res);
+			Impl::vector(col->getChars(), col->getOffsets(), vec_res);
 		}
 		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
 		{
@@ -820,7 +821,7 @@ public:
 			if ("lengthUTF8" != getName())
 			{
 				ResultType res = 0;
-				Impl::vector_fixed_to_constant(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(), res);
+				Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
 
 				ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
 				block.getByPosition(result).column = col_res;
@@ -832,7 +833,7 @@ public:
 
 				typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 				vec_res.resize(col->size());
-				Impl::vector_fixed_to_vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(), vec_res);
+				Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
 			}
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
@@ -901,15 +902,15 @@ public:
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
-			Impl::vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(),
-				dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData(), col_res->getOffsets());
+			Impl::vector(col->getChars(), col->getOffsets(),
+				col_res->getChars(), col_res->getOffsets());
 		}
 		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
 		{
 			ColumnFixedString * col_res = new ColumnFixedString(col->getN());
 			block.getByPosition(result).column = col_res;
-			Impl::vector_fixed(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(),
-				dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData());
+			Impl::vector_fixed(col->getChars(), col->getN(),
+				col_res->getChars());
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
@@ -984,21 +985,21 @@ public:
 				{
 					ColumnFixedString * c_res = new ColumnFixedString(c0_fixed_string->getN() + c1_fixed_string->getN());
 					block.getByPosition(result).column = c_res;
-					ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+					ColumnString::Chars_t & vec_res = c_res->getChars();
 					
 					Impl::fixed_vector_fixed_vector(
-						dynamic_cast<ColumnUInt8 &>(c0_fixed_string->getData()).getData(), c0_fixed_string->getN(),
-						dynamic_cast<ColumnUInt8 &>(c1_fixed_string->getData()).getData(), c1_fixed_string->getN(),
+						c0_fixed_string->getChars(), c0_fixed_string->getN(),
+						c1_fixed_string->getChars(), c1_fixed_string->getN(),
 						vec_res);
 				}
 				else if (c0_fixed_string && c1_const)
 				{
 					ColumnFixedString * c_res = new ColumnFixedString(c0_fixed_string->getN() + c1_const->getData().size());
 					block.getByPosition(result).column = c_res;
-					ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+					ColumnString::Chars_t & vec_res = c_res->getChars();
 					
 					Impl::fixed_vector_constant(
-						dynamic_cast<ColumnUInt8 &>(c0_fixed_string->getData()).getData(), c0_fixed_string->getN(),
+						c0_fixed_string->getChars(), c0_fixed_string->getN(),
 						c1_const->getData(),
 						vec_res);
 				}
@@ -1006,11 +1007,11 @@ public:
 				{
 					ColumnFixedString * c_res = new ColumnFixedString(c1_fixed_string->getN() + c0_const->getData().size());
 					block.getByPosition(result).column = c_res;
-					ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+					ColumnString::Chars_t & vec_res = c_res->getChars();
 					
 					Impl::constant_fixed_vector(
 						c0_const->getData(),
-						dynamic_cast<ColumnUInt8 &>(c1_fixed_string->getData()).getData(), c1_fixed_string->getN(),
+						c1_fixed_string->getChars(), c1_fixed_string->getN(),
 						vec_res);
 				}
 			}
@@ -1018,33 +1019,33 @@ public:
 			{
 				ColumnString * c_res = new ColumnString;
 				block.getByPosition(result).column = c_res;
-				ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(c_res->getData()).getData();
+				ColumnString::Chars_t & vec_res = c_res->getChars();
 				ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
 				
 				if (c0_string && c1_string)
 					Impl::vector_vector(
-						dynamic_cast<ColumnUInt8 &>(c0_string->getData()).getData(), c0_string->getOffsets(),
-						dynamic_cast<ColumnUInt8 &>(c1_string->getData()).getData(), c1_string->getOffsets(),
+						c0_string->getChars(), c0_string->getOffsets(),
+						c1_string->getChars(), c1_string->getOffsets(),
 						vec_res, offsets_res);
 				else if (c0_string && c1_fixed_string)
 					Impl::vector_fixed_vector(
-						dynamic_cast<ColumnUInt8 &>(c0_string->getData()).getData(), c0_string->getOffsets(),
-						dynamic_cast<ColumnUInt8 &>(c1_fixed_string->getData()).getData(), c1_fixed_string->getN(),
+						c0_string->getChars(), c0_string->getOffsets(),
+						c1_fixed_string->getChars(), c1_fixed_string->getN(),
 						vec_res, offsets_res);
 				else if (c0_string && c1_const)
 					Impl::vector_constant(
-						dynamic_cast<ColumnUInt8 &>(c0_string->getData()).getData(), c0_string->getOffsets(),
+						c0_string->getChars(), c0_string->getOffsets(),
 						c1_const->getData(),
 						vec_res, offsets_res);
 				else if (c0_fixed_string && c1_string)
 					Impl::fixed_vector_vector(
-						dynamic_cast<ColumnUInt8 &>(c0_fixed_string->getData()).getData(), c0_fixed_string->getN(),
-						dynamic_cast<ColumnUInt8 &>(c1_string->getData()).getData(), c1_string->getOffsets(),
+						c0_fixed_string->getChars(), c0_fixed_string->getN(),
+						c1_string->getChars(), c1_string->getOffsets(),
 						vec_res, offsets_res);
 				else if (c0_const && c1_string)
 					Impl::constant_vector(
 						c0_const->getData(),
-						dynamic_cast<ColumnUInt8 &>(c1_string->getData()).getData(), c1_string->getOffsets(),
+						c1_string->getChars(), c1_string->getOffsets(),
 						vec_res, offsets_res);
 				else
 					throw Exception("Illegal columns "
@@ -1110,17 +1111,17 @@ public:
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
-			Impl::vector(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getOffsets(),
+			Impl::vector(col->getChars(), col->getOffsets(),
 				start, length,
-				dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData(), col_res->getOffsets());
+				col_res->getChars(), col_res->getOffsets());
 		}
 		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column_string))
 		{
 			ColumnFixedString * col_res = new ColumnFixedString(length);
 			block.getByPosition(result).column = col_res;
-			Impl::vector_fixed(dynamic_cast<const ColumnUInt8 &>(col->getData()).getData(), col->getN(),
+			Impl::vector_fixed(col->getChars(), col->getN(),
 				start, length,
-				dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData());
+				col_res->getChars());
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column_string))
 		{

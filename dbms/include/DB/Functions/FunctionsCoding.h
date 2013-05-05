@@ -104,7 +104,7 @@ public:
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
 			
-			ColumnUInt8::Container_t & vec_res = dynamic_cast<ColumnUInt8 &>(col_res->getData()).getData();
+			ColumnString::Chars_t & vec_res = col_res->getChars();
 			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 			
 			vec_res.resize(vec_in.size() * 16); /// самое длинное значение: 255.255.255.255\0
@@ -201,7 +201,7 @@ public:
 			ColumnVector<UInt32>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->size());
 			
-			const ColumnString::DataVector_t & vec_src = col->getDataVector();
+			const ColumnString::Chars_t & vec_src = col->getChars();
 			const ColumnString::Offsets_t & offsets_src = col->getOffsets();
 			size_t prev_offset = 0;
 			
@@ -285,7 +285,7 @@ public:
 		{
 			ColumnString * col_str = new ColumnString;
 			col_res = col_str;
-			ColumnString::DataVector_t & out_vec = col_str->getDataVector();
+			ColumnString::Chars_t & out_vec = col_str->getChars();
 			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
 			
 			const typename ColumnVector<T>::Container_t & in_vec = col_vec->getData();
@@ -350,10 +350,10 @@ public:
 		{
 			ColumnString * col_str = new ColumnString;
 			col_res = col_str;
-			ColumnString::DataVector_t & out_vec = col_str->getDataVector();
+			ColumnString::Chars_t & out_vec = col_str->getChars();
 			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
 			
-			const ColumnString::DataVector_t & in_vec = col_str_in->getDataVector();
+			const ColumnString::Chars_t & in_vec = col_str_in->getChars();
 			const ColumnString::Offsets_t & in_offsets = col_str_in->getOffsets();
 			
 			size_t size = in_offsets.size();
@@ -477,10 +477,10 @@ public:
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
 			
-			ColumnString::DataVector_t & out_vec = col_res->getDataVector();
+			ColumnString::Chars_t & out_vec = col_res->getChars();
 			ColumnString::Offsets_t & out_offsets = col_res->getOffsets();
 			
-			const ColumnString::DataVector_t & in_vec = col->getDataVector();
+			const ColumnString::Chars_t & in_vec = col->getChars();
 			const ColumnString::Offsets_t & in_offsets = col->getOffsets();
 			
 			size_t size = in_offsets.size();

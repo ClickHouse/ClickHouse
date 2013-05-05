@@ -245,12 +245,12 @@ public:
 		ColumnArray * col_res = new ColumnArray(new ColumnString);
 		ColumnString & res_strings = dynamic_cast<ColumnString &>(col_res->getData());
 		ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
-		ColumnUInt8::Container_t & res_strings_chars = dynamic_cast<ColumnUInt8 &>(res_strings.getData()).getData();
+		ColumnString::Chars_t & res_strings_chars = res_strings.getChars();
 		ColumnString::Offsets_t & res_strings_offsets = res_strings.getOffsets();
 
 		if (col_str)
 		{
-			const ColumnUInt8::Container_t & src_chars = dynamic_cast<const ColumnUInt8 &>(col_str->getData()).getData();
+			const ColumnString::Chars_t & src_chars = col_str->getChars();
 			const ColumnString::Offsets_t & src_offsets = col_str->getOffsets();
 
 			res_offsets.reserve(src_offsets.size());

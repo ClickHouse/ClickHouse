@@ -2,7 +2,6 @@
 
 #include <DB/Core/Defines.h>
 
-#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
@@ -42,13 +41,12 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
-	const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_array.getData()).getData();
-	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+	const ColumnString & column_string = dynamic_cast<const ColumnString &>(column);
+	const ColumnString::Chars_t & data = column_string.getChars();
+	const ColumnString::Offsets_t & offsets = column_string.getOffsets();
 
-	size_t array_size = column_array.size();
 	size_t size = column.size();
-	if (!array_size)
+	if (!size)
 		return;
 
 	size_t end = limit && offset + limit < size
@@ -75,9 +73,9 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 
 void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
-	ColumnUInt8::Container_t & data = dynamic_cast<ColumnUInt8 &>(column_array.getData()).getData();
-	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+	ColumnString & column_string = dynamic_cast<ColumnString &>(column);
+	ColumnString::Chars_t & data = column_string.getChars();
+	ColumnString::Offsets_t & offsets = column_string.getOffsets();
 
 	data.reserve(limit * DBMS_APPROX_STRING_SIZE);
 	offsets.reserve(limit);

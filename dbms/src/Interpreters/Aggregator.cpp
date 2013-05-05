@@ -290,7 +290,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 			{
 				const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-	            const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+	            const ColumnString::Chars_t & data = column_string->getChars();
 
 				/// Для всех строчек
 				for (size_t i = 0; i < rows; ++i)
@@ -333,7 +333,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
 			{
 				size_t n = column_string->getN();
-				const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+				const ColumnFixedString::Chars_t & data = column_string->getChars();
 
 				/// Для всех строчек
 				for (size_t i = 0; i < rows; ++i)
@@ -861,7 +861,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
             {
                 const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-                const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+                const ColumnString::Chars_t & data = column_string->getChars();
 
 				/// Для всех строчек
 				for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
@@ -890,7 +890,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
             {
                 size_t n = column_string->getN();
-                const ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(column_string->getData()).getData();
+                const ColumnFixedString::Chars_t & data = column_string->getChars();
 
 				/// Для всех строчек
 				for (size_t i = with_totals ? 1 : 0; i < rows; ++i)

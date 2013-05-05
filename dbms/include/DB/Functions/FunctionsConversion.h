@@ -155,7 +155,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 			block.getByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
-			ColumnUInt8::Container_t & data_to = dynamic_cast<ColumnUInt8 &>(col_to->getData()).getData();
+			ColumnString::Chars_t & data_to = col_to->getChars();
 			ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
 			size_t size = vec_from.size();
 			data_to.resize(size * 2);
@@ -216,7 +216,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;
 
-			const ColumnUInt8::Container_t & data_from = dynamic_cast<const ColumnUInt8 &>(col_from->getData()).getData();
+			const ColumnString::Chars_t & data_from = col_from->getChars();
 			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
 			size_t size = col_from->size();
 			vec_to.resize(size);

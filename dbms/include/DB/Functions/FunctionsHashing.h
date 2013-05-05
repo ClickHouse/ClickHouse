@@ -103,7 +103,7 @@ public:
 			ColumnUInt64 * col_to = new ColumnUInt64;
 			block.getByPosition(result).column = col_to;
 
-			const typename ColumnUInt8::Container_t & data = dynamic_cast<const ColumnUInt8 &>(col_from->getData()).getData();
+			const typename ColumnString::Chars_t & data = col_from->getChars();
 			const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
 			typename ColumnUInt64::Container_t & vec_to = col_to->getData();
 			size_t size = offsets.size();
