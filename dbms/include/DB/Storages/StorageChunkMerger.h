@@ -26,7 +26,7 @@ public:
 		const std::string & destination_database_, /// БД для создаваемых таблиц типа Chunks.
 		const std::string & destination_name_prefix_, /// Префикс имен создаваемых таблиц типа Chunks.
 		size_t chunks_to_merge_,			/// Сколько чанков сливать в одну группу.
-		Context & context_);				/// Известные таблицы.
+		Context & context_);			/// Известные таблицы.
 	
 	std::string getName() const { return "ChunkMerger"; }
 	std::string getTableName() const { return name; }
@@ -56,7 +56,7 @@ private:
 	String destination_database;
 	std::string destination_name_prefix;
 	size_t chunks_to_merge;
-	Context context;
+	Context & context;
 	
 	bool thread_should_quit;
 	boost::thread merge_thread;

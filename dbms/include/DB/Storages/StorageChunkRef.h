@@ -12,7 +12,7 @@ namespace DB
 class StorageChunkRef : public IStorage
 {
 public:
-	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
+	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
 	
 	std::string getName() const { return "ChunkRef"; }
 	std::string getTableName() const { return name; }
@@ -35,9 +35,9 @@ public:
 private:
 	String name;
 	NamesAndTypesListPtr columns;
-	Context context;
+	const Context & context;
 	
-	StorageChunkRef(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
+	StorageChunkRef(const std::string & name_, NamesAndTypesListPtr columns_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
 	
 	StorageChunks * getSource();
 };

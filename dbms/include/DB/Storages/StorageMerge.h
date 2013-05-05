@@ -20,7 +20,7 @@ public:
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
-		Context & context_);				/// Известные таблицы.
+		const Context & context_);			/// Известные таблицы.
 
 	std::string getName() const { return "Merge"; }
 	std::string getTableName() const { return name; }
@@ -44,14 +44,14 @@ private:
 	NamesAndTypesListPtr columns;
 	String source_database;
 	OptimizedRegularExpression table_name_regexp;
-	Context context;
+	const Context & context;
 	
 	StorageMerge(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
 		const String & source_database_,
 		const String & table_name_regexp_,
-		Context & context_);
+		const Context & context_);
 };
 
 }

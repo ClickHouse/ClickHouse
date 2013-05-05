@@ -10,7 +10,7 @@ StorageMerge::StorageMerge(
 	NamesAndTypesListPtr columns_,
 	const String & source_database_,
 	const String & table_name_regexp_,
-	Context & context_)
+	const Context & context_)
 	: name(name_), columns(columns_), source_database(source_database_), table_name_regexp(table_name_regexp_), context(context_)
 {
 }
@@ -20,7 +20,7 @@ StoragePtr StorageMerge::create(
 	NamesAndTypesListPtr columns_,
 	const String & source_database_,
 	const String & table_name_regexp_,
-	Context & context_)
+	const Context & context_)
 {
 	return (new StorageMerge(name_, columns_, source_database_, table_name_regexp_, context_))->thisPtr();
 }

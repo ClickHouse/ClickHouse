@@ -385,11 +385,13 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		}
 		
 		QueryProcessingStage::Enum processed_stage;
+
+		Settings settings = context.getSettings();
 		
 		BlockInputStreams input_streams = src_storage->read(
 			src_column_names,
 			select_query_ptr,
-			context.getSettingsRef(),
+			settings,
 			processed_stage);
 		
 		BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
@@ -458,10 +460,10 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 		}
 	}
-	while(false);
-	
+	while (false);
+
 	new_storage->removeReference();
-	
+
 	LOG_TRACE(log, "Merged chunks.");
 }
 	

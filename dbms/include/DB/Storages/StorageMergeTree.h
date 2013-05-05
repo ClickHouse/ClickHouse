@@ -111,7 +111,7 @@ public:
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  */
 	static StoragePtr create(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-		Context & context_,
+		const Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
@@ -162,7 +162,7 @@ private:
 	String full_path;
 	NamesAndTypesListPtr columns;
 
-	Context context;
+	const Context & context;
 	ASTPtr primary_expr_ast;
 	String date_column_name;
 	ASTPtr sampling_expression;
@@ -288,7 +288,7 @@ private:
 	Poco::FastMutex data_parts_mutex;
 
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-				  Context & context_,
+				  const Context & context_,
 				  ASTPtr & primary_expr_ast_,
 				  const String & date_column_name_,
 				  const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.

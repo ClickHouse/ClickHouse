@@ -4,7 +4,7 @@
 namespace DB
 {
 	
-StoragePtr StorageChunkRef::create(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
+StoragePtr StorageChunkRef::create(const std::string & name_, NamesAndTypesListPtr columns_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
 {
 	return (new StorageChunkRef(name_, columns_, context_, source_database_name_, source_table_name_, attach))->thisPtr();
 }
@@ -31,7 +31,7 @@ void StorageChunkRef::dropImpl()
 	chunks->removeReference();
 }
 	
-StorageChunkRef::StorageChunkRef(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
+StorageChunkRef::StorageChunkRef(const std::string & name_, NamesAndTypesListPtr columns_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
 	: source_database_name(source_database_name_), source_table_name(source_table_name_), name(name_), columns(columns_), context(context_)
 {
 	if (!attach)

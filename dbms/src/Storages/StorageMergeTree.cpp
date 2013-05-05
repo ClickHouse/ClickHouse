@@ -52,7 +52,7 @@ namespace DB
 
 StorageMergeTree::StorageMergeTree(
 	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-	Context & context_,
+	const Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
@@ -82,8 +82,9 @@ StorageMergeTree::StorageMergeTree(
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
 
-	context.setColumns(*columns);
-	primary_expr = new Expression(primary_expr_ast, context);
+	Context tmp_context = context;
+	tmp_context.setColumns(*columns);
+	primary_expr = new Expression(primary_expr_ast, tmp_context);
 	primary_key_sample = primary_expr->getSampleBlock();
 
 	merge_threads = new boost::threadpool::pool(settings.merging_threads);
@@ -93,7 +94,7 @@ StorageMergeTree::StorageMergeTree(
 
 StoragePtr StorageMergeTree::create(
 	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-	Context & context_,
+	const Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
 	size_t index_granularity_,

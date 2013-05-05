@@ -239,7 +239,7 @@ private:
 	
 	RPN rpn;
 	
-	Context context;
+	const Context & context;
 	SortDescription sort_descr;
 	ColumnIndices pk_columns;
 };

@@ -21,7 +21,7 @@ public:
 							const std::string & name_,
 							const std::string & database_name_,
 							NamesAndTypesListPtr columns_,
-							Context & context,
+							Context & context_,
 							bool attach);
 	
 	void addReference();
@@ -64,7 +64,7 @@ private:
 	ChunkIndices chunk_indices;
 	
 	CounterInFile reference_counter;
-	Context context;
+	Context & context;
 	
 	Logger * log;
 	
