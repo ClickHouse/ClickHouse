@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
 		DB::DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions);
+		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions, false);
 		
 		{
 			Poco::Stopwatch stopwatch;
