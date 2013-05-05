@@ -1,5 +1,5 @@
 #include <pthread.h>
-#include <Yandex/optimization.h>
+#include <Yandex/likely.h>
 
 #include <Poco/Ext/ThreadNumber.h>
 

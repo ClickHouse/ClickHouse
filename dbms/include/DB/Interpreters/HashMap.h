@@ -8,7 +8,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Yandex/optimization.h>
+#include <Yandex/likely.h>
 
 #include <stats/IntHash.h>
 

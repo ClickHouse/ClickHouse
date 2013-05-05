@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#include <Yandex/optimization.h>
+#include <Yandex/likely.h>
 
 
 namespace DB

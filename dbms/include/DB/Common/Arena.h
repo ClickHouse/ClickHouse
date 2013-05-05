@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 #include <Poco/SharedPtr.h>
-#include <Yandex/optimization.h>
+#include <Yandex/likely.h>
 
 
 namespace DB
