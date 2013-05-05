@@ -4,6 +4,11 @@
 #include <boost/type_traits.hpp>
 #include <boost/utility/enable_if.hpp>
 
+#include <Yandex/optimization.h>
+
+#include <DB/Core/Types.h>
+#include <DB/IO/WriteBuffer.h>
+
 /// 20 цифр или 19 цифр и знак
 #define WRITE_HELPERS_MAX_INT_WIDTH 20U
 
@@ -171,13 +176,13 @@ namespace detail
 
 
 template <typename T>
-typename boost::enable_if<std::tr1::is_signed<T>, void>::type writeIntText(T x, WriteBuffer & buf)
+typename boost::disable_if<boost::is_unsigned<T>, void>::type writeIntText(T x, WriteBuffer & buf)
 {
 	detail::writeSIntText(x, buf);
 }
 
 template <typename T>
-typename boost::disable_if<std::tr1::is_signed<T>, void>::type writeIntText(T x, WriteBuffer & buf)
+typename boost::enable_if<boost::is_unsigned<T>, void>::type writeIntText(T x, WriteBuffer & buf)
 {
 	detail::writeUIntText(x, buf);
 }
