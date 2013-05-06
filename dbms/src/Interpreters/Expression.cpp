@@ -83,11 +83,11 @@ StoragePtr Expression::getTable()
 	{
 		if (select->table && !dynamic_cast<const ASTSelectQuery *>(&*select->table))
 		{
-			const String & database = select->database ? 
+			String database = select->database ? 
 				dynamic_cast<const ASTIdentifier &>(*select->database).name :
-				context.getCurrentDatabase();
+				"";
 			const String & table = dynamic_cast<const ASTIdentifier &>(*select->table).name;
-			return context.getTable(database, table);
+			return context.tryGetTable(database, table);
 		}
 	}
 	return StoragePtr();

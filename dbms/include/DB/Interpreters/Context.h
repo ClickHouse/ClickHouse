@@ -91,6 +91,7 @@ public:
 	void assertDatabaseDoesntExist(const String & database_name) const;
 
 	StoragePtr getTable(const String & database_name, const String & table_name) const;
+	StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
 	void addTable(const String & database_name, const String & table_name, StoragePtr table);
 	void addDatabase(const String & database_name);
 

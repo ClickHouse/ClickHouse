@@ -113,6 +113,23 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
 	return jt->second;
 }
 
+StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	
+	String db = database_name.empty() ? current_database : database_name;
+	
+	Databases::const_iterator it;
+	if (shared->databases.end() == (it = shared->databases.find(db)))
+		return StoragePtr();
+	
+	Tables::const_iterator jt;
+	if (it->second.end() == (jt = it->second.find(table_name)))
+		return StoragePtr();
+	
+	return jt->second;
+}
+
 
 void Context::addTable(const String & database_name, const String & table_name, StoragePtr table)
 {
