@@ -126,8 +126,8 @@ BlockInputStreams StorageMergeTree::read(
 	check(column_names_to_return);
 	processed_stage = QueryProcessingStage::FetchColumns;
 	
-	PKCondition key_condition(query, context, sort_descr);
-	PKCondition date_condition(query, context, SortDescription(1, SortColumnDescription(date_column_name, 1)));
+	PKCondition key_condition(query, context, *columns, sort_descr);
+	PKCondition date_condition(query, context, *columns, SortDescription(1, SortColumnDescription(date_column_name, 1)));
 
 	typedef std::vector<DataPartPtr> PartsList;
 	PartsList parts;

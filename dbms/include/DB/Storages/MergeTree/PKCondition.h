@@ -154,8 +154,8 @@ struct Range
 class PKCondition
 {
 public:
-	/// Не учитывает секцию SAMPLE.
-	PKCondition(ASTPtr query, const Context & context, const SortDescription & sort_descr);
+	/// Не учитывает секцию SAMPLE. all_columns - набор всех столбцов таблицы.
+	PKCondition(ASTPtr query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr);
 	
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
@@ -239,7 +239,6 @@ private:
 	
 	RPN rpn;
 	
-	const Context & context;
 	SortDescription sort_descr;
 	ColumnIndices pk_columns;
 };

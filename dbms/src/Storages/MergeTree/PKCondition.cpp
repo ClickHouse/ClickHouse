@@ -4,8 +4,8 @@
 namespace DB
 {
 
-PKCondition::PKCondition(ASTPtr query, const Context & context_, const SortDescription & sort_descr_)
-	: context(context_), sort_descr(sort_descr_)
+PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndTypesList & all_columns, const SortDescription & sort_descr_)
+	: sort_descr(sort_descr_)
 {
 	for (size_t i = 0; i < sort_descr.size(); ++i)
 	{
@@ -15,7 +15,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const SortDescr
 	/** Вычисление выражений, зависящих только от констант.
 	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
 	 */
-	Expression expr_for_constant_folding(query, context);
+	Expression expr_for_constant_folding(query, context_, all_columns);
 	Block block_with_constants;
 	
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
