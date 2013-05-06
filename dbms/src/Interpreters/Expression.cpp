@@ -246,7 +246,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	MapOfASTs tmp_map;
 	if (needSignRewrite())
 		sign_column_name = getSignColumnName();
-	addSemanticImpl(ast,tmp_map, tmp_set);
+	addSemanticImpl(ast, tmp_map, tmp_set);
 }
 
 
