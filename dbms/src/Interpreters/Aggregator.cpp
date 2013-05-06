@@ -240,6 +240,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
+		
 		if (result.type == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res = result.key64;
@@ -460,7 +461,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-		else
+		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 		/// Проверка ограничений.
@@ -536,6 +537,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 			for (size_t i = 0; i < keys_size; ++i)
 				key_columns[i]->insertDefault();
 	}
+	
 	if (data_variants.type == AggregatedDataVariants::KEY_64)
 	{
 		AggregatedDataWithUInt64Key & data = data_variants.key64;
@@ -592,7 +594,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
 		}
 	}
-	else
+	else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 	/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе
@@ -659,6 +661,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 				aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
 			}
 		}
+		
 		if (res->type == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res_data = res->key64;
@@ -751,7 +754,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					res_ptr = it->second;
 			}
 		}
-		else
+		else if (res->type != AggregatedDataVariants::WITHOUT_KEY)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
@@ -825,6 +828,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
 		}
+
 		if (result.type == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res = result.key64;
@@ -980,7 +984,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 					aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
-		else
+		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 		LOG_TRACE(log, "Merged aggregated block");
