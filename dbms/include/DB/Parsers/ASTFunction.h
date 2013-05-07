@@ -22,6 +22,8 @@ public:
 	ASTPtr parameters;
 	/// алиас, если есть
 	String alias;
+	/// оригинальное значение getColumnName() для функции, которую переписали этой функцией по rewrite правилу
+	String original_column_name;
 
 	/// сама функция
 	FunctionPtr function;

@@ -82,6 +82,7 @@ private:
 	void executePreLimit(			BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeUnion(				BlockInputStreams & streams, ExpressionPtr & expression);
 	void executeLimit(				BlockInputStreams & streams, ExpressionPtr & expression);
+	void executeOriginalColumnNameSubstitution(BlockInputStreams & streams, ExpressionPtr & expression);
 	
 
 	ASTPtr query_ptr;
