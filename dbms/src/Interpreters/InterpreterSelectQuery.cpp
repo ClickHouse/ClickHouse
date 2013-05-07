@@ -164,7 +164,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			if (need_aggregate)
 				executeAggregation(streams, expression);
 			
-			executeOriginalColumnNameSubstitution(streams, expression);
+			/// Подставим оригинальные имена столбцов, если запрос шел из distributed таблицы
+			if (settings.sign_rewrite && to_stage == QueryProcessingStage::WithMergeableState)
+				executeOriginalColumnNameSubstitution(streams, expression);
 		}
 		else if (from_stage <= QueryProcessingStage::WithMergeableState && to_stage > QueryProcessingStage::WithMergeableState)
 		{
@@ -585,8 +587,6 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 
 void InterpreterSelectQuery::executeOriginalColumnNameSubstitution(BlockInputStreams & streams, ExpressionPtr & expression)
 {
-	if (!settings.sign_rewrite)
-		return;
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 	{
 		BlockInputStreamPtr & stream = *it;
