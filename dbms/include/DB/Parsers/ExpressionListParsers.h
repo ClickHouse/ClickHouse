@@ -296,6 +296,24 @@ protected:
 };
 
 
+class ParserLambdaExpression : public IParserBase
+{
+private:
+	ParserPtr elem_parser;
+	
+public:
+	ParserLambdaExpression()
+		: elem_parser(new ParserTernaryOperatorExpression)
+	{
+	}
+	
+protected:
+	String getName() { return "lambda expression"; }
+	
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:

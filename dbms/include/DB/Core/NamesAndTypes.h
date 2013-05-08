@@ -17,5 +17,6 @@ using Poco::SharedPtr;
 typedef std::pair<std::string, DataTypePtr> NameAndTypePair;
 typedef std::list<NameAndTypePair> NamesAndTypesList;
 typedef SharedPtr<NamesAndTypesList> NamesAndTypesListPtr;
+typedef std::vector<NameAndTypePair> NamesAndTypes;
 
 }

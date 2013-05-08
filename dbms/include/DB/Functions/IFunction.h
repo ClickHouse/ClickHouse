@@ -32,6 +32,13 @@ public:
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	virtual DataTypePtr getReturnType(const DataTypes & arguments) const = 0;
+	
+	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
+	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений.
+	virtual void getLambdaArgumentTypes(DataTypes & arguments) const
+	{
+		throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 
 	/// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
 	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;

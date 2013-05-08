@@ -29,10 +29,10 @@ public:
 	FunctionPtr function;
 	/// или агрегатная функция
 	AggregateFunctionPtr aggregate_function;
+	/// или лямбда-выражение (ColumnExpression)
+	ColumnPtr column_expression;
 	/// тип возвращаемого значения
 	DataTypePtr return_type;
-	/// номер столбца возвращаемого значения
-	size_t return_column_number;
 
 	ASTFunction() {}
 	ASTFunction(StringRange range_) : IAST(range_) {}

@@ -201,6 +201,69 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 }
 
 
+bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	ParserWhiteSpaceOrComments ws;
+	ParserString arrow("->");
+	ParserString open("(");
+	ParserString close(")");
+	
+	Pos begin = pos;
+	
+	do
+	{
+		ASTPtr inner_arguments;
+		ASTPtr expression;
+		
+		if (!open.ignore(pos, end, expected))
+			break;
+		ws.ignore(pos, end, expected);
+		
+		if (!ParserList(new ParserIdentifier, new ParserString(",")).parse(pos, end, inner_arguments, expected))
+			break;
+		ws.ignore(pos, end, expected);
+		
+		if (!close.ignore(pos, end, expected))
+			break;
+		ws.ignore(pos, end, expected);
+		
+		if (!arrow.ignore(pos, end, expected))
+			break;
+		ws.ignore(pos, end, expected);
+		
+		if (!elem_parser->parse(pos, end, expression, expected))
+		{
+			pos = begin;
+			return false;
+		}
+		
+		/// lambda(tuple(inner_arguments), expression)
+		
+		ASTFunction * lambda = new ASTFunction;
+		node = lambda;
+		lambda->name = "lambda";
+		
+		ASTExpressionList * outer_arguments = new ASTExpressionList;
+		lambda->arguments = outer_arguments;
+		lambda->children.push_back(outer_arguments);
+		
+		ASTFunction * tuple = new ASTFunction;
+		outer_arguments->children.push_back(tuple);
+		tuple->name = "tuple";
+		tuple->arguments = inner_arguments;
+		tuple->children.push_back(inner_arguments);
+		
+		outer_arguments->children.push_back(expression);
+		
+		return true;
+	}
+	while (false);
+	
+	pos = begin;
+	return elem_parser->parse(pos, end, node, expected);
+}
+
+
 bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	ParserWhiteSpaceOrComments ws;
