@@ -15,10 +15,12 @@ StorageDistributed::StorageDistributed(
 	const String & remote_database_,
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
-	const Settings & settings)
+	const Settings & settings,
+	const String & sign_column_name_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
-	data_type_factory(data_type_factory_)
+	data_type_factory(data_type_factory_),
+	sign_column_name(sign_column_name_)
 {
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 		pools.push_back(new ConnectionPool(
@@ -34,10 +36,12 @@ StorageDistributed::StorageDistributed(
 	const String & remote_database_,
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
-	const Settings & settings)
+	const Settings & settings,
+	const String & sign_column_name_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
-	data_type_factory(data_type_factory_)
+	data_type_factory(data_type_factory_),
+	sign_column_name(sign_column_name_)
 {
 	for (AddressesWithFailover::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 	{
@@ -61,9 +65,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
-	const Settings & settings)
+	const Settings & settings,
+	const String & sign_column_name_)
 {
-	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings))->thisPtr();
+	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings, sign_column_name_))->thisPtr();
 }
 
 StoragePtr StorageDistributed::create(
@@ -73,9 +78,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
-	const Settings & settings)
+	const Settings & settings,
+	const String & sign_column_name_)
 {
-	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings))->thisPtr();
+	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings, sign_column_name_))->thisPtr();
 }
 
 
@@ -96,6 +102,10 @@ BlockInputStreams StorageDistributed::read(
 	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*modified_query_ast);
 	select.database = new ASTIdentifier(StringRange(), remote_database, ASTIdentifier::Database);
 	select.table 	= new ASTIdentifier(StringRange(), remote_table, 	ASTIdentifier::Table);
+	
+	/// Установим sign_rewrite = 0, чтобы второй раз не переписывать запрос
+	Settings new_settings = settings;
+	new_settings.sign_rewrite = false;
 
 	std::stringstream s;
 	formatAST(select, s, 0, false, true);
@@ -104,7 +114,7 @@ BlockInputStreams StorageDistributed::read(
 	BlockInputStreams res;
 
 	for (ConnectionPools::iterator it = pools.begin(); it != pools.end(); ++it)
-		res.push_back(new RemoteBlockInputStream((*it)->get(), modified_query, &settings, processed_stage));
+		res.push_back(new RemoteBlockInputStream((*it)->get(), modified_query, &new_settings, processed_stage));
 
 	return res;
 }

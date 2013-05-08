@@ -18,6 +18,7 @@
 #include <DB/Interpreters/Expression.h>
 
 #include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/StorageDistributed.h>
 
 
 namespace DB
@@ -97,15 +98,23 @@ StoragePtr Expression::getTable()
 bool Expression::needSignRewrite()
 {
 	if (settings.sign_rewrite && storage)
+	{
 		if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(&*storage))
 			return merge_tree->getName() == "CollapsingMergeTree";
+		if (const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&*storage))
+			return !distributed->getSignColumnName().empty();
+	}
 	return false;
 }
 
 
 String Expression::getSignColumnName()
 {
-	return dynamic_cast<const StorageMergeTree *>(&*storage)->getSignColumnName();
+	if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(&*storage))
+		return merge_tree->getSignColumnName();
+	if (const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&*storage))
+		return distributed->getSignColumnName();
+	return "";
 }
 
 

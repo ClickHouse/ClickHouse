@@ -31,7 +31,8 @@ public:
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const DataTypeFactory & data_type_factory_,
-		const Settings & settings);
+		const Settings & settings,
+		const String & sign_column_name_ = "");
 	
 	/// Использовать реплики для отказоустойчивости.
 	static StoragePtr create(
@@ -41,10 +42,12 @@ public:
 		const String & remote_database_,			/// БД на удалённых серверах.
 		const String & remote_table_,				/// Имя таблицы на удалённых серверах.
 		const DataTypeFactory & data_type_factory_,
-		const Settings & settings);
+		const Settings & settings,
+		const String & sign_column_name_ = "");
 
 	std::string getName() const { return "Distributed"; }
 	std::string getTableName() const { return name; }
+	std::string getSignColumnName() const { return sign_column_name; };
 	bool supportsSampling() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
@@ -70,7 +73,8 @@ private:
 		const String & remote_database_,
 		const String & remote_table_,
 		const DataTypeFactory & data_type_factory_,
-		const Settings & settings);
+		const Settings & settings,
+		const String & sign_column_name_ = "");
 	
 	/// Использовать реплики для отказоустойчивости.
 	StorageDistributed(
@@ -80,13 +84,15 @@ private:
 		const String & remote_database_,
 		const String & remote_table_,
 		const DataTypeFactory & data_type_factory_,
-		const Settings & settings);
+		const Settings & settings,
+		const String & sign_column_name_ = "");
 	
 	String name;
 	NamesAndTypesListPtr columns;
 	String remote_database;
 	String remote_table;
 	const DataTypeFactory & data_type_factory;
+	String sign_column_name;
 
 	/// Соединения с удалёнными серверами.
 	ConnectionPools pools;

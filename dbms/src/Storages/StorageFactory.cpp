@@ -137,20 +137,21 @@ StoragePtr StorageFactory::get(
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
 		if (args_func.size() != 1)
-			throw Exception("Storage Distributed requires exactly 3 parameters"
-				" - name of configuration section with list of remote servers, name of remote database and name of remote table.",
+			throw Exception("Storage Distributed requires 3 or 4 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table[, sign column name].",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 		
-		if (args.size() != 3)
-			throw Exception("Storage Distributed requires exactly 3 parameters"
-				" - name of configuration section with list of remote servers, name of remote database and name of remote table.",
+		if (args.size() != 3 && args.size() != 4)
+			throw Exception("Storage Distributed requires 3 or 4 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table[, sign column name].",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		String config_name 		= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		String remote_database 	= dynamic_cast<ASTIdentifier &>(*args[1]).name;
 		String remote_table 	= dynamic_cast<ASTIdentifier &>(*args[2]).name;
+		String sign_column_name	= args.size() == 4 ? dynamic_cast<ASTIdentifier &>(*args[3]).name : "";
 
 		/** В конфиге адреса либо находятся в узлах <node>:
 		  * <node>
@@ -210,10 +211,10 @@ StoragePtr StorageFactory::get(
 		
 		if (!addresses_with_failover.empty())
 			return StorageDistributed::create(table_name, columns, addresses_with_failover, remote_database, remote_table,
-										  context.getDataTypeFactory(), context.getSettings());
+										  context.getDataTypeFactory(), context.getSettings(), sign_column_name);
 		else if (!addresses.empty())
 			return StorageDistributed::create(table_name, columns, addresses, remote_database, remote_table,
-										  context.getDataTypeFactory(), context.getSettings());
+										  context.getDataTypeFactory(), context.getSettings(), sign_column_name);
 		else
 			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 	}
