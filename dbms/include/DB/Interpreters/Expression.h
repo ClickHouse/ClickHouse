@@ -109,10 +109,6 @@ public:
 	/** Пометить то, что должно быть вычислено до применения операции arrayJoin.
 	  */
 	void markBeforeArrayJoin(unsigned part_id);
-	
-	/** Заменить названия столбцов в блоке на их оригиналы до sign rewrite
-	 */
-	Block substituteOriginalColumnNames(Block & block);
 
 private:
 	ASTPtr ast;
@@ -194,8 +190,6 @@ private:
 	bool getArrayJoinInfoImpl(ASTPtr ast, String & column_name);
 
 	void markBeforeArrayJoinImpl(ASTPtr ast, unsigned part_id, bool below = false);
-	
-	void substituteOriginalColumnNamesImpl(ASTPtr ast, Block & src, Block & dst);
 
 	typedef std::set<std::string> NeedColumns;
 

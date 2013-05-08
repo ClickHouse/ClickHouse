@@ -13,7 +13,6 @@
 #include <DB/DataStreams/ArrayJoiningBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
-#include <DB/DataStreams/OriginalColumnNameSubstitutorBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -163,10 +162,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 			if (need_aggregate)
 				executeAggregation(streams, expression);
-			
-			/// Подставим оригинальные имена столбцов, если запрос шел из distributed таблицы
-			if (settings.sign_rewrite && to_stage == QueryProcessingStage::WithMergeableState)
-				executeOriginalColumnNameSubstitution(streams, expression);
 		}
 		else if (from_stage <= QueryProcessingStage::WithMergeableState && to_stage > QueryProcessingStage::WithMergeableState)
 		{
@@ -582,16 +577,6 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 	copyData(*in, *out);
 
 	return in;
-}
-
-
-void InterpreterSelectQuery::executeOriginalColumnNameSubstitution(BlockInputStreams & streams, ExpressionPtr & expression)
-{
-	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
-	{
-		BlockInputStreamPtr & stream = *it;
-		stream = new OriginalColumnNameSubstitutorBlockInputStream(stream, expression);
-	}
 }
 
 

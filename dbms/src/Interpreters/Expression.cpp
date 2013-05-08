@@ -146,7 +146,6 @@ ASTPtr Expression::rewriteCount(const ASTFunction * node)
 	ASTPtr sum_node = p_sum;
 	sum.name = "sum";
 	sum.alias = node->alias;
-	sum.original_column_name = node->getColumnName();
 	sum.arguments = exp_list_node;
 	sum.children.push_back(exp_list_node);	
 	sum.aggregate_function = context.getAggregateFunctionFactory().get(sum.name, argument_types);
@@ -191,7 +190,6 @@ ASTPtr Expression::rewriteSum(const ASTFunction * node)
 	ASTPtr sum_node = p_sum;
 	sum.name = "sum";
 	sum.alias = node->alias;
-	sum.original_column_name = node->getColumnName();
 	sum.arguments = exp_list_node;
 	sum.children.push_back(exp_list_node);	
 	sum.aggregate_function = context.getAggregateFunctionFactory().get(sum.name, argument_types);
@@ -210,7 +208,7 @@ ASTPtr Expression::rewriteAvg(const ASTFunction * node)
 	ASTExpressionList & div_exp_list = *p_div_exp_list;
 	ASTPtr div_exp_list_node = p_div_exp_list;
 	div_exp_list.children.push_back(rewriteSum(node));
-	div_exp_list.children.push_back(rewriteCount(node));
+	div_exp_list.children.push_back(rewriteCount(node));	
 	
 	/// sum(Sign * x) / sum(Sign)
 	ASTFunction * p_div = new ASTFunction;
@@ -218,7 +216,6 @@ ASTPtr Expression::rewriteAvg(const ASTFunction * node)
 	ASTPtr div_node = p_div;
 	div.name = "divide";
 	div.alias = node->alias;
-	div.original_column_name = node->getColumnName();
 	div.function = context.getFunctionFactory().get(div.name, context);
 	div.arguments = div_exp_list_node;
 	div.children.push_back(div_exp_list_node);
@@ -249,7 +246,7 @@ void Expression::addSemantic(ASTPtr & ast)
 	MapOfASTs tmp_map;
 	if (needSignRewrite())
 		sign_column_name = getSignColumnName();
-	addSemanticImpl(ast, tmp_map, tmp_set);
+	addSemanticImpl(ast,tmp_map, tmp_set);
 }
 
 
@@ -1167,42 +1164,5 @@ void Expression::resolveScalarSubqueriesImpl(ASTPtr & ast, size_t subquery_depth
 					resolveScalarSubqueriesImpl(*it, subquery_depth, part_id);
 	}
 }
-
-
-Block Expression::substituteOriginalColumnNames(Block & block)
-{
-	Block res;
-	substituteOriginalColumnNamesImpl(ast, block, res);
-	return res;
-}
-
-
-void Expression::substituteOriginalColumnNamesImpl(ASTPtr ast, Block & src, Block & dst)
-{
-	/// Обход в глубину, который не заходит внутрь функций и подзапросов.
-	if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*ast))
-	{
-		if (ident->kind == ASTIdentifier::Column)
-		{
-			dst.insert(src.getByName(ast->getColumnName()));
-		}
-	}
-	else if (dynamic_cast<ASTLiteral *>(&*ast))
-	{
-		dst.insert(src.getByName(ast->getColumnName()));
-	}
-	else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*ast))
-	{
-		ColumnWithNameAndType col = src.getByName(ast->getColumnName());
-		if (!func->original_column_name.empty())
-			col.name = func->original_column_name;
-		dst.insert(col);
-	}
-	else
-		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			if (!dynamic_cast<ASTSelectQuery *>(&**it))
-				substituteOriginalColumnNamesImpl(*it, src, dst);
-}
-
 
 }
