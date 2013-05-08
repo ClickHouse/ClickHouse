@@ -245,7 +245,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, String
 		
 		ASTExpressionList * outer_arguments = new ASTExpressionList;
 		lambda->arguments = outer_arguments;
-		lambda->children.push_back(outer_arguments);
+		lambda->children.push_back(lambda->arguments);
 		
 		ASTFunction * tuple = new ASTFunction;
 		outer_arguments->children.push_back(tuple);
@@ -345,7 +345,7 @@ ParserAccessExpression::ParserAccessExpression()
 
 
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias()
-	: impl(new ParserWithOptionalAlias(new ParserTernaryOperatorExpression))
+	: impl(new ParserWithOptionalAlias(new ParserLambdaExpression))
 {
 }
 
