@@ -212,12 +212,17 @@ ASTPtr Expression::rewriteSum(const ASTFunction * node)
 
 ASTPtr Expression::rewriteAvg(const ASTFunction * node)
 {
+	/// node без alias для переписывания числителя и знаменателя
+	ASTPtr node_clone = node->clone();
+	ASTFunction * node_clone_func = dynamic_cast<ASTFunction *>(&*node_clone);
+	node_clone_func->alias = "";
+	
 	/// 'sum(Sign * x)', 'sum(Sign)'
 	ASTExpressionList * p_div_exp_list = new ASTExpressionList;
 	ASTExpressionList & div_exp_list = *p_div_exp_list;
 	ASTPtr div_exp_list_node = p_div_exp_list;
-	div_exp_list.children.push_back(rewriteSum(node));
-	div_exp_list.children.push_back(rewriteCount(node));	
+	div_exp_list.children.push_back(rewriteSum(node_clone_func));
+	div_exp_list.children.push_back(rewriteCount(node_clone_func));
 	
 	/// sum(Sign * x) / sum(Sign)
 	ASTFunction * p_div = new ASTFunction;
