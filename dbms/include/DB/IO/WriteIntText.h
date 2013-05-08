@@ -29,6 +29,15 @@ namespace detail
 	template <typename T>
 	void writeUIntTextFallback(T x, WriteBuffer & buf)
 	{
+		if (x == 0)
+		{
+			buf.nextIfAtEnd();
+			*buf.position() = '0';
+			++buf.position();
+
+			return;
+		}
+		
 		char tmp[WRITE_HELPERS_MAX_INT_WIDTH];
 
 		char * pos;
