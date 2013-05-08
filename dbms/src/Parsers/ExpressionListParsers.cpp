@@ -215,17 +215,24 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, String
 		ASTPtr inner_arguments;
 		ASTPtr expression;
 		
-		if (!open.ignore(pos, end, expected))
-			break;
-		ws.ignore(pos, end, expected);
+		bool was_open = false;
+		
+		if (open.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end, expected);
+			was_open = true;
+		}
 		
 		if (!ParserList(new ParserIdentifier, new ParserString(",")).parse(pos, end, inner_arguments, expected))
 			break;
 		ws.ignore(pos, end, expected);
 		
-		if (!close.ignore(pos, end, expected))
-			break;
-		ws.ignore(pos, end, expected);
+		if (was_open)
+		{
+			if (!close.ignore(pos, end, expected))
+				break;
+			ws.ignore(pos, end, expected);
+		}
 		
 		if (!arrow.ignore(pos, end, expected))
 			break;
