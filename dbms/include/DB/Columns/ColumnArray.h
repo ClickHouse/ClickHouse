@@ -30,8 +30,6 @@ public:
 	ColumnArray(ColumnPtr nested_column)
 		: data(nested_column), offsets(new ColumnOffsets_t)
 	{
-		if (!nested_column->empty())
-			throw Exception("Nested column for constructing ColumnArray must be empty", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	std::string getName() const { return "ColumnArray(" + data->getName() + ")"; }
