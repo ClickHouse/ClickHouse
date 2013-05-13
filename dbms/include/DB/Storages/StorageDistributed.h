@@ -49,6 +49,7 @@ public:
 	std::string getTableName() const { return name; }
 	std::string getSignColumnName() const { return sign_column_name; };
 	bool supportsSampling() const { return true; }
+	bool supportsFinal() const { return !sign_column_name.empty(); }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
