@@ -9,7 +9,7 @@
 namespace DB
 {
 	
-/** То и дело объединяет таблицы, подходящие под гегэксп, в таблицы типа Chunks.
+/** То и дело объединяет таблицы, подходящие под регэксп, в таблицы типа Chunks.
   * После объндинения заменяет исходные таблицы таблицами типа ChunkRef.
   * При чтении ведет себя как таблица типа Merge.
   * Внимание: если в объединяемых таблицах были лишние столбцы, данные из этих столбцов потеряются при слиянии.
@@ -78,6 +78,11 @@ private:
 	bool maybeMergeSomething();
 	Storages selectChunksToMerge();
 	void mergeChunks(const Storages & chunks);
+	
+	typedef std::set<std::string> TableNames;
+	/// Какие таблицы типа Chunks сейчас пишет хоть один ChunkMerger.
+	/// Нужно смотреть, залочив mutex из контекста.
+	static TableNames currently_written_groups;
 };
 	
 }
