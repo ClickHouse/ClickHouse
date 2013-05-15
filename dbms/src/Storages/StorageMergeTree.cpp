@@ -180,7 +180,7 @@ BlockInputStreams StorageMergeTree::read(
 		}
 		
 		UInt64 sampling_column_max = 0;
-		DataTypePtr type = Expression(sampling_expression, context).getReturnTypes()[0];
+		DataTypePtr type = Expression(sampling_expression, context, *columns).getReturnTypes()[0];
 		
 		if (type->getName() == "UInt64")
 			sampling_column_max = std::numeric_limits<UInt64>::max();
