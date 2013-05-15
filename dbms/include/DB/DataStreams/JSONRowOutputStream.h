@@ -28,8 +28,7 @@ public:
 protected:
 	typedef std::vector<NameAndTypePair> NamesAndTypesVector;
 	
-	//WriteBufferValidUTF8 ostr;
-	WriteBuffer & ostr;
+	WriteBufferValidUTF8 ostr;
 	size_t field_number;
 	size_t row_count;	
 	NamesAndTypesVector fields;
