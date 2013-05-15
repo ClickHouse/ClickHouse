@@ -18,6 +18,9 @@
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedBlockOutputStream.h>
 #include <DB/DataStreams/JSONRowOutputStream.h>
+#include <DB/DataStreams/JSONCompactRowOutputStream.h>
+#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -64,10 +67,14 @@ int main(int argc, char ** argv)
 			DB::ReadBufferFromIStream in_buf(istr);
 			DB::WriteBufferFromOStream out_buf(ostr);
 
-			DB::TabSeparatedRowInputStream row_input(in_buf, sample, true, true);
-			DB::JSONRowOutputStream row_output(out_buf, sample);
-
-			DB::copyData(row_input, row_output);
+			//DB::TabSeparatedRowInputStream row_input(in_buf, sample, true, true);
+			//DB::JSONRowOutputStream row_output(out_buf, sample);
+			//DB::JSONCompactRowOutputStream row_output(out_buf, sample);
+			//DB::copyData(row_input, row_output);
+			
+			DB::BlockInputStreamFromRowInputStream in(new DB::TabSeparatedRowInputStream (in_buf, sample, true, true), sample);
+			DB::BlockOutputStreamFromRowOutputStream out(new DB::JSONCompactRowOutputStream(out_buf, sample));
+			DB::copyData(in, out);
 		}
 	}
 	catch (const DB::Exception & e)
