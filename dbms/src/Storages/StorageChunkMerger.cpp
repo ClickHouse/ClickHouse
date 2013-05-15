@@ -24,6 +24,8 @@ const int SLEEP_AFTER_MERGE = 1;
 const int SLEEP_NO_WORK = 10;
 const int SLEEP_AFTER_ERROR = 60;
 
+StorageChunkMerger::TableNames StorageChunkMerger::currently_written_groups;
+
 StoragePtr StorageChunkMerger::create(
 	const std::string & this_database_,
 	const std::string & name_,
