@@ -215,8 +215,7 @@ bool StorageChunkMerger::maybeMergeSomething()
 	Storages chunks = selectChunksToMerge();
 	if (chunks.empty())
 		return false;
-	mergeChunks(chunks);
-	return true;
+	return mergeChunks(chunks);
 }
 
 StorageChunkMerger::Storages StorageChunkMerger::selectChunksToMerge()
@@ -276,7 +275,7 @@ static std::string FormatColumnsForCreateQuery(NamesAndTypesList & columns)
 	return res;
 }
 
-void StorageChunkMerger::mergeChunks(const Storages & chunks)
+bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 {
 	typedef std::map<std::string, DataTypePtr> ColumnsMap;
 	
@@ -327,7 +326,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			if (currently_written_groups.count(new_table_full_name))
 			{
 				LOG_WARNING(log, "Table " + new_table_full_name + " is already being written. Aborting merge.");
-				return;
+				return false;
 			}
 			
 			currently_written_groups.insert(new_table_full_name);
@@ -478,6 +477,8 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 		new_storage->removeReference();
 
 		LOG_TRACE(log, "Merged chunks.");
+		
+		return true;
 	}
 	catch(...)
 	{
