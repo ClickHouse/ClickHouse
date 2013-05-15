@@ -15,6 +15,8 @@
 #include <DB/DataStreams/NullBlockOutputStream.h>
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DB/DataStreams/JSONRowOutputStream.h>
+#include <DB/DataStreams/JSONCompactRowOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 
 
@@ -76,6 +78,10 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new VerticalRowOutputStream(buf, sample));
 	else if (name == "Values")
 		return new BlockOutputStreamFromRowOutputStream(new ValuesRowOutputStream(buf, sample));
+	else if (name == "JSON")
+		return new BlockOutputStreamFromRowOutputStream(new JSONRowOutputStream(buf, sample));
+	else if (name == "JSONCompact")
+		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
 	else if (name == "Null")
 		return new NullBlockOutputStream;
 	else
