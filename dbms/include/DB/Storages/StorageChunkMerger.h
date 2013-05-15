@@ -77,7 +77,7 @@ private:
 	void mergeThread();
 	bool maybeMergeSomething();
 	Storages selectChunksToMerge();
-	void mergeChunks(const Storages & chunks);
+	bool mergeChunks(const Storages & chunks);
 	
 	typedef std::set<std::string> TableNames;
 	/// Какие таблицы типа Chunks сейчас пишет хоть один ChunkMerger.
