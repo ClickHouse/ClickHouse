@@ -24,15 +24,15 @@ void JSONCompactRowOutputStream::writeField(const Field & field)
 
 void JSONCompactRowOutputStream::writeFieldDelimiter()
 {
-	writeString(", ", ostr);
+	writeCString(", ", ostr);
 }
 
 
 void JSONCompactRowOutputStream::writeRowStartDelimiter()
 {
 	if (row_count > 0)
-		writeString(",\n", ostr);
-	writeString("\t\t\t[", ostr);
+		writeCString(",\n", ostr);
+	writeCString("\t\t\t[", ostr);
 }
 
 

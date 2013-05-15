@@ -46,7 +46,7 @@ void ValuesRowOutputStream::writeRowEndDelimiter()
 
 void ValuesRowOutputStream::writeRowBetweenDelimiter()
 {
-	writeString(",", ostr);
+	writeCString(",", ostr);
 	field_number = 0;
 }
 

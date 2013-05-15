@@ -39,7 +39,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 void VerticalRowOutputStream::writeField(const Field & field)
 {
 	writeEscapedString(names[field_number], ostr);
-	writeString(": ", ostr);
+	writeCString(": ", ostr);
 	writeString(pads[field_number], ostr);
 	
 	data_types[field_number]->serializeTextEscaped(field, ostr);
@@ -52,20 +52,20 @@ void VerticalRowOutputStream::writeField(const Field & field)
 void VerticalRowOutputStream::writeRowStartDelimiter()
 {
 	++row_number;
-	writeString("Row ", ostr);
+	writeCString("Row ", ostr);
 	writeIntText(row_number, ostr);
-	writeString(":\n", ostr);
+	writeCString(":\n", ostr);
 
 	size_t width = log10(row_number + 1) + 1 + strlen("Row :");
 	for (size_t i = 0; i < width; ++i)
-		writeString("─", ostr);
+		writeCString("─", ostr);
 	writeChar('\n', ostr);
 }
 
 
 void VerticalRowOutputStream::writeRowBetweenDelimiter()
 {
-	writeString("\n", ostr);
+	writeCString("\n", ostr);
 	field_number = 0;
 }
 

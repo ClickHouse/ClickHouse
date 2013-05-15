@@ -47,7 +47,7 @@ public:
 			for (ASTs::const_iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
 			{
 				if (it != parameters->children.begin())
-					writeString(", ", wb);
+					writeCString(", ", wb);
 				writeString((*it)->getColumnName(), wb);
 			}
 			writeChar(')', wb);
@@ -57,7 +57,7 @@ public:
 		for (ASTs::const_iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
 		{
 			if (it != arguments->children.begin())
-				writeString(", ", wb);
+				writeCString(", ", wb);
 			writeString((*it)->getColumnName(), wb);
 		}
 		writeChar(')', wb);

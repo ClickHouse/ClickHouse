@@ -19,39 +19,39 @@ JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & samp
 
 void JSONRowOutputStream::writePrefix()
 {
-	writeString("{\n", ostr);
-	writeString("\t\"meta\":\n", ostr);
-	writeString("\t[\n", ostr);
+	writeCString("{\n", ostr);
+	writeCString("\t\"meta\":\n", ostr);
+	writeCString("\t[\n", ostr);
 	
 	for (size_t i = 0; i < fields.size(); ++i)
 	{
-		writeString("\t\t{\n", ostr);
+		writeCString("\t\t{\n", ostr);
 		
-		writeString("\t\t\t\"name\": ", ostr);
+		writeCString("\t\t\t\"name\": ", ostr);
 		writeDoubleQuotedString(fields[i].first, ostr);
-		writeString(",\n", ostr);
-		writeString("\t\t\t\"type\": ", ostr);
+		writeCString(",\n", ostr);
+		writeCString("\t\t\t\"type\": ", ostr);
 		writeDoubleQuotedString(fields[i].second->getName(), ostr);
 		writeChar('\n', ostr);
 		
-		writeString("\t\t}", ostr);
+		writeCString("\t\t}", ostr);
 		if (i + 1 < fields.size())
 			writeChar(',', ostr);
 		writeChar('\n', ostr);
 	}
 	
-	writeString("\t],\n", ostr);
+	writeCString("\t],\n", ostr);
 	writeChar('\n', ostr);
-	writeString("\t\"data\":\n", ostr);
-	writeString("\t[\n", ostr);
+	writeCString("\t\"data\":\n", ostr);
+	writeCString("\t[\n", ostr);
 }
 
 
 void JSONRowOutputStream::writeField(const Field & field)
 {
-	writeString("\t\t\t", ostr);
+	writeCString("\t\t\t", ostr);
 	writeDoubleQuotedString(fields[field_number].first, ostr);
-	writeString(": ", ostr);
+	writeCString(": ", ostr);
 	fields[field_number].second->serializeTextQuoted(field, ostr);
 	++field_number;
 }
@@ -59,22 +59,22 @@ void JSONRowOutputStream::writeField(const Field & field)
 
 void JSONRowOutputStream::writeFieldDelimiter()
 {
-	writeString(",\n", ostr);
+	writeCString(",\n", ostr);
 }
 
 
 void JSONRowOutputStream::writeRowStartDelimiter()
 {
 	if (row_count > 0)
-		writeString(",\n", ostr);		
-	writeString("\t\t{\n", ostr);
+		writeCString(",\n", ostr);
+	writeCString("\t\t{\n", ostr);
 }
 
 
 void JSONRowOutputStream::writeRowEndDelimiter()
 {
 	writeChar('\n', ostr);
-	writeString("\t\t}", ostr);
+	writeCString("\t\t}", ostr);
 	field_number = 0;
 	++row_count;
 }
@@ -83,12 +83,12 @@ void JSONRowOutputStream::writeRowEndDelimiter()
 void JSONRowOutputStream::writeSuffix()
 {
 	writeChar('\n', ostr);
-	writeString("\t],\n", ostr);
+	writeCString("\t],\n", ostr);
 	writeChar('\n', ostr);
-	writeString("\t\"rows\": ", ostr);
+	writeCString("\t\"rows\": ", ostr);
 	writeIntText(row_count, ostr);
 	writeChar('\n', ostr);
-	writeString("}\n", ostr);
+	writeCString("}\n", ostr);
 }
 
 }

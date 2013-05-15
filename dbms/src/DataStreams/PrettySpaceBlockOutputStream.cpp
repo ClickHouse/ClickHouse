@@ -38,7 +38,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 	for (size_t i = 0; i < columns; ++i)
 	{
 		if (i != 0)
-			writeString("   ", ostr);
+			writeCString("   ", ostr);
 
 		const ColumnWithNameAndType & col = block.getByPosition(i);
 
@@ -48,31 +48,31 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 				writeChar(' ', ostr);
 
 			if (!no_escapes)
-				writeString("\033[1;37m", ostr);
+				writeCString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
 			if (!no_escapes)
-				writeString("\033[0m", ostr);
+				writeCString("\033[0m", ostr);
 		}
 		else
 		{
 			if (!no_escapes)
-				writeString("\033[1;37m", ostr);
+				writeCString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
 			if (!no_escapes)
-				writeString("\033[0m", ostr);
+				writeCString("\033[0m", ostr);
 
 			for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
 				writeChar(' ', ostr);
 		}
 	}
-	writeString("\n\n", ostr);
+	writeCString("\n\n", ostr);
 
 	for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
 	{
 		for (size_t j = 0; j < columns; ++j)
 		{
 			if (j != 0)
-				writeString("   ", ostr);
+				writeCString("   ", ostr);
 
 			const ColumnWithNameAndType & col = block.getByPosition(j);
 
@@ -105,9 +105,9 @@ void PrettySpaceBlockOutputStream::writeSuffix()
 {
 	if (total_rows >= max_rows)
 	{
-		writeString("\nShowed first ", ostr);
+		writeCString("\nShowed first ", ostr);
 		writeIntText(max_rows, ostr);
-		writeString(".", ostr);
+		writeCString(".", ostr);
 	}
 }
 

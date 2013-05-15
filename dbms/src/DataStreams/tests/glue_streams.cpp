@@ -65,24 +65,7 @@ int main(int argc, char ** argv)
 		WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
 
 		BlockOutputStreamPtr out1 = context.getFormatFactory().getOutput("TabSeparated", wb, io1.in_sample);
-
-	/*	out1->writePrefix();
-		while (Block block = io1.in->read())
-		{
-			out1->write(block);
-			wb.next();
-		}
-		out1->writeSuffix();*/
-
 		BlockOutputStreamPtr out2 = context.getFormatFactory().getOutput("TabSeparated", wb, io2.in_sample);
-
-	/*	out2->writePrefix();
-		while (Block block = io2.in->read())
-		{
-			out2->write(block);
-			wb.next();
-		}
-		out2->writeSuffix();*/
 
 		BlockInputStreams inputs;
 		inputs.push_back(io1.in);
@@ -93,7 +76,7 @@ int main(int argc, char ** argv)
 
 		Forks forks;
 
-	//	glueBlockInputStreams(inputs, forks);
+		glueBlockInputStreams(inputs, forks);
 
 		std::cerr << forks.size() << std::endl;
 

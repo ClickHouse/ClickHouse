@@ -85,6 +85,18 @@ inline void writeString(const String & s, WriteBuffer & buf)
 	buf.write(s.data(), s.size());
 }
 
+inline void writeString(const char * data, size_t size, WriteBuffer & buf)
+{
+	buf.write(data, size);
+}
+
+
+/** Пишет С-строку без создания временного объекта. Если строка - литерал, то strlen выполняется на этапе компиляции.
+  * Используйте, когда строка - литерал.
+  */
+#define writeCString(s, buf) \
+	(buf).write((s), strlen(s))
+
 
 template <char c>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)

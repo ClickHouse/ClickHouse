@@ -45,47 +45,47 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 	std::string bottom_separator_s = bottom_separator.str();
 
 	/// Имена
-	writeString("┌─", ostr);
+	writeCString("┌─", ostr);
 	for (size_t i = 0; i < columns; ++i)
 	{
 		if (i != 0)
-			writeString("─┬─", ostr);
+			writeCString("─┬─", ostr);
 
 		const ColumnWithNameAndType & col = block.getByPosition(i);
 
 		if (col.type->isNumeric())
 		{
 			for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-				writeString("─", ostr);
+				writeCString("─", ostr);
 
 			if (!no_escapes)
-				writeString("\033[1;37m", ostr);
+				writeCString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
 			if (!no_escapes)
-				writeString("\033[0m", ostr);
+				writeCString("\033[0m", ostr);
 		}
 		else
 		{
 			if (!no_escapes)
-				writeString("\033[1;37m", ostr);
+				writeCString("\033[1;37m", ostr);
 			writeEscapedString(col.name, ostr);
 			if (!no_escapes)
-				writeString("\033[0m", ostr);
+				writeCString("\033[0m", ostr);
 
 			for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-				writeString("─", ostr);
+				writeCString("─", ostr);
 		}
 	}
-	writeString("─┐\n", ostr);
+	writeCString("─┐\n", ostr);
 
 	for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
 	{
-		writeString("│ ", ostr);
+		writeCString("│ ", ostr);
 
 		for (size_t j = 0; j < columns; ++j)
 		{
 			if (j != 0)
-				writeString(" │ ", ostr);
+				writeCString(" │ ", ostr);
 
 			const ColumnWithNameAndType & col = block.getByPosition(j);
 
@@ -107,7 +107,7 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 			}
 		}
 
-		writeString(" │\n", ostr);
+		writeCString(" │\n", ostr);
 	}
 
 	writeString(bottom_separator_s, ostr);

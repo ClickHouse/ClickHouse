@@ -131,16 +131,16 @@ void PrettyBlockOutputStream::write(const Block & block_)
 	writeString(top_separator_s, ostr);
 
 	/// Имена
-	writeString("┃ ", ostr);
+	writeCString("┃ ", ostr);
 	for (size_t i = 0; i < columns; ++i)
 	{
 		if (i != 0)
-			writeString(" ┃ ", ostr);
+			writeCString(" ┃ ", ostr);
 
 		const ColumnWithNameAndType & col = block.getByPosition(i);
 
 		if (!no_escapes)
-			writeString("\033[1;37m", ostr);
+			writeCString("\033[1;37m", ostr);
 		
 		if (col.type->isNumeric())
 		{
@@ -158,9 +158,9 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		}
 
 		if (!no_escapes)
-			writeString("\033[0m", ostr);
+			writeCString("\033[0m", ostr);
 	}
-	writeString(" ┃\n", ostr);
+	writeCString(" ┃\n", ostr);
 
 	writeString(middle_names_separator_s, ostr);
 
@@ -169,12 +169,12 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		if (i != 0)
 			writeString(middle_values_separator_s, ostr);
 
-		writeString("│ ", ostr);
+		writeCString("│ ", ostr);
 
 		for (size_t j = 0; j < columns; ++j)
 		{
 			if (j != 0)
-				writeString(" │ ", ostr);
+				writeCString(" │ ", ostr);
 
 			const ColumnWithNameAndType & col = block.getByPosition(j);
 
@@ -196,7 +196,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 			}
 		}
 
-		writeString(" │\n", ostr);
+		writeCString(" │\n", ostr);
 	}
 	
 	writeString(bottom_separator_s, ostr);
@@ -209,9 +209,9 @@ void PrettyBlockOutputStream::writeSuffix()
 {
 	if (total_rows >= max_rows)
 	{
-		writeString("  Showed first ", ostr);
+		writeCString("  Showed first ", ostr);
 		writeIntText(max_rows, ostr);
-		writeString(".\n", ostr);
+		writeCString(".\n", ostr);
 	}
 }
 

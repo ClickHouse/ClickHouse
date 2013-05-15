@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <sstream>
 #include <tr1/type_traits>
 
 #include <boost/static_assert.hpp>
@@ -17,6 +16,7 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -539,69 +539,86 @@ template <> struct TypeName<Array> { static std::string get() { return "Array"; 
 
 
 /** Возвращает строковый дамп типа */
-class FieldVisitorDump : public StaticVisitor<std::string>
+class FieldVisitorDump : public StaticVisitor<String>
 {
+private:
+	template <typename T>
+	static inline String formatQuotedWithPrefix(T x, const char * prefix)
+	{
+		String res;
+		WriteBufferFromString wb(res);
+		wb.write(prefix, strlen(prefix));
+		writeQuoted(x, wb);
+		return res;
+	}
 public:
 	String operator() (const Null 		& x) const { return "NULL"; }
-	String operator() (const UInt64 	& x) const { return "UInt64_" + Poco::NumberFormatter::format(x); }
-	String operator() (const Int64 		& x) const { return "Int64_" + Poco::NumberFormatter::format(x); }
-	String operator() (const Float64 	& x) const { return "Float64_" + Poco::NumberFormatter::format(x); }
+	String operator() (const UInt64 	& x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
+	String operator() (const Int64 		& x) const { return formatQuotedWithPrefix(x, "Int64_"); }
+	String operator() (const Float64 	& x) const { return formatQuotedWithPrefix(x, "Float64_"); }
 
 	String operator() (const String 	& x) const
 	{
-		std::stringstream s;
-		s << mysqlxx::quote << x;
-		return s.str();
+		String res;
+		WriteBufferFromString wb(res);
+		writeQuoted(x, wb);
+		return res;
 	}
 
 	String operator() (const Array 	& x) const
 	{
-		std::stringstream s;
+		String res;
+		WriteBufferFromString wb(res);
+		FieldVisitorDump visitor;
 
-		s << "Array_[";
+		wb.write("Array_[", 7);
 		for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
 		{
 			if (it != x.begin())
-				s << ", ";
-			s << apply_visitor(FieldVisitorDump(), *it);
+				wb.write(", ", 2);
+			writeString(apply_visitor(visitor, *it), wb);
 		}
-		s << "]";
+		writeChar(']', wb);
 
-		return s.str();
+		return res;
 	}
 };
 
 /** Выводит текстовое представление типа, как литерала в SQL запросе */
 class FieldVisitorToString : public StaticVisitor<String>
 {
+private:
+	template <typename T>
+	static inline String formatQuoted(T x)
+	{
+		String res;
+		WriteBufferFromString wb(res);
+		writeQuoted(x, wb);
+		return res;
+	}
 public:
 	String operator() (const Null 		& x) const { return "NULL"; }
-	String operator() (const UInt64 	& x) const { return Poco::NumberFormatter::format(x); }
-	String operator() (const Int64 		& x) const { return Poco::NumberFormatter::format(x); }
-	String operator() (const Float64 	& x) const { return Poco::NumberFormatter::format(x); }
-
-	String operator() (const String 	& x) const
-	{
-		std::stringstream s;
-		s << mysqlxx::quote << x;
-		return s.str();
-	}
+	String operator() (const UInt64 	& x) const { return formatQuoted(x); }
+	String operator() (const Int64 		& x) const { return formatQuoted(x); }
+	String operator() (const Float64 	& x) const { return formatQuoted(x); }
+	String operator() (const String 	& x) const { return formatQuoted(x); }
 
 	String operator() (const Array 		& x) const
 	{
-		std::stringstream s;
+		String res;
+		WriteBufferFromString wb(res);
 		FieldVisitorToString visitor;
 
-		s << "[";
+		writeChar('[', wb);
 		for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
 		{
 			if (it != x.begin())
-				s << ", ";
-			s << apply_visitor(visitor, *it);
+				wb.write(", ", 2);
+			writeString(apply_visitor(visitor, *it), wb);
 		}
-		s << "]";
+		writeChar(']', wb);
 
-		return s.str();
+		return res;
 	}
 };
 
