@@ -210,7 +210,7 @@ BlockInputStreams StorageMergeTree::read(
 		filter_function->arguments = filter_function_args;
 		filter_function->children.push_back(filter_function->arguments);
 
-		filter_expression = new Expression(filter_function, context);
+		filter_expression = new Expression(filter_function, context, *columns);
 		
 		/// Добавим столбцы, нужные для sampling_expression.
 		std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -447,7 +447,7 @@ void StorageMergeTree::createPositiveSignCondition(ExpressionPtr & out_expressio
 	one->type = new DataTypeInt8;
 	one->value = Field(static_cast<Int64>(1));
 	
-	out_expression = new Expression(function_ptr, context);
+	out_expression = new Expression(function_ptr, context, *columns);
 	out_column = function->getColumnName();
 }
 
