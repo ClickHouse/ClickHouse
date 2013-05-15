@@ -311,7 +311,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 	std::string formatted_columns = FormatColumnsForCreateQuery(*required_columns);
 	
 	std::string new_table_name = MakeName(destination_name_prefix, chunks[0]->getTableName(), chunks.back()->getTableName());
-	std::string new_table_full_name;
+	std::string new_table_full_name = destination_database + "." + new_table_name;
 	StoragePtr new_storage_ptr;
 	
 	try
@@ -330,7 +330,6 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 				return;
 			}
 			
-			std::string new_table_full_name = destination_database + "." + new_table_name;
 			currently_written_groups.insert(new_table_full_name);
 			
 			/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
@@ -474,7 +473,6 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 			
 			currently_written_groups.erase(new_table_full_name);
-			new_table_full_name = "";
 		}
 
 		new_storage->removeReference();
@@ -485,8 +483,7 @@ void StorageChunkMerger::mergeChunks(const Storages & chunks)
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 		
-		if (new_table_full_name != "")
-			currently_written_groups.erase(new_table_full_name);
+		currently_written_groups.erase(new_table_full_name);
 		
 		throw;
 	}
