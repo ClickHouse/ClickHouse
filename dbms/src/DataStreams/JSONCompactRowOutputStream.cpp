@@ -32,7 +32,7 @@ void JSONCompactRowOutputStream::writeRowStartDelimiter()
 {
 	if (row_count > 0)
 		writeCString(",\n", ostr);
-	writeCString("\t\t\t[", ostr);
+	writeCString("\t\t[", ostr);
 }
 
 

@@ -89,6 +89,7 @@ void JSONRowOutputStream::writeSuffix()
 	writeIntText(row_count, ostr);
 	writeChar('\n', ostr);
 	writeCString("}\n", ostr);
+	ostr.next();
 }
 
 }
