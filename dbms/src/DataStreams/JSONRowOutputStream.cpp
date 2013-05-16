@@ -52,7 +52,7 @@ void JSONRowOutputStream::writeField(const Field & field)
 	writeCString("\t\t\t", ostr);
 	writeDoubleQuotedString(fields[field_number].first, ostr);
 	writeCString(": ", ostr);
-	fields[field_number].second->serializeTextQuoted(field, ostr);
+	fields[field_number].second->serializeTextJSON(field, ostr);
 	++field_number;
 }
 

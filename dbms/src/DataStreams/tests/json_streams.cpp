@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
 			//DB::copyData(row_input, row_output);
 			
 			DB::BlockInputStreamFromRowInputStream in(new DB::TabSeparatedRowInputStream (in_buf, sample, true, true), sample);
-			DB::BlockOutputStreamFromRowOutputStream out(new DB::JSONCompactRowOutputStream(out_buf, sample));
+			DB::BlockOutputStreamFromRowOutputStream out(new DB::JSONRowOutputStream(out_buf, sample));
 			DB::copyData(in, out);
 		}
 	}

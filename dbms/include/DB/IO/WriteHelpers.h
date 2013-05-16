@@ -91,6 +91,65 @@ inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 }
 
 
+inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf)
+{
+	writeChar('"', buf);
+	char tmp[7];
+	for (const char * it = begin; it != end; ++it)
+	{
+		switch (*it)
+		{
+			case '\b':
+				writeChar('\\', buf);
+				writeChar('b', buf);
+				break;
+			case '\f':
+				writeChar('\\', buf);
+				writeChar('f', buf);
+				break;
+			case '\n':
+				writeChar('\\', buf);
+				writeChar('n', buf);
+				break;
+			case '\r':
+				writeChar('\\', buf);
+				writeChar('r', buf);
+				break;
+			case '\t':
+				writeChar('\\', buf);
+				writeChar('t', buf);
+				break; 
+			case '\\':
+				writeChar('\\', buf);
+				writeChar('\\', buf);
+				break;
+			case '/':
+				writeChar('\\', buf);
+				writeChar('/', buf);
+				break;
+			default:
+				int code_point = 0;
+				if (0x00 <= *it && *it <= 0x1F)
+					code_point = *it;
+				else if (strncmp(it, "\xE2\x80\xA8", 3) == 0 || strncmp(it, "\xE2\x80\xA9", 3) == 0)
+				{
+					code_point = *(it++);
+					code_point = (code_point << 8) | *(it++);
+					code_point = (code_point << 8) | *it;
+				}
+				if (code_point != 0)
+				{
+					std::snprintf(tmp, 7, "\\u%04X", code_point);
+					buf.write(tmp, 6);
+				}
+				else
+					writeChar(*it, buf);
+		}
+	}
+	writeChar('"', buf);
+}
+
+
 /** Пишет С-строку без создания временного объекта. Если строка - литерал, то strlen выполняется на этапе компиляции.
   * Используйте, когда строка - литерал.
   */
@@ -141,6 +200,12 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 				writeChar(*it, buf);
 		}
 	}
+}
+
+
+inline void writeJSONString(const String & s, WriteBuffer & buf)
+{
+	writeJSONString(s.data(), s.data() + s.size(), buf);
 }
 
 

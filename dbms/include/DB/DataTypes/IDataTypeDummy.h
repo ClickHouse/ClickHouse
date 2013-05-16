@@ -36,6 +36,8 @@ public:
 
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const 									{ throwNoSerialization(); }
+	
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
 
 	SharedPtr<IColumn> createColumn() const
 	{

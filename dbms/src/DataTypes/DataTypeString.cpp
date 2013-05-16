@@ -140,6 +140,12 @@ void DataTypeString::deserializeTextQuoted(Field & field, ReadBuffer & istr) con
 }
 
 
+void DataTypeString::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	writeJSONString(get<const String &>(field), ostr);
+}
+
+
 ColumnPtr DataTypeString::createColumn() const
 {
 	return new ColumnString;

@@ -47,6 +47,8 @@ public:
 	{
 		deserializeText(field, istr);
 	}
+	
+	inline void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
 
 	size_t getSizeOfField() const { return sizeof(FieldType); }
 
@@ -55,6 +57,25 @@ public:
 		return typename NearestFieldType<FieldType>::Type();
 	}
 };
+
+template <typename FType> inline void IDataTypeNumber<FType>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	serializeText(field, ostr);
+}
+
+template <> inline void IDataTypeNumber<Int64>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	writeChar('"', ostr);
+	serializeText(field, ostr);
+	writeChar('"', ostr);
+}
+
+template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	writeChar('"', ostr);
+	serializeText(field, ostr);
+	writeChar('"', ostr);
+}
 
 template <typename FType> inline void IDataTypeNumber<FType>::deserializeText(Field & field, ReadBuffer & istr) const
 {

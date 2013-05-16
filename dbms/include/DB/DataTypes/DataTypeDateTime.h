@@ -47,6 +47,13 @@ public:
 		writeChar('\'', ostr);
 	}
 	
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+	{
+		writeChar('"', ostr);
+		serializeText(field, ostr);
+		writeChar('"', ostr);
+	}
+	
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 	{
 		assertString("'", istr);

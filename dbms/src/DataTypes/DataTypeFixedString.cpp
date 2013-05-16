@@ -105,6 +105,12 @@ void DataTypeFixedString::deserializeTextQuoted(Field & field, ReadBuffer & istr
 }
 
 
+void DataTypeFixedString::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	writeJSONString(get<const String &>(field), ostr);
+}
+
+
 ColumnPtr DataTypeFixedString::createColumn() const
 {
 	return new ColumnFixedString(n);

@@ -94,6 +94,11 @@ void DataTypeAggregateFunction::deserializeTextQuoted(Field & field, ReadBuffer 
 	throw Exception("Cannot read aggregate function from text.", ErrorCodes::CANNOT_READ_AGGREGATE_FUNCTION_FROM_TEXT);
 }
 
+void DataTypeAggregateFunction::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	throw Exception("Cannot write aggregate function as text.", ErrorCodes::CANNOT_WRITE_AGGREGATE_FUNCTION_AS_TEXT);
+}
+
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
 	return new ColumnAggregateFunction(function);

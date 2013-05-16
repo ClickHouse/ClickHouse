@@ -53,6 +53,13 @@ public:
 		deserializeText(field, istr);
 		assertString("'", istr);
 	}
+	
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+	{
+		writeChar('"', ostr);
+		serializeText(field, ostr);
+		writeChar('"', ostr);
+	}
 };
 
 }

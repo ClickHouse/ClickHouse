@@ -64,6 +64,10 @@ public:
 	  */
 	virtual void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const = 0;
 	virtual void deserializeTextQuoted(Field & field, ReadBuffer & istr) const = 0;
+	
+	/** Текстовая сериализация в виде литерала для использования в формате JSON.
+	  */
+	virtual void serializeTextJSON(const Field & field, WriteBuffer & ostr) const = 0;
 
 	/** Создать пустой столбец соответствующего типа.
 	  */

@@ -171,6 +171,21 @@ void DataTypeArray::deserializeTextQuoted(Field & field, ReadBuffer & istr) cons
 }
 
 
+void DataTypeArray::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	const Array & arr = get<const Array &>(field);
+
+	writeChar('[', ostr);
+	for (size_t i = 0, size = arr.size(); i < size; ++i)
+	{
+		if (i != 0)
+			writeChar(',', ostr);
+		nested->serializeTextJSON(arr[i], ostr);
+	}
+	writeChar(']', ostr);
+}
+
+
 ColumnPtr DataTypeArray::createColumn() const
 {
 	return new ColumnArray(nested->createColumn());

@@ -50,6 +50,7 @@ public:
 	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const;
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const;
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const;
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
 
 	ColumnPtr createColumn() const;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const;

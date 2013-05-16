@@ -41,6 +41,8 @@ public:
 
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const;
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const;
+	
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
 
 	/** Потоковая сериализация массивов устроена по-особенному:
 	  * - записываются/читаются элементы, уложенные подряд, без размеров массивов;

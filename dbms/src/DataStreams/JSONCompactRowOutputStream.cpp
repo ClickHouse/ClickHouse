@@ -17,7 +17,7 @@ JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, cons
 
 void JSONCompactRowOutputStream::writeField(const Field & field)
 {
-	fields[field_number].second->serializeTextQuoted(field, ostr);
+	fields[field_number].second->serializeTextJSON(field, ostr);
 	++field_number;
 }
 
