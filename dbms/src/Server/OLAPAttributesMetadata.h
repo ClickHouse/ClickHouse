@@ -2030,6 +2030,10 @@ struct ClickOrderID : public AttributeUIntBase<UInt32>
 	std::string getName() const { return "ClickOrderID"; }
 };
 
+struct ClickTargetPhraseID : public AttributeUIntBase<UInt64>
+{
+	std::string getName() const { return "ClickTargetPhraseID"; }
+};
 
 struct GoalReachesAny : public AttributeUIntBase<Poco::Int16>
 {
@@ -2129,10 +2133,20 @@ struct Interests : public AttributeUIntBase<UInt16>
 												  token_compress_on)); i != split_iterator<std::string::const_iterator>(); ++i)
 		{
 			UInt16 interest = Poco::NumberParser::parseUnsigned(boost::copy_range<std::string>(*i));
-			value |= (interest == 512 ? 512 : (interest == 256 ? 256 :
-			(interest == 128 ? 128 : ( interest == 64 ? 64 :(interest == 32 ? 32 :
-			(interest == 16 ? 16 : (interest == 8 ? 8 :(interest == 4 ? 4 :
-			(interest == 2 ? 2 :(interest == 1 ? 1 : 0))))))))));
+			value |= (interest == 0x2000 ? 0x2000 :
+			(interest == 0x1000 ? 0x1000 :
+			(interest == 0x800 ? 0x800 :
+			(interest == 0x400 ? 0x400 :
+			(interest == 0x200 ? 0x200 :
+			(interest == 0x100 ? 0x100 :
+			(interest == 0x80 ? 0x80 : 
+			(interest == 0x40 ? 0x40 :
+			(interest == 0x20 ? 0x20 :
+			(interest == 0x10 ? 0x10 :
+			(interest == 8 ? 8 :
+			(interest == 4 ? 4 :
+			(interest == 2 ? 2 :
+			(interest == 1 ? 1 : 0))))))))))))));
 		}
 		
 		return value;
@@ -2263,6 +2277,50 @@ struct HasInterestCulinary : public  AttributeUIntBase<UInt16>
 	BinaryData extractFromOne(void* buf) const
 	{
 		return (static_cast<UInt64>(static_cast<UInt16 *>(buf)[0] & CULINARY));
+	}
+};
+
+struct HasInterestSoftware : public  AttributeUIntBase<UInt16>
+{
+	std::string getName() const { return "HasInterestSoftware"; }
+	std::string getFileName() const { return "Interests"; }
+
+	BinaryData extractFromOne(void* buf) const
+	{
+		return (static_cast<UInt64>(static_cast<UInt16 *>(buf)[0] & SOFTWARE));
+	}
+};
+
+struct HasInterestEstate : public  AttributeUIntBase<UInt16>
+{
+	std::string getName() const { return "HasInterestEstate"; }
+	std::string getFileName() const { return "Interests"; }
+
+	BinaryData extractFromOne(void* buf) const
+	{
+		return (static_cast<UInt64>(static_cast<UInt16 *>(buf)[0] & ESTATE));
+	}
+};
+
+struct HasInterestHealthyLifestyle : public  AttributeUIntBase<UInt16>
+{
+	std::string getName() const { return "HasInterestHealthyLifestyle"; }
+	std::string getFileName() const { return "Interests"; }
+
+	BinaryData extractFromOne(void* buf) const
+	{
+		return (static_cast<UInt64>(static_cast<UInt16 *>(buf)[0] & HEALTHY_LIFESTYLE));
+	}
+};
+
+struct HasInterestLiterature : public  AttributeUIntBase<UInt16>
+{
+	std::string getName() const { return "HasInterestLiterature"; }
+	std::string getFileName() const { return "Interests"; }
+
+	BinaryData extractFromOne(void* buf) const
+	{
+		return (static_cast<UInt64>(static_cast<UInt16 *>(buf)[0] & LITERATURE));
 	}
 };
 
@@ -2442,6 +2500,7 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 	metadata["ClickCost"]				= new ClickCost;
 	metadata["ClickURLHash"]			= new ClickURLHash;
 	metadata["ClickOrderID"]			= new ClickOrderID;
+	metadata["ClickTargetPhraseID"]		= new ClickTargetPhraseID;
 	metadata["GoalReaches"]				= new GoalReaches;
 	metadata["GoalReachesAny"]			= new GoalReachesAny;
 	metadata["GoalReachesDepth"]		= new GoalReachesDepth;
@@ -2469,15 +2528,19 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 	metadata["BrowserCountry"]			= new BrowserCountry;
 	metadata["Interests"]				= new Interests;
 	metadata["HasInterestPhoto"]		= new HasInterestPhoto;
-	metadata["HasInterestMoviePremieres"]= new HasInterestMoviePremieres;
+	metadata["HasInterestMoviePremieres"]	= new HasInterestMoviePremieres;
 	metadata["HasInterestMobileAndInternetCommunications"]	= new HasInterestMobileAndInternetCommunications;
 	metadata["HasInterestFinance"]		= new HasInterestFinance;
-	metadata["HasInterestFamilyAndChildren"]= new HasInterestFamilyAndChildren;
+	metadata["HasInterestFamilyAndChildren"]	= new HasInterestFamilyAndChildren;
 	metadata["HasInterestCars"]			= new HasInterestCars;
 	metadata["HasInterestB2B"]			= new HasInterestB2B;
 	metadata["HasInterestTourism"]		= new HasInterestTourism;
-	metadata["HasInterestBuilding"]	= new HasInterestBuilding;
-	metadata["HasInterestCulinary"]	= new HasInterestCulinary;
+	metadata["HasInterestBuilding"]		= new HasInterestBuilding;
+	metadata["HasInterestCulinary"]		= new HasInterestCulinary;
+	metadata["HasInterestSoftware"]		= new HasInterestSoftware;
+	metadata["HasInterestEstate"]		= new HasInterestEstate;
+	metadata["HasInterestHealthyLifestyle"]	= new HasInterestHealthyLifestyle;
+	metadata["HasInterestLiterature"]	= new HasInterestLiterature;
 	
 	metadata["OpenstatServiceNameHash"]= new OpenstatServiceNameHash;
 	metadata["OpenstatCampaignIDHash"]	= new OpenstatCampaignIDHash;
