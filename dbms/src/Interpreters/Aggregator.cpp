@@ -476,7 +476,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			else if (group_by_overflow_mode == Limits::ANY)
 				no_more_keys = true;
 			else
-				throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);
+				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 		}
 	}
 

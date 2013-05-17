@@ -144,7 +144,7 @@ Block IProfilingBlockInputStream::read()
 		if (limits.read_overflow_mode == Limits::BREAK)
 			return Block();
 
-		throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	if (limits.max_execution_time != 0
@@ -158,7 +158,7 @@ Block IProfilingBlockInputStream::read()
 		if (limits.timeout_overflow_mode == Limits::BREAK)
 			return Block();
 
-		throw Exception("Logical error: unkown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	if (limits.min_execution_speed
