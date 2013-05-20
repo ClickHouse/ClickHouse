@@ -27,9 +27,18 @@ public:
 	typedef ColumnVector<Offset_t> ColumnOffsets_t;
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
-	ColumnArray(ColumnPtr nested_column)
-		: data(nested_column), offsets(new ColumnOffsets_t)
+	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = NULL)
+		: data(nested_column), offsets(offsets_column)
 	{
+		if (!offsets_column)
+		{
+			offsets = new ColumnOffsets_t;
+		}
+		else
+		{
+			if (!dynamic_cast<ColumnOffsets_t *>(&*offsets_column))
+				throw Exception("offsets_column must be a ColumnVector<UInt64>", ErrorCodes::ILLEGAL_COLUMN);
+		}
 	}
 
 	std::string getName() const { return "ColumnArray(" + data->getName() + ")"; }

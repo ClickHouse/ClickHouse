@@ -34,7 +34,7 @@ public:
 	virtual DataTypePtr getReturnType(const DataTypes & arguments) const = 0;
 	
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
-	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений.
+	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений и кладет результат в arguments.
 	virtual void getLambdaArgumentTypes(DataTypes & arguments) const
 	{
 		throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

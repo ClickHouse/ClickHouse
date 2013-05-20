@@ -131,7 +131,6 @@ private:
 	typedef std::set<ASTPtr> SetOfASTs;
 	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 
-
 	void init()
 	{
 		createAliasesDict(ast);

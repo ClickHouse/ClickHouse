@@ -18,13 +18,15 @@ public:
 	virtual ColumnPtr cloneDummy(size_t s_) const = 0;
 	
 	ColumnPtr cloneEmpty() const { return cloneDummy(0); }
+	bool isConst() { return true; }
 	size_t size() const { return s; }
-	Field operator[](size_t n) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-	void get(size_t n, Field & res) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
-	void insert(const Field & x) { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	void insertDefault() { ++s; }
 	size_t byteSize() const { return 0; }
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const { return 0; }
+	
+	Field operator[](size_t n) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+	void get(size_t n, Field & res) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
+	void insert(const Field & x) { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	StringRef getDataAt(size_t n) const { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	void insertData(const char * pos, size_t length) { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	
