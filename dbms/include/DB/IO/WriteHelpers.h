@@ -91,10 +91,23 @@ inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 }
 
 
+/** Пишет С-строку без создания временного объекта. Если строка - литерал, то strlen выполняется на этапе компиляции.
+  * Используйте, когда строка - литерал.
+  */
+#define writeCString(s, buf) \
+	(buf).write((s), strlen(s))
+
+/** Пишет строку для использования в формате JSON:
+ *  - строка выводится в двойных кавычках
+ *  - эскейпится символ прямого слеша '/'
+ *  - байты из диапазона 0x00-0x1F кроме '\b', '\f', '\n', '\r', '\t' эскейпятся как \u00XX
+ *  - кодовые точки U+2028 и U+2029 (последовательности байт в UTF-8: e2 80 a8, e2 80 a9) эскейпятся как \u2028 и \u2029
+ *  - предполагается, что строка в кодировке UTF-8, невалидный UTF-8 не обрабатывается
+ *  - не-ASCII символы остаются как есть
+ */
 inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf)
 {
 	writeChar('"', buf);
-	char tmp[7];
 	for (const char * it = begin; it != end; ++it)
 	{
 		switch (*it)
@@ -128,19 +141,25 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 				writeChar('/', buf);
 				break;
 			default:
-				int code_point = 0;
 				if (0x00 <= *it && *it <= 0x1F)
-					code_point = *it;
-				else if (strncmp(it, "\xE2\x80\xA8", 3) == 0 || strncmp(it, "\xE2\x80\xA9", 3) == 0)
 				{
-					code_point = *(it++);
-					code_point = (code_point << 8) | *(it++);
-					code_point = (code_point << 8) | *it;
+					char higher_half = (*it) >> 4;
+					char lower_half = (*it) & 0xF;
+					
+					writeCString("\\u00", buf);
+					writeChar('0' + higher_half, buf);
+					
+					if (0 <= lower_half && lower_half <= 9)
+						writeChar('0' + lower_half, buf);
+					else
+						writeChar('A' + lower_half - 10, buf);
 				}
-				if (code_point != 0)
+				else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
 				{
-					std::snprintf(tmp, 7, "\\u%04X", code_point);
-					buf.write(tmp, 6);
+					if (it[2] == '\xA8')
+						writeCString("\\u2028", buf);
+					if (it[2] == '\xA9')
+						writeCString("\\u2029", buf);
 				}
 				else
 					writeChar(*it, buf);
@@ -148,13 +167,6 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 	}
 	writeChar('"', buf);
 }
-
-
-/** Пишет С-строку без создания временного объекта. Если строка - литерал, то strlen выполняется на этапе компиляции.
-  * Используйте, когда строка - литерал.
-  */
-#define writeCString(s, buf) \
-	(buf).write((s), strlen(s))
 
 
 template <char c>
