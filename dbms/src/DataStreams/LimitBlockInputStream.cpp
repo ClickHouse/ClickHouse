@@ -19,6 +19,9 @@ Block LimitBlockInputStream::readImpl()
 {
 	Block res;
 	size_t rows = 0;
+	
+	/// укажем, что LIMIT применялся
+	info.updateRowsBeforeLimit(res);
 
 	/// pos - сколько строк было прочитано, включая последний прочитанный блок
 
@@ -30,6 +33,7 @@ Block LimitBlockInputStream::readImpl()
 		res = children.back()->read();
 		if (!res)
 			return res;
+		info.updateRowsBeforeLimit(res);
 		rows = res.rows();
 		pos += rows;
 	} while (pos <= offset);

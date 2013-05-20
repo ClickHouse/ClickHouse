@@ -19,7 +19,7 @@ public:
 		Block & sample, size_t max_block_size, const DataTypeFactory & data_type_factory) const;
 		
 	BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-		Block & sample) const;
+		Block & sample, const BlockInputStreamPtr & input_stream = NULL) const;
 };
 
 }

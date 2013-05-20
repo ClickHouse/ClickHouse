@@ -9,8 +9,8 @@ namespace DB
 using Poco::SharedPtr;
 
 
-JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: ostr(ostr_), field_number(0), row_count(0)
+JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const BlockInputStreamPtr & input_stream_)
+	: ostr(ostr_), field_number(0), row_count(0), input_stream(input_stream_)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
@@ -87,9 +87,30 @@ void JSONRowOutputStream::writeSuffix()
 	writeChar('\n', ostr);
 	writeCString("\t\"rows\": ", ostr);
 	writeIntText(row_count, ostr);
+		
+	writeRowsBeforeLimitAtLeast();
+	
 	writeChar('\n', ostr);
 	writeCString("}\n", ostr);
 	ostr.next();
+}
+
+void JSONRowOutputStream::writeRowsBeforeLimitAtLeast()
+{
+	if (input_stream.isNull())
+		return;
+	
+	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*input_stream))
+	{
+		const BlockStreamProfileInfo & info = input->getInfo();
+		if (info.applied_limit)
+		{
+			writeCString(",\n", ostr);
+			writeChar('\n', ostr);
+			writeCString("\t\"rows_before_limit_at_least\": ", ostr);
+			writeIntText(info.rows_before_limit, ostr);
+		}
+	}
 }
 
 }

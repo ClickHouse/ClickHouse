@@ -11,12 +11,12 @@
 namespace DB
 {
 
-/** Поток для вывода данных в формате JSON.
+/** Поток для вывода данных в формате JSONCompact.
   */
 class JSONCompactRowOutputStream : public JSONRowOutputStream
 {
 public:
-	JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
+	JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const BlockInputStreamPtr & input_stream_ = NULL);
 
 	void writeField(const Field & field);
 	void writeFieldDelimiter();

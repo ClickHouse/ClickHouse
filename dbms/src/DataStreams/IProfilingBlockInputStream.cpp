@@ -21,6 +21,13 @@ void BlockStreamProfileInfo::update(Block & block)
 }
 
 
+void BlockStreamProfileInfo::updateRowsBeforeLimit(Block & block)
+{
+	applied_limit = true;
+	rows_before_limit += block.rows();
+}
+
+
 void BlockStreamProfileInfo::print(std::ostream & ostr) const
 {
 	UInt64 elapsed 			= work_stopwatch.elapsed();

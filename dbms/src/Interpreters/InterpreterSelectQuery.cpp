@@ -572,7 +572,7 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : "TabSeparated";
 
 	BlockInputStreamPtr in = execute();
-	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
+	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample, in);
 	
 	copyData(*in, *out);
 

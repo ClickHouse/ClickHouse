@@ -695,7 +695,7 @@ private:
 						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*query_with_output->format))
 							current_format = id->name;
 				
-				block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
+				block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block, block_std_in);
 				block_std_out->writePrefix();
 			}
 			

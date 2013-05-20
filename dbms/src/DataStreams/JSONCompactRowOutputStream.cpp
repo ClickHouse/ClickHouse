@@ -9,8 +9,8 @@ namespace DB
 using Poco::SharedPtr;
 
 
-JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: JSONRowOutputStream(ostr_, sample_)
+JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const BlockInputStreamPtr & input_stream_)
+	: JSONRowOutputStream(ostr_, sample_, input_stream_)
 {
 }
 

@@ -435,7 +435,8 @@ void TCPHandler::sendData(Block & block)
 		state.block_out = query_context.getFormatFactory().getOutput(
 			"Native",
 			*state.maybe_compressed_out,
-			state.io.in_sample);
+			state.io.in_sample,
+			state.io.in);
 	}
 
 	writeVarUInt(Protocol::Server::Data, *out);
