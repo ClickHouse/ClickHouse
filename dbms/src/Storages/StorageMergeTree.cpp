@@ -394,7 +394,6 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 	String sign_filter_column;
 	createPositiveSignCondition(sign_filter_expression, sign_filter_column);
 	
-	BlockInputStreams res;
 	BlockInputStreams to_collapse;
 	
 	for (size_t part_index = 0; part_index < parts.size(); ++part_index)
@@ -405,12 +404,10 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 																			max_block_size, column_names, *this,
 																			part.data_part, part.ranges, thisPtr());
 		
-		if (part.data_part->size * index_granularity >= settings.min_rows_to_skip_collapsing)
-			res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(source_stream, sign_filter_expression), sign_filter_column));
-		else
-			to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
+		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
 	}
 	
+	BlockInputStreams res;
 	if (to_collapse.size() == 1)
 		res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
 	else if (to_collapse.size() > 1)

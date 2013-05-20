@@ -68,9 +68,6 @@ struct StorageMergeTreeSettings
 	/// Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их.
 	size_t coarse_index_granularity;
 	
-	/// Если кусок содержит хотя бы столько строк, его содержимое можно не коллапсировать с содержимым остальных кусков при SELECT ... FINAL.
-	size_t min_rows_to_skip_collapsing;
-	
 	StorageMergeTreeSettings() :
 		max_size_ratio_to_merge_parts(5),
 		max_parts_to_merge_at_once(10),
@@ -78,8 +75,7 @@ struct StorageMergeTreeSettings
 		merging_threads(2),
 		min_rows_for_concurrent_read(20 * 8192),
 		min_rows_for_seek(5 * 8192),
-		coarse_index_granularity(8),
-		min_rows_to_skip_collapsing(90 * 1024 * 1024) {}
+		coarse_index_granularity(8) {}
 };
 
 /// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
