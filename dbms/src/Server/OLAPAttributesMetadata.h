@@ -1825,29 +1825,29 @@ struct UserAgent : public AttributeInOneFileBase
 	BinaryData extractFromOne(void* buf) const
 	{
 		return (static_cast<UInt64>(static_cast<UInt8*>(buf)[0]) << 24)
-		+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[1]) << 16)
-		+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[2]) << 8)
-		+ static_cast<UInt8*>(buf)[3];
+			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[1]) << 16)
+			+ static_cast<UInt8*>(buf)[2]
+			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[3]) << 8);
 	}
 	
 	BinaryData parse(const std::string & s) const
 	{
 		Poco::StringTokenizer tokenizer(s, " .");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
-		: (tokenizer.count() == 2 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
-		: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
-		+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
-		+ (tokenizer[2][0] << 8)
-		+ (tokenizer[2][1]))));
+			: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
+			: (tokenizer.count() == 2 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
+				+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
+			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
+				+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
+				+ (static_cast<UInt32>(tokenizer[2][0]) << 8)
+				+ (tokenizer[2][1]))));
 	}
 	
 	std::string toString(BinaryData data) const
 	{
 		std::stringstream s;
 		s << Poco::NumberFormatter::format(data >> 24)
-		<< " " << Poco::NumberFormatter::format((data >> 16) & 0xFF);
+			<< " " << Poco::NumberFormatter::format((data >> 16) & 0xFF);
 		
 		if (data & 0xFFFF)
 		{
@@ -1878,18 +1878,18 @@ struct UserAgentVersion : public AttributeInOneFileBase
 	BinaryData extractFromOne(void* buf) const
 	{
 		return (static_cast<UInt64>(static_cast<UInt8*>(buf)[1]) << 16)
-		+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[2]) << 8)
-		+ static_cast<UInt8*>(buf)[3];
+			+ static_cast<UInt8*>(buf)[2]
+			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[3]) << 8);
 	}
 	
 	BinaryData parse(const std::string & s) const
 	{
 		Poco::StringTokenizer tokenizer(s, ".");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
-		: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
-		+ (tokenizer[1][0] << 8)
-		+ (tokenizer[1][1])));
+			: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
+			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
+				+ (static_cast<UInt32>(tokenizer[1][0]) << 8)
+				+ tokenizer[1][1]));
 	}
 	
 	std::string toString(BinaryData data) const
@@ -1926,22 +1926,22 @@ struct UserAgentMajor : public AttributeInOneFileBase
 	BinaryData extractFromOne(void* buf) const
 	{
 		return (static_cast<UInt64>(static_cast<UInt8*>(buf)[0]) << 8)
-		+ static_cast<UInt64>(static_cast<UInt8*>(buf)[1]);
+			+ static_cast<UInt64>(static_cast<UInt8*>(buf)[1]);
 	}
 	
 	BinaryData parse(const std::string & s) const
 	{
 		Poco::StringTokenizer tokenizer(s, " ");
 		return tokenizer.count() == 0 ? 0
-		: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
-		: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
-		+ Poco::NumberParser::parseUnsigned(tokenizer[1])));
+			: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
+			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 8)
+				+ Poco::NumberParser::parseUnsigned(tokenizer[1])));
 	}
 	
 	std::string toString(BinaryData data) const
 	{
-		return Poco::NumberFormatter::format(data >> 8)
-		+ " " + Poco::NumberFormatter::format(data & 0xFF);
+		return Poco::NumberFormatter::format(data >> 24)
+			+ " " + Poco::NumberFormatter::format((data >> 16) & 0xFF);
 	}
 };
 
