@@ -17,6 +17,8 @@ public:
 	void write(const Block & block);
 	void writePrefix() { row_output->writePrefix(); }
 	void writeSuffix() { row_output->writeSuffix(); }
+	
+	void setRowsBeforeLimit(size_t rows_before_limit);
 
 private:
 	RowOutputStreamPtr row_output;

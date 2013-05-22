@@ -46,7 +46,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf,
-	Block & sample, const BlockInputStreamPtr & input_stream) const
+	Block & sample) const
 {
 	if (name == "Native")
 		return new NativeBlockOutputStream(buf);
@@ -79,9 +79,9 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 	else if (name == "Values")
 		return new BlockOutputStreamFromRowOutputStream(new ValuesRowOutputStream(buf, sample));
 	else if (name == "JSON")
-		return new BlockOutputStreamFromRowOutputStream(new JSONRowOutputStream(buf, sample, input_stream));
+		return new BlockOutputStreamFromRowOutputStream(new JSONRowOutputStream(buf, sample));
 	else if (name == "JSONCompact")
-		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample, input_stream));
+		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
 	else if (name == "Null")
 		return new NullBlockOutputStream;
 	else

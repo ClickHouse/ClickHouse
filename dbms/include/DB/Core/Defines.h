@@ -29,3 +29,5 @@
 
 /// Суффикс имени для столбца, содержащего смещения массива.
 #define ARRAY_SIZES_COLUMN_NAME_SUFFIX 							".size"
+
+#define DBMS_MIN_REVISION_WITH_PROFILING_PACKET				32027

@@ -38,7 +38,7 @@ public:
 		String format_name = format_ast ? dynamic_cast<ASTIdentifier &>(*format_ast).name : "TabSeparated";
 
 		BlockInputStreamPtr in = executeImpl();
-		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample, in);
+		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
 
 		copyData(*in, *out);
 

@@ -30,6 +30,10 @@ public:
 	  */
 	virtual void writePrefix() {}
 	virtual void writeSuffix() {}
+	
+	/** Метод для установки поля rows_before_limit для вывода в формате JSON[Compact]
+	 */
+	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
 
 	virtual ~IBlockOutputStream() {}
 	

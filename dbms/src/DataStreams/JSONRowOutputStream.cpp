@@ -9,8 +9,8 @@ namespace DB
 using Poco::SharedPtr;
 
 
-JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const BlockInputStreamPtr & input_stream_)
-	: ostr(ostr_), field_number(0), row_count(0), input_stream(input_stream_)
+JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
+	: ostr(ostr_), field_number(0), row_count(0), applied_limit(false), rows_before_limit(0)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());
@@ -97,24 +97,12 @@ void JSONRowOutputStream::writeSuffix()
 
 void JSONRowOutputStream::writeRowsBeforeLimitAtLeast()
 {
-	if (input_stream.isNull())
-		return;
-	
-	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*input_stream))
+	if (applied_limit)
 	{
-		const BlockStreamProfileInfo & info = input->getInfo();
-		
-		size_t rows_before_limit = 0;
-		bool applied_limit = false;
-		info.calculateRowsBeforeLimit(rows_before_limit, applied_limit);
-		
-		if (applied_limit)
-		{
-			writeCString(",\n", ostr);
-			writeChar('\n', ostr);
-			writeCString("\t\"rows_before_limit_at_least\": ", ostr);
-			writeIntText(rows_before_limit, ostr);
-		}
+		writeCString(",\n", ostr);
+		writeChar('\n', ostr);
+		writeCString("\t\"rows_before_limit_at_least\": ", ostr);
+		writeIntText(rows_before_limit, ostr);
 	}
 }
 

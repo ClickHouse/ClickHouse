@@ -633,6 +633,10 @@ private:
 			case Protocol::Server::Progress:
 				onProgress(packet.progress);
 				return true;
+				
+			case Protocol::Server::ProfileInfo:
+				onProfileInfo(packet.profile_info);
+				return true;
 
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
@@ -695,7 +699,7 @@ private:
 						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*query_with_output->format))
 							current_format = id->name;
 				
-				block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block, block_std_in);
+				block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 				block_std_out->writePrefix();
 			}
 			
@@ -758,6 +762,13 @@ private:
 	{
 		std::cerr << "Received exception from server:" << std::endl
 			<< "Code: " << e.code() << ". " << e.displayText();
+	}
+	
+	
+	void onProfileInfo(const BlockStreamProfileInfo & profile_info)
+	{
+		if (profile_info.hasAppliedLimit())
+			block_std_out->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 	}
 
 

@@ -31,6 +31,10 @@ namespace DB
   * Также, клиент может передать на сервер пакет Cancel - отмена выполнения запроса.
   * В этом случае, сервер может прервать выполнение запроса и вернуть неполные данные;
   *  но клиент всё равно должен читать все пакеты до EndOfStream.
+  * 
+  * Перед пакетом EndOfStream, если есть профайлинговая информация и ревизия клиента достаточно новая,
+  * может быть отправлен пакет ProfileInfo. После него передаются данные профайлинга -
+  * сериализованная структура BlockStreamProfileInfo.
   *
   * 2. Между запросами, клиент может отправить Ping, и сервер должен ответить Pong.
   */
@@ -48,12 +52,13 @@ namespace Protocol
 			Progress = 3,		/// Прогресс выполнения запроса: строк считано, байт считано.
 			Pong = 4,			/// Ответ на Ping.
 			EndOfStream = 5,	/// Все пакеты были переданы.
+			ProfileInfo = 6,	/// Пакет с профайлинговой информацией
 		};
 
 		inline const char * toString(Enum packet)
 		{
-			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream" };
-			return packet >= 0 && packet < 6
+			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo" };
+			return packet >= 0 && packet < 7
 				? data[packet]
 				: "Unknown packet";
 		}

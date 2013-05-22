@@ -17,6 +17,7 @@
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 #include <DB/Interpreters/Settings.h>
 
@@ -64,6 +65,7 @@ public:
 		Block block;
 		SharedPtr<Exception> exception;
 		Progress progress;
+		BlockStreamProfileInfo profile_info;
 
 		Packet() : type(Protocol::Server::Hello) {}
 	};
@@ -140,6 +142,7 @@ private:
 	Block receiveData();
 	SharedPtr<Exception> receiveException();
 	Progress receiveProgress();
+	BlockStreamProfileInfo receiveProfileInfo();
 };
 
 

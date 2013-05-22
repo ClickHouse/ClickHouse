@@ -275,6 +275,10 @@ Connection::Packet Connection::receivePacket()
 		case Protocol::Server::Progress:
 			res.progress = receiveProgress();
 			return res;
+			
+		case Protocol::Server::ProfileInfo:
+			res.profile_info = receiveProfileInfo();
+			return res;
 
 		case Protocol::Server::EndOfStream:
 			return res;
@@ -331,6 +335,14 @@ Progress Connection::receiveProgress()
 	Progress progress;
 	progress.read(*in);
 	return progress;
+}
+
+
+BlockStreamProfileInfo Connection::receiveProfileInfo()
+{
+	BlockStreamProfileInfo profile_info;
+	profile_info.read(*in);
+	return profile_info;
 }
 
 }

@@ -17,7 +17,7 @@ namespace DB
 class JSONRowOutputStream : public IRowOutputStream
 {
 public:
-	JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const BlockInputStreamPtr & input_stream_ = NULL);
+	JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
 	void writeField(const Field & field);
 	void writeFieldDelimiter();
@@ -25,6 +25,12 @@ public:
 	void writeRowEndDelimiter();
 	void writePrefix();
 	void writeSuffix();
+	
+	void setRowsBeforeLimit(size_t rows_before_limit_)
+	{
+		applied_limit = true;
+		rows_before_limit = rows_before_limit_;
+	}
 
 protected:
 	
@@ -35,7 +41,8 @@ protected:
 	WriteBufferValidUTF8 ostr;
 	size_t field_number;
 	size_t row_count;
-	BlockInputStreamPtr input_stream;	
+	bool applied_limit;
+	size_t rows_before_limit;
 	NamesAndTypesVector fields;	
 };
 

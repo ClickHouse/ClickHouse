@@ -572,7 +572,11 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : "TabSeparated";
 
 	BlockInputStreamPtr in = execute();
-	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample, in);
+	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
+	
+	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*in))
+		if (input->getInfo().hasAppliedLimit())
+			out->setRowsBeforeLimit(input->getInfo().getRowsBeforeLimit());
 	
 	copyData(*in, *out);
 

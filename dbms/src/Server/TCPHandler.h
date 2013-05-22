@@ -120,6 +120,7 @@ private:
 	void sendException(const Exception & e);
 	void sendProgress(size_t rows, size_t bytes);
 	void sendEndOfStream();
+	void sendProfileInfo();
 
 	bool isQueryCancelled();
 

@@ -10,6 +10,44 @@ namespace DB
 {
 
 
+void BlockStreamProfileInfo::read(ReadBuffer & in)
+{
+	readVarUInt(rows, in);
+	readVarUInt(blocks, in);
+	readVarUInt(bytes, in);
+	readBinary(applied_limit, in);
+	readVarUInt(rows_before_limit, in);
+	readBinary(calculated_rows_before_limit, in);	
+}
+
+
+void BlockStreamProfileInfo::write(WriteBuffer & out) const
+{
+	writeVarUInt(rows, out);
+	writeVarUInt(blocks, out);
+	writeVarUInt(bytes, out);
+	writeBinary(hasAppliedLimit(), out);
+	writeVarUInt(getRowsBeforeLimit(), out);
+	writeBinary(calculated_rows_before_limit, out);
+}
+
+
+size_t BlockStreamProfileInfo::getRowsBeforeLimit() const
+{
+	if (!calculated_rows_before_limit)
+		calculateRowsBeforeLimit();
+	return rows_before_limit;
+}
+
+
+bool BlockStreamProfileInfo::hasAppliedLimit() const
+{
+	if (!calculated_rows_before_limit)
+		calculateRowsBeforeLimit();
+	return applied_limit;
+}	
+
+
 void BlockStreamProfileInfo::update(Block & block)
 {
 	++blocks;
@@ -21,20 +59,20 @@ void BlockStreamProfileInfo::update(Block & block)
 }
 
 
-void BlockStreamProfileInfo::calculateRowsBeforeLimit(size_t & rows_before_limit, bool & applied_limit) const
+void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 {
-		applied_limit |= stream_name == "Limit";
-		rows_before_limit = 0;
-		for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
-        {
-				const BlockStreamProfileInfo & info = **it;
-				size_t nested_rows_before_limit;
-				info.calculateRowsBeforeLimit(nested_rows_before_limit, applied_limit);
-				if (stream_name == "Limit" && nested_rows_before_limit == 0) 
-					rows_before_limit += info.rows;
-				else
-					rows_before_limit += nested_rows_before_limit;
-		}
+	calculated_rows_before_limit = true;
+	applied_limit |= stream_name == "Limit";
+	rows_before_limit = 0;
+	for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
+	{
+		const BlockStreamProfileInfo & info = **it;
+		info.calculateRowsBeforeLimit();
+		if (stream_name == "Limit" && info.rows_before_limit == 0) 
+			rows_before_limit += info.rows;
+		else
+			rows_before_limit += info.rows_before_limit;
+	}
 }
 
 

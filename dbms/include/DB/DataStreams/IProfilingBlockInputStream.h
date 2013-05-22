@@ -34,11 +34,29 @@ struct BlockStreamProfileInfo
 
 	String column_names;
 
-	BlockStreamProfileInfo() : started(false), rows(0), blocks(0), bytes(0) {}
+	BlockStreamProfileInfo() :
+		started(false), rows(0), blocks(0), bytes(0),
+		applied_limit(false), rows_before_limit(0), calculated_rows_before_limit(false)
+	{
+	}
+	
+	size_t getRowsBeforeLimit() const;
+	bool hasAppliedLimit() const;
 
 	void update(Block & block);
-	void print(std::ostream & ostr) const;
-	void calculateRowsBeforeLimit(size_t & rows_before_limit, bool & applied_limit) const;
+	void print(std::ostream & ostr) const;	
+	
+	/// Методы для бинарной [де]сериализации
+	void read(ReadBuffer & in);
+	void write(WriteBuffer & out) const;
+	
+private:
+	void calculateRowsBeforeLimit() const;
+	
+	/// Для этих полей сделаем accessor'ы, т.к. их необходимо предварительно вычислять.
+	mutable bool applied_limit;					/// Применялся ли LIMIT
+	mutable size_t rows_before_limit;			/// Число строк до выполнения LIMIT
+	mutable bool calculated_rows_before_limit;	/// Вычислялось ли поле rows_before_limit
 };
 
 	

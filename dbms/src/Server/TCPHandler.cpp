@@ -221,13 +221,33 @@ void TCPHandler::processOrdinaryQuery()
 				}
 			}
 
-			sendData(block);
+			/// Если закончились данные, то отправим данные профайлинга до
+			/// последнего нулевого блока, чтобы иметь возможность использовать
+			/// эту информацию в выводе суффикса output stream'а
+			if (!block)
+				sendProfileInfo();
+			
+			sendData(block);			
 			if (!block)
 				break;
 		}
 
 		watch.stop();
 		logProfileInfo(watch, *state.io.in);
+	}
+}
+
+
+void TCPHandler::sendProfileInfo()
+{
+	if (client_revision < DBMS_MIN_REVISION_WITH_PROFILING_PACKET)
+		return;
+	
+	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+	{
+		writeVarUInt(Protocol::Server::ProfileInfo, *out);
+		input->getInfo().write(*out);
+		out->next();
 	}
 }
 
@@ -435,8 +455,7 @@ void TCPHandler::sendData(Block & block)
 		state.block_out = query_context.getFormatFactory().getOutput(
 			"Native",
 			*state.maybe_compressed_out,
-			state.io.in_sample,
-			state.io.in);
+			state.io.in_sample);
 	}
 
 	writeVarUInt(Protocol::Server::Data, *out);
