@@ -767,7 +767,7 @@ private:
 	
 	void onProfileInfo(const BlockStreamProfileInfo & profile_info)
 	{
-		if (profile_info.hasAppliedLimit())
+		if (profile_info.hasAppliedLimit() && block_std_out)
 			block_std_out->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 	}
 
