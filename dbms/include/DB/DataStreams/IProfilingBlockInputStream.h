@@ -21,13 +21,12 @@ struct BlockStreamProfileInfo
 	bool started;
 	Stopwatch work_stopwatch;	/// Время вычислений (выполнения функции read())
 	Stopwatch total_stopwatch;	/// Время с учётом ожидания
+	
+	String stream_name;			/// Короткое имя потока, для которого собирается информация
 
 	size_t rows;
 	size_t blocks;
 	size_t bytes;
-	
-	bool applied_limit;			/// Применялся ли LIMIT
-	size_t rows_before_limit;	/// Число строк до выполнения LIMIT
 
 	/// Информация о вложенных потоках - для выделения чистого времени работы.
 	typedef std::vector<const BlockStreamProfileInfo *> BlockStreamProfileInfos;
@@ -35,11 +34,11 @@ struct BlockStreamProfileInfo
 
 	String column_names;
 
-	BlockStreamProfileInfo() : started(false), rows(0), blocks(0), bytes(0), applied_limit(false), rows_before_limit(0) {}
+	BlockStreamProfileInfo() : started(false), rows(0), blocks(0), bytes(0) {}
 
 	void update(Block & block);
-	void updateRowsBeforeLimit(Block & block);
 	void print(std::ostream & ostr) const;
+	void calculateRowsBeforeLimit(size_t & rows_before_limit, bool & applied_limit) const;
 };
 
 	

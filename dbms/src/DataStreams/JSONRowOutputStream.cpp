@@ -103,12 +103,17 @@ void JSONRowOutputStream::writeRowsBeforeLimitAtLeast()
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*input_stream))
 	{
 		const BlockStreamProfileInfo & info = input->getInfo();
-		if (info.applied_limit)
+		
+		size_t rows_before_limit = 0;
+		bool applied_limit = false;
+		info.calculateRowsBeforeLimit(rows_before_limit, applied_limit);
+		
+		if (applied_limit)
 		{
 			writeCString(",\n", ostr);
 			writeChar('\n', ostr);
 			writeCString("\t\"rows_before_limit_at_least\": ", ostr);
-			writeIntText(info.rows_before_limit, ostr);
+			writeIntText(rows_before_limit, ostr);
 		}
 	}
 }

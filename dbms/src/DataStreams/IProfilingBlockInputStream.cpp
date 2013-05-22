@@ -21,10 +21,20 @@ void BlockStreamProfileInfo::update(Block & block)
 }
 
 
-void BlockStreamProfileInfo::updateRowsBeforeLimit(Block & block)
+void BlockStreamProfileInfo::calculateRowsBeforeLimit(size_t & rows_before_limit, bool & applied_limit) const
 {
-	applied_limit = true;
-	rows_before_limit += block.rows();
+		applied_limit |= stream_name == "Limit";
+		rows_before_limit = 0;
+		for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
+        {
+				const BlockStreamProfileInfo & info = **it;
+				size_t nested_rows_before_limit;
+				info.calculateRowsBeforeLimit(nested_rows_before_limit, applied_limit);
+				if (stream_name == "Limit" && nested_rows_before_limit == 0) 
+					rows_before_limit += info.rows;
+				else
+					rows_before_limit += nested_rows_before_limit;
+		}
 }
 
 
@@ -90,6 +100,7 @@ Block IProfilingBlockInputStream::read()
 	if (!info.started)
 	{
 		info.total_stopwatch.start();
+		info.stream_name = getShortName();
 
 		for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
 			if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
