@@ -324,7 +324,7 @@ struct ExtractImpl
 		
 		const OptimizedRegularExpression & regexp = Regexps::get(pattern);
 
-		int capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
+		unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
 		OptimizedRegularExpression::MatchVec matches;
 		matches.reserve(capture + 1);
 		size_t prev_offset = 0;
