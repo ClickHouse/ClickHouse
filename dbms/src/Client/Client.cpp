@@ -769,6 +769,11 @@ private:
 	{
 		if (profile_info.hasAppliedLimit() && block_std_out)
 			block_std_out->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
+		/// Обновим прогресс финальными данными профайлинга
+		Progress progress(
+			profile_info.rows - rows_read_on_server,
+			profile_info.bytes - bytes_read_on_server);
+		onProgress(progress);
 	}
 
 
