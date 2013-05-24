@@ -244,26 +244,32 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 
 AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const DataTypes & argument_types) const
 {
-	std::set<String> names;
-
-	boost::assign::insert(names)
-		("count")
-		("any")
-		("anyLast")
-		("min")
-		("max")
-		("sum")
-		("avg")
-		("uniq")
-		("uniqState")
-		("groupArray")
-		("median")
-		("quantile")
-		;
-	
-	return names.end() != names.find(name)
+	return isAggregateFunctionName(name)
 		? get(name, argument_types)
 		: NULL;
+}
+
+
+bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
+{
+	std::set<String> names;
+	
+	boost::assign::insert(names)
+	("count")
+	("any")
+	("anyLast")
+	("min")
+	("max")
+	("sum")
+	("avg")
+	("uniq")
+	("uniqState")
+	("groupArray")
+	("median")
+	("quantile")
+	;
+	
+	return names.end() != names.find(name);
 }
 
 

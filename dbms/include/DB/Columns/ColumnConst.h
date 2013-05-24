@@ -39,7 +39,7 @@ public:
 	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const { return IsNumber<T>::value; }
 	size_t sizeOfField() const { return sizeof(T); }
-	ColumnPtr cloneEmpty() const { return new ColumnConst(0, data); }
+	ColumnPtr cloneResized(size_t s_) const { return new ColumnConst(s_, data); }
 	size_t size() const { return s; }
 	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
 	void get(size_t n, Field & res) const { res = typename NearestFieldType<T>::Type(data); }

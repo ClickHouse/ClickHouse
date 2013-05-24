@@ -17,7 +17,7 @@ public:
 	
 	virtual ColumnPtr cloneDummy(size_t s_) const = 0;
 	
-	ColumnPtr cloneEmpty() const { return cloneDummy(0); }
+	ColumnPtr cloneResized(size_t s_) const { return cloneDummy(s_); }
 	bool isConst() { return true; }
 	size_t size() const { return s; }
 	void insertDefault() { ++s; }

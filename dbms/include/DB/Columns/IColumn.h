@@ -42,7 +42,13 @@ public:
 	virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 	
 	/** Создать пустой столбец такого же типа */
-	virtual SharedPtr<IColumn> cloneEmpty() const = 0;
+	virtual SharedPtr<IColumn> cloneEmpty() const { return cloneResized(0); }
+	
+	/** Создать столбец такого же типа и указанного размера.
+	  * Если размер меньше текущего, данные обрезаются.
+	  * Если больше - добавляются значения по умолчанию.
+	  */
+	virtual SharedPtr<IColumn> cloneResized(size_t size) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
 	/** Количество значений в столбце. */
 	virtual size_t size() const = 0;

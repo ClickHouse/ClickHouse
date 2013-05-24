@@ -47,6 +47,8 @@ public:
 	void insertUnique(const ColumnWithNameAndType & elem);
 	/// удалить столбец в заданной позиции
 	void erase(size_t position);
+	/// удалить столбец с заданным именем
+	void erase(const String & name);
 
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;

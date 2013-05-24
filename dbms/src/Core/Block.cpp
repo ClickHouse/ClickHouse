@@ -88,6 +88,20 @@ void Block::erase(size_t position)
 }
 
 
+void Block::erase(const String & name)
+{
+	IndexByName_t::iterator index_it = index_by_name.find(name);
+	if (index_it == index_by_name.end())
+		throw Exception("No such name in Block::erase(): '"
+			+ name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+	
+	Container_t::iterator it = index_it->second;
+	index_by_name.erase(index_it);
+	data.erase(it);
+	rebuildIndexByPosition();
+}
+
+
 ColumnWithNameAndType & Block::getByPosition(size_t position)
 {
 	if (position >= index_by_position.size())

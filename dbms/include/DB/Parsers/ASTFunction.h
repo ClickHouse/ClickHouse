@@ -22,6 +22,9 @@ public:
 	ASTPtr parameters;
 	/// алиас, если есть
 	String alias;
+	
+	bool is_aggregate_function;
+	bool is_lambda_expression;
 
 	/// сама функция
 	FunctionPtr function;
@@ -32,8 +35,8 @@ public:
 	/// тип возвращаемого значения
 	DataTypePtr return_type;
 
-	ASTFunction() {}
-	ASTFunction(StringRange range_) : IAST(range_) {}
+	ASTFunction() : is_aggregate_function(false), is_lambda_expression(false) {}
+	ASTFunction(StringRange range_) : IAST(range_), is_aggregate_function(false), is_lambda_expression(false) {}
 
 	String getColumnName() const
 	{

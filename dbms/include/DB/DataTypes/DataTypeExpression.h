@@ -29,7 +29,7 @@ public:
 		{
 			if (i > 0)
 				res += ", ";
-			DataTypePtr & type = argument_types[i];
+			const DataTypePtr & type = argument_types[i];
 			res += type ? type->getName() : "?";
 		}
 		if (argument_types.size() > 1)
