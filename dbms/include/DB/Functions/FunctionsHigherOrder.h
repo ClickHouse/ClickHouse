@@ -213,7 +213,7 @@ public:
 		ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[1]).column);
 		
 		Block temp_block;
-		Expression & expression = column_expression->getExpression();
+		ExpressionActions & expression = *column_expression->getExpression();
 		Name argument_name = column_expression->getArguments()[0].first;
 		DataTypePtr element_type = column_expression->getArguments()[0].second;
 		/// Положим в блок аргумент выражения.

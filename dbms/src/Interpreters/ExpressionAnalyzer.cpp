@@ -8,6 +8,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTSet.h>
+#include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/DataTypes/DataTypeSet.h>
 #include <DB/DataTypes/DataTypeTuple.h>
@@ -363,10 +364,15 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 				normalizeTreeImpl(ast, finished_asts, current_asts);
 			}
-			
-			/// Проверим имеет ли смысл sign-rewrite
-			if (node->name == sign_column_name)
-				throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
+			else
+			{
+				/// Проверим имеет ли смысл sign-rewrite
+				if (node->name == sign_column_name)
+					throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
+				
+				if (findColumn(node->name) == columns.end())
+					throw Exception("Unknown identifier: " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
+			}
 		}
 	}
 	
@@ -617,7 +623,29 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 			aggregate.argument_names[i] = name;
 		}
 		
-		aggregate.function = context.getAggregateFunctionFactory().get(node->name, types);;
+		aggregate.function = context.getAggregateFunctionFactory().get(node->name, types);
+		
+		if (node->parameters)
+		{
+			ASTs & parameters = dynamic_cast<ASTExpressionList &>(*node->parameters).children;
+			Row params_row(parameters.size());
+			
+			for (size_t i = 0; i < parameters.size(); ++i)
+			{
+				ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*parameters[i]);
+				if (!lit)
+					throw Exception("Parameters to aggregate functions must be literals", ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+				
+				params_row[i] = lit->value;
+			}
+			
+			aggregate.function->setParameters(params_row);
+		}
+		
+		aggregate.function->setArguments(types);
+		
+		if (!sign_column_name.empty())
+			considerSignRewrite(ast);
 		
 		aggregate_descriptions.push_back(aggregate);
 	}
@@ -664,8 +692,12 @@ ExpressionActionsPtr ExpressionAnalyzer::getActionsAfterAggregation()
 		asts = select_query->order_expression_list->children;
 		for (size_t i = 0; i < asts.size(); ++i)
 		{
-			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), ""));
-			getActionsImpl(asts[i], false, false, *actions);
+			ASTOrderByElement * ast = dynamic_cast<ASTOrderByElement *>(&*asts[i]);
+			if (!ast || ast->children.size() != 1)
+				throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+			ASTPtr order_expression = ast->children[0];
+			result_columns.push_back(NameWithAlias(order_expression->getColumnName(), ""));
+			getActionsImpl(order_expression, false, false, *actions);
 		}
 	}
 	
@@ -683,25 +715,13 @@ ExpressionActionsPtr ExpressionAnalyzer::getActionsBeforeAggregation()
 	ExpressionActionsPtr actions = new ExpressionActions(columns);
 	NamesWithAliases result_columns;
 	
-	ASTs asts = select_query->select_expression_list->children;
-	for (size_t i = 0; i < asts.size(); ++i)
-	{
-		getActionsBeforeAggregationImpl(asts[i], *actions, result_columns);
-	}
+	getActionsBeforeAggregationImpl(select_query->select_expression_list, *actions, result_columns);
 	
 	if (select_query->having_expression)
-	{
 		getActionsBeforeAggregationImpl(select_query->having_expression, *actions, result_columns);
-	}
 	
 	if (select_query->order_expression_list)
-	{
-		asts = select_query->order_expression_list->children;
-		for (size_t i = 0; i < asts.size(); ++i)
-		{
-			getActionsBeforeAggregationImpl(asts[i], *actions, result_columns);
-		}
-	}
+		getActionsBeforeAggregationImpl(select_query->order_expression_list, *actions, result_columns);
 	
 	if (select_query->where_expression)
 	{
@@ -711,7 +731,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActionsBeforeAggregation()
 	
 	if (select_query->group_expression_list)
 	{
-		asts = select_query->group_expression_list->children;
+		ASTs asts = select_query->group_expression_list->children;
 		for (size_t i = 0; i < asts.size(); ++i)
 		{
 			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), ""));
@@ -776,8 +796,12 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions()
 			asts = select_query->order_expression_list->children;
 			for (size_t i = 0; i < asts.size(); ++i)
 			{
-				result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), ""));
-				getActionsImpl(asts[i], false, false, *actions);
+				ASTOrderByElement * ast = dynamic_cast<ASTOrderByElement *>(&*asts[i]);
+				if (!ast || ast->children.size() != 1)
+					throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+				ASTPtr order_expression = ast->children[0];
+				result_columns.push_back(NameWithAlias(order_expression->getColumnName(), ""));
+				getActionsImpl(order_expression, false, false, *actions);
 			}
 		}
 		

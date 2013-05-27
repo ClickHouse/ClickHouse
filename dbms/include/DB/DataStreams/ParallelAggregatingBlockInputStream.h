@@ -3,7 +3,6 @@
 #include <statdaemons/threadpool.hpp>
 
 #include <DB/Interpreters/Aggregator.h>
-#include <DB/Interpreters/Expression.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
@@ -33,15 +32,12 @@ public:
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, ExpressionPtr expression,
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const Names & key_names, const AggregateDescriptions & aggregates,
 		bool with_totals_, unsigned max_threads_ = 1, size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
 		: has_been_read(false), max_threads(max_threads_), pool(max_threads)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 		
-		Names key_names;
-		AggregateDescriptions aggregates;
-		expression->getAggregateInfo(key_names, aggregates);
 		aggregator = new Aggregator(key_names, aggregates, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_);
 	}
 

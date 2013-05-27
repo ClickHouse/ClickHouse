@@ -7,15 +7,13 @@ namespace DB
 {
 
 
-AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression,
-	bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
+	AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_,
+		const Names & key_names, const AggregateDescriptions & aggregates,
+		bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
 	: has_been_read(false)
 {
 	children.push_back(input_);
 
-	Names key_names;
-	AggregateDescriptions aggregates;
-	expression->getAggregateInfo(key_names, aggregates);
 	aggregator = new Aggregator(key_names, aggregates, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_);
 }
 

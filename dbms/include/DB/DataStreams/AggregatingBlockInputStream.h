@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/Interpreters/Aggregator.h>
-#include <DB/Interpreters/Expression.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
@@ -30,7 +29,7 @@ public:
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression,
+	AggregatingBlockInputStream(BlockInputStreamPtr input_, const Names & key_names, const AggregateDescriptions & aggregates,
 		bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_);
 
 	String getName() const { return "AggregatingBlockInputStream"; }

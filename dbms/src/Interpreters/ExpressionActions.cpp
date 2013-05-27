@@ -117,14 +117,14 @@ std::string ExpressionActions::Action::toString() const
 			ss << result_name << "(" << result_type->getName() << ")" << "=" << source_name;
 			break;
 		case APPLY_FUNCTION:
-			ss << result_name << "(" << result_type->getName() << ")" << "=" << function->getName() << "(";
+			ss << result_name << "(" << result_type->getName() << ")" << "= " << function->getName() << " ( ";
 			for (size_t i = 0; i < argument_names.size(); ++i)
 			{
 				if (i)
-					ss << ",";
+					ss << " , ";
 				ss << argument_names[i];
 			}
-			ss << ")";
+			ss << " )";
 			break;
 		default:
 			throw Exception("Unexpected Action type", ErrorCodes::LOGICAL_ERROR);
@@ -136,43 +136,51 @@ std::string ExpressionActions::Action::toString() const
 void ExpressionActions::finalize(const NamesWithAliases & output_columns)
 {
 	typedef std::set<std::string> NameSet;
-	NameSet used_columns;
+	
+	NameSet final_columns;
+	for (size_t i = 0; i < output_columns.size(); ++i)
+	{
+		const std::string name = output_columns[i].first;
+		const std::string alias = output_columns[i].second;
+		if (!sample_block.has(name))
+			throw Exception("Unknown column: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+		if (alias != "" && alias != name)
+		{
+			final_columns.insert(alias);
+			add(Action(name, alias));
+			add(Action(name));
+		}
+		else
+		{
+			final_columns.insert(name);
+		}
+	}
+	
+	NameSet used_columns = final_columns;
 	
 	for (size_t i = 0; i < actions.size(); ++i)
 	{
 		used_columns.insert(actions[i].source_name);
 		for (size_t j = 0; j < actions[i].argument_names.size(); ++j)
+		{
 			used_columns.insert(actions[i].argument_names[j]);
+		}
 	}
 	for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
 	{
 		NamesAndTypesList::iterator it0 = it;
 		++it;
 		if (!used_columns.count(it0->first))
+		{
+			sample_block.erase(it0->first);
 			input_columns.erase(it0);
-	}
-	
-	NameSet needed_columns;
-	for (size_t i = 0; i < output_columns.size(); ++i)
-	{
-		const std::string name = output_columns[i].first;
-		const std::string alias = output_columns[i].second;
-		if (alias != "" && alias != name)
-		{
-			needed_columns.insert(alias);
-			add(Action(name, alias));
-			add(Action(name));
-		}
-		else
-		{
-			needed_columns.insert(name);
 		}
 	}
 	
 	for (int i = static_cast<int>(sample_block.columns()) - 1; i >= 0; --i)
 	{
 		const std::string & name = sample_block.getByPosition(i).name;
-		if (!needed_columns.count(name))
+		if (!final_columns.count(name))
 			add(Action(name));
 	}
 }
@@ -188,6 +196,11 @@ std::string ExpressionActions::dumpActions() const
 	ss << "\nactions:\n";
 	for (size_t i = 0; i < actions.size(); ++i)
 		ss << actions[i].toString() << '\n';
+	
+	ss << "\noutput:\n";
+	NamesAndTypesList output_columns = sample_block.getColumnsList();
+	for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
+		ss << it->first << " " << it->second->getName() << "\n";
 	
 	return ss.str();
 }

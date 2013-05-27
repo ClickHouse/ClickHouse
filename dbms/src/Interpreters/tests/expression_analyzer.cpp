@@ -7,6 +7,9 @@ using namespace DB;
 
 int main(int argc, char ** argv)
 {
+	try
+	{
+	
 	if (argc < 2)
 	{
 		std::cerr << "at least 1 argument expected" << std::endl;
@@ -68,7 +71,15 @@ int main(int argc, char ** argv)
 	}
 	else
 	{
-		std::cout << analyzer.getActions()->dumpActions();
+		std::cout << "only consts:\n\n" << analyzer.getConstActions()->dumpActions() >> "\n";
+		std::cout << "everything:\n\n" << analyzer.getActions()->dumpActions();
+	}
+	
+	}
+	catch (Exception & e)
+	{
+		std::cerr << "Exception " << e.what() << ": " << e.displayText() << "\n" << e.getStackTrace().toString();
+		return 3;
 	}
 	
 	return 0;

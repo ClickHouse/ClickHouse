@@ -7,19 +7,6 @@ namespace DB
 {
 
 
-MergingAggregatedBlockInputStream::MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression, bool with_totals_)
-	: has_been_read(false)
-{
-	children.push_back(input_);
-
-	Names key_names;
-	AggregateDescriptions aggregates;
-	expression->getAggregateInfo(key_names, aggregates);
-	aggregator = new Aggregator(key_names, aggregates, with_totals_);
-}
-
-
-
 Block MergingAggregatedBlockInputStream::readImpl()
 {
 	if (has_been_read)

@@ -2,7 +2,6 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/Interpreters/Expression.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Columns/ColumnConst.h>
 
