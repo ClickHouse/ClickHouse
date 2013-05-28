@@ -140,6 +140,12 @@ std::string ExpressionActions::Action::toString() const
 	return ss.str();
 }
 
+void ExpressionActions::execute(Block & block)
+{
+	for (size_t i = 0; i < actions.size(); ++i)
+		actions[i].execute(block);
+}
+
 void ExpressionActions::finalize(const Names & output_columns)
 {
 	typedef std::set<std::string> NameSet;
