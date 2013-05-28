@@ -6,7 +6,7 @@
 
 namespace DB
 {
-	
+
 typedef std::pair<std::string, std::string> NameWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
 	
@@ -91,9 +91,6 @@ public:
 	/// - Не удаляет "неожиданные" столбцы (например, добавленные функциями).
 	void finalize(const Names & output_columns);
 	
-	/// Убирает лишние входные столбцы из последовательности наборов действий, каждый из которых принимает на вход результат предыдущего.
-	static void finalizeChain(std::vector<SharedPtr<ExpressionActions> > & chain, Names output_columns);
-	
 	/// Получить список входных столбцов.
 	Names getRequiredColumns() const
 	{
@@ -123,7 +120,47 @@ private:
 };
 
 typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;
-typedef std::vector<ExpressionActionsPtr> ExpressionActionsChain;
 
+
+struct ExpressionActionsChain
+{
+	struct Step
+	{
+		ExpressionActionsPtr actions;
+		Names required_output;
+		
+		Step(ExpressionActionsPtr actions_ = NULL, Names required_output_ = Names())
+			: actions(actions_), required_output(required_output_) {}
+	};
+	
+	typedef std::vector<Step> Steps;
+	
+	Settings settings;
+	Steps steps;
+	
+	void addStep()
+	{
+		if (steps.empty())
+			throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+		
+		NamesAndTypesList columns = steps.back().actions->getSampleBlock().getColumnsList();
+		steps.push_back(Step(new ExpressionActions(columns, settings)));
+	}
+	
+	void finalize()
+	{
+		for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
+		{
+			steps[i].actions->finalize(steps[i].required_output);
+			
+			if (i > 0)
+			{
+				const NamesAndTypesList & columns = steps[i].actions->getRequiredColumnsWithTypes();
+				for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
+					steps[i-1].required_output.push_back(it->first);
+			}
+		}
+	}
+};
 
 }

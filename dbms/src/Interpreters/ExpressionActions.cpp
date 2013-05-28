@@ -133,6 +133,18 @@ std::string ExpressionActions::Action::toString() const
 			}
 			ss << " )";
 			break;
+		case PROJECT:
+			ss << "{";
+			for (size_t i = 0; i < projection.size(); ++i)
+			{
+				if (i)
+					ss << ", ";
+				ss << projection[i].first;
+				if (projection[i].second != "" && projection[i].second != projection[i].first)
+					ss << "=>" << projection[i].second;
+			}
+			ss << "}";
+			break;
 		default:
 			throw Exception("Unexpected Action type", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -195,7 +207,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 	{
 		const std::string name = output_columns[i];
 		if (!sample_block.has(name))
-			throw Exception("Unknown column: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+			throw Exception("Unknown column: " + name + ", there are only columns "
+							+ sample_block.dumpNames(), ErrorCodes::UNKNOWN_IDENTIFIER);
 		final_columns.insert(name);
 	}
 	
@@ -208,6 +221,10 @@ void ExpressionActions::finalize(const Names & output_columns)
 		{
 			used_columns.insert(actions[i].argument_names[j]);
 		}
+		for (size_t j = 0; j < actions[i].projection.size(); ++j)
+		{
+			used_columns.insert(actions[i].projection[j].first);
+		}
 	}
 	for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
 	{
@@ -215,7 +232,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 		++it;
 		if (!used_columns.count(it0->first))
 		{
-			sample_block.erase(it0->first);
+			if (sample_block.has(it0->first))
+				sample_block.erase(it0->first);
 			input_columns.erase(it0);
 		}
 	}
@@ -225,20 +243,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 		const std::string & name = sample_block.getByPosition(i).name;
 		if (!final_columns.count(name))
 			add(Action(name));
-	}
-}
-
-void ExpressionActions::finalizeChain(ExpressionActionsChain & chain, Names columns)
-{
-	for (int i = static_cast<int>(chain.size()) - 1; i >= 0; --i)
-	{
-		chain[i]->finalize(columns);
-		
-		columns.clear();
-		for (NamesAndTypesList::const_iterator it = chain[i]->input_columns.begin(); it != chain[i]->input_columns.end(); ++it)
-		{
-			columns.push_back(it->first);
-		}
 	}
 }
 

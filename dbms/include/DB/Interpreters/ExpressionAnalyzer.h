@@ -38,25 +38,28 @@ public:
 	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
 
 	
-	/// Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
-	/// В конце нужно финализировать получившуюся цепочку.
+	/** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
+	  *
+	  * Пример использования:
+	  *   ExpressionActionsChain chain;
+	  *   analyzer.appendWhere(chain);
+	  *   chain.addStep();
+	  *   analyzer.appendSelect(chain);
+	  *   analyzer.appendOrderBy(chain);
+	  *   chain.finalize();
+	  */
 	
 	/// До агрегации:
 	bool appendWhere(ExpressionActionsChain & chain);
 	bool appendGroupBy(ExpressionActionsChain & chain);
 	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain);
-	/// Финализирует всю цепочку.
-	void appendProjectBeforeAggregation(ExpressionActionsChain & chain);
 	
 	/// После агрегации:
 	bool appendHaving(ExpressionActionsChain & chain);
 	void appendSelect(ExpressionActionsChain & chain);
 	bool appendOrderBy(ExpressionActionsChain & chain);
-	/// Действия, удаляющие из блока столбцы, кроме столбцов из указанных секций запроса.
-	/// Столбцы из секции SELECT также переупорядочиваются и переименовываются в алиасы.
-	/// Финализирует всю цепочку.
-	void appendProject(ExpressionActionsChain & chain, bool select_section, bool order_by_section);
-	
+	/// Удаляет все столбцы кроме выбираемых SELECT, упорядочивает оставшиеся столбцы и переименовывает их в алиасы.
+	void appendProjectResult(ExpressionActionsChain & chain);
 	
 	/// Если ast не запрос SELECT, просто получает все действия для вычисления выражения.
 	ExpressionActionsPtr getActions();
@@ -140,6 +143,8 @@ private:
 	ASTPtr rewriteSum(const ASTFunction * node);
 	/// Заменить avg(x) на sum(Sign * x) / sum(Sign)
 	ASTPtr rewriteAvg(const ASTFunction * node);
+	
+	void initChain(ExpressionActionsChain & chain, NamesAndTypesList & columns);
 	
 	void assertSelect();
 	void assertAggregation();

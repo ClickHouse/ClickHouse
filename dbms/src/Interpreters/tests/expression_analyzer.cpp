@@ -81,29 +81,32 @@ int main(int argc, char ** argv)
 		std::cout << "\n";
 		
 		ExpressionActionsChain before;
-		analyzer.appendWhere(before);
+		if (analyzer.appendWhere(before))
+			before.addStep();
 		analyzer.appendAggregateFunctionsArguments(before);
 		analyzer.appendGroupBy(before);
-		analyzer.appendProjectBeforeAggregation(before);
+		before.finalize();
 		
 		ExpressionActionsChain after;
-		analyzer.appendHaving(after);
+		if (analyzer.appendHaving(after))
+			after.addStep();
 		analyzer.appendSelect(after);
 		analyzer.appendOrderBy(after);
-		analyzer.appendProject(after, true, true);
-		analyzer.appendProject(after, true, false);
+		after.addStep();
+		analyzer.appendProjectResult(after);
+		after.finalize();
 		
 		std::cout << "before aggregation:\n\n";
-		for (size_t i = 0; i < before.size(); ++i)
+		for (size_t i = 0; i < before.steps.size(); ++i)
 		{
-			before[i]->dumpActions();
+			std::cout << before.steps[i].actions->dumpActions();
 			std::cout << std::endl;
 		}
 		
 		std::cout << "\nafter aggregation:\n\n";
-		for (size_t i = 0; i < after.size(); ++i)
+		for (size_t i = 0; i < after.steps.size(); ++i)
 		{
-			after[i]->dumpActions();
+			std::cout << after.steps[i].actions->dumpActions();
 			std::cout << std::endl;
 		}
 	}
@@ -114,15 +117,17 @@ int main(int argc, char ** argv)
 		if (dynamic_cast<ASTSelectQuery *>(&*root))
 		{
 			ExpressionActionsChain chain;
-			analyzer.appendWhere(chain);
+			if (analyzer.appendWhere(chain))
+				chain.addStep();
 			analyzer.appendSelect(chain);
 			analyzer.appendOrderBy(chain);
-			analyzer.appendProject(chain, true, true);
-			analyzer.appendProject(chain, true, false);
+			chain.addStep();
+			analyzer.appendProjectResult(chain);
+			chain.finalize();
 			
-			for (size_t i = 0; i < chain.size(); ++i)
+			for (size_t i = 0; i < chain.steps.size(); ++i)
 			{
-				chain[i]->dumpActions();
+				std::cout << chain.steps[i].actions->dumpActions();
 				std::cout << std::endl;
 			}
 		}
