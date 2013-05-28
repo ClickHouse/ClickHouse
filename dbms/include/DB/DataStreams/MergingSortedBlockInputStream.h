@@ -18,7 +18,7 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
-		: description(description_), max_block_size(max_block_size_), first(true),
+		: description(description_), max_block_size(max_block_size_), first(true), has_collation(false),
 		num_columns(0), source_blocks(inputs_.size()), cursors(inputs_.size()), log(&Logger::get("MergingSortedBlockInputStream"))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
@@ -57,13 +57,16 @@ protected:
 	void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
 	
 	/// Достаёт из источника, соответствующего current следующий блок.
-	void fetchNextBlock(const SortCursor & current);
+	template<class TSortCursor>
+	void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
 	
 	
 	SortDescription description;
 	size_t max_block_size;
 
 	bool first;
+	
+	bool has_collation;
 
 	/// Текущие сливаемые блоки.
 	size_t num_columns;
@@ -74,8 +77,21 @@ protected:
 
 	typedef std::priority_queue<SortCursor> Queue;
 	Queue queue;
+	
+	typedef std::priority_queue<SortCursorWithCollation> QueueWithCollation;
+	QueueWithCollation queue_with_collation;
 
 private:
+	
+	/** Делаем поддержку двух разных курсоров - с Collation и без.
+	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+	 */
+	template<class TSortCursor>
+	void initQueue(std::priority_queue<TSortCursor> & queue);	
+	
+	template<class TSortCursor>
+	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+	
 	Logger * log;
 };
 

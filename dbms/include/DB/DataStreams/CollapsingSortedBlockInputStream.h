@@ -70,16 +70,23 @@ private:
 	size_t count_positive;	/// Количество положительных строк для текущего первичного ключа.
 	size_t count_negative;	/// Количество отрицательных строк для текущего первичного ключа.
 
+	/** Делаем поддержку двух разных курсоров - с Collation и без.
+	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+	 */
+	template<class TSortCursor>
+	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
 	/// Сохранить строчку, на которую указывает cursor в row.
-	void setRow(Row & row, SortCursor & cursor)
+	template<class TSortCursor>
+	void setRow(Row & row, TSortCursor & cursor)
 	{
 		for (size_t i = 0; i < num_columns; ++i)
 			cursor->all_columns[i]->get(cursor->pos, row[i]);
 	}
 
 	/// Сохранить первичный ключ, на который указывает cursor в row.
-	void setPrimaryKey(Row & row, SortCursor & cursor)
+	template<class TSortCursor>
+	void setPrimaryKey(Row & row, TSortCursor & cursor)
 	{
 		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
 			cursor->sort_columns[i]->get(cursor->pos, row[i]);

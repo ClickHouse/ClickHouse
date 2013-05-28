@@ -448,6 +448,8 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String &
 	ParserString descending("DESCENDING", true, true);
 	ParserString asc("ASC", true, true);
 	ParserString desc("DESC", true, true);
+	ParserString collate("COLLATE", true, true);
+	ParserStringLiteral collate_locale_parser;
 
 	ASTPtr expr_elem;
 	if (!elem_p.parse(pos, end, expr_elem, expected))
@@ -460,8 +462,27 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String &
 		direction = -1;
 	else
 		ascending.ignore(pos, end) || asc.ignore(pos, end);
+	
+	Poco::SharedPtr<Collator> collator = NULL;
+	if (collate.ignore(pos, end))
+	{
+		ASTPtr locale_node;
+		if (!collate_locale_parser.parse(pos, end, locale_node, expected))
+			return false;
+		
+		const String & locale = dynamic_cast<const ASTLiteral &>(*locale_node).value.safeGet<String>();
+		try
+		{
+			collator = new Collator(locale);
+		}
+		catch (const DB::Exception & e)
+		{
+			expected = "unsupported collation locale";
+			return false;
+		}
+	}
 
-	node = new ASTOrderByElement(StringRange(begin, pos), direction);
+	node = new ASTOrderByElement(StringRange(begin, pos), direction, collator);
 	node->children.push_back(expr_elem);
 	return true;
 }

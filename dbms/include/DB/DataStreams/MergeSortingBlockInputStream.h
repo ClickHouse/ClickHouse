@@ -49,6 +49,13 @@ private:
 	/** Слить сразу много блоков с помощью priority queue. 
 	  */
 	Block merge(Blocks & blocks);
+	
+	typedef std::vector<SortCursorImpl> CursorImpls;
+	
+	/** Делаем поддержку двух разных курсоров - с Collation и без.
+	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+	 */
+	template<class TSortCursor> Block mergeImpl(Blocks & block, CursorImpls & cursors);
 };
 
 }

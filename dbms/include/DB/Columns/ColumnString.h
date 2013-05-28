@@ -5,6 +5,7 @@
 #include <DB/Core/Defines.h>
 
 #include <DB/Columns/IColumn.h>
+#include <DB/Common/Collator.h>
 
 
 namespace DB
@@ -237,6 +238,16 @@ public:
 			reinterpret_cast<const char *>(&chars[offsetAt(n)]),
 			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]));
 	}
+	
+	/// Версия compareAt для locale-sensitive сравнения строк
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
+	{
+		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
+		
+		return collator.compare(
+			reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),
+			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
+	}
 
 	struct less
 	{
@@ -258,6 +269,33 @@ public:
 			res[i] = i;
 
 		std::sort(res.begin(), res.end(), less(*this));
+		return res;
+	}
+	
+	struct lessWithCollation
+	{
+		const ColumnString & parent;
+		const Collator & collator;
+		
+		lessWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
+		
+		bool operator()(size_t lhs, size_t rhs) const
+		{
+			return collator.compare(
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
+		}
+	};
+
+	/// Сортировка с учетом Collation
+	Permutation getPermutation(const Collator & collator) const
+	{
+		size_t s = offsets.size();
+		Permutation res(s);
+		for (size_t i = 0; i < s; ++i)
+			res[i] = i;
+
+		std::sort(res.begin(), res.end(), lessWithCollation(*this, collator));
 		return res;
 	}
 
