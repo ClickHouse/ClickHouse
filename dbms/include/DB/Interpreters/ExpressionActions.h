@@ -164,7 +164,7 @@ struct ExpressionActionsChain
 					previous_output.push_back(it->first);
 				
 				std::sort(previous_output.begin(), previous_output.end());
-				previous_output.erase(std::unique(previous_output.begin(), previous_output.end()));
+				previous_output.erase(std::unique(previous_output.begin(), previous_output.end()), previous_output.end());
 				
 				/// Если на выходе предыдущего шага образуются ненужные столбцы, добавим в начало этого шага их выбрасывание.
 				if (previous_output.size() > steps[i].actions->getRequiredColumnsWithTypes().size())
