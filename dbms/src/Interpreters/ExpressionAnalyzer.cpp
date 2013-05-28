@@ -66,7 +66,7 @@ void ExpressionAnalyzer::init()
 			throw Exception("Aggregation not in select query", ErrorCodes::ILLEGAL_AGGREGATION);
 		
 		/// Действия до агрегации. Используются только для определения типов.
-		ExpressionActions actions(columns);
+		ExpressionActions actions(columns, settings);
 		
 		/// Найдем агрегатные функции.
 		getAggregatesImpl(ast, actions);
@@ -520,7 +520,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 							lambda_args.push_back(arg);
 						}
 						
-						ExpressionActionsPtr lambda_actions = new ExpressionActions(columns);
+						ExpressionActionsPtr lambda_actions = new ExpressionActions(columns, settings);
 						getActionsImpl(lambda->arguments->children[1], no_subqueries, only_consts, *lambda_actions);
 						
 						columns = initial_columns;
@@ -579,33 +579,6 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			getActionsImpl(*it, no_subqueries, only_consts, actions);
-	}
-
-	/// Проверка ограничений на максимальное количество столбцов.
-
-	const Block & block = actions.getSampleBlock();
-	
-	const Limits & limits = settings.limits;
-	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
-		throw Exception("Too much temporary columns: " + block.dumpNames()
-			+ ". Maximum: " + Poco::NumberFormatter::format(limits.max_temporary_columns),
-			ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
-
-	size_t non_const_columns = 0;
-	for (size_t i = 0, size = block.columns(); i < size; ++i)
-		if (!block.getByPosition(i).column->isConst())
-			++non_const_columns;
-
-	if (limits.max_temporary_non_const_columns && non_const_columns > limits.max_temporary_non_const_columns)
-	{
-		std::stringstream list_of_non_const_columns;
-		for (size_t i = 0, size = block.columns(); i < size; ++i)
-			if (!block.getByPosition(i).column->isConst())
-				list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
-		
-		throw Exception("Too much temporary non-const columns: " + list_of_non_const_columns.str()
-			+ ". Maximum: " + Poco::NumberFormatter::format(limits.max_temporary_non_const_columns),
-			ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
 	}
 }
 
@@ -688,7 +661,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain)
 	if (!select_query->where_expression)
 		return false;
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	getActionsImpl(select_query->where_expression, false, false, *actions);
@@ -703,7 +676,7 @@ bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain)
 	if (!select_query->group_expression_list)
 		return false;
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	ASTs asts = select_query->group_expression_list->children;
@@ -719,7 +692,7 @@ void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChai
 {
 	assertAggregation();
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	getActionsBeforeAggregationImpl(select_query->select_expression_list, &*actions, NULL);
@@ -736,7 +709,7 @@ void ExpressionAnalyzer::appendProjectBeforeAggregation(ExpressionActionsChain &
 {
 	assertAggregation();
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	Names result_columns;
@@ -775,7 +748,7 @@ bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain)
 	if (!select_query->having_expression)
 		return false;
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	getActionsImpl(select_query->having_expression, false, false, *actions);
@@ -787,7 +760,7 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain)
 {
 	assertSelect();
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	getActionsImpl(select_query->select_expression_list, false, false, *actions);
@@ -800,7 +773,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain)
 	if (!select_query->order_expression_list)
 		return false;
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	getActionsImpl(select_query->order_expression_list, false, false, *actions);
@@ -812,7 +785,7 @@ void ExpressionAnalyzer::appendProject(ExpressionActionsChain & chain, bool sele
 {
 	assertSelect();
 	
-	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList(), settings);
 	chain.push_back(actions);
 	
 	NamesWithAliases result_columns;
@@ -875,7 +848,7 @@ void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionA
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions()
 {
-	ExpressionActionsPtr actions = new ExpressionActions(columns);
+	ExpressionActionsPtr actions = new ExpressionActions(columns, settings);
 	NamesWithAliases result_columns;
 	Names result_names;
 	
@@ -909,7 +882,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 	if (has_aggregation)
 		throw Exception("Expression has aggregation", ErrorCodes::LOGICAL_ERROR);
 	
-	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList());
+	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList(), settings);
 	
 	getActionsImpl(ast, true, true, *actions);
 	

@@ -140,10 +140,50 @@ std::string ExpressionActions::Action::toString() const
 	return ss.str();
 }
 
+void ExpressionActions::checkLimits(Block & block)
+{
+	const Limits & limits = settings.limits;
+	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
+		throw Exception("Too many temporary columns: " + block.dumpNames()
+		+ ". Maximum: " + Poco::NumberFormatter::format(limits.max_temporary_columns),
+						ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
+	
+	size_t non_const_columns = 0;
+	for (size_t i = 0, size = block.columns(); i < size; ++i)
+		if (block.getByPosition(i).column && !block.getByPosition(i).column->isConst())
+			++non_const_columns;
+		
+	if (limits.max_temporary_non_const_columns && non_const_columns > limits.max_temporary_non_const_columns)
+	{
+		std::stringstream list_of_non_const_columns;
+		for (size_t i = 0, size = block.columns(); i < size; ++i)
+			if (!block.getByPosition(i).column->isConst())
+				list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
+			
+			throw Exception("Too many temporary non-const columns: " + list_of_non_const_columns.str()
+			+ ". Maximum: " + Poco::NumberFormatter::format(limits.max_temporary_non_const_columns),
+							ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+	}
+}
+
+void ExpressionActions::add(const Action & action)
+{
+	if (sample_block.has(action.result_name))
+		return;
+	actions.push_back(action);
+	actions.back().prepare(sample_block);
+	
+	checkLimits(sample_block);
+}
+
 void ExpressionActions::execute(Block & block)
 {
 	for (size_t i = 0; i < actions.size(); ++i)
+	{
 		actions[i].execute(block);
+		
+		checkLimits(block);
+	}
 }
 
 void ExpressionActions::finalize(const Names & output_columns)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Functions/IFunction.h>
+#include <DB/Interpreters/Settings.h>
 
 
 namespace DB
@@ -73,8 +74,8 @@ public:
 	
 	typedef std::vector<Action> Actions;
 	
-	ExpressionActions(const NamesAndTypesList & input_columns_)
-		: input_columns(input_columns_)
+	ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
+		: input_columns(input_columns_), settings(settings_)
 	{
 		for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 		{
@@ -82,13 +83,7 @@ public:
 		}
 	}
 	
-	void add(const Action & action)
-	{
-		if (sample_block.has(action.result_name))
-			return;
-		actions.push_back(action);
-		actions.back().prepare(sample_block);
-	}
+	void add(const Action & action);
 	
 	/// - Добавляет действия для удаления всех столбцов, кроме указанных.
 	/// - Убирает неиспользуемые входные столбцы.
@@ -122,6 +117,9 @@ private:
 	NamesAndTypesList input_columns;
 	Actions actions;
 	Block sample_block;
+	Settings settings;
+	
+	void checkLimits(Block & block);
 };
 
 typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;
