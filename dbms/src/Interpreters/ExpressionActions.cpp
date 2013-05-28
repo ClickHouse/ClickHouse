@@ -6,18 +6,11 @@ namespace DB
 
 void ExpressionActions::Action::prepare(Block & sample_block)
 {
-	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
-		if (!sample_block.has(source_name))
-			throw Exception("Not found column '" + source_name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-		
-	if (type != REMOVE_COLUMN)
-		if (sample_block.has(result_name))
-			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-	
-	ColumnWithNameAndType new_column;
-	
 	if (type == APPLY_FUNCTION)
 	{
+		if (sample_block.has(result_name))
+			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+		
 		DataTypes types(argument_names.size());
 		for (size_t i = 0; i < argument_names.size(); ++i)
 		{
@@ -28,27 +21,21 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		
 		result_type = function->getReturnType(types);
 		
-		new_column.column = result_type->createConstColumn(1, result_type->getDefault());
+		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
 	}
 	else if (type == ADD_COLUMN)
 	{
-		new_column.column = added_column;
-	}
-	else if (type == COPY_COLUMN)
-	{
-		new_column = sample_block.getByName(source_name);
-		result_type = new_column.type;
-	}
-	
-	if (type != REMOVE_COLUMN)
-	{
-		new_column.name = result_name;
-		new_column.type = result_type;
-		sample_block.insert(new_column);
+		if (sample_block.has(result_name))
+			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+		
+		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
 	}
 	else
 	{
-		sample_block.erase(source_name);
+		if (type == COPY_COLUMN)
+			result_type = sample_block.getByName(source_name).type;
+		
+		execute(sample_block);
 	}
 }
 
@@ -58,47 +45,67 @@ void ExpressionActions::Action::execute(Block & block)
 		if (!block.has(source_name))
 			throw Exception("Not found column '" + source_name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 	
-	if (type != REMOVE_COLUMN)
+	if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION)
 		if (block.has(result_name))
 			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-	
-	if (type == APPLY_FUNCTION)
+		
+	switch (type)
 	{
-		ColumnNumbers arguments(argument_names.size());
-		for (size_t i = 0; i < argument_names.size(); ++i)
+		case APPLY_FUNCTION:
 		{
-			if (!block.has(argument_names[i]))
-				throw Exception("Not found column: '" + argument_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-			arguments[i] = block.getPositionByName(argument_names[i]);
+			ColumnNumbers arguments(argument_names.size());
+			for (size_t i = 0; i < argument_names.size(); ++i)
+			{
+				if (!block.has(argument_names[i]))
+					throw Exception("Not found column: '" + argument_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+				arguments[i] = block.getPositionByName(argument_names[i]);
+			}
+			
+			ColumnWithNameAndType new_column;
+			new_column.name = result_name;
+			new_column.type = result_type;
+			block.insert(new_column);
+			
+			function->execute(block, arguments, block.getPositionByName(result_name));
+			
+			break;
 		}
 		
-		ColumnWithNameAndType new_column;
-		new_column.name = result_name;
-		new_column.type = result_type;
-		block.insert(new_column);
-		
-		function->execute(block, arguments, block.getPositionByName(result_name));
-		
-		return;
-	}
-	
-	if (type == REMOVE_COLUMN)
-	{
-		block.erase(source_name);
-	}
-	else
-	{
-		ColumnWithNameAndType new_column;
-		
-		if (type == ADD_COLUMN)
+		case PROJECT:
 		{
-			new_column.column = added_column->cloneResized(block.rows());
+			Block new_block;
+			
+			for (size_t i = 0; i < projection.size(); ++i)
+			{
+				const std::string & name = projection[i].first;
+				const std::string & alias = projection[i].second;
+				ColumnWithNameAndType column = block.getByName(name);
+				if (alias != "")
+					column.name = alias;
+				if (new_block.has(column.name))
+					throw Exception("Column " + column.name + " already exists", ErrorCodes::DUPLICATE_COLUMN);
+				new_block.insert(column);
+			}
+			
+			block = new_block;
+			
+			break;
 		}
-		else if (type == COPY_COLUMN)
-		{
-			new_column = block.getByName(source_name);
-			result_type = new_column.type;
-		}
+		
+		case REMOVE_COLUMN:
+			block.erase(source_name);
+			break;
+			
+		case ADD_COLUMN:
+			block.insert(ColumnWithNameAndType(added_column->cloneResized(block.rows()), result_type, result_name));
+			break;
+			
+		case COPY_COLUMN:
+			block.insert(ColumnWithNameAndType(block.getByName(source_name).column, result_type, result_name));
+			break;
+			
+		default:
+			throw Exception("Unknown action type", ErrorCodes::UNKNOWN_ACTION);
 	}
 }
 
@@ -133,27 +140,17 @@ std::string ExpressionActions::Action::toString() const
 	return ss.str();
 }
 
-void ExpressionActions::finalize(const NamesWithAliases & output_columns)
+void ExpressionActions::finalize(const Names & output_columns)
 {
 	typedef std::set<std::string> NameSet;
 	
 	NameSet final_columns;
 	for (size_t i = 0; i < output_columns.size(); ++i)
 	{
-		const std::string name = output_columns[i].first;
-		const std::string alias = output_columns[i].second;
+		const std::string name = output_columns[i];
 		if (!sample_block.has(name))
 			throw Exception("Unknown column: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
-		if (alias != "" && alias != name)
-		{
-			final_columns.insert(alias);
-			add(Action(name, alias));
-			add(Action(name));
-		}
-		else
-		{
-			final_columns.insert(name);
-		}
+		final_columns.insert(name);
 	}
 	
 	NameSet used_columns = final_columns;
@@ -182,6 +179,20 @@ void ExpressionActions::finalize(const NamesWithAliases & output_columns)
 		const std::string & name = sample_block.getByPosition(i).name;
 		if (!final_columns.count(name))
 			add(Action(name));
+	}
+}
+
+void ExpressionActions::finalizeChain(ExpressionActionsChain & chain, Names columns)
+{
+	for (int i = static_cast<int>(chain.size()) - 1; i >= 0; --i)
+	{
+		chain[i]->finalize(columns);
+		
+		columns.clear();
+		for (NamesAndTypesList::const_iterator it = chain[i]->input_columns.begin(); it != chain[i]->input_columns.end(); ++it)
+		{
+			columns.push_back(it->first);
+		}
 	}
 }
 

@@ -30,26 +30,41 @@ public:
 	{
 		init();
 	}
-
-	/// Работают только если hasAggregates() == true, и ast - ASTSelectQuery.
-	/// Выполняют подзапросы.
-	ExpressionActionsPtr getActionsBeforeAggregation();
-	ExpressionActionsPtr getActionsAfterAggregation();
 	
-	/// Работает только если !hasAggregates().
-	/// Выполняет подзапросы.
+	/// Есть ли в выражении агрегатные функции или секция GROUP BY или HAVING.
+	bool hasAggregation() { return has_aggregation; }
+	
+	/// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
+	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
+
+	
+	/// Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
+	/// В конце нужно финализировать получившуюся цепочку.
+	
+	/// До агрегации:
+	bool appendWhere(ExpressionActionsChain & chain);
+	bool appendGroupBy(ExpressionActionsChain & chain);
+	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain);
+	/// Финализирует всю цепочку.
+	void appendProjectBeforeAggregation(ExpressionActionsChain & chain);
+	
+	/// После агрегации:
+	bool appendHaving(ExpressionActionsChain & chain);
+	void appendSelect(ExpressionActionsChain & chain);
+	bool appendOrderBy(ExpressionActionsChain & chain);
+	/// Действия, удаляющие из блока столбцы, кроме столбцов из указанных секций запроса.
+	/// Столбцы из секции SELECT также переупорядочиваются и переименовываются в алиасы.
+	/// Финализирует всю цепочку.
+	void appendProject(ExpressionActionsChain & chain, bool select_section, bool order_by_section);
+	
+	
+	/// Если ast не запрос SELECT, просто получает все действия для вычисления выражения.
 	ExpressionActionsPtr getActions();
 	
 	/// Действия, которые можно сделать над пустым блоком: добавление констант и применение функций, зависящих только от констант.
 	/// Не выполняет подзапросы.
 	ExpressionActionsPtr getConstActions();
-
-	/// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
-	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
-
-	/// Есть ли в выражении агрегатные функции или секция GROUP BY или HAVING.
-	bool hasAggregation() { return has_aggregation; }
-
+	
 	/// Получить информацию об операции arrayJoin, если она есть.
 	/// Если есть - в column_name будет записано имя столбца, находящегося внутри arrayJoin.
 	/// TODO: 
@@ -72,8 +87,7 @@ private:
 	bool has_aggregation;
 	NamesAndTypesList aggregation_keys;
 	AggregateDescriptions aggregate_descriptions;
-	
-	NamesWithAliases final_columns;
+	NamesAndTypesList aggregated_columns; /// Если нет агрегации, совпадает с columns.
 	
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
@@ -101,7 +115,7 @@ private:
 	
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions);
 	
-	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions, NamesWithAliases & result_columns);
+	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions * actions, Names * result_columns);
 	
 	/// Добавить агрегатные функции в aggregate_descriptions.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
@@ -126,6 +140,9 @@ private:
 	ASTPtr rewriteSum(const ASTFunction * node);
 	/// Заменить avg(x) на sum(Sign * x) / sum(Sign)
 	ASTPtr rewriteAvg(const ASTFunction * node);
+	
+	void assertSelect();
+	void assertAggregation();
 };
 
 }

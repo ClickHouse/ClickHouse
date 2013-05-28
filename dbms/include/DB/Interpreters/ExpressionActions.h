@@ -22,6 +22,7 @@ public:
 			ADD_COLUMN,
 			REMOVE_COLUMN,
 			COPY_COLUMN,
+			PROJECT, /// Переупорядочить и переименовать столбцы, удалить лишние.
 		};
 		
 		Type type;
@@ -37,6 +38,9 @@ public:
 		FunctionPtr function;
 		Names argument_names;
 		
+		/// Для PROJECT.
+		NamesWithAliases projection;
+		
 		Action(FunctionPtr function_, const std::vector<std::string> & argument_names_, const std::string & result_name_)
 			: type(APPLY_FUNCTION), result_name(result_name_), function(function_), argument_names(argument_names_) {}
 			
@@ -49,6 +53,17 @@ public:
 			
 		Action(const std::string & from_name, const std::string & to_name)
 			: type(COPY_COLUMN), source_name(from_name), result_name(to_name) {}
+			
+		explicit Action(const NamesWithAliases & projected_columns_)
+			: type(PROJECT), projection(projected_columns_) {}
+			
+		explicit Action(const Names & projected_columns_)
+			: type(PROJECT)
+		{
+			projection.resize(projected_columns_.size());
+			for (size_t i = 0; i < projected_columns_.size(); ++i)
+				projection[i] = NameWithAlias(projected_columns_[i], "");
+		}
 		
 		void prepare(Block & sample_block);
 		void execute(Block & block);
@@ -75,12 +90,25 @@ public:
 		actions.back().prepare(sample_block);
 	}
 	
-	/// - Добавляет действия для удаления лишних столбцов и переименования выходных столбцов в алиасы.
-	/// - Убирает входные столбцы, не нужные для получения выходных.
-	void finalize(const NamesWithAliases & output_columns);
+	/// - Добавляет действия для удаления всех столбцов, кроме указанных.
+	/// - Убирает неиспользуемые входные столбцы.
+	/// - Не переупорядочивает столбцы.
+	/// - Не удаляет "неожиданные" столбцы (например, добавленные функциями).
+	void finalize(const Names & output_columns);
+	
+	/// Убирает лишние входные столбцы из последовательности наборов действий, каждый из которых принимает на вход результат предыдущего.
+	static void finalizeChain(std::vector<SharedPtr<ExpressionActions> > & chain, Names output_columns);
 	
 	/// Получить список входных столбцов.
-	NamesAndTypesList getRequiredColumns() { return input_columns; }
+	Names getRequiredColumns() const
+	{
+		Names names;
+		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+			names.push_back(it->first);
+		return names;
+	}
+	
+	const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
 
 	/// Выполнить выражение над блоком. Блок должен содержать все столбцы , возвращаемые getRequiredColumns.
 	void execute(Block & block);
@@ -97,6 +125,7 @@ private:
 };
 
 typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;
+typedef std::vector<ExpressionActionsPtr> ExpressionActionsChain;
 
 
 }

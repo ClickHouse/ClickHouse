@@ -84,6 +84,17 @@ void ExpressionAnalyzer::init()
 				aggregation_keys.push_back(key);
 			}
 		}
+		
+		aggregated_columns = aggregation_keys;
+		for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
+		{
+			AggregateDescription & desc = aggregate_descriptions[i];
+			aggregated_columns.push_back(NameAndTypePair(desc.column_name, desc.function->getReturnType()));
+		}
+	}
+	else
+	{
+		aggregated_columns = columns;	
 	}
 }
 
@@ -515,7 +526,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						columns = initial_columns;
 						
 						String result_name = lambda->arguments->children[1]->getColumnName();
-						lambda_actions->finalize(NamesWithAliases(1, NameWithAlias(result_name, "")));
+						lambda_actions->finalize(Names(1, result_name));
 						DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 						
 						ColumnWithNameAndType lambda_column;
@@ -658,75 +669,89 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 	}
 }
 
-
-ExpressionActionsPtr ExpressionAnalyzer::getActionsAfterAggregation()
+void ExpressionAnalyzer::assertSelect()
+{
+	if (!select_query)
+		throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
+}
+void ExpressionAnalyzer::assertAggregation()
 {
 	if (!has_aggregation)
 		throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
-	
-	NamesAndTypesList aggregated_columns = aggregation_keys;
-	for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
-	{
-		AggregateDescription & desc = aggregate_descriptions[i];
-		aggregated_columns.push_back(NameAndTypePair(desc.column_name, desc.function->getReturnType()));
-	}
-	
-	ExpressionActionsPtr actions = new ExpressionActions(aggregated_columns);
-	NamesWithAliases result_columns;
-	
-	ASTs asts = select_query->select_expression_list->children;
-	for (size_t i = 0; i < asts.size(); ++i)
-	{
-		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
-		getActionsImpl(asts[i], false, false, *actions);
-	}
-	
-	if (select_query->having_expression)
-	{
-		result_columns.push_back(NameWithAlias(select_query->having_expression->getColumnName(), ""));
-		getActionsImpl(select_query->having_expression, false, false, *actions);
-	}
-	
-	if (select_query->order_expression_list)
-	{
-		asts = select_query->order_expression_list->children;
-		for (size_t i = 0; i < asts.size(); ++i)
-		{
-			ASTOrderByElement * ast = dynamic_cast<ASTOrderByElement *>(&*asts[i]);
-			if (!ast || ast->children.size() != 1)
-				throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
-			ASTPtr order_expression = ast->children[0];
-			result_columns.push_back(NameWithAlias(order_expression->getColumnName(), ""));
-			getActionsImpl(order_expression, false, false, *actions);
-		}
-	}
-	
-	actions->finalize(result_columns);
-	
-	return actions;
 }
 
 
-ExpressionActionsPtr ExpressionAnalyzer::getActionsBeforeAggregation()
+bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain)
 {
-	if (!has_aggregation)
-		throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
+	assertSelect();
 	
-	ExpressionActionsPtr actions = new ExpressionActions(columns);
-	NamesWithAliases result_columns;
+	if (!select_query->where_expression)
+		return false;
 	
-	getActionsBeforeAggregationImpl(select_query->select_expression_list, *actions, result_columns);
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	getActionsImpl(select_query->where_expression, false, false, *actions);
+	
+	return true;
+}
+
+bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain)
+{
+	assertAggregation();
+	
+	if (!select_query->group_expression_list)
+		return false;
+	
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	ASTs asts = select_query->group_expression_list->children;
+	for (size_t i = 0; i < asts.size(); ++i)
+	{
+		getActionsImpl(asts[i], false, false, *actions);
+	}
+	
+	return true;
+}
+
+void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain)
+{
+	assertAggregation();
+	
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	getActionsBeforeAggregationImpl(select_query->select_expression_list, &*actions, NULL);
 	
 	if (select_query->having_expression)
-		getActionsBeforeAggregationImpl(select_query->having_expression, *actions, result_columns);
+		getActionsBeforeAggregationImpl(select_query->having_expression, &*actions, NULL);
 	
 	if (select_query->order_expression_list)
-		getActionsBeforeAggregationImpl(select_query->order_expression_list, *actions, result_columns);
+		getActionsBeforeAggregationImpl(select_query->order_expression_list, &*actions, NULL);
+}
+
+/// Финализирует всю цепочку.
+void ExpressionAnalyzer::appendProjectBeforeAggregation(ExpressionActionsChain & chain)
+{
+	assertAggregation();
+	
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	Names result_columns;
+	
+	getActionsBeforeAggregationImpl(select_query->select_expression_list, NULL, &result_columns);
+	
+	if (select_query->having_expression)
+		getActionsBeforeAggregationImpl(select_query->having_expression, NULL, &result_columns);
+	
+	if (select_query->order_expression_list)
+		getActionsBeforeAggregationImpl(select_query->order_expression_list, NULL, &result_columns);
 	
 	if (select_query->where_expression)
 	{
-		result_columns.push_back(NameWithAlias(select_query->where_expression->getColumnName(), ""));
-		getActionsImpl(select_query->where_expression, false, false, *actions);
+		result_columns.push_back(select_query->where_expression->getColumnName());
 	}
 	
 	if (select_query->group_expression_list)
@@ -734,18 +759,96 @@ ExpressionActionsPtr ExpressionAnalyzer::getActionsBeforeAggregation()
 		ASTs asts = select_query->group_expression_list->children;
 		for (size_t i = 0; i < asts.size(); ++i)
 		{
-			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), ""));
-			getActionsImpl(asts[i], false, false, *actions);
+			result_columns.push_back(asts[i]->getColumnName());
 		}
 	}
 	
-	actions->finalize(result_columns);
+	actions->add(ExpressionActions::Action(result_columns));
 	
-	return actions;
+	ExpressionActions::finalizeChain(chain, result_columns);
+}
+
+bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain)
+{
+	assertAggregation();
+	
+	if (!select_query->having_expression)
+		return false;
+	
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	getActionsImpl(select_query->having_expression, false, false, *actions);
+	
+	return true;
+}
+
+void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain)
+{
+	assertSelect();
+	
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	getActionsImpl(select_query->select_expression_list, false, false, *actions);
+}
+
+bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain)
+{
+	assertSelect();
+	
+	if (!select_query->order_expression_list)
+		return false;
+	
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	getActionsImpl(select_query->order_expression_list, false, false, *actions);
+	
+	return true;
+}
+
+void ExpressionAnalyzer::appendProject(ExpressionActionsChain & chain, bool select_section, bool order_by_section)
+{
+	assertSelect();
+	
+	ExpressionActionsPtr actions = new ExpressionActions(chain.empty() ? aggregated_columns : chain.back()->getSampleBlock().getColumnsList());
+	chain.push_back(actions);
+	
+	NamesWithAliases result_columns;
+	Names result_names;
+	
+	if (select_section)
+	{
+		ASTs asts = select_query->select_expression_list->children;
+		for (size_t i = 0; i < asts.size(); ++i)
+		{
+			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
+			result_names.push_back(result_columns.back().first);
+		}
+	}
+	
+	if (order_by_section && select_query->order_expression_list)
+	{
+		ASTs asts = select_query->order_expression_list->children;
+		for (size_t i = 0; i < asts.size(); ++i)
+		{
+			ASTOrderByElement * ast = dynamic_cast<ASTOrderByElement *>(&*asts[i]);
+			if (!ast || ast->children.size() != 1)
+				throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+			ASTPtr order_expression = ast->children[0];
+			result_columns.push_back(NameWithAlias(order_expression->getColumnName(), ""));
+			result_names.push_back(result_columns.back().first);
+		}
+	}
+	
+	actions->add(ExpressionActions::Action(result_columns));
+	
+	ExpressionActions::finalizeChain(chain, result_names);
 }
 
 
-void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions, NamesWithAliases & result_columns)
+void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions * actions, Names * result_columns)
 {
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
 	if (node && node->is_aggregate_function)
@@ -754,8 +857,10 @@ void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionA
 		
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			result_columns.push_back(NameWithAlias(arguments[i]->getColumnName(), ""));
-			getActionsImpl(arguments[i], false, false, actions);
+			if (result_columns)
+				result_columns->push_back(arguments[i]->getColumnName());
+			if (actions);
+				getActionsImpl(arguments[i], false, false, *actions);
 		}
 	}
 	else
@@ -770,63 +875,30 @@ void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionA
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions()
 {
-	if (has_aggregation)
-		throw Exception("Expression has aggregation", ErrorCodes::LOGICAL_ERROR);
-	
 	ExpressionActionsPtr actions = new ExpressionActions(columns);
 	NamesWithAliases result_columns;
+	Names result_names;
 	
-	if (select_query)
-	{
-		ASTs asts = select_query->select_expression_list->children;
-		for (size_t i = 0; i < asts.size(); ++i)
-		{
-			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
-			getActionsImpl(asts[i], false, false, *actions);
-		}
-		
-		if (select_query->having_expression)
-		{
-			result_columns.push_back(NameWithAlias(select_query->having_expression->getColumnName(), ""));
-			getActionsImpl(select_query->having_expression, false, false, *actions);
-		}
-		
-		if (select_query->order_expression_list)
-		{
-			asts = select_query->order_expression_list->children;
-			for (size_t i = 0; i < asts.size(); ++i)
-			{
-				ASTOrderByElement * ast = dynamic_cast<ASTOrderByElement *>(&*asts[i]);
-				if (!ast || ast->children.size() != 1)
-					throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
-				ASTPtr order_expression = ast->children[0];
-				result_columns.push_back(NameWithAlias(order_expression->getColumnName(), ""));
-				getActionsImpl(order_expression, false, false, *actions);
-			}
-		}
-		
-		if (select_query->where_expression)
-		{
-			result_columns.push_back(NameWithAlias(select_query->where_expression->getColumnName(), ""));
-			getActionsImpl(select_query->where_expression, false, false, *actions);
-		}
-	}
-	else if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
+	if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
 	{
 		ASTs asts = node->children;
 		for (size_t i = 0; i < asts.size(); ++i)
 		{
 			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
+			result_names.push_back(result_columns.back().first);
 			getActionsImpl(asts[i], false, false, *actions);
 		}
 	}
 	else
 	{
 		result_columns.push_back(NameWithAlias(ast->getColumnName(), ast->getAlias()));
+		result_names.push_back(result_columns.back().first);
 		getActionsImpl(ast, false, false, *actions);
 	}
 	
-	actions->finalize(result_columns);
+	actions->add(ExpressionActions::Action(result_columns));
+	
+	actions->finalize(result_names);
 	
 	return actions;
 }

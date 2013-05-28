@@ -30,7 +30,7 @@ struct ArrayMapImpl
 		return new DataTypeArray(expression_return);
 	}
 	
-	static ColumnPtr execute(ColumnArray * array, ColumnPtr mapped)
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
 		return new ColumnArray(mapped, array->getOffsetsColumn());
 	}
@@ -42,12 +42,10 @@ struct ArrayFilterImpl
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		if (!dynamic_cast<DataTypeUInt8>(&*expression_return))
-			throw Exception("Filter expression must be UInt8", ErrorCodes::TYPE_MISMATCH);
 		return new DataTypeArray(array_element);
 	}
 	
-	static ColumnPtr execute(ColumnArray * array, ColumnPtr mapped)
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
 		ColumnVector<UInt8> * column_filter = dynamic_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
@@ -57,7 +55,7 @@ struct ArrayFilterImpl
 		ColumnPtr filtered = array->getData().filter(filter);
 		
 		const IColumn::Offsets_t & in_offsets = array->getOffsets();
-		ColumnArray::ColumnOffsets_t * column_offsets = new ColumnOffsets_t(in_offsets.size());
+		ColumnArray::ColumnOffsets_t * column_offsets = new ColumnArray::ColumnOffsets_t(in_offsets.size());
 		ColumnPtr column_offsets_ptr = column_offsets;
 		IColumn::Offsets_t & out_offsets = column_offsets->getData();
 		
@@ -83,12 +81,10 @@ struct ArrayCountImpl
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		if (!dynamic_cast<DataTypeUInt8>(&*expression_return))
-			throw Exception("Filter expression must be UInt8", ErrorCodes::TYPE_MISMATCH);
-		return new DataUInt32;
+		return new DataTypeUInt32;
 	}
 	
-	static ColumnPtr execute(ColumnArray * array, ColumnPtr mapped)
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
 		ColumnVector<UInt8> * column_filter = dynamic_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
@@ -96,7 +92,7 @@ struct ArrayCountImpl
 		
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
-		ColumnVector<UInt32> & out_column = new ColumnVector<UInt32>(offsets.size());
+		ColumnVector<UInt32> * out_column = new ColumnVector<UInt32>(offsets.size());
 		ColumnPtr out_column_ptr = out_column;
 		ColumnVector<UInt32>::Container_t & out_counts = out_column->getData();
 		
@@ -122,12 +118,10 @@ struct ArrayExistsImpl
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
-		if (!dynamic_cast<DataTypeUInt8>(&*expression_return))
-			throw Exception("Filter expression must be UInt8", ErrorCodes::TYPE_MISMATCH);
-		return new DataUInt8;
+		return new DataTypeUInt8;
 	}
 	
-	static ColumnPtr execute(ColumnArray * array, ColumnPtr mapped)
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
 		ColumnVector<UInt8> * column_filter = dynamic_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
@@ -135,7 +129,7 @@ struct ArrayExistsImpl
 		
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
-		ColumnVector<UInt8> & out_column = new ColumnVector<UInt8>(offsets.size());
+		ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
 		ColumnPtr out_column_ptr = out_column;
 		ColumnVector<UInt8>::Container_t & out_exists = out_column->getData();
 		
@@ -168,19 +162,21 @@ public:
 		return Name::get();
 	}
 	
-	void checkTypes(const DataTypes & arguments, const DataTypeExpression *& expression_type, const DataTypeArray *& array_type) {
+	void checkTypes(const DataTypes & arguments, const DataTypeExpression *& expression_type, const DataTypeArray *& array_type) const {
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+							+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1]);
 		if (!array_type)
-			throw Exception("Second argument for function " + getName() + " must be array. Found " + arguments[1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Second argument for function " + getName() + " must be array. Found "
+							+ arguments[1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
 		expression_type = dynamic_cast<const DataTypeExpression *>(&*arguments[0]);
-		if (!expression_type || expression_type.getArgumentTypes().size() != 1)
-			throw Exception("First argument for function " + getName() + " must be an expression with one argument. Found " + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!expression_type || expression_type->getArgumentTypes().size() != 1)
+			throw Exception("First argument for function " + getName() + " must be an expression with one argument. Found "
+							+ arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 	
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
@@ -201,7 +197,8 @@ public:
 		checkTypes(arguments, expression_type, array_type);
 		
 		if (Impl::needBooleanExpression() && !dynamic_cast<const DataTypeUInt8 *>(&*expression_type->getReturnType()))
-			throw Exception("Expression for function " + getName() + " must return UInt8, found " + expression_type->getReturnType()->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Expression for function " + getName() + " must return UInt8, found "
+							+ expression_type->getReturnType()->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
 		return Impl::getReturnType(expression_type->getReturnType(), array_type->getNestedType());
 	}
@@ -214,10 +211,10 @@ public:
 		
 		Block temp_block;
 		ExpressionActions & expression = *column_expression->getExpression();
-		Name argument_name = column_expression->getArguments()[0].first;
+		String argument_name = column_expression->getArguments()[0].first;
 		DataTypePtr element_type = column_expression->getArguments()[0].second;
 		/// Положим в блок аргумент выражения.
-		temp_block.insert(ColumnWithNameAndType(column_array->getDataPtr(), argument_name, element_type));
+		temp_block.insert(ColumnWithNameAndType(column_array->getDataPtr(), element_type, argument_name));
 		
 		Names columns = expression.getRequiredColumns();
 		
@@ -235,9 +232,8 @@ public:
 			}
 			else
 			{
-				ColumnWithNameAndType needed_column = block.getByName(name);
-				replicated_column =
-					ColumnWithNameAndType(needed_column->replicate(column_array->getOffsets()), needed_column.type, replicated_name);
+				ColumnWithNameAndType replicated_column = block.getByName(name);
+				replicated_column.column = replicated_column.column->replicate(column_array->getOffsets());
 				block.insert(replicated_column);
 			}
 			replicated_column.name = name;
@@ -246,7 +242,7 @@ public:
 		
 		expression.execute(temp_block);
 		
-		block.getByPosition(result).column = Impl::execute(temp_block.getByName(column_expression->getReturnName()).column);
+		block.getByPosition(result).column = Impl::execute(column_array, temp_block.getByName(column_expression->getReturnName()).column);
 	}
 };
 

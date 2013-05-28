@@ -43,6 +43,20 @@ int main(int argc, char ** argv)
 	
 	ExpressionAnalyzer analyzer(root, context, columns);
 	
+	/// До агрегации:
+	bool appendWhere(ExpressionActionsChain & chain);
+	bool appendGroupBy(ExpressionActionsChain & chain);
+	bool appendAggregateFunctionsArguments(ExpressionActionsChain & chain);
+	/// Финализирует всю цепочку.
+	void appendProjectBeforeAggregation(ExpressionActionsChain & chain);
+	
+	/// После агрегации:
+	bool appendHaving(ExpressionActionsChain & chain);
+	void appendSelect(ExpressionActionsChain & chain);
+	bool appendOrderBy(ExpressionActionsChain & chain);
+	/// Действия, удаляющие из блока столбцы, кроме столбцов из указанных секций запроса.
+	/// Столбцы из секции SELECT также переупорядочиваются и переименовываются в алиасы.
+	
 	if (analyzer.hasAggregation())
 	{
 		Names key_names;
@@ -66,13 +80,56 @@ int main(int argc, char ** argv)
 		}
 		std::cout << "\n";
 		
-		std::cout << "before aggregation:\n\n" << analyzer.getActionsBeforeAggregation()->dumpActions() << "\n";
-		std::cout << "after aggregation:\n\n" << analyzer.getActionsAfterAggregation()->dumpActions();
+		ExpressionActionsChain before;
+		analyzer.appendWhere(before);
+		analyzer.appendAggregateFunctionsArguments(before);
+		analyzer.appendGroupBy(before);
+		analyzer.appendProjectBeforeAggregation(before);
+		
+		ExpressionActionsChain after;
+		analyzer.appendHaving(after);
+		analyzer.appendSelect(after);
+		analyzer.appendOrderBy(after);
+		analyzer.appendProject(after, true, true);
+		analyzer.appendProject(after, true, false);
+		
+		std::cout << "before aggregation:\n\n";
+		for (size_t i = 0; i < before.size(); ++i)
+		{
+			before[i]->dumpActions();
+			std::cout << std::endl;
+		}
+		
+		std::cout << "\nafter aggregation:\n\n";
+		for (size_t i = 0; i < after.size(); ++i)
+		{
+			after[i]->dumpActions();
+			std::cout << std::endl;
+		}
 	}
 	else
 	{
-		std::cout << "only consts:\n\n" << analyzer.getConstActions()->dumpActions() >> "\n";
-		std::cout << "everything:\n\n" << analyzer.getActions()->dumpActions();
+		std::cout << "only consts:\n\n" << analyzer.getConstActions()->dumpActions() << "\n";
+		
+		if (dynamic_cast<ASTSelectQuery *>(&*root))
+		{
+			ExpressionActionsChain chain;
+			analyzer.appendWhere(chain);
+			analyzer.appendSelect(chain);
+			analyzer.appendOrderBy(chain);
+			analyzer.appendProject(chain, true, true);
+			analyzer.appendProject(chain, true, false);
+			
+			for (size_t i = 0; i < chain.size(); ++i)
+			{
+				chain[i]->dumpActions();
+				std::cout << std::endl;
+			}
+		}
+		else
+		{
+			std::cout << analyzer.getActions()->dumpActions() << "\n";
+		}
 	}
 	
 	}
