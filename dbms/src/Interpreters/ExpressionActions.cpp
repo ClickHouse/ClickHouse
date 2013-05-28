@@ -188,6 +188,11 @@ void ExpressionActions::add(const Action & action)
 	checkLimits(sample_block);
 }
 
+void ExpressionActions::prependProjectInput()
+{
+	actions.insert(actions.begin(), Action(getRequiredColumns()));
+}
+
 void ExpressionActions::execute(Block & block)
 {
 	for (size_t i = 0; i < actions.size(); ++i)

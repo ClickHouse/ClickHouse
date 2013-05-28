@@ -85,6 +85,9 @@ public:
 	
 	void add(const Action & action);
 	
+	/// Добавляет в начало удаление всех лишних столбцов.
+	void prependProjectInput();
+	
 	/// - Добавляет действия для удаления всех столбцов, кроме указанных.
 	/// - Убирает неиспользуемые входные столбцы.
 	/// - Не переупорядочивает столбцы.
@@ -155,9 +158,17 @@ struct ExpressionActionsChain
 			
 			if (i > 0)
 			{
+				Names & previous_output = steps[i-1].required_output;
 				const NamesAndTypesList & columns = steps[i].actions->getRequiredColumnsWithTypes();
 				for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-					steps[i-1].required_output.push_back(it->first);
+					previous_output.push_back(it->first);
+				
+				std::sort(previous_output.begin(), previous_output.end());
+				previous_output.erase(std::unique(previous_output.begin(), previous_output.end()));
+				
+				/// Если на выходе предыдущего шага образуются ненужные столбцы, добавим в начало этого шага их выбрасывание.
+				if (previous_output.size() > steps[i].actions->getRequiredColumnsWithTypes().size())
+					steps[i].actions->prependProjectInput();
 			}
 		}
 	}
