@@ -53,6 +53,7 @@ void ExpressionAnalyzer::init()
 {
 	select_query = dynamic_cast<ASTSelectQuery *>(&*ast);
 	has_aggregation = false;
+	has_array_join = false;
 	
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
@@ -356,13 +357,11 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 		else if (context.getAggregateFunctionFactory().isAggregateFunctionName(node->name))
 		{
 			node->kind = ASTFunction::AGGREGATE_FUNCTION;
-			has_aggregation = true;
 			if (!sign_column_name.empty())
 				considerSignRewrite(ast);
 		}
 		else if (node->name == "arrayJoin")
 		{
-			has_array_join = true;
 			node->kind = ASTFunction::ARRAY_JOIN;
 		}
 		else
