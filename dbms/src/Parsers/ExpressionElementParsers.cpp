@@ -463,9 +463,14 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String &
 	else
 		ascending.ignore(pos, end) || asc.ignore(pos, end);
 	
+	ws.ignore(pos, end);
+	
 	Poco::SharedPtr<Collator> collator = NULL;
 	if (collate.ignore(pos, end))
 	{
+		ws.ignore(pos, end);
+		
+		Pos locale_start = pos;
 		ASTPtr locale_node;
 		if (!collate_locale_parser.parse(pos, end, locale_node, expected))
 			return false;
@@ -477,6 +482,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String &
 		}
 		catch (const DB::Exception & e)
 		{
+			pos = locale_start;
 			expected = "unsupported collation locale";
 			return false;
 		}

@@ -134,7 +134,8 @@ protected:
 };
 
 
-/** Элемент выражения ORDER BY - то же самое, что и элемент выражения, но после него ещё может быть указано ASC[ENDING] | DESC[ENDING].
+/** Элемент выражения ORDER BY - то же самое, что и элемент выражения, но после него ещё может быть указано ASC[ENDING] | DESC[ENDING]
+ * 	и, возможно, COLLATE 'locale'.
   */
 class ParserOrderByElement : public IParserBase
 {

@@ -372,7 +372,7 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
-	return ParserList(new ParserOrderByElement, new ParserString(",")).parse(pos, end, node, expected);
+	return ParserList(new ParserOrderByElement, new ParserString(","), false).parse(pos, end, node, expected);
 }
 
 
