@@ -81,7 +81,8 @@ protected:
 			if (static_cast<ssize_t>(i) == array_column)
 			{
 				ColumnWithNameAndType result;
-				result.column = dynamic_cast<const ColumnArray &>(*current.column).getDataPtr();
+
+				result.column = dynamic_cast<const ColumnArray &>(*array).getDataPtr();
 				result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
 				result.name = "arrayJoin(" + current.name + ")";
 
