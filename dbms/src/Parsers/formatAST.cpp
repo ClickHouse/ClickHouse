@@ -439,6 +439,11 @@ void formatAST(const ASTOrderByElement		& ast, std::ostream & s, size_t indent, 
 {
 	formatAST(*ast.children.front(), s, indent, hilite, one_line);
 	s << (hilite ? hilite_keyword : "") << (ast.direction == -1 ? " DESC" : " ASC") << (hilite ? hilite_none : "");
+	if (!ast.collator.isNull())
+	{
+		s << (hilite ? hilite_keyword : "") << " COLLATE " << (hilite ? hilite_none : "")
+			<< "'" << ast.collator->getLocale() << "'";
+	}
 }
 
 }

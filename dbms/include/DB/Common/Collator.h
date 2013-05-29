@@ -4,14 +4,18 @@
 
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Exception.h>
+
 #include <Yandex/Common.h>
+
 #include <Poco/String.h>
 #include <Poco/NumberFormatter.h>
 
-class Collator
+#include <boost/noncopyable.hpp>
+
+class Collator : private boost::noncopyable
 {
 public:
-	Collator(const std::string & locale_) : locale(Poco::toLower(locale_))
+	explicit Collator(const std::string & locale_) : locale(Poco::toLower(locale_))
 	{		
 		UErrorCode status = U_ZERO_ERROR;
 		
