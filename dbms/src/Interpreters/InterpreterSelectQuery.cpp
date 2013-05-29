@@ -491,7 +491,8 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams, Expressio
 			++it)
 		{
 			String name = (*it)->children.front()->getColumnName();
-			order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
+			const ASTOrderByElement & ast_order_by = dynamic_cast<const ASTOrderByElement &>(**it);
+			order_descr.push_back(SortColumnDescription(name, ast_order_by.direction, ast_order_by.collator));
 		}
 
 		bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
