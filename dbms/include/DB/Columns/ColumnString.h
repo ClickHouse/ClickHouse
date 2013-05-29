@@ -281,7 +281,7 @@ public:
 		
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			return collator.compare(
+			return 0 > collator.compare(
 				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
 				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
 		}
