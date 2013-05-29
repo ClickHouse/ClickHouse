@@ -18,27 +18,36 @@ namespace DB
 class ExpressionAnalyzer : private boost::noncopyable
 {
 public:
-	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_)
-		: ast(ast_), context(context_), settings(context.getSettings()), columns(context.getColumns()), storage(getTable())
+	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, size_t subquery_depth_ = 0)
+		: ast(ast_), context(context_), settings(context.getSettings()),
+		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(getTable())
 	{
 		init();
 	}
 
 	/// columns - список известных столбцов (которых можно достать из таблицы).
-	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, const NamesAndTypesList & columns_)
-		: ast(ast_), context(context_), settings(context.getSettings()), columns(columns_), storage(getTable())
+	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, const NamesAndTypesList & columns_, size_t subquery_depth_ = 0)
+		: ast(ast_), context(context_), settings(context.getSettings()),
+		subquery_depth(subquery_depth_), columns(columns_), storage(getTable())
 	{
 		init();
 	}
+	
+	/// Есть ли в выражении arrayJoin.
+	bool hasArrayJoin() { return has_array_join; }
+	
+	/// Получить имя столбца, находящегося внутри arrayJoin.
+	void getArrayJoinInfo(String & column_name) { column_name = column_under_array_join.first; }
 	
 	/// Есть ли в выражении агрегатные функции или секция GROUP BY или HAVING.
 	bool hasAggregation() { return has_aggregation; }
 	
 	/// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
 	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
-
+	
 	
 	/** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
+	  * Выполняют подзапросы в соответствующих частях запроса.
 	  *
 	  * Пример использования:
 	  *   ExpressionActionsChain chain;
@@ -48,6 +57,9 @@ public:
 	  *   analyzer.appendOrderBy(chain);
 	  *   chain.finalize();
 	  */
+	
+	/// До arrayJoin.
+	void appendArrayJoinArgument(ExpressionActionsChain & chain);
 	
 	/// До агрегации:
 	bool appendWhere(ExpressionActionsChain & chain);
@@ -78,9 +90,14 @@ private:
 	ASTSelectQuery * select_query;
 	const Context & context;
 	Settings settings;
+	size_t subquery_depth;
 	
-	/// Известные столбцы.
+	/// Исходные столбцы.
 	NamesAndTypesList columns;
+	/// Столбцы после выполнения arrayJoin. Если нет arrayJoin, совпадает с columns.
+	NamesAndTypesList array_joined_columns;
+	/// Столбцы после агрегации. Если нет агрегации, совпадает с array_joined_columns.
+	NamesAndTypesList aggregated_columns;
 	
 	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
 	const StoragePtr storage;
@@ -90,7 +107,9 @@ private:
 	bool has_aggregation;
 	NamesAndTypesList aggregation_keys;
 	AggregateDescriptions aggregate_descriptions;
-	NamesAndTypesList aggregated_columns; /// Если нет агрегации, совпадает с columns.
+	
+	bool has_array_join;
+	NameAndTypePair column_under_array_join;
 	
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
@@ -100,7 +119,8 @@ private:
 
 	void init();
 
-	NamesAndTypesList::iterator findColumn(const String & name);
+	NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
+	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
 	/** Создать словарь алиасов.
 	  */
@@ -113,15 +133,21 @@ private:
 	void normalizeTree();
 	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts);
 	
-	/// Превратить перечисление значений или подзапрос в ASTSet. ast - функция in или notIn.
-	void makeSet(ASTPtr ast);
+	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
+	void makeSet(ASTFunction * node, ExpressionActions & actions);
 	
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions);
 	
-	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions * actions, Names * result_columns);
+	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions);
+	
+	void getActionsBeforeArrayJoinImpl(ASTPtr ast, ExpressionActions & actions);
 	
 	/// Добавить агрегатные функции в aggregate_descriptions.
+	/// Установить has_aggregation=true, если есть хоть одна агрегатная функция.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
+	
+	/// Если есть arrayJoin, установить has_array_join=true и column_under_array_join.
+	void getArrayJoinImpl(ASTPtr ast, ExpressionActions & actions);
 	
 	/// Получить таблицу, из которой идет запрос
 	StoragePtr getTable();
@@ -148,6 +174,7 @@ private:
 	
 	void assertSelect();
 	void assertAggregation();
+	void assertArrayJoin();
 };
 
 }

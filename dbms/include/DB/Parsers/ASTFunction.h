@@ -14,6 +14,15 @@ namespace DB
 class ASTFunction : public IAST
 {
 public:
+	enum FunctionKind
+	{
+		UNKNOWN,
+		FUNCTION,
+		AGGREGATE_FUNCTION,
+		LAMBDA_EXPRESSION,
+		ARRAY_JOIN,
+	};
+	
 	/// имя функции
 	String name;
 	/// аргументы
@@ -23,8 +32,7 @@ public:
 	/// алиас, если есть
 	String alias;
 	
-	bool is_aggregate_function;
-	bool is_lambda_expression;
+	FunctionKind kind;
 
 	/// сама функция
 	FunctionPtr function;
@@ -35,8 +43,8 @@ public:
 	/// тип возвращаемого значения
 	DataTypePtr return_type;
 
-	ASTFunction() : is_aggregate_function(false), is_lambda_expression(false) {}
-	ASTFunction(StringRange range_) : IAST(range_), is_aggregate_function(false), is_lambda_expression(false) {}
+	ASTFunction() : kind(UNKNOWN) {}
+	ASTFunction(StringRange range_) : IAST(range_), kind(UNKNOWN) {}
 
 	String getColumnName() const
 	{

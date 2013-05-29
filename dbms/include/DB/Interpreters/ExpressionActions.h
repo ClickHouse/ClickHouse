@@ -12,7 +12,7 @@ typedef std::vector<NameWithAlias> NamesWithAliases;
 	
 /** Содержит последовательность действий над блоком.
   */
-class ExpressionActions : private boost::noncopyable
+class ExpressionActions
 {
 public:
 	struct Action

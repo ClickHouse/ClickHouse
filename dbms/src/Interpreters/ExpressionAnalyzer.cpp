@@ -57,19 +57,35 @@ void ExpressionAnalyzer::init()
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
 	
+	array_joined_columns = columns;
+	
+	/// Найдем arrayJoin.
+	ExpressionActions temp_actions(columns, settings);
+	getArrayJoinImpl(ast, temp_actions);
+	
+	if (has_array_join)
+	{
+		assertSelect();
+		
+		NameAndTypePair col;
+		col.first = "arrayJoin(" + column_under_array_join.first + ")";
+		const DataTypeArray * array = dynamic_cast<const DataTypeArray *>(&*column_under_array_join.second);
+		if (!array)
+			throw Exception("Argument of arrayJoin must be an array", ErrorCodes::TYPE_MISMATCH);
+		col.second = array->getNestedType();
+		array_joined_columns.push_back(col);
+	}
+	
+	/// Найдем агрегатные функции.
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
 		has_aggregation = true;
 	
+	temp_actions = ExpressionActions(array_joined_columns, settings);
+	getAggregatesImpl(ast, temp_actions);
+	
 	if (has_aggregation)
 	{
-		if (!select_query)
-			throw Exception("Aggregation not in select query", ErrorCodes::ILLEGAL_AGGREGATION);
-		
-		/// Действия до агрегации. Используются только для определения типов.
-		ExpressionActions actions(columns, settings);
-		
-		/// Найдем агрегатные функции.
-		getAggregatesImpl(ast, actions);
+		assertSelect();
 		
 		/// Найдем ключи агрегации.
 		if (select_query->group_expression_list)
@@ -77,10 +93,10 @@ void ExpressionAnalyzer::init()
 			const ASTs & group_asts = select_query->group_expression_list->children;
 			for (size_t i = 0; i < group_asts.size(); ++i)
 			{
-				getActionsImpl(group_asts[i], true, false, actions);
+				getActionsImpl(group_asts[i], true, false, temp_actions);
 				NameAndTypePair key;
 				key.first = group_asts[i]->getColumnName();
-				key.second = actions.getSampleBlock().getByName(key.first).type;
+				key.second = temp_actions.getSampleBlock().getByName(key.first).type;
 				aggregation_keys.push_back(key);
 			}
 		}
@@ -94,15 +110,15 @@ void ExpressionAnalyzer::init()
 	}
 	else
 	{
-		aggregated_columns = columns;	
+		aggregated_columns = array_joined_columns;	
 	}
 }
 
 
-NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name)
+NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypesList & cols)
 {
 	NamesAndTypesList::iterator it;
-	for (it = columns.begin(); it != columns.end(); ++it)
+	for (it = cols.begin(); it != cols.end(); ++it)
 		if (it->first == name)
 			break;
 	return it;
@@ -305,23 +321,6 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	ASTPtr initial_ast = ast;
 	current_asts.insert(initial_ast);
 	
-	/// rewrite правила, которые действуют при обходе сверху-вниз.
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
-	{
-		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
-		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
-		  */
-		String function_string = node->getColumnName();
-		NamesAndTypesList::const_iterator it = findColumn(function_string);
-		if (columns.end() != it)
-		{
-			ASTIdentifier * ast_id = new ASTIdentifier(node->range, std::string(node->range.first, node->range.second));
-			ast_id->type = it->second;
-			ast = ast_id;
-			current_asts.insert(ast);
-		}
-	}
-	
 	/// Обход снизу-вверх. Не опускаемся в подзапросы.
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
@@ -352,14 +351,23 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	{
 		if (node->name == "lambda")
 		{
-			node->is_lambda_expression = true;
+			node->kind = ASTFunction::LAMBDA_EXPRESSION;
 		}
 		else if (context.getAggregateFunctionFactory().isAggregateFunctionName(node->name))
 		{
-			node->is_aggregate_function = true;
+			node->kind = ASTFunction::AGGREGATE_FUNCTION;
 			has_aggregation = true;
 			if (!sign_column_name.empty())
 				considerSignRewrite(ast);
+		}
+		else if (node->name == "arrayJoin")
+		{
+			has_array_join = true;
+			node->kind = ASTFunction::ARRAY_JOIN;
+		}
+		else
+		{
+			node->kind = ASTFunction::FUNCTION;
 		}
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
@@ -393,10 +401,59 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 }
 
 
-/// ast - ASTFunction с названием in или notIn.
-void ExpressionAnalyzer::makeSet(ASTPtr ast)
+void ExpressionAnalyzer::makeSet(ASTFunction * node, ExpressionActions & actions)
 {
-	throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+	/** Нужно преобразовать правый аргумент в множество.
+	  * Это может быть перечисление значений или подзапрос.
+	  * Перечисление значений парсится как функция tuple.
+	  */
+	IAST & args = *node->arguments;
+	ASTPtr & arg = args.children[1];
+	if (dynamic_cast<ASTSubquery *>(&*arg))
+	{
+		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
+		InterpreterSelectQuery interpreter(arg->children[0], context, QueryProcessingStage::Complete, subquery_depth + 1);
+		ASTSet * ast_set = new ASTSet(arg->getColumnName());
+		ast_set->set = new Set;
+		ast_set->set->create(interpreter.execute());
+		arg = ast_set;
+	}
+	else if (ASTFunction * set_func = dynamic_cast<ASTFunction *>(&*arg))
+	{
+		/// Случай явного перечисления значений.
+		if (set_func->name != "tuple")
+			throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		DataTypes set_element_types;
+		ASTPtr & left_arg = args.children[0];
+
+		ASTFunction * left_arg_tuple = dynamic_cast<ASTFunction *>(&*left_arg);
+
+		if (left_arg_tuple && left_arg_tuple->name == "tuple")
+		{
+			for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
+				it != left_arg_tuple->arguments->children.end();
+				++it)
+				set_element_types.push_back(actions.getSampleBlock().getByName((*it)->getColumnName()).type);
+		}
+		else
+		{
+			DataTypePtr left_type = actions.getSampleBlock().getByName(left_arg->getColumnName()).type;
+			if (DataTypeArray * array_type = dynamic_cast<DataTypeArray *>(&*left_type))
+				set_element_types.push_back(array_type->getNestedType());
+			else
+				set_element_types.push_back(left_type);
+		}
+
+		ASTSet * ast_set = new ASTSet(arg->getColumnName());
+		ast_set->set = new Set;
+		ast_set->set->create(set_element_types, set_func->arguments);
+		arg = ast_set;
+	}
+	else if (!dynamic_cast<ASTSet *>(&*arg))
+		throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 
@@ -418,17 +475,19 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		if (node->is_lambda_expression)
+		if (node->kind == ASTFunction::LAMBDA_EXPRESSION)
 			throw Exception("Unexpected expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 		
-		if (!node->is_aggregate_function)
+		if (node->kind == ASTFunction::FUNCTION)
 		{
 			if (node->name == "in" || node->name == "notIn")
 			{
 				if (!no_subqueries)
 				{
+					/// Найдем тип первого аргумента (потом getActionsImpl вызовется для него снова и ни на что не повлияет).
+					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions);
 					/// Превратим tuple или подзапрос в множество.
-					makeSet(ast);
+					makeSet(node, actions);
 				}
 				else
 				{
@@ -500,7 +559,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						ASTFunction * lambda_args_tuple = dynamic_cast<ASTFunction *>(&*lambda->arguments->children[0]);
 						ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
 						NamesAndTypes lambda_args;
-						NamesAndTypesList initial_columns = columns;
+						
+						NamesAndTypesList lambda_columns = actions.getRequiredColumnsWithTypes();
 						
 						for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
 						{
@@ -511,19 +571,17 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 							String arg_name = identifier->name;
 							NameAndTypePair arg(arg_name, lambda_type->getArgumentTypes()[j]);
 							
-							NamesAndTypesList::iterator it = findColumn(arg_name);
-							if (it != columns.end())
+							NamesAndTypesList::iterator it = findColumn(arg_name, lambda_columns);
+							if (it != lambda_columns.end())
 								it->second = arg.second;
 							else
-								columns.push_front(arg);
+								lambda_columns.push_back(arg);
 							
 							lambda_args.push_back(arg);
 						}
 						
-						ExpressionActionsPtr lambda_actions = new ExpressionActions(columns, settings);
+						ExpressionActionsPtr lambda_actions = new ExpressionActions(lambda_columns, settings);
 						getActionsImpl(lambda->arguments->children[1], no_subqueries, only_consts, *lambda_actions);
-						
-						columns = initial_columns;
 						
 						String result_name = lambda->arguments->children[1]->getColumnName();
 						lambda_actions->finalize(Names(1, result_name));
@@ -586,8 +644,9 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actions)
 {
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
-	if (node && node->is_aggregate_function)
+	if (node && node->kind == ASTFunction::AGGREGATE_FUNCTION)
 	{
+		has_aggregation = true;
 		AggregateDescription aggregate;
 		aggregate.column_name = node->getColumnName();
 		
@@ -642,6 +701,39 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 	}
 }
 
+void ExpressionAnalyzer::getArrayJoinImpl(ASTPtr ast, ExpressionActions & actions)
+{
+	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
+	if (node && node->kind == ASTFunction::ARRAY_JOIN)
+	{
+		ASTs & arguments = node->arguments->children;
+		if (arguments.size() != 1)
+			throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		String name = arguments[0]->getColumnName();
+		
+		if (has_array_join)
+		{
+			if (column_under_array_join.first != name)
+				throw Exception("Multiple arrayJoin in single query", ErrorCodes::MULTIPLE_ARRAY_JOIN);
+		}
+		else
+		{
+			has_array_join = true;
+			getActionsImpl(arguments[0], true, false, actions);
+			column_under_array_join.first = name;
+			column_under_array_join.second = actions.getSampleBlock().getByName(name).type;
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < ast->children.size(); ++i)
+		{
+			getArrayJoinImpl(ast->children[i], actions);
+		}
+	}
+}
+
 void ExpressionAnalyzer::assertSelect()
 {
 	if (!select_query)
@@ -651,6 +743,11 @@ void ExpressionAnalyzer::assertAggregation()
 {
 	if (!has_aggregation)
 		throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
+}
+void ExpressionAnalyzer::assertArrayJoin()
+{
+	if (!has_array_join)
+		throw Exception("No arrayJoin", ErrorCodes::LOGICAL_ERROR);
 }
 
 void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypesList & columns)
@@ -662,6 +759,17 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypes
 	}
 }
 
+void ExpressionAnalyzer::appendArrayJoinArgument(ExpressionActionsChain & chain)
+{
+	assertArrayJoin();
+	
+	initChain(chain, columns);
+	ExpressionActionsChain::Step & step = chain.steps.back();
+	
+	step.required_output.push_back(column_under_array_join.first);
+	getActionsBeforeArrayJoinImpl(ast, *step.actions);
+}
+
 bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain)
 {
 	assertSelect();
@@ -669,7 +777,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain)
 	if (!select_query->where_expression)
 		return false;
 	
-	initChain(chain, columns);
+	initChain(chain, array_joined_columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
 	step.required_output.push_back(select_query->where_expression->getColumnName());
@@ -685,7 +793,7 @@ bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain)
 	if (!select_query->group_expression_list)
 		return false;
 	
-	initChain(chain, columns);
+	initChain(chain, array_joined_columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
 	ASTs asts = select_query->group_expression_list->children;
@@ -702,16 +810,24 @@ void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChai
 {
 	assertAggregation();
 	
-	initChain(chain, columns);
+	initChain(chain, array_joined_columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
-	getActionsBeforeAggregationImpl(select_query->select_expression_list, &*step.actions, &step.required_output);
+	for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
+	{
+		for (size_t j = 0; j < aggregate_descriptions[i].argument_names.size(); ++j)
+		{
+			step.required_output.push_back(aggregate_descriptions[i].argument_names[j]);
+		}
+	}
+	
+	getActionsBeforeAggregationImpl(select_query->select_expression_list, *step.actions);
 	
 	if (select_query->having_expression)
-		getActionsBeforeAggregationImpl(select_query->having_expression, &*step.actions, &step.required_output);
+		getActionsBeforeAggregationImpl(select_query->having_expression, *step.actions);
 	
 	if (select_query->order_expression_list)
-		getActionsBeforeAggregationImpl(select_query->order_expression_list, &*step.actions, &step.required_output);
+		getActionsBeforeAggregationImpl(select_query->order_expression_list, *step.actions);
 }
 
 bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain)
@@ -791,26 +907,44 @@ void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain)
 }
 
 
-void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions * actions, Names * result_columns)
+void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions)
 {
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
-	if (node && node->is_aggregate_function)
+	if (node && node->kind == ASTFunction::AGGREGATE_FUNCTION)
 	{
 		ASTs & arguments = node->arguments->children;
 		
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			if (result_columns)
-				result_columns->push_back(arguments[i]->getColumnName());
-			if (actions)
-				getActionsImpl(arguments[i], false, false, *actions);
+			getActionsImpl(arguments[i], false, false, actions);
 		}
 	}
 	else
 	{
 		for (size_t i = 0; i < ast->children.size(); ++i)
 		{
-			getActionsBeforeAggregationImpl(ast->children[i], actions, result_columns);
+			getActionsBeforeAggregationImpl(ast->children[i], actions);
+		}
+	}
+}
+
+
+void ExpressionAnalyzer::getActionsBeforeArrayJoinImpl(ASTPtr ast, ExpressionActions & actions)
+{
+	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
+	if (node && node->kind == ASTFunction::ARRAY_JOIN)
+	{
+		ASTs & arguments = node->arguments->children;
+		if (arguments.size() != 1)
+			throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		getActionsImpl(arguments[0], false, false, actions);
+	}
+	else
+	{
+		for (size_t i = 0; i < ast->children.size(); ++i)
+		{
+			getActionsBeforeArrayJoinImpl(ast->children[i], actions);
 		}
 	}
 }

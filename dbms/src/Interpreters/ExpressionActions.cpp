@@ -1,4 +1,6 @@
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Functions/FunctionsMiscellaneous.h>
 #include <set>
 
 namespace DB
@@ -19,7 +21,20 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			types[i] = sample_block.getByName(argument_names[i]).type;
 		}
 		
-		result_type = function->getReturnType(types);
+		if (FunctionTupleElement * func_tuple_elem = dynamic_cast<FunctionTupleElement *>(&*function))
+		{
+			/// Особый случай - для функции tupleElement обычный метод getReturnType не работает.
+			if (argument_names.size() != 2)
+				throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.",
+								ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+			const ColumnConstUInt8 * index_col = dynamic_cast<const ColumnConstUInt8 *>(&*sample_block.getByName(argument_names[1]).column);
+			result_type = func_tuple_elem->getReturnType(types, index_col->getData());
+		}
+		else
+		{
+			result_type = function->getReturnType(types);
+		}
 		
 		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
 	}
@@ -28,7 +43,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		if (sample_block.has(result_name))
 			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 		
-		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
+		sample_block.insert(ColumnWithNameAndType(added_column, result_type, result_name));
 	}
 	else
 	{
