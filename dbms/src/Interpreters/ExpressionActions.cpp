@@ -38,6 +38,20 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		
 		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
 	}
+	else if (type == ARRAY_JOIN)
+	{
+		if (sample_block.has(result_name))
+			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+		if (!sample_block.has(source_name))
+			throw Exception("Unknown identifier: '" + source_name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+		
+		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(sample_block.getByName(source_name).type);
+		if (!array_type)
+			throw Exception("arrayJoin requires array argument", ErrorCodes::TYPE_MISMATCH);
+		result_type = array_type->getNestedType();
+		
+		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
+	}
 	else if (type == ADD_COLUMN)
 	{
 		if (sample_block.has(result_name))
@@ -56,11 +70,11 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 
 void ExpressionActions::Action::execute(Block & block)
 {
-	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
+	if (type == REMOVE_COLUMN || type == COPY_COLUMN || type == ARRAY_JOIN)
 		if (!block.has(source_name))
 			throw Exception("Not found column '" + source_name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 	
-	if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION)
+	if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION || type == ARRAY_JOIN)
 		if (block.has(result_name))
 			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 		
@@ -82,6 +96,37 @@ void ExpressionActions::Action::execute(Block & block)
 			block.insert(new_column);
 			
 			function->execute(block, arguments, block.getPositionByName(result_name));
+			
+			break;
+		}
+		
+		case ARRAY_JOIN:
+		{
+			size_t array_column = block.getPositionByName(source_name);
+			
+			ColumnPtr array = block.getByPosition(array_column).column;
+			
+			if (array->isConst())
+				array = dynamic_cast<const IColumnConst &>(*array).convertToFullColumn();
+			
+			size_t columns = block.columns();
+			for (size_t i = 0; i < columns; ++i)
+			{
+				ColumnWithNameAndType & current = block.getByPosition(i);
+				
+				if (i == array_column)
+				{
+					ColumnWithNameAndType result;
+					result.column = dynamic_cast<const ColumnArray &>(*current.column).getDataPtr();
+					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
+					result.name = result_name;
+					
+					block.erase(i);
+					block.insert(i, result);
+				}
+				else
+					current.column = current.column->replicate(dynamic_cast<const ColumnArray &>(*array).getOffsets());
+			}
 			
 			break;
 		}
@@ -147,6 +192,9 @@ std::string ExpressionActions::Action::toString() const
 				ss << argument_names[i];
 			}
 			ss << " )";
+			break;
+		case ARRAY_JOIN:
+			ss << result_name << "(" << result_type->getName() << ")" << "= " << "arrayJoin" << " ( " << source_name << " )";
 			break;
 		case PROJECT:
 			ss << "{";
@@ -264,6 +312,31 @@ void ExpressionActions::finalize(const Names & output_columns)
 		if (!final_columns.count(name))
 			add(Action(name));
 	}
+}
+
+std::string ExpressionActions::getID() const
+{
+	std::stringstream ss;
+	
+	for (size_t i = 0; i < actions.size(); ++i)
+	{
+		if (i)
+			ss << ", ";
+		if (actions[i].type == Action::APPLY_FUNCTION || actions[i].type == Action::ARRAY_JOIN)
+			ss << actions[i].result_name;
+	}
+	
+	ss << ": {";
+	NamesAndTypesList output_columns = sample_block.getColumnsList();
+	for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
+	{
+		if (it != output_columns.begin())
+			ss << ", ";
+		ss << it->first;
+	}
+	ss << "}";
+	
+	return ss.str();
 }
 
 std::string ExpressionActions::dumpActions() const

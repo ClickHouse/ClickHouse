@@ -33,17 +33,14 @@ public:
 		init();
 	}
 	
-	/// Есть ли в выражении arrayJoin.
-	bool hasArrayJoin() { return has_array_join; }
-	
-	/// Получить имя столбца, находящегося внутри arrayJoin.
-	void getArrayJoinInfo(String & column_name) { column_name = column_under_array_join.first; }
-	
 	/// Есть ли в выражении агрегатные функции или секция GROUP BY или HAVING.
 	bool hasAggregation() { return has_aggregation; }
 	
 	/// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
 	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
+	
+	/// Получить набор столбцов, которые достаточно прочесть для выичсления выражения.
+	Names getRequiredColumns();
 	
 	
 	/** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
@@ -57,9 +54,6 @@ public:
 	  *   analyzer.appendOrderBy(chain);
 	  *   chain.finalize();
 	  */
-	
-	/// До arrayJoin.
-	void appendArrayJoinArgument(ExpressionActionsChain & chain);
 	
 	/// До агрегации:
 	bool appendWhere(ExpressionActionsChain & chain);
@@ -80,12 +74,12 @@ public:
 	/// Не выполняет подзапросы.
 	ExpressionActionsPtr getConstActions();
 	
-	/// Получить информацию об операции arrayJoin, если она есть.
-	/// Если есть - в column_name будет записано имя столбца, находящегося внутри arrayJoin.
-	/// TODO: 
-	//bool getArrayJoinInfo(String & column_name);
+	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
+	Block getSelectSampleBlock();
 
 private:
+	typedef std::set<String> NamesSet;
+	
 	ASTPtr ast;
 	ASTSelectQuery * select_query;
 	const Context & context;
@@ -94,9 +88,7 @@ private:
 	
 	/// Исходные столбцы.
 	NamesAndTypesList columns;
-	/// Столбцы после выполнения arrayJoin. Если нет arrayJoin, совпадает с columns.
-	NamesAndTypesList array_joined_columns;
-	/// Столбцы после агрегации. Если нет агрегации, совпадает с array_joined_columns.
+	/// Столбцы после агрегации. Если нет агрегации, совпадает с columns.
 	NamesAndTypesList aggregated_columns;
 	
 	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
@@ -107,9 +99,6 @@ private:
 	bool has_aggregation;
 	NamesAndTypesList aggregation_keys;
 	AggregateDescriptions aggregate_descriptions;
-	
-	bool has_array_join;
-	NameAndTypePair column_under_array_join;
 	
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
@@ -140,14 +129,11 @@ private:
 	
 	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions);
 	
-	void getActionsBeforeArrayJoinImpl(ASTPtr ast, ExpressionActions & actions);
-	
 	/// Добавить агрегатные функции в aggregate_descriptions.
 	/// Установить has_aggregation=true, если есть хоть одна агрегатная функция.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
 	
-	/// Если есть arrayJoin, установить has_array_join=true и column_under_array_join.
-	void getArrayJoinImpl(ASTPtr ast, ExpressionActions & actions);
+	void getRequiredColumnsImpl(ASTPtr ast, Names & required_columns, NamesSet & ignored_names);
 	
 	/// Получить таблицу, из которой идет запрос
 	StoragePtr getTable();

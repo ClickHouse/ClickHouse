@@ -17,12 +17,17 @@ class ExpressionActions
 public:
 	struct Action
 	{
+	private:
+		Action() {}
+		
+	public:
 		enum Type
 		{
 			APPLY_FUNCTION,
 			ADD_COLUMN,
 			REMOVE_COLUMN,
 			COPY_COLUMN,
+			ARRAY_JOIN, /// Заменяет столбец с массивом на столбец с элементами. Если этот массив упоминается где-то еще, будет ошибка.
 			PROJECT, /// Переупорядочить и переименовать столбцы, удалить лишние.
 		};
 		
@@ -42,28 +47,68 @@ public:
 		/// Для PROJECT.
 		NamesWithAliases projection;
 		
-		Action(FunctionPtr function_, const std::vector<std::string> & argument_names_, const std::string & result_name_)
-			: type(APPLY_FUNCTION), result_name(result_name_), function(function_), argument_names(argument_names_) {}
-			
-		explicit Action(ColumnWithNameAndType added_column_)
-			: type(ADD_COLUMN), result_name(added_column_.name),
-			result_type(added_column_.type), added_column(added_column_.column) {}
-			
-		Action(const std::string & removed_name)
-			: type(REMOVE_COLUMN), source_name(removed_name) {}
-			
-		Action(const std::string & from_name, const std::string & to_name)
-			: type(COPY_COLUMN), source_name(from_name), result_name(to_name) {}
-			
-		explicit Action(const NamesWithAliases & projected_columns_)
-			: type(PROJECT), projection(projected_columns_) {}
-			
-		explicit Action(const Names & projected_columns_)
-			: type(PROJECT)
+		static Action applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, const std::string & result_name_)
 		{
-			projection.resize(projected_columns_.size());
+			Action a;
+			a.type = APPLY_FUNCTION;
+			a.result_name = result_name_;
+			a.function = function_;
+			a.argument_names = argument_names_;
+			return a;
+		}
+		
+		static Action addColumn(ColumnWithNameAndType added_column_)
+		{
+			Action a;
+			a.type = ADD_COLUMN;
+			a.result_name = added_column_.name;
+			a.result_type = added_column_.type;
+			a.added_column = added_column_.column;
+			return a;
+		}
+		
+		static Action removeColumn(const std::string & removed_name)
+		{
+			Action a;
+			a.type = REMOVE_COLUMN;
+			a.source_name = removed_name;
+			return a;
+		}
+		
+		static Action copyColumn(const std::string & from_name, const std::string & to_name)
+		{
+			Action a;
+			a.type = COPY_COLUMN;
+			a.source_name = from_name;
+			a.result_name = to_name;
+			return a;
+		}
+		
+		static Action project(const NamesWithAliases & projected_columns_)
+		{
+			Action a;
+			a.type = PROJECT;
+			a.projection = projected_columns_;
+			return a;
+		}
+		
+		static Action project(const Names & projected_columns_)
+		{
+			Action a;
+			a.type = PROJECT;
+			a.projection.resize(projected_columns_.size());
 			for (size_t i = 0; i < projected_columns_.size(); ++i)
-				projection[i] = NameWithAlias(projected_columns_[i], "");
+				a.projection[i] = NameWithAlias(projected_columns_[i], "");
+			return a;
+		}
+		
+		static Action arrayJoin(const std::string & source_name, const std::string & result_name)
+		{
+			Action a;
+			a.type = ARRAY_JOIN;
+			a.source_name = source_name;
+			a.result_name = result_name;
+			return a;
 		}
 		
 		void prepare(Block & sample_block);
@@ -110,6 +155,8 @@ public:
 
 	/// Получить блок-образец, содержащий имена и типы столбцов результата.
 	const Block & getSampleBlock() { return sample_block; }
+	
+	std::string getID() const;
 	
 	std::string dumpActions() const;
 

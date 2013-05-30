@@ -43,19 +43,13 @@ int main(int argc, char ** argv)
 	
 	ExpressionAnalyzer analyzer(root, context, columns);
 	
-	/// До агрегации:
-	bool appendWhere(ExpressionActionsChain & chain);
-	bool appendGroupBy(ExpressionActionsChain & chain);
-	bool appendAggregateFunctionsArguments(ExpressionActionsChain & chain);
-	/// Финализирует всю цепочку.
-	void appendProjectBeforeAggregation(ExpressionActionsChain & chain);
-	
-	/// После агрегации:
-	bool appendHaving(ExpressionActionsChain & chain);
-	void appendSelect(ExpressionActionsChain & chain);
-	bool appendOrderBy(ExpressionActionsChain & chain);
-	/// Действия, удаляющие из блока столбцы, кроме столбцов из указанных секций запроса.
-	/// Столбцы из секции SELECT также переупорядочиваются и переименовываются в алиасы.
+	Names required = analyzer.getRequiredColumns();
+	std::cout << "required columns:\n";
+	for (size_t i = 0; i < required.size(); ++i)
+	{
+		std::cout << required[i] << "\n";
+	}
+	std::cout << "\n";
 	
 	if (analyzer.hasAggregation())
 	{
