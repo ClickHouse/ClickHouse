@@ -240,7 +240,7 @@ public:
 	}
 	
 	/// Версия compareAt для locale-sensitive сравнения строк
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
+	int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
 	{
 		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
 		
@@ -288,7 +288,7 @@ public:
 	};
 
 	/// Сортировка с учетом Collation
-	Permutation getPermutation(const Collator & collator) const
+	Permutation getPermutationWithCollation(const Collator & collator) const
 	{
 		size_t s = offsets.size();
 		Permutation res(s);

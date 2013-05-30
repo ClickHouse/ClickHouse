@@ -470,22 +470,12 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, String &
 	{
 		ws.ignore(pos, end);
 		
-		Pos locale_start = pos;
 		ASTPtr locale_node;
 		if (!collate_locale_parser.parse(pos, end, locale_node, expected))
 			return false;
 		
 		const String & locale = dynamic_cast<const ASTLiteral &>(*locale_node).value.safeGet<String>();
-		try
-		{
-			collator = new Collator(locale);
-		}
-		catch (const DB::Exception & e)
-		{
-			pos = locale_start;
-			expected = "unsupported collation locale";
-			return false;
-		}
+		collator = new Collator(locale);
 	}
 
 	node = new ASTOrderByElement(StringRange(begin, pos), direction, collator);

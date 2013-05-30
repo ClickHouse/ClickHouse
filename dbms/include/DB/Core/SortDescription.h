@@ -150,7 +150,7 @@ struct SortCursorWithCollation
 			if (impl->need_collation[i])
 			{
 				const ColumnString & column_string = dynamic_cast<const ColumnString &>(*impl->sort_columns[i]);
-				res = column_string.compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
+				res = column_string.compareAtWithCollation(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
 			}
 			else
 				res = impl->sort_columns[i]->compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]));

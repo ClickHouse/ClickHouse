@@ -47,7 +47,7 @@ struct PartialSortingLessWithCollation
 			if (needCollation(it->first, it->second))
 			{
 				const ColumnString & column_string = dynamic_cast<const ColumnString &>(*it->first);
-				res = column_string.compareAt(a, b, *it->first, *it->second.collator);
+				res = column_string.compareAtWithCollation(a, b, *it->first, *it->second.collator);
 			}
 			else
 				res = it->first->compareAt(a, b, *it->first);
@@ -79,7 +79,7 @@ void sortBlock(Block & block, const SortDescription & description)
 		if (needCollation(column, description[0]))
 		{
 			const ColumnString & column_string = dynamic_cast<const ColumnString &>(*column);
-			perm = column_string.getPermutation(*description[0].collator);
+			perm = column_string.getPermutationWithCollation(*description[0].collator);
 		}
 		else
 			perm = column->getPermutation();
