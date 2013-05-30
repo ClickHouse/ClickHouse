@@ -852,7 +852,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 {
 	assertSelect();
 	
-	ExpressionActions temp_actions(aggregated_columns);
+	ExpressionActions temp_actions(aggregated_columns, settings);
 	NamesWithAliases result_columns;
 	
 	ASTs asts = select_query->select_expression_list->children;
@@ -948,7 +948,7 @@ Names ExpressionAnalyzer::getRequiredColumns()
 	return res;
 }
 
-void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NameSet & required_columns, NamesSet & ignored_names)
+void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names)
 {
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
@@ -971,9 +971,9 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NameSet & required_c
 			
 			/// Не нужно добавлять параметры лямбда-выражения в required_columns.
 			Names added_ignored;
-			for (size_t i = 0 ; i < lambda_args_tuple->size(); ++i)
+			for (size_t i = 0 ; i < lambda_args_tuple->children.size(); ++i)
 			{
-				ASTIdentifier * identifier = dynamic_cast<ASTIdentifier *>(&*lambda_args_tuple[i]);
+				ASTIdentifier * identifier = dynamic_cast<ASTIdentifier *>(&*lambda_args_tuple->children[i]);
 				if (!identifier)
 					throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 				std::string name = identifier->name;

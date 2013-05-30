@@ -45,7 +45,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		if (!sample_block.has(source_name))
 			throw Exception("Unknown identifier: '" + source_name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
 		
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(sample_block.getByName(source_name).type);
+		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*sample_block.getByName(source_name).type);
 		if (!array_type)
 			throw Exception("arrayJoin requires array argument", ErrorCodes::TYPE_MISMATCH);
 		result_type = array_type->getNestedType();
@@ -253,7 +253,7 @@ void ExpressionActions::add(const Action & action)
 
 void ExpressionActions::prependProjectInput()
 {
-	actions.insert(actions.begin(), Action(getRequiredColumns()));
+	actions.insert(actions.begin(), Action::project(getRequiredColumns()));
 }
 
 void ExpressionActions::execute(Block & block)
@@ -310,7 +310,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 	{
 		const std::string & name = sample_block.getByPosition(i).name;
 		if (!final_columns.count(name))
-			add(Action(name));
+			add(Action::removeColumn(name));
 	}
 }
 

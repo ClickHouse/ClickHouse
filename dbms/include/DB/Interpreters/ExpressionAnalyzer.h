@@ -133,7 +133,7 @@ private:
 	/// Установить has_aggregation=true, если есть хоть одна агрегатная функция.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
 	
-	void getRequiredColumnsImpl(ASTPtr ast, Names & required_columns, NamesSet & ignored_names);
+	void getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names);
 	
 	/// Получить таблицу, из которой идет запрос
 	StoragePtr getTable();
