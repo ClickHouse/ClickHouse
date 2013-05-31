@@ -15,7 +15,5 @@ namespace DB
   */
 void copyData(IBlockInputStream & from, IBlockOutputStream & to);
 void copyData(IRowInputStream & from, IRowOutputStream & to);
-void copyData(IBlockInputStream & from, IRowOutputStream & to);
-void copyData(IRowInputStream & from, IBlockOutputStream & to, const Block & sample);
 
 }

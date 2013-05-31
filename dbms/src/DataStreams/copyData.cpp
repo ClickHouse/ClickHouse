@@ -15,6 +15,11 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to)
 	while (Block block = from.read())
 		to.write(block);
 
+	/// Для вывода информации о количестве строк до LIMIT в некоторых форматах.
+	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&from))
+		if (input->getInfo().hasAppliedLimit())
+			to.setRowsBeforeLimit(input->getInfo().getRowsBeforeLimit());
+
 	from.readSuffix();
 	to.writeSuffix();
 }

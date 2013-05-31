@@ -581,11 +581,7 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 
 	BlockInputStreamPtr in = execute();
 	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
-	
-	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*in))
-		if (input->getInfo().hasAppliedLimit())
-			out->setRowsBeforeLimit(input->getInfo().getRowsBeforeLimit());
-	
+
 	copyData(*in, *out);
 
 	return in;
