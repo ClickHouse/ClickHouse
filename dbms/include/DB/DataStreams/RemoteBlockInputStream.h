@@ -121,6 +121,7 @@ public:
 			{
 				case Protocol::Server::Data:
 				case Protocol::Server::Progress:
+				case Protocol::Server::ProfileInfo:
 					break;
 
 				case Protocol::Server::EndOfStream:
@@ -173,6 +174,9 @@ protected:
 					if (!was_cancelled && !finished && isCancelled())
 						cancel();
 
+					break;
+
+				case Protocol::Server::ProfileInfo:
 					break;
 
 				default:
