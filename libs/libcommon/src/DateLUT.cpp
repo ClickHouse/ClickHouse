@@ -40,5 +40,7 @@ namespace Yandex
 			if (lut[day].month == 1 && lut[day].day_of_month == 1)
 				years_lut[lut[day].year - DATE_LUT_MIN_YEAR] = day;
 		}
+
+		offset_at_start_of_epoch = 86400 - lut[findIndex(86400)].date;
 	}
 }

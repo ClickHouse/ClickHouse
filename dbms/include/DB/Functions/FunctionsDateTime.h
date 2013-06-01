@@ -119,7 +119,7 @@ struct ToStartOfYearImpl
 struct ToTimeImpl
 {
 	/// При переводе во время, дату будем приравнивать к 1970-01-02.
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return t - date_lut.toDate(t) + 75600; }
+	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toTimeInaccurate(t) + 86400; }
 	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
