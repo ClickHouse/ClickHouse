@@ -13,6 +13,7 @@ namespace DB
 class ASTSelectQuery : public ASTQueryWithOutput
 {
 public:
+	bool distinct;
 	ASTPtr select_expression_list;
 	ASTPtr database;
 	ASTPtr table;	/// Идентификатор или подзапрос (рекурсивно ASTSelectQuery)
@@ -26,8 +27,8 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 
-	ASTSelectQuery() : final(false) {}
-	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_), final(false), group_by_with_totals(false) {}
+	ASTSelectQuery() : distinct(false), final(false), group_by_with_totals(false) {}
+	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_), distinct(false), final(false), group_by_with_totals(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "SelectQuery"; };

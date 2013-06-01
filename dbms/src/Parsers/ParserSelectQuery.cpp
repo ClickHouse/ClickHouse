@@ -20,6 +20,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_select("SELECT", true, true);
+	ParserString s_distinct("DISTINCT", true, true);
 	ParserString s_from("FROM", true, true);
 	ParserString s_where("WHERE", true, true);
 	ParserString s_final("FINAL", true, true);
@@ -38,12 +39,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 
 	ws.ignore(pos, end);
 
-	/// SELECT expr list
+	/// SELECT [DISTINCT] expr list
 	{
 		if (!s_select.ignore(pos, end, expected))
 			return false;
 
 		ws.ignore(pos, end);
+
+		if (s_distinct.ignore(pos, end, expected))
+		{
+			select_query->distinct = true;
+			ws.ignore(pos, end);
+		}
 
 		if (!exp_list.parse(pos, end, select_query->select_expression_list, expected))
 			return false;

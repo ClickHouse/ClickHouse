@@ -93,6 +93,8 @@ protected:
 				current.column = current.column->replicate(dynamic_cast<const ColumnArray &>(*array).getOffsets());
 		}
 
+		/// TODO: баг - если все массивы в данном блоке пустые, то вернётся пустой блок, и это будет ошибочно воспринято, как конец потока.
+
 		return block;
 	}
 

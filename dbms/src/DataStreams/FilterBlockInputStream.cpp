@@ -27,9 +27,7 @@ Block FilterBlockInputStream::readImpl()
 	{
 		Block res = children.back()->read();
 		if (!res)
-			return res;
-
-		//std::cerr << res.dumpNames() << std::endl;
+			return Block();
 
 		/// Найдём настоящую позицию столбца с фильтром в блоке.
 		if (filter_column == -1)

@@ -82,7 +82,7 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_ws = one_line ? " " : "\n";
 			
-	s << (hilite ? hilite_keyword : "") << indent_str << "SELECT " << (hilite ? hilite_none : "");
+	s << (hilite ? hilite_keyword : "") << indent_str << "SELECT " << (ast.distinct ? "DISTINCT " : "") << (hilite ? hilite_none : "");
 	formatAST(*ast.select_expression_list, s, indent, hilite, one_line);
 
 	if (ast.table)

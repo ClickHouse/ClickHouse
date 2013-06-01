@@ -11,6 +11,7 @@
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
 #include <DB/DataStreams/ArrayJoiningBlockInputStream.h>
+#include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
@@ -194,13 +195,27 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			executeOuterExpression(streams, expression);
 			executeOrder(streams, expression);
 
+			/// Сначала выполняем DISTINCT во всех источниках.
+			executeDistinct(streams, true);
+
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 			  * ограничивающий число записей в каждом до offset + limit.
 			  */
 			if (query.limit_length && streams.size() > 1)
 				executePreLimit(streams, expression);
 
+			bool need_second_distinct_pass = streams.size() > 1;
+
 			executeUnion(streams, expression);
+
+			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
+			if (need_second_distinct_pass)
+				executeDistinct(streams, false);
+
+			/** NOTE: В некоторых случаях, DISTINCT можно было бы применять раньше
+			  *  - до сортировки и, возможно, на удалённых серверах.
+			  */
+
 			executeLimit(streams, expression);
 		}
 	}
@@ -291,11 +306,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-	/** Оптимизация - если не указаны WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
+	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
 	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
 	  *  а также установим количество потоков в 1 и отменим асинхронное выполнение конвейера запроса.
 	  */
-	if (!query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
+	if (!query.distinct && !query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
 		&& query.limit_length && !expression->hasAggregates() && limit_length + limit_offset < settings.max_block_size)
 	{
 		settings.max_block_size = limit_length + limit_offset;
@@ -525,6 +540,30 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams, Expressio
 
 		/// Оставим только столбцы, нужные для SELECT части
 		stream = new ProjectionBlockInputStream(stream, expression, false, PART_SELECT, query.select_expression_list);
+	}
+}
+
+
+void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order)
+{
+	if (query.distinct)
+	{
+		size_t limit_length = 0;
+		size_t limit_offset = 0;
+		getLimitLengthAndOffset(query, limit_length, limit_offset);
+
+		size_t limit_for_distinct = 0;
+
+		/// Если после этой стадии DISTINCT не будет выполняться ORDER BY, то можно достать не более limit_length + limit_offset различных строк.
+		if (!query.order_expression_list || !before_order)
+			limit_for_distinct = limit_length + limit_offset;
+
+		bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
+		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
+			BlockInputStreamPtr & stream = *it;
+			stream = maybeAsynchronous(new DistinctBlockInputStream(stream, limit_for_distinct), is_async);
+		}
 	}
 }
 
