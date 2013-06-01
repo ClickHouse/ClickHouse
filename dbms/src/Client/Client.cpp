@@ -351,7 +351,7 @@ private:
 	}
 
 	
-	static bool IsWhitespace(char c)
+	static bool isWhitespace(char c)
 	{
 		return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
 	}
@@ -366,7 +366,7 @@ private:
 			free(line_);
 			
 			size_t ws = line.size();
-			while (ws > 0 && IsWhitespace(line[ws-1]))
+			while (ws > 0 && isWhitespace(line[ws - 1]))
 				--ws;
 			
 			if (ws == 0 && query.empty())
@@ -386,9 +386,25 @@ private:
 			if (!ends_with_backslash && (ends_with_semicolon || !config().hasOption("multiline")))
 			{
 				add_history(query.c_str());
-				
-				if (!process(query))
-					break;
+
+				try
+				{
+					if (!process(query))
+						break;
+				}
+				catch (const DB::Exception & e)
+				{
+					std::cerr << std::endl
+						<< "Exception on client:" << std::endl
+						<< "Code: " << e.code() << ". " << e.displayText() << std::endl
+						<< std::endl;
+
+					/** Эксепшен на клиенте в процессе обработки запроса может привести к рассинхронизации соединения.
+					  * Установим соединение заново и позволим ввести следующий запрос.
+					  */
+					connect();
+				}
+
 				query = "";
 			}
 			else
