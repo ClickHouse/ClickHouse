@@ -994,9 +994,9 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 			
 			/// Не нужно добавлять параметры лямбда-выражения в required_columns.
 			Names added_ignored;
-			for (size_t i = 0 ; i < lambda_args_tuple->children.size(); ++i)
+			for (size_t i = 0 ; i < lambda_args_tuple->arguments->children.size(); ++i)
 			{
-				ASTIdentifier * identifier = dynamic_cast<ASTIdentifier *>(&*lambda_args_tuple->children[i]);
+				ASTIdentifier * identifier = dynamic_cast<ASTIdentifier *>(&*lambda_args_tuple->arguments->children[i]);
 				if (!identifier)
 					throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 				std::string name = identifier->name;
