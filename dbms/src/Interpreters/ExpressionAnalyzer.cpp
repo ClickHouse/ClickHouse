@@ -619,7 +619,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			{
 				for (size_t i = 0; i < argument_names.size(); ++i)
 				{
-					if (!actions.getSampleBlock().has(argument_names[i]))
+					if (!actions.getSampleBlock().has(argument_names[i])
+						|| findColumn(argument_names[i]) != columns.end())
 					{
 						should_add = false;
 						break;
