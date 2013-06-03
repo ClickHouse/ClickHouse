@@ -47,7 +47,7 @@ public:
 	virtual ~IAST() {}
 
 	/** Получить каноническое имя столбца, если элемент является столбцом */
-	virtual String getColumnName() const { throw Exception("Trying to get name of not a column", ErrorCodes::NOT_A_COLUMN); }
+	virtual String getColumnName() const { throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN); }
 
 	/** Получить алиас, если он есть, или каноническое имя столбца; если элемент является столбцом */
 	virtual String getAlias() const { return getColumnName(); }
