@@ -955,7 +955,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
-	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList(), settings);
+	ExpressionActionsPtr actions = new ExpressionActions(columns, settings);
 	
 	getActionsImpl(ast, true, true, *actions);
 	
