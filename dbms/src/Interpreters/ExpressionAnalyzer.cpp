@@ -535,7 +535,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				ASTFunction * lambda = dynamic_cast<ASTFunction *>(&*child);
 				if (lambda && lambda->name == "lambda")
 				{
-					/// Если аргумент лямбда-функция, только запомним ее примерный тип.
+					/// Если аргумент - лямбда-функция, только запомним ее примерный тип.
 					if (lambda->arguments->children.size() != 2)
 						throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 					
@@ -603,6 +603,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						String result_name = lambda->arguments->children[1]->getColumnName();
 						lambda_actions->finalize(Names(1, result_name));
 						DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
+						argument_types[i] = new DataTypeExpression(lambda_type->getArgumentTypes(), result_type);
 						
 						ColumnWithNameAndType lambda_column;
 						lambda_column.column = new ColumnExpression(1, lambda_actions, lambda_args, result_type, result_name);
@@ -953,9 +954,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
-	if (has_aggregation)
-		throw Exception("Expression has aggregation", ErrorCodes::LOGICAL_ERROR);
-	
 	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList(), settings);
 	
 	getActionsImpl(ast, true, true, *actions);
