@@ -1826,8 +1826,8 @@ struct UserAgent : public AttributeInOneFileBase
 	{
 		return (static_cast<UInt64>(static_cast<UInt8*>(buf)[0]) << 24)
 			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[1]) << 16)
-			+ static_cast<UInt8*>(buf)[2]
-			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[3]) << 8);
+			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[2]) << 8)
+			+ static_cast<UInt8*>(buf)[3];
 	}
 	
 	BinaryData parse(const std::string & s) const
@@ -1878,8 +1878,8 @@ struct UserAgentVersion : public AttributeInOneFileBase
 	BinaryData extractFromOne(void* buf) const
 	{
 		return (static_cast<UInt64>(static_cast<UInt8*>(buf)[1]) << 16)
-			+ static_cast<UInt8*>(buf)[2]
-			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[3]) << 8);
+			+ (static_cast<UInt64>(static_cast<UInt8*>(buf)[2]) << 8)
+			+ static_cast<UInt8*>(buf)[3];
 	}
 	
 	BinaryData parse(const std::string & s) const
