@@ -207,7 +207,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[1]).column);
-		ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[1]).column);
+		ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
 		
 		Block temp_block;
 		ExpressionActions & expression = *column_expression->getExpression();
