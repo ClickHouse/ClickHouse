@@ -215,7 +215,9 @@ struct ExpressionActionsChain
 				previous_output.erase(std::unique(previous_output.begin(), previous_output.end()), previous_output.end());
 				
 				/// Если на выходе предыдущего шага образуются ненужные столбцы, добавим в начало этого шага их выбрасывание.
-				if (previous_output.size() > steps[i].actions->getRequiredColumnsWithTypes().size())
+				/// За исключением случая, когда мы выбросим все столбцы и потеряем количество строк в блоке.
+				if (!steps[i].actions->getRequiredColumnsWithTypes().empty()
+					&& previous_output.size() > steps[i].actions->getRequiredColumnsWithTypes().size())
 					steps[i].actions->prependProjectInput();
 			}
 		}
