@@ -51,6 +51,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		result_type = array_type->getNestedType();
 		
 		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
+		sample_block.erase(source_name);
 	}
 	else if (type == ADD_COLUMN)
 	{
@@ -72,7 +73,7 @@ void ExpressionActions::Action::execute(Block & block)
 {
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN || type == ARRAY_JOIN)
 		if (!block.has(source_name))
-			throw Exception("Not found column '" + source_name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+			throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 	
 	if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION || type == ARRAY_JOIN)
 		if (block.has(result_name))
@@ -104,10 +105,14 @@ void ExpressionActions::Action::execute(Block & block)
 		{
 			size_t array_column = block.getPositionByName(source_name);
 			
-			ColumnPtr array = block.getByPosition(array_column).column;
+			ColumnPtr array_ptr = block.getByPosition(array_column).column;
 			
-			if (array->isConst())
-				array = dynamic_cast<const IColumnConst &>(*array).convertToFullColumn();
+			if (array_ptr->isConst())
+				array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
+			
+			ColumnArray * array = dynamic_cast<ColumnArray *>(&*array_ptr);
+			if (!array)
+				throw Exception("arrayJoin of not array: " + array_ptr->getName(), ErrorCodes::TYPE_MISMATCH);
 			
 			size_t columns = block.columns();
 			for (size_t i = 0; i < columns; ++i)
@@ -117,7 +122,7 @@ void ExpressionActions::Action::execute(Block & block)
 				if (i == array_column)
 				{
 					ColumnWithNameAndType result;
-					result.column = dynamic_cast<const ColumnArray &>(*current.column).getDataPtr();
+					result.column = array->getDataPtr();
 					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
 					result.name = result_name;
 					
@@ -125,7 +130,7 @@ void ExpressionActions::Action::execute(Block & block)
 					block.insert(i, result);
 				}
 				else
-					current.column = current.column->replicate(dynamic_cast<const ColumnArray &>(*array).getOffsets());
+					current.column = current.column->replicate(array->getOffsets());
 			}
 			
 			break;
