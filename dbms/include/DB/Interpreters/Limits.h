@@ -61,7 +61,7 @@ struct Limits
 	size_t max_subquery_depth;
 	size_t max_pipeline_depth;
 	size_t max_ast_depth;				/// Проверяются не во время парсинга, 
-	size_t max_ast_elements;			///  а уже после парсинга запроса. TODO: циклы при разборе алиасов в Expression.
+	size_t max_ast_elements;			///  а уже после парсинга запроса.
 
 	bool readonly;
 	

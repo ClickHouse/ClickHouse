@@ -5,7 +5,7 @@
 
 #include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Expression.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
 
 
@@ -172,7 +172,7 @@ private:
 	
 	StorageMergeTreeSettings settings;
 
-	SharedPtr<Expression> primary_expr;
+	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 	Block primary_key_sample;
 
@@ -298,7 +298,7 @@ private:
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size);
 	
 	/// Создать выражение "Sign == 1".
-	void createPositiveSignCondition(ExpressionPtr & out_expression, String & out_column);
+	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);
 	
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();

@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	/** Вычисление выражений, зависящих только от констант.
 	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
 	 */
-	Expression expr_for_constant_folding(query, context_, all_columns);
+	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(query, context_, all_columns).getConstActions();
 	Block block_with_constants;
 	
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
@@ -25,7 +26,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	dummy_column.column = new ColumnConstUInt8(1, 0);
 	block_with_constants.insert(dummy_column);
 	
-	expr_for_constant_folding.execute(block_with_constants, 0, true);
+	expr_for_constant_folding->execute(block_with_constants);
 	
 	/// Преобразуем секцию WHERE в обратную польскую строку.
 	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*query);

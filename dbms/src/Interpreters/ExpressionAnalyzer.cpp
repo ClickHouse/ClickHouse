@@ -912,7 +912,7 @@ void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionA
 }
 
 
-ExpressionActionsPtr ExpressionAnalyzer::getActions()
+ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 {
 	ExpressionActionsPtr actions = new ExpressionActions(columns, settings);
 	NamesWithAliases result_columns;
@@ -924,18 +924,26 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions()
 		for (size_t i = 0; i < asts.size(); ++i)
 		{
 			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
-			result_names.push_back(result_columns.back().first);
+			result_names.push_back(result_columns.back().second);
 			getActionsImpl(asts[i], false, false, *actions);
 		}
 	}
 	else
 	{
 		result_columns.push_back(NameWithAlias(ast->getColumnName(), ast->getAlias()));
-		result_names.push_back(result_columns.back().first);
+		result_names.push_back(result_columns.back().second);
 		getActionsImpl(ast, false, false, *actions);
 	}
 	
-	actions->add(ExpressionActions::Action::project(result_columns));
+	if (project_result)
+	{
+		actions->add(ExpressionActions::Action::project(result_columns));
+	}
+	else
+	{
+		for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+			result_names.push_back(it->first);
+	}
 	
 	actions->finalize(result_names);
 	
