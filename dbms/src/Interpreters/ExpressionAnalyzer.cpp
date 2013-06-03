@@ -304,12 +304,26 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	ASTPtr initial_ast = ast;
 	current_asts.insert(initial_ast);
 	
-	/// Действия, выполняемые сверху вниз.
+	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	
 	if (!sign_column_name.empty())
 		considerSignRewrite(ast);
 	
-	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
+		 * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
+		 */
+		String function_string = node->getColumnName();
+		NamesAndTypesList::const_iterator it = findColumn(function_string);
+		if (columns.end() != it)
+		{
+			ASTIdentifier * ast_id = new ASTIdentifier(node->range, std::string(node->range.first, node->range.second));
+			ast = ast_id;
+			current_asts.insert(ast);
+		}
+	}
+	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column)
 		{
