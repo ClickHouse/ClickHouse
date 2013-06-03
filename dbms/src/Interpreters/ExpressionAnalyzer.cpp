@@ -343,9 +343,6 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 				/// Проверим имеет ли смысл sign-rewrite
 				if (!in_sign_rewritten && node->name == sign_column_name)
 					throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
-				
-				if (findColumn(node->name) == columns.end())
-					throw Exception("Unknown identifier: " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
 			}
 		}
 	}
