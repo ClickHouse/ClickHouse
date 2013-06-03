@@ -120,7 +120,7 @@ private:
 	  * Для агрегатных функций - если нужно, сделать sign rewrite.
 	  */
 	void normalizeTree();
-	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts);
+	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, bool in_sign_rewritten);
 	
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, ExpressionActions & actions);
@@ -145,7 +145,7 @@ private:
 	bool needSignRewrite();
 	
 	/// Попробовать переписать агрегатную функцию для учета Sign
-	void considerSignRewrite(ASTPtr & ast);
+	bool considerSignRewrite(ASTPtr & ast);
 	
 	ASTPtr createSignColumn();
 	

@@ -262,18 +262,21 @@ ASTPtr ExpressionAnalyzer::rewriteAvg(const ASTFunction * node)
 }
 
 
-void ExpressionAnalyzer::considerSignRewrite(ASTPtr & ast)
+bool ExpressionAnalyzer::considerSignRewrite(ASTPtr & ast)
 {
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
 	if (!node)
-		return;
+		return false;
 	const String & name = node->name;
 	if (name == "count")
 		ast = rewriteCount(node);
-	if (name == "sum")
+	else if (name == "sum")
 		ast = rewriteSum(node);
-	if (name == "avg")
+	else if (name == "avg")
 		ast = rewriteAvg(node);
+	else
+		return false;
+	return true;
 }
 
 
@@ -283,13 +286,14 @@ void ExpressionAnalyzer::normalizeTree()
 	MapOfASTs tmp_map;
 	if (needSignRewrite())
 		sign_column_name = getSignColumnName();
-	normalizeTreeImpl(ast, tmp_map, tmp_set);
+	normalizeTreeImpl(ast, tmp_map, tmp_set, false);
 }
 
 
 /// finished_asts - уже обработанные вершины (и на что они заменены)
 /// current_asts - вершины в текущем стеке вызовов этого метода
-void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts)
+/// in_sign_rewritten - находимся ли мы в поддереве, полученном в результате sign rewrite
+void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, bool in_sign_rewritten)
 {
 	if (current_asts.count(ast))
 	{
@@ -306,8 +310,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	
-	if (!sign_column_name.empty())
-		considerSignRewrite(ast);
+	if (!in_sign_rewritten && !sign_column_name.empty())
+		in_sign_rewritten = considerSignRewrite(ast);
 	
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
@@ -333,13 +337,11 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			{
 				/// Заменим его на соответствующий узел дерева
 				ast = jt->second;
-				
-				normalizeTreeImpl(ast, finished_asts, current_asts);
 			}
 			else
 			{
 				/// Проверим имеет ли смысл sign-rewrite
-				if (node->name == sign_column_name)
+				if (!in_sign_rewritten && node->name == sign_column_name)
 					throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
 				
 				if (findColumn(node->name) == columns.end())
@@ -368,7 +370,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			normalizeTreeImpl(*it, finished_asts, current_asts);
+			normalizeTreeImpl(*it, finished_asts, current_asts, in_sign_rewritten);
 	
 	/// Действия, выполняемые снизу вверх.
 
@@ -376,9 +378,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
 		if (select->where_expression)
-			normalizeTreeImpl(select->where_expression, finished_asts, current_asts);
+			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, in_sign_rewritten);
 		if (select->having_expression)
-			normalizeTreeImpl(select->having_expression, finished_asts, current_asts);
+			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, in_sign_rewritten);
 	}
 	
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
@@ -704,9 +706,6 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 		}
 		
 		aggregate.function->setArguments(types);
-		
-		if (!sign_column_name.empty())
-			considerSignRewrite(ast);
 		
 		aggregate_descriptions.push_back(aggregate);
 	}
