@@ -1,8 +1,8 @@
 #pragma once
 
 #include <DB/Core/QueryProcessingStage.h>
-#include <DB/Interpreters/Expression.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 
@@ -35,54 +35,35 @@ public:
 	ASTPtr getCreateQuery();
 
 private:
+	typedef Poco::SharedPtr<ExpressionAnalyzer> ExpressionAnalyzerPtr;
+	
 	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
 	  */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 	
 	StoragePtr getTable();
 
-	void setColumns();
-	
-	/** Пометить часть дерева запроса некоторым part_id.
-	  * - для того, чтобы потом можно было вычислить только часть выражения из запроса.
-	  */
-	void setPartID(ASTPtr ast, unsigned part_id);
-
 	/** Выбрать из списка столбцов какой-нибудь, лучше - минимального размера.
 	  */
 	String getAnyColumn();
 
-	enum PartID
-	{
-		PART_OTHER 	= 1,
-		PART_SELECT = 2,
-		PART_WHERE 	= 4,
-		PART_GROUP 	= 8,
-		PART_HAVING = 16,
-		PART_ORDER 	= 32,
-		PART_BEFORE_AGGREGATING = 64,	/// Под агрегатной функцией
-		PART_BEFORE_ARRAY_JOIN = 128,	/// Под функцией arrayJoin
-		PART_AFTER_AGGREGATING = 256,	/// Вне агрегатной функции
-	};
-
-
 	/// Разные стадии выполнения запроса.
 
 	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
-	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams, ExpressionPtr & expression);
+	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
 
-	void executeArrayJoin(			BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeWhere(				BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeAggregation(		BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeMergeAggregated(	BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeFinalizeAggregates(	BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeHaving(				BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeOuterExpression(	BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeOrder(				BlockInputStreams & streams, ExpressionPtr & expression);
+	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeMergeAggregated(	BlockInputStreams & streams);
+	void executeFinalizeAggregates(BlockInputStreams & streams);
+	void executeHaving(				BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeOuterExpression(	BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeOrder(				BlockInputStreams & streams);
+	void executePreLimit(			BlockInputStreams & streams);
+	void executeUnion(				BlockInputStreams & streams);
+	void executeLimit(				BlockInputStreams & streams);
+	void executeProjection(			BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeDistinct(			BlockInputStreams & streams, bool before_order);
-	void executePreLimit(			BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeUnion(				BlockInputStreams & streams, ExpressionPtr & expression);
-	void executeLimit(				BlockInputStreams & streams, ExpressionPtr & expression);
 	
 
 	ASTPtr query_ptr;
@@ -91,6 +72,7 @@ private:
 	Settings settings;
 	QueryProcessingStage::Enum to_stage;
 	size_t subquery_depth;
+	ExpressionAnalyzerPtr query_analyzer;
 
 	Logger * log;
 };

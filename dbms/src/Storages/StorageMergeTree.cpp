@@ -31,6 +31,7 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
+#include <DB/DataStreams/OldExpressionBlockInputStream.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -273,7 +274,7 @@ BlockInputStreams StorageMergeTree::read(
 		for (size_t i = 0; i < res.size(); ++i)
 		{
 			BlockInputStreamPtr original_stream = res[i];
-			BlockInputStreamPtr expression_stream = new ExpressionBlockInputStream(original_stream, filter_expression);
+			BlockInputStreamPtr expression_stream = new OldExpressionBlockInputStream(original_stream, filter_expression);
 			BlockInputStreamPtr filter_stream = new FilterBlockInputStream(expression_stream, filter_function->getColumnName());
 			res[i] = filter_stream;
 		}
@@ -404,12 +405,12 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 																			max_block_size, column_names, *this,
 																			part.data_part, part.ranges, thisPtr());
 		
-		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
+		to_collapse.push_back(new OldExpressionBlockInputStream(source_stream, primary_expr));
 	}
 	
 	BlockInputStreams res;
 	if (to_collapse.size() == 1)
-		res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
+		res.push_back(new FilterBlockInputStream(new OldExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
 	else if (to_collapse.size() > 1)
 		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, sort_descr, sign_column));
 	
@@ -838,7 +839,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
-		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
+		src_streams.push_back(new OldExpressionBlockInputStream(new MergeTreeBlockInputStream(
 			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], ranges, StoragePtr()), primary_expr));
 	}
 

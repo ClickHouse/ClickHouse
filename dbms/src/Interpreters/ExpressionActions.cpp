@@ -309,7 +309,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 	for (int i = static_cast<int>(sample_block.columns()) - 1; i >= 0; --i)
 	{
 		const std::string & name = sample_block.getByPosition(i).name;
-		if (!final_columns.count(name))
+		/// Не удаляем последний столбец.
+		if (!final_columns.count(name) && sample_block.columns() > 1)
 			add(Action::removeColumn(name));
 	}
 }

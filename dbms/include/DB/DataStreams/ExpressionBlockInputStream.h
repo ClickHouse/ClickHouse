@@ -2,7 +2,7 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/Interpreters/Expression.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
@@ -16,15 +16,12 @@ using Poco::SharedPtr;
   * Выражение состоит из идентификаторов столбцов из блока, констант, обычных функций.
   * Например: hits * 2 + 3, instr("yandex", url)
   * Выражение не меняет количество строк в потоке, и обрабатывает каждую строку независимо от других.
-  * part_id - идентификатор части выражения, которую надо вычислять.
-  *  Например, может потребоваться вычислить только часть выражения в секции WHERE.
-  * clear_temporaries - удалить временные столбцы из блока, которые больше не понадобятся ни для каких вычислений.
   */
 class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionPtr expression_, unsigned part_id_ = 0, bool clear_temporaries_ = false)
-		: expression(expression_), part_id(part_id_), clear_temporaries(clear_temporaries_)
+	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_)
+		: expression(expression_)
 	{
 		children.push_back(input_);
 	}
@@ -34,7 +31,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Expression(" << children.back()->getID() << ", " << expression->getExecutionID(part_id) << ")";
+		res << "Expression(" << children.back()->getID() << ", " << expression->getID() << ")";
 		return res.str();
 	}
 
@@ -45,18 +42,13 @@ protected:
 		if (!res)
 			return res;
 
-		expression->execute(res, part_id);
+		expression->execute(res);
 
-		if (clear_temporaries)
-			expression->clearTemporaries(res);
-			
 		return res;
 	}
 
 private:
-	ExpressionPtr expression;
-	unsigned part_id;
-	bool clear_temporaries;
+	ExpressionActionsPtr expression;
 };
 
 }

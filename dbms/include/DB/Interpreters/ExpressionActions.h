@@ -137,6 +137,7 @@ public:
 	/// - Убирает неиспользуемые входные столбцы.
 	/// - Не переупорядочивает столбцы.
 	/// - Не удаляет "неожиданные" столбцы (например, добавленные функциями).
+	/// - Если output_columns пуст, оставляет один произвольный столбец (чтобы не потерялось количество строк в блоке).
 	void finalize(const Names & output_columns);
 	
 	/// Получить список входных столбцов.
@@ -218,6 +219,27 @@ struct ExpressionActionsChain
 					steps[i].actions->prependProjectInput();
 			}
 		}
+	}
+	
+	void clear()
+	{
+		steps.clear();
+	}
+	
+	ExpressionActionsPtr lastActions()
+	{
+		if (steps.empty())
+			throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+		
+		return steps.back().actions;
+	}
+	
+	Step & lastStep()
+	{
+		if (steps.empty())
+			throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+		
+		return steps.back();
 	}
 };
 
