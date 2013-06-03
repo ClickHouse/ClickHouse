@@ -524,6 +524,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			
 			Names argument_names;
 			DataTypes argument_types;
+			bool arguments_present = true;
 			
 			/// Если у функции есть аргумент-лямбда-выражение, нужно определить его тип до рекурсивного вызова.
 			bool has_lambda_arguments = false;
@@ -535,7 +536,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				ASTFunction * lambda = dynamic_cast<ASTFunction *>(&*child);
 				if (lambda && lambda->name == "lambda")
 				{
-					/// Если аргумент - лямбда-функция, только запомним ее примерный тип.
+					/// Если аргумент - лямбда-выражение, только запомним его примерный тип.
 					if (lambda->arguments->children.size() != 2)
 						throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 					
@@ -552,13 +553,30 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 				else
 				{
-					/// Если аргумент не лямбда-функция, вызовемся рекурсивно и узнаем его тип.
+					/// Если аргумент не лямбда-выражение, вызовемся рекурсивно и узнаем его тип.
 					getActionsImpl(child, no_subqueries, only_consts, actions);
 					std::string name = child->getColumnName();
-					argument_types.push_back(actions.getSampleBlock().getByName(name).type);
-					argument_names.push_back(name);
+					if (actions.getSampleBlock().has(name))
+					{
+						argument_types.push_back(actions.getSampleBlock().getByName(name).type);
+						argument_names.push_back(name);
+					}
+					else
+					{
+						if (only_consts)
+						{
+							arguments_present = false;
+						}
+						else
+						{
+							throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+						}
+					}
 				}
 			}
+			
+			if (only_consts && !arguments_present)
+				return;
 			
 			if (has_lambda_arguments && !only_consts)
 			{
@@ -614,21 +632,19 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 			}
 			
-			bool should_add = true;
 			if (only_consts)
 			{
 				for (size_t i = 0; i < argument_names.size(); ++i)
 				{
-					if (!actions.getSampleBlock().has(argument_names[i])
-						|| findColumn(argument_names[i]) != columns.end())
+					if (!actions.getSampleBlock().has(argument_names[i]))
 					{
-						should_add = false;
+						arguments_present = false;
 						break;
 					}
 				}
 			}
 			
-			if (should_add)
+			if (arguments_present)
 				actions.add(ExpressionActions::Action::applyFunction(function, argument_names, node->getColumnName()));
 		}
 	}
@@ -955,7 +971,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
-	ExpressionActionsPtr actions = new ExpressionActions(columns, settings);
+	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList(), settings);
 	
 	getActionsImpl(ast, true, true, *actions);
 	
