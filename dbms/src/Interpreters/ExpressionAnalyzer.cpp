@@ -265,6 +265,8 @@ ASTPtr ExpressionAnalyzer::rewriteAvg(const ASTFunction * node)
 void ExpressionAnalyzer::considerSignRewrite(ASTPtr & ast)
 {
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
+	if (!node)
+		return;
 	const String & name = node->name;
 	if (name == "count")
 		ast = rewriteCount(node);
@@ -302,54 +304,12 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	ASTPtr initial_ast = ast;
 	current_asts.insert(initial_ast);
 	
-	/// Обход снизу-вверх. Не опускаемся в подзапросы.
+	/// Действия, выполняемые сверху вниз.
 	
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			normalizeTreeImpl(*it, finished_asts, current_asts);
+	if (!sign_column_name.empty())
+		considerSignRewrite(ast);
 	
-	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
-	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
-	{
-		if (select->where_expression)
-			normalizeTreeImpl(select->where_expression, finished_asts, current_asts);
-		if (select->having_expression)
-			normalizeTreeImpl(select->having_expression, finished_asts, current_asts);
-	}
-	
-	if (dynamic_cast<ASTAsterisk *>(&*ast))
-	{
-		ASTExpressionList * all_columns = new ASTExpressionList(ast->range);
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			all_columns->children.push_back(new ASTIdentifier(ast->range, it->first));
-		ast = all_columns;
-		current_asts.insert(ast);
-
-		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			normalizeTreeImpl(*it, finished_asts, current_asts);
-	}
-	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
-	{
-		if (node->name == "lambda")
-		{
-			node->kind = ASTFunction::LAMBDA_EXPRESSION;
-		}
-		else if (context.getAggregateFunctionFactory().isAggregateFunctionName(node->name))
-		{
-			node->kind = ASTFunction::AGGREGATE_FUNCTION;
-			if (!sign_column_name.empty())
-				considerSignRewrite(ast);
-		}
-		else if (node->name == "arrayJoin")
-		{
-			node->kind = ASTFunction::ARRAY_JOIN;
-		}
-		else
-		{
-			node->kind = ASTFunction::FUNCTION;
-		}
-	}
-	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column)
 		{
@@ -359,7 +319,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			{
 				/// Заменим его на соответствующий узел дерева
 				ast = jt->second;
-
+				
 				normalizeTreeImpl(ast, finished_asts, current_asts);
 			}
 			else
@@ -371,6 +331,59 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 				if (findColumn(node->name) == columns.end())
 					throw Exception("Unknown identifier: " + node->name, ErrorCodes::UNKNOWN_IDENTIFIER);
 			}
+		}
+	}
+	else if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
+	{
+		/// Заменим * на список столбцов.
+		ASTs & asts = node->children;
+		for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
+		{
+			if (ASTAsterisk * asterisk = dynamic_cast<ASTAsterisk *>(&*asts[i]))
+			{
+				ASTs all_columns;
+				for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
+					all_columns.push_back(new ASTIdentifier(asterisk->range, it->first));
+				asts.erase(asts.begin() + i);
+				asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
+			}
+		}
+	}
+	
+	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
+	
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			normalizeTreeImpl(*it, finished_asts, current_asts);
+	
+	/// Действия, выполняемые снизу вверх.
+
+	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
+	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
+	{
+		if (select->where_expression)
+			normalizeTreeImpl(select->where_expression, finished_asts, current_asts);
+		if (select->having_expression)
+			normalizeTreeImpl(select->having_expression, finished_asts, current_asts);
+	}
+	
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (node->name == "lambda")
+		{
+			node->kind = ASTFunction::LAMBDA_EXPRESSION;
+		}
+		else if (context.getAggregateFunctionFactory().isAggregateFunctionName(node->name))
+		{
+			node->kind = ASTFunction::AGGREGATE_FUNCTION;
+		}
+		else if (node->name == "arrayJoin")
+		{
+			node->kind = ASTFunction::ARRAY_JOIN;
+		}
+		else
+		{
+			node->kind = ASTFunction::FUNCTION;
 		}
 	}
 	
