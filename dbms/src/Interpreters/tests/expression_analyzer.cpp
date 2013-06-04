@@ -51,6 +51,8 @@ int main(int argc, char ** argv)
 	}
 	std::cout << "\n";
 	
+	std::cout << "only consts:\n\n" << analyzer.getConstActions()->dumpActions() << "\n";
+	
 	if (analyzer.hasAggregation())
 	{
 		Names key_names;
@@ -106,8 +108,6 @@ int main(int argc, char ** argv)
 	}
 	else
 	{
-		std::cout << "only consts:\n\n" << analyzer.getConstActions()->dumpActions() << "\n";
-		
 		if (dynamic_cast<ASTSelectQuery *>(&*root))
 		{
 			ExpressionActionsChain chain;
@@ -127,7 +127,8 @@ int main(int argc, char ** argv)
 		}
 		else
 		{
-			std::cout << analyzer.getActions()->dumpActions() << "\n";
+			std::cout << "unprojected actions:\n\n" << analyzer.getActions(false)->dumpActions() << "\n";
+			std::cout << "projected actions:\n\n" << analyzer.getActions(true)->dumpActions() << "\n";
 		}
 	}
 	
