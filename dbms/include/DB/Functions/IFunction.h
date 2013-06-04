@@ -5,7 +5,9 @@
 #include <DB/Core/Names.h>
 #include <DB/Core/Block.h>
 #include <DB/Core/ColumnNumbers.h>
+#include <DB/Core/ColumnsWithNameAndType.h>
 #include <DB/DataTypes/IDataType.h>
+#include <DB/Interpreters/ExpressionActions.h>
 
 
 namespace DB
@@ -30,8 +32,29 @@ public:
 	/// Получить основное имя функции.
 	virtual String getName() const = 0;
 
+	/// Наследник IFunction должен реализовать либо getReturnType, либо getReturnTypeAndPrerequisites.
+	
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	virtual DataTypePtr getReturnType(const DataTypes & arguments) const = 0;
+	virtual DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+	
+	/** Получить тип результата по типам аргументов и значениям константных аргументов.
+	  * Если функция неприменима для данных аргументов - кинуть исключение.
+	  * Еще можно вернуть описание дополнительных столбцов, которые требуются для выполнения функции.
+	  * Для неконстантных столбцов arguments[i].column=NULL.
+	  * Осмысленные типы элементов в out_prerequisites: APPLY_FUNCTION, ADD_COLUMN.
+	  */
+	virtual void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
+												DataTypePtr & out_return_type,
+												ExpressionActions::Actions & out_prerequisites)
+	{
+		DataTypes types(arguments.size());
+		for (size_t i = 0; i < arguments.size(); ++i)
+			types[i] = arguments[i].type;
+		out_return_type = getReturnType(types);
+	}
 	
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
 	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений и кладет результат в arguments.

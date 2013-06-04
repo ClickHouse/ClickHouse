@@ -225,6 +225,12 @@ Block Block::cloneEmpty() const
 }
 
 
+ColumnsWithNameAndType Block::getColumns() const
+{
+	return ColumnsWithNameAndType(data.begin(), data.end());
+}
+
+
 NamesAndTypesList Block::getColumnsList() const
 {
 	NamesAndTypesList res;

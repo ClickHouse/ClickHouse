@@ -6,6 +6,35 @@
 namespace DB
 {
 
+ExpressionActions::Actions ExpressionActions::Action::getPrerequisites(Block & sample_block)
+{
+	Actions res;
+	
+	if (type == APPLY_FUNCTION)
+	{
+		if (sample_block.has(result_name))
+			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+		
+		ColumnsWithNameAndType arguments(argument_names.size());
+		for (size_t i = 0; i < argument_names.size(); ++i)
+		{
+			if (!sample_block.has(argument_names[i]))
+				throw Exception("Unknown identifier: '" + argument_names[i] + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+			arguments[i] = sample_block.getByName(argument_names[i]);
+		}
+		
+		function->getReturnTypeAndPrerequisites(arguments, result_type, res);
+		
+		for (size_t i = 0; i < res.size(); ++i)
+		{
+			if (res[i].result_name != "")
+				prerequisite_names.push_back(res[i].result_name);
+		}
+	}
+	
+	return res;
+}
+	
 void ExpressionActions::Action::prepare(Block & sample_block)
 {
 	if (type == APPLY_FUNCTION)
@@ -13,30 +42,48 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		if (sample_block.has(result_name))
 			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 		
-		DataTypes types(argument_names.size());
+		bool all_const = true;
+		
+		ColumnNumbers arguments(argument_names.size());
 		for (size_t i = 0; i < argument_names.size(); ++i)
 		{
-			if (!sample_block.has(argument_names[i]))
-				throw Exception("Unknown identifier: '" + argument_names[i] + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-			types[i] = sample_block.getByName(argument_names[i]).type;
+			arguments[i] = sample_block.getPositionByName(argument_names[i]);
+			ColumnPtr col = sample_block.getByPosition(arguments[i]).column;
+			if (!col || !col->isConst())
+				all_const = false;
 		}
 		
-		if (FunctionTupleElement * func_tuple_elem = dynamic_cast<FunctionTupleElement *>(&*function))
+		for (size_t i = 0; i < prerequisite_names.size(); ++i)
 		{
-			/// Особый случай - для функции tupleElement обычный метод getReturnType не работает.
-			if (argument_names.size() != 2)
-				throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.",
-								ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			ColumnPtr col = sample_block.getByName(prerequisite_names[i]).column;
+			if (!col || !col->isConst())
+				all_const = false;
+		}
+		
+		ColumnPtr new_column;
+		
+		/// Если все аргументы и требуемые столбцы - константы, выполним функцию.
+		if (all_const)
+		{
+			ColumnWithNameAndType new_column;
+			new_column.name = result_name;
+			new_column.type = result_type;
+			sample_block.insert(new_column);
 			
-			const ColumnConstUInt8 * index_col = dynamic_cast<const ColumnConstUInt8 *>(&*sample_block.getByName(argument_names[1]).column);
-			result_type = func_tuple_elem->getReturnType(types, index_col->getData());
+			size_t result_position = sample_block.getPositionByName(result_name);
+			function->execute(sample_block, arguments, result_position);
+			
+			/// Если получилась не константа, на всякий случай будем считать результат неизвестным.
+			ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
+			if (!col.column->isConst())
+			{
+				col.column = NULL;
+			}
 		}
 		else
 		{
-			result_type = function->getReturnType(types);
+			sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
 		}
-		
-		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
 	}
 	else if (type == ARRAY_JOIN)
 	{
@@ -248,12 +295,31 @@ void ExpressionActions::checkLimits(Block & block)
 
 void ExpressionActions::add(const Action & action)
 {
-	if (sample_block.has(action.result_name))
-		return;
-	actions.push_back(action);
-	actions.back().prepare(sample_block);
+	NameSet temp_names;
+	addImpl(action, temp_names);
 	
 	checkLimits(sample_block);
+}
+
+void ExpressionActions::addImpl(Action action, NameSet & current_names)
+{
+	if (sample_block.has(action.result_name))
+		return;
+	
+	if (current_names.count(action.result_name))
+		throw Exception("Cyclic function prerequisites: " + action.result_name, ErrorCodes::LOGICAL_ERROR);
+	
+	current_names.insert(action.result_name);
+	
+	Actions prerequisites = action.getPrerequisites(sample_block);
+	
+	for (size_t i = 0; i < prerequisites.size(); ++i)
+		addImpl(prerequisites[i], current_names);
+	
+	action.prepare(sample_block);
+	actions.push_back(action);
+	
+	current_names.erase(action.result_name);
 }
 
 void ExpressionActions::prependProjectInput()
@@ -289,15 +355,14 @@ void ExpressionActions::finalize(const Names & output_columns)
 	
 	for (size_t i = 0; i < actions.size(); ++i)
 	{
-		used_columns.insert(actions[i].source_name);
-		for (size_t j = 0; j < actions[i].argument_names.size(); ++j)
-		{
-			used_columns.insert(actions[i].argument_names[j]);
-		}
+		Action & action = actions[i];
+		
+		used_columns.insert(action.source_name);
+		used_columns.insert(action.argument_names.begin(), action.argument_names.end());
+		used_columns.insert(action.prerequisite_names.begin(), action.prerequisite_names.end());
+		
 		for (size_t j = 0; j < actions[i].projection.size(); ++j)
-		{
 			used_columns.insert(actions[i].projection[j].first);
-		}
 	}
 	for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
 	{

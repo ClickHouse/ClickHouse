@@ -8,6 +8,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include "ColumnsWithNameAndType.h"
 
 
 namespace DB
@@ -63,6 +64,7 @@ public:
 
 	size_t getPositionByName(const std::string & name) const;
 
+	ColumnsWithNameAndType getColumns() const;
 	NamesAndTypesList getColumnsList() const;
 
 	/** Возвращает количество строк в блоке.

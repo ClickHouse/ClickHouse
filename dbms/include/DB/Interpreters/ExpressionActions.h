@@ -1,12 +1,19 @@
 #pragma once
 
-#include <DB/Functions/IFunction.h>
+#include <DB/DataTypes/IDataType.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Core/Names.h>
+#include <DB/Core/ColumnWithNameAndType.h>
+#include <DB/Core/Block.h>
+#include <set>
 
 
 namespace DB
 {
 
+class IFunction;
+typedef Poco::SharedPtr<IFunction> FunctionPtr;
+	
 typedef std::pair<std::string, std::string> NameWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
 	
@@ -43,6 +50,7 @@ public:
 		/// Для APPLY_FUNCTION.
 		FunctionPtr function;
 		Names argument_names;
+		Names prerequisite_names;
 		
 		/// Для PROJECT.
 		NamesWithAliases projection;
@@ -111,6 +119,7 @@ public:
 			return a;
 		}
 		
+		std::vector<Action> getPrerequisites(Block & sample_block);
 		void prepare(Block & sample_block);
 		void execute(Block & block);
 		
@@ -125,6 +134,17 @@ public:
 		for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 		{
 			sample_block.insert(ColumnWithNameAndType(NULL, it->second, it->first));
+		}
+	}
+	
+	/// Для константных столбцов в input_columns_ могут содержаться сами столбцы.
+	ExpressionActions(const ColumnsWithNameAndType & input_columns_, const Settings & settings_)
+	: settings(settings_)
+	{
+		for (ColumnsWithNameAndType::const_iterator it = input_columns_.begin(); it != input_columns_.end(); ++it)
+		{
+			input_columns.push_back(NameAndTypePair(it->name, it->type));
+			sample_block.insert(*it);
 		}
 	}
 	
@@ -162,12 +182,18 @@ public:
 	std::string dumpActions() const;
 
 private:
+	typedef std::set<String> NameSet;
+	
 	NamesAndTypesList input_columns;
 	Actions actions;
 	Block sample_block;
 	Settings settings;
 	
 	void checkLimits(Block & block);
+	
+	/// Добавляет сначала все prerequisites, потом само действие.
+	/// current_names - столбцы, prerequisites которых сейчас обрабатываются.
+	void addImpl(Action action, NameSet & current_names);
 };
 
 typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;
@@ -194,7 +220,7 @@ struct ExpressionActionsChain
 		if (steps.empty())
 			throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 		
-		NamesAndTypesList columns = steps.back().actions->getSampleBlock().getColumnsList();
+		ColumnsWithNameAndType columns = steps.back().actions->getSampleBlock().getColumns();
 		steps.push_back(Step(new ExpressionActions(columns, settings)));
 	}
 	
