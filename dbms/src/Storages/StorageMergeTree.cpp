@@ -84,7 +84,9 @@ StorageMergeTree::StorageMergeTree(
 	}
 
 	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, *columns).getActions(false);
-	primary_key_sample = primary_expr->getSampleBlock();
+	
+	ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, *columns).getActions(true);
+	primary_key_sample = projected_expr->getSampleBlock();
 
 	merge_threads = new boost::threadpool::pool(settings.merging_threads);
 	
