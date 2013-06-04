@@ -32,6 +32,9 @@ namespace DB
   * materialize(x)	- материализовать константу
   * ignore(...)		- функция, принимающая любые аргументы, и всегда возвращающая 0.
   * sleep(seconds)	- спит указанное количество секунд каждый блок.
+  * 
+  * replicate(x, arr) - копирует x столько раз, сколько элементов в массиве arr;
+  * 					 например: replicate(1, ['a', 'b', 'c']) = [1, 1, 1].
   *
   * in(x, set)		- функция для вычисления оператора IN
   * notIn(x, set)	-  и NOT IN.
@@ -686,6 +689,55 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		throw Exception("Function arrayJoin must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
+	}
+};
+
+class FunctionReplicate : public IFunction
+{
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "replicate";
+	}
+
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+							+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1]);
+		if (!array_type)
+			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeArray(arguments[0]);
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		ColumnPtr first_column = block.getByPosition(arguments[0]).column;
+		
+		ColumnArray * array_column = dynamic_cast<ColumnArray *>(&*block.getByPosition(arguments[1]).column);
+		ColumnPtr temp_column;
+		
+		ColumnPtr res;
+		
+		if (!array_column)
+		{
+			ColumnConstArray * const_array_column = dynamic_cast<ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
+			if (!const_array_column)
+				throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
+			ColumnPtr temp_column = const_array_column->convertToFullColumn();
+			array_column = dynamic_cast<ColumnArray *>(&*temp_column);
+		}
+		
+		res = first_column->replicate(array_column->getOffsets());
+		res = new ColumnArray(res, array_column->getOffsetsColumn());
+		
+		block.getByPosition(result).column = res;
 	}
 };
 

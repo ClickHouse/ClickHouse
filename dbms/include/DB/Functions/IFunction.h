@@ -29,12 +29,17 @@ namespace DB
 class IFunction
 {
 public:
+	/** Наследник IFunction должен реализовать:
+	  * - getName
+	  * - либо getReturnType, либо getReturnTypeAndPrerequisites
+	  * - одну из перегрузок execute.
+	  */
+	
 	/// Получить основное имя функции.
 	virtual String getName() const = 0;
 
-	/// Наследник IFunction должен реализовать либо getReturnType, либо getReturnTypeAndPrerequisites.
-	
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Перегрузка для тех, кому не нужны prerequisites и значения константных аргументов. Снаружи не вызывается.
 	virtual DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -62,9 +67,17 @@ public:
 	{
 		throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	
+	/// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
+	/// Перегрузка для тех, кому не нужны prerequisites. Снаружи не вызывается.
+	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
 
 	/// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
-	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
+	/// prerequisites идут в том же порядке, что и out_prerequisites, полученные из getReturnTypeAndPrerequisites.
+	virtual void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
+	{
+		execute(block, arguments, ColumnNumbers(), result);
+	}
 };
 
 

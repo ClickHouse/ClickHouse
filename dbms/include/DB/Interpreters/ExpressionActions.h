@@ -55,15 +55,8 @@ public:
 		/// Для PROJECT.
 		NamesWithAliases projection;
 		
-		static Action applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, const std::string & result_name_)
-		{
-			Action a;
-			a.type = APPLY_FUNCTION;
-			a.result_name = result_name_;
-			a.function = function_;
-			a.argument_names = argument_names_;
-			return a;
-		}
+		/// Если result_name_ == "", в качестве имени используется "имя_функци(аргументы через запятую)".
+		static Action applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 		
 		static Action addColumn(ColumnWithNameAndType added_column_)
 		{

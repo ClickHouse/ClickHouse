@@ -5,6 +5,30 @@
 
 namespace DB
 {
+	
+ExpressionActions::Action ExpressionActions::Action::applyFunction(FunctionPtr function_,
+																	const std::vector<std::string> & argument_names_,
+																	std::string result_name_)
+{
+	if (result_name_ == "")
+	{
+		result_name_ = function_->getName() + "(";
+		for (size_t i = 0 ; i < argument_names_.size(); ++i)
+		{
+			if (i)
+				result_name_ += ", ";
+			result_name_ += argument_names_[i];
+		}
+		result_name_ += ")";
+	}
+	
+	Action a;
+	a.type = APPLY_FUNCTION;
+	a.result_name = result_name_;
+	a.function = function_;
+	a.argument_names = argument_names_;
+	return a;
+}
 
 ExpressionActions::Actions ExpressionActions::Action::getPrerequisites(Block & sample_block)
 {
@@ -53,9 +77,11 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 				all_const = false;
 		}
 		
+		ColumnNumbers prerequisites(prerequisite_names.size());
 		for (size_t i = 0; i < prerequisite_names.size(); ++i)
 		{
-			ColumnPtr col = sample_block.getByName(prerequisite_names[i]).column;
+			prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
+			ColumnPtr col = sample_block.getByPosition(prerequisites[i]).column;
 			if (!col || !col->isConst())
 				all_const = false;
 		}
@@ -71,7 +97,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			sample_block.insert(new_column);
 			
 			size_t result_position = sample_block.getPositionByName(result_name);
-			function->execute(sample_block, arguments, result_position);
+			function->execute(sample_block, arguments, prerequisites, result_position);
 			
 			/// Если получилась не константа, на всякий случай будем считать результат неизвестным.
 			ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
@@ -138,12 +164,20 @@ void ExpressionActions::Action::execute(Block & block)
 				arguments[i] = block.getPositionByName(argument_names[i]);
 			}
 			
+			ColumnNumbers prerequisites(prerequisite_names.size());
+			for (size_t i = 0; i < prerequisite_names.size(); ++i)
+			{
+				if (!block.has(prerequisite_names[i]))
+					throw Exception("Not found column: '" + prerequisite_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+				prerequisites[i] = block.getPositionByName(prerequisite_names[i]);
+			}
+			
 			ColumnWithNameAndType new_column;
 			new_column.name = result_name;
 			new_column.type = result_type;
 			block.insert(new_column);
 			
-			function->execute(block, arguments, block.getPositionByName(result_name));
+			function->execute(block, arguments, prerequisites, block.getPositionByName(result_name));
 			
 			break;
 		}
