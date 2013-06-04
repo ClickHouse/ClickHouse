@@ -583,8 +583,8 @@ public:
 	}
 	
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
-												DataTypePtr & out_return_type,
-												ExpressionActions::Action & out_prerequisites)
+										DataTypePtr & out_return_type,
+										ExpressionActions::Actions & out_prerequisites)
 	{
 		if (arguments.size() != 2)
 			throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.",
