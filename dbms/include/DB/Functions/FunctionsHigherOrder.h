@@ -8,6 +8,7 @@
 #include <DB/Columns/ColumnExpression.h>
 
 #include <DB/Functions/IFunction.h>
+#include "FunctionsMiscellaneous.h"
 
 
 namespace DB
@@ -188,56 +189,93 @@ public:
 		checkTypes(arguments, expression_type, array_type);
 		arguments[0] = new DataTypeExpression(DataTypes(1, array_type->getNestedType()));
 	}
-	
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+
+	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
+										DataTypePtr & out_return_type,
+										ExpressionActions::Actions & out_prerequisites)
 	{
-		const DataTypeArray * array_type;
-		const DataTypeExpression * expression_type;
-		checkTypes(arguments, expression_type, array_type);
+		if (arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const ColumnExpression * column_expression = dynamic_cast<const ColumnExpression *>(arguments[0].column);
+		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1].type);
 		
-		if (Impl::needBooleanExpression() && !dynamic_cast<const DataTypeUInt8 *>(&*expression_type->getReturnType()))
+		if (!column_expression)
+			throw Exception("First argument for function " + getName() + " must be an expression with one argument.",
+							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		if (!array_type)
+			throw Exception("Second argument for function " + getName() + " must be array. Found "
+			+ arguments[1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		/// Попросим добавить в блок все столбцы, упоминаемые в выражении, размноженные в массив, параллельный обрабатываемому.
+		ExpressionActions & expression = *column_expression->getExpression();
+		Names required_columns = expression.getRequiredColumns();
+		Names::iterator it = std::find(required_columns.begin(), required_columns.end(), expression.getArguments()[0].first);
+		if (it != required_columns.end())
+			required_columns.erase(it);
+		for (size_t i = 0; i < required_columns.size(); ++i)
+		{
+			Names arguments;
+			arguments.push_back(required_columns[i]);
+			arguments.push_back(arguments[1].name);
+			out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionReplicate, arguments);
+		}
+
+		/// Если массив константный, попросим его материализовать.
+		if (arguments[1].column)
+		{
+			out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionMaterialize, Names(1, arguments[1].name)));
+		}
+		
+		DataTypePtr return_type = column_expression->getReturnType();
+		if (Impl::needBooleanExpression() && !dynamic_cast<const DataTypeUInt8 *>(&*return_type))
 			throw Exception("Expression for function " + getName() + " must return UInt8, found "
-							+ expression_type->getReturnType()->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+							+ return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
-		return Impl::getReturnType(expression_type->getReturnType(), array_type->getNestedType());
+		return Impl::getReturnType(return_type, array_type->getNestedType());
 	}
 	
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 	{
-		/// TODO: Не падать, увидев константный массив.
-		const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[1]).column);
 		ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[1]).column);
+		
+		/// Если это не ColumnArray, значит это константа, и мы просили ее материализовать.
+		if (!column_array)
+			column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(prerequisites.back()).column);
 		
 		Block temp_block;
 		ExpressionActions & expression = *column_expression->getExpression();
 		String argument_name = column_expression->getArguments()[0].first;
 		DataTypePtr element_type = column_expression->getArguments()[0].second;
+		
+		Names required_columns = expression.getRequiredColumns();
+		Names::iterator it = std::find(required_columns.begin(), required_columns.end(), argument_name);
+		if (it != required_columns.end())
+			required_columns.erase(it);
+		
 		/// Положим в блок аргумент выражения.
 		temp_block.insert(ColumnWithNameAndType(column_array->getDataPtr(), element_type, argument_name));
 		
-		Names columns = expression.getRequiredColumns();
-		
 		/// Положим в блок все нужные столбцы, размноженные по размерам массивов.
-		for (size_t i = 0; i < columns.size(); ++i)
+		for (size_t i = 0; i < required_columns.size(); ++i)
 		{
-			const String & name = columns[i];
-			if (name == argument_name)
-				continue;
-			String replicated_name = "replicate(" + name + "," + block.getByPosition(arguments[1]).name + ")";
-			ColumnWithNameAndType replicated_column;
-			if (block.has(replicated_name))
-			{
-				replicated_column = block.getByName(replicated_name);
-			}
-			else
-			{
-				ColumnWithNameAndType replicated_column = block.getByName(name);
-				replicated_column.column = replicated_column.column->replicate(column_array->getOffsets());
-				block.insert(replicated_column);
-			}
+			const String & name = required_columns[i];
+			ColumnWithNameAndType replicated_column = block.getByPosition(prerequisites[i]);
+			
+			const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*replicated_column.column);
+			const DataTypeArray * type = dynamic_cast<const DataTypeArray *>(&*replicated_column.type);
+			if (!col || !type)
+				throw Exception("Unexpected replicated column", ErrorCodes::LOGICAL_ERROR);
+			
 			replicated_column.name = name;
+			replicated_column.column = col->getDataPtr();
+			replicated_column.type = type->getNestedType();
+			
 			temp_block.insert(replicated_column);
 		}
 		
