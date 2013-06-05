@@ -9,6 +9,7 @@
 #include <statdaemons/RegionsHierarchy.h>
 #include <statdaemons/TechDataHierarchy.h>
 #include <statdaemons/CategoriesHierarchy.h>
+#include <statdaemons/RegionsNames.h>
 
 
 namespace DB
@@ -24,6 +25,7 @@ private:
 	Yandex::MultiVersion<RegionsHierarchy> regions_hierarchy;
 	Yandex::MultiVersion<TechDataHierarchy> tech_data_hierarchy;
 	Yandex::MultiVersion<CategoriesHierarchy> categories_hierarchy;
+	Yandex::MultiVersion<RegionsNames> regions_names;
 
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
@@ -50,10 +52,13 @@ private:
 			new_regions_hierarchy->reload();
 			Yandex::MultiVersion<CategoriesHierarchy>::Version new_categories_hierarchy = new CategoriesHierarchy;
 			new_categories_hierarchy->reload();
+			Yandex::MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
+			new_regions_names->reload();
 			
 			tech_data_hierarchy.set(new_tech_data_hierarchy);
 			regions_hierarchy.set(new_regions_hierarchy);
 			categories_hierarchy.set(new_categories_hierarchy);
+			regions_names.set(new_regions_names);
 		}
 		catch (const Poco::Exception & e)
 		{
@@ -110,6 +115,11 @@ public:
 	Yandex::MultiVersion<CategoriesHierarchy>::Version getCategoriesHierarchy() const
 	{
 		return categories_hierarchy.get();
+	}
+	
+	Yandex::MultiVersion<RegionsNames>::Version getRegionsNames() const
+	{
+		return regions_names.get();
 	}
 };
 

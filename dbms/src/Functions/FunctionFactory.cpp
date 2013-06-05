@@ -205,6 +205,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "OSHierarchy")				return new FunctionOSHierarchy(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEHierarchy")				return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryHierarchy")			return new FunctionCategoryHierarchy(context.getDictionaries().getCategoriesHierarchy());
+	else if (name == "regionToName")				return new FunctionRegionToName(context.getDictionaries().getRegionsNames());
 
 	else
 		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);

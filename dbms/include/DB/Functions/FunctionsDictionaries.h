@@ -2,9 +2,11 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnString.h>
 
 #include <DB/Interpreters/Context.h>
 
@@ -24,6 +26,9 @@ namespace DB
   *  SEToRoot,
   *  categoryToRoot,
   *  categoryToSecondLevel
+  * 
+  * Преобразовать значения в столбце
+  *  regionToName
   *
   * Является ли первый идентификатор потомком второго.
   *  regionIn, SEIn, OSIn, categoryIn.
@@ -408,5 +413,91 @@ typedef FunctionHierarchyWithDictionary<UInt32,	RegionHierarchyImpl,	RegionsHier
 typedef FunctionHierarchyWithDictionary<UInt8,		OSHierarchyImpl,		TechDataHierarchy, NameOSHierarchy>	FunctionOSHierarchy;
 typedef FunctionHierarchyWithDictionary<UInt8,		SEHierarchyImpl,		TechDataHierarchy, NameSEHierarchy>	FunctionSEHierarchy;
 typedef FunctionHierarchyWithDictionary<UInt16,	CategoryHierarchyImpl,	CategoriesHierarchy, NameCategoryHierarchy>FunctionCategoryHierarchy;
+
+
+/// Преобразует числовой идентификатор региона в имя на заданном языке, используя словарь.
+class FunctionRegionToName : public IFunction
+{
+private:
+	const SharedPtr<RegionsNames> owned_dict;
+	
+public:
+	FunctionRegionToName(const SharedPtr<RegionsNames> & owned_dict_)
+		: owned_dict(owned_dict_)
+	{
+		if (!owned_dict)
+			throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+	}
+	
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "regionToName";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1 || arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (arguments[0]->getName() != TypeName<UInt32>::get())
+			throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName()
+				+ " (must be " + TypeName<UInt32>::get() + ")",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+			throw Exception("Illegal type " + arguments[0]->getName() + " of the second argument of function " + getName()
+				+ " (must be " + TypeName<String>::get() + ")",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeString;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		RegionsNames::SupportedLanguages::Enum language = RegionsNames::SupportedLanguages::RU;
+		
+		/// Если указан язык результата
+		if (arguments.size() == 2)
+		{
+			if (const ColumnConstString * col_language = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column))
+				language = RegionsNames::getLanguageEnum(col_language->getData());
+			else
+				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+						+ " of the second argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		
+		if (const ColumnVector<UInt32> * col_from = dynamic_cast<const ColumnVector<UInt32> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnString * col_to = new ColumnString;
+			block.getByPosition(result).column = col_to;
+
+			const ColumnVector<UInt32>::Container_t & region_ids = col_from->getData();
+
+			const RegionsNames & dict = *owned_dict;
+			for (size_t i = 0; i < region_ids.size(); ++i)
+			{
+				const DB::StringRef & name_ref = dict.getRegionName(region_ids[i], language);
+				col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
+			}
+		}
+		else if (const ColumnConst<UInt32> * col_from = dynamic_cast<const ColumnConst<UInt32> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			UInt32 region_id = col_from->getData();
+			const DB::StringRef & name_ref = owned_dict->getRegionName(region_id, language);
+			
+			block.getByPosition(result).column = new ColumnConstString(col_from->size(), name_ref.toString());
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of the first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
 
 }
