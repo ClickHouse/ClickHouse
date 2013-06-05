@@ -736,7 +736,7 @@ class FunctionReplicate : public IFunction
 		
 		res = first_column->replicate(array_column->getOffsets());
 		if (res->isConst())
-			res = dynamic_cast<ColumnConst &>(&*res).convertToFullColumn();
+			res = dynamic_cast<IColumnConst &>(*res).convertToFullColumn();
 		res = new ColumnArray(res, array_column->getOffsetsColumn());
 		
 		block.getByPosition(result).column = res;
