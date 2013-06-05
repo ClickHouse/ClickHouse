@@ -14,7 +14,12 @@ foreach my $key (keys %Region) {
 		my $field = ( $lang eq 'ru' ? 'name' : $lang . '_name' );
 		my $name = $Region{$key}->{$field};
 		if ($name) {
-			print { $outputs{$lang} } $key . "\t" . $name . "\n";
+			$name =~ s/^\s+//;
+			$name =~ s/\s+$//;
+			$name =~ s/(\t|\n)/ /g;
+			if ($name ne '') {
+				print { $outputs{$lang} } $key . "\t" . $name . "\n";
+			}
 		}
 	}	
 }
