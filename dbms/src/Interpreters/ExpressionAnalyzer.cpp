@@ -996,6 +996,10 @@ Names ExpressionAnalyzer::getRequiredColumns()
 
 void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names)
 {
+	/// Не опускаемся в подзапросы.
+	if (dynamic_cast<ASTSubquery *>(&*ast))
+		return;
+	
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column && !ignored_names.count(node->name))
