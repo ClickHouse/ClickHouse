@@ -730,11 +730,13 @@ class FunctionReplicate : public IFunction
 			ColumnConstArray * const_array_column = dynamic_cast<ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
 			if (!const_array_column)
 				throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
-			ColumnPtr temp_column = const_array_column->convertToFullColumn();
+			temp_column = const_array_column->convertToFullColumn();
 			array_column = dynamic_cast<ColumnArray *>(&*temp_column);
 		}
 		
 		res = first_column->replicate(array_column->getOffsets());
+		if (res->isConst())
+			res = dynamic_cast<ColumnConst &>(&*res).convertToFullColumn();
 		res = new ColumnArray(res, array_column->getOffsetsColumn());
 		
 		block.getByPosition(result).column = res;
