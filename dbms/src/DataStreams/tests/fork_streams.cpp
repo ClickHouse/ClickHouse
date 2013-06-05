@@ -11,7 +11,6 @@
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/ForkBlockInputStreams.h>
@@ -71,7 +70,12 @@ int main(int argc, char ** argv)
 		DB::Context context;
 		context.getColumns().push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
 
-		DB::ExpressionActionsPtr expression = DB::ExpressionAnalyzer(ast, context).getActions(true);
+		DB::ExpressionAnalyzer analyzer(ast, context);
+		DB::ExpressionActionsChain chain;
+		analyzer.appendSelect(chain);
+		analyzer.appendProjectResult(chain);
+		chain.finalize();
+		DB::ExpressionActionsPtr expression = chain.getLastActions();
 
 		DB::StoragePtr table = DB::StorageSystemNumbers::create("Numbers");
 

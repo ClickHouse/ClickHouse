@@ -247,7 +247,7 @@ struct ExpressionActionsChain
 		steps.clear();
 	}
 	
-	ExpressionActionsPtr lastActions()
+	ExpressionActionsPtr getLastActions()
 	{
 		if (steps.empty())
 			throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
@@ -255,7 +255,7 @@ struct ExpressionActionsChain
 		return steps.back().actions;
 	}
 	
-	Step & lastStep()
+	Step & getLastStep()
 	{
 		if (steps.empty())
 			throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);

@@ -1,5 +1,4 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
@@ -164,13 +163,13 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			if (query_analyzer->appendWhere(chain))
 			{
 				has_where = true;
-				before_where = chain.lastActions();
+				before_where = chain.getLastActions();
 				
 				/// Если кроме WHERE ничего выполнять не нужно, пометим все исходные столбцы как нужные, чтобы finalize их не выбросил.
 				if (!need_aggregate && to_stage == QueryProcessingStage::WithMergeableState)
 				{
 					Names columns = query_analyzer->getRequiredColumns();
-					chain.lastStep().required_output.insert(chain.lastStep().required_output.end(),
+					chain.getLastStep().required_output.insert(chain.getLastStep().required_output.end(),
 															columns.begin(), columns.end());
 					
 					chain.finalize();
@@ -185,7 +184,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			{
 				query_analyzer->appendGroupBy(chain);
 				query_analyzer->appendAggregateFunctionsArguments(chain);
-				before_aggregation = chain.lastActions();
+				before_aggregation = chain.getLastActions();
 				
 				chain.finalize();
 				
@@ -199,17 +198,17 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			if (need_aggregate && query_analyzer->appendHaving(chain))
 			{
 				has_having = true;
-				before_having = chain.lastActions();
+				before_having = chain.getLastActions();
 				chain.addStep();
 			}
 			
 			query_analyzer->appendSelect(chain);
 			has_order_by = query_analyzer->appendOrderBy(chain);
-			before_order_and_select = chain.lastActions();
+			before_order_and_select = chain.getLastActions();
 			chain.addStep();
 			
 			query_analyzer->appendProjectResult(chain);
-			final_projection = chain.lastActions();
+			final_projection = chain.getLastActions();
 			chain.finalize();
 			
 			/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).

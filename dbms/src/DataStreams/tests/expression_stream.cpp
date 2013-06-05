@@ -11,7 +11,6 @@
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -19,6 +18,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 
 using Poco::SharedPtr;
@@ -49,8 +49,13 @@ int main(int argc, char ** argv)
 		DB::Context context;
 		context.getColumns().push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
 
-		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
-
+		DB::ExpressionAnalyzer analyzer(ast, context);
+		DB::ExpressionActionsChain chain;
+		analyzer.appendSelect(chain);
+		analyzer.appendProjectResult(chain);
+		chain.finalize();
+		DB::ExpressionActionsPtr expression = chain.getLastActions();
+		
 		DB::StoragePtr table = DB::StorageSystemNumbers::create("Numbers");
 
 		DB::Names column_names;
@@ -61,7 +66,6 @@ int main(int argc, char ** argv)
 		Poco::SharedPtr<DB::IBlockInputStream> in;
 		in = table->read(column_names, 0, DB::Settings(), stage)[0];
 		in = new DB::ExpressionBlockInputStream(in, expression);
-		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 		
 		DB::WriteBufferFromOStream out1(std::cout);

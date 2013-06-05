@@ -13,7 +13,6 @@
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/ProjectionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
@@ -27,6 +26,7 @@
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 
 using Poco::SharedPtr;
@@ -129,7 +129,12 @@ int main(int argc, char ** argv)
 
 		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
 
-		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
+		DB::ExpressionAnalyzer analyzer(ast, context);
+		DB::ExpressionActionsChain chain;
+		analyzer.appendSelect(chain);
+		analyzer.appendWhere(chain);
+		chain.finalize();
+		DB::ExpressionActionsPtr expression = chain.getLastActions();
 
 		DB::Names column_names;
 		boost::assign::push_back(column_names)
@@ -143,7 +148,6 @@ int main(int argc, char ** argv)
 
 		Poco::SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
 		in = new DB::ExpressionBlockInputStream(in, expression);
-		in = new DB::ProjectionBlockInputStream(in, expression);
 		in = new DB::FilterBlockInputStream(in, 4);
 		//in = new DB::LimitBlockInputStream(in, 10);
 		

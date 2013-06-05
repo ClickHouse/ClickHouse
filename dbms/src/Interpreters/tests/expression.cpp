@@ -20,32 +20,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
-#include <DB/Interpreters/Expression.h>
-
-
-void dump(DB::IAST & ast, int level = 0)
-{
-	std::string prefix(level, ' ');
-	
-	if (DB::ASTFunction * node = dynamic_cast<DB::ASTFunction *>(&ast))
-	{
-		std::cout << prefix << node << " Function, name = " << node->function->getName()
-			<< ", return type: " << node->return_type->getName() << std::endl;
-	}
-	else if (DB::ASTIdentifier * node = dynamic_cast<DB::ASTIdentifier *>(&ast))
-	{
-		std::cout << prefix << node << " Identifier, name = " << node->name << ", type = " << node->type->getName() << std::endl;
-	}
-	else if (DB::ASTLiteral * node = dynamic_cast<DB::ASTLiteral *>(&ast))
-	{
-		std::cout << prefix << node << " Literal, " << apply_visitor(DB::FieldVisitorToString(), node->value)
-			<< ", type = " << node->type->getName() << std::endl;
-	}
-
-	DB::ASTs children = ast.children;
-	for (DB::ASTs::iterator it = children.begin(); it != children.end(); ++it)
-		dump(**it, level + 1);
-}
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 
 int main(int argc, char ** argv)
@@ -88,9 +63,12 @@ int main(int argc, char ** argv)
 		columns.push_back(DB::NameAndTypePair("s2", new DB::DataTypeString));
 		context.setColumns(columns);
 		
-		DB::Expression expression(ast, context);
-
-		dump(*ast);
+		DB::ExpressionAnalyzer analyzer(ast, context);
+		DB::ExpressionActionsChain chain;
+		analyzer.appendSelect(chain);
+		analyzer.appendProjectResult(chain);
+		chain.finalize();
+		DB::ExpressionActionsPtr expression = chain.getLastActions();
 
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
@@ -135,8 +113,7 @@ int main(int argc, char ** argv)
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 
-			expression.execute(block);
-			block = expression.projectResult(block);
+			expression->execute(block);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
