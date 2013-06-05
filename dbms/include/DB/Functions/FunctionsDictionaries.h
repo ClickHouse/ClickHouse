@@ -438,7 +438,7 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 1 || arguments.size() != 2)
+		if (arguments.size() != 1 && arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
