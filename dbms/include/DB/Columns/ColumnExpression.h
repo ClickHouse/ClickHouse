@@ -19,7 +19,7 @@ public:
 	std::string getName() const { return "ColumnExpression"; }
 	ColumnPtr cloneDummy(size_t s_) const { return new ColumnExpression(s_, expression, arguments, return_type, return_name); }
 	
-	ExpressionActionsPtr getExpression() { return expression; }
+	const ExpressionActionsPtr & getExpression() const { return expression; }
 	const NamesAndTypes & getArguments() const { return arguments; }
 	const DataTypePtr & getReturnType() const { return return_type; }
 	const std::string & getReturnName() const { return return_name; }

@@ -48,7 +48,7 @@ public:
 		ColumnPtr added_column;
 		
 		/// Для APPLY_FUNCTION.
-		FunctionPtr function;
+		mutable FunctionPtr function; /// mutable - чтобы можно было делать execute.
 		Names argument_names;
 		Names prerequisite_names;
 		
@@ -114,7 +114,7 @@ public:
 		
 		std::vector<Action> getPrerequisites(Block & sample_block);
 		void prepare(Block & sample_block);
-		void execute(Block & block);
+		void execute(Block & block) const;
 		
 		std::string toString() const;
 	};
@@ -165,10 +165,10 @@ public:
 	const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
 
 	/// Выполнить выражение над блоком. Блок должен содержать все столбцы , возвращаемые getRequiredColumns.
-	void execute(Block & block);
+	void execute(Block & block) const;
 
 	/// Получить блок-образец, содержащий имена и типы столбцов результата.
-	const Block & getSampleBlock() { return sample_block; }
+	const Block & getSampleBlock() const { return sample_block; }
 	
 	std::string getID() const;
 	
@@ -182,7 +182,7 @@ private:
 	Block sample_block;
 	Settings settings;
 	
-	void checkLimits(Block & block);
+	void checkLimits(Block & block) const;
 	
 	/// Добавляет сначала все prerequisites, потом само действие.
 	/// current_names - столбцы, prerequisites которых сейчас обрабатываются.

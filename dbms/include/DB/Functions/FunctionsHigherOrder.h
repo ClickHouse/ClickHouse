@@ -199,7 +199,7 @@ public:
 			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const ColumnExpression * column_expression = dynamic_cast<const ColumnExpression *>(arguments[0].column);
+		const ColumnExpression * column_expression = dynamic_cast<const ColumnExpression *>(&*arguments[0].column);
 		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1].type);
 		
 		if (!column_expression)
@@ -211,7 +211,7 @@ public:
 							+ arguments[1].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		/// Попросим добавить в блок все столбцы, упоминаемые в выражении, размноженные в массив, параллельный обрабатываемому.
-		ExpressionActions & expression = *column_expression->getExpression();
+		const ExpressionActions & expression = *column_expression->getExpression();
 		Names required_columns = expression.getRequiredColumns();
 		Names::iterator it = std::find(required_columns.begin(), required_columns.end(), column_expression->getArguments()[0].first);
 		if (it != required_columns.end())
@@ -235,7 +235,7 @@ public:
 			throw Exception("Expression for function " + getName() + " must return UInt8, found "
 							+ return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
-		return Impl::getReturnType(return_type, array_type->getNestedType());
+		out_return_type = Impl::getReturnType(return_type, array_type->getNestedType());
 	}
 	
 	/// Выполнить функцию над блоком.
@@ -249,7 +249,7 @@ public:
 			column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(prerequisites.back()).column);
 		
 		Block temp_block;
-		ExpressionActions & expression = *column_expression->getExpression();
+		const ExpressionActions & expression = *column_expression->getExpression();
 		String argument_name = column_expression->getArguments()[0].first;
 		DataTypePtr element_type = column_expression->getArguments()[0].second;
 		

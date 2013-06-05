@@ -142,7 +142,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 	}
 }
 
-void ExpressionActions::Action::execute(Block & block)
+void ExpressionActions::Action::execute(Block & block) const
 {
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN || type == ARRAY_JOIN)
 		if (!block.has(source_name))
@@ -301,7 +301,7 @@ std::string ExpressionActions::Action::toString() const
 	return ss.str();
 }
 
-void ExpressionActions::checkLimits(Block & block)
+void ExpressionActions::checkLimits(Block & block) const
 {
 	const Limits & limits = settings.limits;
 	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
@@ -361,7 +361,7 @@ void ExpressionActions::prependProjectInput()
 	actions.insert(actions.begin(), Action::project(getRequiredColumns()));
 }
 
-void ExpressionActions::execute(Block & block)
+void ExpressionActions::execute(Block & block) const
 {
 	for (size_t i = 0; i < actions.size(); ++i)
 	{
