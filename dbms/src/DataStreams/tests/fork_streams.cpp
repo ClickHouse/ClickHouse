@@ -21,6 +21,7 @@
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 
 using Poco::SharedPtr;
@@ -70,7 +71,7 @@ int main(int argc, char ** argv)
 		DB::Context context;
 		context.getColumns().push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
 
-		Poco::SharedPtr<DB::Expression> expression = new DB::Expression(ast, context);
+		DB::ExpressionActionsPtr expression = DB::ExpressionAnalyzer(ast, context).getActions(true);
 
 		DB::StoragePtr table = DB::StorageSystemNumbers::create("Numbers");
 
@@ -87,12 +88,10 @@ int main(int argc, char ** argv)
 		DB::BlockInputStreamPtr in2 = fork.createInput();
 
 		in1 = new DB::ExpressionBlockInputStream(in1, expression);
-		in1 = new DB::ProjectionBlockInputStream(in1, expression);
 		in1 = new DB::FilterBlockInputStream(in1, 1);
 		in1 = new DB::LimitBlockInputStream(in1, 10, 0);
 
 		in2 = new DB::ExpressionBlockInputStream(in2, expression);
-		in2 = new DB::ProjectionBlockInputStream(in2, expression);
 		in2 = new DB::FilterBlockInputStream(in2, 1);
 		in2 = new DB::LimitBlockInputStream(in2, 20, 5);
 
