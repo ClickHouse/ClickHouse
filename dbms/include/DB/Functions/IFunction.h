@@ -70,7 +70,10 @@ public:
 	
 	/// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
 	/// Перегрузка для тех, кому не нужны prerequisites. Снаружи не вызывается.
-	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
+	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		throw Exception("execute is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
 
 	/// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
 	/// prerequisites идут в том же порядке, что и out_prerequisites, полученные из getReturnTypeAndPrerequisites.

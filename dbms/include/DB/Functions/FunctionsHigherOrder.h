@@ -208,20 +208,20 @@ public:
 		
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array. Found "
-			+ arguments[1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+							+ arguments[1].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		/// Попросим добавить в блок все столбцы, упоминаемые в выражении, размноженные в массив, параллельный обрабатываемому.
 		ExpressionActions & expression = *column_expression->getExpression();
 		Names required_columns = expression.getRequiredColumns();
-		Names::iterator it = std::find(required_columns.begin(), required_columns.end(), expression.getArguments()[0].first);
+		Names::iterator it = std::find(required_columns.begin(), required_columns.end(), column_expression->getArguments()[0].first);
 		if (it != required_columns.end())
 			required_columns.erase(it);
 		for (size_t i = 0; i < required_columns.size(); ++i)
 		{
-			Names arguments;
-			arguments.push_back(required_columns[i]);
-			arguments.push_back(arguments[1].name);
-			out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionReplicate, arguments);
+			Names replicate_arguments;
+			replicate_arguments.push_back(required_columns[i]);
+			replicate_arguments.push_back(arguments[1].name);
+			out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionReplicate, replicate_arguments));
 		}
 
 		/// Если массив константный, попросим его материализовать.
