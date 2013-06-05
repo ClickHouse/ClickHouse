@@ -547,9 +547,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					
 					has_lambda_arguments = true;
 					argument_types.push_back(new DataTypeExpression(DataTypes(lambda_args_tuple->arguments->children.size())));
-					/// Не можем дать название child->getColumnName(),
-					/// потому что оно не однозначно определяет выражение (типы аргументов могут быть разными).
-					argument_names.push_back(getUniqueName(actions.getSampleBlock(), "__lambda"));
+					/// Выберем название в следующем цикле.
+					argument_names.push_back("");
 				}
 				else
 				{
@@ -622,6 +621,10 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						lambda_actions->finalize(Names(1, result_name));
 						DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 						argument_types[i] = new DataTypeExpression(lambda_type->getArgumentTypes(), result_type);
+						
+						/// Не можем дать название getColumnName(),
+						///  потому что оно не однозначно определяет выражение (типы аргументов могут быть разными).
+						argument_names[i] = getUniqueName(actions.getSampleBlock(), "__lambda");
 						
 						ColumnWithNameAndType lambda_column;
 						lambda_column.column = new ColumnExpression(1, lambda_actions, lambda_args, result_type, result_name);
