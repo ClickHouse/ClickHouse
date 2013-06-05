@@ -28,9 +28,6 @@ public:
 	/// чего идентифицирует этот идентификатор
 	Kind kind;
 
-	/// тип (только для столбцов)
-	DataTypePtr type;
-
 	ASTIdentifier() {}
 	ASTIdentifier(StringRange range_, const String & name_, Kind kind_ = Column) : IAST(range_), name(name_), kind(kind_) {}
 

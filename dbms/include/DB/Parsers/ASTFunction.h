@@ -34,15 +34,6 @@ public:
 	
 	FunctionKind kind;
 
-	/// сама функция
-	FunctionPtr function;
-	/// или агрегатная функция
-	AggregateFunctionPtr aggregate_function;
-	/// или лямбда-выражение (ColumnExpression)
-	ColumnPtr column_expression;
-	/// тип возвращаемого значения
-	DataTypePtr return_type;
-
 	ASTFunction() : kind(UNKNOWN) {}
 	ASTFunction(StringRange range_) : IAST(range_), kind(UNKNOWN) {}
 

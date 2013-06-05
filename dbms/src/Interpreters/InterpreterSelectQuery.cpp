@@ -9,7 +9,6 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
-#include <DB/DataStreams/ArrayJoiningBlockInputStream.h>
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>

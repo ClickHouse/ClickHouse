@@ -565,26 +565,6 @@ public:
 		return "tupleElement";
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments, size_t index) const
-	{
-		if (arguments.size() != 2)
-			throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		const DataTypeTuple * tuple = dynamic_cast<const DataTypeTuple *>(&*arguments[0]);
-		if (!tuple)
-			throw Exception("First argument for function tupleElement must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
-		if (index == 0)
-			throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
-		
-		const DataTypes & elems = tuple->getElements();
-		
-		if (index > elems.size())
-			throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-		
-		return elems[index - 1]->clone();
-	}
-	
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites)
