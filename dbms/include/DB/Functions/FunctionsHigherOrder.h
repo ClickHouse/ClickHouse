@@ -224,12 +224,6 @@ public:
 			out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionReplicate, replicate_arguments));
 		}
 
-		/// Если массив константный, попросим его материализовать.
-		if (arguments[1].column)
-		{
-			out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionMaterialize, Names(1, arguments[1].name)));
-		}
-		
 		DataTypePtr return_type = column_expression->getReturnType();
 		if (Impl::needBooleanExpression() && !dynamic_cast<const DataTypeUInt8 *>(&*return_type))
 			throw Exception("Expression for function " + getName() + " must return UInt8, found "
@@ -243,10 +237,13 @@ public:
 	{
 		ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[1]).column);
+		ColumnPtr temp_column;
 		
-		/// Если это не ColumnArray, значит это константа, и мы просили ее материализовать.
 		if (!column_array)
-			column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(prerequisites.back()).column);
+		{
+			temp_column = dynamic_cast<const ColumnConstArray &>(*block.getByPosition(arguments[0]).column).convertToFullColumn();
+			column_array = dynamic_cast<const ColumnArray *>(&*temp_column);
+		}
 		
 		Block temp_block;
 		const ExpressionActions & expression = *column_expression->getExpression();
