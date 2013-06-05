@@ -76,7 +76,7 @@ public:
 	/// prerequisites идут в том же порядке, что и out_prerequisites, полученные из getReturnTypeAndPrerequisites.
 	virtual void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 	{
-		execute(block, arguments, ColumnNumbers(), result);
+		execute(block, arguments, result);
 	}
 };
 
