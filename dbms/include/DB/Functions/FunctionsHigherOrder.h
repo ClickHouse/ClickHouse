@@ -235,13 +235,17 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 	{
+		ColumnPtr column_array_ptr = block.getByPosition(arguments[1]).column;
 		ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*column_array_ptr);
 		ColumnPtr temp_column;
 		
 		if (!column_array)
 		{
-			temp_column = dynamic_cast<const ColumnConstArray &>(*block.getByPosition(arguments[0]).column).convertToFullColumn();
+			const ColumnConstArray * column_const_array = dynamic_cast<const ColumnConstArray *>(&*column_array_ptr);
+			if (!column_const_array)
+				throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
+			temp_column = column_const_array->convertToFullColumn();
 			column_array = dynamic_cast<const ColumnArray *>(&*temp_column);
 		}
 		
