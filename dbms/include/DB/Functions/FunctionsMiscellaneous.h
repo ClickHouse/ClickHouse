@@ -341,7 +341,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		block.getByPosition(result).column = new ColumnConstString(block.getByPosition(0).column->size(), block.getByPosition(arguments[0]).type->getName());
+		block.getByPosition(result).column = new ColumnConstString(block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
 	}
 };
 
@@ -369,7 +369,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		size_t size = block.getByPosition(0).column->size();
+		size_t size = block.rowsInFirstColumn();
 		block.getByPosition(result).column = ColumnConstUInt64(size, size).convertToFullColumn();
 	}
 };
@@ -638,7 +638,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		block.getByPosition(result).column = new ColumnConstUInt8(block.getByPosition(0).column->size(), 0);
+		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 0);
 	}
 };
 

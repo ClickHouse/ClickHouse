@@ -239,7 +239,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		block.getByPosition(result).column = new ColumnConstUInt32(
-			block.getByPosition(0).column->size(),
+			block.rowsInFirstColumn(),
 			time(0));
 	}
 };
@@ -288,7 +288,7 @@ public:
 		}
 		else if (const ColumnConstUInt32 * const_times = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConstUInt32(block.getByPosition(0).column->size(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+			block.getByPosition(result).column = new ColumnConstUInt32(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -436,7 +436,7 @@ public:
 		{
 			Array const_res;
 			TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
-			block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(0).column->size(), const_res, new DataTypeArray(new DataTypeDateTime));
+			block.getByPosition(result).column = new ColumnConstArray(block.rowsInFirstColumn(), const_res, new DataTypeArray(new DataTypeDateTime));
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()

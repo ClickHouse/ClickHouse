@@ -185,6 +185,15 @@ size_t Block::rows() const
 }
 
 
+size_t Block::rowsInFirstColumn() const
+{
+	if (data.empty() || data.front().column.isNull())
+		return 0;
+
+	return data.front().column->size();
+}
+
+
 size_t Block::columns() const
 {
 	return data.size();

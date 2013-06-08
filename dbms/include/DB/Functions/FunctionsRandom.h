@@ -116,7 +116,7 @@ public:
 
 		typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
 
-		size_t size = block.getByPosition(0).column->size();
+		size_t size = block.rowsInFirstColumn();
 		vec_to.resize(size);
 		Impl::execute(vec_to);
 	}

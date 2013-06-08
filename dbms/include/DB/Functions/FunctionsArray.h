@@ -188,7 +188,7 @@ private:
 		Field value = col_array->getData().at(index);
 
 		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
-			block.getByPosition(0).column->size(),
+			block.rowsInFirstColumn(),
 			value);
 
 		return true;
@@ -424,7 +424,7 @@ private:
 		}
 
 		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
-			block.getByPosition(0).column->size(),
+			block.rowsInFirstColumn(),
 			static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
 
 		return true;
