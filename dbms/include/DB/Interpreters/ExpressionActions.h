@@ -44,7 +44,7 @@ public:
 		std::string result_name;
 		DataTypePtr result_type;
 		
-		/// Для ADD_CONST_COLUMN.
+		/// Для ADD_COLUMN.
 		ColumnPtr added_column;
 		
 		/// Для APPLY_FUNCTION.
