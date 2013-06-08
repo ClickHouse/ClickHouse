@@ -251,9 +251,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			
 			/// Сначала выполняем DISTINCT во всех источниках.
 			executeDistinct(streams, true);
-			
-			/// Сначала выполняем DISTINCT во всех источниках.
-			executeDistinct(streams, true);
 
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 			 * ограничивающий число записей в каждом до offset + limit.
