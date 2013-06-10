@@ -40,8 +40,8 @@ static UInt64 readUIntText(const UInt8 * buf, const UInt8 * end)
 {
 	UInt64 x = 0;
 
-	if (buf == end)
-		return x;
+	if (buf != end && *buf == '"')
+		++buf;
 
 	while (buf != end)
 	{
@@ -78,8 +78,8 @@ static Int64 readIntText(const UInt8 * buf, const UInt8 * end)
 	bool negative = false;
 	Int64 x = 0;
 
-	if (buf == end)
-		return x;
+	if (buf != end && *buf == '"')
+		++buf;
 
 	while (buf != end)
 	{
@@ -123,8 +123,8 @@ static double readFloatText(const UInt8 * buf, const UInt8 * end)
 	bool after_point = false;
 	double power_of_ten = 1;
 
-	if (buf == end)
-		return x;
+	if (buf != end && *buf == '"')
+		++buf;
 
 	while (buf != end)
 	{
