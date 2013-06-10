@@ -55,6 +55,9 @@ public:
 		/// Для PROJECT.
 		NamesWithAliases projection;
 		
+		/// Какие столбцы нужны, чтобы выполнить это действие.
+		Names getNeededColumns() const;
+		
 		/// Если result_name_ == "", в качестве имени используется "имя_функци(аргументы через запятую)".
 		static Action applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 		
@@ -187,6 +190,11 @@ private:
 	/// Добавляет сначала все prerequisites, потом само действие.
 	/// current_names - столбцы, prerequisites которых сейчас обрабатываются.
 	void addImpl(Action action, NameSet & current_names);
+	
+	/// Попробовать что-нибудь улучшить, не меняя списки входных и выходных столбцов.
+	void optimize();
+	/// Переместить все arrayJoin как можно ближе к концу.
+	void optimizeArrayJoin();
 };
 
 typedef SharedPtr<ExpressionActions> ExpressionActionsPtr;

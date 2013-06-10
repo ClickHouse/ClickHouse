@@ -6,6 +6,22 @@
 namespace DB
 {
 	
+Names ExpressionActions::Action::getNeededColumns() const
+{
+	Names res = argument_names;
+	res.insert(res.end(), prerequisite_names.begin(), prerequisite_names.end());
+	
+	for (size_t i = 0; i < projection.size(); ++i)
+	{
+		res.push_back(projection[i].first);
+	}
+	
+	if (!source_name.empty())
+		res.push_back(source_name);
+	
+	return res;
+}
+	
 ExpressionActions::Action ExpressionActions::Action::applyFunction(FunctionPtr function_,
 																	const std::vector<std::string> & argument_names_,
 																	std::string result_name_)
@@ -392,8 +408,6 @@ static std::string getAnyColumn(const NamesAndTypesList & columns)
 
 void ExpressionActions::finalize(const Names & output_columns)
 {
-	typedef std::set<std::string> NameSet;
-	
 	NameSet final_columns;
 	for (size_t i = 0; i < output_columns.size(); ++i)
 	{
@@ -414,12 +428,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 	{
 		Action & action = actions[i];
 		
-		used_columns.insert(action.source_name);
-		used_columns.insert(action.argument_names.begin(), action.argument_names.end());
-		used_columns.insert(action.prerequisite_names.begin(), action.prerequisite_names.end());
-		
-		for (size_t j = 0; j < actions[i].projection.size(); ++j)
-			used_columns.insert(actions[i].projection[j].first);
+		Names needed = action.getNeededColumns();
+		used_columns.insert(needed.begin(), needed.end());
 	}
 	for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
 	{
@@ -439,6 +449,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 		if (!final_columns.count(name))
 			add(Action::removeColumn(name));
 	}
+	
+	optimize();
 }
 
 std::string ExpressionActions::getID() const
@@ -484,6 +496,88 @@ std::string ExpressionActions::dumpActions() const
 		ss << it->first << " " << it->second->getName() << "\n";
 	
 	return ss.str();
+}
+
+void ExpressionActions::optimize()
+{
+	optimizeArrayJoin();
+}
+
+void ExpressionActions::optimizeArrayJoin()
+{
+	const size_t NONE = actions.size();
+	size_t first_array_join = NONE;
+	
+	/// Столбцы, для вычисления которых нужен arrayJoin.
+	/// Действия для их добавления нельзя переместить левее arrayJoin.
+	NameSet array_joined_columns;
+	
+	/// Столбцы, нужные для вычисления arrayJoin или тех, кто от него зависит.
+	/// Действия для их удаления нельзя переместить левее arrayJoin.
+	NameSet array_join_dependencies;
+	
+	for (size_t i = 0; i < actions.size(); ++i)
+	{
+		/// Не будем перемещать действия правее проецирования (тем более, что их там обычно нет).
+		if (actions[i].type == Action::PROJECT)
+			break;
+		
+		bool depends_on_array_join = false;
+		Names needed;
+		
+		if (actions[i].type == Action::ARRAY_JOIN)
+		{
+			depends_on_array_join = true;
+			needed = actions[i].getNeededColumns();
+		}
+		else
+		{
+			if (first_array_join == NONE)
+				continue;
+			
+			needed = actions[i].getNeededColumns();
+			
+			for (size_t j = 0; j < needed.size(); ++j)
+			{
+				if (array_joined_columns.count(needed[j]))
+				{
+					depends_on_array_join = true;
+					break;
+				}
+			}
+		}
+		
+		if (depends_on_array_join)
+		{
+			if (first_array_join == NONE)
+				first_array_join = i;
+			array_joined_columns.insert(actions[i].result_name);
+			array_join_dependencies.insert(needed.begin(), needed.end());
+		}
+		else
+		{
+			bool can_move = false;
+			
+			if (actions[i].type == Action::REMOVE_COLUMN)
+			{
+				/// Если удаляем столбец, не нужный для arrayJoin (и тех, кто от него зависит), можно его удалить до arrayJoin.
+				can_move = !array_join_dependencies.count(actions[i].source_name);
+			}
+			else
+			{
+				/// Если действие не удаляет столбцы и не зависит от результата arrayJoin, можно сделать его до arrayJoin.
+				can_move = true;
+			}
+			
+			/// Переместим текущее действие в позицию сразу перед первым arrayJoin.
+			if (can_move)
+			{
+				/// Переместим i-й элемент в позицию first_array_join.
+				std::rotate(actions.begin() + first_array_join, actions.begin() + i, actions.begin() + i + 1);
+				++first_array_join;
+			}
+		}
+	}
 }
 
 }
