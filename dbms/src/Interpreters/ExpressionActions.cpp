@@ -404,7 +404,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 		final_columns.insert(name);
 	}
 	
-	/// Не будем блок пустым, чтобы не потерять количество строк в нем.
+	/// Не будем оставлять блок пустым, чтобы не потерять количество строк в нем.
 	if (final_columns.empty())
 		final_columns.insert(getAnyColumn(input_columns));
 	
