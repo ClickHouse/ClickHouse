@@ -371,6 +371,25 @@ void ExpressionActions::execute(Block & block) const
 	}
 }
 
+static std::string getAnyColumn(const NamesAndTypesList & columns)
+{
+	NamesAndTypesList::const_iterator it = columns.begin();
+	
+	size_t min_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
+	String res = it->first;
+	for (; it != columns.end(); ++it)
+	{
+		size_t current_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
+		if (current_size < min_size)
+		{
+			min_size = current_size;
+			res = it->first;
+		}
+	}
+	
+	return res;
+}
+
 void ExpressionActions::finalize(const Names & output_columns)
 {
 	typedef std::set<std::string> NameSet;
@@ -384,6 +403,10 @@ void ExpressionActions::finalize(const Names & output_columns)
 							+ sample_block.dumpNames(), ErrorCodes::UNKNOWN_IDENTIFIER);
 		final_columns.insert(name);
 	}
+	
+	/// Не будем блок пустым, чтобы не потерять количество строк в нем.
+	if (final_columns.empty())
+		final_columns.insert(getAnyColumn(input_columns));
 	
 	NameSet used_columns = final_columns;
 	
@@ -413,8 +436,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 	for (int i = static_cast<int>(sample_block.columns()) - 1; i >= 0; --i)
 	{
 		const std::string & name = sample_block.getByPosition(i).name;
-		/// Не удаляем последний столбец.
-		if (!final_columns.count(name) && sample_block.columns() > 1)
+		if (!final_columns.count(name))
 			add(Action::removeColumn(name));
 	}
 }
