@@ -20,6 +20,7 @@
 #include <DB/Functions/FunctionsFormatting.h>
 #include <DB/Functions/FunctionsCoding.h>
 #include <DB/Functions/FunctionsHigherOrder.h>
+#include <DB/Functions/FunctionsVisitParam.h>
 
 #include <DB/Functions/FunctionFactory.h>
 
@@ -206,6 +207,12 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "SEHierarchy")				return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryHierarchy")			return new FunctionCategoryHierarchy(context.getDictionaries().getCategoriesHierarchy());
 	else if (name == "regionToName")				return new FunctionRegionToName(context.getDictionaries().getRegionsNames());
+	
+	else if (name == "visitParamHas")				return new FunctionVisitParamHas;
+	else if (name == "visitParamExtractUInt")		return new FunctionVisitParamExtractUInt;
+	else if (name == "visitParamExtractInt")		return new FunctionVisitParamExtractInt;
+	else if (name == "visitParamExtractFloat")		return new FunctionVisitParamExtractFloat;
+	else if (name == "visitParamExtractBool")		return new FunctionVisitParamExtractBool;
 
 	else
 		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
