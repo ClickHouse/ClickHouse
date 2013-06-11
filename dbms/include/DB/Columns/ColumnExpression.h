@@ -16,6 +16,9 @@ public:
 	ColumnExpression(size_t s_, ExpressionActionsPtr expression_, const NamesAndTypes & arguments_, DataTypePtr return_type_, std::string return_name_)
 		: IColumnDummy(s_), expression(expression_), arguments(arguments_), return_type(return_type_), return_name(return_name_) {}
 	
+	ColumnExpression(size_t s_, ExpressionActionsPtr expression_, const NamesAndTypesList & arguments_, DataTypePtr return_type_, std::string return_name_)
+		: IColumnDummy(s_), expression(expression_), arguments(arguments_.begin(), arguments_.end()), return_type(return_type_), return_name(return_name_) {}
+	
 	std::string getName() const { return "ColumnExpression"; }
 	ColumnPtr cloneDummy(size_t s_) const { return new ColumnExpression(s_, expression, arguments, return_type, return_name); }
 	

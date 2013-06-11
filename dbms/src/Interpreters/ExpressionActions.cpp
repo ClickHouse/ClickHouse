@@ -343,15 +343,35 @@ void ExpressionActions::checkLimits(Block & block) const
 	}
 }
 
-void ExpressionActions::add(const Action & action)
+void ExpressionActions::addInput(const ColumnWithNameAndType & column)
+{
+	input_columns.push_back(NameAndTypePair(column.name, column.type));
+	sample_block.insert(column);
+}
+
+void ExpressionActions::addInput(const NameAndTypePair & column)
+{
+	addInput(ColumnWithNameAndType(NULL, column.second, column.first));
+}
+
+void ExpressionActions::add(const Action & action, Names & out_new_columns)
 {
 	NameSet temp_names;
-	addImpl(action, temp_names);
+	addImpl(action, temp_names, out_new_columns);
 	
 	checkLimits(sample_block);
 }
 
-void ExpressionActions::addImpl(Action action, NameSet & current_names)
+void ExpressionActions::add(const Action & action)
+{
+	NameSet temp_names;
+	Names new_names;
+	addImpl(action, temp_names, new_names);
+	
+	checkLimits(sample_block);
+}
+
+void ExpressionActions::addImpl(Action action, NameSet & current_names, Names & new_names)
 {
 	if (sample_block.has(action.result_name))
 		return;
@@ -360,11 +380,12 @@ void ExpressionActions::addImpl(Action action, NameSet & current_names)
 		throw Exception("Cyclic function prerequisites: " + action.result_name, ErrorCodes::LOGICAL_ERROR);
 	
 	current_names.insert(action.result_name);
+	new_names.push_back(action.result_name);
 	
 	Actions prerequisites = action.getPrerequisites(sample_block);
 	
 	for (size_t i = 0; i < prerequisites.size(); ++i)
-		addImpl(prerequisites[i], current_names);
+		addImpl(prerequisites[i], current_names, new_names);
 	
 	action.prepare(sample_block);
 	actions.push_back(action);

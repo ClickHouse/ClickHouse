@@ -74,7 +74,7 @@ void ExpressionAnalyzer::init()
 			const ASTs & group_asts = select_query->group_expression_list->children;
 			for (size_t i = 0; i < group_asts.size(); ++i)
 			{
-				getActionsImpl(group_asts[i], true, false, temp_actions);
+				getRootActionsImpl(group_asts[i], true, false, temp_actions);
 				NameAndTypePair key;
 				key.first = group_asts[i]->getColumnName();
 				key.second = temp_actions.getSampleBlock().getByName(key.first).type;
@@ -406,7 +406,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 }
 
 
-void ExpressionAnalyzer::makeSet(ASTFunction * node, ExpressionActions & actions)
+void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
 	/** Нужно преобразовать правый аргумент в множество.
 	  * Это может быть перечисление значений или подзапрос.
@@ -440,11 +440,11 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, ExpressionActions & actions
 			for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
 				it != left_arg_tuple->arguments->children.end();
 				++it)
-				set_element_types.push_back(actions.getSampleBlock().getByName((*it)->getColumnName()).type);
+			set_element_types.push_back(sample_block.getByName((*it)->getColumnName()).type);
 		}
 		else
 		{
-			DataTypePtr left_type = actions.getSampleBlock().getByName(left_arg->getColumnName()).type;
+			DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
 			if (DataTypeArray * array_type = dynamic_cast<DataTypeArray *>(&*left_type))
 				set_element_types.push_back(array_type->getNestedType());
 			else
@@ -471,11 +471,19 @@ static std::string getUniqueName(const Block & block, const std::string & prefix
 }
 
 
-void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions)
+void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions)
+{
+	ScopeStack scopes(actions, settings);
+	getActionsImpl(ast, no_subqueries, only_consts, scopes);
+	actions = *scopes.popLevel();
+}
+
+
+void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack)
 {
 	/// Если результат вычисления уже есть в блоке.
 	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast) || dynamic_cast<ASTSet *>(&*ast))
-		&& actions.getSampleBlock().has(ast->getColumnName()))
+		&& actions_stack.getSampleBlock().has(ast->getColumnName()))
 		return;
 	
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
@@ -488,9 +496,9 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			if (node->arguments->children.size() != 1)
 				throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
 			ASTPtr arg = node->arguments->children[0];
-			getActionsImpl(arg, no_subqueries, only_consts, actions);
+			getActionsImpl(arg, no_subqueries, only_consts, actions_stack);
 			if (!only_consts)
-				actions.add(ExpressionActions::Action::arrayJoin(arg->getColumnName(), node->getColumnName()));
+				actions_stack.addAction(ExpressionActions::Action::arrayJoin(arg->getColumnName(), node->getColumnName()));
 			
 			return;
 		}
@@ -502,9 +510,9 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				if (!no_subqueries)
 				{
 					/// Найдем тип первого аргумента (потом getActionsImpl вызовется для него снова и ни на что не повлияет).
-					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions);
+					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack);
 					/// Превратим tuple или подзапрос в множество.
-					makeSet(node, actions);
+					makeSet(node, actions_stack.getSampleBlock());
 				}
 				else
 				{
@@ -514,8 +522,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					fake_column.name = node->getColumnName();
 					fake_column.type = new DataTypeUInt8;
 					fake_column.column = new ColumnConstUInt8(1, 0);
-					actions.add(ExpressionActions::Action::addColumn(fake_column));
-					getActionsImpl(node->arguments, no_subqueries, only_consts, actions);
+					actions_stack.addAction(ExpressionActions::Action::addColumn(fake_column));
+					getActionsImpl(node->arguments, no_subqueries, only_consts, actions_stack);
 					return;
 				}
 			}
@@ -553,11 +561,11 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				else
 				{
 					/// Если аргумент не лямбда-выражение, вызовемся рекурсивно и узнаем его тип.
-					getActionsImpl(child, no_subqueries, only_consts, actions);
+					getActionsImpl(child, no_subqueries, only_consts, actions_stack);
 					std::string name = child->getColumnName();
-					if (actions.getSampleBlock().has(name))
+					if (actions_stack.getSampleBlock().has(name))
 					{
-						argument_types.push_back(actions.getSampleBlock().getByName(name).type);
+						argument_types.push_back(actions_stack.getSampleBlock().getByName(name).type);
 						argument_names.push_back(name);
 					}
 					else
@@ -577,6 +585,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			if (only_consts && !arguments_present)
 				return;
 			
+			Names additional_requirements;
+			
 			if (has_lambda_arguments && !only_consts)
 			{
 				function->getLambdaArgumentTypes(argument_types);
@@ -592,9 +602,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						DataTypeExpression * lambda_type = dynamic_cast<DataTypeExpression *>(&*argument_types[i]);
 						ASTFunction * lambda_args_tuple = dynamic_cast<ASTFunction *>(&*lambda->arguments->children[0]);
 						ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
-						NamesAndTypes lambda_args;
-						
-						NamesAndTypesList lambda_columns = actions.getRequiredColumnsWithTypes();
+						NamesAndTypesList lambda_arguments;
 						
 						for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
 						{
@@ -605,32 +613,34 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 							String arg_name = identifier->name;
 							NameAndTypePair arg(arg_name, lambda_type->getArgumentTypes()[j]);
 							
-							NamesAndTypesList::iterator it = findColumn(arg_name, lambda_columns);
-							if (it != lambda_columns.end())
-								it->second = arg.second;
-							else
-								lambda_columns.push_back(arg);
-							
-							lambda_args.push_back(arg);
+							lambda_arguments.push_back(arg);
 						}
 						
-						ExpressionActionsPtr lambda_actions = new ExpressionActions(lambda_columns, settings);
-						getActionsImpl(lambda->arguments->children[1], no_subqueries, only_consts, *lambda_actions);
+						actions_stack.pushLevel(lambda_arguments);
+						getActionsImpl(lambda->arguments->children[1], no_subqueries, only_consts, actions_stack);
+						ExpressionActionsPtr lambda_actions = actions_stack.popLevel();
 						
 						String result_name = lambda->arguments->children[1]->getColumnName();
 						lambda_actions->finalize(Names(1, result_name));
 						DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 						argument_types[i] = new DataTypeExpression(lambda_type->getArgumentTypes(), result_type);
 						
+						Names captured = lambda_actions->getRequiredColumns();
+						for (size_t j = 0; j < captured.size(); ++j)
+						{
+							if (findColumn(captured[j], lambda_arguments) == lambda_arguments.end())
+								additional_requirements.push_back(captured[j]);
+						}
+						
 						/// Не можем дать название getColumnName(),
 						///  потому что оно не однозначно определяет выражение (типы аргументов могут быть разными).
-						argument_names[i] = getUniqueName(actions.getSampleBlock(), "__lambda");
+						argument_names[i] = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
 						
 						ColumnWithNameAndType lambda_column;
-						lambda_column.column = new ColumnExpression(1, lambda_actions, lambda_args, result_type, result_name);
+						lambda_column.column = new ColumnExpression(1, lambda_actions, lambda_arguments, result_type, result_name);
 						lambda_column.type = argument_types[i];
 						lambda_column.name = argument_names[i];
-						actions.add(ExpressionActions::Action::addColumn(lambda_column));
+						actions_stack.addAction(ExpressionActions::Action::addColumn(lambda_column));
 					}
 				}
 			}
@@ -639,7 +649,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			{
 				for (size_t i = 0; i < argument_names.size(); ++i)
 				{
-					if (!actions.getSampleBlock().has(argument_names[i]))
+					if (!actions_stack.getSampleBlock().has(argument_names[i]))
 					{
 						arguments_present = false;
 						break;
@@ -648,7 +658,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			}
 			
 			if (arguments_present)
-				actions.add(ExpressionActions::Action::applyFunction(function, argument_names, node->getColumnName()));
+				actions_stack.addAction(ExpressionActions::Action::applyFunction(function, argument_names, node->getColumnName()),
+										additional_requirements);
 		}
 	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
@@ -659,7 +670,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		column.type = type;
 		column.name = node->getColumnName();
 		
-		actions.add(ExpressionActions::Action::addColumn(column));
+		actions_stack.addAction(ExpressionActions::Action::addColumn(column));
 	}
 	else if (ASTSet * node = dynamic_cast<ASTSet *>(&*ast))
 	{
@@ -669,12 +680,12 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		column.type = new DataTypeSet;
 		column.name = node->getColumnName();
 		
-		actions.add(ExpressionActions::Action::addColumn(column));
+		actions_stack.addAction(ExpressionActions::Action::addColumn(column));
 	}
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			getActionsImpl(*it, no_subqueries, only_consts, actions);
+			getActionsImpl(*it, no_subqueries, only_consts, actions_stack);
 	}
 }
 
@@ -698,7 +709,7 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 		
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			getActionsImpl(arguments[i], true, false, actions);
+			getRootActionsImpl(arguments[i], true, false, actions);
 			const std::string & name = arguments[i]->getColumnName();
 			types[i] = actions.getSampleBlock().getByName(name).type;
 			aggregate.argument_names[i] = name;
@@ -766,7 +777,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain)
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
 	step.required_output.push_back(select_query->where_expression->getColumnName());
-	getActionsImpl(select_query->where_expression, false, false, *step.actions);
+	getRootActionsImpl(select_query->where_expression, false, false, *step.actions);
 	
 	return true;
 }
@@ -785,7 +796,7 @@ bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain)
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		step.required_output.push_back(asts[i]->getColumnName());
-		getActionsImpl(asts[i], false, false, *step.actions);
+		getRootActionsImpl(asts[i], false, false, *step.actions);
 	}
 	
 	return true;
@@ -826,7 +837,7 @@ bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain)
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
 	step.required_output.push_back(select_query->having_expression->getColumnName());
-	getActionsImpl(select_query->having_expression, false, false, *step.actions);
+	getRootActionsImpl(select_query->having_expression, false, false, *step.actions);
 	
 	return true;
 }
@@ -838,7 +849,7 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain)
 	initChain(chain, aggregated_columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
-	getActionsImpl(select_query->select_expression_list, false, false, *step.actions);
+	getRootActionsImpl(select_query->select_expression_list, false, false, *step.actions);
 	
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
@@ -857,7 +868,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain)
 	initChain(chain, aggregated_columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
-	getActionsImpl(select_query->order_expression_list, false, false, *step.actions);
+	getRootActionsImpl(select_query->order_expression_list, false, false, *step.actions);
 	
 	ASTs asts = select_query->order_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
@@ -903,7 +914,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
-		getActionsImpl(asts[i], true, false, temp_actions);
+		getRootActionsImpl(asts[i], true, false, temp_actions);
 	}
 	
 	temp_actions.add(ExpressionActions::Action::project(result_columns));
@@ -920,7 +931,7 @@ void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionA
 		
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			getActionsImpl(arguments[i], false, false, actions);
+			getRootActionsImpl(arguments[i], false, false, actions);
 		}
 	}
 	else
@@ -946,14 +957,14 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 		{
 			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
 			result_names.push_back(result_columns.back().second);
-			getActionsImpl(asts[i], false, false, *actions);
+			getRootActionsImpl(asts[i], false, false, *actions);
 		}
 	}
 	else
 	{
 		result_columns.push_back(NameWithAlias(ast->getColumnName(), ast->getAlias()));
 		result_names.push_back(result_columns.back().second);
-		getActionsImpl(ast, false, false, *actions);
+		getRootActionsImpl(ast, false, false, *actions);
 	}
 	
 	if (project_result)
@@ -976,7 +987,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
 	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList(), settings);
 	
-	getActionsImpl(ast, true, true, *actions);
+	getRootActionsImpl(ast, true, true, *actions);
 	
 	return actions;
 }

@@ -16,7 +16,8 @@ typedef Poco::SharedPtr<IFunction> FunctionPtr;
 	
 typedef std::pair<std::string, std::string> NameWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
-	
+typedef std::set<String> NameSet;
+
 /** Содержит последовательность действий над блоком.
   */
 class ExpressionActions
@@ -54,9 +55,6 @@ public:
 		
 		/// Для PROJECT.
 		NamesWithAliases projection;
-		
-		/// Какие столбцы нужны, чтобы выполнить это действие.
-		Names getNeededColumns() const;
 		
 		/// Если result_name_ == "", в качестве имени используется "имя_функци(аргументы через запятую)".
 		static Action applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
@@ -115,11 +113,18 @@ public:
 			return a;
 		}
 		
+		/// Какие столбцы нужны, чтобы выполнить это действие.
+		/// Если этот Action еще не добавлен в ExpressionActions, возвращаемый список может быть неполным, потому что не учтены prerequisites.
+		Names getNeededColumns() const;
+		
+		std::string toString() const;
+		
+	private:
+		friend class ExpressionActions;
+		
 		std::vector<Action> getPrerequisites(Block & sample_block);
 		void prepare(Block & sample_block);
 		void execute(Block & block) const;
-		
-		std::string toString() const;
 	};
 	
 	typedef std::vector<Action> Actions;
@@ -144,13 +149,24 @@ public:
 		}
 	}
 	
+	/// Добавить входной столбец.
+	/// Название столбца не должно совпадать с названиями промежуточных столбцов, возникающих при вычислении выражения.
+	/// В выражении не должно быть действий PROJECT.
+	void addInput(const ColumnWithNameAndType & column);
+	void addInput(const NameAndTypePair & column);
+	
 	void add(const Action & action);
+	
+	/// Кладет в out_new_columns названия новых столбцов
+	///  (образовавшихся в результате добавляемого действия и его rerequisites).
+	void add(const Action & action, Names & out_new_columns);
 	
 	/// Добавляет в начало удаление всех лишних столбцов.
 	void prependProjectInput();
 	
 	/// - Добавляет действия для удаления всех столбцов, кроме указанных.
 	/// - Убирает неиспользуемые входные столбцы.
+	/// - Может как-нибудь оптимизировать выражение.
 	/// - Не переупорядочивает столбцы.
 	/// - Не удаляет "неожиданные" столбцы (например, добавленные функциями).
 	/// - Если output_columns пуст, оставляет один произвольный столбец (чтобы не потерялось количество строк в блоке).
@@ -178,8 +194,6 @@ public:
 	std::string dumpActions() const;
 
 private:
-	typedef std::set<String> NameSet;
-	
 	NamesAndTypesList input_columns;
 	Actions actions;
 	Block sample_block;
@@ -189,7 +203,7 @@ private:
 	
 	/// Добавляет сначала все prerequisites, потом само действие.
 	/// current_names - столбцы, prerequisites которых сейчас обрабатываются.
-	void addImpl(Action action, NameSet & current_names);
+	void addImpl(Action action, NameSet & current_names, Names & new_names);
 	
 	/// Попробовать что-нибудь улучшить, не меняя списки входных и выходных столбцов.
 	void optimize();
