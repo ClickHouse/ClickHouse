@@ -234,6 +234,7 @@ struct ExtractString
 							int unicode;
 							if (!tryUnhex(pos, end, unicode))
 								return false;
+							pos += 3;
 							
 							res_data.resize(res_data.size() + 6);	/// максимальный размер UTF8 многобайтовой последовательности
 							
