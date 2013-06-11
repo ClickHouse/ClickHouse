@@ -213,6 +213,8 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "visitParamExtractInt")		return new FunctionVisitParamExtractInt;
 	else if (name == "visitParamExtractFloat")		return new FunctionVisitParamExtractFloat;
 	else if (name == "visitParamExtractBool")		return new FunctionVisitParamExtractBool;
+	else if (name == "visitParamExtractRaw")		return new FunctionVisitParamExtractRaw;
+	else if (name == "visitParamExtractString")	return new FunctionVisitParamExtractString;
 
 	else
 		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);

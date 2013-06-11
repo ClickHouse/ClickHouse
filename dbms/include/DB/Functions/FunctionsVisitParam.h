@@ -3,6 +3,7 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
+#include <Poco/NumberParser.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -39,7 +40,7 @@ struct HasParam
 {
 	typedef UInt8 ResultType;
 	
-	static UInt8 extract(const UInt8 * pos, const UInt8 * end)
+	static UInt8 extract(const UInt8 * begin, const UInt8 * end)
 	{
 		return true;
 	}
@@ -50,9 +51,9 @@ struct ExtractNumericType
 {
 	typedef NumericType ResultType;
 	
-	static ResultType extract(const UInt8 * pos, const UInt8 * end)
+	static ResultType extract(const UInt8 * begin, const UInt8 * end)
 	{
-		ReadBuffer in(const_cast<char *>(reinterpret_cast<const char *>(pos)), end - pos, 0);
+		ReadBuffer in(const_cast<char *>(reinterpret_cast<const char *>(begin)), end - begin, 0);
 		
 		/// Учимся читать числа в двойных кавычках
 		if (!in.eof() && *in.position() == '"')
@@ -69,9 +70,205 @@ struct ExtractBool
 {
 	typedef UInt8 ResultType;
 	
-	static UInt8 extract(const UInt8 * pos, const UInt8 * end)
+	static UInt8 extract(const UInt8 * begin, const UInt8 * end)
 	{
-		return pos + 4 <= end && 0 == strncmp(reinterpret_cast<const char *>(pos), "true", 4);
+		return begin + 4 <= end && 0 == strncmp(reinterpret_cast<const char *>(begin), "true", 4);
+	}
+};
+
+
+struct ExtractRaw
+{
+	static void extract(const UInt8 * pos, const UInt8 * end, std::vector<UInt8> & res_data)
+	{
+		if (pos == end)
+			return;
+		
+		UInt8 open_char = *pos;
+		UInt8 close_char = 0;
+		switch (open_char)
+		{
+			case '[':
+				close_char = ']';
+				break;
+			case '{':
+				close_char = '}';
+				break;
+			case '"':
+				close_char = '"';
+				break;
+		}
+		
+		if (close_char != 0)
+		{
+			size_t balance = 1;	
+			char last_char = 0;
+			
+			res_data.push_back(*pos);
+			
+			++pos;
+			for (; pos != end && balance > 0; ++pos)
+			{
+				res_data.push_back(*pos);
+				
+				if (open_char == '"' && *pos == '"')
+				{
+					if (last_char != '\\')
+						break;
+				}
+				else
+				{
+					if (*pos == open_char)
+						++balance;
+					if (*pos == close_char)
+						--balance;
+				}
+				
+				if (last_char == '\\')
+					last_char = 0;
+				else
+					last_char = *pos;
+			}
+		}
+		else
+		{
+			for (; pos != end && *pos != ',' && *pos != '}'; ++pos)
+				res_data.push_back(*pos);
+		}
+	}
+};
+
+struct ExtractString
+{
+	static bool tryParseDigit(UInt8 c, UInt8 & res)
+	{
+		if ('0' <= c && c <= '9')
+		{
+			res = c - '0';
+			return true;
+		}
+		if ('A' <= c && c <= 'Z')
+		{
+			res = c - ('A' - 10);
+			return true;
+		}
+		if ('a' <= c && c <= 'z')
+		{
+			res = c - ('a' - 10);
+			return true;
+		}
+		return false;
+	}
+	
+	static bool tryUnhex(const UInt8 * pos, const UInt8 * end, int & res)
+	{
+		if (pos + 3 >= end)
+			return false;
+		
+		res = 0;
+		{
+			UInt8 major, minor;
+			if (!tryParseDigit(*(pos++), major))
+				return false;
+			if (!tryParseDigit(*(pos++), minor))
+				return false;
+			res |= (major << 4) | minor;
+		}
+		res <<= 8;
+		{
+			UInt8 major, minor;
+			if (!tryParseDigit(*(pos++), major))
+				return false;
+			if (!tryParseDigit(*(pos++), minor))
+				return false;
+			res |= (major << 4) | minor;
+		}
+		return true;
+	}
+	
+	static bool tryExtract(const UInt8 * pos, const UInt8 * end, std::vector<UInt8> & res_data)
+	{
+		if (pos == end || *pos != '"')
+			return false;
+		
+		++pos;
+		while (pos != end)
+		{
+			switch (*pos)
+			{
+				case '\\':
+					++pos;
+					if (pos >= end)
+						return false;
+
+					switch(*pos)
+					{
+						case '"':
+							res_data.push_back('"');
+							break;
+						case '\\':
+							res_data.push_back('\\');
+							break;
+						case '/':
+							res_data.push_back('/');
+							break;
+						case 'b':
+							res_data.push_back('\b');
+							break;
+						case 'f':
+							res_data.push_back('\f');
+							break;
+						case 'n':
+							res_data.push_back('\n');
+							break;
+						case 'r':
+							res_data.push_back('\r');
+							break;
+						case 't':
+							res_data.push_back('\t');
+							break;
+						case 'u':
+						{
+							++pos;
+							
+							int unicode;
+							if (!tryUnhex(pos, end, unicode))
+								return false;
+							
+							res_data.resize(res_data.size() + 6);	/// максимальный размер UTF8 многобайтовой последовательности
+							
+							Poco::UTF8Encoding utf8;
+							int length = utf8.convert(unicode, const_cast<UInt8 *>(&res_data[0]) + res_data.size() - 6, 6);
+							
+							if (!length)
+								return false;
+							
+							res_data.resize(res_data.size() - 6 + length);
+							break;
+						}
+						default:
+							res_data.push_back(*pos);
+							break;
+					}
+					++pos;
+					break;
+				case '"':
+					return true;
+				default:
+					res_data.push_back(*pos);
+					++pos;
+					break;
+			}
+		}
+		return false;
+	}
+	
+	static void extract(const UInt8 * pos, const UInt8 * end, std::vector<UInt8> & res_data)
+	{
+		size_t old_size = res_data.size();
+		
+		if (!tryExtract(pos, end, res_data))
+			res_data.resize(old_size);
 	}
 };
 
@@ -140,6 +337,45 @@ struct ExtractParamImpl
 template<typename ParamExtractor>
 struct ExtractParamToStringImpl
 {
+	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+					   std::string needle,
+					   std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
+	{
+		res_data.reserve(data.size()  / 5);
+		res_offsets.resize(offsets.size());
+		
+		/// Ищем параметр просто как подстроку вида "name":
+		needle = "\"" + needle + "\":";
+		
+		const UInt8 * begin = &data[0];
+		const UInt8 * pos = begin;
+		const UInt8 * end = pos + data.size();
+
+		/// Текущий индекс в массиве строк.
+		size_t i = 0;
+
+		/// Искать будем следующее вхождение сразу во всех строках.
+		while (pos < end && NULL != (pos = reinterpret_cast<UInt8 *>(memmem(pos, end - pos, needle.data(), needle.size()))))
+		{
+			/// Определим, к какому индексу оно относится.
+			while (begin + offsets[i] < pos)
+			{
+				res_data.push_back(0);
+				res_offsets[i] = res_data.size();
+				++i;
+			}
+
+			/// Проверяем, что вхождение не переходит через границы строк.
+			if (pos + needle.size() < begin + offsets[i])
+				ParamExtractor::extract(pos + needle.size(), begin + offsets[i], res_data);
+
+			pos = begin + offsets[i];
+			
+			res_data.push_back(0);
+			res_offsets[i] = res_data.size();
+			++i;
+		}
+	}
 };
 
 
@@ -148,6 +384,8 @@ struct NameVisitParamExtractUInt	{ static const char * get() { return "visitPara
 struct NameVisitParamExtractInt	{ static const char * get() { return "visitParamExtractInt"; } };
 struct NameVisitParamExtractFloat	{ static const char * get() { return "visitParamExtractFloat"; } };
 struct NameVisitParamExtractBool	{ static const char * get() { return "visitParamExtractBool"; } };
+struct NameVisitParamExtractRaw	{ static const char * get() { return "visitParamExtractRaw"; } };
+struct NameVisitParamExtractString	{ static const char * get() { return "visitParamExtractString"; } };
 
 
 typedef FunctionsStringSearch<ExtractParamImpl<HasParam>, NameVisitParamHas> FunctionVisitParamHas;
@@ -155,5 +393,7 @@ typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64> >, Nam
 typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Int64> >, NameVisitParamExtractInt> FunctionVisitParamExtractInt;
 typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Float64> >, NameVisitParamExtractFloat> FunctionVisitParamExtractFloat;
 typedef FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameVisitParamExtractBool> FunctionVisitParamExtractBool;
+typedef FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameVisitParamExtractRaw> FunctionVisitParamExtractRaw;
+typedef FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameVisitParamExtractString> FunctionVisitParamExtractString;
 
 }
