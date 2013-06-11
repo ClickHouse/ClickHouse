@@ -34,170 +34,6 @@
 
 namespace DB
 {
-	
-/// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
-static UInt64 readUIntText(const UInt8 * buf, const UInt8 * end)
-{
-	UInt64 x = 0;
-
-	if (buf != end && *buf == '"')
-		++buf;
-
-	while (buf != end)
-	{
-		switch (*buf)
-		{
-			case '+':
-				break;
-			case '0':
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				x *= 10;
-				x += *buf - '0';
-				break;
-			default:
-			    return x;
-		}
-		++buf;
-	}
-
-	return x;
-}
-
-
-/// Прочитать знаковое целое в простом формате из не-0-terminated строки.
-static Int64 readIntText(const UInt8 * buf, const UInt8 * end)
-{
-	bool negative = false;
-	Int64 x = 0;
-
-	if (buf != end && *buf == '"')
-		++buf;
-
-	while (buf != end)
-	{
-		switch (*buf)
-		{
-			case '+':
-				break;
-			case '-':
-				negative = true;
-				break;
-			case '0':
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				x *= 10;
-				x += *buf - '0';
-				break;
-			default:
-			    return x;
-		}
-		++buf;
-	}
-	if (negative)
-		x = -x;
-
-	return x;
-}
-
-
-/// Прочитать число с плавающей запятой в простом формате, с грубым округлением, из не-0-terminated строки.
-static double readFloatText(const UInt8 * buf, const UInt8 * end)
-{
-	bool negative = false;
-	double x = 0;
-	bool after_point = false;
-	double power_of_ten = 1;
-
-	if (buf != end && *buf == '"')
-		++buf;
-
-	while (buf != end)
-	{
-		switch (*buf)
-		{
-			case '+':
-				break;
-			case '-':
-				negative = true;
-				break;
-			case '.':
-				after_point = true;
-				break;
-			case '0':
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				if (after_point)
-				{
-					power_of_ten /= 10;
-					x += (*buf - '0') * power_of_ten;
-				}
-				else
-				{
-					x *= 10;
-					x += *buf - '0';
-				}
-				break;
-			case 'e':
-			case 'E':
-			{
-				++buf;
-				Int32 exponent = readIntText(buf, end);
-				if (exponent == 0)
-				{
-					if (negative)
-						x = -x;
-					return x;
-				}
-				else if (exponent > 0)
-				{
-					for (Int32 i = 0; i < exponent; ++i)
-						x *= 10;
-					if (negative)
-						x = -x;
-					return x;
-				}
-				else
-				{
-					for (Int32 i = 0; i < exponent; ++i)
-						x /= 10;
-					if (negative)
-						x = -x;
-					return x;
-				}
-			}
-			default:
-			    return x;
-		}
-		++buf;
-	}
-	if (negative)
-		x = -x;
-
-	return x;
-}
-
 
 struct HasParam
 {
@@ -209,39 +45,25 @@ struct HasParam
 	}
 };
 
-
-struct ExtractUInt
+template<typename NumericType>
+struct ExtractNumericType
 {
-	typedef UInt64 ResultType;
+	typedef NumericType ResultType;
 	
-	static UInt64 extract(const UInt8 * pos, const UInt8 * end)
+	static ResultType extract(const UInt8 * pos, const UInt8 * end)
 	{
-		return readUIntText(pos, end);
+		ReadBuffer in(const_cast<char *>(reinterpret_cast<const char *>(pos)), end - pos, 0);
+		
+		/// Учимся читать числа в двойных кавычках
+		if (!in.eof() && *in.position() == '"')
+			++in.position();
+		
+		ResultType x = 0;
+		if (!in.eof())
+			readText(x, in);
+		return x;
 	}
 };
-
-
-struct ExtractInt
-{
-	typedef Int64 ResultType;
-	
-	static Int64 extract(const UInt8 * pos, const UInt8 * end)
-	{
-		return readIntText(pos, end);
-	}
-};
-
-
-struct ExtractFloat
-{
-	typedef Float64 ResultType;
-	
-	static Float64 extract(const UInt8 * pos, const UInt8 * end)
-	{
-		return readFloatText(pos, end);
-	}
-};
-
 
 struct ExtractBool
 {
@@ -329,9 +151,9 @@ struct NameVisitParamExtractBool	{ static const char * get() { return "visitPara
 
 
 typedef FunctionsStringSearch<ExtractParamImpl<HasParam>, NameVisitParamHas> FunctionVisitParamHas;
-typedef FunctionsStringSearch<ExtractParamImpl<ExtractUInt>, NameVisitParamExtractUInt> FunctionVisitParamExtractUInt;
-typedef FunctionsStringSearch<ExtractParamImpl<ExtractInt>, NameVisitParamExtractInt> FunctionVisitParamExtractInt;
-typedef FunctionsStringSearch<ExtractParamImpl<ExtractFloat>, NameVisitParamExtractFloat> FunctionVisitParamExtractFloat;
+typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64> >, NameVisitParamExtractUInt> FunctionVisitParamExtractUInt;
+typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Int64> >, NameVisitParamExtractInt> FunctionVisitParamExtractInt;
+typedef FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Float64> >, NameVisitParamExtractFloat> FunctionVisitParamExtractFloat;
 typedef FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameVisitParamExtractBool> FunctionVisitParamExtractBool;
 
 }
