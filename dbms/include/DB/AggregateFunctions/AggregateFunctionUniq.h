@@ -127,4 +127,58 @@ public:
 	}
 };
 
+
+/** Принимает два аргумента - значение и условие.
+  * Приближённо считает количество различных значений, когда выполнено это условие.
+  */
+template <typename T>
+class AggregateFunctionUniqIf : public IAggregateFunctionHelper<AggregateFunctionUniqData>
+{
+public:
+	AggregateFunctionUniqIf() {}
+
+	String getName() const { return "uniqIf"; }
+	String getTypeID() const { return "uniqIf_" + TypeName<T>::get(); }
+
+	DataTypePtr getReturnType() const
+	{
+		return new DataTypeUInt64;
+	}
+
+	void setArguments(const DataTypes & arguments)
+	{
+		if (!dynamic_cast<const DataTypeUInt8 *>(&*arguments[1]))
+			throw Exception("Incorrect type " + arguments[1]->getName() + " of second argument for aggregate function " + getName() + ". Must be UInt8.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+	void add(AggregateDataPtr place, const Row & row) const
+	{
+		if (get<UInt64>(row[1]))
+			data(place).set.insert(AggregateFunctionUniqTraits<T>::hash(get<const T &>(row[0])));
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	{
+		data(place).set.merge(data(rhs).set);
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	{
+		data(place).set.write(buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	{
+		UniquesHashSet tmp_set;
+		tmp_set.read(buf);
+		data(place).set.merge(tmp_set);
+	}
+
+	Field getResult(ConstAggregateDataPtr place) const
+	{
+		return data(place).set.size();
+	}
+};
+
 }
