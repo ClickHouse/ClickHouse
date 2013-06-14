@@ -59,7 +59,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String 
 		ws.ignore(pos, end);
 
 		if (s_not.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+			
 			query->not_like = true;
+		}
 		
 		if (s_like.ignore(pos, end, expected))
 		{
