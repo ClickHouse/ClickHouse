@@ -58,6 +58,24 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "sumIf")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		String argument_type_name = argument_types[0]->getName();
+
+		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
+			|| argument_type_name == "UInt32" || argument_type_name == "UInt64")
+			return new AggregateFunctionSumIf<UInt64>;
+		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
+			|| argument_type_name == "Int32" || argument_type_name == "Int64")
+			return new AggregateFunctionSumIf<Int64>;
+		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
+			return new AggregateFunctionSumIf<Float64>;
+		else
+			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 	else if (name == "avg")
 	{
 		if (argument_types.size() != 1)
@@ -209,6 +227,17 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 		else
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 	}
+	else if (0 == type_id.compare(0, strlen("sumIf_"), "sumIf_"))
+	{
+		if (0 == type_id.compare(strlen("sumIf_"), strlen("UInt64"), "UInt64"))
+			return new AggregateFunctionSumIf<UInt64>;
+		else if (0 == type_id.compare(strlen("sumIf_"), strlen("Int64"), "Int64"))
+			return new AggregateFunctionSumIf<Int64>;
+		else if (0 == type_id.compare(strlen("sumIf_"), strlen("Float64"), "Float64"))
+			return new AggregateFunctionSumIf<Float64>;
+		else
+			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+	}
 	else if (0 == type_id.compare(0, strlen("avg_"), "avg_"))
 	{
 		if (0 == type_id.compare(strlen("avg_"), strlen("UInt64"), "UInt64"))
@@ -324,6 +353,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 		("min")
 		("max")
 		("sum")
+		("sumIf")
 		("avg")
 		("avgIf")
 		("uniq")
