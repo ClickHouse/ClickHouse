@@ -358,8 +358,6 @@ void ExpressionActions::add(const Action & action, Names & out_new_columns)
 {
 	NameSet temp_names;
 	addImpl(action, temp_names, out_new_columns);
-	
-	checkLimits(sample_block);
 }
 
 void ExpressionActions::add(const Action & action)
@@ -367,8 +365,6 @@ void ExpressionActions::add(const Action & action)
 	NameSet temp_names;
 	Names new_names;
 	addImpl(action, temp_names, new_names);
-	
-	checkLimits(sample_block);
 }
 
 void ExpressionActions::addImpl(Action action, NameSet & current_names, Names & new_names)
@@ -472,6 +468,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 	}
 	
 	optimize();
+	
+	checkLimits(sample_block);
 }
 
 std::string ExpressionActions::getID() const
