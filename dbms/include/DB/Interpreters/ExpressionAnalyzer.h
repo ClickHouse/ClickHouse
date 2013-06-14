@@ -132,7 +132,7 @@ private:
 		{
 			stack.push_back(Level());
 			stack.back().actions = new ExpressionActions(actions);
-			const NamesAndTypesList & input_columns = actions.getRequiredColumnsWithTypes();
+			const NamesAndTypesList & input_columns = actions.getSampleBlock().getColumnsList();
 			for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 				stack.back().new_columns.insert(it->first);
 		}
