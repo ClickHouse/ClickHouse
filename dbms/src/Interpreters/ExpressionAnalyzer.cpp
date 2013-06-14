@@ -752,11 +752,13 @@ void ExpressionAnalyzer::assertSelect()
 	if (!select_query)
 		throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
 }
+
 void ExpressionAnalyzer::assertAggregation()
 {
 	if (!has_aggregation)
 		throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
 }
+
 void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypesList & columns)
 {
 	if (chain.steps.empty())
