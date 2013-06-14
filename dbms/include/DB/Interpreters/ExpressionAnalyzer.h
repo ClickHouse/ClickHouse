@@ -141,12 +141,26 @@ private:
 		{
 			stack.push_back(Level());
 			Level & prev = stack[stack.size() - 2];
-			stack.back().actions = new ExpressionActions(prev.actions->getSampleBlock().getColumns(), settings);
+			
+			ColumnsWithNameAndType prev_columns = prev.actions->getSampleBlock().getColumns();
+			
+			ColumnsWithNameAndType all_columns;
+			NameSet new_names;
+			
 			for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 			{
+				all_columns.push_back(ColumnWithNameAndType(NULL, it->second, it->first));
+				new_names.insert(it->first);
 				stack.back().new_columns.insert(it->first);
-				stack.back().actions->addInput(*it);
 			}
+			
+			for (ColumnsWithNameAndType::const_iterator it = prev_columns.begin(); it != prev_columns.end(); ++it)
+			{
+				if (!new_names.count(it->name))
+					all_columns.push_back(*it);
+			}
+			
+			stack.back().actions = new ExpressionActions(all_columns, settings);
 		}
 		
 		size_t getColumnLevel(const std::string & name)
