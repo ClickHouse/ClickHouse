@@ -79,6 +79,7 @@ public:
 
 /** Принимает два аргумента - значение и условие.
   * Вычисляет среднее значений при выполнении условия.
+  * avgIf(x, cond) эквивалентно sum(cond ? x : 0) / sum(cond).
   */
 template <typename T>
 class AggregateFunctionAvgIf : public IAggregateFunctionHelper<AggregateFunctionAvgData>

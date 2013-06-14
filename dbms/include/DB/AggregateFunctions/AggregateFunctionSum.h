@@ -94,7 +94,7 @@ public:
 };
 
 
-/// Считает сумму чисел при выполнении условия.
+/// Считает сумму чисел при выполнении условия. sumIf(x, cond) эквивалентно sum(cond ? x : 0).
 template <typename T>
 class AggregateFunctionSumIf : public IAggregateFunctionHelper<AggregateFunctionSumData<T> >
 {
