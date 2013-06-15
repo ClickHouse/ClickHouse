@@ -77,7 +77,7 @@ void loadMetadata(Context & context)
 
 		executeCreateQuery("ATTACH DATABASE " + it.name(), context, it.name(), it->path());
 
-		if (0 != chdir(it->path()))
+		if (0 != chdir(it->path().c_str()))
 			throwFromErrno("Cannot chdir to " + it->path(), ErrorCodes::CANNOT_CHDIR);
 
 		/// Цикл по таблицам
