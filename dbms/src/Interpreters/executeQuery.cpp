@@ -66,6 +66,8 @@ void executeQuery(
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			ErrorCodes::SYNTAX_ERROR);
 
+	LOG_DEBUG(&Logger::get("executeQuery"), std::string(begin, pos - begin));
+
 //	formatAST(*ast, std::cerr);
 //	std::cerr << std::endl;
 
