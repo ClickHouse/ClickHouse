@@ -1,5 +1,3 @@
-#include <unistd.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
 
@@ -12,6 +10,8 @@
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/copyData.h>
+
+#include <statdaemons/Stopwatch.h>
 
 
 namespace DB
@@ -54,14 +54,6 @@ void loadMetadata(Context & context)
 	/// Здесь хранятся определения таблиц
 	String path = context.getPath() + "metadata";
 
-	/** Файлы открываются быстрее, если открывать их по относительному пути, находясь в директории, содержащей их.
-	  * Поэтому, запомним текущую рабочую директорию. Затем будем менять её для каждой БД.
-	  * В конце, поменяем обратно.
-	  */
-	std::vector<char> current_working_directory(PATH_MAX);
-	if (NULL == getcwd(&current_working_directory[0], current_working_directory.size()))
-		throwFromErrno("Cannot getcwd", ErrorCodes::CANNOT_GETCWD);
-
 	/// Цикл по базам данных
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
@@ -77,9 +69,6 @@ void loadMetadata(Context & context)
 
 		executeCreateQuery("ATTACH DATABASE " + it.name(), context, it.name(), it->path());
 
-		if (0 != chdir(it->path().c_str()))
-			throwFromErrno("Cannot chdir to " + it->path(), ErrorCodes::CANNOT_CHDIR);
-
 		/// Цикл по таблицам
 		typedef std::vector<std::string> Tables;
 		Tables tables;
@@ -93,7 +82,7 @@ void loadMetadata(Context & context)
 			if (jt.name().compare(jt.name().size() - 4, 4, ".sql"))
 				throw Exception("Incorrect file extension: " + jt.name() + " in metadata directory " + it->path(), ErrorCodes::INCORRECT_FILE_NAME);
 
-			tables.push_back(jt.name());
+			tables.push_back(jt->path());
 		}
 
 		LOG_INFO(&Logger::get("loadMetadata"), "Found " << tables.size() << " tables.");
@@ -104,31 +93,37 @@ void loadMetadata(Context & context)
 		  */
 		std::sort(tables.begin(), tables.end());
 
-		for (Tables::const_iterator jt = tables.begin(); jt != tables.end(); ++jt)
+		Stopwatch watch;
+
+		for (size_t j = 0, size = tables.size(); j < size; ++j)
 		{
+			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
+			if (j % 256 == 0 && watch.elapsedSeconds() > 5)
+			{
+				LOG_INFO(&Logger::get("loadMetadata"), std::fixed << std::setprecision(2) << j * 100.0 / size << "%");
+				watch.restart();
+			}
+			
 			String s;
 			{
 				static const size_t in_buf_size = 32768;
 				char in_buf[in_buf_size];
-				ReadBufferFromFile in(*jt, 32768, in_buf);
+				ReadBufferFromFile in(tables[j], 32768, in_buf);
 				WriteBufferFromString out(s);
 				copyData(in, out);
 			}
 
 			try
 			{
-				executeCreateQuery(s, context, it.name(), *jt);
+				executeCreateQuery(s, context, it.name(), tables[j]);
 			}
 			catch (const DB::Exception & e)
 			{
-				throw Exception("Cannot create table from metadata file " + *jt + ", error: " + e.displayText(),
+				throw Exception("Cannot create table from metadata file " + tables[j] + ", error: " + e.displayText(),
 					ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 			}
 		}
 	}
-
-	if (0 != chdir(&current_working_directory[0]))
-		throwFromErrno("Cannot chdir to " + std::string(&current_working_directory[0]), ErrorCodes::CANNOT_CHDIR);
 }
 
 
