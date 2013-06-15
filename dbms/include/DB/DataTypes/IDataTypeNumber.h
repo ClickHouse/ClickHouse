@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath> /// std::isfinite
+
 #include <DB/DataTypes/IDataType.h>
 
 #include <DB/IO/ReadHelpers.h>
@@ -77,6 +79,22 @@ template <> inline void IDataTypeNumber<UInt64>::serializeTextJSON(const Field &
 	writeChar('"', ostr);
 }
 
+template <> inline void IDataTypeNumber<Float32>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	if (likely(std::isfinite(get<Float64>(field))))
+		serializeText(field, ostr);
+	else
+		writeCString("null", ostr);
+}
+
+template <> inline void IDataTypeNumber<Float64>::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+{
+	if (likely(std::isfinite(get<Float64>(field))))
+		serializeText(field, ostr);
+	else
+		writeCString("null", ostr);
+}
+
 template <typename FType> inline void IDataTypeNumber<FType>::deserializeText(Field & field, ReadBuffer & istr) const
 {
 	typename NearestFieldType<FieldType>::Type x;
@@ -90,6 +108,7 @@ template <> inline void IDataTypeNumber<Float64>::deserializeText(Field & field,
 	readText(x, istr);
 	field = x;
 }
+
 template <> inline void IDataTypeNumber<Float32>::deserializeText(Field & field, ReadBuffer & istr) const
 {
 	Float64 x;
