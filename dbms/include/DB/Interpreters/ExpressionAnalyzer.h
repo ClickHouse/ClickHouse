@@ -105,7 +105,7 @@ private:
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
 	
-	typedef std::set<ASTPtr> SetOfASTs;
+	typedef std::set<IAST *> SetOfASTs;
 	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 	
 	/** Для getActionsImpl.
