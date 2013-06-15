@@ -39,7 +39,7 @@ void StorageChunkRef::dropImpl()
 StorageChunkRef::StorageChunkRef(const std::string & name_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
 	: source_database_name(source_database_name_), source_table_name(source_table_name_), name(name_), context(context_)
 {
-	if (!attach)	/// TODO: не понял, как гарантируется правильность учёта ссылок при старте сервера.
+	if (!attach)
 		getSource().addReference();
 }
 
