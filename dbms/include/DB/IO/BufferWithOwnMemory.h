@@ -21,7 +21,7 @@ namespace detail
 		char * m_data;
 
 		Memory() : m_capacity(0), m_size(0), m_data(NULL) {}
-		Memory(size_t size_) : m_capacity(size_), m_size(m_capacity), m_data(new char[m_capacity]) {}
+		Memory(size_t size_) : m_capacity(size_), m_size(m_capacity), m_data(size_ ? new char[m_capacity] : NULL) {}
 
 		~Memory()
 		{
@@ -57,7 +57,7 @@ namespace detail
 }
 
 
-/** Буфер, который сам владеет своим куском памяти для работы.
+/** Буфер, который может сам владеть своим куском памяти для работы.
   * Аргумент шаблона - ReadBuffer или WriteBuffer
   */
 template <typename Base>
@@ -66,9 +66,10 @@ class BufferWithOwnMemory : public Base
 protected:
 	detail::Memory memory;
 public:
-	BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE) : Base(NULL, 0), memory(size)
+	/// Если передать не-NULL existing_memory, то буфер не будет создавать свой кусок памяти, а будет использовать существующий (и не будет им владеть).
+	BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = NULL) : Base(NULL, 0), memory(existing_memory ? 0 : size)
 	{
-		Base::set(&memory[0], size);
+		Base::set(existing_memory ? existing_memory : &memory[0], size);
 	}
 };
 

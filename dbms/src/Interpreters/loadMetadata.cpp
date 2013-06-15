@@ -79,7 +79,9 @@ void loadMetadata(Context & context)
 
 			String s;
 			{
-				ReadBufferFromFile in(jt->path(), 32768);
+				static const size_t in_buf_size = 32768;
+				char in_buf[in_buf_size];
+				ReadBufferFromFile in(jt->path(), 32768, in_buf);
 				WriteBufferFromString out(s);
 				copyData(in, out);
 			}

@@ -53,8 +53,8 @@ protected:
 	}
 
 public:
-	ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<ReadBuffer>(buf_size), fd(fd_) {}
+	ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = NULL)
+		: BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory), fd(fd_) {}
 
 	int getFD()
 	{
