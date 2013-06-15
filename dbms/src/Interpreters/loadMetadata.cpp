@@ -63,6 +63,8 @@ void loadMetadata(Context & context)
 		if (it.name().at(0) == '.')
 			continue;
 
+		LOG_INFO(&Logger::get("loadMetadata"), "Loading database " << it.name());
+
 		executeCreateQuery("ATTACH DATABASE " + it.name(), context, it.name(), it->path());
 
 		/// Цикл по таблицам
