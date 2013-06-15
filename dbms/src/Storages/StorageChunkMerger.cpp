@@ -202,7 +202,7 @@ void StorageChunkMerger::mergeThread()
 	}
 }
 
-static std::string MakeName(const std::string & prefix, const std::string & first_chunk, const std::string & last_chunk)
+static std::string makeName(const std::string & prefix, const std::string & first_chunk, const std::string & last_chunk)
 {
 	size_t lcp = 0; /// Длина общего префикса имен чанков.
 	while (lcp < first_chunk.size() && lcp < last_chunk.size() && first_chunk[lcp] == last_chunk[lcp])
@@ -251,7 +251,7 @@ StorageChunkMerger::Storages StorageChunkMerger::selectChunksToMerge()
 	return res;
 }
 
-static ASTPtr NewIdentifier(const std::string & name, ASTIdentifier::Kind kind)
+static ASTPtr newIdentifier(const std::string & name, ASTIdentifier::Kind kind)
 {
 	ASTIdentifier * res = new ASTIdentifier;
 	res->name = name;
@@ -259,7 +259,7 @@ static ASTPtr NewIdentifier(const std::string & name, ASTIdentifier::Kind kind)
 	return res;
 }
 
-static std::string FormatColumnsForCreateQuery(NamesAndTypesList & columns)
+static std::string formatColumnsForCreateQuery(NamesAndTypesList & columns)
 {
 	std::string res;
 	res += "(";
@@ -307,9 +307,9 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		}
 	}
 	
-	std::string formatted_columns = FormatColumnsForCreateQuery(*required_columns);
+	std::string formatted_columns = formatColumnsForCreateQuery(*required_columns);
 	
-	std::string new_table_name = MakeName(destination_name_prefix, chunks[0]->getTableName(), chunks.back()->getTableName());
+	std::string new_table_name = makeName(destination_name_prefix, chunks[0]->getTableName(), chunks.back()->getTableName());
 	std::string new_table_full_name = destination_database + "." + new_table_name;
 	StoragePtr new_storage_ptr;
 	
@@ -386,14 +386,14 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			ASTPtr select_expression_list;
 			ASTPtr database;
 			ASTPtr table;	/// Идентификатор или подзапрос (рекурсивно ASTSelectQuery)
-			select_query->database = NewIdentifier(source_database, ASTIdentifier::Database);
-			select_query->table = NewIdentifier(src_storage->getTableName(), ASTIdentifier::Table);
+			select_query->database = newIdentifier(source_database, ASTIdentifier::Database);
+			select_query->table = newIdentifier(src_storage->getTableName(), ASTIdentifier::Table);
 			ASTExpressionList * select_list = new ASTExpressionList;
 			select_query->select_expression_list = select_list;
 			for (NamesAndTypesList::const_iterator it = src_columns.begin(); it != src_columns.end(); ++it)
 			{
 				src_column_names.push_back(it->first);
-				select_list->children.push_back(NewIdentifier(it->first, ASTIdentifier::Column));
+				select_list->children.push_back(newIdentifier(it->first, ASTIdentifier::Column));
 			}
 			
 			QueryProcessingStage::Enum processed_stage;
@@ -456,8 +456,8 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 						ASTExpressionList * engine_params = new ASTExpressionList;
 						ast_storage->parameters = engine_params;
 						ast_storage->children.push_back(ast_storage->parameters);
-						engine_params->children.push_back(NewIdentifier(destination_database, ASTIdentifier::Database));
-						engine_params->children.push_back(NewIdentifier(new_table_name, ASTIdentifier::Table));
+						engine_params->children.push_back(newIdentifier(destination_database, ASTIdentifier::Database));
+						engine_params->children.push_back(newIdentifier(new_table_name, ASTIdentifier::Table));
 						
 						InterpreterCreateQuery interpreter_create(create_query_ptr, context);
 						interpreter_create.execute();
