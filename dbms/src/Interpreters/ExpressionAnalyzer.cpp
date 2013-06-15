@@ -295,10 +295,6 @@ void ExpressionAnalyzer::normalizeTree()
 /// in_sign_rewritten - находимся ли мы в поддереве, полученном в результате sign rewrite
 void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, bool in_sign_rewritten)
 {
-	if (current_asts.count(ast))
-	{
-		throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
-	}
 	if (finished_asts.count(ast))
 	{
 		ast = finished_asts[ast];
@@ -307,7 +303,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	
 	ASTPtr initial_ast = ast;
 	current_asts.insert(initial_ast);
-	
+
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	
 	if (!in_sign_rewritten && !sign_column_name.empty())
@@ -336,6 +332,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			if (jt != aliases.end())
 			{
 				/// Заменим его на соответствующий узел дерева
+				if (current_asts.count(jt->second))
+					throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 				ast = jt->second;
 			}
 			else
