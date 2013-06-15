@@ -28,7 +28,7 @@ namespace DB
 {
 
 
-static std::string * GetAlias(ASTPtr & ast)
+static std::string * getAlias(ASTPtr & ast)
 {
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
@@ -113,7 +113,7 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
 			createAliasesDict(*it);
 	
-	std::string * alias = GetAlias(ast);
+	std::string * alias = getAlias(ast);
 	if (alias && !alias->empty())
 	{
 		if (aliases.count(*alias) && ast->getTreeID() != aliases[*alias]->getTreeID())
