@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
 
@@ -52,6 +54,14 @@ void loadMetadata(Context & context)
 	/// Здесь хранятся определения таблиц
 	String path = context.getPath() + "metadata";
 
+	/** Файлы открываются быстрее, если открывать их по относительному пути, находясь в директории, содержащей их.
+	  * Поэтому, запомним текущую рабочую директорию. Затем будем менять её для каждой БД.
+	  * В конце, поменяем обратно.
+	  */
+	std::vector<char> current_working_directory(PATH_MAX);
+	if (NULL == getcwd(&current_working_directory[0], current_working_directory.size()))
+		throwFromErrno("Cannot getcwd", ErrorCodes::CANNOT_GETCWD);
+
 	/// Цикл по базам данных
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
@@ -67,6 +77,9 @@ void loadMetadata(Context & context)
 
 		executeCreateQuery("ATTACH DATABASE " + it.name(), context, it.name(), it->path());
 
+		if (0 != chdir(it->path()))
+			throwFromErrno("Cannot chdir to " + it->path(), ErrorCodes::CANNOT_CHDIR);
+
 		/// Цикл по таблицам
 		for (Poco::DirectoryIterator jt(it->path()); jt != dir_end; ++jt)
 		{
@@ -81,7 +94,7 @@ void loadMetadata(Context & context)
 			{
 				static const size_t in_buf_size = 32768;
 				char in_buf[in_buf_size];
-				ReadBufferFromFile in(jt->path(), 32768, in_buf);
+				ReadBufferFromFile in(jt.name(), 32768, in_buf);
 				WriteBufferFromString out(s);
 				copyData(in, out);
 			}
@@ -97,6 +110,9 @@ void loadMetadata(Context & context)
 			}
 		}
 	}
+
+	if (0 != chdir(&current_working_directory[0]))
+		throwFromErrno("Cannot chdir to " + std::string(&current_working_directory[0]), ErrorCodes::CANNOT_CHDIR);
 }
 
 
