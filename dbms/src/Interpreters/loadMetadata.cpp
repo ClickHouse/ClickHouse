@@ -81,6 +81,9 @@ void loadMetadata(Context & context)
 			throwFromErrno("Cannot chdir to " + it->path(), ErrorCodes::CANNOT_CHDIR);
 
 		/// Цикл по таблицам
+		typedef std::vector<std::string> Tables;
+		Tables tables;
+			
 		for (Poco::DirectoryIterator jt(it->path()); jt != dir_end; ++jt)
 		{
 			if (jt.name() == ".svn")
@@ -90,22 +93,35 @@ void loadMetadata(Context & context)
 			if (jt.name().compare(jt.name().size() - 4, 4, ".sql"))
 				throw Exception("Incorrect file extension: " + jt.name() + " in metadata directory " + it->path(), ErrorCodes::INCORRECT_FILE_NAME);
 
+			tables.push_back(jt.name());
+		}
+
+		LOG_INFO(&Logger::get("loadMetadata"), "Found " << tables.size() << " tables.");
+
+		/** Таблицы быстрее грузятся, если их грузить в сортированном (по именам) порядке.
+		  * Иначе (для файловой системы ext4) DirectoryIterator перебирает их в некотором порядке,
+		  *  который не соответствует порядку создания таблиц и не соответствует порядку их расположения на диске.
+		  */
+		std::sort(tables.begin(), tables.end());
+
+		for (Tables::const_iterator jt = tables.begin(); jt != tables.end(); ++jt)
+		{
 			String s;
 			{
 				static const size_t in_buf_size = 32768;
 				char in_buf[in_buf_size];
-				ReadBufferFromFile in(jt.name(), 32768, in_buf);
+				ReadBufferFromFile in(*jt, 32768, in_buf);
 				WriteBufferFromString out(s);
 				copyData(in, out);
 			}
 
 			try
 			{
-				executeCreateQuery(s, context, it.name(), jt->path());
+				executeCreateQuery(s, context, it.name(), *jt);
 			}
 			catch (const DB::Exception & e)
 			{
-				throw Exception("Cannot create table from metadata file " + jt->path() + ", error: " + e.displayText(),
+				throw Exception("Cannot create table from metadata file " + *jt + ", error: " + e.displayText(),
 					ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 			}
 		}
