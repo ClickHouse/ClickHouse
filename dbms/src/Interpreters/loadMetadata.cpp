@@ -1,3 +1,5 @@
+#include <iomanip>
+
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
 
