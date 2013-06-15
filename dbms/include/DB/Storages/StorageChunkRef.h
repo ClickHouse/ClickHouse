@@ -12,12 +12,12 @@ namespace DB
 class StorageChunkRef : public IStorage
 {
 public:
-	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
+	static StoragePtr create(const std::string & name_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
 	
 	std::string getName() const { return "ChunkRef"; }
 	std::string getTableName() const { return name; }
 	
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsList() const { return getSource().getColumnsList(); }
 	
 	BlockInputStreams read(
 		const Names & column_names,
@@ -34,12 +34,13 @@ public:
 	
 private:
 	String name;
-	NamesAndTypesListPtr columns;
 	const Context & context;
 	
-	StorageChunkRef(const std::string & name_, NamesAndTypesListPtr columns_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
-	
-	StorageChunks * getSource();
+	StorageChunkRef(const std::string & name_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
+
+	/// TODO: может быть, можно просто хранить указатель на родительскую таблицу?
+	StorageChunks & getSource();
+	const StorageChunks & getSource() const;
 };
 	
 }

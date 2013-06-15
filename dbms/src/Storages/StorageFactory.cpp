@@ -62,7 +62,7 @@ StoragePtr StorageFactory::get(
 		String source_database	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		String source_table		= dynamic_cast<ASTIdentifier &>(*args[1]).name;
 		
-		return StorageChunkRef::create(table_name, columns, context, source_database, source_table, attach);
+		return StorageChunkRef::create(table_name, context, source_database, source_table, attach);
 	}
 	else if (name == "ChunkMerger")
 	{
