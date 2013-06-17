@@ -6,6 +6,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
 #include <Poco/NumberParser.h>
+#include <Poco/ConsoleChannel.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -26,6 +27,9 @@ int main(int argc, char ** argv)
 {
 	try
 	{
+		Logger::root().setChannel(new Poco::ConsoleChannel(std::cout));
+		Logger::root().setLevel("trace");
+		
 		/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 		Yandex::DateLUTSingleton::instance();
 		

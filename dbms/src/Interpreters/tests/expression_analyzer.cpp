@@ -1,6 +1,7 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ExpressionListParsers.h>
 
 using namespace DB;
 
@@ -27,14 +28,22 @@ int main(int argc, char ** argv)
 		columns.push_back(col);
 	}
 	
-	ParserSelectQuery parser;
-	const char * pos = argv[1];
-	const char * end = argv[1] + strlen(argv[1]);
 	ASTPtr root;
-	std::string expected;
-	if (!parser.parse(pos ,end, root, expected))
+	ParserPtr parsers[] = {new ParserSelectQuery, new ParserExpressionList};
+	for (size_t i = 0; i < sizeof(parsers)/sizeof(parsers[0]); ++i)
 	{
-		std::cerr << "expected " << expected << std::endl;
+		IParser & parser = *parsers[i];
+		const char * pos = argv[1];
+		const char * end = argv[1] + strlen(argv[1]);
+		std::string expected;
+		if (parser.parse(pos ,end, root, expected))
+			break;
+		else
+			root = NULL;
+	}
+	if (!root)
+	{
+		std::cerr << "invalid expression (should be select query or expression list)" << std::endl;
 		return 2;
 	}
 	
