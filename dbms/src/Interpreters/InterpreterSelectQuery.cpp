@@ -210,6 +210,11 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			final_projection = chain.getLastActions();
 			chain.finalize();
 			
+			/// Если предыдущая стадия запроса выполнялась отдельно, нам могли дать лишних столбцов (например, используемых только в секции WHERE).
+			/// Уберем их. Они могут существенно мешать, например, при arrayJoin.
+			if (from_stage == QueryProcessingStage::WithMergeableState)
+				before_order_and_select->prependProjectInput();
+			
 			/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
 			if (has_having)
 				before_having->prependProjectInput();
