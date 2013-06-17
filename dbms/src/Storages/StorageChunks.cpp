@@ -98,8 +98,19 @@ StorageChunks::StorageChunks(
 	loadIndex();
 
 	/// Создадим все таблицы типа ChunkRef. Они должны располагаться в той же БД.
-	for (ChunkIndices::const_iterator it = chunk_indices.begin(); it != chunk_indices.end(); ++it)
-		context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+		for (ChunkIndices::const_iterator it = chunk_indices.begin(); it != chunk_indices.end(); ++it)
+		{
+			if (context.isTableExist(database_name, it->first))
+			{
+				LOG_ERROR(log, "Chunk " << it->first << " exists in more than one Chunks tables.");
+				context.detachTable(database_name, it->first);
+			}
+
+			context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
+		}
+	}
 }
 	
 void StorageChunks::loadIndex()
