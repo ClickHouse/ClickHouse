@@ -188,9 +188,20 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 	/// Здесь хранится определение таблицы
 	String metadata_path = shared->path + "metadata/" + escapeForFileName(db) + "/" + escapeForFileName(table_name) + ".sql";
+	
 	if (!Poco::File(metadata_path).exists())
-		throw Exception("Metadata file " + metadata_path + " for table " + db + "." + table_name + " doesn't exist.",
-			ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
+	{
+		try
+		{
+			/// Если файл .sql не предусмотрен (например, для таблиц типа ChunkRef), то движок может сам предоставить запрос CREATE.
+			return getTable(database_name, table_name)->getCustomCreateQuery(*this);
+		}
+		catch (...)
+		{
+			throw Exception("Metadata file " + metadata_path + " for table " + db + "." + table_name + " doesn't exist.",
+				ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
+		}
+	}
 
 	StringPtr query = new String();
 	{

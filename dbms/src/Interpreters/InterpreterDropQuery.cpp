@@ -57,7 +57,9 @@ void InterpreterDropQuery::execute()
 				table->database_to_drop = database_dropper;
 				table->drop();
 
-				Poco::File(metadata_path).remove();
+				/// Для таблиц типа ChunkRef, файла с метаданными не существует.
+				if (Poco::File(metadata_path).exists())
+					Poco::File(metadata_path).remove();
 			}
 
 			/// Удаляем информацию о таблице из оперативки

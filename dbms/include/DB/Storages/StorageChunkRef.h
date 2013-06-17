@@ -26,6 +26,8 @@ public:
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
+
+	ASTPtr getCustomCreateQuery(const Context & context) const;
 	
 	void dropImpl();
 	

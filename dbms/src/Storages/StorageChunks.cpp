@@ -1,4 +1,5 @@
 #include <DB/Storages/StorageChunks.h>
+#include <DB/Storages/StorageChunkRef.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -43,8 +44,6 @@ BlockInputStreams StorageChunks::readFromChunk(
 	size_t max_block_size,
 	unsigned threads)
 {
-	loadIndex();
-	
 	size_t mark1;
 	size_t mark2;
 	
@@ -54,8 +53,8 @@ BlockInputStreams StorageChunks::readFromChunk(
 		if (!chunk_indices.count(chunk_name))
 			throw Exception("No chunk " + chunk_name + " in table " + name, ErrorCodes::CHUNK_NOT_FOUND);
 		size_t index = chunk_indices[chunk_name];
-		mark1 = marks[index];
-		mark2 = index + 1 == marks.size() ? marksCount() : marks[index + 1];
+		mark1 = chunk_num_to_marks[index];
+		mark2 = index + 1 == chunk_num_to_marks.size() ? marksCount() : chunk_num_to_marks[index + 1];
 	}
 	
 	return read(mark1, mark2, column_names, query, settings, processed_stage, max_block_size, threads);
@@ -64,18 +63,16 @@ BlockInputStreams StorageChunks::readFromChunk(
 BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 	const std::string & chunk_name)
 {
-	loadIndex();
-	
 	{
 		Poco::ScopedWriteRWLock lock(rwlock);
-		
+
 		if (chunk_indices.count(chunk_name))
 			throw Exception("Duplicate chunk name in table " + name, ErrorCodes::DUPLICATE_CHUNK_NAME);
-		
+
 		size_t mark = marksCount();
-		chunk_indices[chunk_name] = marks.size();
+		chunk_indices[chunk_name] = chunk_num_to_marks.size();
 		appendChunkToIndex(chunk_name, mark);
-		marks.push_back(mark);
+		chunk_num_to_marks.push_back(mark);
 	}
 	
 	return StorageLog::write(NULL);
@@ -91,22 +88,25 @@ StorageChunks::StorageChunks(
 	:
 	StorageLog(path_, name_, columns_),
 	database_name(database_name_),
-	index_loaded(false),
 	reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"),
 	context(context_),
 	log(&Logger::get("StorageChunks"))
 {
 	if (!attach)
 		reference_counter.add(1, true);
+
+	loadIndex();
+
+	/// Создадим все таблицы типа ChunkRef. Они должны располагаться в той же БД.
+	for (ChunkIndices::const_iterator it = chunk_indices.begin(); it != chunk_indices.end(); ++it)
+		context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
 }
 	
 void StorageChunks::loadIndex()
 {
 	loadMarks();
+
 	Poco::ScopedWriteRWLock lock(rwlock);
-	if (index_loaded)
-		return;
-	index_loaded = true;
 	
 	String index_path = path + escapeForFileName(name) + "/chunks.chn";
 	
@@ -122,8 +122,8 @@ void StorageChunks::loadIndex()
 		readStringBinary(name, index);
 		readIntBinary<UInt64>(mark, index);
 		
-		chunk_indices[name] = marks.size();
-		marks.push_back(mark);
+		chunk_indices[name] = chunk_num_to_marks.size();
+		chunk_num_to_marks.push_back(mark);
 	}
 }
 

@@ -19,6 +19,8 @@
 namespace DB
 {
 
+class Context;
+
 
 /** Хранилище. Отвечает за:
   * - хранение данных таблицы;
@@ -83,7 +85,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1)
 	{
-		throw Exception("Method read() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Пишет данные в таблицу.
@@ -93,7 +95,7 @@ public:
 	virtual BlockOutputStreamPtr write(
 		ASTPtr query)
 	{
-		throw Exception("Method write() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Удалить данные таблицы. После вызова этого метода, использование объекта некорректно (его можно лишь уничтожить).
@@ -114,7 +116,7 @@ public:
 	  */
 	virtual void rename(const String & new_path_to_db, const String & new_name)
 	{
-		throw Exception("Method rename() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		throw Exception("Method rename is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
@@ -122,7 +124,7 @@ public:
 	  */
 	virtual void alter(NamesAndTypesListPtr columns)
 	{
-		throw Exception("Method alter() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
@@ -130,9 +132,19 @@ public:
 	  */
 	virtual bool optimize()
 	{
-		throw Exception("Method optimize() is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	/** Получить запрос CREATE TABLE, который описывает данную таблицу.
+	  * Обычно этот запрос хранится и достаётся из .sql файла из директории с метаданными.
+	  * Этот метод используется и имеет смысл только если для таблицы не создаётся .sql файл
+	  *  - то есть, только для таблиц, которые создаются не пользователем, а самой системой - например, для таблиц типа ChunkRef.
+	  */
+	virtual ASTPtr getCustomCreateQuery(const Context & context) const
+	{
+		throw Exception("Method getCustomCreateQuery is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+	
 	virtual ~IStorage() {}
 
 	/** Проверить, что все запрошенные имена есть в таблице и заданы корректно.

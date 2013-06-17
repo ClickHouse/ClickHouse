@@ -12,7 +12,8 @@ namespace DB
   * Запись не поддерживается. Для записи используются таблицы типа ChunkMerger.
   * Таблицы типа ChunkRef могут ссылаться на отдельные куски внутри таблицы типа Chunks.
   * Хранит количество ссылающихся таблиц ChunkRef и удаляет себя, когда оно становится нулевым.
-  * После создания счетчик ссылок имеет значение 1.
+  * Сразу после создания CREATE-ом, счетчик ссылок имеет значение 1
+  *  (потом, движок ChunkMerger добавляет ссылки от созданных ChunkRef-ов и затем вычитает 1).
   */
 class StorageChunks : public StorageLog
 {
@@ -54,13 +55,14 @@ public:
 		throw Exception("Table doesn't support renaming", ErrorCodes::NOT_IMPLEMENTED);
 	}
 private:
-	typedef std::vector<size_t> Marks;
+	/// Имя чанка - номер (в последовательности, как чанки записаны в таблице).
 	typedef std::map<String, size_t> ChunkIndices;
+	/// Номер чанка - засечка, с которой начинаются данные таблицы.
+	typedef std::vector<size_t> ChunkNumToMark;
 	
 	String database_name;
 	
-	bool index_loaded;
-	Marks marks;
+	ChunkNumToMark chunk_num_to_marks;
 	ChunkIndices chunk_indices;
 	
 	CounterInFile reference_counter;

@@ -32,12 +32,11 @@ StoragePtr StorageChunkMerger::create(
 	NamesAndTypesListPtr columns_,
 	const String & source_database_,
 	const String & table_name_regexp_,
-	const std::string & destination_database_,
 	const std::string & destination_name_prefix_,
 	size_t chunks_to_merge_,
 	Context & context_)
 {
-	return (new StorageChunkMerger(this_database_, name_, columns_, source_database_, table_name_regexp_, destination_database_, destination_name_prefix_, chunks_to_merge_, context_))->thisPtr();
+	return (new StorageChunkMerger(this_database_, name_, columns_, source_database_, table_name_regexp_, destination_name_prefix_, chunks_to_merge_, context_))->thisPtr();
 }
 
 BlockInputStreams StorageChunkMerger::read(
@@ -135,12 +134,11 @@ StorageChunkMerger::StorageChunkMerger(
 	NamesAndTypesListPtr columns_,
 	const String & source_database_,
 	const String & table_name_regexp_,
-	const std::string & destination_database_,
 	const std::string & destination_name_prefix_,
 	size_t chunks_to_merge_,
 	Context & context_)
 	: this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
-	table_name_regexp(table_name_regexp_), destination_database(destination_database_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_), context(context_),
+	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_), context(context_),
 	thread_should_quit(false), merge_thread(&StorageChunkMerger::mergeThread, this), log(&Logger::get("StorageChunkMerger"))
 {
 }
@@ -309,8 +307,8 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 	
 	std::string formatted_columns = formatColumnsForCreateQuery(*required_columns);
 	
-	std::string new_table_name = makeName(destination_name_prefix, chunks[0]->getTableName(), chunks.back()->getTableName());
-	std::string new_table_full_name = destination_database + "." + new_table_name;
+	std::string new_table_name = makeName(destination_name_prefix, chunks.front()->getTableName(), chunks.back()->getTableName());
+	std::string new_table_full_name = source_database + "." + new_table_name;
 	StoragePtr new_storage_ptr;
 	
 	try
@@ -318,8 +316,8 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 			
-			if (!context.getDatabases().count(destination_database))
-				throw Exception("Destination database " + destination_database + " for table " + name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+			if (!context.getDatabases().count(source_database))
+				throw Exception("Destination database " + source_database + " for table " + name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 			
 			LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << " to new table " << new_table_name << ".");
 			
@@ -334,7 +332,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
 			ASTDropQuery * drop_ast = new ASTDropQuery;
 			ASTPtr drop_ptr = drop_ast;
-			drop_ast->database = destination_database;
+			drop_ast->database = source_database;
 			drop_ast->detach = false;
 			drop_ast->if_exists = true;
 			drop_ast->table = new_table_name;
@@ -342,7 +340,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			drop_interpreter.execute();
 			
 			/// Составим запрос для создания Chunks таблицы.
-			std::string create_query = "CREATE TABLE " + destination_database + "." + new_table_name + " " + formatted_columns + " ENGINE = Chunks";
+			std::string create_query = "CREATE TABLE " + source_database + "." + new_table_name + " " + formatted_columns + " ENGINE = Chunks";
 			
 			/// Распарсим запрос.
 			const char * begin = create_query.data();
@@ -369,12 +367,12 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		}
 		
 		/// Скопируем данные в новую таблицу.
-		StorageChunks * new_storage = dynamic_cast<StorageChunks *>(&*new_storage_ptr);
+		StorageChunks & new_storage = dynamic_cast<StorageChunks &>(*new_storage_ptr);
 		
 		for (size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index)
 		{
 			StoragePtr src_storage = chunks[chunk_index];
-			BlockOutputStreamPtr output = new_storage->writeToNewChunk(src_storage->getTableName());
+			BlockOutputStreamPtr output = new_storage.writeToNewChunk(src_storage->getTableName());
 			
 			const NamesAndTypesList & src_columns = src_storage->getColumnsList();
 			Names src_column_names;
@@ -424,11 +422,8 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 					std::string src_name = src_storage->getTableName();
 					
 					/// Если таблицу успели удалить, ничего не делаем.
-					if (!context.getDatabases()[source_database].count(src_storage->getTableName()))
+					if (!context.getDatabases()[source_database].count(src_name))
 						continue;
-					
-					/// Перед удалением таблицы запомним запрос для ее создания.
-					ASTPtr create_query_ptr = context.getCreateQuery(source_database, src_storage->getTableName());
 					
 					/// Роняем исходную таблицу.
 					ASTDropQuery * drop_query = new ASTDropQuery();
@@ -436,33 +431,17 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 					drop_query->detach = false;
 					drop_query->if_exists = false;
 					drop_query->database = source_database;
-					drop_query->table = src_storage->getTableName();
+					drop_query->table = src_name;
 					
 					InterpreterDropQuery interpreter_drop(drop_query_ptr, context);
 					interpreter_drop.execute();
 					
 					/// Создаем на ее месте ChunkRef
-					///  (если бы ChunkRef хранил что-то в директории с данными, тут возникли бы проблемы, потому что данные src_storage еще не удалены).
 					try
 					{
-						ASTCreateQuery * create_query = dynamic_cast<ASTCreateQuery *>(&*create_query_ptr);
-						create_query->attach = false;
-						create_query->if_not_exists = false;
-						
-						ASTFunction * ast_storage = new ASTFunction;
-						create_query->storage = ast_storage;
-						ast_storage->name = "ChunkRef";
-						
-						ASTExpressionList * engine_params = new ASTExpressionList;
-						ast_storage->parameters = engine_params;
-						ast_storage->children.push_back(ast_storage->parameters);
-						engine_params->children.push_back(newIdentifier(destination_database, ASTIdentifier::Database));
-						engine_params->children.push_back(newIdentifier(new_table_name, ASTIdentifier::Table));
-						
-						InterpreterCreateQuery interpreter_create(create_query_ptr, context);
-						interpreter_create.execute();
+						context.addTable(source_database, src_name, StorageChunkRef::create(src_name, context, source_database, new_table_name, false));
 					}
-					catch(...)
+					catch (...)
 					{
 						LOG_ERROR(log, "Chunk " + src_name + " was removed but not replaced. Its data is stored in table " << new_table_name << ". You may need to resolve this manually.");
 						
@@ -470,11 +449,11 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 					}
 				}
 			}
-			
+
 			currently_written_groups.erase(new_table_full_name);
 		}
 
-		new_storage->removeReference();
+		new_storage.removeReference();
 
 		LOG_TRACE(log, "Merged chunks.");
 		

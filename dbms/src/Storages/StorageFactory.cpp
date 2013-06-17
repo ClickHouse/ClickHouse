@@ -45,24 +45,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "ChunkRef")
 	{
-		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
-		
-		if (args_func.size() != 1)
-			throw Exception("Storage ChunkRef requires exactly 2 parameters"
-			" - names of source database and source table.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
-		
-		if (args.size() != 2)
-			throw Exception("Storage ChunkRef requires exactly 2 parameters"
-			" - names of source database and source table.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		String source_database	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String source_table		= dynamic_cast<ASTIdentifier &>(*args[1]).name;
-		
-		return StorageChunkRef::create(table_name, context, source_database, source_table, attach);
+		throw Exception("Table with storage ChunkRef must not be created manually.", ErrorCodes::TABLE_MUST_NOT_BE_CREATED_MANUALLY);
 	}
 	else if (name == "ChunkMerger")
 	{
@@ -75,7 +58,7 @@ StoragePtr StorageFactory::get(
 			
 			ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 			
-			if (args.size() < 3 || args.size() > 5)
+			if (args.size() < 3 || args.size() > 4)
 				break;
 			
 			String source_database = dynamic_cast<ASTIdentifier &>(*args[0]).name;
@@ -87,14 +70,12 @@ StoragePtr StorageFactory::get(
 			
 			if (args.size() > 3)
 				destination_name_prefix = dynamic_cast<ASTIdentifier &>(*args[3]).name;
-			if (args.size() > 4)
-				destination_database = dynamic_cast<ASTIdentifier &>(*args[4]).name;
 			
-			return StorageChunkMerger::create(database_name, table_name, columns, source_database, source_table_name_regexp, destination_database, destination_name_prefix, chunks_to_merge, context);
+			return StorageChunkMerger::create(database_name, table_name, columns, source_database, source_table_name_regexp, destination_name_prefix, chunks_to_merge, context);
 		} while(false);
 		
-		throw Exception("Storage ChunkMerger requires from 3 to 5 parameters:"
-			" source database, regexp for source table names, number of chunks to merge, [destination tables name prefix, [destination database]].",
+		throw Exception("Storage ChunkMerger requires from 3 to 4 parameters:"
+			" source database, regexp for source table names, number of chunks to merge, [destination tables name prefix].",
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 	}
 	else if (name == "TinyLog")

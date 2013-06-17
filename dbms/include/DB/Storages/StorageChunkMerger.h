@@ -12,7 +12,6 @@ namespace DB
 /** То и дело объединяет таблицы, подходящие под регэксп, в таблицы типа Chunks.
   * После объндинения заменяет исходные таблицы таблицами типа ChunkRef.
   * При чтении ведет себя как таблица типа Merge.
-  * Внимание: если в объединяемых таблицах были лишние столбцы, данные из этих столбцов потеряются при слиянии.
   */
 class StorageChunkMerger : public IStorage
 {
@@ -23,7 +22,6 @@ public:
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
-		const std::string & destination_database_, /// БД для создаваемых таблиц типа Chunks.
 		const std::string & destination_name_prefix_, /// Префикс имен создаваемых таблиц типа Chunks.
 		size_t chunks_to_merge_,			/// Сколько чанков сливать в одну группу.
 		Context & context_);			/// Известные таблицы.
@@ -53,7 +51,6 @@ private:
 	NamesAndTypesListPtr columns;
 	String source_database;
 	OptimizedRegularExpression table_name_regexp;
-	String destination_database;
 	std::string destination_name_prefix;
 	size_t chunks_to_merge;
 	Context & context;
@@ -69,7 +66,6 @@ private:
 		NamesAndTypesListPtr columns_,
 		const String & source_database_,
 		const String & table_name_regexp_,
-		const std::string & destination_database_,
 		const std::string & destination_name_prefix_,
 		size_t chunks_to_merge_,
 		Context & context_);
