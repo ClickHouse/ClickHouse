@@ -17,6 +17,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/JSONRowOutputStream.h>
 #include <DB/DataStreams/JSONCompactRowOutputStream.h>
+#include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 
 
@@ -84,6 +85,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
 	else if (name == "Null")
 		return new NullBlockOutputStream;
+	else if (name == "PrettyCompactMonoBlock")
+		return new PrettyCompactMonoBlockOutputStream(buf);
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }

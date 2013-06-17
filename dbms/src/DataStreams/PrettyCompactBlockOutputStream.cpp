@@ -18,7 +18,7 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 		return;
 	}
 	
-	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
+	/// Будем вставлять сюда столбцы с вычисленными значениями видимых длин.
 	Block block = block_;
 	
 	size_t rows = block.rows();
