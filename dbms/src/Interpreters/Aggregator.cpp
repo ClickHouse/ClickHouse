@@ -98,12 +98,6 @@ void Aggregator::initialize(Block & block)
 
 			sample.insert(col);
 		}
-
-		/// Вставим в блок результата все столбцы-константы из исходного блока, так как они могут ещё пригодиться.
-		size_t columns = block.columns();
-		for (size_t i = 0; i < columns; ++i)
-			if (block.getByPosition(i).column->isConst())
-				sample.insert(block.getByPosition(i).cloneEmpty());
 	}	
 }
 
