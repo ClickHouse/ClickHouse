@@ -447,8 +447,6 @@ BlockInputStreams StorageLog::read(
 		if (threads > to_mark - from_mark)
 			threads = to_mark - from_mark;
 
-		BlockInputStreams res;
-
 		for (size_t thread = 0; thread < threads; ++thread)
 		{
 			res.push_back(new LogBlockInputStream(
