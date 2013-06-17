@@ -342,6 +342,7 @@ struct ExtractParamToStringImpl
 					   std::string needle,
 					   std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
+		/// Константа 5 взята из функции, выполняющей похожую задачу FunctionsStringSearch.h::ExtractImpl
 		res_data.reserve(data.size()  / 5);
 		res_offsets.resize(offsets.size());
 		
@@ -372,6 +373,13 @@ struct ExtractParamToStringImpl
 
 			pos = begin + offsets[i];
 			
+			res_data.push_back(0);
+			res_offsets[i] = res_data.size();
+			++i;
+		}
+		
+		while (i < res_offsets.size())
+		{
 			res_data.push_back(0);
 			res_offsets[i] = res_data.size();
 			++i;
