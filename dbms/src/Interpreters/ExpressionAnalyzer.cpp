@@ -950,31 +950,29 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 	NamesWithAliases result_columns;
 	Names result_names;
 	
+	ASTs asts;
+	
 	if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
-	{
-		ASTs asts = node->children;
-		for (size_t i = 0; i < asts.size(); ++i)
-		{
-			result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
-			result_names.push_back(result_columns.back().second);
-			getRootActionsImpl(asts[i], false, false, *actions);
-		}
-	}
+		asts = node->children;
 	else
+		asts = ASTs(1, ast);
+	
+	for (size_t i = 0; i < asts.size(); ++i)
 	{
-		result_columns.push_back(NameWithAlias(ast->getColumnName(), ast->getAlias()));
-		result_names.push_back(result_columns.back().second);
-		getRootActionsImpl(ast, false, false, *actions);
+		std::string name = asts[i]->getColumnName();
+		std::string alias;
+		if (project_result)
+			alias = asts[i]->getAlias();
+		else
+			alias = name;
+		result_columns.push_back(NameWithAlias(name, alias));
+		result_names.push_back(alias);
+		getRootActionsImpl(asts[i], false, false, *actions);
 	}
 	
 	if (project_result)
 	{
 		actions->add(ExpressionActions::Action::project(result_columns));
-	}
-	else
-	{
-		for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
-			result_names.push_back(it->first);
 	}
 	
 	actions->finalize(result_names);
