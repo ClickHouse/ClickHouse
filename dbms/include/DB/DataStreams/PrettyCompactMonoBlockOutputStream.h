@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/DataStreams/PrettyBlockOutputStream.h>
+#include <DB/DataStreams/PrettyCompactBlockOutputStream.h>
 
 
 namespace DB
@@ -9,11 +9,11 @@ namespace DB
 /** Тоже самое, что и PrettyCompactBlockOutputStream, но выводит все max_rows (или меньше,
  * 	если результат содержит меньшее число строк) одним блоком с одной шапкой.
   */
-class PrettyCompactMonoBlockOutputStream : public PrettyBlockOutputStream
+class PrettyCompactMonoBlockOutputStream : public PrettyCompactBlockOutputStream
 {
 public:
 	PrettyCompactMonoBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_ = false, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS)
-		: PrettyBlockOutputStream(ostr_, no_escapes_, max_rows_) {}
+		: PrettyCompactBlockOutputStream(ostr_, no_escapes_, max_rows_) {}
 
 	void write(const Block & block);
 	void writeSuffix();

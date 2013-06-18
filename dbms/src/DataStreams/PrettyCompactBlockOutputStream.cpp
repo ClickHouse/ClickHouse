@@ -9,44 +9,14 @@
 namespace DB
 {
 
-
-void PrettyCompactBlockOutputStream::write(const Block & block_)
+void PrettyCompactBlockOutputStream::writeHeader(
+	const Block & block,
+	const Widths_t & max_widths,
+	const Widths_t & name_widths)
 {
-	if (total_rows >= max_rows)
-	{
-		total_rows += block_.rows();
-		return;
-	}
-	
-	/// Будем вставлять сюда столбцы с вычисленными значениями видимых длин.
-	Block block = block_;
-	
-	size_t rows = block.rows();
-	size_t columns = block.columns();
-
-	Widths_t max_widths;
-	Widths_t name_widths;
-	calculateWidths(block, max_widths, name_widths);
-
-	/// Создадим разделители
-	std::stringstream bottom_separator;
-
-	bottom_separator 		<< "└";
-	for (size_t i = 0; i < columns; ++i)
-	{
-		if (i != 0)
-			bottom_separator 		<< "┴";
-
-		for (size_t j = 0; j < max_widths[i] + 2; ++j)
-			bottom_separator 		<< "─";
-	}
-	bottom_separator 		<< "┘\n";
-
-	std::string bottom_separator_s = bottom_separator.str();
-
 	/// Имена
 	writeCString("┌─", ostr);
-	for (size_t i = 0; i < columns; ++i)
+	for (size_t i = 0; i < max_widths.size(); ++i)
 	{
 		if (i != 0)
 			writeCString("─┬─", ostr);
@@ -77,40 +47,88 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 		}
 	}
 	writeCString("─┐\n", ostr);
+}
 
-	for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
+void PrettyCompactBlockOutputStream::writeBottom(const Widths_t & max_widths)
+{
+	/// Создадим разделители
+	std::stringstream bottom_separator;
+
+	bottom_separator 		<< "└";
+	for (size_t i = 0; i < max_widths.size(); ++i)
 	{
-		writeCString("│ ", ostr);
+		if (i != 0)
+			bottom_separator 		<< "┴";
 
-		for (size_t j = 0; j < columns; ++j)
+		for (size_t j = 0; j < max_widths[i] + 2; ++j)
+			bottom_separator 		<< "─";
+	}
+	bottom_separator 		<< "┘\n";
+
+	writeString(bottom_separator.str(), ostr);
+}
+
+void PrettyCompactBlockOutputStream::writeRow(
+	size_t row_id,
+	const Block & block,
+	const Widths_t & max_widths,
+	const Widths_t & name_widths)
+{
+	size_t columns = max_widths.size();
+	
+	writeCString("│ ", ostr);
+
+	for (size_t j = 0; j < columns; ++j)
+	{
+		if (j != 0)
+			writeCString(" │ ", ostr);
+
+		const ColumnWithNameAndType & col = block.getByPosition(j);
+
+		if (col.type->isNumeric())
 		{
-			if (j != 0)
-				writeCString(" │ ", ostr);
-
-			const ColumnWithNameAndType & col = block.getByPosition(j);
-
-			if (col.type->isNumeric())
-			{
-				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
-				for (size_t k = 0; k < max_widths[j] - width; ++k)
-					writeChar(' ', ostr);
-					
-				col.type->serializeTextEscaped((*col.column)[i], ostr);
-			}
-			else
-			{
-				col.type->serializeTextEscaped((*col.column)[i], ostr);
-
-				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
-				for (size_t k = 0; k < max_widths[j] - width; ++k)
-					writeChar(' ', ostr);
-			}
+			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
+			for (size_t k = 0; k < max_widths[j] - width; ++k)
+				writeChar(' ', ostr);
+				
+			col.type->serializeTextEscaped((*col.column)[row_id], ostr);
 		}
+		else
+		{
+			col.type->serializeTextEscaped((*col.column)[row_id], ostr);
 
-		writeCString(" │\n", ostr);
+			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
+			for (size_t k = 0; k < max_widths[j] - width; ++k)
+				writeChar(' ', ostr);
+		}
 	}
 
-	writeString(bottom_separator_s, ostr);
+	writeCString(" │\n", ostr);
+}
+
+void PrettyCompactBlockOutputStream::write(const Block & block_)
+{
+	if (total_rows >= max_rows)
+	{
+		total_rows += block_.rows();
+		return;
+	}
+	
+	/// Будем вставлять сюда столбцы с вычисленными значениями видимых длин.
+	Block block = block_;
+	
+	size_t rows = block.rows();
+
+	Widths_t max_widths;
+	Widths_t name_widths;
+	calculateWidths(block, max_widths, name_widths);
+	
+	writeHeader(block, max_widths, name_widths);
+
+	for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
+		writeRow(i, block, max_widths, name_widths);
+
+	writeBottom(max_widths);
 
 	total_rows += rows;
 }

@@ -15,6 +15,11 @@ public:
 		: PrettyBlockOutputStream(ostr_, no_escapes_, max_rows_) {}
 
 	void write(const Block & block);
+	
+protected:
+	void writeHeader(const Block & block, const Widths_t & max_widths, const Widths_t & name_widths);
+	void writeBottom(const Widths_t & max_widths);
+	void writeRow(size_t row_id, const Block & block, const Widths_t & max_widths, const Widths_t & name_widths);
 };
 
 }
