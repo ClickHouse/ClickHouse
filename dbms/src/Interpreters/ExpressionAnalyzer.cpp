@@ -306,9 +306,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	current_asts.insert(initial_ast);
 
 	std::string * my_alias = getAlias(ast);
-	std::string new_current_alias = current_alias;
 	if (my_alias && !my_alias->empty())
-		new_current_alias = *my_alias;
+		current_alias = *my_alias;
 	
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	
@@ -371,15 +370,15 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			normalizeTreeImpl(*it, finished_asts, current_asts, new_current_alias, in_sign_rewritten);
+			normalizeTreeImpl(*it, finished_asts, current_asts, current_alias, in_sign_rewritten);
 	
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
 		if (select->where_expression)
-			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, new_current_alias, in_sign_rewritten);
+			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
 		if (select->having_expression)
-			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, new_current_alias, in_sign_rewritten);
+			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
 	}
 	
 	/// Действия, выполняемые снизу вверх.
