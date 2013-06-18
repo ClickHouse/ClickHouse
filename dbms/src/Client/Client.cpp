@@ -719,7 +719,9 @@ private:
 				block_std_out->writePrefix();
 			}
 			
-			block_std_out->write(block);
+			if (block.rows() != 0)
+				block_std_out->write(block);
+			
 			std_out.next();
 		}
 		else

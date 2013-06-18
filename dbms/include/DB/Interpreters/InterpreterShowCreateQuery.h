@@ -56,6 +56,7 @@ private:
 		ColumnWithNameAndType col;
 		col.name = "statement";
 		col.type = new DataTypeString;
+		col.column = col.type->createColumn();
 		
 		Block block;
 		block.insert(col);

@@ -54,6 +54,7 @@ private:
 		ColumnWithNameAndType col;
 		col.name = "result";
 		col.type = new DataTypeUInt8;
+		col.column = col.type->createColumn();
 
 		Block block;
 		block.insert(col);

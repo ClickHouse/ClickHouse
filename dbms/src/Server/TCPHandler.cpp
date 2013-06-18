@@ -196,6 +196,10 @@ void TCPHandler::processOrdinaryQuery()
 	/// Вынимаем результат выполнения запроса, если есть, и пишем его в сеть.
 	if (state.io.in)
 	{
+		/// Отправим блок-заголовок, чтобы клиент мог подготовить формат вывода
+		if (state.io.in_sample && client_revision >= DBMS_MIN_REVISION_WITH_HEADER_BLOCK)
+			sendData(state.io.in_sample);
+		
 		AsynchronousBlockInputStream async_in(state.io.in);
 
 		std::stringstream query_pipeline;

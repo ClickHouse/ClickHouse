@@ -58,6 +58,7 @@ private:
 		ColumnWithNameAndType col;
 		col.name = "name";
 		col.type = new DataTypeString;
+		col.column = col.type->createColumn();
 		
 		block.insert(col);
 		

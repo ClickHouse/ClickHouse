@@ -102,7 +102,16 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 
 Block InterpreterSelectQuery::getSampleBlock()
 {
-	return query_analyzer->getSelectSampleBlock();
+	Block block = query_analyzer->getSelectSampleBlock();
+	/// создадим ненулевые колонки, чтобы SampleBlock можно было
+	/// писать (читать) с помощью BlockOut(In)putStream'ов
+	for (size_t i = 0; i < block.columns(); ++i)
+	{
+		ColumnWithNameAndType & col = block.getByPosition(i);
+		if (col.column.isNull())
+			col.column = col.type->createColumn();
+	}
+	return block;
 }
 
 
