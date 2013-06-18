@@ -223,7 +223,7 @@ private:
 	  * Для агрегатных функций - если нужно, сделать sign rewrite.
 	  */
 	void normalizeTree();
-	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, bool in_sign_rewritten);
+	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, bool in_sign_rewritten);
 	
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);

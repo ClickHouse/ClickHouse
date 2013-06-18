@@ -845,7 +845,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], ranges, StoragePtr()), primary_expr));
 	}
 
-	/// Порядок потоков важен: при совпадении ключа элементы идет в порядке номера потока-источника.
+	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
 	/// В слитом куске строки с одинаковым ключом должны идти в порядке возрастания идентификатора исходного куска, то есть (примерного) возрастания времени вставки.
 	BlockInputStreamPtr merged_stream = sign_column.empty()
 		? new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_BLOCK_SIZE)

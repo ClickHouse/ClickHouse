@@ -439,22 +439,67 @@ void ExpressionActions::finalize(const Names & output_columns)
 	if (final_columns.empty())
 		final_columns.insert(getAnyColumn(input_columns));
 	
-	NameSet used_columns = final_columns;
+	/// Какие столбцы нужны, чтобы выполнить действия от текущего до последнего.
+	NameSet needed_columns = final_columns;
+	/// Какие столбцы никто не будет трогать от текущего действия до последнего.
+	NameSet unmodified_columns;
 	
-	for (size_t i = 0; i < actions.size(); ++i)
+	{
+		NamesAndTypesList sample_columns = sample_block.getColumnsList();
+		for (NamesAndTypesList::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
+			unmodified_columns.insert(it->first);
+	}
+	
+	/// Будем идти с конца и поодерживать множество нужных на данном этапе столбцов.
+	/// Будем выбрасывать ненужные действия, хотя обычно их нет по построению.
+	for (int i = static_cast<int>(actions.size()) - 1; i >= 0; --i)
 	{
 		Action & action = actions[i];
+		Names in = action.getNeededColumns();
+		std::string out = action.result_name;
 		
-		Names needed = action.getNeededColumns();
-		used_columns.insert(needed.begin(), needed.end());
+		if (action.type == Action::PROJECT)
+		{
+			needed_columns = NameSet(in.begin(), in.end());
+			unmodified_columns.clear();
+		}
+		else
+		{
+			if (!out.empty())
+			{
+				/// Если результат не используется и нет побочных эффектов, выбросим действие.
+				if (!needed_columns.count(out) &&
+					(action.type == Action::APPLY_FUNCTION
+					|| action.type == Action::ADD_COLUMN
+					|| action.type == Action::COPY_COLUMN))
+				{
+					actions.erase(actions.begin() + i);
+					
+					if (unmodified_columns.count(out))
+					{
+						sample_block.erase(out);
+						unmodified_columns.erase(out);
+					}
+					
+					continue;
+				}
+				
+				unmodified_columns.erase(out);
+				
+				needed_columns.erase(out);
+			}
+			
+			needed_columns.insert(in.begin(), in.end());
+		}
 	}
+	
 	for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
 	{
 		NamesAndTypesList::iterator it0 = it;
 		++it;
-		if (!used_columns.count(it0->first))
+		if (!needed_columns.count(it0->first))
 		{
-			if (sample_block.has(it0->first))
+			if (unmodified_columns.count(it0->first))
 				sample_block.erase(it0->first);
 			input_columns.erase(it0);
 		}

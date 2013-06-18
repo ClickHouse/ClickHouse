@@ -286,14 +286,15 @@ void ExpressionAnalyzer::normalizeTree()
 	MapOfASTs tmp_map;
 	if (needSignRewrite())
 		sign_column_name = getSignColumnName();
-	normalizeTreeImpl(ast, tmp_map, tmp_set, false);
+	normalizeTreeImpl(ast, tmp_map, tmp_set, "", false);
 }
 
 
 /// finished_asts - уже обработанные вершины (и на что они заменены)
 /// current_asts - вершины в текущем стеке вызовов этого метода
+/// current_alias - алиас, повешенный на предка ast (самого глебокого из предков с алиасами)
 /// in_sign_rewritten - находимся ли мы в поддереве, полученном в результате sign rewrite
-void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, bool in_sign_rewritten)
+void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, bool in_sign_rewritten)
 {
 	if (finished_asts.count(ast))
 	{
@@ -304,6 +305,11 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	ASTPtr initial_ast = ast;
 	current_asts.insert(initial_ast);
 
+	std::string * my_alias = getAlias(ast);
+	std::string new_current_alias = current_alias;
+	if (my_alias && !my_alias->empty())
+		new_current_alias = *my_alias;
+	
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	
 	if (!in_sign_rewritten && !sign_column_name.empty())
@@ -327,9 +333,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	{
 		if (node->kind == ASTIdentifier::Column)
 		{
-			/// Если это алиас
+			/// Если это алиас, но не родительский алиас (чтобы работали конструкции вроде "SELECT column+1 AS column").
 			Aliases::const_iterator jt = aliases.find(node->name);
-			if (jt != aliases.end())
+			if (jt != aliases.end() && current_alias != node->name)
 			{
 				/// Заменим его на соответствующий узел дерева
 				if (current_asts.count(jt->second))
@@ -365,19 +371,19 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			normalizeTreeImpl(*it, finished_asts, current_asts, in_sign_rewritten);
+			normalizeTreeImpl(*it, finished_asts, current_asts, new_current_alias, in_sign_rewritten);
 	
-	/// Действия, выполняемые снизу вверх.
-
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
 		if (select->where_expression)
-			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, in_sign_rewritten);
+			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, new_current_alias, in_sign_rewritten);
 		if (select->having_expression)
-			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, in_sign_rewritten);
+			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, new_current_alias, in_sign_rewritten);
 	}
 	
+	/// Действия, выполняемые снизу вверх.
+
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		if (node->name == "lambda")
@@ -973,6 +979,12 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 	if (project_result)
 	{
 		actions->add(ExpressionActions::Action::project(result_columns));
+	}
+	else
+	{
+		/// Не будем удалять исходные столбцы.
+		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
+			result_names.push_back(it->first);
 	}
 	
 	actions->finalize(result_names);
