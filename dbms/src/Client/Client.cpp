@@ -719,6 +719,8 @@ private:
 				block_std_out->writePrefix();
 			}
 			
+			/// Загаловочный блок с нулем строк использовался для инициализации block_std_out,
+			/// выводить его не нужно
 			if (block.rows() != 0)
 				block_std_out->write(block);
 			

@@ -108,8 +108,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		ColumnWithNameAndType & col = block.getByPosition(i);
-		if (col.column.isNull())
-			col.column = col.type->createColumn();
+		col.column = col.type->createColumn();
 	}
 	return block;
 }
