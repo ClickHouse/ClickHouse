@@ -76,6 +76,15 @@ bool Limits::trySet(const String & name, const Field & value)
 	else if (name == "max_ast_elements")		max_ast_elements 		= safeGet<UInt64>(value);
 
 	else if (name == "readonly")				readonly 				= safeGet<UInt64>(value);
+	
+	else if (name == "max_rows_in_set")		max_rows_in_set 		= safeGet<UInt64>(value);
+	else if (name == "max_bytes_in_set")		max_bytes_in_set 		= safeGet<UInt64>(value);
+	else if (name == "set_overflow_mode")		set_overflow_mode	 	= getOverflowMode(safeGet<const String &>(value));
+	
+	else if (name == "max_rows_in_distinct")	max_rows_in_distinct	= safeGet<UInt64>(value);
+	else if (name == "max_bytes_in_distinct")	max_bytes_in_distinct	= safeGet<UInt64>(value);
+	else if (name == "distinct_overflow_mode")	distinct_overflow_mode 	= getOverflowMode(safeGet<const String &>(value));
+	
 	else
 		return false;
 
@@ -102,7 +111,11 @@ bool Limits::trySet(const String & name, ReadBuffer & buf)
 		|| name == "max_pipeline_depth"
 		|| name == "max_ast_depth"
 		|| name == "max_ast_elements"
-		|| name == "readonly")
+		|| name == "readonly"
+		|| name == "max_rows_in_set"
+		|| name == "max_bytes_in_set"
+		|| name == "max_rows_in_distinct"
+		|| name == "max_bytes_in_distinct")
 	{
 		UInt64 value = 0;
 		readVarUInt(value, buf);
@@ -114,7 +127,9 @@ bool Limits::trySet(const String & name, ReadBuffer & buf)
 		|| name == "group_by_overflow_mode"
 		|| name == "sort_overflow_mode"
 		|| name == "result_overflow_mode"
-		|| name == "timeout_overflow_mode")
+		|| name == "timeout_overflow_mode"
+		|| name == "set_overflow_mode"
+		|| name == "distinct_overflow_mode")
 	{
 		String value;
 		readBinary(value, buf);
@@ -147,7 +162,11 @@ bool Limits::trySet(const String & name, const String & value)
 		|| name == "max_pipeline_depth"
 		|| name == "max_ast_depth"
 		|| name == "max_ast_elements"
-		|| name == "readonly")
+		|| name == "readonly"
+		|| name == "max_rows_in_set"
+		|| name == "max_bytes_in_set"
+		|| name == "max_rows_in_distinct"
+		|| name == "max_bytes_in_distinct")
 	{
 		if (!trySet(name, Poco::NumberParser::parseUnsigned64(value)))
 			throw Exception("Logical error: unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
@@ -156,7 +175,9 @@ bool Limits::trySet(const String & name, const String & value)
 		|| name == "group_by_overflow_mode"
 		|| name == "sort_overflow_mode"
 		|| name == "result_overflow_mode"
-		|| name == "timeout_overflow_mode")
+		|| name == "timeout_overflow_mode"
+		|| name == "set_overflow_mode"
+		|| name == "distinct_overflow_mode")
 	{
 		if (!trySet(name, Field(value)))
 			throw Exception("Logical error: unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
@@ -192,6 +213,12 @@ void Limits::serialize(WriteBuffer & buf) const
 	writeStringBinary("max_ast_depth", buf);			writeVarUInt(max_ast_depth, buf);
 	writeStringBinary("max_ast_elements", buf);			writeVarUInt(max_ast_elements, buf);
 	writeStringBinary("readonly", buf);					writeVarUInt(readonly, buf);
+	writeStringBinary("max_rows_in_set", buf);			writeVarUInt(max_rows_in_set, buf);
+	writeStringBinary("max_bytes_in_set", buf);		writeVarUInt(max_bytes_in_set, buf);
+	writeStringBinary("set_overflow_mode", buf);		writeStringBinary(toString(set_overflow_mode), buf);
+	writeStringBinary("max_rows_in_distinct", buf);	writeVarUInt(max_rows_in_distinct, buf);
+	writeStringBinary("max_bytes_in_distinct", buf);	writeVarUInt(max_bytes_in_distinct, buf);
+	writeStringBinary("distinct_overflow_mode", buf);	writeStringBinary(toString(distinct_overflow_mode), buf);
 }
 
 }

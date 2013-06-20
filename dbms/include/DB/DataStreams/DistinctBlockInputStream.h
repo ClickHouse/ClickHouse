@@ -3,6 +3,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/HashSet.h>
 #include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Interpreters/Limits.h>
 
 
 namespace DB
@@ -18,8 +19,11 @@ namespace DB
 class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	DistinctBlockInputStream(BlockInputStreamPtr input_, size_t limit_ = 0)
-		: limit(limit_)
+	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_ = 0)
+		: limit(limit_),
+		max_rows(limits.max_rows_in_distinct),
+		max_bytes(limits.max_bytes_in_distinct),
+		overflow_mode(limits.distinct_overflow_mode)
 	{
 		children.push_back(input_);
 	}
@@ -89,6 +93,22 @@ protected:
 
 				/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
 				filter[i] = set.insert(key).second;
+				
+				if (!checkLimits())
+				{
+					if (overflow_mode == Limits::THROW)
+						throw Exception("DISTINCT-set size limit exceeded."
+							" Rows: " + Poco::NumberFormatter::format(set.size()) +
+							", limit: " + Poco::NumberFormatter::format(max_rows) +
+							". Bytes: " + Poco::NumberFormatter::format(set.getBufferSizeInBytes()) +
+							", limit: " + Poco::NumberFormatter::format(max_bytes) + ".",
+							ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+					
+					if (overflow_mode == Limits::BREAK)
+						break;
+					
+					throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+				}
 
 				if (limit && set.size() == limit)
 					break;
@@ -106,7 +126,22 @@ protected:
 	}
 
 private:
+	
+	bool checkLimits() const
+	{
+		if (max_rows && set.size() > max_rows)
+			return false;
+		if (max_bytes && set.getBufferSizeInBytes() > max_bytes)
+			return false;
+		return true;
+	}
+	
 	size_t limit;
+	
+	/// Ограничения на максимальный размер множества
+	size_t max_rows;
+	size_t max_bytes;
+	Limits::OverflowMode overflow_mode;
 
 	typedef HashSet<UInt128, UInt128Hash, UInt128ZeroTraits> SetHashed;
 	SetHashed set;

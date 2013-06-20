@@ -53,6 +53,7 @@ private:
 	size_t growth_factor;
 	/// Последний непрерывный кусок памяти.
 	Chunk * head;
+	size_t size_in_bytes;
 
 	/// Добавить следующий непрерывный кусок памяти размера не меньше заданного.
 	void addChunk(size_t min_size)
@@ -61,11 +62,13 @@ private:
 			min_size = head->size() * growth_factor;
 
 		head = new Chunk(min_size, head);
+		
+		size_in_bytes += head->size();
 	}
 
 public:
 	Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2)
-		: growth_factor(growth_factor_), head(new Chunk(initial_size_, NULL))
+		: growth_factor(growth_factor_), head(new Chunk(initial_size_, NULL)), size_in_bytes(head->size())
 	{
 	}
 
@@ -91,6 +94,12 @@ public:
 		char * res = alloc(size);
 		memcpy(res, data, size);
 		return res;
+	}
+	
+	/// Размер выделенного пула в байтах
+	size_t size() const
+	{
+		return size_in_bytes;
 	}
 };
 

@@ -15,6 +15,7 @@
 
 #include <DB/Interpreters/HashSet.h>
 #include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Interpreters/Limits.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 
@@ -28,7 +29,14 @@ namespace DB
 class Set
 {
 public:
-	Set() : type(EMPTY), log(&Logger::get("Set")) {}
+	Set(const Limits & limits)
+		: type(EMPTY), log(&Logger::get("Set")),
+		max_rows(limits.max_rows_in_set),
+		max_bytes(limits.max_bytes_in_set),
+		overflow_mode(limits.set_overflow_mode)
+	{
+	}
+	
 	bool empty() { return type == EMPTY; }
 
 	/** Создать множество по потоку блоков (для подзапроса). */
@@ -91,6 +99,11 @@ private:
 	
 	Logger * log;
 	
+	/// Ограничения на максимальный размер множества
+	size_t max_rows;
+	size_t max_bytes;
+	Limits::OverflowMode overflow_mode;
+	
 	static Type chooseMethod(const DataTypes & key_types, bool & keys_fit_128_bits, Sizes & key_sizes);
 
 	/// Если в левой части IN стоит массив. Проверяем, что хоть один элемент массива лежит в множестве.
@@ -103,6 +116,14 @@ private:
 	/** Вывести в лог информацию о скорости создания множества.
 	  */
 	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries);
+	
+	/// Проверить не превышены ли допустимые размеры множества ключей
+	bool checkSetSizeLimits() const;
+	
+	/// Считает суммарное число ключей во всех Set'ах
+	size_t getTotalRowCount() const;
+	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
+	size_t getTotalByteCount() const;
 };
 
 typedef SharedPtr<Set> SetPtr;

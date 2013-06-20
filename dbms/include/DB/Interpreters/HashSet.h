@@ -369,6 +369,11 @@ public:
 	{
 	    return 0 == m_size;
 	}
+	
+	bool getBufferSizeInBytes() const
+	{
+		return buf_size_bytes();
+	}
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 	size_t getCollisions() const

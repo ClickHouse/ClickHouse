@@ -22,6 +22,37 @@
 
 namespace DB
 {
+	
+size_t Set::getTotalRowCount() const
+{
+	size_t rows = 0;
+	rows += key64.size();
+	rows += key_string.size();
+	rows += hashed.size();
+	return rows;
+}
+
+
+size_t Set::getTotalByteCount() const
+{
+	size_t bytes = 0;
+	bytes += key64.getBufferSizeInBytes();
+	bytes += key_string.getBufferSizeInBytes();
+	bytes += hashed.getBufferSizeInBytes();
+	bytes += string_pool.size();
+	return bytes;
+}
+	
+	
+bool Set::checkSetSizeLimits() const
+{
+	if (max_rows && getTotalRowCount() > max_rows)
+		return false;
+	if (max_bytes && getTotalByteCount() > max_bytes)
+		return false;
+	return true;
+}
+	
 
 Set::Type Set::chooseMethod(const DataTypes & key_types, bool & keys_fit_128_bits, Sizes & key_sizes)
 {
@@ -178,6 +209,22 @@ void Set::create(BlockInputStreamPtr stream)
 		}
 		else
 			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+		
+		if (!checkSetSizeLimits())
+		{
+			if (overflow_mode == Limits::THROW)
+					throw Exception("IN-Set size exceeded."
+						" Rows: " + Poco::NumberFormatter::format(getTotalRowCount()) +
+						", limit: " + Poco::NumberFormatter::format(max_rows) +
+						". Bytes: " + Poco::NumberFormatter::format(getTotalByteCount()) +
+						", limit: " + Poco::NumberFormatter::format(max_bytes) + ".",
+						ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+
+			if (overflow_mode == Limits::BREAK)
+				break;
+
+			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		}
 	}
 
 	logProfileInfo(watch, *stream, entries);

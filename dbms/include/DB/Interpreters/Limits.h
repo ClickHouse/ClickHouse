@@ -65,6 +65,16 @@ struct Limits
 
 	bool readonly;
 	
+	/// Ограничения для максимального размера множества, получающегося при выполнении секции IN.
+	size_t max_rows_in_set;
+	size_t max_bytes_in_set;
+	OverflowMode set_overflow_mode;
+	
+	/// Ограничения для максимального размера запоминаемого состояния при выполнении DISTINCT.
+	size_t max_rows_in_distinct;
+	size_t max_bytes_in_distinct;
+	OverflowMode distinct_overflow_mode;
+	
 	/// По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
 	Limits() :
 		max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(THROW),
@@ -75,7 +85,9 @@ struct Limits
 		min_execution_speed(0), timeout_before_checking_execution_speed(0),
 		max_columns_to_read(0), max_temporary_columns(0), max_temporary_non_const_columns(0),
 		max_subquery_depth(100), max_pipeline_depth(1000), max_ast_depth(1000), max_ast_elements(10000),
-		readonly(false)
+		readonly(false),
+		max_rows_in_set(0), max_bytes_in_set(0), set_overflow_mode(THROW),
+		max_rows_in_distinct(0), max_bytes_in_distinct(0), distinct_overflow_mode(THROW)
 	{
 	}
 

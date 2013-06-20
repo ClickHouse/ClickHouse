@@ -422,7 +422,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
 		InterpreterSelectQuery interpreter(arg->children[0], context, QueryProcessingStage::Complete, subquery_depth + 1);
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
-		ast_set->set = new Set;
+		ast_set->set = new Set(settings.limits);
 		ast_set->set->create(interpreter.execute());
 		arg = ast_set;
 	}
@@ -455,7 +455,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		}
 
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
-		ast_set->set = new Set;
+		ast_set->set = new Set(settings.limits);
 		ast_set->set->create(set_element_types, set_func->arguments);
 		arg = ast_set;
 	}

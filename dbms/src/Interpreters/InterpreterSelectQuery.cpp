@@ -580,7 +580,7 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = maybeAsynchronous(new DistinctBlockInputStream(stream, limit_for_distinct), is_async);
+			stream = maybeAsynchronous(new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct), is_async);
 		}
 	}
 }
