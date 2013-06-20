@@ -184,6 +184,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "arrayFilter")				return new FunctionArrayFilter;
 	else if (name == "arrayCount")					return new FunctionArrayCount;
 	else if (name == "arrayExists")				return new FunctionArrayExists;
+	else if (name == "arrayAll")					return new FunctionArrayAll;
 	
 	else if (name == "alphaTokens")				return new FunctionAlphaTokens;
 	else if (name == "splitByChar")				return new FunctionSplitByChar;

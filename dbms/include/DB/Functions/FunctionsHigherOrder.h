@@ -16,15 +16,23 @@ namespace DB
 	
 /** Функции высшего порядка для массивов:
   * 
-  * arrayMap(x -> expression, array) - применить выражение к каждому элементу массива.
+  * arrayMap(x1,...,xn -> expression, array1,...,arrayn) - применить выражение к каждому элементу массива (или набора параллельных массивов).
   * arrayFilter(x -> predicate, array) - оставить в массиве только элементы, для которых выражение истинно.
-  * arrayCount(x -> predicate, array) - для скольки элементов массива выражение истинно.
-  * arrayExists(x -> predicate, array) - истинно ли выражение для хотя бы одного элемента массива.
+  * arrayCount(x1,...,xn -> expression, array1,...,arrayn) - для скольки элементов массива выражение истинно.
+  * arrayExists(x1,...,xn -> expression, array1,...,arrayn) - истинно ли выражение для хотя бы одного элемента массива.
+  * arrayAll(x1,...,xn -> expression, array1,...,arrayn) - истинно ли выражение для всех элементов массива.
+  * 
+  * Для функций arrayCount, arrayExists, arrayAll доступна еще перегрузка вида f(array), которая работает так же, как f(x -> x, array).
   */
 
 struct ArrayMapImpl
 {
-	static bool needBooleanExpression() { return false; }
+	/// true, если выражение (для перегрузки f(expression, arrays)) или массив (для f(array)) должно быть булевым.
+	static bool needBoolean() { return false; }
+	/// true, если перегрузка f(array) недоступна.
+	static bool needExpression() { return true; }
+	/// true, если массив должен быть ровно один.
+	static bool needOneArray() { return false; }
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
@@ -39,7 +47,9 @@ struct ArrayMapImpl
 
 struct ArrayFilterImpl
 {
-	static bool needBooleanExpression() { return true; }
+	static bool needBoolean() { return true; }
+	static bool needExpression() { return true; }
+	static bool needOneArray() { return true; }
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
@@ -78,7 +88,9 @@ struct ArrayFilterImpl
 
 struct ArrayCountImpl
 {
-	static bool needBooleanExpression() { return true; }
+	static bool needBoolean() { return true; }
+	static bool needExpression() { return false; }
+	static bool needOneArray() { return false; }
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
@@ -115,7 +127,9 @@ struct ArrayCountImpl
 
 struct ArrayExistsImpl
 {
-	static bool needBooleanExpression() { return true; }
+	static bool needBoolean() { return true; }
+	static bool needExpression() { return false; }
+	static bool needOneArray() { return false; }
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
@@ -142,11 +156,53 @@ struct ArrayExistsImpl
 			{
 				if (filter[pos])
 				{
-					exists = true;
+					exists = 1;
 					break;
 				}
 			}
 			out_exists[i] = exists;
+		}
+		
+		return out_column_ptr;
+	}
+};
+
+struct ArrayAllImpl
+{
+	static bool needBoolean() { return true; }
+	static bool needExpression() { return false; }
+	static bool needOneArray() { return false; }
+	
+	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+	{
+		return new DataTypeUInt8;
+	}
+	
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
+	{
+		ColumnVector<UInt8> * column_filter = dynamic_cast<ColumnVector<UInt8> *>(&*mapped);
+		if (!column_filter)
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+		
+		const IColumn::Filter & filter = column_filter->getData();
+		const IColumn::Offsets_t & offsets = array->getOffsets();
+		ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
+		ColumnPtr out_column_ptr = out_column;
+		ColumnVector<UInt8>::Container_t & out_all = out_column->getData();
+		
+		size_t pos = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			UInt8 all = 1;
+			for (; pos < offsets[i]; ++pos)
+			{
+				if (!filter[pos])
+				{
+					all = 0;
+					break;
+				}
+			}
+			out_all[i] = all;
 		}
 		
 		return out_column_ptr;
@@ -163,126 +219,213 @@ public:
 		return Name::get();
 	}
 	
-	void checkTypes(const DataTypes & arguments, const DataTypeExpression *& expression_type, const DataTypeArray *& array_type) const {
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-							+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1]);
-		if (!array_type)
-			throw Exception("Second argument for function " + getName() + " must be array. Found "
-							+ arguments[1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
-		expression_type = dynamic_cast<const DataTypeExpression *>(&*arguments[0]);
-		if (!expression_type || expression_type->getArgumentTypes().size() != 1)
-			throw Exception("First argument for function " + getName() + " must be an expression with one argument. Found "
-							+ arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
 	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений.
 	void getLambdaArgumentTypes(DataTypes & arguments) const
 	{
-		const DataTypeArray * array_type;
-		const DataTypeExpression * expression_type;
-		checkTypes(arguments, expression_type, array_type);
-		arguments[0] = new DataTypeExpression(DataTypes(1, array_type->getNestedType()));
+		if (arguments.size() < 1)
+			throw Exception("Function " + getName() + " needs at least one argument; passed "
+							+ Poco::NumberFormatter::format(arguments.size()) + ".",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		if (arguments.size() == 1)
+			throw Exception("Function " + getName() + " needs at least one array argument.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		
+		DataTypes nested_types(arguments.size() - 1);
+		for (size_t i = 0; i < nested_types.size(); ++i)
+		{
+			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[i + 1]);
+			if (!array_type)
+				throw Exception("Argument " + Poco::NumberFormatter::format(i + 2) + " of function " + getName() + " must be array. Found "
+								+ arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			nested_types[i] = array_type->getNestedType();
+		}
+		
+		const DataTypeExpression * expression_type = dynamic_cast<const DataTypeExpression *>(&*arguments[0]);
+		if (!expression_type || expression_type->getArgumentTypes().size() != nested_types.size())
+			throw Exception("First argument for this overload of " + getName() + " must be an expression with "
+							+ Poco::NumberFormatter::format(nested_types.size()) + " arguments. Found "
+							+ arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		arguments[0] = new DataTypeExpression(nested_types);
 	}
 
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites)
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+		size_t min_args = Impl::needExpression() ? 2 : 1;
+		if (arguments.size() < min_args)
+			throw Exception("Function " + getName() + " needs at least "
+							+ Poco::NumberFormatter::format(min_args) + " argument; passed "
+							+ Poco::NumberFormatter::format(arguments.size()) + ".",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const ColumnExpression * column_expression = dynamic_cast<const ColumnExpression *>(&*arguments[0].column);
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1].type);
 		
-		if (!column_expression)
-			throw Exception("First argument for function " + getName() + " must be an expression with one argument.",
-							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
-		if (!array_type)
-			throw Exception("Second argument for function " + getName() + " must be array. Found "
-							+ arguments[1].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		/// Попросим добавить в блок все столбцы, упоминаемые в выражении, размноженные в массив, параллельный обрабатываемому.
-		const ExpressionActions & expression = *column_expression->getExpression();
-		Names required_columns = expression.getRequiredColumns();
-		Names::iterator it = std::find(required_columns.begin(), required_columns.end(), column_expression->getArguments()[0].first);
-		if (it != required_columns.end())
-			required_columns.erase(it);
-		for (size_t i = 0; i < required_columns.size(); ++i)
+		if (arguments.size() == 1)
 		{
-			Names replicate_arguments;
-			replicate_arguments.push_back(required_columns[i]);
-			replicate_arguments.push_back(arguments[1].name);
-			out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionReplicate, replicate_arguments));
+			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0].type);
+			
+			if (!array_type)
+				throw Exception("The only argument for function " + getName() + " must be array. Found "
+								+ arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+				
+			DataTypePtr nested_type = array_type->getNestedType();
+				
+			if (Impl::needBoolean() && !dynamic_cast<const DataTypeUInt8 *>(&*nested_type))
+				throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
+								+ arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			
+			out_return_type = Impl::getReturnType(nested_type, nested_type);
 		}
+		else
+		{
+			if (arguments.size() > 2 && Impl::needOneArray())
+				throw Exception("Function " + getName() + " needs one array argument.",
+								ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+			const ColumnExpression * column_expression = dynamic_cast<const ColumnExpression *>(&*arguments[0].column);
+			
+			if (!column_expression)
+				throw Exception("First argument for function " + getName() + " must be an expression.",
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			
+			/// Типы остальных аргументов уже проверены в getLambdaArgumentTypes.
+			
+			/// Попросим добавить в блок все столбцы, упоминаемые в выражении, размноженные в массив, параллельный обрабатываемому.
+			const ExpressionActions & expression = *column_expression->getExpression();
+			Names required_columns = expression.getRequiredColumns();
+			
+			Names argument_name_vector = column_expression->getArgumentNames();
+			NameSet argument_names(argument_name_vector.begin(), argument_name_vector.end());
+			
+			for (size_t i = 0; i < required_columns.size(); ++i)
+			{
+				if (argument_names.count(required_columns[i]))
+					continue;
+				Names replicate_arguments;
+				replicate_arguments.push_back(required_columns[i]);
+				replicate_arguments.push_back(arguments[1].name);
+				out_prerequisites.push_back(ExpressionActions::Action::applyFunction(new FunctionReplicate, replicate_arguments));
+			}
 
-		DataTypePtr return_type = column_expression->getReturnType();
-		if (Impl::needBooleanExpression() && !dynamic_cast<const DataTypeUInt8 *>(&*return_type))
-			throw Exception("Expression for function " + getName() + " must return UInt8, found "
-							+ return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
-		out_return_type = Impl::getReturnType(return_type, array_type->getNestedType());
+			DataTypePtr return_type = column_expression->getReturnType();
+			if (Impl::needBoolean() && !dynamic_cast<const DataTypeUInt8 *>(&*return_type))
+				throw Exception("Expression for function " + getName() + " must return UInt8, found "
+								+ return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+				
+			const DataTypeArray * first_array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1].type);
+			
+			out_return_type = Impl::getReturnType(return_type, first_array_type->getNestedType());
+		}
 	}
 	
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
 	{
-		ColumnPtr column_array_ptr = block.getByPosition(arguments[1]).column;
-		ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*column_array_ptr);
-		ColumnPtr temp_column;
-		
-		if (!column_array)
+		if (arguments.size() == 1)
 		{
-			const ColumnConstArray * column_const_array = dynamic_cast<const ColumnConstArray *>(&*column_array_ptr);
-			if (!column_const_array)
-				throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
-			temp_column = column_const_array->convertToFullColumn();
-			column_array = dynamic_cast<const ColumnArray *>(&*temp_column);
+			ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
+			const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*column_array_ptr);
+			
+			if (!column_array)
+			{
+				const ColumnConstArray * column_const_array = dynamic_cast<const ColumnConstArray *>(&*column_array_ptr);
+				if (!column_const_array)
+					throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
+				column_array_ptr = column_const_array->convertToFullColumn();
+				column_array = dynamic_cast<const ColumnArray *>(&*column_array_ptr);
+			}
+			
+			block.getByPosition(result).column = Impl::execute(column_array, column_array->getDataPtr());
 		}
-		
-		Block temp_block;
-		const ExpressionActions & expression = *column_expression->getExpression();
-		String argument_name = column_expression->getArguments()[0].first;
-		DataTypePtr element_type = column_expression->getArguments()[0].second;
-		
-		Names required_columns = expression.getRequiredColumns();
-		Names::iterator it = std::find(required_columns.begin(), required_columns.end(), argument_name);
-		if (it != required_columns.end())
-			required_columns.erase(it);
-		
-		/// Положим в блок аргумент выражения.
-		temp_block.insert(ColumnWithNameAndType(column_array->getDataPtr(), element_type, argument_name));
-		
-		/// Положим в блок все нужные столбцы, размноженные по размерам массивов.
-		for (size_t i = 0; i < required_columns.size(); ++i)
+		else
 		{
-			const String & name = required_columns[i];
-			ColumnWithNameAndType replicated_column = block.getByPosition(prerequisites[i]);
+			ColumnExpression * column_expression = dynamic_cast<ColumnExpression *>(&*block.getByPosition(arguments[0]).column);
 			
-			const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*replicated_column.column);
-			const DataTypeArray * type = dynamic_cast<const DataTypeArray *>(&*replicated_column.type);
-			if (!col || !type)
-				throw Exception("Unexpected replicated column", ErrorCodes::LOGICAL_ERROR);
+			ColumnPtr offsets_column;
 			
-			replicated_column.name = name;
-			replicated_column.column = col->getDataPtr();
-			replicated_column.type = type->getNestedType();
+			Block temp_block;
+			const ExpressionActions & expression = *column_expression->getExpression();
+			NamesAndTypes expression_arguments = column_expression->getArguments();
+			NameSet argument_names;
 			
-			temp_block.insert(replicated_column);
+			ColumnPtr column_first_array_ptr;
+			const ColumnArray * column_first_array = NULL;
+			
+			/// Положим в блок аргументы выражения.
+			
+			for (size_t i = 0; i < expression_arguments.size(); ++i)
+			{
+				const std::string & argument_name = expression_arguments[i].first;
+				DataTypePtr argument_type = expression_arguments[i].second;
+				
+				ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
+				const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*column_array_ptr);
+				
+				if (!column_array)
+				{
+					const ColumnConstArray * column_const_array = dynamic_cast<const ColumnConstArray *>(&*column_array_ptr);
+					if (!column_const_array)
+						throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
+					column_array_ptr = column_const_array->convertToFullColumn();
+					column_array = dynamic_cast<const ColumnArray *>(&*column_array_ptr);
+				}
+				
+				if (!offsets_column)
+				{
+					offsets_column = column_array->getOffsetsColumn();
+				}
+				else
+				{
+					/// Первое условие - оптимизация: не сравнивать данные, если указатели равны.
+					if (column_array->getOffsetsColumn() != offsets_column
+						&& column_array->getOffsets() != dynamic_cast<const ColumnArray::ColumnOffsets_t &>(*offsets_column).getData())
+						throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+				}
+				
+				if (i == 0)
+				{
+					column_first_array_ptr = column_array_ptr;
+					column_first_array = column_array;
+				}
+				
+				temp_block.insert(ColumnWithNameAndType(column_array->getDataPtr(), argument_type, argument_name));
+				argument_names.insert(argument_name);
+			}
+			
+			/// Положим в блок все нужные столбцы, размноженные по размерам массивов.
+			
+			Names required_columns = expression.getRequiredColumns();
+			size_t prerequisite_index = 0;
+			
+			for (size_t i = 0; i < required_columns.size(); ++i)
+			{
+				const String & name = required_columns[i];
+				
+				if (argument_names.count(name))
+					continue;
+				
+				ColumnWithNameAndType replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
+				
+				const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*replicated_column.column);
+				const DataTypeArray * type = dynamic_cast<const DataTypeArray *>(&*replicated_column.type);
+				if (!col || !type)
+					throw Exception("Unexpected replicated column", ErrorCodes::LOGICAL_ERROR);
+				
+				replicated_column.name = name;
+				replicated_column.column = col->getDataPtr();
+				replicated_column.type = type->getNestedType();
+				
+				temp_block.insert(replicated_column);
+				
+				++prerequisite_index;
+			}
+			
+			expression.execute(temp_block);
+			
+			block.getByPosition(result).column = Impl::execute(column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
 		}
-		
-		expression.execute(temp_block);
-		
-		block.getByPosition(result).column = Impl::execute(column_array, temp_block.getByName(column_expression->getReturnName()).column);
 	}
 };
 
@@ -291,10 +434,12 @@ struct NameArrayMap		{ static const char * get() { return "arrayMap"; } };
 struct NameArrayFilter	{ static const char * get() { return "arrayFilter"; } };
 struct NameArrayCount	{ static const char * get() { return "arrayCount"; } };
 struct NameArrayExists	{ static const char * get() { return "arrayExists"; } };
+struct NameArrayAll		{ static const char * get() { return "arrayAll"; } };
 
 typedef FunctionArrayMapped<ArrayMapImpl, 		NameArrayMap>		FunctionArrayMap;
 typedef FunctionArrayMapped<ArrayFilterImpl, 	NameArrayFilter>	FunctionArrayFilter;
 typedef FunctionArrayMapped<ArrayCountImpl, 	NameArrayCount>		FunctionArrayCount;
 typedef FunctionArrayMapped<ArrayExistsImpl, 	NameArrayExists>	FunctionArrayExists;
+typedef FunctionArrayMapped<ArrayAllImpl,	 	NameArrayAll>		FunctionArrayAll;
 	
 }

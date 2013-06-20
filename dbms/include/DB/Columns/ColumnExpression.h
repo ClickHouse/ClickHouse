@@ -23,9 +23,18 @@ public:
 	ColumnPtr cloneDummy(size_t s_) const { return new ColumnExpression(s_, expression, arguments, return_type, return_name); }
 	
 	const ExpressionActionsPtr & getExpression() const { return expression; }
-	const NamesAndTypes & getArguments() const { return arguments; }
 	const DataTypePtr & getReturnType() const { return return_type; }
 	const std::string & getReturnName() const { return return_name; }
+	
+	const NamesAndTypes & getArguments() const { return arguments; }
+	
+	Names getArgumentNames() const
+	{
+		Names res(arguments.size());
+		for (size_t i = 0; i < arguments.size(); ++i)
+			res[i] = arguments[i].first;
+		return res;
+	}
 	
 private:
 	ExpressionActionsPtr expression;
