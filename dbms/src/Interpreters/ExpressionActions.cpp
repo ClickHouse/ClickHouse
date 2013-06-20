@@ -491,6 +491,10 @@ void ExpressionActions::finalize(const Names & output_columns)
 		}
 	}
 	
+	/// Не будем выбрасывать все входные столбцы, чтобы не потерять количество строк в блоке.
+	if (needed_columns.empty() && !input_columns.empty())
+		needed_columns.insert(getSmallestColumn(input_columns));
+	
 	for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
 	{
 		NamesAndTypesList::iterator it0 = it;
