@@ -362,10 +362,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 			+ ", maximum: " + Poco::NumberFormatter::format(settings.limits.max_columns_to_read),
 			ErrorCodes::TOO_MUCH_COLUMNS);
 
-	/// Если не указан ни один столбец из таблицы, то будем читать первый попавшийся (чтобы хотя бы знать число строк).
-	if (required_columns.empty())
-		required_columns.push_back(getAnyColumn());
-
 	size_t limit_length = 0;
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
@@ -642,26 +638,6 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 	copyData(*in, *out);
 
 	return in;
-}
-
-
-String InterpreterSelectQuery::getAnyColumn()
-{
-	NamesAndTypesList::const_iterator it = context.getColumns().begin();
-
-	size_t min_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
-	String res = it->first;
-	for (; it != context.getColumns().end(); ++it)
-	{
-		size_t current_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
-		if (current_size < min_size)
-		{
-			min_size = current_size;
-			res = it->first;
-		}
-	}
-
-	return res;
 }
 
 

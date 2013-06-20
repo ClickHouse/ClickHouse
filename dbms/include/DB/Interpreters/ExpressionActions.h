@@ -192,6 +192,8 @@ public:
 	std::string getID() const;
 	
 	std::string dumpActions() const;
+	
+	static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
 private:
 	NamesAndTypesList input_columns;

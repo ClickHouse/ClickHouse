@@ -57,6 +57,8 @@ void ExpressionAnalyzer::init()
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
 	
+	removeUnusedColumns();
+	
 	/// Найдем агрегатные функции.
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
 		has_aggregation = true;
@@ -1008,12 +1010,30 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
 	aggregates = aggregate_descriptions;
 }
 
-Names ExpressionAnalyzer::getRequiredColumns()
+void ExpressionAnalyzer::removeUnusedColumns()
 {
 	NamesSet required;
 	NamesSet ignored;
 	getRequiredColumnsImpl(ast, required, ignored);
-	Names res(required.begin(), required.end());
+	
+	/// Нужно прочитать хоть один столбец, чтобы узнать количество строк.
+	if (required.empty())
+		required.insert(ExpressionActions::getSmallestColumn(columns));
+	
+	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
+	{
+		NamesAndTypesList::iterator it0 = it;
+		++it;
+		if (!required.count(it0->first))
+			columns.erase(it0);
+	}
+}
+
+Names ExpressionAnalyzer::getRequiredColumns()
+{
+	Names res;
+	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+		res.push_back(it->first);
 	return res;
 }
 

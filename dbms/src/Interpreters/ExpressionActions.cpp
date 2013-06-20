@@ -404,7 +404,7 @@ void ExpressionActions::execute(Block & block) const
 	}
 }
 
-static std::string getAnyColumn(const NamesAndTypesList & columns)
+std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
 	NamesAndTypesList::const_iterator it = columns.begin();
 	
@@ -437,7 +437,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 	
 	/// Не будем оставлять блок пустым, чтобы не потерять количество строк в нем.
 	if (final_columns.empty())
-		final_columns.insert(getAnyColumn(input_columns));
+		final_columns.insert(getSmallestColumn(input_columns));
 	
 	/// Какие столбцы нужны, чтобы выполнить действия от текущего до последнего.
 	NameSet needed_columns = final_columns;

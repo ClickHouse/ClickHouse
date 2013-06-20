@@ -39,7 +39,7 @@ public:
 	/// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
 	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
 	
-	/// Получить набор столбцов, которые достаточно прочесть для выичсления выражения.
+	/// Получить набор столбцов, которые достаточно прочесть для вычисления выражения.
 	Names getRequiredColumns();
 	
 	
@@ -214,6 +214,8 @@ private:
 	NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
 	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
+	void removeUnusedColumns();
+	
 	/** Создать словарь алиасов.
 	  */
 	void createAliasesDict(ASTPtr & ast);
