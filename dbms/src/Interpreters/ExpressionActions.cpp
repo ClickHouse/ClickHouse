@@ -244,8 +244,6 @@ void ExpressionActions::Action::execute(Block & block) const
 				ColumnWithNameAndType column = block.getByName(name);
 				if (alias != "")
 					column.name = alias;
-				if (new_block.has(column.name))
-					throw Exception("Column " + column.name + " already exists", ErrorCodes::DUPLICATE_COLUMN);
 				new_block.insert(column);
 			}
 			

@@ -157,20 +157,26 @@ class Aggregator
 public:
 	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool with_totals_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
+		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		with_totals(with_totals_), total_size_of_aggregate_states(0), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
+		std::sort(keys.begin(), keys.end());
+		keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+		keys_size = keys.size();
 	}
 
 	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool with_totals_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: key_names(key_names_), aggregates(aggregates_), keys_size(key_names.size()), aggregates_size(aggregates.size()),
+		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		with_totals(with_totals_), total_size_of_aggregate_states(0), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
+		std::sort(key_names.begin(), key_names.end());
+		key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
+		keys_size = key_names.size();
 	}
 
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
