@@ -73,6 +73,7 @@ void ExpressionAnalyzer::init()
 		/// Найдем ключи агрегации.
 		if (select_query->group_expression_list)
 		{
+			NameSet unique_keys;
 			const ASTs & group_asts = select_query->group_expression_list->children;
 			for (size_t i = 0; i < group_asts.size(); ++i)
 			{
@@ -81,10 +82,15 @@ void ExpressionAnalyzer::init()
 				key.first = group_asts[i]->getColumnName();
 				key.second = temp_actions.getSampleBlock().getByName(key.first).type;
 				aggregation_keys.push_back(key);
+				
+				if (!unique_keys.count(key.first))
+				{
+					aggregated_columns.push_back(key);
+					unique_keys.insert(key.first);
+				}
 			}
 		}
 		
-		aggregated_columns = aggregation_keys;
 		for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
 		{
 			AggregateDescription & desc = aggregate_descriptions[i];
