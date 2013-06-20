@@ -370,7 +370,7 @@ public:
 	    return 0 == m_size;
 	}
 	
-	bool getBufferSizeInBytes() const
+	size_t getBufferSizeInBytes() const
 	{
 		return buf_size_bytes();
 	}

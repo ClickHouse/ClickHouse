@@ -97,7 +97,7 @@ protected:
 				if (!checkLimits())
 				{
 					if (overflow_mode == Limits::THROW)
-						throw Exception("DISTINCT-set size limit exceeded."
+						throw Exception("DISTINCT-Set size limit exceeded."
 							" Rows: " + Poco::NumberFormatter::format(set.size()) +
 							", limit: " + Poco::NumberFormatter::format(max_rows) +
 							". Bytes: " + Poco::NumberFormatter::format(set.getBufferSizeInBytes()) +
