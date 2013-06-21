@@ -40,7 +40,7 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 		return 0;
 
 	if (level > max_depth)
-		throw Exception("Query pipeline is too deep. Maximum: " + Poco::NumberFormatter::format(max_depth), ErrorCodes::TOO_DEEP_PIPELINE);
+		throw Exception("Query pipeline is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_PIPELINE);
 
 	size_t res = 0;
 	for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)

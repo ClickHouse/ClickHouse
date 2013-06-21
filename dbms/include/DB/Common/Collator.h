@@ -4,11 +4,11 @@
 
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Exception.h>
+#include <DB/IO/WriteHelpers.h>
 
 #include <Yandex/Common.h>
 
 #include <Poco/String.h>
-#include <Poco/NumberFormatter.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -42,7 +42,7 @@ public:
 		UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);
 		
 		if (status != U_ZERO_ERROR)
-			throw DB::Exception("ICU collation comparison failed with error code: " + Poco::NumberFormatter::format(status),
+			throw DB::Exception("ICU collation comparison failed with error code: " + DB::toString(status),
 								DB::ErrorCodes::COLLATION_COMPARISON_FAILED);
 		
 		/** Значения enum UCollationResult совпадают с нужными нам:

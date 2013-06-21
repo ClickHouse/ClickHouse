@@ -78,7 +78,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	/// Для массивов используются отдельные потоки для размеров.
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
@@ -95,7 +95,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 	{
 		type_arr->deserializeOffsets(
 			column,
-			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed,
+			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
 			limit);
 
 		if (column.size())
@@ -126,7 +126,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	/// Для массивов используются отдельные потоки для размеров.
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
 		
 		addStream(name, *type_arr->getNestedType(), level + 1);
@@ -143,7 +143,7 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 	{
 		type_arr->serializeOffsets(
 			column,
-			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed);
+			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed);
 		
 		writeData(name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), level + 1);
 	}
@@ -196,7 +196,7 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 		ColumnData column_data;
 		files.insert(std::make_pair(column_name + size_column_suffix, column_data));

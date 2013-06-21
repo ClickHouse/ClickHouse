@@ -193,8 +193,8 @@ Block IProfilingBlockInputStream::read()
 		|| (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read))
 	{
 		if (limits.read_overflow_mode == Limits::THROW)
-			throw Exception("Limit for rows to read exceeded: read " + Poco::NumberFormatter::format(info.rows)
-				+ " rows, maximum: " + Poco::NumberFormatter::format(limits.max_rows_to_read),
+			throw Exception("Limit for rows to read exceeded: read " + toString(info.rows)
+				+ " rows, maximum: " + toString(limits.max_rows_to_read),
 				ErrorCodes::TOO_MUCH_ROWS);
 
 		if (limits.read_overflow_mode == Limits::BREAK)
@@ -207,8 +207,8 @@ Block IProfilingBlockInputStream::read()
 		&& info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
 	{
 		if (limits.timeout_overflow_mode == Limits::THROW)
-			throw Exception("Timeout exceeded: elapsed " + Poco::NumberFormatter::format(info.total_stopwatch.elapsedSeconds())
-				+ " seconds, maximum: " + Poco::NumberFormatter::format(limits.max_execution_time.totalMicroseconds() / 1000000.0),
+			throw Exception("Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
+				+ " seconds, maximum: " + toString(limits.max_execution_time.totalMicroseconds() / 1000000.0),
 			ErrorCodes::TIMEOUT_EXCEEDED);
 
 		if (limits.timeout_overflow_mode == Limits::BREAK)
@@ -221,8 +221,8 @@ Block IProfilingBlockInputStream::read()
 		&& info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.timeout_before_checking_execution_speed.totalMicroseconds()) * 1000
 		&& info.rows / info.total_stopwatch.elapsedSeconds() < limits.min_execution_speed)
 	{
-		throw Exception("Query is executing too slow: " + Poco::NumberFormatter::format(info.rows / info.total_stopwatch.elapsedSeconds())
-			+ " rows/sec., minimum: " + Poco::NumberFormatter::format(limits.min_execution_speed),
+		throw Exception("Query is executing too slow: " + toString(info.rows / info.total_stopwatch.elapsedSeconds())
+			+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
 			ErrorCodes::TOO_SLOW);
 	}
 	

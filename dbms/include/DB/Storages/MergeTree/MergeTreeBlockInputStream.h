@@ -281,8 +281,8 @@ private:
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
-			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			streams.insert(std::make_pair(size_name, new Stream(
 				path + escaped_size_name,
@@ -303,7 +303,7 @@ private:
 		{
 			type_arr->deserializeOffsets(
 				column,
-				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level)]->compressed,
+				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
 											max_rows_to_read);
 			
 			if (column.size())

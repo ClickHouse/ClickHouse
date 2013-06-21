@@ -462,8 +462,8 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		if (!no_more_keys && max_rows_to_group_by && result.size() > max_rows_to_group_by)
 		{
 			if (group_by_overflow_mode == Limits::THROW)
-				throw Exception("Limit for rows to GROUP BY exceeded: has " + Poco::NumberFormatter::format(result.size())
-					+ " rows, maximum: " + Poco::NumberFormatter::format(max_rows_to_group_by),
+				throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result.size())
+					+ " rows, maximum: " + toString(max_rows_to_group_by),
 					ErrorCodes::TOO_MUCH_ROWS);
 			else if (group_by_overflow_mode == Limits::BREAK)
 				break;

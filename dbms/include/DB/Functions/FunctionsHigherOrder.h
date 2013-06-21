@@ -301,7 +301,7 @@ public:
 	{
 		if (arguments.size() < 1)
 			throw Exception("Function " + getName() + " needs at least one argument; passed "
-							+ Poco::NumberFormatter::format(arguments.size()) + ".",
+							+ toString(arguments.size()) + ".",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		if (arguments.size() == 1)
@@ -313,7 +313,7 @@ public:
 		{
 			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[i + 1]);
 			if (!array_type)
-				throw Exception("Argument " + Poco::NumberFormatter::format(i + 2) + " of function " + getName() + " must be array. Found "
+				throw Exception("Argument " + toString(i + 2) + " of function " + getName() + " must be array. Found "
 								+ arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 			nested_types[i] = array_type->getNestedType();
 		}
@@ -321,7 +321,7 @@ public:
 		const DataTypeExpression * expression_type = dynamic_cast<const DataTypeExpression *>(&*arguments[0]);
 		if (!expression_type || expression_type->getArgumentTypes().size() != nested_types.size())
 			throw Exception("First argument for this overload of " + getName() + " must be an expression with "
-							+ Poco::NumberFormatter::format(nested_types.size()) + " arguments. Found "
+							+ toString(nested_types.size()) + " arguments. Found "
 							+ arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
 		arguments[0] = new DataTypeExpression(nested_types);
@@ -334,8 +334,8 @@ public:
 		size_t min_args = Impl::needExpression() ? 2 : 1;
 		if (arguments.size() < min_args)
 			throw Exception("Function " + getName() + " needs at least "
-							+ Poco::NumberFormatter::format(min_args) + " argument; passed "
-							+ Poco::NumberFormatter::format(arguments.size()) + ".",
+							+ toString(min_args) + " argument; passed "
+							+ toString(arguments.size()) + ".",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		if (arguments.size() == 1)

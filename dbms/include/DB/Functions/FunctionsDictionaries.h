@@ -140,7 +140,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (arguments[0]->getName() != TypeName<T>::get())
@@ -206,7 +206,7 @@ public:
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (arguments[0]->getName() != TypeName<T>::get())
@@ -315,7 +315,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		if (arguments[0]->getName() != TypeName<T>::get())
@@ -440,7 +440,7 @@ public:
 	{
 		if (arguments.size() != 1 && arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1 or 2.",
+				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (arguments[0]->getName() != TypeName<UInt32>::get())

@@ -570,4 +570,21 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 	return pos;
 }
 
+
+/// Простые для использования методы чтения чего-либо из строки в текстовом виде.
+template <typename T>
+inline T parse(const char * data, size_t size)
+{
+	T res;
+	ReadBuffer buf(data, size, 0);
+	readText(res, buf);
+	return res;
+}
+
+template <typename T>
+inline T parse(const String & s)
+{
+	return parse<T>(s.data(), s.size());
+}
+
 }

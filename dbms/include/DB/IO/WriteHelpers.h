@@ -17,6 +17,7 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteIntText.h>
 #include <DB/IO/VarInt.h>
+#include <DB/IO/WriteBufferFromString.h>
 
 #define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
 
@@ -523,5 +524,17 @@ inline void writeDoubleQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
 /// Сериализация эксепшена (чтобы его можно было передать по сети)
 void writeException(const Exception & e, WriteBuffer & buf);
 
+
+/// Простой для использования метод преобразования чего-либо в строку в текстовом виде.
+template <typename T>
+inline String toString(const T & x)
+{
+	String res;
+	{
+		WriteBufferFromString buf(res);
+		writeText(x, buf);
+	}
+	return res;
+}
 
 }

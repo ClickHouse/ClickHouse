@@ -2,11 +2,10 @@
 #include <iomanip>
 #include <map>
 
-#include <Poco/NumberFormatter.h>
-
 #include <DB/Core/Field.h>
 #include <DB/Interpreters/HashMap.h>
 #include <DB/Common/AutoArray.h>
+#include <DB/IO/WriteHelpers.h>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -19,7 +18,7 @@ int main(int argc, char ** argv)
 		DB::AutoArray<T> arr(n);
 
 		for (size_t i = 0; i < arr.size(); ++i)
-			arr[i] = "Hello, world! " + Poco::NumberFormatter::format(i);
+			arr[i] = "Hello, world! " + DB::toString(i);
 
 		for (size_t i = 0; i < arr.size(); ++i)
 			std::cerr << arr[i] << std::endl;
@@ -33,7 +32,7 @@ int main(int argc, char ** argv)
 		DB::AutoArray<T> arr(n, DB::DontInitElemsTag());
 
 		for (size_t i = 0; i < arr.size(); ++i)
-			new (arr.place(i)) std::string("Hello, world! " + Poco::NumberFormatter::format(i));
+			new (arr.place(i)) std::string("Hello, world! " + DB::toString(i));
 
 		for (size_t i = 0; i < arr.size(); ++i)
 			std::cerr << arr[i] << std::endl;
@@ -49,7 +48,7 @@ int main(int argc, char ** argv)
 
 		arr.resize(n);
 		for (size_t i = 0; i < arr.size(); ++i)
-			arr[i] = "Hello, world! " + Poco::NumberFormatter::format(i);
+			arr[i] = "Hello, world! " + DB::toString(i);
 
 		for (size_t i = 0; i < arr.size(); ++i)
 			std::cerr << arr[i] << std::endl;
@@ -78,9 +77,9 @@ int main(int argc, char ** argv)
 		{
 			Arr key(n);
 			for (size_t j = 0; j < n; ++j)
-				key[j] = Poco::NumberFormatter::format(rand());
+				key[j] = DB::toString(rand());
 			
-			map[key] = "Hello, world! " + Poco::NumberFormatter::format(i);
+			map[key] = "Hello, world! " + DB::toString(i);
 		}
 
 		for (Map::const_iterator it = map.begin(); it != map.end(); ++it)
@@ -122,7 +121,7 @@ int main(int argc, char ** argv)
 		{
 			Arr key(n);
 			for (size_t j = 0; j < n; ++j)
-				key[j] = Poco::NumberFormatter::format(rand());
+				key[j] = DB::toString(rand());
 
 			vec.push_back(key);
 		}
@@ -221,8 +220,8 @@ int main(int argc, char ** argv)
 
 		for (size_t i = 0; i < n; ++i)
 		{
-			arr1[i] = "Hello, world! " + Poco::NumberFormatter::format(i);
-			arr2[i] = "Goodbye, world! " + Poco::NumberFormatter::format(i);
+			arr1[i] = "Hello, world! " + DB::toString(i);
+			arr2[i] = "Goodbye, world! " + DB::toString(i);
 		}
 
 		arr2 = arr1;

@@ -206,7 +206,7 @@ public:
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
@@ -443,7 +443,7 @@ public:
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);

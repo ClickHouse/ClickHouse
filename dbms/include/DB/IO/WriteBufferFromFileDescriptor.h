@@ -3,12 +3,11 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <Poco/NumberFormatter.h>
-
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 
 
@@ -43,7 +42,7 @@ protected:
 	/// Имя или описание файла
 	virtual std::string getFileName()
 	{
-		return "(fd = " + Poco::NumberFormatter::format(fd) + ")";
+		return "(fd = " + toString(fd) + ")";
 	}
 
 public:

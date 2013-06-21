@@ -48,7 +48,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 	}
 	catch (const DB::Exception & e)
 	{
-		throw DB::Exception(e.message() + " (at row " + Poco::NumberFormatter::format(total_rows + 1) + ")", e, e.code());
+		throw DB::Exception(e.message() + " (at row " + toString(total_rows + 1) + ")", e, e.code());
 	}
 
 	return res;

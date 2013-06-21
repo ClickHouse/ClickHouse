@@ -476,9 +476,9 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 static std::string getUniqueName(const Block & block, const std::string & prefix)
 {
 	int i = 1;
-	while (block.has(prefix + Poco::NumberFormatter::format(i)))
+	while (block.has(prefix + toString(i)))
 		++i;
-	return prefix + Poco::NumberFormatter::format(i);
+	return prefix + toString(i);
 }
 
 

@@ -418,7 +418,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 			
 			if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
@@ -481,7 +481,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 			
 			if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))

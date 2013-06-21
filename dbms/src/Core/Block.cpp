@@ -46,7 +46,7 @@ void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 {
 	if (position > index_by_position.size())
 		throw Exception("Position out of bound in Block::insert(), max position = "
-			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+			+ toString(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	if (position == index_by_position.size())
 	{
@@ -79,7 +79,7 @@ void Block::erase(size_t position)
 {
 	if (position >= index_by_position.size())
 		throw Exception("Position out of bound in Block::erase(), max position = "
-			+ Poco::NumberFormatter::format(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+			+ toString(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 		
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
@@ -105,9 +105,9 @@ void Block::erase(const String & name)
 ColumnWithNameAndType & Block::getByPosition(size_t position)
 {
 	if (position >= index_by_position.size())
-		throw Exception("Position " + Poco::NumberFormatter::format(position)
+		throw Exception("Position " + toString(position)
 			+ " is out of bound in Block::getByPosition(), max position = "
-			+ Poco::NumberFormatter::format(index_by_position.size() - 1)
+			+ toString(index_by_position.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 		
 	return *index_by_position[position];
@@ -117,9 +117,9 @@ ColumnWithNameAndType & Block::getByPosition(size_t position)
 const ColumnWithNameAndType & Block::getByPosition(size_t position) const
 {
 	if (position >= index_by_position.size())
-		throw Exception("Position " + Poco::NumberFormatter::format(position)
+		throw Exception("Position " + toString(position)
 			+ " is out of bound in Block::getByPosition(), max position = "
-			+ Poco::NumberFormatter::format(index_by_position.size() - 1)
+			+ toString(index_by_position.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 		
 	return *index_by_position[position];
@@ -174,8 +174,8 @@ size_t Block::rows() const
 
 		if (res != 0 && size != res)
 			throw Exception("Sizes of columns doesn't match: "
-				+ data.begin()->name + ": " + Poco::NumberFormatter::format(res)
-				+ ", " + it->name + ": " + Poco::NumberFormatter::format(size)
+				+ data.begin()->name + ": " + toString(res)
+				+ ", " + it->name + ": " + toString(size)
 				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		res = size;

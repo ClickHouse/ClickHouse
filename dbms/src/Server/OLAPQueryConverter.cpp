@@ -1,7 +1,6 @@
 #include "OLAPQueryConverter.h"
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/WriteBufferFromString.h>
-#include <Poco/NumberFormatter.h>
 
 
 namespace DB
@@ -149,7 +148,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	
 	/// Ограничение на количество выводимых строк.
 	if (query.limit != 0)
-		out_query += " LIMIT " + Poco::NumberFormatter::format(query.limit);
+		out_query += " LIMIT " + toString(query.limit);
 }
 
 std::string QueryConverter::convertAttributeFormatted(const std::string & attribute, unsigned parameter)
@@ -257,7 +256,7 @@ std::string QueryConverter::convertConstant(const std::string & attribute, const
 {
 	if (!attribute_metadatas.count(attribute))
 		throw Exception("Unknown attribute " + attribute, ErrorCodes::UNKNOWN_IDENTIFIER);
-	return Poco::NumberFormatter::format(attribute_metadatas[attribute]->parse(value));
+	return toString(attribute_metadatas[attribute]->parse(value));
 }
 
 std::string QueryConverter::convertCondition(const std::string & attribute, unsigned parameter, const std::string & name, const std::string & rhs)
@@ -327,7 +326,7 @@ std::string QueryConverter::convertDateRange(time_t date_first, time_t date_last
 
 std::string QueryConverter::convertCounterID(Yandex::CounterID_t CounterID)
 {
-	return "CounterID == " + Poco::NumberFormatter::format(CounterID);
+	return "CounterID == " + toString(CounterID);
 }
 
 std::string QueryConverter::getTableName(Yandex::CounterID_t CounterID)

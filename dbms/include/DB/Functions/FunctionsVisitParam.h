@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Poco/NumberFormatter.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <Poco/NumberParser.h>

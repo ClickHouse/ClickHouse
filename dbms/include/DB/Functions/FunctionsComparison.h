@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/NumberFormatter.h>
-
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnString.h>
@@ -1314,7 +1312,7 @@ public:
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (!(	(arguments[0]->isNumeric() && arguments[1]->isNumeric())

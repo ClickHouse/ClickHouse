@@ -356,7 +356,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			if (!parse_res || pos != end)
 				throw DB::Exception("Syntax error while parsing create query made by ChunkMerger."
 					" The query is \"" + create_query + "\"."
-					+ " Failed at position " + Poco::NumberFormatter::format(pos - begin) + ": "
+					+ " Failed at position " + toString(pos - begin) + ": "
 					+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
 					+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 					DB::ErrorCodes::LOGICAL_ERROR);

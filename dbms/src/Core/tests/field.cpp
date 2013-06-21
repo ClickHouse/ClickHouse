@@ -3,8 +3,6 @@
 #include <sstream>
 
 #include <Poco/NumberParser.h>
-#include <Poco/NumberFormatter.h>
-
 #include <DB/Core/Field.h>
 
 #include <statdaemons/Stopwatch.h>

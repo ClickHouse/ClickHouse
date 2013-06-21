@@ -34,7 +34,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
 		throw DB::Exception("Syntax error while executing query from file " + file_name + ": failed at position "
-			+ Poco::NumberFormatter::format(pos - begin) + ": "
+			+ toString(pos - begin) + ": "
 			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			DB::ErrorCodes::SYNTAX_ERROR);

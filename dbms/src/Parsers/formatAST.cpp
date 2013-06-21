@@ -2,8 +2,6 @@
 
 #include <boost/variant/static_visitor.hpp>
 
-#include <Poco/NumberFormatter.h>
-
 #include <mysqlxx/Manip.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>

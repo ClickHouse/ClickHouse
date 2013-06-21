@@ -5,8 +5,6 @@
 
 #include <boost/static_assert.hpp>
 
-#include <Poco/NumberFormatter.h>
-
 #include <mysqlxx/Date.h>
 #include <mysqlxx/DateTime.h>
 #include <mysqlxx/Manip.h>

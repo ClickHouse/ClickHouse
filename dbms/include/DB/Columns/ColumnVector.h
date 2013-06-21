@@ -148,9 +148,9 @@ public:
 	{
 		if (start + length > this->data.size())
 			throw Exception("Parameters start = "
-				+ Poco::NumberFormatter::format(start) + ", length = "
-				+ Poco::NumberFormatter::format(length) + " are out of bound in IColumnVector<T>::cut() method"
-				" (data.size() = " + Poco::NumberFormatter::format(this->data.size()) + ").",
+				+ toString(start) + ", length = "
+				+ toString(length) + " are out of bound in IColumnVector<T>::cut() method"
+				" (data.size() = " + toString(this->data.size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
 		Self * res = new Self(length);

@@ -186,7 +186,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		return new DataTypeUInt64;
@@ -332,7 +332,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		return new DataTypeString;
@@ -360,7 +360,7 @@ public:
 	{
 		if (!arguments.empty())
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 0.",
+				+ toString(arguments.size()) + ", should be 0.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		return new DataTypeUInt64;
@@ -389,7 +389,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		if (!dynamic_cast<const DataTypeFloat64 *>(&*arguments[0]) &&
@@ -455,7 +455,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		return arguments[0];
@@ -492,7 +492,7 @@ public:
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function '" + getName() + "' doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		return new DataTypeUInt8;
@@ -687,7 +687,7 @@ class FunctionReplicate : public IFunction
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-							+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+							+ toString(arguments.size()) + ", should be 2.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1]);

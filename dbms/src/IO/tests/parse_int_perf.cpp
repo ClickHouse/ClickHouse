@@ -9,6 +9,7 @@
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/WriteIntText.h>
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/CompressedWriteBuffer.h>
@@ -1141,12 +1142,12 @@ int main(int argc, char ** argv)
 {
 /*	std::string s(' ', 20);
 	DB::WriteBufferFromString wb(s);
-	::writeIntText(Poco::NumberParser::parseUnsigned64(std::string(argv[1])), wb);
+	DB::Faster::writeIntText(Poco::NumberParser::parseUnsigned64(std::string(argv[1])), wb);
 	std::cerr << s << std::endl;*/
 	
 	try
 	{
-		typedef Int64 T;
+		typedef UInt8 T;
 		
 		size_t n = atoi(argv[1]);
 		std::vector<T> data(n);
@@ -1156,7 +1157,7 @@ int main(int argc, char ** argv)
 			Stopwatch watch;
 
 			for (size_t i = 0; i < n; ++i)
-				data[i] = lrand48() ^ (lrand48() << 24) ^ (lrand48() << 48);
+				data[i] = lrand48();// / lrand48();// ^ (lrand48() << 24) ^ (lrand48() << 48);
 
 			watch.stop();
 			std::cerr << std::fixed << std::setprecision(2)
@@ -1178,7 +1179,9 @@ int main(int argc, char ** argv)
 
 			for (size_t i = 0; i < n; ++i)
 			{
-				writeIntTextTable(data[i], wb);
+				//writeIntTextTable(data[i], wb);
+				DB::writeIntText(data[i], wb);
+				//DB::writeIntText(data[i], wb);
 				DB::writeChar('\t', wb);
 			}
 

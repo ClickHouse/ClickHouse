@@ -34,7 +34,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
-		throw Exception("Too deep subqueries. Maximum: " + Poco::NumberFormatter::format(settings.limits.max_subquery_depth),
+		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 	
 	context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
@@ -358,8 +358,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Ограничение на количество столбцов для чтения.
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
 		throw Exception("Limit for number of columns to read exceeded. "
-			"Requested: " + Poco::NumberFormatter::format(required_columns.size())
-			+ ", maximum: " + Poco::NumberFormatter::format(settings.limits.max_columns_to_read),
+			"Requested: " + toString(required_columns.size())
+			+ ", maximum: " + toString(settings.limits.max_columns_to_read),
 			ErrorCodes::TOO_MUCH_COLUMNS);
 
 	size_t limit_length = 0;

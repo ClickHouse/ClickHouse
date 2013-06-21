@@ -1,7 +1,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include <Poco/NumberFormatter.h>
+#include <DB/IO/WriteHelpers.h>
 
 #include <DB/Core/Exception.h>
 
@@ -48,7 +48,7 @@ void Exception::rethrow() const
 void throwFromErrno(const std::string & s, int code, int e)
 {
 	char buf[128];
-	throw Exception(s + ", errno: " + Poco::NumberFormatter::format(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code);
+	throw Exception(s + ", errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code);
 }
 
 }

@@ -4,13 +4,13 @@
 #include <sstream>
 
 #include <Poco/SharedPtr.h>
-#include <Poco/NumberFormatter.h>
 
 #include <Yandex/Common.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
 
 #include <iostream>
@@ -97,7 +97,7 @@ public:
 		size_t res = 0;
 		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
 			if (max_depth == 0 || (res = (*it)->checkDepth(max_depth - 1)) > max_depth - 1)
-				throw Exception("AST is too deep. Maximum: " + Poco::NumberFormatter::format(max_depth), ErrorCodes::TOO_DEEP_AST);
+				throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
 
 		return res + 1;
 	}
@@ -111,7 +111,7 @@ public:
 			res += (*it)->checkSize(max_size);
 
 		if (res > max_size)
-			throw Exception("AST is too big. Maximum: " + Poco::NumberFormatter::format(max_size), ErrorCodes::TOO_BIG_AST);
+			throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
 		
 		return res;
 	}

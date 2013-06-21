@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/NumberFormatter.h>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 
@@ -237,7 +235,7 @@ public:
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 2.",
+				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (!(arguments[0]->isNumeric() && arguments[1]->isNumeric()))
@@ -314,7 +312,7 @@ public:
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ Poco::NumberFormatter::format(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (!arguments[0]->isNumeric())

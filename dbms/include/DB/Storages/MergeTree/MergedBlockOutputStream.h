@@ -122,8 +122,8 @@ private:
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
-			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			column_streams[size_name] = new ColumnStream(
 				part_tmp_path + escaped_size_name + ".bin",
@@ -146,7 +146,7 @@ private:
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			ColumnStream & stream = *column_streams[size_name];
 			

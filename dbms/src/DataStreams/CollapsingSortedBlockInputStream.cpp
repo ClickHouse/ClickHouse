@@ -126,7 +126,7 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 			++count_negative;
 		}
 		else
-			throw Exception("Incorrect data: Sign = " + Poco::NumberFormatter::format(sign) + " (must be 1 or -1).",
+			throw Exception("Incorrect data: Sign = " + toString(sign) + " (must be 1 or -1).",
 				ErrorCodes::INCORRECT_DATA);
 
 		if (!current->isLast())

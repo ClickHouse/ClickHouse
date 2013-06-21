@@ -287,7 +287,7 @@ Connection::Packet Connection::receivePacket()
 			/// Закроем соединение, чтобы не было рассинхронизации.
 			disconnect();
 			throw Exception("Unknown packet "
-				+ Poco::NumberFormatter::format(res.type)
+				+ toString(res.type)
 				+ " from server " + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 	}
 }

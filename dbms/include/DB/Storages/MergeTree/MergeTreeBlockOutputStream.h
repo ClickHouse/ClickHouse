@@ -182,7 +182,7 @@ private:
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + Poco::NumberFormatter::format(level);
+			String size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			WriteBufferFromFile plain(path + size_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
 			WriteBufferFromFile marks(path + size_name + ".mrk", 4096, flags);

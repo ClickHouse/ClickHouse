@@ -15,7 +15,7 @@ public:
 	void setArguments(const DataTypes & arguments)
 	{
 		if (arguments.size() != 1)
-			throw Exception("Passed " + Poco::NumberFormatter::format(arguments.size()) + " arguments to unary aggregate function " + this->getName(),
+			throw Exception("Passed " + toString(arguments.size()) + " arguments to unary aggregate function " + this->getName(),
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		setArgument(arguments[0]);
 	}

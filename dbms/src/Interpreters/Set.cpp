@@ -213,10 +213,10 @@ void Set::create(BlockInputStreamPtr stream)
 		{
 			if (overflow_mode == Limits::THROW)
 					throw Exception("IN-Set size exceeded."
-						" Rows: " + Poco::NumberFormatter::format(getTotalRowCount()) +
-						", limit: " + Poco::NumberFormatter::format(max_rows) +
-						". Bytes: " + Poco::NumberFormatter::format(getTotalByteCount()) +
-						", limit: " + Poco::NumberFormatter::format(max_bytes) + ".",
+						" Rows: " + toString(getTotalRowCount()) +
+						", limit: " + toString(max_rows) +
+						". Bytes: " + toString(getTotalByteCount()) +
+						", limit: " + toString(max_bytes) + ".",
 						ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
 			if (overflow_mode == Limits::BREAK)
@@ -267,7 +267,7 @@ void Set::create(DataTypes & types, ASTPtr node)
 		ColumnWithNameAndType col;
 		col.type = data_types[i];
 		col.column = data_types[i]->createColumn();
-		col.name = "_" + Poco::NumberFormatter::format(i);
+		col.name = "_" + toString(i);
 
 		block.insert(col);
 	}
@@ -353,7 +353,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			key_columns[i] = block.getByPosition(arguments[i]).column;
 			
 			if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
-				throw Exception("Types of column " + Poco::NumberFormatter::format(i + 1) + " in section IN don't match: " + data_types[i]->getName() + " on the right, " + block.getByPosition(arguments[i]).type->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
+				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: " + data_types[i]->getName() + " on the right, " + block.getByPosition(arguments[i]).type->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 		}
 		
 		executeOrdinary(key_columns, vec_res, negative);

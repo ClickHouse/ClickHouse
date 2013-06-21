@@ -3,7 +3,6 @@
 #include <ostream>
 
 #include <Poco/SharedPtr.h>
-#include <Poco/NumberFormatter.h>
 
 #include <DB/DataTypes/IDataType.h>
 
@@ -24,7 +23,7 @@ public:
 	
 	std::string getName() const
 	{
-		return "FixedString(" + Poco::NumberFormatter::format(n) + ")";
+		return "FixedString(" + toString(n) + ")";
 	}
 
 	DataTypePtr clone() const

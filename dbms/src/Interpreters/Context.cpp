@@ -222,7 +222,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
 		throw DB::Exception("Syntax error while parsing query from file " + metadata_path + ": failed at position "
-			+ Poco::NumberFormatter::format(pos - begin) + ": "
+			+ toString(pos - begin) + ": "
 			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			DB::ErrorCodes::SYNTAX_ERROR);
