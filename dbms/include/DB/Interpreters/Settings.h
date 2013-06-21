@@ -52,7 +52,7 @@ struct Settings
 		asynchronous(true),
 		interactive_delay(DEFAULT_INTERACTIVE_DELAY),
 		connect_timeout(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
-		connect_timeout_with_failover_ms(0, DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS),
+		connect_timeout_with_failover_ms(0, 1000 * DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS),
 		receive_timeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
