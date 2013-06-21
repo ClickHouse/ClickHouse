@@ -13,8 +13,6 @@ namespace DB
   * Для реализации SELECT DISTINCT ... .
   * Если указан ненулевой limit - прекращает выдавать строки после того, как накопилось limit строк
   *  - для оптимизации SELECT DISTINCT ... LIMIT ... .
-  *
-  * TODO: Ограничение на максимальное количество строк в множестве.
   */
 class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
@@ -94,22 +92,6 @@ protected:
 				/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
 				filter[i] = set.insert(key).second;
 				
-				if (!checkLimits())
-				{
-					if (overflow_mode == Limits::THROW)
-						throw Exception("DISTINCT-Set size limit exceeded."
-							" Rows: " + Poco::NumberFormatter::format(set.size()) +
-							", limit: " + Poco::NumberFormatter::format(max_rows) +
-							". Bytes: " + Poco::NumberFormatter::format(set.getBufferSizeInBytes()) +
-							", limit: " + Poco::NumberFormatter::format(max_bytes) + ".",
-							ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-					
-					if (overflow_mode == Limits::BREAK)
-						break;
-					
-					throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-				}
-
 				if (limit && set.size() == limit)
 					break;
 			}
@@ -117,6 +99,22 @@ protected:
 			/// Если ни одной новой строки не было в блоке - перейдём к следующему блоку.
 			if (set.size() == old_set_size)
 				continue;
+
+			if (!checkLimits())
+			{
+				if (overflow_mode == Limits::THROW)
+					throw Exception("DISTINCT-Set size limit exceeded."
+						" Rows: " + Poco::NumberFormatter::format(set.size()) +
+						", limit: " + Poco::NumberFormatter::format(max_rows) +
+						". Bytes: " + Poco::NumberFormatter::format(set.getBufferSizeInBytes()) +
+						", limit: " + Poco::NumberFormatter::format(max_bytes) + ".",
+						ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+
+				if (overflow_mode == Limits::BREAK)
+					return Block();
+
+				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+			}
 
 			for (size_t i = 0; i < columns; ++i)
 				block.getByPosition(i).column = block.getByPosition(i).column->filter(filter);
