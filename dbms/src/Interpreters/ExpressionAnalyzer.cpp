@@ -1038,12 +1038,14 @@ void ExpressionAnalyzer::removeUnusedColumns()
 		}
 	}
 	
-	if (!required.empty())
-		throw Exception("Unknown identifier: " + *required.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
+	unknown_required_columns = required;
 }
 
 Names ExpressionAnalyzer::getRequiredColumns()
 {
+	if (!unknown_required_columns.empty())
+		throw Exception("Unknown identifier: " + *unknown_required_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
+	
 	Names res;
 	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
 		res.push_back(it->first);

@@ -88,6 +88,9 @@ private:
 	Settings settings;
 	size_t subquery_depth;
 	
+	/// Столбцы, которые упоминаются в выражении, но не были заданы в конструкторе.
+	NameSet unknown_required_columns;
+	
 	/// Исходные столбцы.
 	NamesAndTypesList columns;
 	/// Столбцы после агрегации. Если нет агрегации, совпадает с columns.
