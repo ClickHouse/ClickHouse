@@ -74,9 +74,8 @@ Set::Type Set::chooseMethod(const DataTypes & key_types, bool & keys_fit_128_bit
 	if (keys_bytes > 16)
 		keys_fit_128_bits = false;
 
-	/// Если есть один ключ, который помещается в 64 бита, и это не число с плавающей запятой
-	if (keys_size == 1 && key_types[0]->isNumeric()
-		&& !dynamic_cast<const DataTypeFloat32 *>(&*key_types[0]) && !dynamic_cast<const DataTypeFloat64 *>(&*key_types[0]))
+	/// Если есть один ключ, который помещается в 64 бита
+	if (keys_size == 1 && key_types[0]->isNumeric())
 		return KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
