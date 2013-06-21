@@ -753,7 +753,8 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 	{
 		for (size_t i = 0; i < ast->children.size(); ++i)
 		{
-			getAggregatesImpl(ast->children[i], actions);
+			if (!dynamic_cast<ASTSubquery *>(&*ast->children[i]))
+				getAggregatesImpl(ast->children[i], actions);
 		}
 	}
 }
@@ -1031,8 +1032,14 @@ void ExpressionAnalyzer::removeUnusedColumns()
 		NamesAndTypesList::iterator it0 = it;
 		++it;
 		if (!required.count(it0->first))
+		{
+			required.erase(it0->first);
 			columns.erase(it0);
+		}
 	}
+	
+	if (!required.empty())
+		throw Exception("Unknown identifier: " + *required.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 Names ExpressionAnalyzer::getRequiredColumns()
