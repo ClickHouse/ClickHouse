@@ -1027,18 +1027,21 @@ void ExpressionAnalyzer::removeUnusedColumns()
 	if (required.empty())
 		required.insert(ExpressionActions::getSmallestColumn(columns));
 	
+	unknown_required_columns = required;
+	
 	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
 	{
 		NamesAndTypesList::iterator it0 = it;
 		++it;
+		
+		unknown_required_columns.erase(it0->first);
+		
 		if (!required.count(it0->first))
 		{
 			required.erase(it0->first);
 			columns.erase(it0);
 		}
 	}
-	
-	unknown_required_columns = required;
 }
 
 Names ExpressionAnalyzer::getRequiredColumns()
