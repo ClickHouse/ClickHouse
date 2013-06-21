@@ -4,7 +4,7 @@
 #include <DB/IO/VarInt.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/ReadBufferFromString.h>
-#include <Poco/NumberParser.h>
+#include <DB/IO/ReadHelpers.h>
 #include <Poco/HexBinaryEncoder.h>
 
 
@@ -17,7 +17,7 @@ int main(int argc, char ** argv)
 		return 1;
 	}
 	
-	DB::UInt64 x = Poco::NumberParser::parseUnsigned64(argv[1]);
+	DB::UInt64 x = DB::parse<UInt64>(argv[1]);
 	Poco::HexBinaryEncoder hex(std::cout);
 	DB::writeVarUInt(x, hex);
 	std::cout << std::endl;

@@ -2,7 +2,6 @@
 #include <iomanip>
 #include <sstream>
 
-#include <Poco/NumberParser.h>
 #include <DB/Core/Field.h>
 
 #include <statdaemons/Stopwatch.h>
@@ -44,7 +43,7 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		size_t n = argc == 2 ? Poco::NumberParser::parseUnsigned64(argv[1]) : 10000000;
+		size_t n = argc == 2 ? DB::parse<UInt64>(argv[1]) : 10000000;
 
 		Stopwatch watch;
 

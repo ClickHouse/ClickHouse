@@ -1,7 +1,6 @@
 #include <iomanip>
 
 #include <Poco/URI.h>
-#include <Poco/NumberParser.h>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -57,7 +56,7 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Ne
 	SharedPtr<ReadBuffer> in_post_maybe_compressed;
 
 	/// Если указано decompress, то будем разжимать то, что передано POST-ом.
-	if (0 != Poco::NumberParser::parseUnsigned(params.get("decompress", "0")))
+	if (parse<bool>(params.get("decompress", "0")))
 		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
 	else
 		in_post_maybe_compressed = in_post;
@@ -68,7 +67,7 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Ne
 	SharedPtr<WriteBuffer> out = new WriteBufferFromHTTPServerResponse(response);
 	SharedPtr<WriteBuffer> out_maybe_compressed;
 
-	if (0 != Poco::NumberParser::parseUnsigned(params.get("compress", "0")))
+	if (parse<bool>(params.get("compress", "0")))
 		out_maybe_compressed = new CompressedWriteBuffer(*out);
 	else
 		out_maybe_compressed = out;

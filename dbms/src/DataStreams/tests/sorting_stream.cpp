@@ -5,7 +5,6 @@
 
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
-#include <Poco/NumberParser.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>
 

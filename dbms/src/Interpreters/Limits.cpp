@@ -1,5 +1,3 @@
-#include <Poco/NumberParser.h>
-
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
@@ -168,7 +166,7 @@ bool Limits::trySet(const String & name, const String & value)
 		|| name == "max_rows_in_distinct"
 		|| name == "max_bytes_in_distinct")
 	{
-		if (!trySet(name, Poco::NumberParser::parseUnsigned64(value)))
+		if (!trySet(name, parse<UInt64>(value)))
 			throw Exception("Logical error: unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 	}
 	else if (name == "read_overflow_mode"

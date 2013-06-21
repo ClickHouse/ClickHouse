@@ -2,7 +2,6 @@
 #include <numeric>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/NumberParser.h>
 #include <Poco/Ext/ScopedTry.h>
 
 #include <Yandex/time2str.h>
@@ -502,9 +501,9 @@ void StorageMergeTree::loadDataParts()
 		DataPartPtr part = new DataPart(*this);
 		part->left_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
 		part->right_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
-		part->left = Poco::NumberParser::parseUnsigned64(file_name.substr(matches[3].offset, matches[3].length));
-		part->right = Poco::NumberParser::parseUnsigned64(file_name.substr(matches[4].offset, matches[4].length));
-		part->level = Poco::NumberParser::parseUnsigned(file_name.substr(matches[5].offset, matches[5].length));
+		part->left = parse<UInt64>(file_name.substr(matches[3].offset, matches[3].length));
+		part->right = parse<UInt64>(file_name.substr(matches[4].offset, matches[4].length));
+		part->level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
 		part->name = file_name;
 
 		/// Размер - в количестве засечек.

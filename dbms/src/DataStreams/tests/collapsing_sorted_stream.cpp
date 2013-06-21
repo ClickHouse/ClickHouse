@@ -3,7 +3,6 @@
 
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
-#include <Poco/NumberParser.h>
 #include <Poco/ConsoleChannel.h>
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>

@@ -1,5 +1,3 @@
-#include <Poco/NumberParser.h>
-
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
@@ -84,7 +82,7 @@ void Settings::set(const String & name, const String & value)
 		|| name == "connections_with_failover_max_tries"
 		|| name == "sign_rewrite")
 	{
-		set(name, Poco::NumberParser::parseUnsigned64(value));
+		set(name, parse<UInt64>(value));
 	}
 	else if (name == "profile")
 	{

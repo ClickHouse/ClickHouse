@@ -3,8 +3,6 @@
 
 #include <boost/type_traits.hpp>
 
-#include <Poco/NumberParser.h>
-
 #include <Yandex/Common.h>
 
 #include <DB/IO/ReadHelpers.h>
@@ -1142,7 +1140,7 @@ int main(int argc, char ** argv)
 {
 /*	std::string s(' ', 20);
 	DB::WriteBufferFromString wb(s);
-	DB::Faster::writeIntText(Poco::NumberParser::parseUnsigned64(std::string(argv[1])), wb);
+	DB::Faster::writeIntText(DB::parse<UInt64>(argv[1]), wb);
 	std::cerr << s << std::endl;*/
 	
 	try

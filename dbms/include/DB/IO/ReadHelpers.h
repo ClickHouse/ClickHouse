@@ -576,9 +576,15 @@ template <typename T>
 inline T parse(const char * data, size_t size)
 {
 	T res;
-	ReadBuffer buf(data, size, 0);
+	ReadBuffer buf(const_cast<char *>(data), size, 0);
 	readText(res, buf);
 	return res;
+}
+
+template <typename T>
+inline T parse(const char * data)
+{
+	return parse<T>(data, strlen(data));
 }
 
 template <typename T>

@@ -3,7 +3,6 @@
 
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
-#include <Poco/NumberParser.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>
 
@@ -28,7 +27,7 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		size_t n = argc == 2 ? Poco::NumberParser::parseUnsigned64(argv[1]) : 10ULL;
+		size_t n = argc == 2 ? DB::parse<UInt64>(argv[1]) : 10ULL;
 
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;

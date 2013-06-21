@@ -1,12 +1,12 @@
 #include <Yandex/DateLUT.h>
 #include <Yandex/time2str.h>
 #include <Poco/DateTimeParser.h>
-#include <Poco/NumberParser.h>
 #include <Poco/AutoPtr.h>
 
 #include "OLAPQueryParser.h"
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Exception.h>
+#include <DB/IO/ReadHelpers.h>
 
 
 namespace DB
@@ -36,7 +36,7 @@ QueryParser::AttributeWithParameter QueryParser::parseAttributeWithParameter(con
 		if (matches.size() == 3)
 		{
 			res.first = s.substr(matches[1].offset, matches[1].length);
-			res.second = Poco::NumberParser::parseUnsigned(s.substr(matches[2].offset, matches[2].length));
+			res.second = DB::parse<unsigned>(s.substr(matches[2].offset, matches[2].length));
 			return res;
 		}
 	}
@@ -82,7 +82,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	
 	result.CounterID = 0;
 	if (result.query->getElementsByTagName(CounterID_element_name)->length() > 0)
-		result.CounterID = Poco::NumberParser::parseUnsigned(getValueOfOneTextElement(result.query, CounterID_element_name));
+		result.CounterID = DB::parse<unsigned>(getValueOfOneTextElement(result.query, CounterID_element_name));
 	
 	int time_zone_diff = 0;
 	result.date_first = Yandex::Time2Date(Poco::DateTimeParser::parse(
@@ -116,13 +116,13 @@ QueryParseResult QueryParser::parse(std::istream & s)
 			{
 				/// выставить дополнительное локальное ограничение на максимальный размер результата
 				
-				result.max_result_size = Poco::NumberParser::parseUnsigned(settings_child_nodes->item(i)->innerText());
+				result.max_result_size = DB::parse<unsigned>(settings_child_nodes->item(i)->innerText());
 			}
 			else if (settings_child_nodes->item(i)->nodeName() == "max_execution_time")
 			{
 				/// выставить дополнительное локальное ограничение на максимальное время выполнения запроса
 				
-				result.max_execution_time = Poco::NumberParser::parseUnsigned(settings_child_nodes->item(i)->innerText());
+				result.max_execution_time = DB::parse<unsigned>(settings_child_nodes->item(i)->innerText());
 			}
 			else if (settings_child_nodes->item(i)->nodeName() == "cut_date_last")
 			{
@@ -158,14 +158,14 @@ QueryParseResult QueryParser::parse(std::istream & s)
 			{
 				/// выставить количество потоков для обработки запроса
 				
-				result.concurrency = Poco::NumberParser::parseUnsigned(settings_child_nodes->item(i)->innerText());
+				result.concurrency = DB::parse<unsigned>(settings_child_nodes->item(i)->innerText());
 			}
 			else if (settings_child_nodes->item(i)->nodeName() == "max_threads_per_counter")
 			{
 				/** Выставить локальное ограничение на максимальное количество обрабатываемых запросов
 					* Оно может быть больше, чем ограничение по-умолчанию.
 					*/
-				result.max_threads_per_counter = Poco::NumberParser::parseUnsigned(settings_child_nodes->item(i)->innerText());
+				result.max_threads_per_counter = DB::parse<unsigned>(settings_child_nodes->item(i)->innerText());
 			}
 		}
 	}
@@ -174,7 +174,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	if (limit_nodes->length() > 1)
 		throw Exception(std::string("Found more than one node limit"), ErrorCodes::FOUND_MORE_THAN_ONE_NODE);
 	if (limit_nodes->length() == 1)
-		result.limit = Poco::NumberParser::parseUnsigned(limit_nodes->item(0)->innerText());
+		result.limit = DB::parse<unsigned>(limit_nodes->item(0)->innerText());
 	
 	LOG_DEBUG(log, "CounterID: " << result.CounterID
 		<< ", dates: " << Yandex::Date2Str(result.date_first) << " - " << Yandex::Date2Str(result.date_last));
@@ -320,7 +320,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 			{
 				if (index_direction_nodes->item(j)->nodeName() == "index")
 				{
-					column.index = Poco::NumberParser::parseUnsigned(index_direction_nodes->item(j)->innerText());
+					column.index = DB::parse<unsigned>(index_direction_nodes->item(j)->innerText());
 					if (column.index < 1 || column.index > result.key_attributes.size() + result.aggregates.size())
 						throw Exception("Index of column in sort clause is out of range.",
 											ErrorCodes::INDEX_OF_COLUMN_IN_SORT_CLAUSE_IS_OUT_OF_RANGE);

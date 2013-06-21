@@ -2,8 +2,6 @@
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
-#include <Poco/NumberParser.h>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
