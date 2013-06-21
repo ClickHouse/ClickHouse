@@ -49,13 +49,14 @@ struct ArrayFilterImpl
 {
 	static bool needBoolean() { return true; }
 	static bool needExpression() { return true; }
-	static bool needOneArray() { return true; }
+	static bool needOneArray() { return false; }
 	
 	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
 	{
 		return new DataTypeArray(array_element);
 	}
 	
+	/// Если массивов несколько, сюда передается первый.
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
 		ColumnVector<UInt8> * column_filter = dynamic_cast<ColumnVector<UInt8> *>(&*mapped);
