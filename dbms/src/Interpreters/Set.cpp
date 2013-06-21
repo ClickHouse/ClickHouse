@@ -221,7 +221,11 @@ void Set::create(BlockInputStreamPtr stream)
 						ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
 			if (overflow_mode == Limits::BREAK)
+			{
+				if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
+					profiling_in->cancel();
 				break;
+			}
 
 			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 		}
