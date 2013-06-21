@@ -753,8 +753,9 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 	{
 		for (size_t i = 0; i < ast->children.size(); ++i)
 		{
-			if (!dynamic_cast<ASTSubquery *>(&*ast->children[i]))
-				getAggregatesImpl(ast->children[i], actions);
+			ASTPtr child = ast->children[i];
+			if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child))
+				getAggregatesImpl(child, actions);
 		}
 	}
 }
@@ -1057,10 +1058,6 @@ Names ExpressionAnalyzer::getRequiredColumns()
 
 void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names)
 {
-	/// Не опускаемся в подзапросы.
-	if (dynamic_cast<ASTSubquery *>(&*ast))
-		return;
-	
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column && !ignored_names.count(node->name))
@@ -1105,7 +1102,11 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 	}
 	
 	for (size_t i = 0; i < ast->children.size(); ++i)
-		getRequiredColumnsImpl(ast->children[i], required_columns, ignored_names);
+	{
+		ASTPtr child = ast->children[i];
+		if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child))
+			getRequiredColumnsImpl(child, required_columns, ignored_names);
+	}
 }
 
 }
