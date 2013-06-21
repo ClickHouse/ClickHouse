@@ -209,6 +209,81 @@ struct ArrayAllImpl
 	}
 };
 
+struct ArraySumImpl
+{
+	static bool needBoolean() { return false; }
+	static bool needExpression() { return false; }
+	static bool needOneArray() { return false; }
+	
+	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+	{
+		if (dynamic_cast<const DataTypeUInt8 *>(&*expression_return) ||
+			dynamic_cast<const DataTypeUInt16 *>(&*expression_return) ||
+			dynamic_cast<const DataTypeUInt32 *>(&*expression_return) ||
+			dynamic_cast<const DataTypeUInt64 *>(&*expression_return))
+			return new DataTypeUInt64;
+		
+		if (dynamic_cast<const DataTypeInt8 *>(&*expression_return) ||
+			dynamic_cast<const DataTypeInt16 *>(&*expression_return) ||
+			dynamic_cast<const DataTypeInt32 *>(&*expression_return) ||
+			dynamic_cast<const DataTypeInt64 *>(&*expression_return))
+			return new DataTypeInt64;
+		
+		if (dynamic_cast<const DataTypeFloat32 *>(&*expression_return) ||
+			dynamic_cast<const DataTypeFloat64 *>(&*expression_return))
+			return new DataTypeFloat64;
+		
+		throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+	
+	template <class Element, class Result>
+	static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets_t & offsets, ColumnPtr & res_ptr)
+	{
+		const ColumnVector<Element> * column = dynamic_cast<const ColumnVector<Element> *>(&*mapped);
+		
+		if (!column)
+			return false;
+		
+		const typename ColumnVector<Element>::Container_t & data = column->getData();
+		ColumnVector<Result> * res_column = new ColumnVector<Result>(offsets.size());
+		res_ptr = res_column;
+		typename ColumnVector<Result>::Container_t & res = res_column->getData();
+		
+		size_t pos = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			Result s = 0;
+			for (; pos < offsets[i]; ++pos)
+			{
+				s += data[pos];
+			}
+			res[i] = s;
+		}
+		
+		return true;
+	}
+	
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
+	{
+		const IColumn::Offsets_t & offsets = array->getOffsets();
+		ColumnPtr res;
+		
+		if (executeType< UInt8 , UInt64>(mapped, offsets, res) ||
+			executeType< UInt16, UInt64>(mapped, offsets, res) ||
+			executeType< UInt32, UInt64>(mapped, offsets, res) ||
+			executeType< UInt64, UInt64>(mapped, offsets, res) ||
+			executeType<  Int8 ,  Int64>(mapped, offsets, res) ||
+			executeType<  Int16,  Int64>(mapped, offsets, res) ||
+			executeType<  Int32,  Int64>(mapped, offsets, res) ||
+			executeType<  Int64,  Int64>(mapped, offsets, res) ||
+			executeType<Float32,Float64>(mapped, offsets, res) ||
+			executeType<Float64,Float64>(mapped, offsets, res))
+			return res;
+		else
+			throw Exception("Unexpected column for arraySum: " + mapped->getName());
+	}
+};
+
 template <typename Impl, typename Name>
 class FunctionArrayMapped : public IFunction
 {
@@ -435,11 +510,13 @@ struct NameArrayFilter	{ static const char * get() { return "arrayFilter"; } };
 struct NameArrayCount	{ static const char * get() { return "arrayCount"; } };
 struct NameArrayExists	{ static const char * get() { return "arrayExists"; } };
 struct NameArrayAll		{ static const char * get() { return "arrayAll"; } };
+struct NameArraySum		{ static const char * get() { return "arraySum"; } };
 
 typedef FunctionArrayMapped<ArrayMapImpl, 		NameArrayMap>		FunctionArrayMap;
 typedef FunctionArrayMapped<ArrayFilterImpl, 	NameArrayFilter>	FunctionArrayFilter;
 typedef FunctionArrayMapped<ArrayCountImpl, 	NameArrayCount>		FunctionArrayCount;
 typedef FunctionArrayMapped<ArrayExistsImpl, 	NameArrayExists>	FunctionArrayExists;
 typedef FunctionArrayMapped<ArrayAllImpl,	 	NameArrayAll>		FunctionArrayAll;
+typedef FunctionArrayMapped<ArraySumImpl,	 	NameArraySum>		FunctionArraySum;
 	
 }
