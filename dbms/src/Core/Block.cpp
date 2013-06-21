@@ -251,4 +251,22 @@ NamesAndTypesList Block::getColumnsList() const
 }
 
 
+bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
+{
+	size_t columns = lhs.columns();
+	if (rhs.columns() != columns)
+		return false;
+
+	for (size_t i = 0; i < columns; ++i)
+	{
+		const IDataType & lhs_type = *lhs.getByPosition(i).type;
+		const IDataType & rhs_type = *rhs.getByPosition(i).type;
+
+		if (lhs_type.getName() != rhs_type.getName())
+			return false;
+	}
+
+	return true;
+}
+
 }

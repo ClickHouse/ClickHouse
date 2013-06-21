@@ -94,4 +94,7 @@ public:
 typedef std::vector<Block> Blocks;
 typedef std::list<Block> BlocksList;
 
+/// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
+bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
+
 }
