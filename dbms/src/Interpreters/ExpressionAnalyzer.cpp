@@ -352,7 +352,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			else
 			{
 				/// Проверим имеет ли смысл sign-rewrite
-				if (!in_sign_rewritten && node->name == sign_column_name)
+				if (!in_sign_rewritten && sign_column_name != "" && node->name == sign_column_name)
 					throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
 			}
 		}
