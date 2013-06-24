@@ -154,7 +154,8 @@ protected:
 			switch (packet.type)
 			{
 				case Protocol::Server::Data:
-					if (packet.block)
+					/// Если блок не пуст и не является заголовочным блоком
+					if (packet.block && packet.block.rows() > 0)
 						return packet.block;
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
