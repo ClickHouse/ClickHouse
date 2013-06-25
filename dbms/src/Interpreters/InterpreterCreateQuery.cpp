@@ -68,7 +68,9 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			Poco::File(data_path).createDirectory();
 		}
 
-		context.addDatabase(database_name);
+		if (!create.if_not_exists || !context.isDatabaseExist(database_name))
+			context.addDatabase(database_name);
+		
 		return StoragePtr();
 	}
 
