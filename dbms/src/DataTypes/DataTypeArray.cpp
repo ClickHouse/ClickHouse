@@ -22,13 +22,25 @@ DataTypeArray::DataTypeArray(DataTypePtr nested_) : nested(nested_)
 	
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	throw Exception("Binary serialization of individual array values is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+	const Array & a = get<const Array &>(field);
+	writeVarUInt(a.size(), ostr);
+	for (size_t i = 0; i < a.size(); ++i)
+	{
+		nested->serializeBinary(a[i], ostr);
+	}
 }
 
 
 void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-	throw Exception("Binary serialization of individual array values is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+	size_t size;
+	readVarUInt(size, istr);
+	Array a(size);
+	for (size_t i = 0; i < size; ++i)
+	{
+		nested->deserializeBinary(a[i], istr);
+	}
+	field = a;
 }
 
 
