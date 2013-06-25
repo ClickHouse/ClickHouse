@@ -175,7 +175,19 @@ protected:
 			column.name = *it;
 			column.type = storage.getDataTypeByName(*it);
 			column.column = column.type->createColumn();
-			readData(*it, *column.type, *column.column, max_rows_to_read);
+
+			try
+			{
+				readData(*it, *column.type, *column.column, max_rows_to_read);
+			}
+			catch (const Exception & e)
+			{
+				/// Более хорошая диагностика.
+				if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH || e.code() == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED)
+					throw Exception(e.message() + " (while reading column " + *it + " from part " + path + ")", e.code());
+				else
+					throw;
+			}
 			
 			if (column.column->size())
 				res.insert(column);
@@ -309,7 +321,7 @@ private:
 			if (column.size())
 				readData(
 					name,
-			*type_arr->getNestedType(),
+					*type_arr->getNestedType(),
 							dynamic_cast<ColumnArray &>(column).getData(),
 							dynamic_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
 							level + 1);
