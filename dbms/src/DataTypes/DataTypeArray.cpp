@@ -35,12 +35,10 @@ void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
 	size_t size;
 	readVarUInt(size, istr);
-	Array a(size);
+	field = Array(size);
+	Array & arr = get<Array &>(field);
 	for (size_t i = 0; i < size; ++i)
-	{
-		nested->deserializeBinary(a[i], istr);
-	}
-	field = a;
+		nested->deserializeBinary(arr[i], istr);
 }
 
 
