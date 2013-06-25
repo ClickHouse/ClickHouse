@@ -21,7 +21,7 @@ public:
 	}
 
 	/// Добавить значение.
-	void add(AggregateDataPtr place, const Row & row) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
 		addZero(place);
 	}

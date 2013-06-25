@@ -149,9 +149,6 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	typedef std::vector<ConstColumnPlainPtrs> AggregateColumns;
 	AggregateColumns aggregate_columns(aggregates_size);
 
-	typedef AutoArray<Row> Rows;
-	Rows aggregate_arguments(aggregates_size);
-
 	/** Используется, если есть ограничение на максимальное количество строк при агрегации,
 	  *  и если group_by_overflow_mode == ANY.
 	  * В этом случае, новые ключи не добавляются в набор, а производится агрегация только по
@@ -181,10 +178,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		src_bytes += block.bytes();
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-		{
-			aggregate_arguments[i].resize(aggregates[i].arguments.size());
 			aggregate_columns[i].resize(aggregates[i].arguments.size());
-		}
 		
 		/// Запоминаем столбцы, с которыми будем работать
 		for (size_t i = 0; i < keys_size; ++i)
@@ -225,12 +219,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				{
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-					{
-						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-							aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
-
-						aggregate_functions[j]->add(res + offsets_of_aggregate_states[j], aggregate_arguments[j]);
-					}
+						aggregate_functions[j]->add(res + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 				}
 			}
 		}
@@ -269,12 +258,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-				{
-					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
-
-					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], aggregate_arguments[j]);
-				}
+					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
@@ -317,12 +301,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-					{
-						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-							aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
-
-						aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], aggregate_arguments[j]);
-					}
+						aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 				}
 			}
 			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -360,12 +339,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-					{
-						for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-							aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
-
-						aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], aggregate_arguments[j]);
-					}
+						aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 				}
 			}
 			else
@@ -411,12 +385,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-				{
-					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
-
-					aggregate_functions[j]->add(it->second.second + offsets_of_aggregate_states[j], aggregate_arguments[j]);
-				}
+					aggregate_functions[j]->add(it->second.second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::GENERIC)
@@ -447,12 +416,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-				{
-					for (size_t k = 0, size = aggregate_arguments[j].size(); k < size; ++k)
-						aggregate_columns[j][k]->get(i, aggregate_arguments[j][k]);
-
-					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], aggregate_arguments[j]);
-				}
+					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
 		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)

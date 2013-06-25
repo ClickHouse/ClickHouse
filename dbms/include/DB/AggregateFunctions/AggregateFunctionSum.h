@@ -65,9 +65,9 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const Field & value) const
+	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		this->data(place).sum += get<const T &>(value);
+		this->data(place).sum += get<const T &>(column[row_num]);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
@@ -118,10 +118,10 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
-	void add(AggregateDataPtr place, const Row & row) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		if (get<UInt64>(row[1]))
-			this->data(place).sum += get<const T &>(row[0]);
+		if (columns[1]->getDataAt(row_num).data[0])
+			this->data(place).sum += get<const T &>((*columns[0])[row_num]);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

@@ -40,9 +40,10 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const Field & value_) const
+	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		data(place).value.push_back(value_);
+		data(place).value.push_back(Array::value_type());
+		column.get(row_num, data(place).value.back());
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

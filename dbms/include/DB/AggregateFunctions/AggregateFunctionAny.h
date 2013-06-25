@@ -37,13 +37,13 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const Field & value_) const
+	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		Data & d = data(place);
 
 		if (!d.value.isNull())
 			return;
-		d.value = value_;
+		column.get(row_num, d.value);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

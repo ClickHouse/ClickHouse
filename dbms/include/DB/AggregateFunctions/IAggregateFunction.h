@@ -69,8 +69,8 @@ public:
 	/// Как должна быть выровнена структура с данными. NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
 	virtual size_t alignOfData() const = 0;
 
-	/// Добавить значение.
-	virtual void add(AggregateDataPtr place, const Row & row) const = 0;
+	/// Добавить значение. columns - столбцы, содержащие аргументы, row_num - номер строки в столбцах.
+	virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const = 0;
 
 	/// Объединить состояние с другим состоянием.
 	/// Нельзя объединять с "пустым" состоянием, то есть - состоянием, для которого ни разу не был выполнен метод add.

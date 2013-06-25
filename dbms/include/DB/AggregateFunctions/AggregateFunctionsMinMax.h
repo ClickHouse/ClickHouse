@@ -51,17 +51,19 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const Field & value_) const
+	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
+		Field value;
+		column.get(row_num, value);
 		Data & d = data(place);
 
 		if (!d.value.isNull())
 		{
-			if (Traits::better(value_, d.value))
-				d.value = value_;
+			if (Traits::better(value, d.value))
+				d.value = value;
 		}
 		else
-			d.value = value_;
+			d.value = value;
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

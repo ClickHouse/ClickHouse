@@ -23,12 +23,12 @@ public:
 	virtual void setArgument(const DataTypePtr & argument) = 0;
 
 	/// Добавить значение.
-	void add(AggregateDataPtr place, const Row & row) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		addOne(place, row[0]);
+		addOne(place, *columns[0], row_num);
 	}
 
-	virtual void addOne(AggregateDataPtr place, const Field & value) const = 0;
+	virtual void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const = 0;
 };
 
 }
