@@ -12,18 +12,19 @@ namespace DB
 {
 
 
+template <typename T>
 struct AggregateFunctionAvgData
 {
-	Float64 sum;
+	T sum;
 	UInt64 count;
 
 	AggregateFunctionAvgData() : sum(0), count(0) {}
 };
 
 
-/// Считает арифметическое среднее значение чисел. Параметром шаблона может быть UInt64, Int64 или Float64.
+/// Считает арифметическое среднее значение чисел.
 template <typename T>
-class AggregateFunctionAvg : public IUnaryAggregateFunction<AggregateFunctionAvgData>
+class AggregateFunctionAvg : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type> >
 {
 public:
 	String getName() const { return "avg"; }
@@ -44,35 +45,35 @@ public:
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		data(place).sum += get<const T &>(column[row_num]);
-		++data(place).count;
+		this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+		++this->data(place).count;
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).sum += data(rhs).sum;
-		data(place).count += data(rhs).count;
+		this->data(place).sum += this->data(rhs).sum;
+		this->data(place).count += this->data(rhs).count;
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		writeFloatBinary(data(place).sum, buf);
-		writeVarUInt(data(place).count, buf);
+		writeBinary(this->data(place).sum, buf);
+		writeVarUInt(this->data(place).count, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		Float64 tmp_sum = 0;
+		typename NearestFieldType<T>::Type tmp_sum = 0;
 		UInt64 tmp_count = 0;
-		readFloatBinary(tmp_sum, buf);
+		readBinary(tmp_sum, buf);
 		readVarUInt(tmp_count, buf);
-		data(place).sum += tmp_sum;
-		data(place).count += tmp_count;
+		this->data(place).sum += tmp_sum;
+		this->data(place).count += tmp_count;
 	}
 
 	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return data(place).sum / data(place).count;
+		return static_cast<Float64>(this->data(place).sum) / this->data(place).count;
 	}
 };
 
@@ -82,7 +83,7 @@ public:
   * avgIf(x, cond) эквивалентно sum(cond ? x : 0) / sum(cond).
   */
 template <typename T>
-class AggregateFunctionAvgIf : public IAggregateFunctionHelper<AggregateFunctionAvgData>
+class AggregateFunctionAvgIf : public IAggregateFunctionHelper<AggregateFunctionAvgData<typename NearestFieldType<T>::Type> >
 {
 public:
 	String getName() const { return "avgIf"; }
@@ -106,38 +107,38 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		if (columns[1]->getDataAt(row_num).data[0])
+		if (static_cast<const ColumnUInt8 &>(*columns[1]).getData()[row_num])
 		{
-			data(place).sum += get<const T &>((*columns[0])[row_num]);
-			++data(place).count;
+			this->data(place).sum += static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+			++this->data(place).count;
 		}
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).sum += data(rhs).sum;
-		data(place).count += data(rhs).count;
+		this->data(place).sum += this->data(rhs).sum;
+		this->data(place).count += this->data(rhs).count;
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		writeFloatBinary(data(place).sum, buf);
-		writeVarUInt(data(place).count, buf);
+		writeBinary(this->data(place).sum, buf);
+		writeVarUInt(this->data(place).count, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		Float64 tmp_sum = 0;
+		typename NearestFieldType<T>::Type tmp_sum = 0;
 		UInt64 tmp_count = 0;
-		readFloatBinary(tmp_sum, buf);
+		readBinary(tmp_sum, buf);
 		readVarUInt(tmp_count, buf);
-		data(place).sum += tmp_sum;
-		data(place).count += tmp_count;
+		this->data(place).sum += tmp_sum;
+		this->data(place).count += tmp_count;
 	}
 
 	Field getResult(ConstAggregateDataPtr place) const
 	{
-		return data(place).sum / data(place).count;
+		return static_cast<Float64>(this->data(place).sum) / this->data(place).count;
 	}
 };
 

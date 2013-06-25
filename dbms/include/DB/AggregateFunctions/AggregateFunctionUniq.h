@@ -18,16 +18,19 @@ namespace DB
 {
 
 
-template <typename T> struct AggregateFunctionUniqTraits;
-
-template <> struct AggregateFunctionUniqTraits<UInt64>
+template <typename T> struct AggregateFunctionUniqTraits
 {
-	static UInt64 hash(UInt64 x) { return x; }
+	static UInt64 hash(T x) { return x; }
 };
 
-template <> struct AggregateFunctionUniqTraits<Int64>
+template <> struct AggregateFunctionUniqTraits<Float32>
 {
-	static UInt64 hash(Int64 x) { return x; }
+	static UInt64 hash(Float32 x)
+	{
+		UInt64 res = 0;
+		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+		return res;
+	}
 };
 
 template <> struct AggregateFunctionUniqTraits<Float64>
@@ -38,12 +41,6 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
 		return res;
 	}
-};
-
-template <> struct AggregateFunctionUniqTraits<String>
-{
-	/// Имейте ввиду, что вычисление приближённое.
-	static UInt64 hash(const String & x) { return CityHash64(x.data(), x.size()); }
 };
 
 
@@ -72,10 +69,9 @@ public:
 	{
 	}
 
-
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		data(place).set.insert(AggregateFunctionUniqTraits<T>::hash(get<const T &>(column[row_num])));
+		data(place).set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
@@ -100,6 +96,14 @@ public:
 		return data(place).set.size();
 	}
 };
+
+template <>
+inline void AggregateFunctionUniq<String>::addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+{
+	/// Имейте ввиду, что вычисление приближённое.
+	StringRef value = column.getDataAt(row_num);
+	data(place).set.insert(CityHash64(value.data, value.size));
+}
 
 
 /** То же самое, но выводит состояние вычислений в строке в текстовом виде.
@@ -154,8 +158,8 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		if (columns[1]->getDataAt(row_num).data[0])
-			data(place).set.insert(AggregateFunctionUniqTraits<T>::hash(get<const T &>((*columns[0])[row_num])));
+		if (static_cast<const ColumnUInt8 &>(*columns[1]).getData()[row_num])
+			data(place).set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]));
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
@@ -180,5 +184,16 @@ public:
 		return data(place).set.size();
 	}
 };
+
+template <>
+inline void AggregateFunctionUniqIf<String>::add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+{
+	if (static_cast<const ColumnUInt8 &>(*columns[1]).getData()[row_num])
+	{
+		/// Имейте ввиду, что вычисление приближённое.
+		StringRef value = columns[0]->getDataAt(row_num);
+		data(place).set.insert(CityHash64(value.data, value.size));
+	}
+}
 
 }

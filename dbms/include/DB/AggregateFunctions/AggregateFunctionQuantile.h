@@ -66,9 +66,7 @@ public:
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		this->data(place).sample.insert(
-			static_cast<typename NearestFieldType<ArgumentFieldType>::Type>(
-				*reinterpret_cast<const ArgumentFieldType *>(column.getDataAt(row_num).data)));
+		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

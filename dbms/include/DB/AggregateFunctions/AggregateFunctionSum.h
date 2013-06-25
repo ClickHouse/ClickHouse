@@ -11,30 +11,6 @@
 namespace DB
 {
 
-template <typename T> struct AggregateFunctionSumTraits;
-
-template <> struct AggregateFunctionSumTraits<UInt64>
-{
-	static DataTypePtr getReturnType() { return new DataTypeUInt64; }
-	static void write(UInt64 x, WriteBuffer & buf) { writeVarUInt(x, buf); }
-	static void read(UInt64 & x, ReadBuffer & buf) { readVarUInt(x, buf); }
-};
-
-template <> struct AggregateFunctionSumTraits<Int64>
-{
-	static DataTypePtr getReturnType() { return new DataTypeInt64; }
-	static void write(Int64 x, WriteBuffer & buf) { writeVarInt(x, buf); }
-	static void read(Int64 & x, ReadBuffer & buf) { readVarInt(x, buf); }
-};
-
-template <> struct AggregateFunctionSumTraits<Float64>
-{
-	static DataTypePtr getReturnType() { return new DataTypeFloat64; }
-	static void write(Float64 x, WriteBuffer & buf) { writeFloatBinary(x, buf); }
-	static void read(Float64 & x, ReadBuffer & buf) { readFloatBinary(x, buf); }
-};
-
-
 template <typename T>
 struct AggregateFunctionSumData
 {
@@ -44,9 +20,9 @@ struct AggregateFunctionSumData
 };
 
 	
-/// Считает сумму чисел. Параметром шаблона может быть UInt64, Int64 или Float64.
+/// Считает сумму чисел.
 template <typename T>
-class AggregateFunctionSum : public IUnaryAggregateFunction<AggregateFunctionSumData<T> >
+class AggregateFunctionSum : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type> >
 {
 public:
 	String getName() const { return "sum"; }
@@ -54,7 +30,7 @@ public:
 
 	DataTypePtr getReturnType() const
 	{
-		return AggregateFunctionSumTraits<T>::getReturnType();
+		return new typename DataTypeFromFieldType<typename NearestFieldType<T>::Type>::Type;
 	}
 
 	void setArgument(const DataTypePtr & argument)
@@ -67,7 +43,7 @@ public:
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		this->data(place).sum += get<const T &>(column[row_num]);
+		this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
@@ -77,13 +53,13 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		AggregateFunctionSumTraits<T>::write(this->data(place).sum, buf);
+		writeBinary(this->data(place).sum, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		T tmp;
-		AggregateFunctionSumTraits<T>::read(tmp, buf);
+		typename NearestFieldType<T>::Type tmp;
+		readBinary(tmp, buf);
 		this->data(place).sum += tmp;
 	}
 
@@ -96,7 +72,7 @@ public:
 
 /// Считает сумму чисел при выполнении условия. sumIf(x, cond) эквивалентно sum(cond ? x : 0).
 template <typename T>
-class AggregateFunctionSumIf : public IAggregateFunctionHelper<AggregateFunctionSumData<T> >
+class AggregateFunctionSumIf : public IAggregateFunctionHelper<AggregateFunctionSumData<typename NearestFieldType<T>::Type> >
 {
 public:
 	String getName() const { return "sumIf"; }
@@ -104,7 +80,7 @@ public:
 
 	DataTypePtr getReturnType() const
 	{
-		return AggregateFunctionSumTraits<T>::getReturnType();
+		return new typename DataTypeFromFieldType<typename NearestFieldType<T>::Type>::Type;
 	}
 
 	void setArguments(const DataTypes & arguments)
@@ -120,8 +96,8 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		if (columns[1]->getDataAt(row_num).data[0])
-			this->data(place).sum += get<const T &>((*columns[0])[row_num]);
+		if (static_cast<const ColumnUInt8 &>(*columns[1]).getData()[row_num])
+			this->data(place).sum += static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
@@ -131,13 +107,13 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		AggregateFunctionSumTraits<T>::write(this->data(place).sum, buf);
+		writeBinary(this->data(place).sum, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		T tmp;
-		AggregateFunctionSumTraits<T>::read(tmp, buf);
+		typename NearestFieldType<T>::Type tmp;
+		readBinary(tmp, buf);
 		this->data(place).sum += tmp;
 	}
 

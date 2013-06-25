@@ -15,6 +15,8 @@
 
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
 
 
 namespace DB
@@ -23,6 +25,45 @@ namespace DB
 
 AggregateFunctionFactory::AggregateFunctionFactory()
 {
+}
+
+
+/** Создать агрегатную функцию с числовым типом в параметре шаблона, в зависимости от типа аргумента.
+  */
+template<template <typename> class AggregateFunctionTemplate>
+static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
+{
+	     if (dynamic_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8>;
+	else if (dynamic_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16>;
+	else if (dynamic_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32>;
+	else if (dynamic_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64>;
+	else if (dynamic_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Int8>;
+	else if (dynamic_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Int16>;
+	else if (dynamic_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Int32>;
+	else if (dynamic_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64>;
+	else if (dynamic_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32>;
+	else if (dynamic_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64>;
+	else
+		return NULL;
+}
+
+/** Создать агрегатную функцию с числовым типом в параметре шаблона, в зависимости от имени типа, расположенном в type_id.
+  */
+template<template <typename> class AggregateFunctionTemplate>
+static IAggregateFunction * createWithNumericType(const String & type_id, size_t prefix_length)
+{
+		 if (0 == type_id.compare(prefix_length, strlen("UInt8"), 	"UInt8"))	return new AggregateFunctionTemplate<UInt8>;
+	else if (0 == type_id.compare(prefix_length, strlen("UInt16"), 	"UInt16"))	return new AggregateFunctionTemplate<UInt16>;
+	else if (0 == type_id.compare(prefix_length, strlen("UInt32"), 	"UInt32"))	return new AggregateFunctionTemplate<UInt32>;
+	else if (0 == type_id.compare(prefix_length, strlen("UInt64"), 	"UInt64"))	return new AggregateFunctionTemplate<UInt64>;
+	else if (0 == type_id.compare(prefix_length, strlen("Int8"), 	"Int8"))	return new AggregateFunctionTemplate<Int8>;
+	else if (0 == type_id.compare(prefix_length, strlen("Int16"), 	"Int16"))	return new AggregateFunctionTemplate<Int16>;
+	else if (0 == type_id.compare(prefix_length, strlen("Int32"), 	"Int32"))	return new AggregateFunctionTemplate<Int32>;
+	else if (0 == type_id.compare(prefix_length, strlen("Int64"), 	"Int64"))	return new AggregateFunctionTemplate<Int64>;
+	else if (0 == type_id.compare(prefix_length, strlen("Float32"),	"Float32"))	return new AggregateFunctionTemplate<Float32>;
+	else if (0 == type_id.compare(prefix_length, strlen("Float64"),	"Float64"))	return new AggregateFunctionTemplate<Float64>;
+	else
+		return NULL;
 }
 
 
@@ -45,157 +86,130 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String argument_type_name = argument_types[0]->getName();
-		
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64")
-			return new AggregateFunctionSum<UInt64>;
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64")
-			return new AggregateFunctionSum<Int64>;
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionSum<Float64>;
-		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionSum>(*argument_types[0]);
+
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
 	}
 	else if (name == "sumIf")
 	{
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String argument_type_name = argument_types[0]->getName();
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionSumIf>(*argument_types[0]);
 
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64")
-			return new AggregateFunctionSumIf<UInt64>;
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64")
-			return new AggregateFunctionSumIf<Int64>;
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionSumIf<Float64>;
-		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
 	}
 	else if (name == "avg")
 	{
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String argument_type_name = argument_types[0]->getName();
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionAvg>(*argument_types[0]);
 
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64")
-			return new AggregateFunctionAvg<UInt64>;
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64")
-			return new AggregateFunctionAvg<Int64>;
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionAvg<Float64>;
-		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
 	}
 	else if (name == "avgIf")
 	{
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String argument_type_name = argument_types[0]->getName();
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionAvgIf>(*argument_types[0]);
 
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64")
-			return new AggregateFunctionAvgIf<UInt64>;
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64")
-			return new AggregateFunctionAvgIf<Int64>;
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionAvgIf<Float64>;
-		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
 	}
 	else if (name == "uniq")
 	{
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String argument_type_name = argument_types[0]->getName();
+		const IDataType & argument_type = *argument_types[0];
 
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
-			|| argument_type_name == "Date" || argument_type_name == "DateTime")
-			return new AggregateFunctionUniq<UInt64>;
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64")
-			return new AggregateFunctionUniq<Int64>;
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionUniq<Float64>;
-		else if (argument_type_name == "String" || 0 == argument_type_name.compare(0, strlen("FixedString"), "FixedString"))
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq>(*argument_types[0]);
+
+		if (res)
+			return res;
+		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
+			return new AggregateFunctionUniq<DataTypeDate::FieldType>;
+		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
+			return new AggregateFunctionUniq<DataTypeDateTime::FieldType>;
+		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
 			return new AggregateFunctionUniq<String>;
 		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 	else if (name == "uniqIf")
 	{
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String argument_type_name = argument_types[0]->getName();
+		const IDataType & argument_type = *argument_types[0];
 
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
-			|| argument_type_name == "Date" || argument_type_name == "DateTime")
-			return new AggregateFunctionUniqIf<UInt64>;
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64")
-			return new AggregateFunctionUniqIf<Int64>;
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionUniqIf<Float64>;
-		else if (argument_type_name == "String" || 0 == argument_type_name.compare(0, strlen("FixedString"), "FixedString"))
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqIf>(*argument_types[0]);
+
+		if (res)
+			return res;
+		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
+			return new AggregateFunctionUniqIf<DataTypeDate::FieldType>;
+		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
+			return new AggregateFunctionUniqIf<DataTypeDateTime::FieldType>;
+		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
 			return new AggregateFunctionUniqIf<String>;
 		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 	else if (name == "uniqState")
 	{
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String argument_type_name = argument_types[0]->getName();
+		const IDataType & argument_type = *argument_types[0];
 
-		if (argument_type_name == "UInt8" || argument_type_name == "UInt16"
-			|| argument_type_name == "UInt32" || argument_type_name == "UInt64"
-			|| argument_type_name == "Date" || argument_type_name == "DateTime")
-			return new AggregateFunctionUniqState<UInt64>;
-		else if (argument_type_name == "Int8" || argument_type_name == "Int16"
-			|| argument_type_name == "Int32" || argument_type_name == "Int64")
-			return new AggregateFunctionUniqState<Int64>;
-		else if (argument_type_name == "Float32" || argument_type_name == "Float64")
-			return new AggregateFunctionUniqState<Float64>;
-		else if (argument_type_name == "String" || 0 == argument_type_name.compare(0, strlen("FixedString"), "FixedString"))
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqState>(*argument_types[0]);
+
+		if (res)
+			return res;
+		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
+			return new AggregateFunctionUniqState<DataTypeDate::FieldType>;
+		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
+			return new AggregateFunctionUniqState<DataTypeDateTime::FieldType>;
+		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
 			return new AggregateFunctionUniqState<String>;
 		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 	else if (name == "median" || name == "quantile")
 	{
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
-		String argument_type_name = argument_types[0]->getName();
-		
-		if 		(argument_type_name == "UInt8")		return new AggregateFunctionQuantile<UInt8>;
-		else if (argument_type_name == "UInt16")	return new AggregateFunctionQuantile<UInt16>;
-		else if (argument_type_name == "UInt32")	return new AggregateFunctionQuantile<UInt32>;
-		else if (argument_type_name == "UInt64")	return new AggregateFunctionQuantile<UInt64>;
-		else if (argument_type_name == "Int8")		return new AggregateFunctionQuantile<Int8>;
-		else if (argument_type_name == "Int16")		return new AggregateFunctionQuantile<Int16>;
-		else if (argument_type_name == "Int32")		return new AggregateFunctionQuantile<Int32>;
-		else if (argument_type_name == "Int64")		return new AggregateFunctionQuantile<Int64>;
-		else if (argument_type_name == "Float32")	return new AggregateFunctionQuantile<Float32>;
-		else if (argument_type_name == "Float64")	return new AggregateFunctionQuantile<Float64>;
-		else if (argument_type_name == "Date")		return new AggregateFunctionQuantile<DataTypeDate::FieldType, false>;
-		else if (argument_type_name == "DateTime")	return new AggregateFunctionQuantile<DataTypeDateTime::FieldType, false>;
+		const IDataType & argument_type = *argument_types[0];
+
+			 if (dynamic_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt8>;
+		else if (dynamic_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt16>;
+		else if (dynamic_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt32>;
+		else if (dynamic_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt64>;
+		else if (dynamic_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantile<Int8>;
+		else if (dynamic_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantile<Int16>;
+		else if (dynamic_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantile<Int32>;
+		else if (dynamic_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantile<Int64>;
+		else if (dynamic_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantile<Float32>;
+		else if (dynamic_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantile<Float64>;
+		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantile<DataTypeDate::FieldType, false>;
+		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantile<DataTypeDateTime::FieldType, false>;
 		else
-			throw Exception("Illegal type " + argument_type_name + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 	else
 		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
@@ -218,56 +232,46 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 		return new AggregateFunctionGroupArray;
 	else if (0 == type_id.compare(0, strlen("sum_"), "sum_"))
 	{
-		if (0 == type_id.compare(strlen("sum_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionSum<UInt64>;
-		else if (0 == type_id.compare(strlen("sum_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionSum<Int64>;
-		else if (0 == type_id.compare(strlen("sum_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionSum<Float64>;
-		else
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionSum>(type_id, strlen("sum_"));
+
+		if (!res)
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+
+		return res;
 	}
 	else if (0 == type_id.compare(0, strlen("sumIf_"), "sumIf_"))
 	{
-		if (0 == type_id.compare(strlen("sumIf_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionSumIf<UInt64>;
-		else if (0 == type_id.compare(strlen("sumIf_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionSumIf<Int64>;
-		else if (0 == type_id.compare(strlen("sumIf_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionSumIf<Float64>;
-		else
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionSumIf>(type_id, strlen("sumIf_"));
+
+		if (!res)
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+
+		return res;
 	}
 	else if (0 == type_id.compare(0, strlen("avg_"), "avg_"))
 	{
-		if (0 == type_id.compare(strlen("avg_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionAvg<UInt64>;
-		else if (0 == type_id.compare(strlen("avg_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionAvg<Int64>;
-		else if (0 == type_id.compare(strlen("avg_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionAvg<Float64>;
-		else
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionAvg>(type_id, strlen("avg_"));
+
+		if (!res)
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+
+		return res;
 	}
 	else if (0 == type_id.compare(0, strlen("avgIf_"), "avgIf_"))
 	{
-		if (0 == type_id.compare(strlen("avgIf_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionAvgIf<UInt64>;
-		else if (0 == type_id.compare(strlen("avgIf_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionAvgIf<Int64>;
-		else if (0 == type_id.compare(strlen("avgIf_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionAvgIf<Float64>;
-		else
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionAvgIf>(type_id, strlen("avgIf_"));
+
+		if (!res)
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+
+		return res;
 	}
 	else if (0 == type_id.compare(0, strlen("uniq_"), "uniq_"))
 	{
-		if (0 == type_id.compare(strlen("uniq_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionUniq<UInt64>;
-		else if (0 == type_id.compare(strlen("uniq_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionUniq<Int64>;
-		else if (0 == type_id.compare(strlen("uniq_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionUniq<Float64>;
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq>(type_id, strlen("uniq_"));
+
+		if (res)
+			return res;
 		else if (0 == type_id.compare(strlen("uniq_"), strlen("String"), "String"))
 			return new AggregateFunctionUniq<String>;
 		else
@@ -275,25 +279,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 	}
 	else if (0 == type_id.compare(0, strlen("uniqIf_"), "uniqIf_"))
 	{
-		if (0 == type_id.compare(strlen("uniqIf_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionUniqIf<UInt64>;
-		else if (0 == type_id.compare(strlen("uniqIf_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionUniqIf<Int64>;
-		else if (0 == type_id.compare(strlen("uniqIf_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionUniqIf<Float64>;
-		else if (0 == type_id.compare(strlen("uniqIf_"), strlen("String"), "String"))
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqIf>(type_id, strlen("uniqIf_"));
+
+		if (res)
+			return res;
+		else if (0 == type_id.compare(strlen("uniq_"), strlen("String"), "String"))
 			return new AggregateFunctionUniqIf<String>;
 		else
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 	}
 	else if (0 == type_id.compare(0, strlen("uniqState_"), "uniqState_"))
 	{
-		if (0 == type_id.compare(strlen("uniqState_"), strlen("UInt64"), "UInt64"))
-			return new AggregateFunctionUniqState<UInt64>;
-		else if (0 == type_id.compare(strlen("uniqState_"), strlen("Int64"), "Int64"))
-			return new AggregateFunctionUniqState<Int64>;
-		else if (0 == type_id.compare(strlen("uniqState_"), strlen("Float64"), "Float64"))
-			return new AggregateFunctionUniqState<Float64>;
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqState>(type_id, strlen("uniqState_"));
+
+		if (res)
+			return res;
 		else if (0 == type_id.compare(strlen("uniqState_"), strlen("String"), "String"))
 			return new AggregateFunctionUniqState<String>;
 		else

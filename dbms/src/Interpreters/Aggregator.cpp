@@ -185,8 +185,18 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			key_columns[i] = block.getByPosition(keys[i]).column;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
+		{
 			for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
+			{
 				aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
+
+				/** Агрегатные функции рассчитывают, что в них передаются полноценные столбцы.
+				  * Поэтому, стобцы-константы не разрешены в качестве аргументов агрегатных функций.
+				  */
+				if (aggregate_columns[i][j]->isConst())
+					throw Exception("Constants is not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
+			}
+		}
 
 		size_t rows = block.rows();
 
