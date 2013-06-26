@@ -420,11 +420,15 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
 	/** Нужно преобразовать правый аргумент в множество.
-	  * Это может быть перечисление значений или подзапрос.
+	  * Это может быть значение, перечисление значений или подзапрос.
 	  * Перечисление значений парсится как функция tuple.
 	  */
 	IAST & args = *node->arguments;
 	ASTPtr & arg = args.children[1];
+	
+	if (dynamic_cast<ASTSet *>(&*arg))
+		return;
+	
 	if (dynamic_cast<ASTSubquery *>(&*arg))
 	{
 		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
@@ -434,13 +438,10 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		ast_set->set->create(interpreter.execute());
 		arg = ast_set;
 	}
-	else if (ASTFunction * set_func = dynamic_cast<ASTFunction *>(&*arg))
+	else
 	{
 		/// Случай явного перечисления значений.
-		if (set_func->name != "tuple")
-			throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+		
 		DataTypes set_element_types;
 		ASTPtr & left_arg = args.children[0];
 
@@ -461,15 +462,46 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			else
 				set_element_types.push_back(left_type);
 		}
-
+		
+		/// Отличим случай x in (1, 2) от случая x in 1 (он же x in (1)).
+		bool single_value = false;
+		ASTPtr elements_ast = arg;
+		
+		if (ASTFunction * set_func = dynamic_cast<ASTFunction *>(&*arg))
+		{
+			if (set_func->name != "tuple")
+				throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			
+			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+			ASTFunction * any_element = dynamic_cast<ASTFunction *>(&*set_func->arguments->children[0]);
+			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
+				single_value = true;
+			else
+				elements_ast = set_func->arguments;
+		}
+		else if (dynamic_cast<ASTLiteral *>(&*arg))
+		{
+			single_value = true;
+		}
+		else
+		{
+			throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
+							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+		
+		if (single_value)
+		{
+			ASTPtr exp_list = new ASTExpressionList;
+			exp_list->children.push_back(elements_ast);
+			elements_ast = exp_list;
+		}
+		
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
 		ast_set->set = new Set(settings.limits);
-		ast_set->set->create(set_element_types, set_func->arguments);
+		ast_set->set->create(set_element_types, elements_ast);
 		arg = ast_set;
 	}
-	else if (!dynamic_cast<ASTSet *>(&*arg))
-		throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 
@@ -493,7 +525,7 @@ void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool
 void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack)
 {
 	/// Если результат вычисления уже есть в блоке.
-	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast) || dynamic_cast<ASTSet *>(&*ast))
+	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast))
 		&& actions_stack.getSampleBlock().has(ast->getColumnName()))
 		return;
 	
@@ -553,6 +585,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				ASTPtr child = node->arguments->children[i];
 				
 				ASTFunction * lambda = dynamic_cast<ASTFunction *>(&*child);
+				ASTSet * set = dynamic_cast<ASTSet *>(&*child);
 				if (lambda && lambda->name == "lambda")
 				{
 					/// Если аргумент - лямбда-выражение, только запомним его примерный тип.
@@ -568,6 +601,20 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					argument_types.push_back(new DataTypeExpression(DataTypes(lambda_args_tuple->arguments->children.size())));
 					/// Выберем название в следующем цикле.
 					argument_names.push_back("");
+				}
+				else if (set)
+				{
+					/// Если аргумент - множество, дадим ему уникальное имя,
+					///  чтобы множества с одинаковой записью не склеивались (у них может быть разный тип).
+					ColumnWithNameAndType column;
+					column.column = new ColumnSet(1, set->set);
+					column.type = new DataTypeSet;
+					column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
+					
+					actions_stack.addAction(ExpressionActions::Action::addColumn(column));
+					
+					argument_types.push_back(column.type);
+					argument_names.push_back(column.name);
 				}
 				else
 				{
@@ -679,16 +726,6 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		ColumnWithNameAndType column;
 		column.column = type->createConstColumn(1, node->value);
 		column.type = type;
-		column.name = node->getColumnName();
-		
-		actions_stack.addAction(ExpressionActions::Action::addColumn(column));
-	}
-	else if (ASTSet * node = dynamic_cast<ASTSet *>(&*ast))
-	{
-		/// Множество в секции IN.
-		ColumnWithNameAndType column;
-		column.column = new ColumnSet(1, node->set);
-		column.type = new DataTypeSet;
 		column.name = node->getColumnName();
 		
 		actions_stack.addAction(ExpressionActions::Action::addColumn(column));

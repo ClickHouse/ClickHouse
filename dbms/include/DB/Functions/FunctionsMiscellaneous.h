@@ -502,9 +502,11 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		/// Второй аргумент - обязательно ColumnSet.
-		const ColumnSet * column_set = dynamic_cast<const ColumnSet *>(&*block.getByPosition(arguments[1]).column);
+		ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
+		const ColumnSet * column_set = dynamic_cast<const ColumnSet *>(&*column_set_ptr);
 		if (!column_set)
-			throw Exception("Second argument for function '" + getName() + "' must be Set.", ErrorCodes::ILLEGAL_COLUMN);
+			throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
+							ErrorCodes::ILLEGAL_COLUMN);
 
 		/// Столбцы, которые проверяются на принадлежность множеству.
 		ColumnNumbers left_arguments;
