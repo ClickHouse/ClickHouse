@@ -1,0 +1,19 @@
+PROGRAM=@DAEMON@
+LOGDIR=/var/log/$PROGRAM
+LOGFILE=$LOGDIR/$PROGRAM.log
+PIDDIR=/var/run/$PROGRAM
+PIDFILE=$PIDDIR/$PROGRAM.pid
+
+
+$LOGFILE {
+	rotate 20
+	size 20M
+	compress
+	missingok
+	sharedscripts
+	nocreate
+	delaycompress
+	postrotate
+	[ -f "$PIDFILE" ] && kill -s USR1 `cat $PIDFILE`
+	endscript
+}
