@@ -47,9 +47,9 @@ void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, 
 	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
-	size_t nested_offset = offset ? offsets[offset] : 0;
-	size_t nested_limit = limit && offset + limit < offsets.size()
-		? offsets[offset + limit] - nested_offset
+	size_t nested_offset = offset ? offsets[offset - 1] : 0;
+	size_t nested_limit = limit && (offset + limit < offsets.size())
+		? offsets[offset + limit - 1] - nested_offset
 		: 0;
 
 	nested->serializeBinary(column_array.getData(), ostr, nested_offset, nested_limit);
