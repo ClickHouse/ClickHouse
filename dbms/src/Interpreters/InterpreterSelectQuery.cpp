@@ -238,8 +238,19 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			
 			if (need_aggregate)
 				executeAggregation(streams, before_aggregation);
+
+			/** Оптимизация - при распределённой обработке запроса, на удалённом сервере,
+			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
+			  *  то выполним предварительный LIMIT на удалёном сервере.
+			  */
+			if (to_stage == QueryProcessingStage::WithMergeableState
+				&& !query.distinct && !need_aggregate && !has_having && !has_order_by
+				&& query.limit_length)
+			{
+				executePreLimit(streams);
+			}
 		}
-		
+
 		if (from_stage <= QueryProcessingStage::WithMergeableState
 			&& to_stage > QueryProcessingStage::WithMergeableState)
 		{
@@ -266,8 +277,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			executeDistinct(streams, true);
 
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
-			 * ограничивающий число записей в каждом до offset + limit.
-			 */
+			  * ограничивающий число записей в каждом до offset + limit.
+			  */
 			if (query.limit_length && streams.size() > 1)
 				executePreLimit(streams);
 			
@@ -280,9 +291,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 				executeDistinct(streams, false);
 			
 			/** NOTE: В некоторых случаях, DISTINCT можно было бы применять раньше
-			 *  - до сортировки и, возможно, на удалённых серверах.
-			 */
-			
+			  *  - до сортировки и, возможно, на удалённых серверах.
+			  */
+
 			executeLimit(streams);
 		}
 	}
