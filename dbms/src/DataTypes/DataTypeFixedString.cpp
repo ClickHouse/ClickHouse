@@ -45,7 +45,7 @@ void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & 
 	if (limit == 0 || offset + limit > size)
 		limit = size - offset;
 
-	ostr.write(reinterpret_cast<const char *>(&data[offset]), n * limit);
+	ostr.write(reinterpret_cast<const char *>(&data[n * offset]), n * limit);
 }
 
 
