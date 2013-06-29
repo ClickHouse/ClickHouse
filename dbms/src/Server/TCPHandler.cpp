@@ -213,14 +213,14 @@ void TCPHandler::processOrdinaryQuery()
 			
 			while (true)
 			{
-				if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
-				{
-					block = async_in.read();
-					break;
-				}
-				else if (isQueryCancelled())
+				if (isQueryCancelled())
 				{
 					async_in.cancel();
+					break;
+				}
+				else if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
+				{
+					block = async_in.read();
 					break;
 				}
 			}
