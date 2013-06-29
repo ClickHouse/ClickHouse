@@ -630,7 +630,7 @@ void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams)
 BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 {
 	Block sample = getSampleBlock();
-	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : "TabSeparated";
+	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : context.getDefaultFormat();
 
 	BlockInputStreamPtr in = execute();
 	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);

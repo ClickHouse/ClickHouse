@@ -82,6 +82,10 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Ne
 		{
 			context.setCurrentDatabase(it->second);
 		}
+		else if (it->first == "default_format")
+		{
+			context.setDefaultFormat(it->second);
+		}
 		else if (readonly && it->first == "readonly")
 		{
 			throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);

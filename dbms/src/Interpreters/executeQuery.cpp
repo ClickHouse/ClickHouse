@@ -68,9 +68,6 @@ void executeQuery(
 
 	LOG_DEBUG(&Logger::get("executeQuery"), std::string(begin, pos - begin));
 
-//	formatAST(*ast, std::cerr);
-//	std::cerr << std::endl;
-
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
 

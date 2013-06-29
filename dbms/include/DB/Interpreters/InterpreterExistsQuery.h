@@ -35,7 +35,7 @@ public:
 	{
 		Block sample = getSampleBlock();
 		ASTPtr format_ast = dynamic_cast<ASTExistsQuery &>(*query_ptr).format;
-		String format_name = format_ast ? dynamic_cast<ASTIdentifier &>(*format_ast).name : "TabSeparated";
+		String format_name = format_ast ? dynamic_cast<ASTIdentifier &>(*format_ast).name : context.getDefaultFormat();
 
 		BlockInputStreamPtr in = executeImpl();
 		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);

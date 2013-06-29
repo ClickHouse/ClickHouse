@@ -295,6 +295,20 @@ void Context::setCurrentDatabase(const String & name)
 }
 
 
+String Context::getDefaultFormat() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return default_format.empty() ? "TabSeparated" : default_format;
+}
+
+
+void Context::setDefaultFormat(const String & name)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	default_format = name;
+}
+
+
 Context & Context::getSessionContext()
 {
 	if (!session_context)

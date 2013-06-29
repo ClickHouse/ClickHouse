@@ -68,13 +68,16 @@ private:
 	typedef SharedPtr<ContextShared> Shared;
 	Shared shared;
 
-	String current_database;								/// Текущая БД.
-	NamesAndTypesList columns;								/// Столбцы текущей обрабатываемой таблицы.
-	Settings settings;										/// Настройки выполнения запроса.
-	ProgressCallback progress_callback;						/// Колбек для отслеживания прогресса выполнения запроса.
+	String current_database;			/// Текущая БД.
+	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
+	Settings settings;					/// Настройки выполнения запроса.
+	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
+
+	String default_format;				/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
+										/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
 	
-	Context * session_context;								/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
-	Context * global_context;								/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
+	Context * session_context;			/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
+	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
 public:
 	Context() : shared(new ContextShared), session_context(NULL), global_context(NULL) {}
@@ -100,6 +103,9 @@ public:
 
 	String getCurrentDatabase() const;
 	void setCurrentDatabase(const String & name);
+
+	String getDefaultFormat() const;	/// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
+	void setDefaultFormat(const String & name);
 
 	DatabaseDropperPtr getDatabaseDropper(const String & name);
 	
