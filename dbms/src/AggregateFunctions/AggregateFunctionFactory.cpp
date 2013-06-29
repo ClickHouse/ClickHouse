@@ -211,6 +211,28 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "quantiles")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const IDataType & argument_type = *argument_types[0];
+
+			 if (dynamic_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt8>;
+		else if (dynamic_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt16>;
+		else if (dynamic_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt32>;
+		else if (dynamic_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt64>;
+		else if (dynamic_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int8>;
+		else if (dynamic_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int16>;
+		else if (dynamic_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int32>;
+		else if (dynamic_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int64>;
+		else if (dynamic_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantiles<Float32>;
+		else if (dynamic_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantiles<Float64>;
+		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantiles<DataTypeDate::FieldType, false>;
+		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantiles<DataTypeDateTime::FieldType, false>;
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 	else
 		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
@@ -329,6 +351,36 @@ AggregateFunctionPtr AggregateFunctionFactory::getByTypeID(const String & type_i
 		else
 			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 	}
+	else if (0 == type_id.compare(0, strlen("quantiles_float_"), "quantiles_float_"))
+	{
+		if 		(0 == type_id.compare(strlen("quantiles_float_"), strlen("UInt8"), 	"UInt8"))	return new AggregateFunctionQuantiles<UInt8>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("UInt16"), "UInt16"))	return new AggregateFunctionQuantiles<UInt16>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("UInt32"), "UInt32"))	return new AggregateFunctionQuantiles<UInt32>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("UInt64"), "UInt64"))	return new AggregateFunctionQuantiles<UInt64>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("Int8"), 	"Int8"))	return new AggregateFunctionQuantiles<Int8>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("Int16"), 	"Int16"))	return new AggregateFunctionQuantiles<Int16>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("Int32"), 	"Int32"))	return new AggregateFunctionQuantiles<Int32>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("Int64"), 	"Int64"))	return new AggregateFunctionQuantiles<Int64>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("Float32"), "Float32"))	return new AggregateFunctionQuantiles<Float32>;
+		else if (0 == type_id.compare(strlen("quantiles_float_"), strlen("Float64"), "Float64"))	return new AggregateFunctionQuantiles<Float64>;
+		else
+			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+	}
+	else if (0 == type_id.compare(0, strlen("quantiles_rounded_"), "quantiles_rounded_"))
+	{
+		if 		(0 == type_id.compare(strlen("quantiles_rounded_"), strlen("UInt8"), 	"UInt8"))	return new AggregateFunctionQuantiles<UInt8,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("UInt16"), 	"UInt16"))	return new AggregateFunctionQuantiles<UInt16,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("UInt32"), 	"UInt32"))	return new AggregateFunctionQuantiles<UInt32,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("UInt64"), 	"UInt64"))	return new AggregateFunctionQuantiles<UInt64,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("Int8"), 	"Int8"))	return new AggregateFunctionQuantiles<Int8,		false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("Int16"), 	"Int16"))	return new AggregateFunctionQuantiles<Int16,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("Int32"), 	"Int32"))	return new AggregateFunctionQuantiles<Int32,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("Int64"), 	"Int64"))	return new AggregateFunctionQuantiles<Int64,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("Float32"), 	"Float32"))	return new AggregateFunctionQuantiles<Float32,	false>;
+		else if (0 == type_id.compare(strlen("quantiles_rounded_"), strlen("Float64"), 	"Float64"))	return new AggregateFunctionQuantiles<Float64,	false>;
+		else
+			throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+	}
 	else
 		throw Exception("Unknown type id of aggregate function " + type_id, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
@@ -362,6 +414,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 		("groupArray")
 		("median")
 		("quantile")
+		("quantiles")
 	;
 
 	return names.end() != names.find(name);
