@@ -79,7 +79,7 @@ void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr,
 	if (!size)
 		return;
 
-	size_t end = limit && offset + limit < size
+	size_t end = limit && (offset + limit < size)
 		? offset + limit
 		: size;
 
