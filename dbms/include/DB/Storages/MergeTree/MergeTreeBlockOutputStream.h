@@ -23,7 +23,7 @@ public:
 		
 		/// Достаём столбец с датой.
 		const ColumnUInt16::Container_t & dates =
-		dynamic_cast<const ColumnUInt16 &>(*block.getByName(storage.date_column_name).column).getData();
+			dynamic_cast<const ColumnUInt16 &>(*block.getByName(storage.date_column_name).column).getData();
 		
 		/// Минимальная и максимальная дата.
 		UInt16 min_date = std::numeric_limits<UInt16>::max();
@@ -130,9 +130,9 @@ private:
 					? &block.getByName(storage.sort_descr[i].column_name)
 					: &block.getByPosition(storage.sort_descr[i].column_number));
 				
-				for (size_t i = 0; i < rows; i += storage.index_granularity)
-					for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
-						(*it)->type->serializeBinary((*(*it)->column)[i], index);
+			for (size_t i = 0; i < rows; i += storage.index_granularity)
+				for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
+					(*it)->type->serializeBinary((*(*it)->column)[i], index);
 		}
 		
 		LOG_TRACE(storage.log, "Writing data.");
