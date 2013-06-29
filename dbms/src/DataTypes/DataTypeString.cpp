@@ -34,7 +34,6 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 	field = String();
 	String & s = get<String &>(field);
 	s.resize(size);
-	/// непереносимо, но (действительно) быстрее
 	istr.readStrict(&s[0], size);
 }
 
