@@ -24,7 +24,6 @@ class AggregateFunctionCount : public INullaryAggregateFunction<AggregateFunctio
 {
 public:
 	String getName() const { return "count"; }
-	String getTypeID() const { return "count"; }
 
 	DataTypePtr getReturnType() const
 	{

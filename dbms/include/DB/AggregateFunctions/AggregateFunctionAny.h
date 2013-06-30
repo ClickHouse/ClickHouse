@@ -24,7 +24,6 @@ private:
 	
 public:
 	String getName() const { return "any"; }
-	String getTypeID() const { return "any"; }
 
 	DataTypePtr getReturnType() const
 	{

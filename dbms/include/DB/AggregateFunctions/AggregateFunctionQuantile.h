@@ -41,7 +41,6 @@ public:
 	AggregateFunctionQuantile(double level_ = 0.5) : level(level_) {}
 
 	String getName() const { return "quantile"; }
-	String getTypeID() const { return (returns_float ? "quantile_float_" : "quantile_rounded_") + TypeName<ArgumentFieldType>::get(); }
 
 	DataTypePtr getReturnType() const
 	{
@@ -116,7 +115,6 @@ private:
 
 public:
 	String getName() const { return "quantiles"; }
-	String getTypeID() const { return (returns_float ? "quantiles_float_" : "quantiles_rounded_") + TypeName<ArgumentFieldType>::get(); }
 
 	DataTypePtr getReturnType() const
 	{

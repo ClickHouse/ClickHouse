@@ -27,7 +27,6 @@ private:
 	
 public:
 	String getName() const { return "groupArray"; }
-	String getTypeID() const { return "groupArray"; }
 
 	DataTypePtr getReturnType() const
 	{

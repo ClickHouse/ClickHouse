@@ -28,7 +28,6 @@ class AggregateFunctionAvg : public IUnaryAggregateFunction<AggregateFunctionAvg
 {
 public:
 	String getName() const { return "avg"; }
-	String getTypeID() const { return "avg_" + TypeName<T>::get(); }
 
 	DataTypePtr getReturnType() const
 	{
@@ -87,7 +86,6 @@ class AggregateFunctionAvgIf : public IAggregateFunctionHelper<AggregateFunction
 {
 public:
 	String getName() const { return "avgIf"; }
-	String getTypeID() const { return "avgIf_" + TypeName<T>::get(); }
 
 	DataTypePtr getReturnType() const
 	{

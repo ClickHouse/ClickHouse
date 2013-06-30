@@ -38,7 +38,6 @@ private:
 	
 public:
 	String getName() const { return Traits::name(); }
-	String getTypeID() const { return Traits::name(); }
 
 	DataTypePtr getReturnType() const
 	{

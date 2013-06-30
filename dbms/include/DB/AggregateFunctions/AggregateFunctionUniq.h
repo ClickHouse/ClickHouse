@@ -58,7 +58,6 @@ public:
 	AggregateFunctionUniq() {}
 
 	String getName() const { return "uniq"; }
-	String getTypeID() const { return "uniq_" + TypeName<T>::get(); }
 
 	DataTypePtr getReturnType() const
 	{
@@ -115,7 +114,6 @@ class AggregateFunctionUniqState : public AggregateFunctionUniq<T>
 {
 public:
 	String getName() const { return "uniqState"; }
-	String getTypeID() const { return "uniqState_" + TypeName<T>::get(); }
 
 	DataTypePtr getReturnType() const
 	{
@@ -142,7 +140,6 @@ public:
 	AggregateFunctionUniqIf() {}
 
 	String getName() const { return "uniqIf"; }
-	String getTypeID() const { return "uniqIf_" + TypeName<T>::get(); }
 
 	DataTypePtr getReturnType() const
 	{

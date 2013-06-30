@@ -26,7 +26,6 @@ class AggregateFunctionSum : public IUnaryAggregateFunction<AggregateFunctionSum
 {
 public:
 	String getName() const { return "sum"; }
-	String getTypeID() const { return "sum_" + TypeName<T>::get(); }
 
 	DataTypePtr getReturnType() const
 	{
@@ -76,7 +75,6 @@ class AggregateFunctionSumIf : public IAggregateFunctionHelper<AggregateFunction
 {
 public:
 	String getName() const { return "sumIf"; }
-	String getTypeID() const { return "sumIf_" + TypeName<T>::get(); }
 
 	DataTypePtr getReturnType() const
 	{
