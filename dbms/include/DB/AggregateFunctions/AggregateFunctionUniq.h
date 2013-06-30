@@ -125,8 +125,10 @@ public:
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
 		String res;
-		WriteBufferFromString wb(res);
-		this->data(place).set.writeText(wb);
+		{
+			WriteBufferFromString wb(res);
+			this->data(place).set.writeText(wb);
+		}
 
 		static_cast<ColumnString &>(to).insertDataWithTerminatingZero(res.data(), res.size() + 1);
 	}
