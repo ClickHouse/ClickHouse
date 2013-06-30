@@ -56,13 +56,12 @@ protected:
 				ColumnAggregateFunction::Container_t & data = col->getData();
 				IAggregateFunction * func = col->getFunction();
 				column.type = func->getReturnType();
-				ColumnPtr finalized_column = column.type->createColumn();
-				finalized_column->reserve(rows);
+				column.column = column.type->createColumn();
+				IColumn & finalized_column = *column.column;
+				finalized_column.reserve(rows);
 
 				for (size_t j = 0; j < rows; ++j)
-					finalized_column->insert(func->getResult(data[j]));
-
-				column.column = finalized_column;
+					func->insertResultInto(data[j], finalized_column);
 			}
 		}
 

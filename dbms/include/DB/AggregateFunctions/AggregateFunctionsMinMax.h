@@ -99,9 +99,9 @@ public:
 			type->deserializeBinary(d.value, buf);
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return data(place).value;
+		to.insert(data(place).value);
 	}
 };
 

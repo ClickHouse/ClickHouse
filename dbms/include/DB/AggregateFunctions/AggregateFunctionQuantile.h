@@ -10,6 +10,8 @@
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
+#include <DB/Columns/ColumnArray.h>
+
 
 namespace DB
 {
@@ -86,14 +88,15 @@ public:
 		this->data(place).sample.merge(tmp_sample);
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
 		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
+		Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
 		if (returns_float)
-			return Float64(const_cast<Sample &>(this->data(place).sample).quantileInterpolated(level));
+			static_cast<ColumnFloat64 &>(to).getData().push_back(sample.quantileInterpolated(level));
 		else
-			return typename NearestFieldType<ArgumentFieldType>::Type(const_cast<Sample &>(this->data(place).sample).quantileInterpolated(level));
+			static_cast<ColumnVector<ArgumentFieldType> &>(to).getData().push_back(sample.quantileInterpolated(level));
 	}
 };
 
@@ -164,23 +167,31 @@ public:
 		this->data(place).sample.merge(tmp_sample);
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		size_t size = levels.size();
-		Field res = Array(levels.size());
-		Array & arr = get<Array &>(res);
-
 		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
-		if (returns_float)
-			for (size_t i = 0; i < size; ++i)
-				 arr[i] = Float64(sample.quantileInterpolated(levels[i]));
-		else
-			for (size_t i = 0; i < size; ++i)
-				 arr[i] = typename NearestFieldType<ArgumentFieldType>::Type(sample.quantileInterpolated(levels[i]));
+		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
 
-		return res;
+		size_t size = levels.size();
+		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+		
+		if (returns_float)
+		{
+			ColumnFloat64::Container_t & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
+
+			for (size_t i = 0; i < size; ++i)
+				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+		}
+		else
+		{
+			typename ColumnVector<ArgumentFieldType>::Container_t & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
+			
+			for (size_t i = 0; i < size; ++i)
+				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+		}
 	}
 };
 

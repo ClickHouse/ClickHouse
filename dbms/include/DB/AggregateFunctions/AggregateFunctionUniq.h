@@ -11,6 +11,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 
+#include <DB/Columns/ColumnString.h>
+
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
 
@@ -90,9 +92,9 @@ public:
 		data(place).set.merge(tmp_set);
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return data(place).set.size();
+		static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).set.size());
 	}
 };
 
@@ -120,12 +122,13 @@ public:
 		return new DataTypeString;
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		Field res = String();
-		WriteBufferFromString wb(get<String &>(res));
+		String res;
+		WriteBufferFromString wb(res);
 		this->data(place).set.writeText(wb);
-		return res;
+
+		static_cast<ColumnString &>(to).insertDataWithTerminatingZero(res.data(), res.size() + 1);
 	}
 };
 
@@ -176,9 +179,9 @@ public:
 		data(place).set.merge(tmp_set);
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+ 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return data(place).set.size();
+		static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).set.size());
 	}
 };
 

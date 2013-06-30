@@ -70,9 +70,10 @@ public:
 		this->data(place).count += tmp_count;
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return static_cast<Float64>(this->data(place).sum) / this->data(place).count;
+		static_cast<ColumnFloat64 &>(to).getData().push_back(
+			static_cast<Float64>(this->data(place).sum) / this->data(place).count);
 	}
 };
 
@@ -134,9 +135,10 @@ public:
 		this->data(place).count += tmp_count;
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return static_cast<Float64>(this->data(place).sum) / this->data(place).count;
+		static_cast<ColumnFloat64 &>(to).getData().push_back(
+			static_cast<Float64>(this->data(place).sum) / this->data(place).count);
 	}
 };
 

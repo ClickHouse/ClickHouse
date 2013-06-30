@@ -79,8 +79,8 @@ public:
 	/// Десериализовать состояние и объединить своё состояние с ним.
 	virtual void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const = 0;
 
-	/// Получить результат
-	virtual Field getResult(ConstAggregateDataPtr place) const = 0;
+	/// Вставить результат в столбец.
+	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 };
 
 

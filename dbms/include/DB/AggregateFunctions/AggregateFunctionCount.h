@@ -53,9 +53,9 @@ public:
 		data(place).count += tmp;
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return data(place).count;
+		static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
 	}
 
 	/// Для оптимизации

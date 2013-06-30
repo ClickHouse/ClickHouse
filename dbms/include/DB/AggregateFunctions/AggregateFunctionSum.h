@@ -62,9 +62,9 @@ public:
 		this->data(place).sum += tmp;
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return this->data(place).sum;
+		static_cast<ColumnVector<typename NearestFieldType<T>::Type> &>(to).getData().push_back(this->data(place).sum);
 	}
 };
 
@@ -115,9 +115,9 @@ public:
 		this->data(place).sum += tmp;
 	}
 
-	Field getResult(ConstAggregateDataPtr place) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		return this->data(place).sum;
+		static_cast<ColumnVector<typename NearestFieldType<T>::Type> &>(to).getData().push_back(this->data(place).sum);
 	}
 };
 
