@@ -1,6 +1,3 @@
-#include <set>
-#include <boost/assign/list_inserter.hpp>
-
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/AggregateFunctions/AggregateFunctionSum.h>
 #include <DB/AggregateFunctions/AggregateFunctionAvg.h>
@@ -248,28 +245,32 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
 {
-	std::set<String> names;
-	
-	boost::assign::insert(names)
-		("count")
-		("any")
-		("anyLast")
-		("min")
-		("max")
-		("sum")
-		("sumIf")
-		("avg")
-		("avgIf")
-		("uniq")
-		("uniqIf")
-		("uniqState")
-		("groupArray")
-		("median")
-		("quantile")
-		("quantiles")
-	;
+	static const char * names[] =
+	{
+		"count",
+		"any",
+		"anyLast",
+		"min",
+		"max",
+		"sum",
+		"sumIf",
+		"avg",
+		"avgIf",
+		"uniq",
+		"uniqIf",
+		"uniqState",
+		"groupArray",
+		"median",
+		"quantile",
+		"quantiles",
+		NULL
+	};
 
-	return names.end() != names.find(name);
+	for (const char ** it = names; *it; ++it)
+		if (0 == strcmp(*it, name.data()))
+			return true;
+
+	return false;
 }
 
 
