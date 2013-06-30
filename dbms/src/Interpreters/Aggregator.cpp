@@ -20,15 +20,6 @@ namespace DB
 
 AggregatedDataVariants::~AggregatedDataVariants()
 {
-	if (type == HASHED)
-	{
-		/// Уничтожаем ключи из keys_pool.
-		for (AggregatedDataHashed::iterator it = hashed.begin(); it != hashed.end(); ++it)
-			if (it->second.first != NULL)	/// Они могли быть перенесены в другой AggregatedDataVariants, с занулением указателя.
-				for (size_t i = 0; i < keys_size; ++i)
-					it->second.first[i].~Field();
-	}
-
 	if (aggregator)
 		aggregator->destroyAggregateStates(*this);
 }
@@ -102,9 +93,9 @@ void Aggregator::initialize(Block & block)
 }
 
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
-	keys_fit_128_bits = true;
+	bool keys_fit_128_bits = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
@@ -134,7 +125,11 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 			|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
 		return AggregatedDataVariants::KEY_STRING;
 
-	/// Если много ключей - будем агрегировать по хэшу от них
+	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
+	if (keys_fit_128_bits)
+		return AggregatedDataVariants::KEYS_128;
+
+	/// Иначе будем агрегировать по хэшу от ключей.
 	return AggregatedDataVariants::HASHED;
 }
 
@@ -143,7 +138,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
   */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
-	Row key(keys_size);
+	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
 
 	typedef std::vector<ConstColumnPlainPtrs> AggregateColumns;
@@ -163,7 +158,6 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	size_t src_rows = 0;
 	size_t src_bytes = 0;
 
-	bool keys_fit_128_bits = false;
 	Sizes key_sizes;
 
 	/// Читаем все данные
@@ -203,9 +197,10 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		/// Каким способом выполнять агрегацию?
 		if (result.empty())
 		{
-			result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
+			result.type = chooseAggregationMethod(key_columns, key_sizes);
 			result.keys_size = keys_size;
-			LOG_TRACE(log, "Aggregation method: " << result.getMethodName() << ", keys_fit_128_bits: " << (keys_fit_128_bits ? "true" : "false"));
+			result.key_sizes = key_sizes;
+			LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
 		}
 
 		if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
@@ -355,16 +350,16 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			else
 				throw Exception("Illegal type of column when aggregating by string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (result.type == AggregatedDataVariants::HASHED)
+		else if (result.type == AggregatedDataVariants::KEYS_128)
 		{
-			AggregatedDataHashed & res = result.hashed;
+			AggregatedDataWithKeys128 & res = result.keys128;
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
-				AggregatedDataHashed::iterator it;
+				AggregatedDataWithKeys128::iterator it;
 				bool inserted;
-				UInt128 key128 = pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes);
+				UInt128 key128 = pack128(i, keys_size, key_columns, key_sizes);
 
 				if (!no_more_keys)
 					res.emplace(key128, it, inserted);
@@ -378,47 +373,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				if (inserted)
 				{
-					/// Выделяем место для ключей в пуле.
-					char * keys_place = result.keys_pool.alloc(keys_size * sizeof(Field));
-					it->second.first = reinterpret_cast<Field*>(keys_place);
-
-					/// Деструктивно переносим туда ключи. Делается допущение о том, что Field является relocatable типом.
-					memcpy(keys_place, reinterpret_cast<const char *>(&key[0]), keys_size * sizeof(Field));
-					/// А также, что field, инициализированный нулями, содержит значение Null.
-					memset(reinterpret_cast<char *>(&key[0]), 0, keys_size * sizeof(Field));
-					
-					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-					
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
-				}
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(it->second.second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-			}
-		}
-		else if (result.type == AggregatedDataVariants::GENERIC)
-		{
-			/// Общий способ
-			AggregatedData & res = result.generic;
-			
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				for (size_t j = 0; j < keys_size; ++j)
-					key_columns[j]->get(i, key[j]);
-
-				AggregatedData::iterator it = res.find(key);
-				if (it == res.end())
-				{
-					if (no_more_keys)
-						continue;
-					
-					it = res.insert(AggregatedData::value_type(key, NULL)).first;
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-					key.resize(keys_size);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
 						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
@@ -427,6 +382,41 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
 					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+			}
+		}
+		else if (result.type == AggregatedDataVariants::HASHED)
+		{
+			AggregatedDataHashed & res = result.hashed;
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
+			{
+				AggregatedDataHashed::iterator it;
+				bool inserted;
+				UInt128 key128 = hash128(i, keys_size, key_columns, key);
+
+				if (!no_more_keys)
+					res.emplace(key128, it, inserted);
+				else
+				{
+					inserted = false;
+					it = res.find(key128);
+					if (res.end() == it)
+						continue;
+				}
+
+				if (inserted)
+				{
+					it->second.first = placeKeysInPool(i, keys_size, key, result.keys_pool);
+					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					aggregate_functions[j]->add(it->second.second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
 		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
@@ -535,6 +525,25 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
 		}
 	}
+	else if (data_variants.type == AggregatedDataVariants::KEYS_128)
+	{
+		AggregatedDataWithKeys128 & data = data_variants.keys128;
+
+		size_t j = with_totals ? 1 : 0;
+		for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+		{
+			size_t offset = 0;
+			for (size_t i = 0; i < keys_size; ++i)
+			{
+				size_t size = data_variants.key_sizes[i];
+				key_columns[i]->insertData(reinterpret_cast<const char *>(&it->first) + offset, size);
+				offset += size;
+			}
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
+		}
+	}
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
 	{
 		AggregatedDataHashed & data = data_variants.hashed;
@@ -543,23 +552,10 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			for (size_t i = 0; i < keys_size; ++i)
-				key_columns[i]->insert(it->second.first[i]);
+				key_columns[i]->insertDataWithTerminatingZero(it->second.first[i].data, it->second.first[i].size);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
 				(*aggregate_columns[i])[j] = it->second.second + offsets_of_aggregate_states[i];
-		}
-	}
-	else if (data_variants.type == AggregatedDataVariants::GENERIC)
-	{
-		AggregatedData & data = data_variants.generic;
-		size_t j = with_totals ? 1 : 0;
-		for (AggregatedData::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-		{
-			for (size_t i = 0; i < keys_size; ++i)
-				key_columns[i]->insert(it->first[i]);
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
 		}
 	}
 	else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
@@ -676,6 +672,31 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 					res_it->second = it->second;
 			}
 		}
+		else if (res->type == AggregatedDataVariants::KEYS_128)
+		{
+			AggregatedDataWithKeys128 & res_data = res->keys128;
+			AggregatedDataWithKeys128 & current_data = current.keys128;
+
+			for (AggregatedDataWithKeys128::iterator it = current_data.begin(); it != current_data.end(); ++it)
+			{
+				AggregatedDataWithKeys128::iterator res_it;
+				bool inserted;
+				res_data.emplace(it->first, res_it, inserted);
+
+				if (!inserted)
+				{
+					for (size_t i = 0; i < aggregates_size; ++i)
+					{
+						aggregate_functions[i]->merge(res_it->second + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
+						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
+					}
+				}
+				else
+				{
+					res_it->second = it->second;
+				}
+			}
+		}
 		else if (res->type == AggregatedDataVariants::HASHED)
 		{
 			AggregatedDataHashed & res_data = res->hashed;
@@ -698,28 +719,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 				else
 				{
 					res_it->second = it->second;
-					it->second.first = NULL;
 				}
-			}
-		}
-		else if (res->type == AggregatedDataVariants::GENERIC)
-		{
-			AggregatedData & res_data = res->generic;
-			AggregatedData & current_data = current.generic;
-
-			for (AggregatedData::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
-			{
-				AggregateDataPtr & res_ptr = res_data[it->first];
-				if (res_ptr != NULL)
-				{
-					for (size_t i = 0; i < aggregates_size; ++i)
-					{
-						aggregate_functions[i]->merge(res_ptr + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
-						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
-					}
-				}
-				else
-					res_ptr = it->second;
 			}
 		}
 		else if (res->type != AggregatedDataVariants::WITHOUT_KEY)
@@ -744,7 +744,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
-	Row key(keys_size);
+	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
 
 	typedef ColumnAggregateFunction::Container_t * AggregateColumn;
@@ -776,10 +776,10 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		size_t rows = block.rows();
 
 		/// Каким способом выполнять агрегацию?
-		bool keys_fit_128_bits = false;
 		Sizes key_sizes;
-		result.type = chooseAggregationMethod(key_columns, keys_fit_128_bits, key_sizes);
+		result.type = chooseAggregationMethod(key_columns, key_sizes);
 		result.keys_size = keys_size;
+		result.key_sizes = key_sizes;
 
 		if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
 		{
@@ -891,6 +891,30 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			else
 				throw Exception("Illegal type of column when aggregating by string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 		}
+		else if (result.type == AggregatedDataVariants::KEYS_128)
+		{
+			AggregatedDataWithKeys128 & res = result.keys128;
+
+			/// Для всех строчек
+			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
+			{
+				AggregatedDataWithKeys128::iterator it;
+				bool inserted;
+				res.emplace(pack128(i, keys_size, key_columns, key_sizes), it, inserted);
+
+				if (inserted)
+				{
+					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
+			}
+		}
 		else if (result.type == AggregatedDataVariants::HASHED)
 		{
 			AggregatedDataHashed & res = result.hashed;
@@ -900,19 +924,11 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			{
 				AggregatedDataHashed::iterator it;
 				bool inserted;
-				res.emplace(pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes), it, inserted);
+				res.emplace(hash128(i, keys_size, key_columns, key), it, inserted);
 
 				if (inserted)
 				{
-					/// Выделяем место для ключей в пуле.
-					char * keys_place = result.keys_pool.alloc(keys_size * sizeof(Field));
-					it->second.first = reinterpret_cast<Field*>(keys_place);
-
-					/// Деструктивно переносим туда ключи. Делается допущение о том, что Field является relocatable типом.
-					memcpy(keys_place, reinterpret_cast<const char *>(&key[0]), keys_size * sizeof(Field));
-					/// А также, что field, инициализированный нулями, содержит значение Null.
-					memset(reinterpret_cast<char *>(&key[0]), 0, keys_size * sizeof(Field));
-					
+					it->second.first = placeKeysInPool(i, keys_size, key, result.keys_pool);
 					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
@@ -922,34 +938,6 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
 					aggregate_functions[j]->merge(it->second.second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
-			}
-		}
-		else if (result.type == AggregatedDataVariants::GENERIC)
-		{
-			/// Общий способ
-			AggregatedData & res = result.generic;
-
-			/// Для всех строчек
-			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				for (size_t j = 0; j < keys_size; ++j)
-					key_columns[j]->get(i, key[j]);
-
-				AggregatedData::iterator it = res.find(key);
-				if (it == res.end())
-				{
-					it = res.insert(AggregatedData::value_type(key, NULL)).first;
-					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-					key.resize(keys_size);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-				}
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
 			}
 		}
 		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
@@ -998,14 +986,6 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 		for (AggregatedDataHashed::iterator it = res_data.begin(); it != res_data.end(); ++it)
 			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->destroy(it->second.second + offsets_of_aggregate_states[i]);
-	}
-	else if (result.type == AggregatedDataVariants::GENERIC)
-	{
-		AggregatedData & res_data = result.generic;
-
-		for (AggregatedData::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
 	}
 }
 

@@ -57,13 +57,9 @@ private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
 	  *  одного или нескольких столбцов значений множеству.
 	  */
-	typedef std::set<Row> SetGeneric;
 	typedef HashSet<UInt64> SetUInt64;
 	typedef HashSet<StringRef, StringRefHash, StringRefZeroTraits> SetString;
 	typedef HashSet<UInt128, UInt128Hash, UInt128ZeroTraits> SetHashed;
-
-	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
-	SetGeneric generic;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	SetUInt64 key64;
@@ -82,10 +78,9 @@ private:
 	enum Type
 	{
 		EMPTY 		= 0,
-		GENERIC 	= 1,
-		KEY_64		= 2,
-		KEY_STRING	= 3,
-		HASHED		= 4,
+		KEY_64		= 1,
+		KEY_STRING	= 2,
+		HASHED		= 3,
 	};
 	Type type;
 	

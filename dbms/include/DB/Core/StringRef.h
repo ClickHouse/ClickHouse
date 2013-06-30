@@ -4,6 +4,7 @@
 #include <city.h>
 
 #include <string>
+#include <vector>
 
 
 namespace DB
@@ -21,6 +22,8 @@ namespace DB
 
 		std::string toString() const { return std::string(data, size); }
 	};
+
+	typedef std::vector<StringRef> StringRefs;
 
 	inline bool operator==(StringRef lhs, StringRef rhs)
 	{

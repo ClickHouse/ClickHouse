@@ -4,6 +4,7 @@
 #include <openssl/md5.h>
 
 #include <DB/Common/SipHash.h>
+#include <DB/Common/Arena.h>
 #include <DB/Core/Row.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Columns/IColumn.h>
@@ -47,82 +48,99 @@ struct StringHash
 typedef std::vector<size_t> Sizes;
 
 
-/// Записать набор ключей в UInt128. Либо уложив их подряд, либо вычислив SipHash.
-inline UInt128 __attribute__((__always_inline__)) pack128(
-	size_t i, bool keys_fit_128_bits, size_t keys_size, Row & key, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
+/// Записать набор ключей фиксированной длины в UInt128, уложив их подряд (при допущении, что они помещаются).
+static inline UInt128 __attribute__((__always_inline__)) pack128(
+	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
 {
 	union
 	{
-		UInt128 key_hash;
+		UInt128 key;
 		char bytes[16];
-	} key_hash_union;
+	};
 
-	/// Если все ключи числовые и помещаются в 128 бит
-	if (keys_fit_128_bits)
+	memset(bytes, 0, 16);
+	size_t offset = 0;
+	for (size_t j = 0; j < keys_size; ++j)
 	{
-		memset(key_hash_union.bytes, 0, 16);
-		size_t offset = 0;
-		for (size_t j = 0; j < keys_size; ++j)
-		{
-			key_columns[j]->get(i, key[j]);
-			StringRef key_data = key_columns[j]->getDataAt(i);
-			memcpy(key_hash_union.bytes + offset, key_data.data, key_sizes[j]);
-			offset += key_sizes[j];
-		}
-	}
-	else	/// Иначе используем SipHash.
-	{
-		SipHash hash;
-
-		for (size_t j = 0; j < keys_size; ++j)
-		{
-			key_columns[j]->get(i, key[j]);
-			StringRef key_data = key_columns[j]->getDataAtWithTerminatingZero(i);
-			hash.update(key_data.data, key_data.size);
-		}
-
-		hash.final(key_hash_union.bytes);
+		StringRef key_data = key_columns[j]->getDataAt(i);
+		memcpy(bytes + offset, key_data.data, key_sizes[j]);
+		offset += key_sizes[j];
 	}
 
-	return key_hash_union.key_hash;
+	return key;
 }
 
-/// То же самое, но не формирует ключ.
-inline UInt128 __attribute__((__always_inline__)) pack128(
-	size_t i, bool keys_fit_128_bits, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
+
+/// Хэшировать набор ключей в UInt128.
+static inline UInt128 __attribute__((__always_inline__)) hash128(
+	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys)
 {
 	union
 	{
-		UInt128 key_hash;
+		UInt128 key;
 		char bytes[16];
-	} key_hash_union;
+	};
 
-	/// Если все ключи числовые и помещаются в 128 бит
-	if (keys_fit_128_bits)
+	memset(bytes, 0, 16);
+
+	SipHash hash;
+
+	for (size_t j = 0; j < keys_size; ++j)
 	{
-		memset(key_hash_union.bytes, 0, 16);
-		size_t offset = 0;
-		for (size_t j = 0; j < keys_size; ++j)
-		{
-			StringRef key_data = key_columns[j]->getDataAt(i);
-			memcpy(key_hash_union.bytes + offset, key_data.data, key_sizes[j]);
-			offset += key_sizes[j];
-		}
-	}
-	else	/// Иначе используем SipHash.
-	{
-		SipHash hash;
-
-		for (size_t j = 0; j < keys_size; ++j)
-		{
-			StringRef key_data = key_columns[j]->getDataAtWithTerminatingZero(i);
-			hash.update(key_data.data, key_data.size);
-		}
-
-		hash.final(key_hash_union.bytes);
+		/// Хэшируем ключ.
+		keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
+		hash.update(keys[j].data, keys[j].size);
 	}
 
-	return key_hash_union.key_hash;
+    hash.final(bytes);
+
+	return key;
+}
+
+
+/// То же самое, но без возврата ссылок на данные ключей.
+static inline UInt128 __attribute__((__always_inline__)) hash128(
+	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns)
+{
+	union
+	{
+		UInt128 key;
+		char bytes[16];
+	};
+
+	memset(bytes, 0, 16);
+
+	SipHash hash;
+
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		/// Хэшируем ключ.
+		StringRef key = key_columns[j]->getDataAtWithTerminatingZero(i);
+		hash.update(key.data, key.size);
+	}
+
+    hash.final(bytes);
+
+	return key;
+}
+
+
+/// Скопировать ключи в пул. Потом разместить в пуле StringRef-ы на них и вернуть указатель на первый.
+static inline StringRef * __attribute__((__always_inline__)) placeKeysInPool(
+	size_t i, size_t keys_size, StringRefs & keys, Arena & pool)
+{
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		char * place = pool.alloc(keys[j].size);
+		memcpy(place, keys[j].data, keys[j].size);
+		keys[j].data = place;
+	}
+
+	/// Размещаем в пуле StringRef-ы на только что скопированные ключи.
+	char * res = pool.alloc(keys_size * sizeof(StringRef));
+	memcpy(res, &keys[0], keys_size * sizeof(StringRef));
+
+	return reinterpret_cast<StringRef *>(res);
 }
 
 

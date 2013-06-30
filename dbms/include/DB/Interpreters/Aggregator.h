@@ -40,11 +40,11 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
   * Владение данными (состояний агрегатных функций) и пулом
   *  захватывается позднее - в функции ConvertToBlock, объектом ColumnAggregateFunction.
   */
-typedef std::map<Row, AggregateDataPtr> AggregatedData;
 typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
 typedef HashMap<StringRef, AggregateDataPtr, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
-typedef HashMap<UInt128, std::pair<Field*, AggregateDataPtr>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
+typedef HashMap<UInt128, AggregateDataPtr, UInt128Hash, UInt128ZeroTraits> AggregatedDataWithKeys128;
+typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
 
 class Aggregator;
 
@@ -72,9 +72,6 @@ struct AggregatedDataVariants
 	/// Пулы для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
 	Arenas aggregates_pools;
 	Arena * aggregates_pool;	/// Пул, который сейчас используется для аллокации.
-	
-	/// Наиболее общий вариант. Самый медленный. На данный момент, не используется.
-	AggregatedData generic;
 
 	/** Специализация для случая, когда ключи отсутствуют.
 	  * А также в этой стркутуре хранятся "тотальные" агрегаты, когда указано with_totals (GROUP BY ... WITH TOTALS в запросе).
@@ -88,22 +85,25 @@ struct AggregatedDataVariants
 	AggregatedDataWithStringKey key_string;
 	Arena string_pool;
 
+	size_t keys_size;	/// Количество ключей
+	Sizes key_sizes;	/// Размеры ключей, если ключи фиксированной длины
+
+	/// Специализация для случая, когда ключи фискированной длины помещаются в 128 бит.
+	AggregatedDataWithKeys128 keys128;
+
 	/** Агрегирует по 128 битному хэшу от ключа.
-	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
-	  * Иначе - вычисляет SipHash от набора из всех ключей.
 	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 	  */ 
 	AggregatedDataHashed hashed;
-	Arena keys_pool;	// TODO: складывать ключи в пул не в виде Field, а в виде плоского набора байт.
-	size_t keys_size;
-
+	Arena keys_pool;
+	
 	enum Type
 	{
 		EMPTY 		= 0,
-		GENERIC 	= 1,
-		WITHOUT_KEY = 2,
-		KEY_64		= 3,
-		KEY_STRING	= 4,
+		WITHOUT_KEY = 1,
+		KEY_64		= 2,
+		KEY_STRING	= 3,
+		KEYS_128	= 4,
 		HASHED		= 5,
 	};
 	Type type;
@@ -118,10 +118,10 @@ struct AggregatedDataVariants
 		switch (type)
 		{
 			case EMPTY:			return 0;
-			case GENERIC:		return generic.size() 		+ (without_key != NULL);
 			case WITHOUT_KEY:	return 1;
 			case KEY_64:		return key64.size() 		+ (without_key != NULL);
 			case KEY_STRING:	return key_string.size() 	+ (without_key != NULL);
+			case KEYS_128:		return keys128.size() 		+ (without_key != NULL);
 			case HASHED:		return hashed.size() 		+ (without_key != NULL);
 
 			default:
@@ -134,10 +134,10 @@ struct AggregatedDataVariants
 		switch (type)
 		{
 			case EMPTY:			return "EMPTY";
-			case GENERIC:		return "GENERIC";
 			case WITHOUT_KEY:	return "WITHOUT_KEY";
 			case KEY_64:		return "KEY_64";
 			case KEY_STRING:	return "KEY_STRING";
+			case KEYS_128:		return "KEYS_128";
 			case HASHED:		return "HASHED";
 
 			default:
@@ -233,7 +233,7 @@ private:
 	void initialize(Block & block);
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
-	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
 
 	/** Вызвать методы destroy для состояний агрегатных функций.
 	  * Используется в обработчике исключений при агрегации, так как RAII в данном случае не применим.

@@ -184,25 +184,7 @@ void Set::create(BlockInputStreamPtr stream)
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
-				res.insert(pack128(i, keys_fit_128_bits, keys_size, key, key_columns, key_sizes));
-
-			entries = res.size();
-		}
-		else if (type == GENERIC)
-		{
-			/// Общий способ
-			SetGeneric & res = generic;
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				for (size_t j = 0; j < keys_size; ++j)
-					key_columns[j]->get(i, key[j]);
-
-				res.insert(key);
-				key.resize(keys_size);
-			}
+				res.insert(keys_fit_128_bits ? pack128(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns));
 
 			entries = res.size();
 		}
@@ -427,22 +409,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 		
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
-			vec_res[i] = negative ^ (set.end() != set.find(pack128(i, keys_fit_128_bits, keys_size, key_columns, key_sizes)));
-	}
-	else if (type == GENERIC)
-	{
-		/// Общий способ
-		const SetGeneric & set = generic;
-		
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			/// Строим ключ
-			for (size_t j = 0; j < keys_size; ++j)
-				key_columns[j]->get(i, key[j]);
-			
-			vec_res[i] = negative ^ (set.end() != set.find(key));
-		}
+			vec_res[i] = negative ^ (set.end() != set.find(keys_fit_128_bits ? pack128(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns)));
 	}
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
@@ -545,30 +512,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 			for (size_t j = prev_offset; j < offsets[i]; ++j)
 			{
 				/// Строим ключ
-				res |= negative ^ (set.end() != set.find(pack128(j, keys_fit_128_bits, 1, nested_columns, key_sizes)));
-				if (res)
-					break;
-			}
-			vec_res[i] = res;
-			prev_offset = offsets[i];
-		}
-	}
-	else if (type == GENERIC)
-	{
-		/// Общий способ
-		const SetGeneric & set = generic;
-		
-		Row key(1);
-		size_t prev_offset = 0;
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			UInt8 res = 0;
-			/// Для всех элементов
-			for (size_t j = prev_offset; j < offsets[i]; ++j)
-			{
-				nested_column.get(j, key[0]);
-				res |= negative ^ (set.end() != set.find(key));
+				res |= negative ^ (set.end() != set.find(keys_fit_128_bits ? pack128(i, 1, nested_columns, key_sizes) : hash128(i, 1, nested_columns)));
 				if (res)
 					break;
 			}
@@ -607,15 +551,9 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 			const SetString & set = key_string;
 			res |= negative ^ (set.end() != set.find(StringRef(get<String>(values[j]))));
 		}
-		else if (type == GENERIC)
-		{
-			const SetGeneric & set = generic;
-			Row key(1, values[j]);
-			res |= negative ^ (set.end() != set.find(key));
-		}
 		else
 			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-		
+
 		if (res)
 			break;
 	}
