@@ -139,8 +139,9 @@ StorageChunkMerger::StorageChunkMerger(
 	Context & context_)
 	: this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
 	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_), context(context_),
-	thread_should_quit(false), merge_thread(&StorageChunkMerger::mergeThread, this), log(&Logger::get("StorageChunkMerger"))
+	thread_should_quit(false), log(&Logger::get("StorageChunkMerger"))
 {
+	merge_thread = boost::thread(&StorageChunkMerger::mergeThread, this);
 }
 
 void StorageChunkMerger::dropImpl()
