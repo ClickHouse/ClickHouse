@@ -44,6 +44,8 @@ void JSONRowOutputStream::writePrefix()
 	writeChar('\n', ostr);
 	writeCString("\t\"data\":\n", ostr);
 	writeCString("\t[\n", ostr);
+
+	ostr.next();
 }
 
 
