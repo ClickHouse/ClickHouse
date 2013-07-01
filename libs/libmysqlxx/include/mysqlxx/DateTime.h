@@ -145,27 +145,27 @@ public:
 
 	DateTime toStartOfDate() { return DateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-	bool operator< (const Date & other) const
+	bool operator< (const DateTime & other) const
 	{
 		return 0 > memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator> (const Date & other) const
+	bool operator> (const DateTime & other) const
 	{
 		return 0 < memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator<= (const Date & other) const
+	bool operator<= (const DateTime & other) const
 	{
 		return 0 >= memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator>= (const Date & other) const
+	bool operator>= (const DateTime & other) const
 	{
 		return 0 <= memcmp(this, &other, sizeof(*this));
 	}
 
-	bool operator== (const Date & other) const
+	bool operator== (const DateTime & other) const
 	{
 		return 0 == memcmp(this, &other, sizeof(*this));
 	}
