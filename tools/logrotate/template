@@ -1,11 +1,4 @@
-PROGRAM=@DAEMON@
-LOGDIR=/var/log/$PROGRAM
-LOGFILE=$LOGDIR/$PROGRAM.log
-PIDDIR=/var/run/$PROGRAM
-PIDFILE=$PIDDIR/$PROGRAM.pid
-
-
-$LOGFILE {
+/var/log/@DAEMON@/@DAEMON@.log {
 	rotate 20
 	size 20M
 	compress
@@ -14,6 +7,9 @@ $LOGFILE {
 	nocreate
 	delaycompress
 	postrotate
+	PROGRAM=@DAEMON@
+	PIDDIR=/var/run/$PROGRAM
+	PIDFILE=$PIDDIR/$PROGRAM.pid
 	[ -f "$PIDFILE" ] && kill -s USR1 `cat $PIDFILE`
 	endscript
 }
