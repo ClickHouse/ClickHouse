@@ -7,8 +7,32 @@
 namespace DB
 {
 
-/** Тип или Storage, возможно, параметрический. Например, UInt8 или FixedString(10) или Partitioned(Log, ChunkID)
-  * Результат парсинга - ASTFunction с параметрами или без. 
+/** Вложенная таблица. Например, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
+  */
+class ParserNestedTable : public IParserBase
+{
+protected:
+	String getName() { return "nested table"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+	
+/** Параметрический тип или Storage. Например:
+ * 		FixedString(10) или
+ * 		Partitioned(Log, ChunkID) или
+ * 		Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
+  * Результат парсинга - ASTFunction с параметрами или без.
+  */
+class ParserIdentifierWithParameters : public IParserBase
+{
+protected:
+	String getName() { return "identifier with parameters"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
+/** Тип или Storage, возможно, параметрический. Например, UInt8 или примеры из ParserIdentifierWithParameters
+  * Результат парсинга - ASTFunction с параметрами или без.
   */
 class ParserIdentifierWithOptionalParameters : public IParserBase
 {
@@ -23,6 +47,15 @@ class ParserNameTypePair : public IParserBase
 {
 protected:
 	String getName() { return "name and type pair"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
+/** Список столбцов.  */
+class ParserNameTypePairList : public IParserBase
+{
+protected:
+	String getName() { return "name and type pair list"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
 };
 

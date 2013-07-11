@@ -11,13 +11,15 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
-
+#include <DB/Parsers/ASTNameTypePair.h>
 
 namespace DB
 {
@@ -62,6 +64,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 		if (base_name == "Array")
 			return new DataTypeArray(get(parameters));
+		
 		if (base_name == "AggregateFunction")
 		{
 			String function_name;
@@ -92,8 +95,34 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			function = AggregateFunctionFactory().get(function_name, argument_types);
 			return new DataTypeAggregateFunction(function, argument_types);
 		}
-		else
-			throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);
+		
+		if (base_name == "Nested")
+		{
+			ParserNameTypePairList columns_p;
+			ASTPtr columns_ast;
+			String expected;
+			IParser::Pos pos = parameters.data();
+			IParser::Pos end = pos + parameters.size();
+			
+			if (!(columns_p.parse(pos, end, columns_ast, expected) && pos == end))
+				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
+			
+			NamesAndTypesListPtr columns = new NamesAndTypesList;
+
+			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*columns_ast);
+			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
+			{
+				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
+				StringRange type_range = name_and_type_pair.type->range;
+				columns->push_back(NameAndTypePair(
+					name_and_type_pair.name,
+					get(String(type_range.first, type_range.second - type_range.first))));
+			}
+			
+			return new DataTypeNested(columns);
+		}
+		
+		throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);
 	}
 
 	throw Exception("Unknown type " + name, ErrorCodes::UNKNOWN_TYPE);

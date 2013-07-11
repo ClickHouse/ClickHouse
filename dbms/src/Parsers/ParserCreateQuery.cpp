@@ -12,12 +12,76 @@
 
 namespace DB
 {
+	
+bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	ParserWhiteSpaceOrComments ws;
+	ParserString open("(");
+	ParserString close(")");
+	ParserIdentifier name_p;
+	ParserNameTypePairList columns_p;
+	
+	ASTPtr name;
+	ASTPtr columns;
+	
+	Pos begin = pos;
+	
+	/// Пока name == 'Nested', возможно потом появятся альтернативные вложенные структуры данных
+	if (!name_p.parse(pos, end, name, expected))
+		return false;
+	
+	ws.ignore(pos, end);
+	
+	if (!open.ignore(pos, end))
+		return false;
+	
+	ws.ignore(pos, end);
+	
+	if (!columns_p.parse(pos, end, columns, expected))
+		return false;
+	
+	ws.ignore(pos, end);
+	
+	if (!close.ignore(pos, end))
+		return false;
+	
+	/** В качестве результата запоминаем лишь имя вложенной таблицы
+	 * и StringRange успешно распарсенного ее описания.
+	 * В DataTypeFactory передается именно строковое описание типа,
+	 * поэтому столбцы будем парсить там заново.
+	 */
+	ASTFunction * func = new ASTFunction(StringRange(begin, pos));
+	node = func;
+	func->name = dynamic_cast<ASTIdentifier &>(*name).name;
+	
+	return true;
+}
+	
+	
+bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	Pos begin = pos;
+	
+	ParserFunction function_or_array;
+	if (function_or_array.parse(pos, end, node, expected))
+		return true;
+	
+	pos = begin;
+	
+	ParserNestedTable nested;	
+	if (nested.parse(pos, end, node, expected))
+		return true;
+	
+	pos = begin;
+	
+	return false;
+}
 
 
 bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {
 	ParserIdentifier non_parametric;
-	ParserFunction parametric;
+	ParserIdentifierWithParameters parametric;
 	
 	Pos begin = pos;
 
@@ -64,6 +128,12 @@ bool ParserNameTypePair::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & e
 	
 	pos = begin;
 	return false;
+}
+
+
+bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	return ParserList(new ParserNameTypePair, new ParserString(","), false).parse(pos, end, node, expected);
 }
 
 
@@ -114,7 +184,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_select("SELECT", true, true);
 	ParserEngine engine_p;
 	ParserIdentifier name_p;
-	ParserList columns_p(new ParserNameTypePair, new ParserString(","), false);
+	ParserNameTypePairList columns_p;
 
 	ASTPtr database;
 	ASTPtr table;
