@@ -27,7 +27,7 @@ namespace DB
 
 DataTypeFactory::DataTypeFactory()
 	: fixed_string_regexp("^FixedString\\s*\\(\\s*(\\d+)\\s*\\)$"),
-	nested_regexp("^(\\w+)\\s*\\(\\s*(.+)\\s*\\)$")
+	nested_regexp("^(\\w+)\\s*\\(\\s*(.+)\\s*\\)$", Poco::RegularExpression::RE_MULTILINE | Poco::RegularExpression::RE_DOTALL)
 {
 	boost::assign::insert(non_parametric_data_types)
 		("UInt8",				new DataTypeUInt8)
@@ -49,6 +49,7 @@ DataTypeFactory::DataTypeFactory()
 
 DataTypePtr DataTypeFactory::get(const String & name) const
 {
+
 	NonParametricDataTypes::const_iterator it = non_parametric_data_types.find(name);
 	if (it != non_parametric_data_types.end())
 		return it->second;
