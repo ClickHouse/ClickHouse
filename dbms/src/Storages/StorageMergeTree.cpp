@@ -17,9 +17,11 @@
 
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNested.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNested.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>

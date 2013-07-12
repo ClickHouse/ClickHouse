@@ -302,6 +302,19 @@ private:
 			
 			addStream(name, *type_arr->getNestedType(), mark_number, level + 1);
 		}
+		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+		{
+			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			
+			streams.insert(std::make_pair(size_name, new Stream(
+				path + escaped_size_name,
+				mark_number)));
+
+			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
+			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
+				addStream(name + "." + it->first, *it->second, mark_number, level + 1);
+		}
 		else
 			streams.insert(std::make_pair(name, new Stream(
 				path + escaped_column_name,
@@ -316,15 +329,38 @@ private:
 			type_arr->deserializeOffsets(
 				column,
 				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
-											max_rows_to_read);
+				max_rows_to_read);
 			
 			if (column.size())
 				readData(
 					name,
 					*type_arr->getNestedType(),
-							dynamic_cast<ColumnArray &>(column).getData(),
-							dynamic_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
-							level + 1);
+					dynamic_cast<ColumnArray &>(column).getData(),
+					dynamic_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
+					level + 1);
+		}
+		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+		{
+			type_nested->deserializeOffsets(
+				column,
+				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
+				max_rows_to_read);
+
+			if (column.size())
+			{
+				ColumnNested & column_nested = dynamic_cast<ColumnNested &>(column);
+				
+				NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
+				for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
+				{
+					readData(
+						name + "." + it->first,
+						*it->second,
+						*column_nested.getData()[i],
+						column_nested.getOffsets()[column.size() - 1],
+						level + 1);
+				}
+			}
 		}
 		else
 			type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read);

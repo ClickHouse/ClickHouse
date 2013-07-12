@@ -199,6 +199,25 @@ private:
 				prev_mark += storage.index_granularity;
 			}
 		}
+		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+		{
+			String size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			
+			WriteBufferFromFile plain(path + size_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
+			WriteBufferFromFile marks(path + size_name + ".mrk", 4096, flags);
+			CompressedWriteBuffer compressed(plain);
+			
+			size_t prev_mark = 0;
+			while (prev_mark < size)
+			{
+				/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
+				writeIntBinary(plain.count(), marks);
+				writeIntBinary(compressed.offset(), marks);
+				
+				type_nested->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
+				prev_mark += storage.index_granularity;
+			}
+		}
 		
 		{
 			WriteBufferFromFile plain(path + escaped_column_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);

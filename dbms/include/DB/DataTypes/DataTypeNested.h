@@ -70,7 +70,7 @@ public:
 		throw Exception("Method getDefault is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	const NamesAndTypesListPtr & getNestedTypes() const { return nested; }
+	const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }
 	const DataTypePtr & getOffsetsType() const { return offsets; }
 };
 

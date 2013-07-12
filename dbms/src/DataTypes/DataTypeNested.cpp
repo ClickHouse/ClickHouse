@@ -47,13 +47,13 @@ std::string DataTypeNested::getName() const
 	
 void DataTypeNested::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	throw Exception("Method serializeBinary(const Field & field, WriteBuffer & ostr) is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("Method serializeBinary(const Field &, WriteBuffer &) is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
 void DataTypeNested::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-	throw Exception("Method deserializeBinary(Field & field, ReadBuffer & istr) is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("Method deserializeBinary(Field &, ReadBuffer &) is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
