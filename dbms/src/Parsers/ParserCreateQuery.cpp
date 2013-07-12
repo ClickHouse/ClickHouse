@@ -45,14 +45,11 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	if (!close.ignore(pos, end))
 		return false;
 	
-	/** В качестве результата запоминаем лишь имя вложенной таблицы
-	 * и StringRange успешно распарсенного ее описания.
-	 * В DataTypeFactory передается именно строковое описание типа,
-	 * поэтому столбцы будем парсить там заново.
-	 */
 	ASTFunction * func = new ASTFunction(StringRange(begin, pos));
 	node = func;
 	func->name = dynamic_cast<ASTIdentifier &>(*name).name;
+	func->arguments = columns;
+	func->children.push_back(columns);
 	
 	return true;
 }
