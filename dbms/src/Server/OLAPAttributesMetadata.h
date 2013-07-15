@@ -23,7 +23,7 @@ namespace DB
 namespace OLAP
 {
 
-typedef Poco::Int64 BinaryData;
+typedef Int64 BinaryData;
 
 /** Информация о типе атрибута */
 struct IAttributeMetadata
@@ -93,7 +93,7 @@ struct AttributeFixedPointBase : public AttributeUIntBase<T>
 
 
 /** Базовые классы для атрибутов, получаемых из времени (unix timestamp, 4 байта) */
-struct AttributeDateTimeBase : public AttributeIntBase<Poco::Int32>
+struct AttributeDateTimeBase : public AttributeIntBase<Int32>
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -111,7 +111,7 @@ struct AttributeDateTimeBase : public AttributeIntBase<Poco::Int32>
 };
 
 
-struct AttributeDateBase : public AttributeIntBase<Poco::Int32>
+struct AttributeDateBase : public AttributeIntBase<Int32>
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -129,7 +129,7 @@ struct AttributeDateBase : public AttributeIntBase<Poco::Int32>
 };
 
 
-struct AttributeTimeBase : public AttributeIntBase<Poco::Int32>
+struct AttributeTimeBase : public AttributeIntBase<Int32>
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -390,7 +390,7 @@ struct RegionCountry : public AttributeUIntBase<UInt32>
 };
 
 
-struct TraficSourceID : public AttributeIntBase<Poco::Int8>
+struct TraficSourceID : public AttributeIntBase<Int8>
 {
 };
 
@@ -716,7 +716,7 @@ struct IPNetworkID : public AttributeUIntBase<UInt32>
 };
 
 
-struct ClientTimeZone : public AttributeIntBase<Poco::Int16>
+struct ClientTimeZone : public AttributeIntBase<Int16>
 {
 };
 
@@ -924,35 +924,35 @@ struct UserAgentID : public AttributeInOneFileBase
 };
 
 
-struct ClickGoodEvent : public AttributeIntBase<Poco::Int8>
+struct ClickGoodEvent : public AttributeIntBase<Int8>
 {
 };
 
-struct ClickPriorityID : public AttributeIntBase<Poco::Int32>
+struct ClickPriorityID : public AttributeIntBase<Int32>
 {
 };
 
-struct ClickBannerID : public AttributeIntBase<Poco::Int32>
+struct ClickBannerID : public AttributeIntBase<Int32>
 {
 };
 
-struct ClickPhraseID : public AttributeIntBase<Poco::Int32>
+struct ClickPhraseID : public AttributeIntBase<Int32>
 {
 };
 
-struct ClickPageID : public AttributeIntBase<Poco::Int32>
+struct ClickPageID : public AttributeIntBase<Int32>
 {
 };
 
-struct ClickPlaceID : public AttributeIntBase<Poco::Int32>
+struct ClickPlaceID : public AttributeIntBase<Int32>
 {
 };
 
-struct ClickTypeID : public AttributeIntBase<Poco::Int32>
+struct ClickTypeID : public AttributeIntBase<Int32>
 {
 };
 
-struct ClickResourceID : public AttributeIntBase<Poco::Int32>
+struct ClickResourceID : public AttributeIntBase<Int32>
 {
 };
 
@@ -976,27 +976,27 @@ struct ClickTargetPhraseID : public AttributeUIntBase<UInt64>
 {
 };
 
-struct GoalReachesAny : public AttributeUIntBase<Poco::Int16>
+struct GoalReachesAny : public AttributeUIntBase<Int16>
 {
 };
 
-struct GoalReachesDepth : public AttributeUIntBase<Poco::Int16>
+struct GoalReachesDepth : public AttributeUIntBase<Int16>
 {
 };
 
-struct GoalReachesURL : public AttributeUIntBase<Poco::Int16>
+struct GoalReachesURL : public AttributeUIntBase<Int16>
 {
 };
 
-struct ConvertedAny : public AttributeFixedPointBase<Poco::Int16>
+struct ConvertedAny : public AttributeFixedPointBase<Int16>
 {
 };
 
-struct ConvertedDepth : public AttributeFixedPointBase<Poco::Int16>
+struct ConvertedDepth : public AttributeFixedPointBase<Int16>
 {
 };
 
-struct ConvertedURL : public AttributeFixedPointBase<Poco::Int16>
+struct ConvertedURL : public AttributeFixedPointBase<Int16>
 {
 };
 
@@ -1149,9 +1149,42 @@ struct FromHash : public AttributeHashBase
 {
 };
 
-struct CLID : public AttributeUIntBase<UInt32>
+struct CLID : public AttributeUIntBase<UInt32> 
 {
 };
+
+struct SocialSourceNetworkID : public AttributeUIntBase<UInt8>
+{
+};
+
+struct URLCategoryID : public AttributeUIntBase<UInt16>
+{
+};
+
+struct URLCategoryMostAncestor : public AttributeUIntBase<UInt16>
+{
+};
+
+struct URLCategorySecondLevel : public AttributeUIntBase<UInt16>
+{
+};
+
+struct URLRegionID : public AttributeUIntBase<UInt32>
+{
+};
+
+struct URLRegionCity : public AttributeUIntBase<UInt32>
+{
+};
+
+struct URLRegionArea : public AttributeUIntBase<UInt32>
+{
+};
+
+struct URLRegionCountry : public AttributeUIntBase<UInt32>
+{
+};
+
 
 
 /** Информация о типах атрибутов */
@@ -1167,7 +1200,7 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 	metadata["VisitStartTime"]			= new VisitStartTime;
 	metadata["VisitStartYear"]			= new VisitStartYear;
 	metadata["VisitStartMonth"]			= new VisitStartMonth;
-	metadata["VisitStartDayOfWeek"]	= new VisitStartDayOfWeek;
+	metadata["VisitStartDayOfWeek"]		= new VisitStartDayOfWeek;
 	metadata["VisitStartDayOfMonth"]	= new VisitStartDayOfMonth;
 	metadata["VisitStartHour"]			= new VisitStartHour;
 	metadata["VisitStartMinute"]		= new VisitStartMinute;
@@ -1178,7 +1211,7 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 	metadata["FirstVisitTime"]			= new FirstVisitTime;
 	metadata["FirstVisitYear"]			= new FirstVisitYear;
 	metadata["FirstVisitMonth"]			= new FirstVisitMonth;
-	metadata["FirstVisitDayOfWeek"]	= new FirstVisitDayOfWeek;
+	metadata["FirstVisitDayOfWeek"]		= new FirstVisitDayOfWeek;
 	metadata["FirstVisitDayOfMonth"]	= new FirstVisitDayOfMonth;
 	metadata["FirstVisitHour"]			= new FirstVisitHour;
 	metadata["FirstVisitMinute"]		= new FirstVisitMinute;
@@ -1188,7 +1221,7 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 	metadata["PredLastVisitYear"]		= new PredLastVisitYear;
 	metadata["PredLastVisitMonth"]		= new PredLastVisitMonth;
 	metadata["PredLastVisitDayOfWeek"]	= new PredLastVisitDayOfWeek;
-	metadata["PredLastVisitDayOfMonth"]= new PredLastVisitDayOfMonth;
+	metadata["PredLastVisitDayOfMonth"]	= new PredLastVisitDayOfMonth;
 	metadata["PredLastVisitWeek"]		= new PredLastVisitWeek;
 	metadata["RegionID"] 				= new RegionID;
 	metadata["RegionCity"] 				= new RegionCity;
@@ -1207,7 +1240,7 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 	metadata["PageViewsInterval"]		= new PageViewsInterval;
 	metadata["UserID"] 					= new UserID;
 	metadata["TotalVisits"] 			= new TotalVisits;
-	metadata["TotalVisitsInterval"]	= new TotalVisitsInterval;
+	metadata["TotalVisitsInterval"]		= new TotalVisitsInterval;
 	metadata["Age"] 					= new Age;
 	metadata["AgeInterval"]				= new AgeInterval;
 	metadata["Sex"] 					= new Sex;
@@ -1329,6 +1362,16 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 	
 	metadata["FromHash"]				= new FromHash;
 	metadata["CLID"]					= new CLID;
+
+	metadata["SocialSourceNetworkID"]	= new SocialSourceNetworkID;
+
+	metadata["URLCategoryID"]			= new URLCategoryID;
+	metadata["URLCategoryMostAncestor"]= new URLCategoryMostAncestor;
+	metadata["URLCategorySecondLevel"]	= new URLCategorySecondLevel;
+	metadata["URLRegionID"]				= new URLRegionID;
+	metadata["URLRegionCity"] 			= new URLRegionCity;
+	metadata["URLRegionArea"] 			= new URLRegionArea;
+	metadata["URLRegionCountry"]		= new URLRegionCountry;
 	
 	return metadata;
 }
