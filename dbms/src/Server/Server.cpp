@@ -114,10 +114,12 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.setCurrentDatabase(config.getString("default_database", "default"));
 
 	bool use_olap_server = config.getBool("use_olap_http_server", false);
+	Poco::Timespan keep_alive_timeout(config.getInt("keep_alive_timeout", 10), 0);
 	
 	Poco::ThreadPool server_pool(3, config.getInt("max_connections", 128));
 	Poco::Net::HTTPServerParams * http_params = new Poco::Net::HTTPServerParams;
 	http_params->setTimeout(settings.receive_timeout);
+	http_params->setKeepAliveTimeout(keep_alive_timeout);
 	
 	/// HTTP
 	Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
@@ -148,6 +150,7 @@ int Server::main(const std::vector<std::string> & args)
 
 		Poco::Net::HTTPServerParams * olap_http_params = new Poco::Net::HTTPServerParams;
 		olap_http_params->setTimeout(settings.receive_timeout);
+		olap_http_params->setKeepAliveTimeout(keep_alive_timeout);
 		
 		Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("olap_http_port")));
 		olap_http_socket.setReceiveTimeout(settings.receive_timeout);
