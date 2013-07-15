@@ -3,6 +3,7 @@
 #include <math.h>	// log2()
 
 #include <boost/algorithm/string.hpp>
+#include <boost/assign/list_of.hpp>
 
 #include <Poco/NumberParser.h>
 #include <Poco/StringTokenizer.h>
@@ -41,15 +42,8 @@ struct DummyAttribute : public IAttributeMetadata
 };
 
 
-/// базовый класс для атрибутов, для получения значения которых надо прочитать только один файл (таких большинство)
-struct AttributeInOneFileBase : public IAttributeMetadata
-{
-};
-
-
 /// базовый класс для атрибутов, которые являются просто UInt8, UInt16, UInt32 или UInt64 (таких тоже много)
-template <typename T>
-struct AttributeUIntBase : public AttributeInOneFileBase
+struct AttributeUIntBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -59,8 +53,7 @@ struct AttributeUIntBase : public AttributeInOneFileBase
 
 
 /// базовый класс для атрибутов, которые являются Int8, Int16, Int32 или Int64
-template <typename T>
-struct AttributeIntBase : public AttributeInOneFileBase
+struct AttributeIntBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -69,31 +62,8 @@ struct AttributeIntBase : public AttributeInOneFileBase
 };
 
 
-/** базовый класс для атрибутов, которые являются просто UInt8, UInt16, UInt32,
- * при этом значение округляется до степени двух,
- * при этом для хранения значения хватает точности double
- */
-template <typename T>
-struct AttributeUIntLogIntervalBase : public AttributeUIntBase<T>
-{
-};
-
-
-/** базовый класс для атрибутов, которые являются целыми числами, но
- * усреднение которых должно производиться с точностью до тысячных долей
- */
-template <typename T>
-struct AttributeFixedPointBase : public AttributeUIntBase<T>
-{
-	BinaryData parse(const std::string & s) const
-	{
-		return Poco::NumberParser::parseUnsigned64(s) * 1000;
-	}
-};
-
-
 /** Базовые классы для атрибутов, получаемых из времени (unix timestamp, 4 байта) */
-struct AttributeDateTimeBase : public AttributeIntBase<Int32>
+struct AttributeDateTimeBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -111,7 +81,7 @@ struct AttributeDateTimeBase : public AttributeIntBase<Int32>
 };
 
 
-struct AttributeDateBase : public AttributeIntBase<Int32>
+struct AttributeDateBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -129,7 +99,7 @@ struct AttributeDateBase : public AttributeIntBase<Int32>
 };
 
 
-struct AttributeTimeBase : public AttributeIntBase<Int32>
+struct AttributeTimeBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -144,47 +114,16 @@ struct AttributeTimeBase : public AttributeIntBase<Int32>
 };
 
 
-struct AttributeYearBase : public AttributeUIntBase<UInt32>
-{
-};
+typedef AttributeUIntBase AttributeYearBase;
+typedef AttributeUIntBase AttributeMonthBase;
+typedef AttributeUIntBase AttributeDayOfWeekBase;
+typedef AttributeUIntBase AttributeDayOfMonthBase;
+typedef AttributeDateBase AttributeWeekBase;
+typedef AttributeUIntBase AttributeHourBase;
+typedef AttributeUIntBase AttributeMinuteBase;
+typedef AttributeUIntBase AttributeSecondBase;
 
-
-struct AttributeMonthBase : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct AttributeDayOfWeekBase : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct AttributeDayOfMonthBase : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct AttributeWeekBase : public AttributeDateBase
-{
-};
-
-
-struct AttributeHourBase : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct AttributeMinuteBase : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct AttributeSecondBase : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct AttributeShortStringBase : public AttributeUIntBase<UInt64>
+struct AttributeShortStringBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -196,147 +135,48 @@ struct AttributeShortStringBase : public AttributeUIntBase<UInt64>
 
 
 /** Атрибуты, относящиеся к времени начала визита */
-struct VisitStartDateTime : public AttributeDateTimeBase
-{
-};
-
-struct VisitStartDate : public AttributeDateBase
-{
-};
-
-struct VisitStartWeek : public AttributeWeekBase
-{
-};
-
-struct VisitStartTime : public AttributeTimeBase
-{
-};
-
-struct VisitStartYear : public AttributeYearBase
-{
-};
-
-struct VisitStartMonth : public AttributeMonthBase
-{
-};
-
-struct VisitStartDayOfWeek : public AttributeDayOfWeekBase
-{
-};
-
-struct VisitStartDayOfMonth : public AttributeDayOfMonthBase
-{
-};
-
-struct VisitStartHour : public AttributeHourBase
-{
-};
-
-struct VisitStartMinute : public AttributeMinuteBase
-{
-};
-
-struct VisitStartSecond : public AttributeSecondBase
-{
-};
-
+typedef AttributeDateTimeBase VisitStartDateTime;
+typedef AttributeDateBase VisitStartDate;
+typedef AttributeWeekBase VisitStartWeek;
+typedef AttributeTimeBase VisitStartTime;
+typedef AttributeYearBase VisitStartYear;
+typedef AttributeMonthBase VisitStartMonth;
+typedef AttributeDayOfWeekBase VisitStartDayOfWeek;
+typedef AttributeDayOfMonthBase VisitStartDayOfMonth;
+typedef AttributeHourBase VisitStartHour;
+typedef AttributeMinuteBase VisitStartMinute;
+typedef AttributeSecondBase VisitStartSecond;
 
 /** Атрибуты, относящиеся к времени начала первого визита */
-struct FirstVisitDateTime : public AttributeDateTimeBase
-{
-};
-
-struct FirstVisitDate : public AttributeDateBase
-{
-};
-
-struct FirstVisitWeek : public AttributeWeekBase
-{
-};
-
-struct FirstVisitTime : public AttributeTimeBase
-{
-};
-
-struct FirstVisitYear : public AttributeYearBase
-{
-};
-
-struct FirstVisitMonth : public AttributeMonthBase
-{
-};
-
-struct FirstVisitDayOfWeek : public AttributeDayOfWeekBase
-{
-};
-
-struct FirstVisitDayOfMonth : public AttributeDayOfMonthBase
-{
-};
-
-struct FirstVisitHour : public AttributeHourBase
-{
-};
-
-struct FirstVisitMinute : public AttributeMinuteBase
-{
-};
-
-struct FirstVisitSecond : public AttributeSecondBase
-{
-};
-
+typedef AttributeDateTimeBase FirstVisitDateTime;
+typedef AttributeDateBase FirstVisitDate;
+typedef AttributeWeekBase FirstVisitWeek;
+typedef AttributeTimeBase FirstVisitTime;
+typedef AttributeYearBase FirstVisitYear;
+typedef AttributeMonthBase FirstVisitMonth;
+typedef AttributeDayOfWeekBase FirstVisitDayOfWeek;
+typedef AttributeDayOfMonthBase FirstVisitDayOfMonth;
+typedef AttributeHourBase FirstVisitHour;
+typedef AttributeMinuteBase FirstVisitMinute;
+typedef AttributeSecondBase FirstVisitSecond;
 
 /** Атрибуты, относящиеся к времени начала предпоследнего визита */
-struct PredLastVisitDate : public AttributeDateBase
-{
-};
-
-struct PredLastVisitWeek : public AttributeWeekBase
-{
-};
-
-struct PredLastVisitYear : public AttributeYearBase
-{
-};
-
-struct PredLastVisitMonth : public AttributeMonthBase
-{
-};
-
-struct PredLastVisitDayOfWeek : public AttributeDayOfWeekBase
-{
-};
-
-struct PredLastVisitDayOfMonth : public AttributeDayOfMonthBase
-{
-};
-
+typedef AttributeDateBase PredLastVisitDate;
+typedef AttributeWeekBase PredLastVisitWeek;
+typedef AttributeYearBase PredLastVisitYear;
+typedef AttributeMonthBase PredLastVisitMonth;
+typedef AttributeDayOfWeekBase PredLastVisitDayOfWeek;
+typedef AttributeDayOfMonthBase PredLastVisitDayOfMonth;
 
 /** Атрибуты, относящиеся к времени на компьютере посетителя */
-struct ClientDateTime : public AttributeDateTimeBase
-{
-};
-
-struct ClientTime : public AttributeTimeBase
-{
-};
-
-struct ClientTimeHour : public AttributeHourBase
-{
-};
-
-struct ClientTimeMinute : public AttributeMinuteBase
-{
-};
-
-struct ClientTimeSecond : public AttributeSecondBase
-{
-};
-
+typedef AttributeDateTimeBase ClientDateTime;
+typedef AttributeTimeBase ClientTime;
+typedef AttributeHourBase ClientTimeHour;
+typedef AttributeMinuteBase ClientTimeMinute;
+typedef AttributeSecondBase ClientTimeSecond;
 
 /** Базовый класс для атрибутов, для которых хранится хэш. */
-struct AttributeHashBase : public AttributeUIntBase<UInt64>
+struct AttributeHashBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -345,75 +185,21 @@ struct AttributeHashBase : public AttributeUIntBase<UInt64>
 };
 
 
-struct EndURLHash : public AttributeHashBase
-{
-};
+typedef AttributeHashBase EndURLHash;
+typedef AttributeHashBase RefererHash;
+typedef AttributeHashBase SearchPhraseHash;
+typedef AttributeHashBase RefererDomainHash;
+typedef AttributeHashBase StartURLHash;
+typedef AttributeHashBase StartURLDomainHash;
+typedef AttributeUIntBase RegionID;
+typedef AttributeUIntBase RegionCity;
+typedef AttributeUIntBase RegionArea;
+typedef AttributeUIntBase RegionCountry;
+typedef AttributeIntBase TraficSourceID;
+typedef AttributeUIntBase IsNewUser;
+typedef AttributeUIntBase UserNewness;
 
-struct RefererHash : public AttributeHashBase
-{
-};
-
-struct SearchPhraseHash : public AttributeHashBase
-{
-};
-
-struct RefererDomainHash : public AttributeHashBase
-{
-};
-
-struct StartURLHash : public AttributeHashBase
-{
-};
-
-struct StartURLDomainHash : public AttributeHashBase
-{
-};
-
-
-struct RegionID : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct RegionCity : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct RegionArea : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct RegionCountry : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct TraficSourceID : public AttributeIntBase<Int8>
-{
-};
-
-
-struct IsNewUser : public AttributeFixedPointBase<UInt8>
-{
-	BinaryData parse(const std::string & s) const
-	{
-		return Poco::NumberParser::parseUnsigned(s) * 1000;
-	}
-};
-
-
-struct UserNewness : public IAttributeMetadata
-{
-	BinaryData parse(const std::string & s) const
-	{
-		return Poco::NumberParser::parseUnsigned(s) * 1000;
-	}
-};
-
-
-struct UserNewnessInterval : public UserNewness
+struct UserNewnessInterval : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -422,16 +208,9 @@ struct UserNewnessInterval : public UserNewness
 };
 
 
-struct UserReturnTime : public IAttributeMetadata
-{
-	BinaryData parse(const std::string & s) const
-	{
-		return Poco::NumberParser::parseUnsigned(s) * 1000;
-	}
-};
+typedef AttributeUIntBase UserReturnTime;
 
-
-struct UserReturnTimeInterval : public UserReturnTime
+struct UserReturnTimeInterval : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -440,16 +219,9 @@ struct UserReturnTimeInterval : public UserReturnTime
 };
 
 
-struct UserVisitsPeriod : public IAttributeMetadata
-{
-	BinaryData parse(const std::string & s) const
-	{
-		return Poco::NumberParser::parseUnsigned(s) * 1000;
-	}
-};
+typedef AttributeUIntBase UserVisitsPeriod;
 
-
-struct UserVisitsPeriodInterval : public UserVisitsPeriod
+struct UserVisitsPeriodInterval : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -458,110 +230,27 @@ struct UserVisitsPeriodInterval : public UserVisitsPeriod
 };
 
 
-struct VisitTime : public AttributeUIntBase<UInt32>
-{
-};
+typedef AttributeUIntBase VisitTime;
+typedef AttributeUIntBase VisitTimeInterval;
+typedef AttributeUIntBase PageViews;
+typedef AttributeUIntBase PageViewsInterval;
+typedef AttributeUIntBase Bounce;
+typedef AttributeUIntBase BouncePrecise;
+typedef AttributeUIntBase IsYandex;
+typedef AttributeUIntBase UserID;
+typedef AttributeDateTimeBase UserIDCreateDateTime;
+typedef AttributeDateBase UserIDCreateDate;
+typedef AttributeUIntBase UserIDAge;
+typedef AttributeUIntBase UserIDAgeInterval;
+typedef AttributeUIntBase TotalVisits;
+typedef AttributeUIntBase TotalVisitsInterval;
+typedef AttributeUIntBase Age;
+typedef AttributeUIntBase AgeInterval;
+typedef AttributeUIntBase Sex;
+typedef AttributeUIntBase Income;
+typedef AttributeUIntBase AdvEngineID;
 
-
-struct VisitTimeInterval : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct PageViews : public AttributeFixedPointBase<UInt32>
-{
-};
-
-
-struct PageViewsInterval : public AttributeUIntLogIntervalBase<UInt32>
-{
-};
-
-
-struct Bounce : public AttributeFixedPointBase<UInt32>
-{
-};
-
-
-struct BouncePrecise : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct IsYandex : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct UserID : public AttributeUIntBase<UInt64>
-{
-};
-
-
-struct UserIDCreateDateTime : public AttributeDateTimeBase
-{
-};
-
-
-struct UserIDCreateDate : public AttributeDateBase
-{
-};
-
-
-struct UserIDAge : public AttributeDateTimeBase
-{
-	BinaryData parse(const std::string & s) const
-	{
-		return Poco::NumberParser::parseUnsigned(s) * 1000;
-	}
-};
-
-
-struct UserIDAgeInterval : public UserIDAge
-{
-	BinaryData parse(const std::string & s) const
-	{
-		return Poco::NumberParser::parseUnsigned(s);
-	}
-};
-
-
-struct TotalVisits : public AttributeFixedPointBase<UInt32>
-{
-};
-
-
-struct TotalVisitsInterval : public AttributeUIntLogIntervalBase<UInt32>
-{
-};
-
-
-struct Age : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct AgeInterval : public AttributeUIntBase<UInt8>
-{
-};
-
-
-struct Sex : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct Income : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct AdvEngineID : public AttributeUIntBase<UInt8>
-{
-};
-
-
-struct DotNet : public AttributeInOneFileBase
+struct DotNet : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -573,7 +262,7 @@ struct DotNet : public AttributeInOneFileBase
 };
 
 
-struct DotNetMajor : public AttributeInOneFileBase
+struct DotNetMajor : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -582,7 +271,7 @@ struct DotNetMajor : public AttributeInOneFileBase
 };
 
 
-struct Flash : public AttributeInOneFileBase
+struct Flash : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -594,7 +283,7 @@ struct Flash : public AttributeInOneFileBase
 };
 
 
-struct FlashExists : public AttributeInOneFileBase
+struct FlashExists : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -603,7 +292,7 @@ struct FlashExists : public AttributeInOneFileBase
 };
 
 
-struct FlashMajor : public AttributeInOneFileBase
+struct FlashMajor : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -612,7 +301,7 @@ struct FlashMajor : public AttributeInOneFileBase
 };
 
 
-struct Silverlight : public AttributeUIntBase<UInt64>
+struct Silverlight : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -635,57 +324,18 @@ struct Silverlight : public AttributeUIntBase<UInt64>
 };
 
 
-struct SilverlightMajor : public AttributeUIntBase<UInt64>
-{
-};
+typedef AttributeUIntBase SilverlightMajor;
+typedef AttributeUIntBase Hits;
+typedef AttributeUIntBase HitsInterval;
+typedef AttributeUIntBase JavaEnable;
+typedef AttributeUIntBase CookieEnable;
+typedef AttributeUIntBase JavascriptEnable;
+typedef AttributeUIntBase IsMobile;
+typedef AttributeUIntBase MobilePhoneID;
+typedef AttributeHashBase MobilePhoneModelHash;
+typedef AttributeShortStringBase MobilePhoneModel;
 
-
-struct Hits : public AttributeFixedPointBase<UInt32>
-{
-};
-
-
-struct HitsInterval : public AttributeUIntLogIntervalBase<UInt32>
-{
-};
-
-
-struct JavaEnable : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct CookieEnable : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct JavascriptEnable : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct IsMobile : public AttributeFixedPointBase<UInt8>
-{
-};
-
-
-struct MobilePhoneID : public AttributeUIntBase<UInt8>
-{
-};
-
-
-struct MobilePhoneModelHash : public AttributeHashBase
-{
-};
-
-
-struct MobilePhoneModel : public AttributeShortStringBase
-{
-};
-
-
-struct BrowserLanguage : public AttributeUIntBase<UInt16>
+struct BrowserLanguage : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -696,42 +346,15 @@ struct BrowserLanguage : public AttributeUIntBase<UInt16>
 };
 
 
-struct BrowserCountry : public BrowserLanguage
-{
-};
+typedef BrowserLanguage BrowserCountry;
+typedef AttributeShortStringBase TopLevelDomain;
+typedef AttributeShortStringBase URLScheme;
+typedef AttributeUIntBase IPNetworkID;
+typedef AttributeIntBase ClientTimeZone;
+typedef AttributeUIntBase OSID;
+typedef AttributeUIntBase OSMostAncestor;
 
-
-struct TopLevelDomain : public AttributeShortStringBase
-{
-};
-
-
-struct URLScheme : public AttributeShortStringBase
-{
-};
-
-
-struct IPNetworkID : public AttributeUIntBase<UInt32>
-{
-};
-
-
-struct ClientTimeZone : public AttributeIntBase<Int16>
-{
-};
-
-
-struct OSID : public AttributeUIntBase<UInt8>
-{
-};
-
-
-struct OSMostAncestor : public AttributeUIntBase<UInt8>
-{
-};
-
-
-struct ClientIP : public AttributeUIntBase<UInt32>
+struct ClientIP : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -751,7 +374,7 @@ struct ClientIP : public AttributeUIntBase<UInt32>
 };
 
 
-struct Resolution : public AttributeInOneFileBase
+struct Resolution : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -767,7 +390,7 @@ struct Resolution : public AttributeInOneFileBase
 };
 
 
-struct ResolutionWidthHeight : public AttributeInOneFileBase
+struct ResolutionWidthHeight : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -780,7 +403,7 @@ struct ResolutionWidthHeight : public AttributeInOneFileBase
 };
 
 
-struct ResolutionWidth : public AttributeInOneFileBase
+struct ResolutionWidth : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -789,7 +412,7 @@ struct ResolutionWidth : public AttributeInOneFileBase
 };
 
 
-struct ResolutionHeight : public AttributeInOneFileBase
+struct ResolutionHeight : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -798,17 +421,10 @@ struct ResolutionHeight : public AttributeInOneFileBase
 };
 
 
-struct ResolutionWidthInterval : public ResolutionWidth
-{
-};
+typedef ResolutionWidth ResolutionWidthInterval;
+typedef ResolutionHeight ResolutionHeightInterval;
 
-
-struct ResolutionHeightInterval : public ResolutionHeight
-{
-};
-
-
-struct ResolutionColor : public AttributeInOneFileBase
+struct ResolutionColor : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -817,7 +433,7 @@ struct ResolutionColor : public AttributeInOneFileBase
 };
 
 
-struct WindowClientArea : public AttributeUIntBase<UInt32>
+struct WindowClientArea : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -830,48 +446,17 @@ struct WindowClientArea : public AttributeUIntBase<UInt32>
 };
 
 
-struct WindowClientAreaInterval : public WindowClientArea
-{
-};
-
-
-struct WindowClientWidth : public AttributeUIntBase<UInt16>
-{
-};
-
-
-struct WindowClientWidthInterval : public WindowClientWidth
-{
-};
-
-
-struct WindowClientHeight : public AttributeUIntBase<UInt16>
-{
-};
-
-
-struct WindowClientHeightInterval : public WindowClientHeight
-{
-};
-
-
-struct SearchEngineID : public AttributeUIntBase<UInt8>
-{
-};
-
-
-struct SearchEngineMostAncestor : public AttributeUIntBase<UInt8>
-{
-};
-
-
-struct CodeVersion : public AttributeUIntBase<UInt32>
-{
-};
-
+typedef WindowClientArea WindowClientAreaInterval;
+typedef AttributeUIntBase WindowClientWidth;
+typedef WindowClientWidth WindowClientWidthInterval;
+typedef AttributeUIntBase WindowClientHeight;
+typedef WindowClientHeight WindowClientHeightInterval;
+typedef AttributeUIntBase SearchEngineID;
+typedef AttributeUIntBase SearchEngineMostAncestor;
+typedef AttributeUIntBase CodeVersion;
 
 /// формат строки вида "10 7.5b", где первое число - UserAgentID, дальше - версия.
-struct UserAgent : public AttributeInOneFileBase
+struct UserAgent : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -888,7 +473,7 @@ struct UserAgent : public AttributeInOneFileBase
 };
 
 
-struct UserAgentVersion : public AttributeInOneFileBase
+struct UserAgentVersion : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -902,7 +487,7 @@ struct UserAgentVersion : public AttributeInOneFileBase
 };
 
 
-struct UserAgentMajor : public AttributeInOneFileBase
+struct UserAgentMajor : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -915,7 +500,7 @@ struct UserAgentMajor : public AttributeInOneFileBase
 };
 
 
-struct UserAgentID : public AttributeInOneFileBase
+struct UserAgentID : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -924,101 +509,31 @@ struct UserAgentID : public AttributeInOneFileBase
 };
 
 
-struct ClickGoodEvent : public AttributeIntBase<Int8>
-{
-};
+typedef AttributeIntBase ClickGoodEvent;
+typedef AttributeIntBase ClickPriorityID;
+typedef AttributeIntBase ClickBannerID;
+typedef AttributeIntBase ClickPhraseID;
+typedef AttributeIntBase ClickPageID;
+typedef AttributeIntBase ClickPlaceID;
+typedef AttributeIntBase ClickTypeID;
+typedef AttributeIntBase ClickResourceID;
+typedef AttributeUIntBase ClickDomainID;
+typedef AttributeUIntBase ClickCost;
+typedef AttributeHashBase ClickURLHash;
+typedef AttributeUIntBase ClickOrderID;
+typedef AttributeUIntBase ClickTargetPhraseID;
+typedef AttributeUIntBase GoalReachesAny;
+typedef AttributeUIntBase GoalReachesDepth;
+typedef AttributeUIntBase GoalReachesURL;
+typedef AttributeUIntBase ConvertedAny;
+typedef AttributeUIntBase ConvertedDepth;
+typedef AttributeUIntBase ConvertedURL;
+typedef AttributeUIntBase GoalReaches;
+typedef AttributeUIntBase Converted;
+typedef AttributeUIntBase CounterID;
+typedef AttributeUIntBase VisitID;
 
-struct ClickPriorityID : public AttributeIntBase<Int32>
-{
-};
-
-struct ClickBannerID : public AttributeIntBase<Int32>
-{
-};
-
-struct ClickPhraseID : public AttributeIntBase<Int32>
-{
-};
-
-struct ClickPageID : public AttributeIntBase<Int32>
-{
-};
-
-struct ClickPlaceID : public AttributeIntBase<Int32>
-{
-};
-
-struct ClickTypeID : public AttributeIntBase<Int32>
-{
-};
-
-struct ClickResourceID : public AttributeIntBase<Int32>
-{
-};
-
-struct ClickDomainID : public AttributeUIntBase<UInt32>
-{
-};
-
-struct ClickCost : public AttributeUIntBase<UInt32>
-{
-};
-
-struct ClickURLHash : public AttributeHashBase
-{
-};
-
-struct ClickOrderID : public AttributeUIntBase<UInt32>
-{
-};
-
-struct ClickTargetPhraseID : public AttributeUIntBase<UInt64>
-{
-};
-
-struct GoalReachesAny : public AttributeUIntBase<Int16>
-{
-};
-
-struct GoalReachesDepth : public AttributeUIntBase<Int16>
-{
-};
-
-struct GoalReachesURL : public AttributeUIntBase<Int16>
-{
-};
-
-struct ConvertedAny : public AttributeFixedPointBase<Int16>
-{
-};
-
-struct ConvertedDepth : public AttributeFixedPointBase<Int16>
-{
-};
-
-struct ConvertedURL : public AttributeFixedPointBase<Int16>
-{
-};
-
-
-struct GoalReaches : public AttributeUIntBase<UInt16>
-{
-};
-
-struct Converted : public AttributeFixedPointBase<UInt16>
-{
-};
-
-
-struct CounterID : public AttributeUIntBase<UInt32>
-{
-};
-
-struct VisitID : public AttributeUIntBase<UInt64>
-{
-};
-
-struct Interests : public AttributeUIntBase<UInt16>
+struct Interests : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
@@ -1053,138 +568,39 @@ struct Interests : public AttributeUIntBase<UInt16>
 	}
 };
 
-struct HasInterestPhoto : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestMoviePremieres : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestTourism : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestFamilyAndChildren : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestFinance : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestB2B : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestCars : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestMobileAndInternetCommunications : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestBuilding : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestCulinary : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestSoftware : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestEstate : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestHealthyLifestyle : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct HasInterestLiterature : public  AttributeUIntBase<UInt16>
-{
-};
-
-struct OpenstatServiceNameHash : public AttributeHashBase
-{
-};
-
-struct OpenstatCampaignIDHash : public AttributeHashBase
-{
-};
-
-struct OpenstatAdIDHash : public AttributeHashBase
-{
-};
-
-struct OpenstatSourceIDHash: public AttributeHashBase
-{
-};
-
-struct UTMSourceHash : public AttributeHashBase
-{
-};
-
-struct UTMMediumHash : public AttributeHashBase
-{
-};
-
-struct UTMCampaignHash : public AttributeHashBase
-{
-};
-
-struct UTMContentHash : public AttributeHashBase
-{
-};
-
-struct UTMTermHash : public AttributeHashBase
-{
-};
-
-struct FromHash : public AttributeHashBase
-{
-};
-
-struct CLID : public AttributeUIntBase<UInt32> 
-{
-};
-
-struct SocialSourceNetworkID : public AttributeUIntBase<UInt8>
-{
-};
-
-struct URLCategoryID : public AttributeUIntBase<UInt16>
-{
-};
-
-struct URLCategoryMostAncestor : public AttributeUIntBase<UInt16>
-{
-};
-
-struct URLCategorySecondLevel : public AttributeUIntBase<UInt16>
-{
-};
-
-struct URLRegionID : public AttributeUIntBase<UInt32>
-{
-};
-
-struct URLRegionCity : public AttributeUIntBase<UInt32>
-{
-};
-
-struct URLRegionArea : public AttributeUIntBase<UInt32>
-{
-};
-
-struct URLRegionCountry : public AttributeUIntBase<UInt32>
-{
-};
-
+typedef AttributeUIntBase HasInterestPhoto;
+typedef AttributeUIntBase HasInterestMoviePremieres;
+typedef AttributeUIntBase HasInterestTourism;
+typedef AttributeUIntBase HasInterestFamilyAndChildren;
+typedef AttributeUIntBase HasInterestFinance;
+typedef AttributeUIntBase HasInterestB2B;
+typedef AttributeUIntBase HasInterestCars;
+typedef AttributeUIntBase HasInterestMobileAndInternetCommunications;
+typedef AttributeUIntBase HasInterestBuilding;
+typedef AttributeUIntBase HasInterestCulinary;
+typedef AttributeUIntBase HasInterestSoftware;
+typedef AttributeUIntBase HasInterestEstate;
+typedef AttributeUIntBase HasInterestHealthyLifestyle;
+typedef AttributeUIntBase HasInterestLiterature;
+typedef AttributeHashBase OpenstatServiceNameHash;
+typedef AttributeHashBase OpenstatCampaignIDHash;
+typedef AttributeHashBase OpenstatAdIDHash;
+typedef AttributeHashBase OpenstatSourceIDHash;
+typedef AttributeHashBase UTMSourceHash;
+typedef AttributeHashBase UTMMediumHash;
+typedef AttributeHashBase UTMCampaignHash;
+typedef AttributeHashBase UTMContentHash;
+typedef AttributeHashBase UTMTermHash;
+typedef AttributeHashBase FromHash;
+typedef AttributeUIntBase CLID;
+typedef AttributeUIntBase SocialSourceNetworkID;
+typedef AttributeUIntBase URLCategoryID;
+typedef AttributeUIntBase URLCategoryMostAncestor;
+typedef AttributeUIntBase URLCategorySecondLevel;
+typedef AttributeUIntBase URLRegionID;
+typedef AttributeUIntBase URLRegionCity;
+typedef AttributeUIntBase URLRegionArea;
+typedef AttributeUIntBase URLRegionCountry;
 
 
 /** Информация о типах атрибутов */
@@ -1192,188 +608,186 @@ typedef std::map<std::string, Poco::SharedPtr<IAttributeMetadata> > AttributeMet
 
 inline AttributeMetadatas GetOLAPAttributeMetadata()
 {
-	AttributeMetadatas metadata;
-	
-	metadata["DummyAttribute"] 			= new DummyAttribute;
-	metadata["VisitStartDateTime"]		= new VisitStartDateTime;
-	metadata["VisitStartDate"]			= new VisitStartDate;
-	metadata["VisitStartTime"]			= new VisitStartTime;
-	metadata["VisitStartYear"]			= new VisitStartYear;
-	metadata["VisitStartMonth"]			= new VisitStartMonth;
-	metadata["VisitStartDayOfWeek"]		= new VisitStartDayOfWeek;
-	metadata["VisitStartDayOfMonth"]	= new VisitStartDayOfMonth;
-	metadata["VisitStartHour"]			= new VisitStartHour;
-	metadata["VisitStartMinute"]		= new VisitStartMinute;
-	metadata["VisitStartSecond"]		= new VisitStartSecond;
-	metadata["VisitStartWeek"]			= new VisitStartWeek;
-	metadata["FirstVisitDateTime"]		= new FirstVisitDateTime;
-	metadata["FirstVisitDate"]			= new FirstVisitDate;
-	metadata["FirstVisitTime"]			= new FirstVisitTime;
-	metadata["FirstVisitYear"]			= new FirstVisitYear;
-	metadata["FirstVisitMonth"]			= new FirstVisitMonth;
-	metadata["FirstVisitDayOfWeek"]		= new FirstVisitDayOfWeek;
-	metadata["FirstVisitDayOfMonth"]	= new FirstVisitDayOfMonth;
-	metadata["FirstVisitHour"]			= new FirstVisitHour;
-	metadata["FirstVisitMinute"]		= new FirstVisitMinute;
-	metadata["FirstVisitSecond"]		= new FirstVisitSecond;
-	metadata["FirstVisitWeek"]			= new FirstVisitWeek;
-	metadata["PredLastVisitDate"]		= new PredLastVisitDate;
-	metadata["PredLastVisitYear"]		= new PredLastVisitYear;
-	metadata["PredLastVisitMonth"]		= new PredLastVisitMonth;
-	metadata["PredLastVisitDayOfWeek"]	= new PredLastVisitDayOfWeek;
-	metadata["PredLastVisitDayOfMonth"]	= new PredLastVisitDayOfMonth;
-	metadata["PredLastVisitWeek"]		= new PredLastVisitWeek;
-	metadata["RegionID"] 				= new RegionID;
-	metadata["RegionCity"] 				= new RegionCity;
-	metadata["RegionArea"] 				= new RegionArea;
-	metadata["RegionCountry"]			= new RegionCountry;
-	metadata["TraficSourceID"] 			= new TraficSourceID;
-	metadata["UserNewness"] 			= new UserNewness;
-	metadata["UserNewnessInterval"] 	= new UserNewnessInterval;
-	metadata["UserReturnTime"] 			= new UserReturnTime;
-	metadata["UserReturnTimeInterval"] = new UserReturnTimeInterval;
-	metadata["UserVisitsPeriod"]		= new UserVisitsPeriod;
-	metadata["UserVisitsPeriodInterval"]= new UserVisitsPeriodInterval;
-	metadata["VisitTime"] 				= new VisitTime;
-	metadata["VisitTimeInterval"]		= new VisitTimeInterval;
-	metadata["PageViews"] 				= new PageViews;
-	metadata["PageViewsInterval"]		= new PageViewsInterval;
-	metadata["UserID"] 					= new UserID;
-	metadata["TotalVisits"] 			= new TotalVisits;
-	metadata["TotalVisitsInterval"]		= new TotalVisitsInterval;
-	metadata["Age"] 					= new Age;
-	metadata["AgeInterval"]				= new AgeInterval;
-	metadata["Sex"] 					= new Sex;
-	metadata["Income"] 					= new Income;
-	metadata["AdvEngineID"] 			= new AdvEngineID;
-	metadata["DotNet"] 					= new DotNet;
-	metadata["DotNetMajor"]				= new DotNetMajor;
-	metadata["EndURLHash"]				= new EndURLHash;
-	metadata["Flash"] 					= new Flash;
-	metadata["FlashMajor"]				= new FlashMajor;
-	metadata["FlashExists"]				= new FlashExists;
-	metadata["Hits"] 					= new Hits;
-	metadata["HitsInterval"]			= new HitsInterval;
-	metadata["JavaEnable"]				= new JavaEnable;
-	metadata["OSID"] 					= new OSID;
-	metadata["ClientIP"]				= new ClientIP;
-	metadata["RefererHash"]				= new RefererHash;
-	metadata["RefererDomainHash"]		= new RefererDomainHash;
-	metadata["Resolution"]				= new Resolution;
-	metadata["ResolutionWidthHeight"]	= new ResolutionWidthHeight;
-	metadata["ResolutionWidth"]			= new ResolutionWidth;
-	metadata["ResolutionHeight"]		= new ResolutionHeight;
-	metadata["ResolutionWidthInterval"]= new ResolutionWidthInterval;
-	metadata["ResolutionHeightInterval"]= new ResolutionHeightInterval;
-	metadata["ResolutionColor"]			= new ResolutionColor;
-	metadata["CookieEnable"]			= new CookieEnable;
-	metadata["JavascriptEnable"]		= new JavascriptEnable;
-	metadata["IsMobile"]				= new IsMobile;
-	metadata["MobilePhoneID"]			= new MobilePhoneID;
-	metadata["MobilePhoneModel"]		= new MobilePhoneModel;
-	metadata["MobilePhoneModelHash"]	= new MobilePhoneModelHash;
-	metadata["IPNetworkID"]				= new IPNetworkID;
-	metadata["WindowClientArea"]		= new WindowClientArea;
-	metadata["WindowClientWidth"]		= new WindowClientWidth;
-	metadata["WindowClientHeight"]		= new WindowClientHeight;
-	metadata["WindowClientAreaInterval"]= new WindowClientAreaInterval;
-	metadata["WindowClientWidthInterval"]= new WindowClientWidthInterval;
-	metadata["WindowClientHeightInterval"]= new WindowClientHeightInterval;
-	metadata["ClientTimeZone"]			= new ClientTimeZone;
-	metadata["ClientDateTime"]			= new ClientDateTime;
-	metadata["ClientTime"]				= new ClientTime;
-	metadata["ClientTimeHour"]			= new ClientTimeHour;
-	metadata["ClientTimeMinute"]		= new ClientTimeMinute;
-	metadata["ClientTimeSecond"]		= new ClientTimeSecond;
-	metadata["Silverlight"]				= new Silverlight;
-	metadata["SilverlightMajor"]		= new SilverlightMajor;
-	metadata["SearchEngineID"]			= new SearchEngineID;
-	metadata["SearchPhraseHash"]		= new SearchPhraseHash;
-	metadata["StartURLHash"]			= new StartURLHash;
-	metadata["StartURLDomainHash"]		= new StartURLDomainHash;
-	metadata["UserAgent"]				= new UserAgent;
-	metadata["UserAgentVersion"]		= new UserAgentVersion;
-	metadata["UserAgentMajor"]			= new UserAgentMajor;
-	metadata["UserAgentID"]				= new UserAgentID;
-	metadata["ClickGoodEvent"]			= new ClickGoodEvent;
-	metadata["ClickPriorityID"]			= new ClickPriorityID;
-	metadata["ClickBannerID"]			= new ClickBannerID;
-	metadata["ClickPhraseID"]			= new ClickPhraseID;
-	metadata["ClickPageID"]				= new ClickPageID;
-	metadata["ClickPlaceID"]			= new ClickPlaceID;
-	metadata["ClickTypeID"]				= new ClickTypeID;
-	metadata["ClickResourceID"]			= new ClickResourceID;
-	metadata["ClickDomainID"]			= new ClickDomainID;
-	metadata["ClickCost"]				= new ClickCost;
-	metadata["ClickURLHash"]			= new ClickURLHash;
-	metadata["ClickOrderID"]			= new ClickOrderID;
-	metadata["ClickTargetPhraseID"]		= new ClickTargetPhraseID;
-	metadata["GoalReaches"]				= new GoalReaches;
-	metadata["GoalReachesAny"]			= new GoalReachesAny;
-	metadata["GoalReachesDepth"]		= new GoalReachesDepth;
-	metadata["GoalReachesURL"]			= new GoalReachesURL;
-	metadata["Converted"]				= new Converted;
-	metadata["ConvertedAny"]			= new ConvertedAny;
-	metadata["ConvertedDepth"]			= new ConvertedDepth;
-	metadata["ConvertedURL"]			= new ConvertedURL;
-	metadata["Bounce"]					= new Bounce;
-	metadata["BouncePrecise"]			= new BouncePrecise;
-	metadata["IsNewUser"]				= new IsNewUser;
-	metadata["CodeVersion"]				= new CodeVersion;
-	metadata["CounterID"]				= new CounterID;
-	metadata["VisitID"]					= new VisitID;
-	metadata["IsYandex"]				= new IsYandex;
-	metadata["TopLevelDomain"]			= new TopLevelDomain;
-	metadata["URLScheme"]				= new URLScheme;
-	metadata["UserIDCreateDateTime"]	= new UserIDCreateDateTime;
-	metadata["UserIDCreateDate"]		= new UserIDCreateDate;
-	metadata["UserIDAge"]				= new UserIDAge;
-	metadata["UserIDAgeInterval"]		= new UserIDAgeInterval;
-	metadata["OSMostAncestor"]			= new OSMostAncestor;
-	metadata["SearchEngineMostAncestor"]= new SearchEngineMostAncestor;
-	metadata["BrowserLanguage"]			= new BrowserLanguage;
-	metadata["BrowserCountry"]			= new BrowserCountry;
-	metadata["Interests"]				= new Interests;
-	metadata["HasInterestPhoto"]		= new HasInterestPhoto;
-	metadata["HasInterestMoviePremieres"]	= new HasInterestMoviePremieres;
-	metadata["HasInterestMobileAndInternetCommunications"]	= new HasInterestMobileAndInternetCommunications;
-	metadata["HasInterestFinance"]		= new HasInterestFinance;
-	metadata["HasInterestFamilyAndChildren"]	= new HasInterestFamilyAndChildren;
-	metadata["HasInterestCars"]			= new HasInterestCars;
-	metadata["HasInterestB2B"]			= new HasInterestB2B;
-	metadata["HasInterestTourism"]		= new HasInterestTourism;
-	metadata["HasInterestBuilding"]		= new HasInterestBuilding;
-	metadata["HasInterestCulinary"]		= new HasInterestCulinary;
-	metadata["HasInterestSoftware"]		= new HasInterestSoftware;
-	metadata["HasInterestEstate"]		= new HasInterestEstate;
-	metadata["HasInterestHealthyLifestyle"]	= new HasInterestHealthyLifestyle;
-	metadata["HasInterestLiterature"]	= new HasInterestLiterature;
-	
-	metadata["OpenstatServiceNameHash"]= new OpenstatServiceNameHash;
-	metadata["OpenstatCampaignIDHash"]	= new OpenstatCampaignIDHash;
-	metadata["OpenstatAdIDHash"]		= new OpenstatAdIDHash;
-	metadata["OpenstatSourceIDHash"]	= new OpenstatSourceIDHash;
-	
-	metadata["UTMSourceHash"]			= new UTMSourceHash;
-	metadata["UTMMediumHash"]			= new UTMMediumHash;
-	metadata["UTMCampaignHash"]			= new UTMCampaignHash;
-	metadata["UTMContentHash"]			= new UTMContentHash;
-	metadata["UTMTermHash"]				= new UTMTermHash;
-	
-	metadata["FromHash"]				= new FromHash;
-	metadata["CLID"]					= new CLID;
+	return boost::assign::map_list_of<AttributeMetadatas::key_type, AttributeMetadatas::mapped_type>
+		("DummyAttribute", 			new DummyAttribute)
+		("VisitStartDateTime",		new VisitStartDateTime)
+		("VisitStartDate",			new VisitStartDate)
+		("VisitStartTime",			new VisitStartTime)
+		("VisitStartYear",			new VisitStartYear)
+		("VisitStartMonth",			new VisitStartMonth)
+		("VisitStartDayOfWeek",		new VisitStartDayOfWeek)
+		("VisitStartDayOfMonth",	new VisitStartDayOfMonth)
+		("VisitStartHour",			new VisitStartHour)
+		("VisitStartMinute",		new VisitStartMinute)
+		("VisitStartSecond",		new VisitStartSecond)
+		("VisitStartWeek",			new VisitStartWeek)
+		("FirstVisitDateTime",		new FirstVisitDateTime)
+		("FirstVisitDate",			new FirstVisitDate)
+		("FirstVisitTime",			new FirstVisitTime)
+		("FirstVisitYear",			new FirstVisitYear)
+		("FirstVisitMonth",			new FirstVisitMonth)
+		("FirstVisitDayOfWeek",		new FirstVisitDayOfWeek)
+		("FirstVisitDayOfMonth",	new FirstVisitDayOfMonth)
+		("FirstVisitHour",			new FirstVisitHour)
+		("FirstVisitMinute",		new FirstVisitMinute)
+		("FirstVisitSecond",		new FirstVisitSecond)
+		("FirstVisitWeek",			new FirstVisitWeek)
+		("PredLastVisitDate",		new PredLastVisitDate)
+		("PredLastVisitYear",		new PredLastVisitYear)
+		("PredLastVisitMonth",		new PredLastVisitMonth)
+		("PredLastVisitDayOfWeek",	new PredLastVisitDayOfWeek)
+		("PredLastVisitDayOfMonth",	new PredLastVisitDayOfMonth)
+		("PredLastVisitWeek",		new PredLastVisitWeek)
+		("RegionID", 				new RegionID)
+		("RegionCity", 				new RegionCity)
+		("RegionArea", 				new RegionArea)
+		("RegionCountry",			new RegionCountry)
+		("TraficSourceID", 			new TraficSourceID)
+		("UserNewness", 			new UserNewness)
+		("UserNewnessInterval", 	new UserNewnessInterval)
+		("UserReturnTime", 			new UserReturnTime)
+		("UserReturnTimeInterval", 	new UserReturnTimeInterval)
+		("UserVisitsPeriod",		new UserVisitsPeriod)
+		("UserVisitsPeriodInterval",new UserVisitsPeriodInterval)
+		("VisitTime", 				new VisitTime)
+		("VisitTimeInterval",		new VisitTimeInterval)
+		("PageViews", 				new PageViews)
+		("PageViewsInterval",		new PageViewsInterval)
+		("UserID", 					new UserID)
+		("TotalVisits", 			new TotalVisits)
+		("TotalVisitsInterval",		new TotalVisitsInterval)
+		("Age", 					new Age)
+		("AgeInterval",				new AgeInterval)
+		("Sex", 					new Sex)
+		("Income", 					new Income)
+		("AdvEngineID", 			new AdvEngineID)
+		("DotNet", 					new DotNet)
+		("DotNetMajor",				new DotNetMajor)
+		("EndURLHash",				new EndURLHash)
+		("Flash", 					new Flash)
+		("FlashMajor",				new FlashMajor)
+		("FlashExists",				new FlashExists)
+		("Hits", 					new Hits)
+		("HitsInterval",			new HitsInterval)
+		("JavaEnable",				new JavaEnable)
+		("OSID", 					new OSID)
+		("ClientIP",				new ClientIP)
+		("RefererHash",				new RefererHash)
+		("RefererDomainHash",		new RefererDomainHash)
+		("Resolution",				new Resolution)
+		("ResolutionWidthHeight",	new ResolutionWidthHeight)
+		("ResolutionWidth",			new ResolutionWidth)
+		("ResolutionHeight",		new ResolutionHeight)
+		("ResolutionWidthInterval",	new ResolutionWidthInterval)
+		("ResolutionHeightInterval",new ResolutionHeightInterval)
+		("ResolutionColor",			new ResolutionColor)
+		("CookieEnable",			new CookieEnable)
+		("JavascriptEnable",		new JavascriptEnable)
+		("IsMobile",				new IsMobile)
+		("MobilePhoneID",			new MobilePhoneID)
+		("MobilePhoneModel",		new MobilePhoneModel)
+		("MobilePhoneModelHash",	new MobilePhoneModelHash)
+		("IPNetworkID",				new IPNetworkID)
+		("WindowClientArea",		new WindowClientArea)
+		("WindowClientWidth",		new WindowClientWidth)
+		("WindowClientHeight",		new WindowClientHeight)
+		("WindowClientAreaInterval",new WindowClientAreaInterval)
+		("WindowClientWidthInterval",new WindowClientWidthInterval)
+		("WindowClientHeightInterval",new WindowClientHeightInterval)
+		("ClientTimeZone",			new ClientTimeZone)
+		("ClientDateTime",			new ClientDateTime)
+		("ClientTime",				new ClientTime)
+		("ClientTimeHour",			new ClientTimeHour)
+		("ClientTimeMinute",		new ClientTimeMinute)
+		("ClientTimeSecond",		new ClientTimeSecond)
+		("Silverlight",				new Silverlight)
+		("SilverlightMajor",		new SilverlightMajor)
+		("SearchEngineID",			new SearchEngineID)
+		("SearchPhraseHash",		new SearchPhraseHash)
+		("StartURLHash",			new StartURLHash)
+		("StartURLDomainHash",		new StartURLDomainHash)
+		("UserAgent",				new UserAgent)
+		("UserAgentVersion",		new UserAgentVersion)
+		("UserAgentMajor",			new UserAgentMajor)
+		("UserAgentID",				new UserAgentID)
+		("ClickGoodEvent",			new ClickGoodEvent)
+		("ClickPriorityID",			new ClickPriorityID)
+		("ClickBannerID",			new ClickBannerID)
+		("ClickPhraseID",			new ClickPhraseID)
+		("ClickPageID",				new ClickPageID)
+		("ClickPlaceID",			new ClickPlaceID)
+		("ClickTypeID",				new ClickTypeID)
+		("ClickResourceID",			new ClickResourceID)
+		("ClickDomainID",			new ClickDomainID)
+		("ClickCost",				new ClickCost)
+		("ClickURLHash",			new ClickURLHash)
+		("ClickOrderID",			new ClickOrderID)
+		("ClickTargetPhraseID",		new ClickTargetPhraseID)
+		("GoalReaches",				new GoalReaches)
+		("GoalReachesAny",			new GoalReachesAny)
+		("GoalReachesDepth",		new GoalReachesDepth)
+		("GoalReachesURL",			new GoalReachesURL)
+		("Converted",				new Converted)
+		("ConvertedAny",			new ConvertedAny)
+		("ConvertedDepth",			new ConvertedDepth)
+		("ConvertedURL",			new ConvertedURL)
+		("Bounce",					new Bounce)
+		("BouncePrecise",			new BouncePrecise)
+		("IsNewUser",				new IsNewUser)
+		("CodeVersion",				new CodeVersion)
+		("CounterID",				new CounterID)
+		("VisitID",					new VisitID)
+		("IsYandex",				new IsYandex)
+		("TopLevelDomain",			new TopLevelDomain)
+		("URLScheme",				new URLScheme)
+		("UserIDCreateDateTime",	new UserIDCreateDateTime)
+		("UserIDCreateDate",		new UserIDCreateDate)
+		("UserIDAge",				new UserIDAge)
+		("UserIDAgeInterval",		new UserIDAgeInterval)
+		("OSMostAncestor",			new OSMostAncestor)
+		("SearchEngineMostAncestor",new SearchEngineMostAncestor)
+		("BrowserLanguage",			new BrowserLanguage)
+		("BrowserCountry",			new BrowserCountry)
+		("Interests",				new Interests)
+		("HasInterestPhoto",		new HasInterestPhoto)
+		("HasInterestMoviePremieres",	new HasInterestMoviePremieres)
+		("HasInterestMobileAndInternetCommunications",	new HasInterestMobileAndInternetCommunications)
+		("HasInterestFinance",		new HasInterestFinance)
+		("HasInterestFamilyAndChildren",	new HasInterestFamilyAndChildren)
+		("HasInterestCars",			new HasInterestCars)
+		("HasInterestB2B",			new HasInterestB2B)
+		("HasInterestTourism",		new HasInterestTourism)
+		("HasInterestBuilding",		new HasInterestBuilding)
+		("HasInterestCulinary",		new HasInterestCulinary)
+		("HasInterestSoftware",		new HasInterestSoftware)
+		("HasInterestEstate",		new HasInterestEstate)
+		("HasInterestHealthyLifestyle",	new HasInterestHealthyLifestyle)
+		("HasInterestLiterature",	new HasInterestLiterature)
 
-	metadata["SocialSourceNetworkID"]	= new SocialSourceNetworkID;
+		("OpenstatServiceNameHash",new OpenstatServiceNameHash)
+		("OpenstatCampaignIDHash",	new OpenstatCampaignIDHash)
+		("OpenstatAdIDHash",		new OpenstatAdIDHash)
+		("OpenstatSourceIDHash",	new OpenstatSourceIDHash)
 
-	metadata["URLCategoryID"]			= new URLCategoryID;
-	metadata["URLCategoryMostAncestor"]= new URLCategoryMostAncestor;
-	metadata["URLCategorySecondLevel"]	= new URLCategorySecondLevel;
-	metadata["URLRegionID"]				= new URLRegionID;
-	metadata["URLRegionCity"] 			= new URLRegionCity;
-	metadata["URLRegionArea"] 			= new URLRegionArea;
-	metadata["URLRegionCountry"]		= new URLRegionCountry;
-	
-	return metadata;
+		("UTMSourceHash",			new UTMSourceHash)
+		("UTMMediumHash",			new UTMMediumHash)
+		("UTMCampaignHash",			new UTMCampaignHash)
+		("UTMContentHash",			new UTMContentHash)
+		("UTMTermHash",				new UTMTermHash)
+
+		("FromHash",				new FromHash)
+		("CLID",					new CLID)
+
+		("SocialSourceNetworkID",	new SocialSourceNetworkID)
+
+		("URLCategoryID",			new URLCategoryID)
+		("URLCategoryMostAncestor",	new URLCategoryMostAncestor)
+		("URLCategorySecondLevel",	new URLCategorySecondLevel)
+		("URLRegionID",				new URLRegionID)
+		("URLRegionCity", 			new URLRegionCity)
+		("URLRegionArea", 			new URLRegionArea)
+		("URLRegionCountry",		new URLRegionCountry)
+		;
 }
 
 }
