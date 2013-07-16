@@ -87,6 +87,8 @@ private:
 		: block(block_), min_date(min_date_), max_date(max_date_) {}
 	};
 	
+	typedef std::set<std::string> OffsetColumns;
+	
 	void writePart(Block & block, UInt16 min_date, UInt16 max_date)
 	{
 		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
@@ -137,10 +139,13 @@ private:
 		
 		LOG_TRACE(storage.log, "Writing data.");
 		
+		/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
+		OffsetColumns offset_columns;
+		
 		for (size_t i = 0; i < columns; ++i)
 		{
 			const ColumnWithNameAndType & column = block.getByPosition(i);
-			writeData(part_tmp_path, column.name, *column.type, *column.column);
+			writeData(part_tmp_path, column.name, *column.type, *column.column, offset_columns);
 		}
 		
 		LOG_TRACE(storage.log, "Renaming.");
@@ -174,29 +179,35 @@ private:
 	}
 	
 	/// Записать данные одного столбца.
-	void writeData(const String & path, const String & name, const IDataType & type, const IColumn & column, size_t level = 0)
+	void writeData(const String & path, const String & name, const IDataType & type, const IColumn & column,
+					OffsetColumns & offset_columns, size_t level = 0)
 	{
-		String escaped_column_name = escapeForFileName(name);
+		String escaped_column_name = escapeForFileName(DataTypeNested::extractNestedTableName(name));
 		size_t size = column.size();
 		
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
 			String size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-			
-			WriteBufferFromFile plain(path + size_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
-			WriteBufferFromFile marks(path + size_name + ".mrk", 4096, flags);
-			CompressedWriteBuffer compressed(plain);
-			
-			size_t prev_mark = 0;
-			while (prev_mark < size)
+		
+			if (offset_columns.count(size_name) == 0)
 			{
-				/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
-				writeIntBinary(plain.count(), marks);
-				writeIntBinary(compressed.offset(), marks);
+				offset_columns.insert(size_name);
 				
-				type_arr->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
-				prev_mark += storage.index_granularity;
+				WriteBufferFromFile plain(path + size_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
+				WriteBufferFromFile marks(path + size_name + ".mrk", 4096, flags);
+				CompressedWriteBuffer compressed(plain);
+				
+				size_t prev_mark = 0;
+				while (prev_mark < size)
+				{
+					/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
+					writeIntBinary(plain.count(), marks);
+					writeIntBinary(compressed.offset(), marks);
+					
+					type_arr->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
+					prev_mark += storage.index_granularity;
+				}
 			}
 		}
 		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))

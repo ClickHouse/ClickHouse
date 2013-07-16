@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <Poco/File.h>
 
 #include <DB/Core/NamesAndTypes.h>
@@ -59,7 +61,7 @@ private:
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level = 0);
+	void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level = 0, bool read_offsets = true);
 };
 
 
@@ -85,9 +87,11 @@ private:
 
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
 	FileStreams streams;
+	
+	typedef std::set<std::string> OffsetColumns;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void writeData(const String & name, const IDataType & type, const IColumn & column, size_t level = 0);
+	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
 };
 
 

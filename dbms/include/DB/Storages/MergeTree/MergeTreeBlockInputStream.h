@@ -161,6 +161,10 @@ protected:
 		bool has_missing_columns = false;
 		bool has_normal_columns = false;
 		
+		/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
+		typedef std::map<std::string, ColumnPtr> OffsetColumns;
+		OffsetColumns offset_columns;
+		
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 		{
 			if (streams.end() == streams.find(*it))
@@ -174,11 +178,27 @@ protected:
 			ColumnWithNameAndType column;
 			column.name = *it;
 			column.type = storage.getDataTypeByName(*it);
-			column.column = column.type->createColumn();
+			
+			bool read_offsets = true;
+			
+			/// Для вложенных структур запоминаем указатели на столбцы со смещениями
+			if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&*column.type))
+			{
+				String name = DataTypeNested::extractNestedTableName(column.name);
+				
+				if (offset_columns.count(name) == 0)
+					offset_columns[name] = new ColumnArray::ColumnOffsets_t;
+				else
+					read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
+				
+				column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+			}
+			else
+				column.column = column.type->createColumn();
 
 			try
 			{
-				readData(*it, *column.type, *column.column, max_rows_to_read);
+				readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
 			}
 			catch (const Exception & e)
 			{
@@ -282,7 +302,7 @@ private:
 	
 	void addStream(const String & name, const IDataType & type, size_t mark_number, size_t level = 0)
 	{
-		String escaped_column_name = escapeForFileName(name);
+		String escaped_column_name = escapeForFileName(DataTypeNested::extractNestedTableName(name));
 		
 		/** Если файла с данными нет - то не будем пытаться открыть его.
 			* Это нужно, чтобы можно было добавлять новые столбцы к структуре таблицы без создания файлов для старых кусков.
@@ -293,7 +313,7 @@ private:
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			streams.insert(std::make_pair(size_name, new Stream(
@@ -313,7 +333,7 @@ private:
 
 			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-				addStream(name + "." + it->first, *it->second, mark_number, level + 1);
+				addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, mark_number, level + 1);
 		}
 		else
 			streams.insert(std::make_pair(name, new Stream(
@@ -321,15 +341,18 @@ private:
 				mark_number)));
 	}
 	
-	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0)
+	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0, bool read_offsets = true)
 	{
 		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			type_arr->deserializeOffsets(
-				column,
-				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
-				max_rows_to_read);
+			if (read_offsets)
+			{
+				type_arr->deserializeOffsets(
+					column,
+					streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
+					max_rows_to_read);
+			}
 			
 			if (column.size())
 				readData(
@@ -354,7 +377,7 @@ private:
 				for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 				{
 					readData(
-						name + "." + it->first,
+						DataTypeNested::concatenateNestedName(name, it->first),
 						*it->second,
 						*column_nested.getData()[i],
 						column_nested.getOffsets()[column.size() - 1],

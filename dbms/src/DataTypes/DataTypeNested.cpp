@@ -12,6 +12,8 @@
 
 #include <DB/DataTypes/DataTypeNested.h>
 
+#include <Poco/StringTokenizer.h>
+
 
 namespace DB
 {
@@ -20,6 +22,33 @@ namespace DB
 DataTypeNested::DataTypeNested(NamesAndTypesListPtr nested_) : nested(nested_)
 {
 	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
+}
+
+
+std::string DataTypeNested::concatenateNestedName(const std::string & nested_table_name, const std::string & nested_field_name)
+{
+	return nested_table_name + "." + nested_field_name;
+}
+
+
+std::pair<std::string, std::string> DataTypeNested::splitNestedName(const std::string & nested_name)
+{
+	Poco::StringTokenizer tokenizer(nested_name, ".");
+	return std::make_pair(tokenizer[0], tokenizer[1]);
+}
+
+
+bool DataTypeNested::isNestedName(const std::string & nested_name)
+{
+	Poco::StringTokenizer tokenizer(nested_name, ".");
+	return tokenizer.count() == 2 && tokenizer[0] != "" && tokenizer[1] != "";
+}
+
+
+std::string DataTypeNested::extractNestedTableName(const std::string & nested_name)
+{
+	Poco::StringTokenizer tokenizer(nested_name, ".");
+	return tokenizer[0];
 }
 
 

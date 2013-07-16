@@ -21,6 +21,11 @@ public:
 	DataTypeNested(NamesAndTypesListPtr nested_);
 	
 	std::string getName() const;
+	
+	static std::string concatenateNestedName(const std::string & nested_table_name, const std::string & nested_field_name);
+	static std::pair<std::string, std::string> splitNestedName(const std::string & nested_name);
+	static bool isNestedName(const std::string & nested_name);
+	static std::string extractNestedTableName(const std::string & nested_name);
 
 	DataTypePtr clone() const
 	{

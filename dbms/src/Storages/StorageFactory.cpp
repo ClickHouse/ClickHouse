@@ -20,9 +20,32 @@
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Storages/StorageChunkMerger.h>
 
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNested.h>
+
 
 namespace DB
 {
+	
+NamesAndTypesListPtr expandNestedColumns(const NamesAndTypesList & names_and_types)
+{
+	NamesAndTypesListPtr columns = new NamesAndTypesList;
+	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
+	{
+		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&*it->second))
+		{
+			const NamesAndTypesList & nested = *type_nested->getNestedTypesList();
+			for (NamesAndTypesList::const_iterator jt = nested.begin(); jt != nested.end(); ++jt)
+			{
+				String nested_name = DataTypeNested::concatenateNestedName(it->first, jt->first);
+				columns->push_back(NameAndTypePair(nested_name, new DataTypeArray(jt->second)));
+			}
+		}
+		else
+			columns->push_back(*it);
+	}
+	return columns;
+}
 
 
 StoragePtr StorageFactory::get(
@@ -35,6 +58,8 @@ StoragePtr StorageFactory::get(
 	NamesAndTypesListPtr columns,
 	bool attach) const
 {
+	columns = expandNestedColumns(*columns);
+	
 	if (name == "Log")
 	{
 		return StorageLog::create(data_path, table_name, columns);

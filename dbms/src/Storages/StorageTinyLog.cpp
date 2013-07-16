@@ -52,14 +52,35 @@ Block TinyLogBlockInputStream::readImpl()
 	if (streams.empty())
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 			addStream(*it, *storage.getDataTypeByName(*it));
+		
+	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
+	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+	OffsetColumns offset_columns;
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
 		ColumnWithNameAndType column;
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
-		column.column = column.type->createColumn();
-		readData(*it, *column.type, *column.column, block_size);
+		
+		bool read_offsets = true;
+		
+		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
+		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&*column.type))
+		{
+			String name = DataTypeNested::extractNestedTableName(column.name);
+			
+			if (offset_columns.count(name) == 0)
+				offset_columns[name] = new ColumnArray::ColumnOffsets_t;
+			else
+				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
+			
+			column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+		}
+		else
+			column.column = column.type->createColumn();
+		
+		readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
 
 		if (column.column->size())
 			res.insert(column);
@@ -80,7 +101,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	/// Для массивов используются отдельные потоки для размеров.
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
@@ -92,22 +113,25 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(name + "." + it->first, *it->second, level + 1);
+			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
 		streams.insert(std::make_pair(name, new Stream(storage.files[name].data_file.path())));
 }
 
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level)
+void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level, bool read_offsets)
 {
 	/// Для массивов требуется сначала десериализовать размеры, а потом значения.
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		type_arr->deserializeOffsets(
-			column,
-			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
-			limit);
+		if (read_offsets)
+		{
+			type_arr->deserializeOffsets(
+				column,
+				streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
+				limit);
+		}
 
 		if (column.size())
 		{
@@ -134,7 +158,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 			for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 			{
 				readData(
-					name + "." + it->first,
+					DataTypeNested::concatenateNestedName(name, it->first),
 					*it->second,
 					*column_nested.getData()[i],
 					column_nested.getOffsets()[column.size() - 1],
@@ -160,7 +184,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	/// Для массивов используются отдельные потоки для размеров.
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
 		
 		addStream(name, *type_arr->getNestedType(), level + 1);
@@ -172,23 +196,30 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(name + "." + it->first, *it->second, level + 1);
+			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
 		streams.insert(std::make_pair(name, new Stream(storage.files[name].data_file.path())));
 }
 
 
-void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, size_t level)
+void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
+											OffsetColumns & offset_columns, size_t level)
 {
 	/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
-		type_arr->serializeOffsets(
-			column,
-			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed);
+		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		
-		writeData(name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), level + 1);
+		if (offset_columns.count(size_name) == 0)
+		{
+			offset_columns.insert(size_name);			
+			type_arr->serializeOffsets(
+				column,
+				streams[size_name]->compressed);
+		}
+		
+		writeData(name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), offset_columns, level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
@@ -202,9 +233,10 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 		{
 			writeData(
-				name + "." + it->first,
+				DataTypeNested::concatenateNestedName(name, it->first),
 				*it->second,
 				*column_nested.getData()[i],
+				offset_columns,
 				level + 1);
 		}
 	}
@@ -216,11 +248,14 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 void TinyLogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block, true);
+	
+	/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
+	OffsetColumns offset_columns;
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
-		writeData(column.name, *column.type, *column.column);
+		writeData(column.name, *column.type, *column.column, offset_columns);
 	}
 }
 
@@ -258,11 +293,15 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
 		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+		String size_name = DataTypeNested::extractNestedTableName(column_name) + size_column_suffix;
 
-		ColumnData column_data;
-		files.insert(std::make_pair(column_name + size_column_suffix, column_data));
-		files[column_name + size_column_suffix].data_file = Poco::File(
-			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		if (files.end() == files.find(size_name))
+		{
+			ColumnData column_data;
+			files.insert(std::make_pair(size_name, column_data));
+			files[size_name].data_file = Poco::File(
+				path + escapeForFileName(name) + '/' + escapeForFileName(DataTypeNested::extractNestedTableName(column_name)) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		}
 		
 		addFile(column_name, *type_arr->getNestedType(), level + 1);
 	}
@@ -277,7 +316,7 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addFile(column_name + "." + it->first, *it->second, level + 1);
+			addFile(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
 	{
