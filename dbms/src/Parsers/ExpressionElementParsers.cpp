@@ -136,6 +136,40 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 	}
 	else
 	{
+		while (pos != end
+			&& ((*pos >= 'a' && *pos <= 'z')
+				|| (*pos >= 'A' && *pos <= 'Z')
+				|| (*pos == '_')
+				|| (pos != begin && *pos >= '0' && *pos <= '9')))
+			++pos;
+
+		if (pos != begin)
+		{
+			node = new ASTIdentifier(StringRange(begin, pos), String(begin, pos - begin));
+			return true;
+		}
+		else
+			return false;
+	}
+}
+
+
+bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	Pos begin = pos;
+
+	/// Идентификатор в обратных кавычках
+	if (pos != end && *pos == '`')
+	{
+		ReadBuffer buf(const_cast<char *>(pos), end - pos, 0);
+		String s;
+		readBackQuotedString(s, buf);
+		pos += buf.count();
+		node = new ASTIdentifier(StringRange(begin, pos), s);
+		return true;
+	}
+	else
+	{
 		while (pos != end)
 		{
 			while (pos != end
@@ -378,7 +412,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Strin
 	ParserArray array_p;
 	ParserLiteral lit_p;
 	ParserFunction fun_p;
-	ParserIdentifier id_p;
+	ParserCompoundIdentifier id_p;
 	ParserString asterisk_p("*");
 
 	if (subquery_p.parse(pos, end, node, expected))

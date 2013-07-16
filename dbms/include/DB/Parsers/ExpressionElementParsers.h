@@ -47,6 +47,16 @@ protected:
 };
 
 
+/** Идентификатор, возможно, содержащий точку, например, x_yz123 или `something special` или Hits.EventTime
+  */
+class ParserCompoundIdentifier : public IParserBase
+{
+protected:
+	String getName() { return "compound identifier"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
 /** Функция, например, f(x, y + 1, g(z)).
   * Или агрегатная функция: sum(x + f(y)), corr(x, y). По синтаксису - такая же, как обычная функция.
   * Или параметрическая агрегатная функция: quantile(0.9)(x + y).
