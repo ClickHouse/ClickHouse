@@ -136,12 +136,23 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 	}
 	else
 	{
-		while (pos != end
-			&& ((*pos >= 'a' && *pos <= 'z')
-				|| (*pos >= 'A' && *pos <= 'Z')
-				|| (*pos == '_')
-				|| (pos != begin && *pos >= '0' && *pos <= '9')))
-			++pos;
+		while (pos != end)
+		{
+			while (pos != end
+				&& ((*pos >= 'a' && *pos <= 'z')
+					|| (*pos >= 'A' && *pos <= 'Z')
+					|| (*pos == '_')
+					|| (pos != begin && *pos >= '0' && *pos <= '9')))
+				++pos;
+			
+			/// Если следующий символ - точка '.' и за ней следует, не цифра,
+			/// то продолжаем парсинг имени идентификатора
+			if (pos != begin && pos + 1 < end && *pos == '.' &&
+				!(*(pos + 1) >= '0' && *(pos + 1) <= '9'))
+				++pos;
+			else
+				break;
+		}
 
 		if (pos != begin)
 		{
