@@ -15,6 +15,7 @@ QueryConverter::QueryConverter(Poco::Util::AbstractConfiguration & config)
 	
 	fillFormattedAttributeMap();
 	fillNumericAttributeMap();
+	fillFormattingAggregatedAttributeMap();
 	attribute_metadatas = GetOLAPAttributeMetadata();
 }
 
@@ -582,6 +583,64 @@ void QueryConverter::fillFormattedAttributeMap()
 	M("UserAgentVersion",     "concat(toString(UserAgentMajor), UserAgentMinor == 0 ? '' : concat('.', reinterpretAsString(UserAgentMinor)))")
 	M("UserAgentMajor",       "concat(concat(toString(UserAgent), ' '), toString(UserAgentMajor))")
 #undef M	
+}
+
+void QueryConverter::fillFormattingAggregatedAttributeMap()
+{
+#define M(a, b) formatting_aggregated_attribute_map[a] = b;
+	std::string todate = "toDate(toDateTime(%s))";
+	std::string todatetime = "toDateTime(%s)";
+	std::string cuttime = "substring(toString(toDateTime(%s)), 12, 8)";
+	std::string tostring = "reinterpretAsString(%s)";
+
+	M("VisitStartDateTime",   todatetime)
+	M("VisitStartDate",       todate)
+	M("VisitStartWeek",       todate)
+	M("VisitStartTime",       cuttime)
+
+	M("VisitStartDateTimeRoundedToMinute", 	todatetime)
+	M("VisitStartDateTimeRoundedToHour",   	todatetime)
+	M("VisitStartDateRoundedToMonth",      	todate)
+	M("VisitStartTimeRoundedToMinute",		cuttime)
+
+	M("FirstVisitDateTime",   todatetime)
+	M("FirstVisitDate",       todate)
+	M("FirstVisitWeek",       todate)
+	M("FirstVisitTime",       cuttime)
+
+	M("PredLastVisitDate",    todate)
+	M("PredLastVisitWeek",    todate)
+
+	M("ClientDateTime",       todatetime)
+	M("ClientTime",           cuttime)
+
+	M("UserIDCreateDateTime", todatetime)
+	M("UserIDCreateDate",     todate)
+
+	M("DotNet",               "concat(concat(toString(intDiv(toUInt32(%[0]s), 256)), '.'), toString(modulo(toUInt32(%[0]s), 256)))")
+
+	M("Flash",                "concat(concat(toString(intDiv(toUInt32(%[0]s), 256)), '.'), toString(modulo(toUInt32(%[0]s), 256)))")
+
+	M("Silverlight",          "concat(concat(concat(concat(concat(concat(toString(intDiv(toUInt64(%[0]s), 72057594037927936)), '.'), toString(modulo(intDiv(toUInt64(%[0]s), 281474976710656), 256))), '.'), toString(modulo(intDiv(toUInt64(%[0]s), 65536), 4294967296))), '.'), toString(modulo(toUInt64(%[0]s), 65536)))")
+
+	M("MobilePhoneModel",     tostring)
+	M("BrowserLanguage",      tostring)
+	M("BrowserCountry",       tostring)
+	M("TopLevelDomain",       tostring)
+	M("URLScheme",            tostring)
+
+	M("ClientIP",             "IPv4NumToString(%[0]s)")
+	M("Resolution",           "concat(concat(concat(concat(toString(intDiv(toUInt64(%[0]s), 16777216)),'x'),toString(intDiv(toUInt64(%[0]s), 256) %% 65536)),'x'),toString(toUInt64(%[0]s) %% 256))")
+	M("ResolutionWidthHeight","concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) %% 65536))")
+
+	M("WindowClientArea",     "concat(concat(toString(intDiv(toUInt64(%[0]s), 65536)),'x'),toString(toUInt64(%[0]s) %% 65536))")
+
+	M("UserAgent",            "concat(concat(concat(toString(intDiv(toUInt32(%[0]s), 16777216)), ' '), toString(intDiv(toUInt32(%[0]s), 65536) %% 256)), (toUInt32(%[0]s) %% 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) %% 65536)))")
+	M("UserAgentVersion",     "concat(toString(intDiv(toUInt32(%[0]s), 65536)), (toUInt32(%[0]s) %% 65536) == 0 ? '' : concat('.', reinterpretAsString(toUInt32(%[0]s) %% 65536)))")
+	M("UserAgentMajor",       "concat(concat(toString(intDiv(toUInt32(%[0]s), 256)), ' '), toString(toUInt32(%[0]s) %% 256))")
+
+	M("Interests",            "bitmaskToList(%s)")
+#undef M
 }
 
 }
