@@ -136,9 +136,14 @@ struct AttributeShortStringBase : public IAttributeMetadata
 
 /** Атрибуты, относящиеся к времени начала визита */
 typedef AttributeDateTimeBase VisitStartDateTime;
+typedef AttributeDateTimeBase VisitStartDateTimeRoundedToMinute;
+typedef AttributeDateTimeBase VisitStartDateTimeRoundedToHour;
+typedef AttributeDateTimeBase VisitStartDateTime;
 typedef AttributeDateBase VisitStartDate;
+typedef AttributeDateBase VisitStartDateRoundedToMonth;
 typedef AttributeWeekBase VisitStartWeek;
 typedef AttributeTimeBase VisitStartTime;
+typedef AttributeTimeBase VisitStartTimeRoundedToMinute;
 typedef AttributeYearBase VisitStartYear;
 typedef AttributeMonthBase VisitStartMonth;
 typedef AttributeDayOfWeekBase VisitStartDayOfWeek;
@@ -609,10 +614,14 @@ typedef std::map<std::string, Poco::SharedPtr<IAttributeMetadata> > AttributeMet
 inline AttributeMetadatas GetOLAPAttributeMetadata()
 {
 	return boost::assign::map_list_of<AttributeMetadatas::key_type, AttributeMetadatas::mapped_type>
-		("DummyAttribute", 			new DummyAttribute)
-		("VisitStartDateTime",		new VisitStartDateTime)
-		("VisitStartDate",			new VisitStartDate)
-		("VisitStartTime",			new VisitStartTime)
+		("DummyAttribute", 						new DummyAttribute)
+		("VisitStartDateTime",					new VisitStartDateTime)
+		("VisitStartDateTimeRoundedToMinute",	new VisitStartDateTimeRoundedToMinute)
+		("VisitStartDateTimeRoundedToHour",		new VisitStartDateTimeRoundedToHour)
+		("VisitStartDate",						new VisitStartDate)
+		("VisitStartDateRoundedToMonth",		new VisitStartDateRoundedToMonth)
+		("VisitStartTime",						new VisitStartTime)
+		("VisitStartTimeRoundedToMinute",		new VisitStartTimeRoundedToMinute)
 		("VisitStartYear",			new VisitStartYear)
 		("VisitStartMonth",			new VisitStartMonth)
 		("VisitStartDayOfWeek",		new VisitStartDayOfWeek)
