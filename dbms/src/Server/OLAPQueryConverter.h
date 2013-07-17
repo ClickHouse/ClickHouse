@@ -44,7 +44,6 @@ private:
 	void fillFormattedAttributeMap();
 	void fillNumericAttributeMap();
 	void fillFormattingAggregatedAttributeMap();
-	void fillAttributeParsers();
 	
 	std::string table_for_single_counter;
 	std::string table_for_all_counters;
