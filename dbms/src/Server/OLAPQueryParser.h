@@ -93,9 +93,6 @@ struct QueryParseResult
 	std::vector<Aggregate> aggregates;
 	std::vector<WhereCondition> where_conditions;
 	std::vector<SortColumn> sort_columns;
-	
-	/// Запрос - получить список визитов, без агрегации
-	bool is_list_of_visits_query;
 };
 
 

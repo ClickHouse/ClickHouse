@@ -102,7 +102,6 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	result.concurrency = 0;
 	result.max_threads_per_counter = 0;
 	result.limit = 0;
-	result.is_list_of_visits_query = false;
 	
 	Poco::AutoPtr<Poco::XML::NodeList> settings_nodes = result.query->getElementsByTagName("settings");
 	if (settings_nodes->length() > 1)
@@ -179,30 +178,6 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	LOG_DEBUG(log, "CounterID: " << result.CounterID
 		<< ", dates: " << Yandex::Date2Str(result.date_first) << " - " << Yandex::Date2Str(result.date_last));
 	
-	/** Если написано <visits />, то запрос - получить список визитов, без агрегации;
-		* список ключей и агрегатов при этом не имеет смысла, имеет смысл только список условий.
-		*/
-	Poco::AutoPtr<Poco::XML::NodeList> visits_attributes = result.query->getElementsByTagName("visits");
-	if (visits_attributes->length() > 1)
-		throw Exception(std::string("Found more than one node visits"), ErrorCodes::FOUND_MORE_THAN_ONE_NODE);
-	if (visits_attributes->length() == 1)
-	{
-		result.is_list_of_visits_query = true;
-		QueryParseResult::KeyAttribute key;
-		
-		key.attribute = "UserID";
-		key.parameter = 0;
-		result.key_attributes.push_back(key);
-		
-		key.attribute = "VisitStartDateTime";
-		key.parameter = 0;
-		result.key_attributes.push_back(key);
-		
-		key.attribute = "VisitTime";
-		key.parameter = 0;
-		result.key_attributes.push_back(key);
-	}
-	
 	/// получаем список имён атрибутов
 	Poco::AutoPtr<Poco::XML::NodeList> attributes = result.query->getElementsByTagName("attribute");
 	for (unsigned i = 0; i < attributes->length(); i++)
@@ -220,10 +195,6 @@ QueryParseResult QueryParser::parse(std::istream & s)
 		
 		if (attributes->item(i)->parentNode()->nodeName() == "keys")
 		{
-			if (result.is_list_of_visits_query)
-				throw Exception(std::string("In list of visits query, keys section doesn't make sense."),
-									ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
-			
 			QueryParseResult::KeyAttribute key_attribute;
 			key_attribute.attribute = attribute_name;
 			key_attribute.parameter = attribute_param;
@@ -232,10 +203,6 @@ QueryParseResult QueryParser::parse(std::istream & s)
 		
 		if (attributes->item(i)->parentNode()->nodeName() == "aggregate")
 		{
-			if (result.is_list_of_visits_query)
-				throw Exception(std::string("In list of visits query, aggregates section doesn't make sense."),
-									ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
-			
 			Poco::AutoPtr<Poco::XML::NodeList> aggregate_nodes = attributes->item(i)->parentNode()->childNodes();
 			
 			unsigned j;
@@ -302,10 +269,6 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	Poco::AutoPtr<Poco::XML::NodeList> sort_nodes = result.query->getElementsByTagName("sort");
 	if (sort_nodes->length() >= 1)
 	{
-		if (result.is_list_of_visits_query)
-			throw Exception(std::string("In list of visits query, sort section doesn't make sense."),
-								ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
-		
 		Poco::AutoPtr<Poco::XML::NodeList> column_nodes = sort_nodes->item(0)->childNodes();
 		for (unsigned i = 0; i < column_nodes->length(); i++)
 		{

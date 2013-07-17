@@ -35,8 +35,6 @@ static std::string FirstWord(std::string s)
 void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query, Context & inout_context, std::string & out_query)
 {
 	/// Проверим, умеем ли мы выполнять такой запрос.
-	if (query.is_list_of_visits_query)
-		throw Exception("List of visits queries not supported", ErrorCodes::UNSUPPORTED_PARAMETER);
 	if (query.format != FORMAT_TAB)
 		throw Exception("Only tab-separated output format is supported", ErrorCodes::UNSUPPORTED_PARAMETER);
 	
