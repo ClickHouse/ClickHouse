@@ -242,6 +242,7 @@ public:
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 			
 		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeFixedString *>(&*arguments[0]) &&
 			!dynamic_cast<const DataTypeDate *>(&*arguments[0]) &&
 			!dynamic_cast<const DataTypeDateTime *>(&*arguments[0]) &&
 			!dynamic_cast<const DataTypeUInt8 *>(&*arguments[0]) &&
@@ -399,6 +400,54 @@ public:
 		}
 	}
 	
+	bool tryExecuteFixedString(const IColumn * col, ColumnPtr & col_res)
+	{
+		const ColumnFixedString * col_fstr_in = dynamic_cast<const ColumnFixedString *>(col);
+		
+		if (col_fstr_in)
+		{
+			ColumnString * col_str = new ColumnString;
+			
+			col_res = col_str;
+			
+			ColumnString::Chars_t & out_vec = col_str->getChars();
+			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+			
+			const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
+			
+			size_t size = col_fstr_in->size();
+			
+			out_offsets.resize(size);
+			out_vec.resize(in_vec.size() * 2 + size);
+			
+			char * begin = reinterpret_cast<char *>(&out_vec[0]);
+			char * pos = begin;
+			
+			size_t n = col_fstr_in->getN();
+			
+			size_t prev_offset = 0;
+			
+			for (size_t i = 0; i < size; ++i)
+			{
+				size_t new_offset = prev_offset + n;
+				
+				executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
+				
+				out_offsets[i] = pos - begin;
+				prev_offset = new_offset;
+			}
+			
+			if (out_offsets.back() != out_vec.size())
+				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+			
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -409,7 +458,8 @@ public:
 			tryExecuteUInt<UInt16>(column, res_column) ||
 			tryExecuteUInt<UInt32>(column, res_column) ||
 			tryExecuteUInt<UInt64>(column, res_column) ||
-			tryExecuteString(column, res_column))
+			tryExecuteString(column, res_column) ||
+			tryExecuteFixedString(column, res_column))
 			return;
 		
 		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
