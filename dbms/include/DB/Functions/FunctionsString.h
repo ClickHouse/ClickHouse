@@ -671,7 +671,7 @@ struct SubstringImpl
 		
 		size_t size = data.size() / n;
 		res_offsets.resize(size);
-		res_data.resize(length * size + 1);
+		res_data.resize(length * size + size);
 
 		ColumnString::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
