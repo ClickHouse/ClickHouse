@@ -515,7 +515,7 @@ struct ConcatImpl
 			offset += b_offsets[i] - b_offset;
 
 			a_offset = a_n;
-			b_offset += b_offsets[i];
+			b_offset = b_offsets[i];
 
 			c_offsets[i] = offset;
 		}
