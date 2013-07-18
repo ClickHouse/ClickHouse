@@ -524,33 +524,47 @@ struct ConcatImpl
 	static void fixed_vector_fixed_vector(
 		const std::vector<UInt8> & a_data, ColumnString::Offset_t a_n,
 		const std::vector<UInt8> & b_data, ColumnString::Offset_t b_n,
-		std::vector<UInt8> & c_data)
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = a_data.size() / a_n;
-		c_data.resize(a_data.size() + b_data.size());
-		ColumnString::Offset_t c_n = a_n + b_n;
+		c_data.resize(a_data.size() + b_data.size() + size);
+		c_offsets.resize(size);
 
+		ColumnString::Offset_t offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[i * c_n], &a_data[i * a_n], a_n);
-			memcpy(&c_data[i * c_n + a_n], &b_data[i * b_n], b_n);
+			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			++offset;
+
+			c_offsets[i] = offset;
 		}
 	}
 
 	static void fixed_vector_constant(
 		const std::vector<UInt8> & a_data, ColumnString::Offset_t a_n,
 		const std::string & b,
-		std::vector<UInt8> & c_data)
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = a_data.size() / a_n;
 		ColumnString::Offset_t b_n = b.size();
-		ColumnString::Offset_t c_n = a_n + b_n;
-		c_data.resize(a_data.size() + size * b_n);
+		c_data.resize(a_data.size() + size * b_n + size);
+		c_offsets.resize(size);
 
+		ColumnString::Offset_t offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[i * c_n], &a_data[i * a_n], a_n);
-			memcpy(&c_data[i * c_n + a_n], b.data(), b_n);
+			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], b.data(), b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			++offset;
+
+			c_offsets[i] = offset;
 		}
 	}
 
@@ -582,17 +596,24 @@ struct ConcatImpl
 	static void constant_fixed_vector(
 		const std::string & a,
 		const std::vector<UInt8> & b_data, ColumnString::Offset_t b_n,
-		std::vector<UInt8> & c_data)
+		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = b_data.size() / b_n;
 		ColumnString::Offset_t a_n = a.size();
-		ColumnString::Offset_t c_n = a_n + b_n;
-		c_data.resize(size * a_n + b_data.size());
+		c_data.resize(size * a_n + b_data.size() + size);
+		c_offsets.resize(size);
 
+		ColumnString::Offset_t offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			memcpy(&c_data[i * c_n], a.data(), a_n);
-			memcpy(&c_data[i * c_n + a_n], &b_data[i * b_n], b_n);
+			memcpy(&c_data[offset], a.data(), a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			++offset;
+
+			c_offsets[i] = offset;
 		}
 	}
 
@@ -643,16 +664,24 @@ struct SubstringImpl
 
 	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
 		size_t start, size_t length,
-		std::vector<UInt8> & res_data)
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		if (length == 0 || start + length > n + 1)
 			throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		
 		size_t size = data.size() / n;
-		res_data.resize(length * size);
+		res_offsets.resize(size);
+		res_data.resize(length * size + 1);
 
+		ColumnString::Offset_t res_offset = 0;
 		for (size_t i = 0; i < size; ++i)
-			memcpy(&res_data[i * length], &data[i * n + start - 1], length);
+		{
+			memcpy(&res_data[res_offset], &data[i * n + start - 1], length);
+			res_offset += length;
+			res_data[res_offset] = 0;
+			++res_offset;
+			res_offsets[i] = res_offset;
+		}
 	}
 
 	static void constant(const std::string & data,
@@ -731,7 +760,7 @@ struct SubstringUTF8Impl
 
 	static void vector_fixed(const std::vector<UInt8> & data, ColumnString::Offset_t n,
 		size_t start, size_t length,
-		std::vector<UInt8> & res_data)
+		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		throw Exception("Cannot apply function substringUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -890,7 +919,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeString;
+		return arguments[0]->clone();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -958,15 +987,15 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		IColumn * c0 = &*block.getByPosition(arguments[0]).column;
-		IColumn * c1 = &*block.getByPosition(arguments[1]).column;
+		const IColumn * c0 = &*block.getByPosition(arguments[0]).column;
+		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
 
-		ColumnString * c0_string = dynamic_cast<ColumnString *>(c0);
-		ColumnString * c1_string = dynamic_cast<ColumnString *>(c1);
-		ColumnFixedString * c0_fixed_string = dynamic_cast<ColumnFixedString *>(c0);
-		ColumnFixedString * c1_fixed_string = dynamic_cast<ColumnFixedString *>(c1);
-		ColumnConstString * c0_const = dynamic_cast<ColumnConstString *>(c0);
-		ColumnConstString * c1_const = dynamic_cast<ColumnConstString *>(c1);
+		const ColumnString * c0_string = dynamic_cast<const ColumnString *>(c0);
+		const ColumnString * c1_string = dynamic_cast<const ColumnString *>(c1);
+		const ColumnFixedString * c0_fixed_string = dynamic_cast<const ColumnFixedString *>(c0);
+		const ColumnFixedString * c1_fixed_string = dynamic_cast<const ColumnFixedString *>(c1);
+		const ColumnConstString * c0_const = dynamic_cast<const ColumnConstString *>(c0);
+		const ColumnConstString * c1_const = dynamic_cast<const ColumnConstString *>(c1);
 
 		/// Результат - const string
 		if (c0_const && c1_const)
@@ -977,82 +1006,57 @@ public:
 		}
 		else
 		{
-			/// Результат - fixed string
-			if ((c0_fixed_string || c0_const) && (c1_fixed_string || c1_const))
-			{
-				if (c0_fixed_string && c1_fixed_string)
-				{
-					ColumnFixedString * c_res = new ColumnFixedString(c0_fixed_string->getN() + c1_fixed_string->getN());
-					block.getByPosition(result).column = c_res;
-					ColumnString::Chars_t & vec_res = c_res->getChars();
-					
-					Impl::fixed_vector_fixed_vector(
-						c0_fixed_string->getChars(), c0_fixed_string->getN(),
-						c1_fixed_string->getChars(), c1_fixed_string->getN(),
-						vec_res);
-				}
-				else if (c0_fixed_string && c1_const)
-				{
-					ColumnFixedString * c_res = new ColumnFixedString(c0_fixed_string->getN() + c1_const->getData().size());
-					block.getByPosition(result).column = c_res;
-					ColumnString::Chars_t & vec_res = c_res->getChars();
-					
-					Impl::fixed_vector_constant(
-						c0_fixed_string->getChars(), c0_fixed_string->getN(),
-						c1_const->getData(),
-						vec_res);
-				}
-				else if (c0_const && c1_fixed_string)
-				{
-					ColumnFixedString * c_res = new ColumnFixedString(c1_fixed_string->getN() + c0_const->getData().size());
-					block.getByPosition(result).column = c_res;
-					ColumnString::Chars_t & vec_res = c_res->getChars();
-					
-					Impl::constant_fixed_vector(
-						c0_const->getData(),
-						c1_fixed_string->getChars(), c1_fixed_string->getN(),
-						vec_res);
-				}
-			}
-			else /// Результат - string
-			{
-				ColumnString * c_res = new ColumnString;
-				block.getByPosition(result).column = c_res;
-				ColumnString::Chars_t & vec_res = c_res->getChars();
-				ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
-				
-				if (c0_string && c1_string)
-					Impl::vector_vector(
-						c0_string->getChars(), c0_string->getOffsets(),
-						c1_string->getChars(), c1_string->getOffsets(),
-						vec_res, offsets_res);
-				else if (c0_string && c1_fixed_string)
-					Impl::vector_fixed_vector(
-						c0_string->getChars(), c0_string->getOffsets(),
-						c1_fixed_string->getChars(), c1_fixed_string->getN(),
-						vec_res, offsets_res);
-				else if (c0_string && c1_const)
-					Impl::vector_constant(
-						c0_string->getChars(), c0_string->getOffsets(),
-						c1_const->getData(),
-						vec_res, offsets_res);
-				else if (c0_fixed_string && c1_string)
-					Impl::fixed_vector_vector(
-						c0_fixed_string->getChars(), c0_fixed_string->getN(),
-						c1_string->getChars(), c1_string->getOffsets(),
-						vec_res, offsets_res);
-				else if (c0_const && c1_string)
-					Impl::constant_vector(
-						c0_const->getData(),
-						c1_string->getChars(), c1_string->getOffsets(),
-						vec_res, offsets_res);
-				else
-					throw Exception("Illegal columns "
-						+ block.getByPosition(arguments[0]).column->getName() + " and "
-						+ block.getByPosition(arguments[1]).column->getName()
-						+ " of arguments of function " + getName(),
-						ErrorCodes::ILLEGAL_COLUMN);
-			}
+			ColumnString * c_res = new ColumnString;
+			block.getByPosition(result).column = c_res;
+			ColumnString::Chars_t & vec_res = c_res->getChars();
+			ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
+
+			if (c0_string && c1_string)
+				Impl::vector_vector(
+					c0_string->getChars(), c0_string->getOffsets(),
+					c1_string->getChars(), c1_string->getOffsets(),
+					vec_res, offsets_res);
+			else if (c0_string && c1_fixed_string)
+				Impl::vector_fixed_vector(
+					c0_string->getChars(), c0_string->getOffsets(),
+					c1_fixed_string->getChars(), c1_fixed_string->getN(),
+					vec_res, offsets_res);
+			else if (c0_string && c1_const)
+				Impl::vector_constant(
+					c0_string->getChars(), c0_string->getOffsets(),
+					c1_const->getData(),
+					vec_res, offsets_res);
+			else if (c0_fixed_string && c1_string)
+				Impl::fixed_vector_vector(
+					c0_fixed_string->getChars(), c0_fixed_string->getN(),
+					c1_string->getChars(), c1_string->getOffsets(),
+					vec_res, offsets_res);
+			else if (c0_const && c1_string)
+				Impl::constant_vector(
+					c0_const->getData(),
+					c1_string->getChars(), c1_string->getOffsets(),
+					vec_res, offsets_res);
+			else if (c0_fixed_string && c1_fixed_string)
+				Impl::fixed_vector_fixed_vector(
+					c0_fixed_string->getChars(), c0_fixed_string->getN(),
+					c1_fixed_string->getChars(), c1_fixed_string->getN(),
+					vec_res, offsets_res);
+			else if (c0_fixed_string && c1_const)
+				Impl::fixed_vector_constant(
+					c0_fixed_string->getChars(), c0_fixed_string->getN(),
+					c1_const->getData(),
+					vec_res, offsets_res);
+			else if (c0_const && c1_fixed_string)
+				Impl::constant_fixed_vector(
+					c0_const->getData(),
+					c1_fixed_string->getChars(), c1_fixed_string->getN(),
+					vec_res, offsets_res);
+			else
+				throw Exception("Illegal columns "
+					+ block.getByPosition(arguments[0]).column->getName() + " and "
+					+ block.getByPosition(arguments[1]).column->getName()
+					+ " of arguments of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
 };
@@ -1116,11 +1120,11 @@ public:
 		}
 		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column_string))
 		{
-			ColumnFixedString * col_res = new ColumnFixedString(length);
+			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				start, length,
-				col_res->getChars());
+				col_res->getChars(), col_res->getOffsets());
 		}
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column_string))
 		{
