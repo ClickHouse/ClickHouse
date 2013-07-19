@@ -54,33 +54,34 @@ bool Set::checkSetSizeLimits() const
 }
 	
 
-Set::Type Set::chooseMethod(const DataTypes & key_types, bool & keys_fit_128_bits, Sizes & key_sizes)
+Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
 {
-	size_t keys_size = key_types.size();
+	size_t keys_size = key_columns.size();
 
 	keys_fit_128_bits = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		if (!key_types[j]->isNumeric())
+		if (!key_columns[j]->isNumeric())
 		{
 			keys_fit_128_bits = false;
 			break;
 		}
-		key_sizes[j] = key_types[j]->getSizeOfField();
+		key_sizes[j] = key_columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
 	if (keys_bytes > 16)
 		keys_fit_128_bits = false;
 
 	/// Если есть один ключ, который помещается в 64 бита
-	if (keys_size == 1 && key_types[0]->isNumeric())
+	if (keys_size == 1 && key_columns[0]->isNumeric())
 		return KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
-		&& (dynamic_cast<const DataTypeString *>(&*key_types[0]) || dynamic_cast<const DataTypeFixedString *>(&*key_types[0])))
+		&& (dynamic_cast<const ColumnString *>(key_columns[0]) || dynamic_cast<const ColumnFixedString *>(key_columns[0])
+		|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
 		return KEY_STRING;
 
 	/// Если много ключей - будем строить множество хэшей от них
@@ -113,7 +114,7 @@ void Set::create(BlockInputStreamPtr stream)
 
 		/// Какую структуру данных для множества использовать?
 		keys_fit_128_bits = false;
-		type = chooseMethod(data_types, keys_fit_128_bits, key_sizes);
+		type = chooseMethod(key_columns, keys_fit_128_bits, key_sizes);
 
 		if (type == KEY_64)
 		{

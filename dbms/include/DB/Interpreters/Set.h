@@ -99,7 +99,7 @@ private:
 	size_t max_bytes;
 	Limits::OverflowMode overflow_mode;
 	
-	static Type chooseMethod(const DataTypes & key_types, bool & keys_fit_128_bits, Sizes & key_sizes);
+	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 
 	/// Если в левой части IN стоит массив. Проверяем, что хоть один элемент массива лежит в множестве.
 	void executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
