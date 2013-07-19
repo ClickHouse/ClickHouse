@@ -38,6 +38,7 @@ public:
 	
 	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const { return IsNumber<T>::value; }
+	bool isFixed() const { return IsNumber<T>::value; }
 	size_t sizeOfField() const { return sizeof(T); }
 	ColumnPtr cloneResized(size_t s_) const { return new ColumnConst(s_, data); }
 	size_t size() const { return s; }

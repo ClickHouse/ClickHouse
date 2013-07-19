@@ -100,7 +100,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		if (!key_columns[j]->isNumeric())
+		if (!key_columns[j]->isFixed())
 		{
 			keys_fit_128_bits = false;
 			break;
@@ -115,19 +115,19 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	if (keys_size == 0)
 		return AggregatedDataVariants::WITHOUT_KEY;
 
-	/// Если есть один ключ, который помещается в 64 бита
+	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumeric())
 		return AggregatedDataVariants::KEY_64;
+
+	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
+	if (keys_fit_128_bits)
+		return AggregatedDataVariants::KEYS_128;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
 		&& (dynamic_cast<const ColumnString *>(key_columns[0]) || dynamic_cast<const ColumnFixedString *>(key_columns[0])
 			|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
 		return AggregatedDataVariants::KEY_STRING;
-
-	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
-	if (keys_fit_128_bits)
-		return AggregatedDataVariants::KEYS_128;
 
 	/// Иначе будем агрегировать по хэшу от ключей.
 	return AggregatedDataVariants::HASHED;

@@ -37,6 +37,16 @@ public:
 	{
 		return chars.size() / n;
 	}
+
+	size_t sizeOfField() const
+	{
+		return n;
+	}
+
+	bool isFixed() const
+	{
+		return true;
+	}
 	
 	size_t byteSize() const
 	{

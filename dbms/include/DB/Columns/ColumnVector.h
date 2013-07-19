@@ -27,6 +27,7 @@ public:
 	ColumnVectorBase(size_t n) : data(n) {}
 
 	bool isNumeric() const { return IsNumber<T>::value; }
+	bool isFixed() const { return IsNumber<T>::value; }
 
 	size_t sizeOfField() const { return sizeof(T); }
 

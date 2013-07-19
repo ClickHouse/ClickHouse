@@ -33,11 +33,15 @@ public:
 	  */
 	virtual bool isNumeric() const { return false; }
 
-	/** Столбец представляет собой константу
+	/** Столбец представляет собой константу.
 	  */
 	virtual bool isConst() const { return false; }
 
-	/** Для числовых столбцов - вернуть sizeof числового типа
+	/** Значения имеют фиксированную длину.
+	  */
+	virtual bool isFixed() const { return false; }
+
+	/** Для столбцов фиксированной длины - вернуть длину значения.
 	  */
 	virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 	

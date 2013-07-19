@@ -63,7 +63,7 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		if (!key_columns[j]->isNumeric())
+		if (!key_columns[j]->isFixed())
 		{
 			keys_fit_128_bits = false;
 			break;
@@ -74,14 +74,15 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 	if (keys_bytes > 16)
 		keys_fit_128_bits = false;
 
-	/// Если есть один ключ, который помещается в 64 бита
+	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumeric())
 		return KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
-		&& (dynamic_cast<const ColumnString *>(key_columns[0]) || dynamic_cast<const ColumnFixedString *>(key_columns[0])
-		|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
+		&& (dynamic_cast<const ColumnString *>(key_columns[0])
+		|| dynamic_cast<const ColumnConstString *>(key_columns[0])
+		|| (dynamic_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
 		return KEY_STRING;
 
 	/// Если много ключей - будем строить множество хэшей от них
