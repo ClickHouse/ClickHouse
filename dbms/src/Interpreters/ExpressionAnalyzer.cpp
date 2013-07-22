@@ -381,12 +381,15 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			normalizeTreeImpl(*it, finished_asts, current_asts, current_alias, in_sign_rewritten);
 	
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
+	/// Тоже самое с секцией ARRAY JOIN, алиас нужно подставить и там.
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
 		if (select->where_expression)
 			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
 		if (select->having_expression)
 			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
+		if (select->array_join_identifier)
+			normalizeTreeImpl(select->array_join_identifier, finished_asts, current_asts, current_alias, in_sign_rewritten);
 	}
 	
 	/// Действия, выполняемые снизу вверх.
@@ -903,11 +906,28 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain)
 	
 	getRootActionsImpl(select_query->select_expression_list, false, false, *step.actions);
 	
+	appendArrayJoin(chain);
+	
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		step.required_output.push_back(asts[i]->getColumnName());
 	}
+}
+
+bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
+{
+	assertSelect();
+	
+	if (!select_query->array_join_identifier)
+		return false;
+	
+	initChain(chain, aggregated_columns);
+	ExpressionActionsChain::Step & step = chain.steps.back();
+	
+	step.actions->add(ExpressionActions::Action::arrayJoin(select_query->array_join_identifier->getColumnName(), ""));
+	
+	return true;
 }
 
 bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain)

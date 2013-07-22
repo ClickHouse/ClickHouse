@@ -70,7 +70,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 				array_columns[name] = column_array;
 			else
 			{
-				if (!it->second->hasEqualOffsets(column_array))
+				if (!it->second->hasEqualOffsets(*column_array))
 					throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 				
 				/// делаем так, чтобы столбцы смещений массивов внутри одной вложенной таблицы указывали в одно место

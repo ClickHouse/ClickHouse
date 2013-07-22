@@ -22,6 +22,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_select("SELECT", true, true);
 	ParserString s_distinct("DISTINCT", true, true);
 	ParserString s_from("FROM", true, true);
+	ParserString s_array("ARRAY", true, true);
+	ParserString s_join("JOIN", true, true);
 	ParserString s_where("WHERE", true, true);
 	ParserString s_final("FINAL", true, true);
 	ParserString s_sample("SAMPLE", true, true);
@@ -102,6 +104,23 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		}
 		else
 			return false;
+	}
+	
+	/// ARRAY JOIN array|Nested_table
+	if (s_array.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+		
+		if (!s_join.ignore(pos, end, expected))
+			return false;
+		
+		ws.ignore(pos, end);
+		
+		ParserCompoundIdentifier ident;
+		if (!ident.parse(pos, end, select_query->array_join_identifier, expected))
+			return false;
+		
+		ws.ignore(pos, end);
 	}
 	
 	/// FINAL
@@ -227,6 +246,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		select_query->children.push_back(select_query->database);
 	if (select_query->table)
 		select_query->children.push_back(select_query->table);
+	if (select_query->array_join_identifier)
+		select_query->children.push_back(select_query->array_join_identifier);
 	if (select_query->sample_size)
 		select_query->children.push_back(select_query->sample_size);
 	if (select_query->where_expression)

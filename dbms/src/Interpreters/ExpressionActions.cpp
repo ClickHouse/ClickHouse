@@ -1,6 +1,7 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/DataTypes/DataTypeNested.h>
 #include <set>
 
 namespace DB
@@ -200,36 +201,55 @@ void ExpressionActions::Action::execute(Block & block) const
 		
 		case ARRAY_JOIN:
 		{
-			size_t array_column = block.getPositionByName(source_name);
-			
-			ColumnPtr array_ptr = block.getByPosition(array_column).column;
-			
-			if (array_ptr->isConst())
-				array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
-			
-			ColumnArray * array = dynamic_cast<ColumnArray *>(&*array_ptr);
-			if (!array)
-				throw Exception("arrayJoin of not array: " + array_ptr->getName(), ErrorCodes::TYPE_MISMATCH);
+			ColumnPtr any_array_ptr = NULL;
 			
 			size_t columns = block.columns();
 			for (size_t i = 0; i < columns; ++i)
 			{
 				ColumnWithNameAndType & current = block.getByPosition(i);
+				ColumnArray * array = dynamic_cast<ColumnArray *>(&*current.column);
 				
-				if (i == array_column)
+				if (array && DataTypeNested::extractNestedTableName(current.name) == source_name)
+				{
+					if (any_array_ptr.isNull())
+						any_array_ptr = current.column;
+					else
+					{
+						if (!array->hasEqualOffsets(dynamic_cast<const ColumnArray &>(*any_array_ptr)))
+							throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+					}
+				}
+			}
+			
+			if (any_array_ptr.isNull())
+				throw Exception("No arrays to join for name: " + any_array_ptr->getName(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+			
+			if (any_array_ptr->isConst())
+				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
+			
+			ColumnArray * any_array = dynamic_cast<ColumnArray *>(&*any_array_ptr);
+			if (!any_array)
+				throw Exception("arrayJoin of not array: " + any_array_ptr->getName(), ErrorCodes::TYPE_MISMATCH);
+			
+			for (size_t i = 0; i < columns; ++i)
+			{
+				ColumnWithNameAndType & current = block.getByPosition(i);
+				ColumnArray * array = dynamic_cast<ColumnArray *>(&*current.column);
+				
+				if (array && DataTypeNested::extractNestedTableName(current.name) == source_name)
 				{
 					ColumnWithNameAndType result;
 					result.column = array->getDataPtr();
 					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
-					result.name = result_name;
+					result.name = result_name == "" ? current.name : result_name;
 					
 					block.erase(i);
 					block.insert(i, result);
 				}
 				else
-					current.column = current.column->replicate(array->getOffsets());
+					current.column = current.column->replicate(any_array->getOffsets());
 			}
-			
+
 			break;
 		}
 		
