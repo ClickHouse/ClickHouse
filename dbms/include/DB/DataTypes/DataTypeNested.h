@@ -24,7 +24,8 @@ public:
 	
 	static std::string concatenateNestedName(const std::string & nested_table_name, const std::string & nested_field_name);
 	static std::pair<std::string, std::string> splitNestedName(const std::string & nested_name);
-	static bool isNestedName(const std::string & nested_name);
+	static bool isNestedName(const std::string & nested_name);	
+	/// Возвращает префикс имени до первой точки '.'. Или имя без изменений, если точки нет.
 	static std::string extractNestedTableName(const std::string & nested_name);
 
 	DataTypePtr clone() const

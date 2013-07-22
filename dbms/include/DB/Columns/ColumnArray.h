@@ -280,6 +280,16 @@ public:
 	{
 		return data->byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
+	
+	bool hasEqualOffsets(const ColumnArray * other) const
+	{
+		if (offsets == other->offsets)
+			return true;
+		
+		const Offsets_t & offsets1 = getOffsets();
+		const Offsets_t & offsets2 = other->getOffsets();
+		return offsets1.size() == offsets2.size() && 0 == memcmp(&offsets1[0], &offsets2[0], sizeof(offsets1[0]) * offsets1.size());
+	}
 
 	/** Более эффективные методы манипуляции */
 	IColumn & getData() { return *data; }
