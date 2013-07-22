@@ -36,7 +36,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 			bool has_row = row_input->read(row);
 
 			if (!has_row)
-				return res;
+				break;
 
 			if (!res)
 				res = sample.cloneEmpty();
