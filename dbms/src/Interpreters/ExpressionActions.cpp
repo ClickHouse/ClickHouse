@@ -130,18 +130,51 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 	}
 	else if (type == ARRAY_JOIN)
 	{
-		if (sample_block.has(result_name))
-			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-		if (!sample_block.has(source_name))
-			throw Exception("Unknown identifier: '" + source_name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+		/// Использовалась ли секция ARRAY JOIN или функция arrayJoin
+		bool from_array_join_section = result_name == "";
 		
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*sample_block.getByName(source_name).type);
-		if (!array_type)
-			throw Exception("arrayJoin requires array argument", ErrorCodes::TYPE_MISMATCH);
-		result_type = array_type->getNestedType();
-		
-		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
-		sample_block.erase(source_name);
+		if (from_array_join_section)
+		{
+			bool has_arrays_to_join = false;
+			
+			size_t columns = sample_block.columns();
+			for (size_t i = 0; i < columns; ++i)
+			{
+				ColumnWithNameAndType & current = sample_block.getByPosition(i);
+				ColumnArray * array = dynamic_cast<ColumnArray *>(&*current.column);
+				
+				if (array && (current.name == source_name || DataTypeNested::extractNestedTableName(current.name) == source_name))
+				{
+					has_arrays_to_join = true;
+					
+					ColumnWithNameAndType result;
+					result.column = array->getDataPtr();
+					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
+					result.name = current.name;
+					
+					sample_block.erase(i);
+					sample_block.insert(i, result);
+				}
+			}
+			
+			if (!has_arrays_to_join)
+				throw Exception("No arrays to join for name: " + source_name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+		}
+		else
+		{
+			if (sample_block.has(result_name))
+				throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+			if (!sample_block.has(source_name))
+				throw Exception("Unknown identifier: '" + source_name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+			
+			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*sample_block.getByName(source_name).type);
+			if (!array_type)
+				throw Exception("arrayJoin requires array argument", ErrorCodes::TYPE_MISMATCH);
+			result_type = array_type->getNestedType();
+			
+			sample_block.erase(source_name);
+			sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
+		}
 	}
 	else if (type == ADD_COLUMN)
 	{
@@ -201,6 +234,9 @@ void ExpressionActions::Action::execute(Block & block) const
 		
 		case ARRAY_JOIN:
 		{
+			/// Использовалась ли секция ARRAY JOIN или функция arrayJoin
+			bool from_array_join_section = result_name == "";
+			
 			ColumnPtr any_array_ptr = NULL;
 			
 			size_t columns = block.columns();
@@ -209,7 +245,9 @@ void ExpressionActions::Action::execute(Block & block) const
 				ColumnWithNameAndType & current = block.getByPosition(i);
 				ColumnArray * array = dynamic_cast<ColumnArray *>(&*current.column);
 				
-				if (array && DataTypeNested::extractNestedTableName(current.name) == source_name)
+				if (array
+					&& (current.name == source_name
+						|| (from_array_join_section && DataTypeNested::extractNestedTableName(current.name) == source_name)))
 				{
 					if (any_array_ptr.isNull())
 						any_array_ptr = current.column;
@@ -222,7 +260,7 @@ void ExpressionActions::Action::execute(Block & block) const
 			}
 			
 			if (any_array_ptr.isNull())
-				throw Exception("No arrays to join for name: " + any_array_ptr->getName(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+				throw Exception("No arrays to join for name: " + source_name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 			
 			if (any_array_ptr->isConst())
 				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
@@ -236,12 +274,14 @@ void ExpressionActions::Action::execute(Block & block) const
 				ColumnWithNameAndType & current = block.getByPosition(i);
 				ColumnArray * array = dynamic_cast<ColumnArray *>(&*current.column);
 				
-				if (array && DataTypeNested::extractNestedTableName(current.name) == source_name)
+				if (array
+					&& (current.name == source_name
+						|| (from_array_join_section && DataTypeNested::extractNestedTableName(current.name) == source_name)))
 				{
 					ColumnWithNameAndType result;
 					result.column = array->getDataPtr();
 					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
-					result.name = result_name == "" ? current.name : result_name;
+					result.name = from_array_join_section ? current.name : result_name;
 					
 					block.erase(i);
 					block.insert(i, result);

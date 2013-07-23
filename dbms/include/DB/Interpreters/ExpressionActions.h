@@ -258,7 +258,7 @@ struct ExpressionActionsChain
 			
 			if (i > 0)
 			{
-				Names & previous_output = steps[i-1].required_output;
+				Names & previous_output = steps[i - 1].required_output;
 				const NamesAndTypesList & columns = steps[i].actions->getRequiredColumnsWithTypes();
 				for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 					previous_output.push_back(it->first);
