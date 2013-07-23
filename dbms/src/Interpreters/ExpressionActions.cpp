@@ -141,15 +141,15 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				ColumnWithNameAndType & current = sample_block.getByPosition(i);
-				ColumnArray * array = dynamic_cast<ColumnArray *>(&*current.column);
+				const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*current.type);
 				
-				if (array && (current.name == source_name || DataTypeNested::extractNestedTableName(current.name) == source_name))
+				if (array_type && (current.name == source_name || DataTypeNested::extractNestedTableName(current.name) == source_name))
 				{
 					has_arrays_to_join = true;
 					
 					ColumnWithNameAndType result;
-					result.column = array->getDataPtr();
-					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
+					result.column = NULL;
+					result.type = array_type->getNestedType();
 					result.name = current.name;
 					
 					sample_block.erase(i);
