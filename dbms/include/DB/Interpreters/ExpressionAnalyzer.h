@@ -63,6 +63,7 @@ public:
 	/// После агрегации:
 	bool appendHaving(ExpressionActionsChain & chain);
 	void appendSelect(ExpressionActionsChain & chain);
+	bool appendArrayJoin(ExpressionActionsChain & chain);
 	bool appendOrderBy(ExpressionActionsChain & chain);
 	/// Удаляет все столбцы кроме выбираемых SELECT, упорядочивает оставшиеся столбцы и переименовывает их в алиасы.
 	void appendProjectResult(ExpressionActionsChain & chain);

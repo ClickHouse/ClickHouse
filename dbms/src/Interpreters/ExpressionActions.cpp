@@ -140,7 +140,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			size_t columns = sample_block.columns();
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnWithNameAndType & current = sample_block.getByPosition(i);
+				const ColumnWithNameAndType & current = sample_block.getByPosition(i);
 				const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*current.type);
 				
 				if (array_type && (current.name == source_name || DataTypeNested::extractNestedTableName(current.name) == source_name))
