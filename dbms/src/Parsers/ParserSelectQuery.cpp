@@ -120,6 +120,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		if (!ident.parse(pos, end, select_query->array_join_identifier, expected))
 			return false;
 		
+		dynamic_cast<ASTIdentifier &>(*select_query->array_join_identifier).kind = ASTIdentifier::ArrayJoin;
+		
 		ws.ignore(pos, end);
 	}
 	

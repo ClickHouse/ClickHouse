@@ -338,7 +338,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
-		if (node->kind == ASTIdentifier::Column)
+		if (node->kind == ASTIdentifier::Column || node->kind == ASTIdentifier::ArrayJoin)
 		{
 			/// Если это алиас, но не родительский алиас (чтобы работали конструкции вроде "SELECT column+1 AS column").
 			Aliases::const_iterator jt = aliases.find(node->name);
@@ -723,6 +723,11 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 										additional_requirements);
 		}
 	}
+	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		if (node->kind == ASTIdentifier::ArrayJoin && !only_consts)
+			actions_stack.addAction(ExpressionActions::Action::arrayJoin(node->name, ""));
+	}
 	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
 	{
 		DataTypePtr type = apply_visitor(FieldToDataType(), node->value);
@@ -906,28 +911,11 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain)
 	
 	getRootActionsImpl(select_query->select_expression_list, false, false, *step.actions);
 	
-	appendArrayJoin(chain);
-	
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		step.required_output.push_back(asts[i]->getColumnName());
 	}
-}
-
-bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
-{
-	assertSelect();
-	
-	if (!select_query->array_join_identifier)
-		return false;
-	
-	initChain(chain, aggregated_columns);
-	ExpressionActionsChain::Step & step = chain.steps.back();
-	
-	step.actions->add(ExpressionActions::Action::arrayJoin(select_query->array_join_identifier->getColumnName(), ""));
-	
-	return true;
 }
 
 bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain)

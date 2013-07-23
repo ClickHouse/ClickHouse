@@ -18,6 +18,7 @@ public:
 		Database,
 		Table,
 		Format,
+		ArrayJoin,
 	};
 	
 	/// имя
