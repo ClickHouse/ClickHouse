@@ -63,7 +63,6 @@ public:
 	/// После агрегации:
 	bool appendHaving(ExpressionActionsChain & chain);
 	void appendSelect(ExpressionActionsChain & chain);
-	bool appendArrayJoin(ExpressionActionsChain & chain);
 	bool appendOrderBy(ExpressionActionsChain & chain);
 	/// Удаляет все столбцы кроме выбираемых SELECT, упорядочивает оставшиеся столбцы и переименовывает их в алиасы.
 	void appendProjectResult(ExpressionActionsChain & chain);
@@ -234,7 +233,7 @@ private:
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 	
-	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
+	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack, NameSet & array_joined_columns);
 	
 	void getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions);
 	

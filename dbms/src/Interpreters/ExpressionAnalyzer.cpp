@@ -13,6 +13,7 @@
 #include <DB/DataTypes/DataTypeSet.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeExpression.h>
+#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnExpression.h>
@@ -455,7 +456,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
 				it != left_arg_tuple->arguments->children.end();
 				++it)
-			set_element_types.push_back(sample_block.getByName((*it)->getColumnName()).type);
+				set_element_types.push_back(sample_block.getByName((*it)->getColumnName()).type);
 		}
 		else
 		{
@@ -520,12 +521,16 @@ static std::string getUniqueName(const Block & block, const std::string & prefix
 void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions)
 {
 	ScopeStack scopes(actions, settings);
-	getActionsImpl(ast, no_subqueries, only_consts, scopes);
+	NameSet array_joined_columns;
+	getActionsImpl(ast, no_subqueries, only_consts, scopes, array_joined_columns);
+	if (!array_joined_columns.empty())
+		scopes.addAction(ExpressionActions::Action::multipleArrayJoin(array_joined_columns));
 	actions = *scopes.popLevel();
 }
 
 
-void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack)
+void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts,
+										ScopeStack & actions_stack, NameSet & array_joined_columns)
 {
 	/// Если результат вычисления уже есть в блоке.
 	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast))
@@ -542,7 +547,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			if (node->arguments->children.size() != 1)
 				throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
 			ASTPtr arg = node->arguments->children[0];
-			getActionsImpl(arg, no_subqueries, only_consts, actions_stack);
+			getActionsImpl(arg, no_subqueries, only_consts, actions_stack, array_joined_columns);
 			if (!only_consts)
 				actions_stack.addAction(ExpressionActions::Action::arrayJoin(arg->getColumnName(), node->getColumnName()));
 			
@@ -556,7 +561,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				if (!no_subqueries)
 				{
 					/// Найдем тип первого аргумента (потом getActionsImpl вызовется для него снова и ни на что не повлияет).
-					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack);
+					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack, array_joined_columns);
 					/// Превратим tuple или подзапрос в множество.
 					makeSet(node, actions_stack.getSampleBlock());
 				}
@@ -569,7 +574,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					fake_column.type = new DataTypeUInt8;
 					fake_column.column = new ColumnConstUInt8(1, 0);
 					actions_stack.addAction(ExpressionActions::Action::addColumn(fake_column));
-					getActionsImpl(node->arguments, no_subqueries, only_consts, actions_stack);
+					getActionsImpl(node->arguments, no_subqueries, only_consts, actions_stack, array_joined_columns);
 					return;
 				}
 			}
@@ -622,7 +627,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				else
 				{
 					/// Если аргумент не лямбда-выражение, вызовемся рекурсивно и узнаем его тип.
-					getActionsImpl(child, no_subqueries, only_consts, actions_stack);
+					getActionsImpl(child, no_subqueries, only_consts, actions_stack, array_joined_columns);
 					std::string name = child->getColumnName();
 					if (actions_stack.getSampleBlock().has(name))
 					{
@@ -678,7 +683,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						}
 						
 						actions_stack.pushLevel(lambda_arguments);
-						getActionsImpl(lambda->arguments->children[1], no_subqueries, only_consts, actions_stack);
+						getActionsImpl(lambda->arguments->children[1], no_subqueries, only_consts, actions_stack, array_joined_columns);
 						ExpressionActionsPtr lambda_actions = actions_stack.popLevel();
 						
 						String result_name = lambda->arguments->children[1]->getColumnName();
@@ -733,10 +738,21 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		
 		actions_stack.addAction(ExpressionActions::Action::addColumn(column));
 	}
+	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		if (select_query &&
+			select_query->array_join_identifier &&
+			node->kind == ASTIdentifier::Column &&
+			(node->name == select_query->array_join_identifier->getColumnName()
+				|| DataTypeNested::extractNestedTableName(node->name) == select_query->array_join_identifier->getColumnName()))
+		{
+			array_joined_columns.insert(node->name);
+		}
+	}
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			getActionsImpl(*it, no_subqueries, only_consts, actions_stack);
+			getActionsImpl(*it, no_subqueries, only_consts, actions_stack, array_joined_columns);
 	}
 }
 
@@ -906,27 +922,11 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain)
 	
 	getRootActionsImpl(select_query->select_expression_list, false, false, *step.actions);
 	
-	appendArrayJoin(chain);
-	
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		step.required_output.push_back(asts[i]->getColumnName());
 	}
-}
-
-bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
-{
-	assertSelect();
-	if (!select_query->array_join_identifier)
-		return false;
-	
-	initChain(chain, aggregated_columns);
-	ExpressionActionsChain::Step & step = chain.steps.back();
-	
-	step.actions->add(ExpressionActions::Action::arrayJoin(select_query->array_join_identifier->getColumnName(), ""));
-	
-	return true;
 }
 
 bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain)

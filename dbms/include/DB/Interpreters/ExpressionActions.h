@@ -37,6 +37,7 @@ public:
 			COPY_COLUMN,
 			ARRAY_JOIN, /// Заменяет столбец с массивом на столбец с элементами. Если этот массив упоминается где-то еще, будет ошибка.
 			PROJECT, /// Переупорядочить и переименовать столбцы, удалить лишние. Допускаются одинаковые имена столбцов в результате.
+			MULTIPLE_ARRAY_JOIN, /// Заменяет столбцы из вложенной таблицы (или один столбец-массив) на столбцы с элементами.
 		};
 		
 		Type type;
@@ -44,6 +45,9 @@ public:
 		std::string source_name;
 		std::string result_name;
 		DataTypePtr result_type;
+		
+		/// Для MULTIPLE_ARRAY_JOIN
+		NameSet array_joined_columns; /// Имена исходных столбцов и столбцов результатов совпадают
 		
 		/// Для ADD_COLUMN.
 		ColumnPtr added_column;
@@ -110,6 +114,22 @@ public:
 			a.type = ARRAY_JOIN;
 			a.source_name = source_name;
 			a.result_name = result_name;
+			return a;
+		}
+		
+		static Action multipleArrayJoin(const Names & array_joined_columns_)
+		{
+			Action a;
+			a.type = MULTIPLE_ARRAY_JOIN;
+			a.array_joined_columns.insert(array_joined_columns_.begin(), array_joined_columns_.end());
+			return a;
+		}
+		
+		static Action multipleArrayJoin(const NameSet & array_joined_columns_)
+		{
+			Action a;
+			a.type = MULTIPLE_ARRAY_JOIN;
+			a.array_joined_columns = array_joined_columns_;
 			return a;
 		}
 		
