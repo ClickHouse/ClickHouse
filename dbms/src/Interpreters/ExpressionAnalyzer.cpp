@@ -523,7 +523,7 @@ void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool
 	ScopeStack scopes(actions, settings);
 	NameSet array_joined_columns;
 	getActionsImpl(ast, no_subqueries, only_consts, scopes, array_joined_columns);
-	if (!array_joined_columns.empty())
+	if (!array_joined_columns.empty() && !only_consts)
 		scopes.addAction(ExpressionActions::Action::multipleArrayJoin(array_joined_columns));
 	actions = *scopes.popLevel();
 }
