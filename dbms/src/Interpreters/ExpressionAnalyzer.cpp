@@ -540,7 +540,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast, NameSet & array_j
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			if (dynamic_cast<ASTIdentifier *>(&**it) || dynamic_cast<ASTExpressionList *>(&**it))
+			if (!dynamic_cast<ASTSelectQuery *>(&**it))
 				getArrayJoinedColumnsImpl(*it, array_joined_columns);
 	}
 }
