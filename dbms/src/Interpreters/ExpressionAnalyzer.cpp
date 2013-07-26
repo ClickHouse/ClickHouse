@@ -521,14 +521,7 @@ static std::string getUniqueName(const Block & block, const std::string & prefix
 void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions)
 {
 	ScopeStack scopes(actions, settings);
-	
-	NameSet array_joined_columns;
-	getArrayJoinedColumnsImpl(ast, array_joined_columns);
-	if (!array_joined_columns.empty() && !only_consts)
-		scopes.addAction(ExpressionActions::Action::multipleArrayJoin(array_joined_columns));
-	
 	getActionsImpl(ast, no_subqueries, only_consts, scopes);
-	
 	actions = *scopes.popLevel();
 }
 
@@ -537,9 +530,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast, NameSet & array_j
 {
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
-		if (select_query &&
-			select_query->array_join_identifier &&
-			node->kind == ASTIdentifier::Column &&
+		if (node->kind == ASTIdentifier::Column &&
 			(node->name == select_query->array_join_identifier->getColumnName()
 				|| DataTypeNested::extractNestedTableName(node->name) == select_query->array_join_identifier->getColumnName()))
 		{
@@ -549,7 +540,8 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast, NameSet & array_j
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			getArrayJoinedColumnsImpl(*it, array_joined_columns);
+			if (!dynamic_cast<ASTSelectQuery *>(&**it))
+				getArrayJoinedColumnsImpl(*it, array_joined_columns);
 	}
 }
 
@@ -848,6 +840,28 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypes
 		chain.settings = settings;
 		chain.steps.push_back(ExpressionActionsChain::Step(new ExpressionActions(columns, settings)));
 	}
+}
+
+bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
+{
+	assertSelect();
+	
+	if (!select_query->array_join_identifier)
+		return false;
+	
+	initChain(chain, columns);
+	ExpressionActionsChain::Step & step = chain.steps.back();
+	
+	NameSet array_joined_columns;
+	getArrayJoinedColumnsImpl(ast, array_joined_columns);
+	
+	if (!array_joined_columns.empty())
+	{
+		step.actions->add(ExpressionActions::Action::multipleArrayJoin(array_joined_columns));
+		step.required_output.insert(step.required_output.end(), array_joined_columns.begin(), array_joined_columns.end());
+	}
+	
+	return true;
 }
 
 bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain)

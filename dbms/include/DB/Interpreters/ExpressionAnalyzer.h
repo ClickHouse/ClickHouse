@@ -56,6 +56,7 @@ public:
 	  */
 	
 	/// До агрегации:
+	bool appendArrayJoin(ExpressionActionsChain & chain);
 	bool appendWhere(ExpressionActionsChain & chain);
 	bool appendGroupBy(ExpressionActionsChain & chain);
 	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain);

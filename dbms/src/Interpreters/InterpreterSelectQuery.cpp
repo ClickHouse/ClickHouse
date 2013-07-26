@@ -167,6 +167,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		if (from_stage < QueryProcessingStage::WithMergeableState
 			&& to_stage >= QueryProcessingStage::WithMergeableState)
 		{
+			query_analyzer->appendArrayJoin(chain);
+			
 			if (query_analyzer->appendWhere(chain))
 			{
 				has_where = true;
