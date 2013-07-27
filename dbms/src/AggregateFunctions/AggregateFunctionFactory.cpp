@@ -6,9 +6,10 @@
 #include <DB/AggregateFunctions/AggregateFunctionUniq.h>
 #include <DB/AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
+#include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
+#include <DB/AggregateFunctions/AggregateFunctionQuantileTiming.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
 
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
@@ -230,6 +231,30 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "medianTiming" || name == "quantileTiming")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionQuantileTiming>(*argument_types[0]);
+
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "quantilesTiming")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionQuantilesTiming>(*argument_types[0]);
+
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
 	else
 		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
@@ -263,6 +288,9 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 		"median",
 		"quantile",
 		"quantiles",
+		"medianTiming",
+		"quantileTiming",
+		"quantilesTiming",
 		NULL
 	};
 
