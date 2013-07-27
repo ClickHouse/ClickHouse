@@ -16,7 +16,7 @@
 namespace DB
 {
 
-template <typename ArgumentFieldType, bool returns_float = true>
+template <typename ArgumentFieldType>
 struct AggregateFunctionQuantileData
 {
 	typedef ReservoirSampler<ArgumentFieldType> Sample;
@@ -30,7 +30,7 @@ struct AggregateFunctionQuantileData
   * Для дат и дат-с-временем returns_float следует задавать равным false.
   */
 template <typename ArgumentFieldType, bool returns_float = true>
-class AggregateFunctionQuantile : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType, returns_float> >
+class AggregateFunctionQuantile : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType> >
 {
 private:
 	typedef AggregateFunctionQuantile<ArgumentFieldType, returns_float> Self;
@@ -106,7 +106,7 @@ public:
   * Возвращает массив результатов.
   */
 template <typename ArgumentFieldType, bool returns_float = true>
-class AggregateFunctionQuantiles : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType, returns_float> >
+class AggregateFunctionQuantiles : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType> >
 {
 private:
 	typedef AggregateFunctionQuantiles<ArgumentFieldType, returns_float> Self;
@@ -134,6 +134,8 @@ public:
 
 	void setParameters(const Row & params)
 	{
+		std::cerr << "!!! " << this << std::endl;
+		
 		if (params.empty())
 			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -169,6 +171,8 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
+		std::cerr << "??? " << this << ", " << levels.size() << std::endl;
+		
 		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
