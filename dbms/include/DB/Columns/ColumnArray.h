@@ -181,11 +181,6 @@ public:
 		return res;
 	}
 
-	ColumnPtr replicate(const Offsets_t & offsets) const
-	{
-		throw Exception("Replication of column Array is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
-	}
-
 	ColumnPtr permute(const Permutation & perm) const
 	{
 		size_t size = getOffsets().size();
@@ -311,12 +306,77 @@ public:
 	ColumnPtr & getOffsetsColumn() { return offsets; }
 	const ColumnPtr & getOffsetsColumn() const { return offsets; }
 
+
+	ColumnPtr replicate(const Offsets_t & replicate_offsets) const
+	{
+		/// Не получается реализовать в общем случае.
+		
+		if (dynamic_cast<const ColumnUInt8 *>(&*data))		return replicate<UInt8>(replicate_offsets);
+		if (dynamic_cast<const ColumnUInt16 *>(&*data))		return replicate<UInt16>(replicate_offsets);
+		if (dynamic_cast<const ColumnUInt32 *>(&*data))		return replicate<UInt32>(replicate_offsets);
+		if (dynamic_cast<const ColumnUInt64 *>(&*data))		return replicate<UInt64>(replicate_offsets);
+		if (dynamic_cast<const ColumnInt8 *>(&*data))		return replicate<Int8>(replicate_offsets);
+		if (dynamic_cast<const ColumnInt16 *>(&*data))		return replicate<Int16>(replicate_offsets);
+		if (dynamic_cast<const ColumnInt32 *>(&*data))		return replicate<Int32>(replicate_offsets);
+		if (dynamic_cast<const ColumnInt64 *>(&*data))		return replicate<Int64>(replicate_offsets);
+		if (dynamic_cast<const ColumnFloat32 *>(&*data))	return replicate<Float32>(replicate_offsets);
+		if (dynamic_cast<const ColumnFloat64 *>(&*data))	return replicate<Float64>(replicate_offsets);
+
+		throw Exception("Replication of column " + getName() + " is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 private:
 	ColumnPtr data;
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 
 	size_t __attribute__((__always_inline__)) offsetAt(size_t i) const	{ return i == 0 ? 0 : getOffsets()[i - 1]; }
 	size_t __attribute__((__always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
+
+
+	/// Размножить значения, если вложенный столбец - ColumnArray<T>.
+	template <typename T>
+	ColumnPtr replicate(const Offsets_t & replicate_offsets) const
+	{
+		size_t col_size = size();
+		if (col_size != replicate_offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+		
+		ColumnPtr res = cloneEmpty();
+		ColumnArray & res_ = dynamic_cast<ColumnArray &>(*res);
+
+		const typename ColumnVector<T>::Container_t & cur_data = dynamic_cast<const ColumnVector<T> &>(*data).getData();
+		const Offsets_t & cur_offsets = getOffsets();
+		
+		typename ColumnVector<T>::Container_t & res_data = dynamic_cast<ColumnVector<T> &>(res_.getData()).getData();
+		Offsets_t & res_offsets = res_.getOffsets();
+		
+		res_data.reserve(data->size() / col_size * replicate_offsets.back());
+		res_offsets.reserve(replicate_offsets.back());
+
+		Offset_t prev_replicate_offset = 0;
+		Offset_t prev_data_offset = 0;
+		Offset_t current_new_offset = 0;
+
+		for (size_t i = 0; i < col_size; ++i)
+		{
+			size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
+			size_t value_size = cur_offsets[i] - prev_data_offset;
+
+			for (size_t j = 0; j < size_to_replicate; ++j)
+			{
+				current_new_offset += value_size;
+				res_offsets.push_back(current_new_offset);
+
+				res_data.resize(res_data.size() + value_size);
+				memcpy(&res_data[res_data.size() - value_size], &cur_data[prev_data_offset], value_size * sizeof(T));
+			}
+
+			prev_replicate_offset = replicate_offsets[i];
+			prev_data_offset = cur_offsets[i];
+		}
+
+		return res;
+	}
 };
 
 
