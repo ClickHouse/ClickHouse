@@ -29,6 +29,7 @@ private:
 	size_t m_size;			/// Количество элементов
 	UInt8 size_degree;		/// Размер таблицы в виде степени двух
 	bool has_zero;			/// Хэш-таблица содержит элемент со значением ключа = 0.
+	Key zero_value;			/// Нулевое значение ключа. Чтобы было, куда поставить итератор. Не static, так как нулевое значение зависит от ZeroTraits.
 	Key * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
 
 	Hash hash;
@@ -123,6 +124,8 @@ public:
 		size_degree(GrowthTraits::INITIAL_SIZE_DEGREE),
 		has_zero(false)
 	{
+		ZeroTraits::set(zero_value);
+		
 		buf = reinterpret_cast<Key *>(calloc(buf_size_bytes(), 1));
 
 		if (NULL == buf)
@@ -155,7 +158,7 @@ public:
 
 		iterator & operator++()
 		{
-			if (unlikely(!ptr))
+			if (unlikely(ptr == &container->zero_value))
 				ptr = container->buf;
 			else
 				++ptr;
@@ -189,7 +192,7 @@ public:
 
 		const_iterator & operator++()
 		{
-			if (unlikely(!ptr))
+			if (unlikely(ptr == &container->zero_value))
 				ptr = container->buf;
 			else
 				++ptr;
@@ -208,7 +211,7 @@ public:
 	const_iterator begin() const
 	{
 		if (has_zero)
-			return const_iterator(this, NULL);
+			return const_iterator(this, &zero_value);
 
 		const Key * ptr = buf;
 		while (ptr < buf + buf_size() && ZeroTraits::check(*ptr))
@@ -220,7 +223,7 @@ public:
 	iterator begin()
 	{
 		if (has_zero)
-			return iterator(this, NULL);
+			return iterator(this, &zero_value);
 
 		Key * ptr = buf;
 		while (ptr < buf + buf_size() && ZeroTraits::check(*ptr))
