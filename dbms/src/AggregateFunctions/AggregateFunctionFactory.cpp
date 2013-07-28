@@ -45,25 +45,6 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 		return NULL;
 }
 
-/** Создать агрегатную функцию с числовым типом в параметре шаблона, в зависимости от имени типа, расположенном в type_id.
-  */
-template<template <typename> class AggregateFunctionTemplate>
-static IAggregateFunction * createWithNumericType(const String & type_id, size_t prefix_length)
-{
-		 if (0 == type_id.compare(prefix_length, strlen("UInt8"), 	"UInt8"))	return new AggregateFunctionTemplate<UInt8>;
-	else if (0 == type_id.compare(prefix_length, strlen("UInt16"), 	"UInt16"))	return new AggregateFunctionTemplate<UInt16>;
-	else if (0 == type_id.compare(prefix_length, strlen("UInt32"), 	"UInt32"))	return new AggregateFunctionTemplate<UInt32>;
-	else if (0 == type_id.compare(prefix_length, strlen("UInt64"), 	"UInt64"))	return new AggregateFunctionTemplate<UInt64>;
-	else if (0 == type_id.compare(prefix_length, strlen("Int8"), 	"Int8"))	return new AggregateFunctionTemplate<Int8>;
-	else if (0 == type_id.compare(prefix_length, strlen("Int16"), 	"Int16"))	return new AggregateFunctionTemplate<Int16>;
-	else if (0 == type_id.compare(prefix_length, strlen("Int32"), 	"Int32"))	return new AggregateFunctionTemplate<Int32>;
-	else if (0 == type_id.compare(prefix_length, strlen("Int64"), 	"Int64"))	return new AggregateFunctionTemplate<Int64>;
-	else if (0 == type_id.compare(prefix_length, strlen("Float32"),	"Float32"))	return new AggregateFunctionTemplate<Float32>;
-	else if (0 == type_id.compare(prefix_length, strlen("Float64"),	"Float64"))	return new AggregateFunctionTemplate<Float64>;
-	else
-		return NULL;
-}
-
 
 AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types) const
 {
