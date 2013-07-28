@@ -3,9 +3,10 @@
 #include <DB/AggregateFunctions/AggregateFunctionAvg.h>
 #include <DB/AggregateFunctions/AggregateFunctionAny.h>
 #include <DB/AggregateFunctions/AggregateFunctionAnyLast.h>
+#include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
 #include <DB/AggregateFunctions/AggregateFunctionUniq.h>
 #include <DB/AggregateFunctions/AggregateFunctionGroupArray.h>
-#include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
+#include <DB/AggregateFunctions/AggregateFunctionGroupUniqArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantileTiming.h>
 
@@ -60,6 +61,25 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		return new AggregateFunctionMax;
 	else if (name == "groupArray")
 		return new AggregateFunctionGroupArray;
+	else if (name == "groupUniqArray")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * arr = dynamic_cast<const DataTypeArray *>(&*argument_types[0]);
+
+		AggregateFunctionPtr res;
+		
+		if (!arr)
+			res = createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]);
+		else
+			res = createWithNumericType<AggregateFunctionGroupUniqArrays>(*arr->getNestedType());
+		
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
 	else if (name == "sum")
 	{
 		if (argument_types.size() != 1)
@@ -266,6 +286,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 		"uniqIf",
 		"uniqState",
 		"groupArray",
+		"groupUniqArray",
 		"median",
 		"quantile",
 		"quantiles",
