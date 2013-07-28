@@ -68,10 +68,11 @@ public:
 			throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
 		Array & value = data(place).value;
-		
-		value.resize(size);
+
+		size_t old_size = value.size();
+		value.resize(old_size + size);
 		for (size_t i = 0; i < size; ++i)
-			type->deserializeBinary(value[i], buf);
+			type->deserializeBinary(value[old_size + i], buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
