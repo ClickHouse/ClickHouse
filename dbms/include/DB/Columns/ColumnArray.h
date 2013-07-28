@@ -9,6 +9,7 @@
 
 #include <DB/Columns/IColumn.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnString.h>
 
 
 namespace DB
@@ -321,6 +322,7 @@ public:
 		if (dynamic_cast<const ColumnInt64 *>(&*data))		return replicate<Int64>(replicate_offsets);
 		if (dynamic_cast<const ColumnFloat32 *>(&*data))	return replicate<Float32>(replicate_offsets);
 		if (dynamic_cast<const ColumnFloat64 *>(&*data))	return replicate<Float64>(replicate_offsets);
+		if (dynamic_cast<const ColumnString *>(&*data))		return replicateString(replicate_offsets);
 
 		throw Exception("Replication of column " + getName() + " is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -373,6 +375,88 @@ private:
 
 			prev_replicate_offset = replicate_offsets[i];
 			prev_data_offset = cur_offsets[i];
+		}
+
+		return res;
+	}
+
+	/// Размножить значения, если вложенный столбец - ColumnString. Код слишком сложный.
+	ColumnPtr replicateString(const Offsets_t & replicate_offsets) const
+	{
+		size_t col_size = size();
+		if (col_size != replicate_offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		ColumnPtr res = cloneEmpty();
+		ColumnArray & res_ = dynamic_cast<ColumnArray &>(*res);
+
+		const ColumnString & cur_string = dynamic_cast<const ColumnString &>(*data);
+		const ColumnString::Chars_t & cur_chars = cur_string.getChars();
+		const Offsets_t & cur_string_offsets = cur_string.getOffsets();
+		const Offsets_t & cur_offsets = getOffsets();
+
+		ColumnString::Chars_t & res_chars = dynamic_cast<ColumnString &>(res_.getData()).getChars();
+		Offsets_t & res_string_offsets = dynamic_cast<ColumnString &>(res_.getData()).getOffsets();
+		Offsets_t & res_offsets = res_.getOffsets();
+
+		res_chars.reserve(cur_chars.size() / col_size * replicate_offsets.back());
+		res_string_offsets.reserve(cur_string_offsets.size() / col_size * replicate_offsets.back());
+		res_offsets.reserve(replicate_offsets.back());
+
+		Offset_t prev_replicate_offset = 0;
+
+		Offset_t prev_cur_offset = 0;
+		Offset_t prev_cur_string_offset = 0;
+		
+		Offset_t current_res_offset = 0;
+		Offset_t current_res_string_offset = 0;
+
+		for (size_t i = 0; i < col_size; ++i)
+		{
+	//		std::cerr << "i: " << i << std::endl;
+			/// Насколько размножить массив.
+			size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
+	//		std::cerr << "size_to_replicate: " << size_to_replicate << std::endl;
+			/// Количество строк в массиве.
+			size_t value_size = cur_offsets[i] - prev_cur_offset;
+	//		std::cerr << "value_size: " << value_size << std::endl;
+
+			size_t sum_chars_size = 0;
+
+			for (size_t j = 0; j < size_to_replicate; ++j)
+			{
+	//			std::cerr << "j: " << j << std::endl;
+				current_res_offset += value_size;
+				res_offsets.push_back(current_res_offset);
+	//			std::cerr << "current_res_offset: " << current_res_offset << std::endl;
+
+				size_t sum_chars_size = 0;
+
+				size_t prev_cur_string_offset_local = prev_cur_string_offset;
+				for (size_t k = 0; k < value_size; ++k)
+				{
+	//				std::cerr << "k: " << k << std::endl;
+					/// Размер одной строки.
+					size_t chars_size = cur_string_offsets[k + prev_cur_offset] - prev_cur_string_offset_local;
+	//				std::cerr << "chars_size: " << chars_size << std::endl;
+
+					current_res_string_offset += chars_size;
+					res_string_offsets.push_back(current_res_string_offset);
+	//				std::cerr << "current_res_string_offset: " << current_res_string_offset << std::endl;
+
+					/// Копирование символов одной строки.
+					res_chars.resize(res_chars.size() + chars_size);
+					memcpy(&res_chars[res_chars.size() - chars_size], &cur_chars[prev_cur_string_offset_local], chars_size);
+	//				std::cerr << "copied: " << mysqlxx::escape << std::string(reinterpret_cast<const char *>(&cur_chars[prev_cur_string_offset_local]), chars_size) << std::endl;
+
+					sum_chars_size += chars_size;
+					prev_cur_string_offset_local += chars_size;
+				}
+			}
+
+			prev_replicate_offset = replicate_offsets[i];
+			prev_cur_offset = cur_offsets[i];
+			prev_cur_string_offset += sum_chars_size;
 		}
 
 		return res;
