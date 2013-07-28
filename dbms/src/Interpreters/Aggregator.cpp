@@ -211,7 +211,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregates[i].function->create(res + offsets_of_aggregate_states[i]);
+					aggregate_functions[i]->create(res + offsets_of_aggregate_states[i]);
 			}
 
 			/// Оптимизация в случае единственной агрегатной функции count.
