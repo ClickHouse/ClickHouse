@@ -130,14 +130,9 @@ public:
 		size_t old_size = data_to.size();
 		data_to.resize(old_size + size);
 
-		std::cerr << size << std::endl;
-
 		size_t i = 0;
 		for (typename State::Set::const_iterator it = set.begin(); it != set.end(); ++it, ++i)
-		{
-			std::cerr << i << std::endl;
 			data_to[old_size + i] = *it;
-		}
 	}
 };
 
