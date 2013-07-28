@@ -8,6 +8,8 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
+#include <DB/Interpreters/Aggregator.h>
+
 
 namespace DB
 {
@@ -20,8 +22,8 @@ using Poco::SharedPtr;
 class FinalizingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	FinalizingAggregatedBlockInputStream(BlockInputStreamPtr input_)
-		: log(&Logger::get("FinalizingAggregatedBlockInputStream"))
+	FinalizingAggregatedBlockInputStream(BlockInputStreamPtr input_, AggregateDescriptions & aggregates_)
+		: aggregates(aggregates_), log(&Logger::get("FinalizingAggregatedBlockInputStream"))
 	{
 		children.push_back(input_);
 	}
@@ -48,13 +50,14 @@ protected:
 
 		size_t rows = res.rows();
 		size_t columns = res.columns();
+		size_t number_of_aggregate = 0;
 		for (size_t i = 0; i < columns; ++i)
 		{
 			ColumnWithNameAndType & column = res.getByPosition(i);
 			if (ColumnAggregateFunction * col = dynamic_cast<ColumnAggregateFunction *>(&*column.column))
 			{
 				ColumnAggregateFunction::Container_t & data = col->getData();
-				IAggregateFunction * func = col->getFunction();
+				IAggregateFunction * func = aggregates[number_of_aggregate].function;
 				column.type = func->getReturnType();
 				column.column = column.type->createColumn();
 				IColumn & finalized_column = *column.column;
@@ -62,6 +65,8 @@ protected:
 
 				for (size_t j = 0; j < rows; ++j)
 					func->insertResultInto(data[j], finalized_column);
+
+				++number_of_aggregate;
 			}
 		}
 
@@ -79,6 +84,7 @@ protected:
 	}
 
 private:
+	AggregateDescriptions aggregates;
 	Logger * log;
 };
 

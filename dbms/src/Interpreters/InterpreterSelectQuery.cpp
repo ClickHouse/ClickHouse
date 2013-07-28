@@ -471,9 +471,13 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 
 void InterpreterSelectQuery::executeFinalizeAggregates(BlockInputStreams & streams)
 {
+	Names key_names;
+	AggregateDescriptions aggregates;
+	query_analyzer->getAggregateInfo(key_names, aggregates);
+	
 	/// Финализируем агрегатные функции - заменяем их состояния вычислений на готовые значения
 	BlockInputStreamPtr & stream = streams[0];
-	stream = maybeAsynchronous(new FinalizingAggregatedBlockInputStream(stream), settings.asynchronous);
+	stream = maybeAsynchronous(new FinalizingAggregatedBlockInputStream(stream, aggregates), settings.asynchronous);
 }
 
 
