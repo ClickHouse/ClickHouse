@@ -139,32 +139,24 @@ StorageChunkMerger::StorageChunkMerger(
 	Context & context_)
 	: this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
 	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_), context(context_),
-	thread_should_quit(false), log(&Logger::get("StorageChunkMerger"))
+	log(&Logger::get("StorageChunkMerger"))
 {
 	merge_thread = boost::thread(&StorageChunkMerger::mergeThread, this);
 }
 
-void StorageChunkMerger::dropImpl()
-{
-	thread_should_quit = true;
-	merge_thread.join();
-}
-
 StorageChunkMerger::~StorageChunkMerger()
 {
-	merge_thread.detach();
+	cancel_merge_thread.set();
+	merge_thread.join();
 }
 
 void StorageChunkMerger::mergeThread()
 {
-	/// Не дает удалить this посреди итерации.
-	StoragePtr this_ptr = thisPtr();
-	
-	while (!thread_should_quit && this_ptr.use_count() > 1)
+	while (true)
 	{
 		bool merged = false;
 		bool error = true;
-		
+
 		try
 		{
 			merged = maybeMergeSomething();
@@ -189,15 +181,9 @@ void StorageChunkMerger::mergeThread()
 			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 		
-		if (thread_should_quit)
+		unsigned sleep_ammount = error ? SLEEP_AFTER_ERROR : (merged ? SLEEP_AFTER_MERGE : SLEEP_NO_WORK);
+		if (cancel_merge_thread.tryWait(1000 * sleep_ammount))
 			break;
-		
-		if (error)
-			sleep(SLEEP_AFTER_ERROR);
-		else if (merged)
-			sleep(SLEEP_AFTER_MERGE);
-		else
-			sleep(SLEEP_NO_WORK);
 	}
 }
 

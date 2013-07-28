@@ -39,8 +39,6 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 	
-	void dropImpl();
-	
 	~StorageChunkMerger();
 	
 private:
@@ -55,8 +53,8 @@ private:
 	size_t chunks_to_merge;
 	Context & context;
 	
-	bool thread_should_quit;
 	boost::thread merge_thread;
+	Poco::Event cancel_merge_thread;
 	
 	Logger * log;
 	
@@ -74,7 +72,7 @@ private:
 	bool maybeMergeSomething();
 	Storages selectChunksToMerge();
 	bool mergeChunks(const Storages & chunks);
-	
+
 	typedef std::set<std::string> TableNames;
 	/// Какие таблицы типа Chunks сейчас пишет хоть один ChunkMerger.
 	/// Нужно смотреть, залочив mutex из контекста.
