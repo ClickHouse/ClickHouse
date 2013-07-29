@@ -239,18 +239,22 @@ void ExpressionActions::Action::execute(Block & block) const
 			for (size_t i = 0; i < columns; ++i)
 			{
 				const ColumnWithNameAndType & current = block.getByPosition(i);
-				const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*current.column);
 				
 				if (current.name == source_name || array_joined_columns.count(current.name))
 				{
-					if (!array)
+					if (!dynamic_cast<const DataTypeArray *>(&*current.type))
 						throw Exception("arrayJoin of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 					
+					ColumnPtr array_ptr = current.column;
+					if (array_ptr->isConst())
+						array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
+					
 					if (any_array_ptr.isNull())
-						any_array_ptr = current.column;
+						any_array_ptr = array_ptr;
 					else
 					{
-						if (!array->hasEqualOffsets(dynamic_cast<const ColumnArray &>(*any_array_ptr)))
+						const ColumnArray & array = dynamic_cast<const ColumnArray &>(*array_ptr);
+						if (!array.hasEqualOffsets(dynamic_cast<const ColumnArray &>(*any_array_ptr)))
 							throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 					}
 				}
@@ -259,20 +263,20 @@ void ExpressionActions::Action::execute(Block & block) const
 			if (any_array_ptr.isNull())
 				throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 			
-			if (any_array_ptr->isConst())
-				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
-			
 			const ColumnArray * any_array = dynamic_cast<const ColumnArray *>(&*any_array_ptr);
 			
 			for (size_t i = 0; i < columns; ++i)
 			{
 				ColumnWithNameAndType & current = block.getByPosition(i);
-				ColumnArray * array = dynamic_cast<ColumnArray *>(&*current.column);
 				
 				if (current.name == source_name || array_joined_columns.count(current.name))
 				{
+					ColumnPtr array_ptr = current.column;
+					if (array_ptr->isConst())
+						array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
+					
 					ColumnWithNameAndType result;
-					result.column = array->getDataPtr();
+					result.column = dynamic_cast<const ColumnArray &>(*array_ptr).getDataPtr();
 					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
 					result.name = type == MULTIPLE_ARRAY_JOIN ? current.name : result_name;
 					
