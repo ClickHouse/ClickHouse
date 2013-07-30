@@ -52,6 +52,13 @@ std::string DataTypeNested::extractNestedTableName(const std::string & nested_na
 }
 
 
+std::string DataTypeNested::extractNestedColumnName(const std::string & nested_name)
+{
+	Poco::StringTokenizer tokenizer(nested_name, ".");
+	return tokenizer[tokenizer.count() - 1];
+}
+
+
 std::string DataTypeNested::getName() const
 {
 	std::string res;

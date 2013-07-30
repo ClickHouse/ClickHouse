@@ -106,7 +106,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			return false;
 	}
 	
-	/// ARRAY JOIN array|Nested_table
+	/// ARRAY JOIN array|Nested_table [AS alias]
 	if (s_array.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
@@ -116,7 +116,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		
 		ws.ignore(pos, end);
 		
-		ParserCompoundIdentifier ident;
+		ParserWithOptionalAlias ident(new ParserCompoundIdentifier());
 		if (!ident.parse(pos, end, select_query->array_join_identifier, expected))
 			return false;
 		

@@ -526,15 +526,23 @@ void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool
 }
 
 
-void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast, NameSet & array_joined_columns)
+void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast, NameToNameMap & array_joined_columns)
 {
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
+		String maybe_array_joined_nested_table = select_query->array_join_identifier->getAlias();
+		
 		if (node->kind == ASTIdentifier::Column &&
-			(node->name == select_query->array_join_identifier->getColumnName()
-				|| DataTypeNested::extractNestedTableName(node->name) == select_query->array_join_identifier->getColumnName()))
+			(node->name == maybe_array_joined_nested_table
+				|| DataTypeNested::extractNestedTableName(node->name) == maybe_array_joined_nested_table))
 		{
-			array_joined_columns.insert(node->name);
+			String nested_table = select_query->array_join_identifier->getColumnName();
+			String nested_column = DataTypeNested::extractNestedColumnName(node->name);
+			
+			String from_name = DataTypeNested::concatenateNestedName(nested_table, nested_column);
+			String to_name = DataTypeNested::concatenateNestedName(maybe_array_joined_nested_table, nested_column);
+			
+			array_joined_columns[from_name] = to_name;
 		}
 	}
 	else
@@ -852,13 +860,14 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
 	initChain(chain, columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
-	NameSet array_joined_columns;
+	NameToNameMap array_joined_columns;
 	getArrayJoinedColumnsImpl(ast, array_joined_columns);
 	
 	if (!array_joined_columns.empty())
 	{
 		step.actions->add(ExpressionActions::Action::multipleArrayJoin(array_joined_columns));
-		step.required_output.insert(step.required_output.end(), array_joined_columns.begin(), array_joined_columns.end());
+		for (NameToNameMap::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			step.required_output.push_back(it->second);
 	}
 	
 	return true;

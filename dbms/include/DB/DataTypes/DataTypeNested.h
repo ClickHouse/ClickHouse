@@ -27,6 +27,8 @@ public:
 	static bool isNestedName(const std::string & nested_name);	
 	/// Возвращает префикс имени до первой точки '.'. Или имя без изменений, если точки нет.
 	static std::string extractNestedTableName(const std::string & nested_name);
+	/// Возвращает суффикс имени до первой точки справа '.'. Или имя без изменений, если точки нет.
+	static std::string extractNestedColumnName(const std::string & nested_name);
 
 	DataTypePtr clone() const
 	{

@@ -17,6 +17,7 @@ typedef Poco::SharedPtr<IFunction> FunctionPtr;
 typedef std::pair<std::string, std::string> NameWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
 typedef std::set<String> NameSet;
+typedef std::map<String, String> NameToNameMap;
 
 /** Содержит последовательность действий над блоком.
   */
@@ -47,7 +48,7 @@ public:
 		DataTypePtr result_type;
 		
 		/// Для MULTIPLE_ARRAY_JOIN
-		NameSet array_joined_columns; /// Имена исходных столбцов и столбцов результатов совпадают
+		NameToNameMap array_joined_columns; /// Имена исходных столбцов -> имена столбцов результатов ARRAY JOIN
 		
 		/// Для ADD_COLUMN.
 		ColumnPtr added_column;
@@ -117,15 +118,7 @@ public:
 			return a;
 		}
 		
-		static Action multipleArrayJoin(const Names & array_joined_columns_)
-		{
-			Action a;
-			a.type = MULTIPLE_ARRAY_JOIN;
-			a.array_joined_columns.insert(array_joined_columns_.begin(), array_joined_columns_.end());
-			return a;
-		}
-		
-		static Action multipleArrayJoin(const NameSet & array_joined_columns_)
+		static Action multipleArrayJoin(const NameToNameMap & array_joined_columns_)
 		{
 			Action a;
 			a.type = MULTIPLE_ARRAY_JOIN;
