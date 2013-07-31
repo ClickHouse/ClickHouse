@@ -1153,7 +1153,25 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column && !ignored_names.count(node->name))
+		{
+			/// Разрешаем алиасы для вложенной таблицы, чтобы в требуемые столбцы попали исходные имена
+			if (select_query && select_query->array_join_identifier)
+			{
+				String maybe_array_joined_nested_table = select_query->array_join_identifier->getAlias();
+				if (node->name == maybe_array_joined_nested_table
+					|| DataTypeNested::extractNestedTableName(node->name) == maybe_array_joined_nested_table)
+				{
+					String nested_table = select_query->array_join_identifier->getColumnName();
+					String nested_column = DataTypeNested::extractNestedColumnName(node->name);
+					String original_name = DataTypeNested::concatenateNestedName(nested_table, nested_column);
+					
+					required_columns.insert(original_name);
+					return;
+				}
+			}
+			
 			required_columns.insert(node->name);
+		}
 		return;
 	}
 	
