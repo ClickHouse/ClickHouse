@@ -115,6 +115,38 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 }
 
 
+bool ExpressionAnalyzer::isArrayJoinedColumnName(const String & name)
+{
+	if (select_query && select_query->array_join_identifier)
+	{
+		String maybe_array_joined_nested_table = select_query->array_join_identifier->getAlias();
+		return name == maybe_array_joined_nested_table
+			|| DataTypeNested::extractNestedTableName(name) == maybe_array_joined_nested_table;
+	}
+	return false;
+}
+
+
+String ExpressionAnalyzer::getOriginalNestedName(const String & name)
+{
+	if (select_query && select_query->array_join_identifier)
+	{
+		String aliased_nested_table = select_query->array_join_identifier->getAlias();
+		String nested_table = select_query->array_join_identifier->getColumnName();
+
+		if (name == aliased_nested_table)
+			return nested_table;
+		
+		if (DataTypeNested::extractNestedTableName(name) == aliased_nested_table)
+		{
+			String nested_column = DataTypeNested::extractNestedColumnName(name);
+			return DataTypeNested::concatenateNestedName(nested_table, nested_column);
+		}
+	}
+	return name;
+}
+
+
 void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast)
 {
 	/// Обход снизу-вверх. Не опускаемся в подзапросы.
@@ -357,6 +389,16 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 					throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
 			}
 		}
+		
+		/// на случай если подставили алиас
+		node = dynamic_cast<ASTIdentifier *>(&*ast);
+		
+		if (node && node->kind == ASTIdentifier::Column && isArrayJoinedColumnName(node->name))
+		{
+			String original_name = getOriginalNestedName(node->name);
+			node->alias = node->name;
+			node->name = original_name;
+		}
 	}
 	else if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
 	{
@@ -530,20 +572,8 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast, NameToNameMap & a
 {
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
-		String maybe_array_joined_nested_table = select_query->array_join_identifier->getAlias();
-		
-		if (node->kind == ASTIdentifier::Column &&
-			(node->name == maybe_array_joined_nested_table
-				|| DataTypeNested::extractNestedTableName(node->name) == maybe_array_joined_nested_table))
-		{
-			String nested_table = select_query->array_join_identifier->getColumnName();
-			String nested_column = DataTypeNested::extractNestedColumnName(node->name);
-			
-			String from_name = DataTypeNested::concatenateNestedName(nested_table, nested_column);
-			String to_name = DataTypeNested::concatenateNestedName(maybe_array_joined_nested_table, nested_column);
-			
-			array_joined_columns[from_name] = to_name;
-		}
+		if (node->kind == ASTIdentifier::Column && isArrayJoinedColumnName(node->name))
+			array_joined_columns[node->name] = node->alias;
 	}
 	else
 	{
@@ -1153,25 +1183,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column && !ignored_names.count(node->name))
-		{
-			/// Разрешаем алиасы для вложенной таблицы, чтобы в требуемые столбцы попали исходные имена
-			if (select_query && select_query->array_join_identifier)
-			{
-				String maybe_array_joined_nested_table = select_query->array_join_identifier->getAlias();
-				if (node->name == maybe_array_joined_nested_table
-					|| DataTypeNested::extractNestedTableName(node->name) == maybe_array_joined_nested_table)
-				{
-					String nested_table = select_query->array_join_identifier->getColumnName();
-					String nested_column = DataTypeNested::extractNestedColumnName(node->name);
-					String original_name = DataTypeNested::concatenateNestedName(nested_table, nested_column);
-					
-					required_columns.insert(original_name);
-					return;
-				}
-			}
-			
 			required_columns.insert(node->name);
-		}
 		return;
 	}
 	

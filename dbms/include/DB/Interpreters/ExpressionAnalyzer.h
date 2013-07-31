@@ -217,6 +217,11 @@ private:
 
 	NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
 	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
+	
+	/// Проверяет является ли данный столбец результатом ARRAY JOIN
+	bool isArrayJoinedColumnName(const String & name);
+	/// Возвращает исходное имя столбца до применения к нему ARRAY JOIN
+	String getOriginalNestedName(const String & name);
 
 	void removeUnusedColumns();
 	
