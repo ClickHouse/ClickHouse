@@ -430,7 +430,7 @@ private:
 				res_offsets.push_back(current_res_offset);
 	//			std::cerr << "current_res_offset: " << current_res_offset << std::endl;
 
-				size_t sum_chars_size = 0;
+				sum_chars_size = 0;
 
 				size_t prev_cur_string_offset_local = prev_cur_string_offset;
 				for (size_t k = 0; k < value_size; ++k)
