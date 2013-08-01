@@ -563,12 +563,8 @@ void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool
 
 void ExpressionAnalyzer::getArrayJoinedColumns()
 {
-	assertSelect();
-	
-	if (!select_query->array_join_identifier)
-		return;
-	
-	getArrayJoinedColumnsImpl(ast);
+	if (select_query && select_query->array_join_identifier)
+		getArrayJoinedColumnsImpl(ast);
 }
 
 
@@ -590,22 +586,25 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 {
+	if (array_joined_columns.empty())
+		return;
+	
 	String nested_table_name = select_query->array_join_identifier->getColumnName();
 	String nested_table_alias = select_query->array_join_identifier->getAlias();
 	
 	bool added_columns = false;
 	
-	const NamesAndTypesList & input_columns = actions.getRequiredColumnsWithTypes();
-	for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+	const Names & input_columns = actions.getRequiredColumns();
+	for (Names::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 	{
-		String nested_table = DataTypeNested::extractNestedTableName(it->first);
-		String nested_column = DataTypeNested::extractNestedColumnName(it->first);
+		String nested_table = DataTypeNested::extractNestedTableName(*it);
+		String nested_column = DataTypeNested::extractNestedColumnName(*it);
 		
 		if (nested_column == nested_table_name || (nested_table == nested_table_name && array_joined_columns.count(nested_column)))
 		{
 			added_columns = true;
 			String array_joined_name = DataTypeNested::concatenateNestedName(nested_table_alias, nested_column);
-			actions.add(ExpressionActions::Action::copyColumn(it->first, array_joined_name));
+			actions.add(ExpressionActions::Action::copyColumn(*it, array_joined_name));
 		}
 	}
 	
