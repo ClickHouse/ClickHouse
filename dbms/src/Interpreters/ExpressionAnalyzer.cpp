@@ -603,11 +603,11 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 	{
 		String nested_table = DataTypeNested::extractNestedTableName(*it);
 		String nested_column = DataTypeNested::extractNestedColumnName(*it);
-		
-		if (nested_column == nested_table_name || (nested_table == nested_table_name && array_joined_columns.count(nested_column)))
+
+		if (*it == nested_table_name || nested_table == nested_table_name)
 		{
 			added_columns = true;
-			String array_joined_name = nested_column == nested_table_name
+			String array_joined_name = *it == nested_table_name
 				? nested_table_alias
 				: DataTypeNested::concatenateNestedName(nested_table_alias, nested_column);
 			actions.add(ExpressionActions::Action::copyColumn(*it, array_joined_name));

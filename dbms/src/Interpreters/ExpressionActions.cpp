@@ -30,17 +30,17 @@ bool ExpressionActions::Action::isArrayJoinedColumnName(const String & name) con
 {
 	std::string nested_table = DataTypeNested::extractNestedTableName(name);
 	std::string nested_column = DataTypeNested::extractNestedColumnName(name);
-	return nested_column == nested_table_alias || (nested_table == nested_table_alias && array_joined_columns.count(nested_column));
+	return name == nested_table_alias || (nested_table == nested_table_alias && array_joined_columns.count(nested_column));
 }
 
 String ExpressionActions::Action::getOriginalNestedName(const String & name) const
 {
+	if (name == nested_table_alias)
+		return nested_table_name;
+	
 	std::string nested_table = DataTypeNested::extractNestedTableName(name);
 	std::string nested_column = DataTypeNested::extractNestedColumnName(name);
 
-	if (nested_column == nested_table_alias)
-		return nested_table_name;
-	
 	if (nested_table == nested_table_alias && array_joined_columns.count(nested_column))
 		return DataTypeNested::concatenateNestedName(nested_table_name, nested_column);
 	
