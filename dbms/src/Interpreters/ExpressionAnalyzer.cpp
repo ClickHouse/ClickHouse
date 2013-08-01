@@ -60,11 +60,14 @@ void ExpressionAnalyzer::init()
 	
 	removeUnusedColumns();
 	
+	getArrayJoinedColumns();
+	
 	/// Найдем агрегатные функции.
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
 		has_aggregation = true;
 	
 	ExpressionActions temp_actions(columns, settings);
+	addMultipleArrayJoinAction(temp_actions);
 	getAggregatesImpl(ast, temp_actions);
 	
 	if (has_aggregation)
@@ -389,16 +392,6 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 					throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
 			}
 		}
-		
-		/// на случай если подставили алиас
-		node = dynamic_cast<ASTIdentifier *>(&*ast);
-		
-		if (node && node->kind == ASTIdentifier::Column && isArrayJoinedColumnName(node->name))
-		{
-			String original_name = getOriginalNestedName(node->name);
-			node->alias = node->name;
-			node->name = original_name;
-		}
 	}
 	else if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
 	{
@@ -568,19 +561,56 @@ void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool
 }
 
 
-void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast, NameToNameMap & array_joined_columns)
+void ExpressionAnalyzer::getArrayJoinedColumns()
+{
+	assertSelect();
+	
+	if (!select_query->array_join_identifier)
+		return;
+	
+	getArrayJoinedColumnsImpl(ast);
+}
+
+
+void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 {
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column && isArrayJoinedColumnName(node->name))
-			array_joined_columns[node->name] = node->alias;
+			array_joined_columns.insert(DataTypeNested::extractNestedColumnName(node->name));
 	}
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 			if (!dynamic_cast<ASTSelectQuery *>(&**it))
-				getArrayJoinedColumnsImpl(*it, array_joined_columns);
+				getArrayJoinedColumnsImpl(*it);
 	}
+}
+
+
+void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
+{
+	String nested_table_name = select_query->array_join_identifier->getColumnName();
+	String nested_table_alias = select_query->array_join_identifier->getAlias();
+	
+	bool added_columns = false;
+	
+	const NamesAndTypesList & input_columns = actions.getRequiredColumnsWithTypes();
+	for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+	{
+		String nested_table = DataTypeNested::extractNestedTableName(it->first);
+		String nested_column = DataTypeNested::extractNestedColumnName(it->first);
+		
+		if (nested_column == nested_table_name || (nested_table == nested_table_name && array_joined_columns.count(nested_column)))
+		{
+			added_columns = true;
+			String array_joined_name = DataTypeNested::concatenateNestedName(nested_table_alias, nested_column);
+			actions.add(ExpressionActions::Action::copyColumn(it->first, array_joined_name));
+		}
+	}
+	
+	if (added_columns)
+		actions.add(ExpressionActions::Action::multipleArrayJoin(nested_table_name, nested_table_alias, array_joined_columns));
 }
 
 
@@ -890,14 +920,15 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
 	initChain(chain, columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 	
-	NameToNameMap array_joined_columns;
-	getArrayJoinedColumnsImpl(ast, array_joined_columns);
+	getArrayJoinedColumnsImpl(ast);
 	
 	if (!array_joined_columns.empty())
 	{
-		step.actions->add(ExpressionActions::Action::multipleArrayJoin(array_joined_columns));
-		for (NameToNameMap::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
-			step.required_output.push_back(it->second);
+		addMultipleArrayJoinAction(*step.actions);
+		
+		String nested_table_alias = select_query->array_join_identifier->getAlias();
+		for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			step.required_output.push_back(DataTypeNested::concatenateNestedName(nested_table_alias, *it));
 	}
 	
 	return true;

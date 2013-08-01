@@ -48,7 +48,9 @@ public:
 		DataTypePtr result_type;
 		
 		/// Для MULTIPLE_ARRAY_JOIN
-		NameToNameMap array_joined_columns; /// Имена исходных столбцов -> имена столбцов результатов ARRAY JOIN
+		std::string nested_table_name;
+		std::string nested_table_alias;
+		NameSet array_joined_columns; /// Имена столбцов без префикса 'NestedTableName.'
 		
 		/// Для ADD_COLUMN.
 		ColumnPtr added_column;
@@ -118,11 +120,15 @@ public:
 			return a;
 		}
 		
-		static Action multipleArrayJoin(const NameToNameMap & array_joined_columns_)
+		static Action multipleArrayJoin(const std::string & nested_table_name,
+										const std::string & nested_table_alias,
+										const NameSet & array_joined_columns)
 		{
 			Action a;
 			a.type = MULTIPLE_ARRAY_JOIN;
-			a.array_joined_columns = array_joined_columns_;
+			a.nested_table_name = nested_table_name;
+			a.nested_table_alias = nested_table_alias;
+			a.array_joined_columns = array_joined_columns;
 			return a;
 		}
 		
@@ -134,6 +140,11 @@ public:
 		
 	private:
 		friend class ExpressionActions;
+		
+		/// Проверяет является ли данный столбец результатом ARRAY JOIN
+		bool isArrayJoinedColumnName(const String & name) const;
+		/// Возвращает исходное имя столбца до применения к нему ARRAY JOIN
+		String getOriginalNestedName(const String & name) const;
 		
 		std::vector<Action> getPrerequisites(Block & sample_block);
 		void prepare(Block & sample_block);

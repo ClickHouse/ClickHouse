@@ -112,6 +112,9 @@ private:
 	typedef std::set<const IAST *> SetOfASTs;
 	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 	
+	/// Столбцы, которые должны быть преобразованы из-за секции ARRAY JOIN
+	NameSet array_joined_columns;
+	
 	/** Для getActionsImpl.
 	  * Стек из ExpressionActions, соответствующих вложенным лямбда-выражениям.
 	  * Новое действие нужно добавлять на самый высокий возможный уровень.
@@ -239,7 +242,9 @@ private:
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 	
-	void getArrayJoinedColumnsImpl(ASTPtr ast, NameToNameMap & array_joined_columns);
+	void getArrayJoinedColumns();
+	void getArrayJoinedColumnsImpl(ASTPtr ast);
+	void addMultipleArrayJoinAction(ExpressionActions & actions);
 	
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
 	

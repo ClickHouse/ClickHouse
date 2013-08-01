@@ -12,8 +12,8 @@ Names ExpressionActions::Action::getNeededColumns() const
 	Names res = argument_names;
 	res.insert(res.end(), prerequisite_names.begin(), prerequisite_names.end());
 	
-	for (NameToNameMap::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
-		res.push_back(it->first);
+	for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+		res.push_back(DataTypeNested::concatenateNestedName(nested_table_alias, *it));
 	
 	for (size_t i = 0; i < projection.size(); ++i)
 	{
@@ -25,7 +25,28 @@ Names ExpressionActions::Action::getNeededColumns() const
 	
 	return res;
 }
+
+bool ExpressionActions::Action::isArrayJoinedColumnName(const String & name) const
+{
+	std::string nested_table = DataTypeNested::extractNestedTableName(name);
+	std::string nested_column = DataTypeNested::extractNestedColumnName(name);
+	return nested_column == nested_table_alias || (nested_table == nested_table_alias && array_joined_columns.count(nested_column));
+}
+
+String ExpressionActions::Action::getOriginalNestedName(const String & name) const
+{
+	std::string nested_table = DataTypeNested::extractNestedTableName(name);
+	std::string nested_column = DataTypeNested::extractNestedColumnName(name);
+
+	if (nested_column == nested_table_alias)
+		return nested_table_name;
 	
+	if (nested_table == nested_table_alias && array_joined_columns.count(nested_column))
+		return DataTypeNested::concatenateNestedName(nested_table_name, nested_column);
+	
+	throw Exception("Can't produce original nested name for column: " + name, ErrorCodes::LOGICAL_ERROR);
+}
+
 ExpressionActions::Action ExpressionActions::Action::applyFunction(FunctionPtr function_,
 																	const std::vector<std::string> & argument_names_,
 																	std::string result_name_)
@@ -156,8 +177,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			const ColumnWithNameAndType & current = sample_block.getByPosition(i);
 			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*current.type);
 			
-			NameToNameMap::const_iterator array_joined_names = array_joined_columns.find(current.name);
-			if (array_joined_columns.end() != array_joined_names)
+			if (isArrayJoinedColumnName(current.name))
 			{
 				if (!array_type)
 					throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
@@ -167,17 +187,10 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 				ColumnWithNameAndType result;
 				result.column = NULL;
 				result.type = array_type->getNestedType();
-				result.name = array_joined_names->second;
-					
-				/// Если для столбцов из секции ARRAY JOIN указали алиас, то не будем удалять исходные
-				/// столбцы из блока. Они могут быть использованы функциями, работающими с массивом целиком.
-				if (array_joined_names->first != array_joined_names->second)
-					sample_block.insert(result);
-				else
-				{
-					sample_block.erase(i);
-					sample_block.insert(i, result);
-				}
+				result.name = current.name;
+				
+				sample_block.erase(i);
+				sample_block.insert(i, result);
 			}
 		}
 		
@@ -250,7 +263,7 @@ void ExpressionActions::Action::execute(Block & block) const
 			{
 				const ColumnWithNameAndType & current = block.getByPosition(i);
 				
-				if (current.name == source_name || array_joined_columns.count(current.name))
+				if (isArrayJoinedColumnName(current.name))
 				{
 					if (!dynamic_cast<const DataTypeArray *>(&*current.type))
 						throw Exception("arrayJoin of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
@@ -279,8 +292,7 @@ void ExpressionActions::Action::execute(Block & block) const
 			{
 				ColumnWithNameAndType & current = block.getByPosition(i);
 				
-				NameToNameMap::const_iterator array_joined_names = array_joined_columns.find(current.name);
-				if (current.name == source_name || array_joined_columns.end() != array_joined_names)
+				if (isArrayJoinedColumnName(current.name))
 				{
 					ColumnPtr array_ptr = current.column;
 					if (array_ptr->isConst())
@@ -289,17 +301,10 @@ void ExpressionActions::Action::execute(Block & block) const
 					ColumnWithNameAndType result;
 					result.column = dynamic_cast<const ColumnArray &>(*array_ptr).getDataPtr();
 					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
-					result.name = type == MULTIPLE_ARRAY_JOIN ? array_joined_names->second : result_name;
+					result.name = type == MULTIPLE_ARRAY_JOIN ? current.name : result_name;
 					
-					/// Если для столбцов из секции ARRAY JOIN указали алиас, то не будем удалять исходные
-					/// столбцы из блока. Они могут быть использованы функциями, работающими с массивом целиком.
-					if (type == MULTIPLE_ARRAY_JOIN && array_joined_names->first != array_joined_names->second)
-						block.insert(result);
-					else
-					{
-						block.erase(i);
-						block.insert(i, result);
-					}
+					block.erase(i);
+					block.insert(i, result);
 				}
 				else
 					current.column = current.column->replicate(any_array->getOffsets());
@@ -372,12 +377,13 @@ std::string ExpressionActions::Action::toString() const
 			ss << result_name << "(" << result_type->getName() << ")" << "= " << "arrayJoin" << " ( " << source_name << " )";
 			break;
 		case MULTIPLE_ARRAY_JOIN:
-			ss << "ARRAY JOIN {";
-			for (NameToNameMap::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			ss << "ARRAY JOIN " << nested_table_name << (nested_table_name != nested_table_alias ? " AS " + nested_table_alias : "");
+			ss << "{";
+			for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 			{
 				if (it != array_joined_columns.begin())
 					ss << ", ";
-				ss << it->first << " = " << it->second;
+				ss << *it;
 			}
 			ss << "}";
 			break;
@@ -462,8 +468,8 @@ void ExpressionActions::addImpl(Action action, NameSet & current_names, Names & 
 	
 	if (action.result_name != "")
 		new_names.push_back(action.result_name);
-	for (NameToNameMap::const_iterator it = action.array_joined_columns.begin(); it != action.array_joined_columns.end(); ++it)
-		new_names.push_back(it->second);
+	for (NameSet::const_iterator it = action.array_joined_columns.begin(); it != action.array_joined_columns.end(); ++it)
+		new_names.push_back(DataTypeNested::concatenateNestedName(action.nested_table_alias, *it));
 	
 	Actions prerequisites = action.getPrerequisites(sample_block);
 	
@@ -620,13 +626,15 @@ std::string ExpressionActions::getID() const
 			ss << actions[i].result_name;
 		if (actions[i].type == Action::MULTIPLE_ARRAY_JOIN)
 		{
-			for (NameToNameMap::const_iterator it = actions[i].array_joined_columns.begin();
+			ss << actions[i].nested_table_alias << ".{";
+			for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
 				 it != actions[i].array_joined_columns.end(); ++it)
 			{
 				if (it != actions[i].array_joined_columns.begin())
 					ss << ", ";
-				ss << it->second;
+				ss << *it;
 			}
+			ss << "}";
 		}
 	}
 	
@@ -720,10 +728,10 @@ void ExpressionActions::optimizeArrayJoin()
 			if (actions[i].result_name != "")
 				array_joined_columns.insert(actions[i].result_name);
 			
-			for (NameToNameMap::const_iterator it = actions[i].array_joined_columns.begin();
+			for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
 				 it != actions[i].array_joined_columns.end(); ++it)
 			{
-				array_joined_columns.insert(it->second);
+				array_joined_columns.insert(DataTypeNested::concatenateNestedName(actions[i].nested_table_alias, *it));
 			}
 			
 			array_join_dependencies.insert(needed.begin(), needed.end());
