@@ -597,19 +597,25 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 	
 	bool added_columns = false;
 	
-	const Names & input_columns = actions.getRequiredColumns();
-	for (Names::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+	const NamesAndTypesList & input_columns = actions.getRequiredColumnsWithTypes();
+	for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 	{
-		String nested_table = DataTypeNested::extractNestedTableName(*it);
-		String nested_column = DataTypeNested::extractNestedColumnName(*it);
+		const String & name = it->first;
+		const DataTypePtr & type= it->second;
 
-		if (*it == nested_table_name || nested_table == nested_table_name)
+		String nested_table = DataTypeNested::extractNestedTableName(name);
+		String nested_column = DataTypeNested::extractNestedColumnName(name);
+		
+		/// Проверка на тип нужна для случая, когда столбец уже был преобразован по ARRAY JOIN
+		/// на предыдущих шагах ExpressionActionChain'а
+		if (dynamic_cast<const DataTypeArray *>(&*type)
+			&& (name == nested_table_name || nested_table == nested_table_name))
 		{
 			added_columns = true;
-			String array_joined_name = *it == nested_table_name
+			String array_joined_name = name == nested_table_name
 				? nested_table_alias
 				: DataTypeNested::concatenateNestedName(nested_table_alias, nested_column);
-			actions.add(ExpressionActions::Action::copyColumn(*it, array_joined_name));
+			actions.add(ExpressionActions::Action::copyColumn(name, array_joined_name));
 		}
 	}
 	
