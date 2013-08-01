@@ -134,16 +134,16 @@ String ExpressionAnalyzer::getOriginalNestedName(const String & name)
 {
 	if (select_query && select_query->array_join_identifier)
 	{
-		String aliased_nested_table = select_query->array_join_identifier->getAlias();
-		String nested_table = select_query->array_join_identifier->getColumnName();
+		String nested_table_name = select_query->array_join_identifier->getColumnName();
+		String nested_table_alias = select_query->array_join_identifier->getAlias();
 
-		if (name == aliased_nested_table)
-			return nested_table;
+		if (name == nested_table_alias)
+			return nested_table_name;
 		
-		if (DataTypeNested::extractNestedTableName(name) == aliased_nested_table)
+		if (DataTypeNested::extractNestedTableName(name) == nested_table_alias)
 		{
 			String nested_column = DataTypeNested::extractNestedColumnName(name);
-			return DataTypeNested::concatenateNestedName(nested_table, nested_column);
+			return DataTypeNested::concatenateNestedName(nested_table_name, nested_column);
 		}
 	}
 	return name;
@@ -152,6 +152,10 @@ String ExpressionAnalyzer::getOriginalNestedName(const String & name)
 
 void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast)
 {
+	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+		if (node->kind == ASTIdentifier::ArrayJoin)
+			return;
+
 	/// Обход снизу-вверх. Не опускаемся в подзапросы.
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
@@ -603,7 +607,9 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 		if (nested_column == nested_table_name || (nested_table == nested_table_name && array_joined_columns.count(nested_column)))
 		{
 			added_columns = true;
-			String array_joined_name = DataTypeNested::concatenateNestedName(nested_table_alias, nested_column);
+			String array_joined_name = nested_column == nested_table_name
+				? nested_table_alias
+				: DataTypeNested::concatenateNestedName(nested_table_alias, nested_column);
 			actions.add(ExpressionActions::Action::copyColumn(*it, array_joined_name));
 		}
 	}
@@ -1075,6 +1081,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 	assertSelect();
 	
 	ExpressionActions temp_actions(aggregated_columns, settings);
+	addMultipleArrayJoinAction(temp_actions);
 	NamesWithAliases result_columns;
 	
 	ASTs asts = select_query->select_expression_list->children;
@@ -1213,7 +1220,12 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column && !ignored_names.count(node->name))
-			required_columns.insert(node->name);
+		{
+			if (isArrayJoinedColumnName(node->name))
+				required_columns.insert(getOriginalNestedName(node->name));
+			else
+				required_columns.insert(node->name);
+		}
 		return;
 	}
 	
