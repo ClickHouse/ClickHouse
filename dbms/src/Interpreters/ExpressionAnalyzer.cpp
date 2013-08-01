@@ -637,7 +637,11 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			ASTPtr arg = node->arguments->children[0];
 			getActionsImpl(arg, no_subqueries, only_consts, actions_stack);
 			if (!only_consts)
-				actions_stack.addAction(ExpressionActions::Action::arrayJoin(arg->getColumnName(), node->getColumnName()));
+			{
+				String temp_name = "__array_joined__" + arg->getColumnName();
+				actions_stack.addAction(ExpressionActions::Action::copyColumn(arg->getColumnName(), temp_name));
+				actions_stack.addAction(ExpressionActions::Action::arrayJoin(temp_name, node->getColumnName()));
+			}
 			
 			return;
 		}

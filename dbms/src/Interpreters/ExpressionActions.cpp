@@ -247,7 +247,7 @@ void ExpressionActions::Action::execute(Block & block) const
 			{
 				const ColumnWithNameAndType & current = block.getByPosition(i);
 				
-				if (isArrayJoinedColumnName(current.name))
+				if (current.name == source_name || isArrayJoinedColumnName(current.name))
 				{
 					if (!dynamic_cast<const DataTypeArray *>(&*current.type))
 						throw Exception("arrayJoin of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
@@ -276,7 +276,7 @@ void ExpressionActions::Action::execute(Block & block) const
 			{
 				ColumnWithNameAndType & current = block.getByPosition(i);
 				
-				if (isArrayJoinedColumnName(current.name))
+				if (current.name == source_name || isArrayJoinedColumnName(current.name))
 				{
 					ColumnPtr array_ptr = current.column;
 					if (array_ptr->isConst())
