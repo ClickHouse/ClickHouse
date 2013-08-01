@@ -10,10 +10,10 @@ namespace DB
 Names ExpressionActions::Action::getNeededColumns() const
 {
 	Names res = argument_names;
+	
 	res.insert(res.end(), prerequisite_names.begin(), prerequisite_names.end());
 	
-	for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
-		res.push_back(DataTypeNested::concatenateNestedName(nested_table_alias, *it));
+	res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 	
 	for (size_t i = 0; i < projection.size(); ++i)
 	{
@@ -28,23 +28,7 @@ Names ExpressionActions::Action::getNeededColumns() const
 
 bool ExpressionActions::Action::isArrayJoinedColumnName(const String & name) const
 {
-	std::string nested_table = DataTypeNested::extractNestedTableName(name);
-	std::string nested_column = DataTypeNested::extractNestedColumnName(name);
-	return name == nested_table_alias || (nested_table == nested_table_alias && array_joined_columns.count(nested_column));
-}
-
-String ExpressionActions::Action::getOriginalNestedName(const String & name) const
-{
-	if (name == nested_table_alias)
-		return nested_table_name;
-	
-	std::string nested_table = DataTypeNested::extractNestedTableName(name);
-	std::string nested_column = DataTypeNested::extractNestedColumnName(name);
-
-	if (nested_table == nested_table_alias && array_joined_columns.count(nested_column))
-		return DataTypeNested::concatenateNestedName(nested_table_name, nested_column);
-	
-	throw Exception("Can't produce original nested name for column: " + name, ErrorCodes::LOGICAL_ERROR);
+	return array_joined_columns.count(name) != 0;
 }
 
 ExpressionActions::Action ExpressionActions::Action::applyFunction(FunctionPtr function_,
@@ -468,8 +452,7 @@ void ExpressionActions::addImpl(Action action, NameSet & current_names, Names & 
 	
 	if (action.result_name != "")
 		new_names.push_back(action.result_name);
-	for (NameSet::const_iterator it = action.array_joined_columns.begin(); it != action.array_joined_columns.end(); ++it)
-		new_names.push_back(DataTypeNested::concatenateNestedName(action.nested_table_alias, *it));
+	new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 	
 	Actions prerequisites = action.getPrerequisites(sample_block);
 	
@@ -626,7 +609,7 @@ std::string ExpressionActions::getID() const
 			ss << actions[i].result_name;
 		if (actions[i].type == Action::MULTIPLE_ARRAY_JOIN)
 		{
-			ss << actions[i].nested_table_alias << ".{";
+			ss << "{";
 			for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
 				 it != actions[i].array_joined_columns.end(); ++it)
 			{
@@ -727,12 +710,7 @@ void ExpressionActions::optimizeArrayJoin()
 			
 			if (actions[i].result_name != "")
 				array_joined_columns.insert(actions[i].result_name);
-			
-			for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
-				 it != actions[i].array_joined_columns.end(); ++it)
-			{
-				array_joined_columns.insert(DataTypeNested::concatenateNestedName(actions[i].nested_table_alias, *it));
-			}
+			array_joined_columns.insert(actions[i].array_joined_columns.begin(), actions[i].array_joined_columns.end());
 			
 			array_join_dependencies.insert(needed.begin(), needed.end());
 		}

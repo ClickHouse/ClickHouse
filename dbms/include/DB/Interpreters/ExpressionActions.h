@@ -143,8 +143,6 @@ public:
 		
 		/// Проверяет является ли данный столбец результатом ARRAY JOIN
 		bool isArrayJoinedColumnName(const String & name) const;
-		/// Возвращает исходное имя столбца до применения к нему ARRAY JOIN
-		String getOriginalNestedName(const String & name) const;
 		
 		std::vector<Action> getPrerequisites(Block & sample_block);
 		void prepare(Block & sample_block);

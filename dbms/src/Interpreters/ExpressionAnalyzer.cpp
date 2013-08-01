@@ -122,9 +122,8 @@ bool ExpressionAnalyzer::isArrayJoinedColumnName(const String & name)
 {
 	if (select_query && select_query->array_join_identifier)
 	{
-		String maybe_array_joined_nested_table = select_query->array_join_identifier->getAlias();
-		return name == maybe_array_joined_nested_table
-			|| DataTypeNested::extractNestedTableName(name) == maybe_array_joined_nested_table;
+		String nested_table_alias = select_query->array_join_identifier->getAlias();
+		return name == nested_table_alias || DataTypeNested::extractNestedTableName(name) == nested_table_alias;
 	}
 	return false;
 }
@@ -577,7 +576,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column && isArrayJoinedColumnName(node->name))
-			array_joined_columns.insert(DataTypeNested::extractNestedColumnName(node->name));
+			array_joined_columns.insert(node->name);
 	}
 	else
 	{
@@ -930,10 +929,7 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
 	if (!array_joined_columns.empty())
 	{
 		addMultipleArrayJoinAction(*step.actions);
-		
-		String nested_table_alias = select_query->array_join_identifier->getAlias();
-		for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
-			step.required_output.push_back(DataTypeNested::concatenateNestedName(nested_table_alias, *it));
+		step.required_output.insert(step.required_output.end(), array_joined_columns.begin(), array_joined_columns.end());
 	}
 	
 	return true;
