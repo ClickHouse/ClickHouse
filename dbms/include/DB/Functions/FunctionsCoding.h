@@ -683,4 +683,145 @@ public:
 	}
 };
 
+class FunctionToStringCutToZero : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "toStringCutToZero";
+	}
+	
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			
+		if (!dynamic_cast<const DataTypeFixedString *>(&*arguments[0]) &&
+			!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		
+		return new DataTypeString;
+	}
+
+	
+	bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
+	{
+		const ColumnString * col_str_in = dynamic_cast<const ColumnString *>(col);
+		const ColumnConstString * col_const_in = dynamic_cast<const ColumnConstString *>(col);
+		
+		if (col_str_in)
+		{
+			ColumnString * col_str = new ColumnString;
+			col_res = col_str;
+			ColumnString::Chars_t & out_vec = col_str->getChars();
+			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+			
+			const ColumnString::Chars_t & in_vec = col_str_in->getChars();
+			const ColumnString::Offsets_t & in_offsets = col_str_in->getOffsets();
+			
+			size_t size = in_offsets.size();
+			out_offsets.resize(size);
+			out_vec.resize(in_vec.size());
+			
+			char * begin = reinterpret_cast<char *>(&out_vec[0]);
+			char * pos = begin;
+			const char * pos_in = reinterpret_cast<const char *>(&in_vec[0]);
+			
+			for (size_t i = 0; i < size; ++i)
+			{
+				size_t current_size = strlen(pos_in);
+				memcpy(pos, pos_in, current_size);
+				pos += current_size;
+				*pos = '\0';
+				out_offsets[i] = ++pos - begin;
+				pos_in += in_offsets[i];
+			}
+			out_vec.resize(pos - begin);
+			
+			if (out_offsets.back() != out_vec.size())
+				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+			
+			return true;
+		}
+		else if(col_const_in)
+		{
+			std::string res(col_const_in->getData().c_str());
+			col_res = new ColumnConstString(col_const_in->size(), res);
+			
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	
+	bool tryExecuteFixedString(const IColumn * col, ColumnPtr & col_res)
+	{
+		const ColumnFixedString * col_fstr_in = dynamic_cast<const ColumnFixedString *>(col);
+		
+		if (col_fstr_in)
+		{
+			ColumnString * col_str = new ColumnString;
+			
+			col_res = col_str;
+			
+			ColumnString::Chars_t & out_vec = col_str->getChars();
+			ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+			
+			const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
+			
+			size_t size = col_fstr_in->size();
+			
+			out_offsets.resize(size);
+			out_vec.resize(in_vec.size() + size);
+			
+			char * begin = reinterpret_cast<char *>(&out_vec[0]);
+			char * pos = begin;
+			const char * pos_in = reinterpret_cast<const char *>(&in_vec[0]);
+			
+			size_t n = col_fstr_in->getN();
+			
+			for (size_t i = 0; i < size; ++i)
+			{
+				size_t current_size = strnlen(pos_in, n);
+				memcpy(pos, pos_in, current_size);
+				pos += current_size;
+				*pos = '\0';
+				out_offsets[i] = ++pos - begin;
+				pos_in += n;
+			}
+			out_vec.resize(pos - begin);
+			
+			if (out_offsets.back() != out_vec.size())
+				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+			
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const IColumn * column = &*block.getByPosition(arguments[0]).column;
+		ColumnPtr & res_column = block.getByPosition(result).column;
+		
+		if (tryExecuteFixedString(column, res_column) || tryExecuteString(column, res_column))
+			return;
+		
+		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
 }
