@@ -159,6 +159,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "cutQueryStringAndFragment")	return new FunctionCutQueryStringAndFragment;
 	else if (name == "extractURLParameter")		return new FunctionExtractURLParameter;
 	else if (name == "extractURLParameters")		return new FunctionExtractURLParameters;
+	else if (name == "extractURLParameterNames")		return new FunctionExtractURLParameterNames;
 	else if (name == "cutURLParameter")			return new FunctionCutURLParameter;
 	else if (name == "URLHierarchy")				return new FunctionURLHierarchy;
 
