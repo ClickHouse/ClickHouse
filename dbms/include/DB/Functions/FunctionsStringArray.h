@@ -6,6 +6,7 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/FunctionsStringSearch.h>
 
 
 namespace DB
@@ -213,6 +214,85 @@ public:
 	}
 };
 
+class ExtractAll
+{
+private:
+	String regexp;
+
+	const OptimizedRegularExpression *re;
+	OptimizedRegularExpression::MatchVec matches;
+	size_t wrote_num;
+
+	Pos pos;
+	Pos end;
+public:
+	ExtractAll():re(0) { matches.reserve(10); }
+	/// Получить имя функции.
+	static String getName() { return "extractAll"; }
+
+	/// Проверить типы агрументов функции.
+	static void checkArguments( const DataTypes &  arguments )
+	{
+		SplitByStringImpl::checkArguments(arguments);
+	}
+
+	/// Инициализировать по аргументам функции.
+	void init(Block & block, const ColumnNumbers & arguments)
+	{
+		const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
+
+		if (!col)
+			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
+				ErrorCodes::ILLEGAL_COLUMN);
+
+		regexp = col->getData();
+	}
+
+	/// Вызывается для каждой следующей строки.
+	void set(Pos pos_, Pos end_)
+	{
+		pos = pos_;
+		end = end_;
+
+		wrote_num = 0;
+		matches.clear();
+
+		if (pos_)
+		{
+			re = &Regexps::get(regexp);
+		}
+	}
+
+	/// Получить следующий токен, если есть, или вернуть false.
+	bool get(Pos & token_begin, Pos & token_end)
+	{
+		if(!pos || pos > end)
+			return false;
+
+		if(wrote_num >= matches.size())
+		{
+			matches.clear();
+			wrote_num = 0;
+			size_t match_num = re->match(pos, end - pos, matches);
+			if(!match_num)
+				return false;
+		}
+
+		/// Пишем найденные слова
+		token_begin = pos + matches[wrote_num].offset;
+		token_end = token_begin + matches[wrote_num].length;
+
+		++wrote_num;
+
+		/// когда дочитали до конца, сдвигаем на один символ
+		if(wrote_num == matches.size())
+		{
+			pos += matches[0].offset + 1;
+		}
+
+		return true;
+	}
+};
 
 /// Функция, принимающая строку, и возвращающая массив подстрок, создаваемый некоторым генератором.
 template <typename Generator>
@@ -318,5 +398,6 @@ public:
 typedef FunctionTokens<AlphaTokensImpl>	FunctionAlphaTokens;
 typedef FunctionTokens<SplitByCharImpl>	FunctionSplitByChar;
 typedef FunctionTokens<SplitByStringImpl>	FunctionSplitByString;
+typedef FunctionTokens<ExtractAll> 		FunctionExtractAll;
 
 }
