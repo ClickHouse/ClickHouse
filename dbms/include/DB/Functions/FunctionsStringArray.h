@@ -19,7 +19,10 @@ namespace DB
   * splitByRegexp(regexp, s)
   *
   * extractAll(regexp, s) 	- выделить из строки подпоследовательности, соответствующие регекспу.
-  * 
+  * - первый subpattern, если в regexp-е есть subpattern;
+  * - нулевой subpattern (сматчившуюся часть, иначе);
+  * - инача, пустой массив
+  *
   * join(sep, arr)
   * join(arr)
   * 
@@ -217,11 +220,9 @@ public:
 class ExtractAll
 {
 private:
-	String regexp;
-
 	const OptimizedRegularExpression *re;
 	OptimizedRegularExpression::MatchVec matches;
-	size_t wrote_num;
+	size_t capture;
 
 	Pos pos;
 	Pos end;
@@ -245,7 +246,10 @@ public:
 			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
-		regexp = col->getData();
+		re = &Regexps::get(col->getData());
+		capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
+
+		matches.reserve(capture + 1);
 	}
 
 	/// Вызывается для каждой следующей строки.
@@ -253,14 +257,6 @@ public:
 	{
 		pos = pos_;
 		end = end_;
-
-		wrote_num = 0;
-		matches.clear();
-
-		if (pos_)
-		{
-			re = &Regexps::get(regexp);
-		}
 	}
 
 	/// Получить следующий токен, если есть, или вернуть false.
@@ -269,26 +265,14 @@ public:
 		if(!pos || pos > end)
 			return false;
 
-		if(wrote_num >= matches.size())
-		{
-			matches.clear();
-			wrote_num = 0;
-			size_t match_num = re->match(pos, end - pos, matches);
-			if(!match_num)
-				return false;
-		}
+		size_t match_num = re->match(pos, end - pos, matches);
+		if(!match_num)
+			return false;
 
-		/// Пишем найденные слова
-		token_begin = pos + matches[wrote_num].offset;
-		token_end = token_begin + matches[wrote_num].length;
+		token_begin = pos + matches[match_num -1].offset;
+		token_end = token_begin + matches[match_num - 1].length;
 
-		++wrote_num;
-
-		/// когда дочитали до конца, сдвигаем на один символ
-		if(wrote_num == matches.size())
-		{
-			pos += matches[0].offset + 1;
-		}
+		pos += matches[0].offset + 1;
 
 		return true;
 	}
