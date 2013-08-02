@@ -89,6 +89,13 @@ public:
 
 	/** Получить такой же блок, но пустой. */
 	Block cloneEmpty() const;
+	
+	/** Заменяет столбцы смещений внутри вложенных таблиц на один общий для таблицы.
+	 *  Кидает исключение, если эти смещения вдруг оказались неодинаковы.
+	 */
+	void optimizeNestedArraysOffsets();
+	/** Тоже самое, только без замены смещений. */
+	void checkNestedArraysOffsets() const;
 };
 
 typedef std::vector<Block> Blocks;

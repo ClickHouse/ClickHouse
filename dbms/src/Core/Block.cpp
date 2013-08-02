@@ -5,6 +5,9 @@
 
 #include <DB/Core/Block.h>
 
+#include <DB/Columns/ColumnArray.h>
+#include <DB/DataTypes/DataTypeNested.h>
+
 
 namespace DB
 {
@@ -248,6 +251,63 @@ NamesAndTypesList Block::getColumnsList() const
 		res.push_back(NameAndTypePair(it->name, it->type));
 
 	return res;
+}
+
+
+void Block::checkNestedArraysOffsets() const
+{
+	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
+	typedef std::map<String, const ColumnArray *> ArrayColumns;
+	ArrayColumns array_columns;
+	
+	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	{
+		const ColumnWithNameAndType & column = *it;
+		
+		if (const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*column.column))
+		{
+			String name = DataTypeNested::extractNestedTableName(column.name);
+			
+			ArrayColumns::const_iterator it = array_columns.find(name);
+			if (array_columns.end() == it)
+				array_columns[name] = column_array;
+			else
+			{
+				if (!it->second->hasEqualOffsets(*column_array))
+					throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+			}
+		}
+	}
+}
+
+
+void Block::optimizeNestedArraysOffsets()
+{
+	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
+	typedef std::map<String, ColumnArray *> ArrayColumns;
+	ArrayColumns array_columns;
+	
+	for (Container_t::iterator it = data.begin(); it != data.end(); ++it)
+	{
+		ColumnWithNameAndType & column = *it;
+		
+		if (ColumnArray * column_array = dynamic_cast<ColumnArray *>(&*column.column))
+		{
+			String name = DataTypeNested::extractNestedTableName(column.name);
+			
+			ArrayColumns::const_iterator it = array_columns.find(name);
+			if (array_columns.end() == it)
+				array_columns[name] = column_array;
+			else
+			{
+				if (!it->second->hasEqualOffsets(*column_array))
+					throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+				
+				/// делаем так, чтобы столбцы смещений массивов внутри одной вложенной таблицы указывали в одно место
+				column_array->getOffsetsColumn() = it->second->getOffsetsColumn();
+			}
+		}
+	}
 }
 
 

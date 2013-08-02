@@ -53,32 +53,8 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 		throw DB::Exception(e.message() + " (at row " + toString(total_rows + 1) + ")", e, e.code());
 	}
 	
-	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
-	typedef std::map<String, ColumnArray *> ArrayColumns;
-	ArrayColumns array_columns;
+	res.optimizeNestedArraysOffsets();
 	
-	for (size_t i = 0; i < res.columns(); ++i)
-	{
-		ColumnWithNameAndType & column = res.getByPosition(i);
-		
-		if (ColumnArray * column_array = dynamic_cast<ColumnArray *>(&*column.column))
-		{
-			String name = DataTypeNested::extractNestedTableName(column.name);
-			
-			ArrayColumns::const_iterator it = array_columns.find(name);
-			if (array_columns.end() == it)
-				array_columns[name] = column_array;
-			else
-			{
-				if (!it->second->hasEqualOffsets(*column_array))
-					throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-				
-				/// делаем так, чтобы столбцы смещений массивов внутри одной вложенной таблицы указывали в одно место
-				column_array->getOffsetsColumn() = it->second->getOffsetsColumn();
-			}
-		}
-	}
-
 	return res;
 }
 
