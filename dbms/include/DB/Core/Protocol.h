@@ -65,6 +65,7 @@ namespace Protocol
 
 		/** NOTE: Если бы в качестве типа агрумента функции был бы Enum, то сравнение packet >= 0 && packet < 7
 		  * срабатывало бы всегда из-за оптимизации компилятором, даже если packet некорректный, и было бы чтение за границей массива.
+		  * https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
 		  */
 		inline const char * toString(UInt64 packet)
 		{
