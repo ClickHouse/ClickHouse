@@ -39,7 +39,7 @@ public:
 		}
 		else
 			throw Exception("Unexpected packet from server (expected Data or Exception, got "
-				+ String(Protocol::Server::toString(Protocol::Server::Enum(packet.type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+				+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 	
 
@@ -68,7 +68,7 @@ public:
 			packet.exception->rethrow();
 		else
 			throw Exception("Unexpected packet from server (expected EndOfStream or Exception, got "
-				+ String(Protocol::Server::toString(Protocol::Server::Enum(packet.type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+				+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 
 private:

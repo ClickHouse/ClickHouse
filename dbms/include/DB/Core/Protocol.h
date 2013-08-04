@@ -1,5 +1,8 @@
 #pragma once
 
+#include <DB/Core/Types.h>
+
+
 namespace DB
 {
 
@@ -60,7 +63,10 @@ namespace Protocol
 			ProfileInfo = 6,	/// Пакет с профайлинговой информацией
 		};
 
-		inline const char * toString(Enum packet)
+		/** NOTE: Если бы в качестве типа агрумента функции был бы Enum, то сравнение packet >= 0 && packet < 7
+		  * срабатывало бы всегда из-за оптимизации компилятором, даже если packet некорректный, и было бы чтение за границей массива.
+		  */
+		inline const char * toString(UInt64 packet)
 		{
 			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo" };
 			return packet >= 0 && packet < 7
@@ -84,7 +90,7 @@ namespace Protocol
 			Ping = 4,			/// Проверка живости соединения с сервером.
 		};
 
-		inline const char * toString(Enum packet)
+		inline const char * toString(UInt64 packet)
 		{
 			static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping" };
 			return packet >= 0 && packet < 5

@@ -109,9 +109,9 @@ void Connection::receiveHello()
 	{
 		/// Закроем соединение, чтобы не было рассинхронизации.
 		disconnect();
-		
+
 		throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Hello or Exception, got "
-			+ String(Protocol::Server::toString(Protocol::Server::Enum(packet_type))) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+			+ String(Protocol::Server::toString(packet_type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 }
 
@@ -171,7 +171,7 @@ bool Connection::ping()
 		if (pong != Protocol::Server::Pong)
 		{
 			throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Pong, got "
-				+ String(Protocol::Server::toString(Protocol::Server::Enum(pong))) + ")",
+				+ String(Protocol::Server::toString(pong)) + ")",
 				ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 		}
 	}

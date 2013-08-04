@@ -14,7 +14,7 @@ namespace QueryProcessingStage
 		Complete 			= 2,	/// Полностью.
 	};
 
-	inline const char * toString(Enum stage)
+	inline const char * toString(UInt64 stage)
 	{
 		static const char * data[] = { "FetchColumns", "WithMergeableState", "Complete" };
 		return stage >= 0 && stage < 3

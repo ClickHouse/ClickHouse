@@ -343,7 +343,7 @@ bool TCPHandler::receivePacket()
 				break;
 				
 			case Protocol::Client::Hello:
-				throw Exception("Unexpected packet " + String(Protocol::Client::toString(Protocol::Client::Enum(packet_type))) + " received from client",
+				throw Exception("Unexpected packet " + String(Protocol::Client::toString(packet_type)) + " received from client",
 					ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
 			default:
@@ -376,7 +376,7 @@ void TCPHandler::receiveQuery()
 
 	LOG_DEBUG(log, "Query ID: " << state.query_id);
 	LOG_DEBUG(log, "Query: " << state.query);
-	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(state.stage));
+	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(stage));
 
 	state.io = executeQuery(state.query, query_context, state.stage);
 }
