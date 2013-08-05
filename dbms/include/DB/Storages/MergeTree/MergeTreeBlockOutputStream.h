@@ -182,14 +182,14 @@ private:
 	void writeData(const String & path, const String & name, const IDataType & type, const IColumn & column,
 					OffsetColumns & offset_columns, size_t level = 0)
 	{
-		String escaped_column_name = escapeForFileName(DataTypeNested::extractNestedTableName(name));
+		String escaped_column_name = escapeForFileName(name);
 		size_t size = column.size();
 		
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		
+			String size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			if (offset_columns.count(size_name) == 0)
 			{
 				offset_columns.insert(size_name);

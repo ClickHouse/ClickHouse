@@ -302,7 +302,7 @@ private:
 	
 	void addStream(const String & name, const IDataType & type, size_t mark_number, size_t level = 0)
 	{
-		String escaped_column_name = escapeForFileName(DataTypeNested::extractNestedTableName(name));
+		String escaped_column_name = escapeForFileName(name);
 		
 		/** Если файла с данными нет - то не будем пытаться открыть его.
 			* Это нужно, чтобы можно было добавлять новые столбцы к структуре таблицы без создания файлов для старых кусков.
@@ -313,8 +313,10 @@ private:
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String size_name = DataTypeNested::extractNestedTableName(name)
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			streams.insert(std::make_pair(size_name, new Stream(
 				path + escaped_size_name,
