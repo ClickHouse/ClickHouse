@@ -43,7 +43,7 @@ namespace DB
   *  extractURLParameters(URL)
   *
   * Извлечь все имена параметров из URL в виде массива строк
-  *  extractURLParametersNames(URL)
+  *  extractURLParameterNames(URL)
   * 
   * Убрать указанный параметр из URL.
   *  cutURLParameter(URL, name)
@@ -511,19 +511,19 @@ public:
 		{
 			first = false;
 			pos = strchr(pos, '?');
-
-		}else{
-			pos = strchr(pos, '&');
 		}
+		else
+			pos = strchr(pos, '&');
+
 		if (pos == NULL)
-				return false;
+			return false;
 		++pos;
 
 		token_begin = pos;
 
-		pos = strpbrk(pos, "=&;#");
+		pos = strchr(pos, '=');
 		if (pos == NULL)
-			token_end = end;
+			return false;
 		else
 			token_end = pos++;
 

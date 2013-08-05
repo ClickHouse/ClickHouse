@@ -217,7 +217,7 @@ public:
 	}
 };
 
-class ExtractAll
+class ExtractAllImpl
 {
 private:
 	const OptimizedRegularExpression *re;
@@ -227,7 +227,7 @@ private:
 	Pos pos;
 	Pos end;
 public:
-	ExtractAll():re(0) { matches.reserve(10); }
+	ExtractAllImpl():re(NULL) { }
 	/// Получить имя функции.
 	static String getName() { return "extractAll"; }
 
@@ -249,7 +249,7 @@ public:
 		re = &Regexps::get(col->getData());
 		capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
-		matches.reserve(capture + 1);
+		matches.resize(capture + 1);
 	}
 
 	/// Вызывается для каждой следующей строки.
@@ -262,17 +262,16 @@ public:
 	/// Получить следующий токен, если есть, или вернуть false.
 	bool get(Pos & token_begin, Pos & token_end)
 	{
-		if(!pos || pos > end)
+		if (!pos || pos > end)
 			return false;
 
-		size_t match_num = re->match(pos, end - pos, matches);
-		if(!match_num)
+		if (!re->match(pos, end - pos, matches))
 			return false;
 
-		token_begin = pos + matches[match_num -1].offset;
-		token_end = token_begin + matches[match_num - 1].length;
+		token_begin = pos + matches[capture].offset;
+		token_end = token_begin + matches[capture].length;
 
-		pos += matches[0].offset + 1;
+		pos += matches[capture].offset + matches[capture].length; 
 
 		return true;
 	}
@@ -382,6 +381,6 @@ public:
 typedef FunctionTokens<AlphaTokensImpl>	FunctionAlphaTokens;
 typedef FunctionTokens<SplitByCharImpl>	FunctionSplitByChar;
 typedef FunctionTokens<SplitByStringImpl>	FunctionSplitByString;
-typedef FunctionTokens<ExtractAll> 		FunctionExtractAll;
+typedef FunctionTokens<ExtractAllImpl> 		FunctionExtractAll;
 
 }
