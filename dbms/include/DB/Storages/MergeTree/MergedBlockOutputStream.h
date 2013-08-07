@@ -44,24 +44,24 @@ public:
 				? &block.getByName(storage.sort_descr[i].column_name)
 				: &block.getByPosition(storage.sort_descr[i].column_number));
 			
-			for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+		{
+			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
 			{
-				for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
-				{
-					(*it)->type->serializeBinary((*(*it)->column)[i], *index_stream);
-				}
-				
-				++marks_count;
+				(*it)->type->serializeBinary((*(*it)->column)[i], *index_stream);
 			}
 			
-			/// Теперь пишем данные.
-			for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-			{
-				const ColumnWithNameAndType & column = block.getByName(it->first);
-				writeData(column.name, *column.type, *column.column);
-			}
-			
-			index_offset = rows % storage.index_granularity
+			++marks_count;
+		}
+		
+		/// Теперь пишем данные.
+		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+		{
+			const ColumnWithNameAndType & column = block.getByName(it->first);
+			writeData(column.name, *column.type, *column.column);
+		}
+		
+		index_offset = rows % storage.index_granularity
 			? (storage.index_granularity - rows % storage.index_granularity)
 			: 0;
 	}
@@ -122,8 +122,10 @@ private:
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String size_name = DataTypeNested::extractNestedTableName(name)
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			column_streams[size_name] = new ColumnStream(
 				part_tmp_path + escaped_size_name + ".bin",
@@ -142,7 +144,7 @@ private:
 
 			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-				addStream(name + "." + it->first, *it->second, level + 1);
+				addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 		}
 		else
 			column_streams[name] = new ColumnStream(
@@ -159,7 +161,8 @@ private:
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
+			String size_name = DataTypeNested::extractNestedTableName(name)
+				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			ColumnStream & stream = *column_streams[size_name];
 			
