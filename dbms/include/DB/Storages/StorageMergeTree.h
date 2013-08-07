@@ -152,6 +152,8 @@ public:
 	
 	void rename(const String & new_path_to_db, const String & new_name);
 
+	void alter(const ASTAlterQuery::Parameters &params);
+
 private:
 	String path;
 	String name;
@@ -179,6 +181,9 @@ private:
 	Increment increment;
 
 	Logger * log;
+
+	/// Регулярное выражение соответсвующее названию директории с кусочками
+	Poco::RegularExpression file_name_regexp;
 
 	/// Описание куска с данными.
 	struct DataPart
@@ -319,6 +324,12 @@ private:
 	void joinMergeThreads();
 
 	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
+
+	/// берет нерекурсивные блокировки data_parts_mutex и all_data_parts_mutex
+	void removeColumnFiles(String column_name);
+
+	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
+	bool isBlockDirectory(const String dir_name, Poco::RegularExpression::MatchVec & matches);
 };
 
 }

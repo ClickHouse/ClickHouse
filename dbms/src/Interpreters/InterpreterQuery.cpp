@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTUseQuery.h>
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTOptimizeQuery.h>
+#include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -22,6 +23,7 @@
 #include <DB/Interpreters/InterpreterDescribeQuery.h>
 #include <DB/Interpreters/InterpreterShowCreateQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
+#include <DB/Interpreters/InterpreterAlterQuery.h>
 
 
 namespace DB
@@ -102,6 +104,12 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 		InterpreterDescribeQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
+	else if (dynamic_cast<ASTAlterQuery *>(&*query_ptr))
+	{
+		throwIfReadOnly();
+		InterpreterAlterQuery interpreter(query_ptr, context);
+		interpreter.execute();
+	}
 	else
 		throw Exception("Unknown type of query: " + query_ptr->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 }
@@ -178,6 +186,12 @@ BlockIO InterpreterQuery::execute()
 	{
 		InterpreterDescribeQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
+	}
+	else if (dynamic_cast<ASTAlterQuery *>(&*query_ptr))
+	{
+		throwIfReadOnly();
+		InterpreterAlterQuery interpreter(query_ptr, context);
+		interpreter.execute();
 	}
 	else
 		throw Exception("Unknown type of query: " + query_ptr->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

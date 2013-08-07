@@ -10,6 +10,7 @@
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/StoragePtr.h>
 #include "DatabaseDropper.h"
@@ -122,7 +123,7 @@ public:
 	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
 	  * (ALTER, затрагивающий изменение движка, делается внешним кодом, путём копирования данных.)
 	  */
-	virtual void alter(NamesAndTypesListPtr columns)
+	virtual void alter(const ASTAlterQuery::Parameters &params)
 	{
 		throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

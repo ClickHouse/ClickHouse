@@ -10,6 +10,7 @@
 #include <DB/Parsers/ParserSetQuery.h>
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/ParserTablePropertiesQuery.h>
+#include <DB/Parsers/ParserAlterQuery.h>
 
 
 namespace DB
@@ -24,6 +25,7 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected
 	ParserCreateQuery create_p;
 	ParserRenameQuery rename_p;
 	ParserDropQuery drop_p;
+	ParserAlterQuery alter_p;
 	ParserUseQuery use_p;
 	ParserSetQuery set_p;
 	ParserOptimizeQuery optimize_p;
@@ -35,13 +37,14 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected
 		|| create_p.parse(pos, end, node, expected)
 		|| rename_p.parse(pos, end, node, expected)
 		|| drop_p.parse(pos, end, node, expected)
+		|| alter_p.parse(pos, end, node, expected)
 		|| use_p.parse(pos, end, node, expected)
 		|| set_p.parse(pos, end, node, expected)
 		|| optimize_p.parse(pos, end, node, expected)
 		|| table_p.parse(pos, end, node, expected);
 
 	if (!res)
-		expected = "One of: SHOW TABLES, SHOW DATABASES, SHOW CREATE TABLE, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE, EXISTS, DESCRIBE, DESC";
+		expected = "One of: SHOW TABLES, SHOW DATABASES, SHOW CREATE TABLE, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE, EXISTS, DESCRIBE, DESC, ALTER";
 
 	return res;
 }

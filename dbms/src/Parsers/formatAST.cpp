@@ -65,6 +65,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(Asterisk)
 	DISPATCH(OrderByElement)
 	DISPATCH(Subquery)
+	DISPATCH(AlterQuery)
 	else
 		throw DB::Exception("Unknown element in AST: " + ast.getID() + " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'",
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
@@ -450,5 +451,53 @@ void formatAST(const ASTOrderByElement		& ast, std::ostream & s, size_t indent, 
 	}
 }
 
+void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	std::string nl_or_nothing = one_line ? "" : "\n";
+
+	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
+	std::string nl_or_ws = one_line ? " " : "\n";
+
+	s << (hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (hilite ? hilite_none : "");
+
+	if (!ast.table.empty())
+	{
+		if (!ast.database.empty())
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << ast.database << (hilite ? hilite_none : "");
+			s << ".";
+		}
+		s << (hilite ? hilite_keyword : "") << indent_str << ast.table << (hilite ? hilite_none : "");
+	}
+	s << nl_or_ws;
+
+	for( std::size_t i = 0; i < ast.parameters.size(); ++i)
+	{
+		const ASTAlterQuery::Parameters &p = ast.parameters[i];
+
+		if (p.type == ASTAlterQuery::ADD)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (hilite ? hilite_none : "");
+			formatAST(*p.name_type, s, indent, hilite, true);
+
+			/// AFTER
+			if (p.column)
+			{
+				s << (hilite ? hilite_keyword : "") << indent_str << " AFTER " << (hilite ? hilite_none : "");
+				formatAST(*p.column, s, indent, hilite, one_line);
+			}
+		}
+		else if (p.type == ASTAlterQuery::DROP)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "DROP COLUMN " << (hilite ? hilite_none : "");
+			formatAST(*p.column, s, indent, hilite, true);
+		}
+
+		std::string comma = (i < (ast.parameters.size() -1) ) ? "," : "";
+		s << (hilite ? hilite_keyword : "") << indent_str << comma << (hilite ? hilite_none : "");
+
+		s << nl_or_ws;
+	}
+}
 }
 

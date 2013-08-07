@@ -38,6 +38,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTNameTypePair.h>
 
 #include <DB/Interpreters/sortBlock.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
@@ -66,7 +67,8 @@ StorageMergeTree::StorageMergeTree(
 	index_granularity(index_granularity_),
 	sign_column(sign_column_),
 	settings(settings_),
-	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name))
+	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name)),
+	file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)")
 {
 	min_marks_for_seek = (settings.min_rows_for_seek + index_granularity - 1) / index_granularity;
 	min_marks_for_concurrent_read = (settings.min_rows_for_concurrent_read + index_granularity - 1) / index_granularity;
@@ -490,14 +492,13 @@ void StorageMergeTree::loadDataParts()
 	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
 	data_parts.clear();
 
-	static Poco::RegularExpression file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)");
 	Poco::DirectoryIterator end;
 	Poco::RegularExpression::MatchVec matches;
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
 	{
 		std::string file_name = it.name();
 
-		if (!(file_name_regexp.match(file_name, 0, matches) && 6 == matches.size()))
+		if (!isBlockDirectory(file_name, matches))
 			continue;
 			
 		DataPartPtr part = new DataPart(*this);
@@ -914,4 +915,49 @@ void StorageMergeTree::dropImpl()
 	Poco::File(full_path).remove(true);
 }
 
+void StorageMergeTree::removeColumnFiles(String column_name)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	Poco::DirectoryIterator end;
+	Poco::RegularExpression::MatchVec matches;
+
+	for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path); it != end; ++it)
+	{
+		std::string file_name = it.name();
+
+		if (!isBlockDirectory(file_name, matches))
+			continue;
+
+		String full_dir_name = full_path + file_name + "/";
+
+		Poco::File file(full_dir_name + column_name + ".mrk");
+		if (file.exists())
+			file.remove();
+		file = Poco::File(full_dir_name + column_name + ".bin");
+		if (file.exists())
+			file.remove();
+	}
+}
+
+void StorageMergeTree::alter(const ASTAlterQuery::Parameters &params)
+{
+	if (params.type == ASTAlterQuery::ADD)
+		return;
+
+	if (params.type == ASTAlterQuery::DROP)
+	{
+		const ASTIdentifier & column  = dynamic_cast<const ASTIdentifier &>(*params.column);
+		removeColumnFiles(column.name);
+	}
+	else
+		throw Exception("Wrong parameter type in alter query");
+
+}
+
+bool StorageMergeTree::isBlockDirectory(const String dir_name, Poco::RegularExpression::MatchVec & matches)
+{
+	return (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
+}
 }
