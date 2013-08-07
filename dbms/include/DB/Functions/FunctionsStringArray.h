@@ -18,7 +18,7 @@ namespace DB
   * splitByString(sep, s)
   * splitByRegexp(regexp, s)
   *
-  * extractAll(regexp, s) 	- выделить из строки подпоследовательности, соответствующие регекспу.
+  * extractAll(s, regexp) 	- выделить из строки подпоследовательности, соответствующие регекспу.
   * - первый subpattern, если в regexp-е есть subpattern;
   * - нулевой subpattern (сматчившуюся часть, иначе);
   * - инача, пустой массив
@@ -68,6 +68,12 @@ public:
 	{
 		pos = pos_;
 		end = end_;
+	}
+
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 0;
 	}
 
 	/// Получить следующий токен, если есть, или вернуть false.
@@ -135,6 +141,12 @@ public:
 		sep = sep_str[0];
 	}
 
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 1;
+	}
+
 	void set(Pos pos_, Pos end_)
 	{
 		pos = pos_;
@@ -189,6 +201,12 @@ public:
 		sep = col->getData();
 	}
 
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 1;
+	}
+
 	/// Вызывается для каждой следующей строки.
 	void set(Pos pos_, Pos end_)
 	{
@@ -240,7 +258,7 @@ public:
 	/// Инициализировать по аргументам функции.
 	void init(Block & block, const ColumnNumbers & arguments)
 	{
-		const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
 
 		if (!col)
 			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
@@ -250,6 +268,12 @@ public:
 		capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
 		matches.resize(capture + 1);
+	}
+
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 0;
 	}
 
 	/// Вызывается для каждой следующей строки.
@@ -271,7 +295,7 @@ public:
 		token_begin = pos + matches[capture].offset;
 		token_end = token_begin + matches[capture].length;
 
-		pos += matches[capture].offset + matches[capture].length; 
+		pos += matches[capture].offset + matches[capture].length;
 
 		return true;
 	}
@@ -301,9 +325,11 @@ public:
 	{
 		Generator generator;
 		generator.init(block, arguments);
+		size_t arrayArgumentPosition = arguments[generator.getStringsArgumentPosition()];
 
-		const ColumnString * col_str = dynamic_cast<const ColumnString *>(&*block.getByPosition(arguments.back()).column);
-		const ColumnConstString * col_const_str = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments.back()).column);
+		const ColumnString * col_str = dynamic_cast<const ColumnString *>(&*block.getByPosition(arrayArgumentPosition).column);
+		const ColumnConstString * col_const_str =
+				dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arrayArgumentPosition).column);
 
 		ColumnArray * col_res = new ColumnArray(new ColumnString);
 		ColumnString & res_strings = dynamic_cast<ColumnString &>(col_res->getData());
@@ -370,8 +396,8 @@ public:
 			block.getByPosition(result).column = new ColumnConstArray(col_const_str->size(), dst, new DataTypeArray(new DataTypeString));
 		}
 		else
-			throw Exception("Illegal columns " + block.getByPosition(arguments.back()).column->getName()
-					+ ", " + block.getByPosition(arguments.back()).column->getName()
+			throw Exception("Illegal columns " + block.getByPosition(arrayArgumentPosition).column->getName()
+					+ ", " + block.getByPosition(arrayArgumentPosition).column->getName()
 					+ " of arguments of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}

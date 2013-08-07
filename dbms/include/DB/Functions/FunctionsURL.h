@@ -430,6 +430,12 @@ public:
 	}
 	
 	void init(Block & block, const ColumnNumbers & arguments) {}
+
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 0;
+	}
 	
 	/// Вызывается для каждой следующей строки.
 	void set(Pos pos_, Pos end_)
@@ -489,6 +495,12 @@ public:
 			if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
 				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 0;
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments) {}
@@ -554,6 +566,12 @@ public:
 	}
 	
 	void init(Block & block, const ColumnNumbers & arguments) {}
+
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 0;
+	}
 	
 	/// Вызывается для каждой следующей строки.
 	void set(Pos pos_, Pos end_)
