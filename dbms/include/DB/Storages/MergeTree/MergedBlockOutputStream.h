@@ -54,11 +54,14 @@ public:
 			++marks_count;
 		}
 		
+		/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
+		OffsetColumns offset_columns;
+		
 		/// Теперь пишем данные.
 		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		{
 			const ColumnWithNameAndType & column = block.getByName(it->first);
-			writeData(column.name, *column.type, *column.column);
+			writeData(column.name, *column.type, *column.column, offset_columns);
 		}
 		
 		index_offset = rows % storage.index_granularity
@@ -114,6 +117,7 @@ private:
 	/// Смещение до первой строчки блока, для которой надо записать индекс.
 	size_t index_offset;
 	
+	typedef std::set<std::string> OffsetColumns;
 	
 	void addStream(const String & name, const IDataType & type, size_t level = 0)
 	{
@@ -154,7 +158,7 @@ private:
 	
 	
 	/// Записать данные одного столбца.
-	void writeData(const String & name, const IDataType & type, const IColumn & column, size_t level = 0)
+	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0)
 	{
 		size_t size = column.size();
 		
@@ -164,27 +168,32 @@ private:
 			String size_name = DataTypeNested::extractNestedTableName(name)
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
-			ColumnStream & stream = *column_streams[size_name];
-			
-			size_t prev_mark = 0;
-			while (prev_mark < size)
+			if (offset_columns.count(size_name) == 0)
 			{
-				size_t limit = 0;
+				offset_columns.insert(size_name);
 				
-				/// Если есть index_offset, то первая засечка идёт не сразу, а после этого количества строк.
-				if (prev_mark == 0 && index_offset != 0)
-				{
-					limit = index_offset;
-				}
-				else
-				{
-					limit = storage.index_granularity;
-					writeIntBinary(stream.plain.count(), stream.marks);
-					writeIntBinary(stream.compressed.offset(), stream.marks);
-				}
+				ColumnStream & stream = *column_streams[size_name];
 				
-				type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
-				prev_mark += limit;
+				size_t prev_mark = 0;
+				while (prev_mark < size)
+				{
+					size_t limit = 0;
+					
+					/// Если есть index_offset, то первая засечка идёт не сразу, а после этого количества строк.
+					if (prev_mark == 0 && index_offset != 0)
+					{
+						limit = index_offset;
+					}
+					else
+					{
+						limit = storage.index_granularity;
+						writeIntBinary(stream.plain.count(), stream.marks);
+						writeIntBinary(stream.compressed.offset(), stream.marks);
+					}
+					
+					type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
+					prev_mark += limit;
+				}
 			}
 		}
 		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
