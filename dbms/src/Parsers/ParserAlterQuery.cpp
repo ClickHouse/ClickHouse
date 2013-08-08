@@ -35,8 +35,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 	ASTPtr col_after;
 	ASTPtr col_drop;
 
-	ASTAlterQuery * query = new ASTAlterQuery(StringRange(begin, pos));
-	ASTPtr temp_node = query;
+	ASTAlterQuery * query = new ASTAlterQuery();
 
 	ws.ignore(pos, end);
 	if (!s_alter.ignore(pos, end, expected))
@@ -124,7 +123,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 	}
 	while (!parsing_finished);
 
-	node = temp_node;
+	query->range = StringRange(begin, end);
+	node = query;
 
 	return true;
 }

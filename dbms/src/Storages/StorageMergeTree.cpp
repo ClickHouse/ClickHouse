@@ -49,6 +49,8 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -915,13 +917,24 @@ void StorageMergeTree::dropImpl()
 	Poco::File(full_path).remove(true);
 }
 
-void StorageMergeTree::removeColumnFiles(String column_name)
+bool namesEqual( const String &name,  const DB::NameAndTypePair & name_type)
+{
+	return name_type.first == name;
+}
+
+void StorageMergeTree::removeColumn(String column_name)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
 	Poco::DirectoryIterator end;
 	Poco::RegularExpression::MatchVec matches;
+
+	NamesAndTypesList::iterator column_it =std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
+	if (column_it == columns->end())
+		throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+	else
+		columns->erase(column_it);
 
 	for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path); it != end; ++it)
 	{
@@ -941,15 +954,38 @@ void StorageMergeTree::removeColumnFiles(String column_name)
 	}
 }
 
+
 void StorageMergeTree::alter(const ASTAlterQuery::Parameters &params)
 {
 	if (params.type == ASTAlterQuery::ADD)
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+		NamesAndTypesList::iterator insert_it = columns->end();
+		if (params.column)
+		{
+			String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
+			insert_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1) );
+
+			if (insert_it == columns->end())
+				throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
+			else
+				++insert_it;
+		}
+
+		const ASTNameTypePair & ast_name_type =  dynamic_cast<const ASTNameTypePair&> (*params.name_type);
+		StringRange type_range = ast_name_type.type->range;
+		String type_string = String(type_range.first, type_range.second - type_range.first);
+		NameAndTypePair pair(ast_name_type.name, context.getDataTypeFactory().get(type_string));
+		columns->insert(insert_it, pair);
 		return;
+	}
 
 	if (params.type == ASTAlterQuery::DROP)
 	{
-		const ASTIdentifier & column  = dynamic_cast<const ASTIdentifier &>(*params.column);
-		removeColumnFiles(column.name);
+		String  column_name  = dynamic_cast<const ASTIdentifier &>(*params.column).name;
+		removeColumn(column_name);
 	}
 	else
 		throw Exception("Wrong parameter type in alter query");

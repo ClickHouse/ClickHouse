@@ -46,7 +46,7 @@ public:
 	String table;
 
 
-	ASTAlterQuery(StringRange range_) : IAST(range_) {};
+	ASTAlterQuery(StringRange range_ = StringRange(NULL, NULL)) : IAST(range_) {};
 
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return ("AlterQuery_" + database + "_" + table); };

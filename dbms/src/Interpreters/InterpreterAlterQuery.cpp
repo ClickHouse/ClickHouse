@@ -89,28 +89,28 @@ void InterpreterAlterQuery::execute()
 			else
 				columns.push_back(params.name_type);
 		}
-		else
-			if (params.type == ASTAlterQuery::DROP)
-			{
-				/// Проверяем, что поле не является ключевым
-				const ASTIdentifier & drop_column = dynamic_cast <const ASTIdentifier &>(*params.column);
-				Poco::RegularExpression key_column_re("[\\(,\\s]\\s*" + drop_column.name + "\\s*[,\\)]");
-				if (key_column_re.match(engine_string, 0, matches))
-					throw DB::Exception("Cannot drop key column", DB::ErrorCodes::ILLEGAL_COLUMN);
+		else if (params.type == ASTAlterQuery::DROP)
+		{
+			/// Проверяем, что поле не является ключевым
+			const ASTIdentifier & drop_column = dynamic_cast <const ASTIdentifier &>(*params.column);
+			Poco::RegularExpression key_column_re("[\\(,\\s]\\s*" + drop_column.name + "\\s*[,\\)]");
+			if (key_column_re.match(engine_string, 0, matches))
+				throw DB::Exception("Cannot drop key column", DB::ErrorCodes::ILLEGAL_COLUMN);
 
-				ASTs::iterator drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
+			ASTs::iterator drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
 
-				if (drop_it == columns.end())
-					throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
-				else
-					columns.erase(drop_it);
-			}
+			if (drop_it == columns.end())
+				throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+			else
+				columns.erase(drop_it);
+		}
 
 		table->alter(params);
 
 		/// Перезаписываем файл метадата каждую итерацию
 		Poco::FileOutputStream ostr(metadata_path);
 		formatAST(attach, ostr, 0, false);
+
 	}
 }
 

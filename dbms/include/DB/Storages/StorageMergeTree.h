@@ -152,6 +152,9 @@ public:
 	
 	void rename(const String & new_path_to_db, const String & new_name);
 
+	/// Метод ALTER позволяет добавлять и удалять столбцы.
+	/// Метод ALTER нужно применять, когда обращения к базе приостановлены.
+	/// Например если параллельно с INSERT выполнить ALTER, то ALTER выполниться, а INSERT бросит исключение
 	void alter(const ASTAlterQuery::Parameters &params);
 
 private:
@@ -326,7 +329,7 @@ private:
 	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
 
 	/// берет нерекурсивные блокировки data_parts_mutex и all_data_parts_mutex
-	void removeColumnFiles(String column_name);
+	void removeColumn(String column_name);
 
 	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
 	bool isBlockDirectory(const String dir_name, Poco::RegularExpression::MatchVec & matches);
