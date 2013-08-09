@@ -39,23 +39,18 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 
 	ws.ignore(pos, end);
 	if (!s_alter.ignore(pos, end, expected))
-	{
 		return false;
-	}
 
 	ws.ignore(pos, end);
 	if (!s_table.ignore(pos, end, expected))
-	{
 		return false;
-	}
 
 	ws.ignore(pos, end);
-
 
 	if (!parser_name.parse(pos, end, database, expected))
 		return false;
 
-	// Parse [db].name
+	/// Parse [db].name
 	if (s_dot.ignore(pos, end))
 	{
 		if (!parser_name.parse(pos, end, table, expected))
@@ -82,7 +77,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 			s_column.ignore(pos, end, expected);
 			ws.ignore(pos, end);
 
-
 			parser_name_type.parse(pos, end, params.name_type, expected);
 
 			ws.ignore(pos, end);
@@ -107,7 +101,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 				parser_name.parse(pos, end, params.column, expected);
 
 				params.type = ASTAlterQuery::DROP;
-			} else
+			}
+			else
 				return false;
 		}
 
