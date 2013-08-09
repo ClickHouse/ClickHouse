@@ -14,17 +14,17 @@
 #include <boost/bind.hpp>
 #include <boost/bind/placeholders.hpp>
 
+
 namespace DB
 {
 InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & context_)
-: query_ptr(query_ptr_), context(context_)
+	: query_ptr(query_ptr_), context(context_)
 {
 }
 
-bool namesEqual( const String &name,  const ASTPtr & name_type_)
+bool namesEqual( const String &name, const ASTPtr & name_type_)
 {
-	const ASTNameTypePair &name_type = dynamic_cast<const ASTNameTypePair &>(*name_type_);
-
+	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*name_type_);
 	return name_type.name == name;
 }
 
@@ -33,21 +33,21 @@ void InterpreterAlterQuery::execute()
 	/// Poco::Mutex является рекурсивным, т.е. взятие мьютекса дважды из одного потока не приводит к блокировке
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
-	ASTAlterQuery &alter = dynamic_cast<ASTAlterQuery &>(*query_ptr);
+	ASTAlterQuery & alter = dynamic_cast<ASTAlterQuery &>(*query_ptr);
 
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
-	String &table_name = alter.table;
+	String & table_name = alter.table;
 	String database_name_escaped = escapeForFileName(database_name);
 	String table_name_escaped = escapeForFileName(table_name);
 
 	StoragePtr table = context.getTable(database_name, table_name);
 	String path = context.getPath();
-	String metadata_path = path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
+	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 
-    ASTPtr attach_ptr = context.getCreateQuery(database_name, table_name);
-    ASTCreateQuery & attach = dynamic_cast< ASTCreateQuery &>(*attach_ptr);
+	ASTPtr attach_ptr = context.getCreateQuery(database_name, table_name);
+	ASTCreateQuery & attach = dynamic_cast< ASTCreateQuery &>(*attach_ptr);
 	attach.attach = true;
-	ASTs & columns = dynamic_cast<ASTExpressionList &>( *attach.columns).children;
+	ASTs & columns = dynamic_cast<ASTExpressionList &>(*attach.columns).children;
 
 	const ASTFunction & storage = dynamic_cast<const ASTFunction &>(*attach.storage);
 
@@ -81,7 +81,7 @@ void InterpreterAlterQuery::execute()
 					throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
 				else
 				{
-					// increase iterator because we want to insert after founded element not before
+					/// increase iterator because we want to insert after found element not before
 					++insert_it;
 					columns.insert(insert_it, params.name_type);
 				}
@@ -110,7 +110,6 @@ void InterpreterAlterQuery::execute()
 		/// Перезаписываем файл метадата каждую итерацию
 		Poco::FileOutputStream ostr(metadata_path);
 		formatAST(attach, ostr, 0, false);
-
 	}
 }
 

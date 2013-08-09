@@ -33,7 +33,7 @@ public:
 		ASTPtr column;
 
 		/// deep copy
-		void clone( Parameters & p) const
+		void clone(Parameters & p) const
 		{
 			p.type = type;
 			p.column = column->clone();
@@ -54,7 +54,7 @@ public:
 	ASTPtr clone() const
 	{
 		ASTAlterQuery * res = new ASTAlterQuery(*this);
-		for(ParameterContainer::size_type i = 0; i < parameters.size(); ++i)
+		for (ParameterContainer::size_type i = 0; i < parameters.size(); ++i)
 		{
 			parameters[i].clone(res->parameters[i]);
 		}

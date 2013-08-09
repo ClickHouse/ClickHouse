@@ -155,7 +155,7 @@ public:
 	/// Метод ALTER позволяет добавлять и удалять столбцы.
 	/// Метод ALTER нужно применять, когда обращения к базе приостановлены.
 	/// Например если параллельно с INSERT выполнить ALTER, то ALTER выполниться, а INSERT бросит исключение
-	void alter(const ASTAlterQuery::Parameters &params);
+	void alter(const ASTAlterQuery::Parameters & params);
 
 private:
 	String path;
@@ -332,7 +332,7 @@ private:
 	void removeColumn(String column_name);
 
 	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
-	bool isBlockDirectory(const String dir_name, Poco::RegularExpression::MatchVec & matches);
+	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
 };
 
 }

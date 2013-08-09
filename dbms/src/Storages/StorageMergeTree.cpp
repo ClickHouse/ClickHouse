@@ -500,7 +500,7 @@ void StorageMergeTree::loadDataParts()
 	{
 		std::string file_name = it.name();
 
-		if (!isBlockDirectory(file_name, matches))
+		if (!isPartDirectory(file_name, matches))
 			continue;
 			
 		DataPartPtr part = new DataPart(*this);
@@ -917,45 +917,51 @@ void StorageMergeTree::dropImpl()
 	Poco::File(full_path).remove(true);
 }
 
-bool namesEqual( const String &name,  const DB::NameAndTypePair & name_type)
+
+bool namesEqual(const String & name, const DB::NameAndTypePair & name_type)
 {
 	return name_type.first == name;
 }
+
 
 void StorageMergeTree::removeColumn(String column_name)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
-	Poco::DirectoryIterator end;
-	Poco::RegularExpression::MatchVec matches;
-
-	NamesAndTypesList::iterator column_it =std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
+	NamesAndTypesList::iterator column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
 	if (column_it == columns->end())
 		throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
 	else
 		columns->erase(column_it);
 
+	Poco::RegularExpression::MatchVec matches;
+	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path); it != end; ++it)
 	{
 		std::string file_name = it.name();
 
-		if (!isBlockDirectory(file_name, matches))
+		if (!isPartDirectory(file_name, matches))
 			continue;
 
 		String full_dir_name = full_path + file_name + "/";
 
-		Poco::File file(full_dir_name + column_name + ".mrk");
-		if (file.exists())
-			file.remove();
-		file = Poco::File(full_dir_name + column_name + ".bin");
-		if (file.exists())
-			file.remove();
+		{
+			Poco::File file(full_dir_name + column_name + ".mrk");
+			if (file.exists())
+				file.remove();
+		}
+
+		{
+			Poco::File file(full_dir_name + column_name + ".bin");
+			if (file.exists())
+				file.remove();
+		}
 	}
 }
 
 
-void StorageMergeTree::alter(const ASTAlterQuery::Parameters &params)
+void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 {
 	if (params.type == ASTAlterQuery::ADD)
 	{
@@ -974,26 +980,27 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters &params)
 				++insert_it;
 		}
 
-		const ASTNameTypePair & ast_name_type =  dynamic_cast<const ASTNameTypePair&> (*params.name_type);
+		const ASTNameTypePair & ast_name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
 		StringRange type_range = ast_name_type.type->range;
 		String type_string = String(type_range.first, type_range.second - type_range.first);
 		NameAndTypePair pair(ast_name_type.name, context.getDataTypeFactory().get(type_string));
 		columns->insert(insert_it, pair);
 		return;
 	}
-
-	if (params.type == ASTAlterQuery::DROP)
+	else if (params.type == ASTAlterQuery::DROP)
 	{
-		String  column_name  = dynamic_cast<const ASTIdentifier &>(*params.column).name;
+		String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
 		removeColumn(column_name);
 	}
 	else
-		throw Exception("Wrong parameter type in alter query");
+		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 
 }
 
-bool StorageMergeTree::isBlockDirectory(const String dir_name, Poco::RegularExpression::MatchVec & matches)
+
+bool StorageMergeTree::isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const
 {
 	return (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
 }
+
 }
