@@ -360,6 +360,7 @@ private:
 	void loop()
 	{
 		String query;
+		String prev_query;
 		while (char * line_ = readline(query.empty() ? ":) " : ":-] "))
 		{
 			String line = line_;
@@ -375,9 +376,6 @@ private:
 			bool ends_with_semicolon = line[ws - 1] == ';';
 			bool ends_with_backslash = line[ws - 1] == '\\';
 			
-			if (append_history(1, history_file.c_str()))
-				throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
-			
 			if (ends_with_backslash)
 				line = line.substr(0, ws - 1);
 			
@@ -385,7 +383,15 @@ private:
 			
 			if (!ends_with_backslash && (ends_with_semicolon || !config().hasOption("multiline")))
 			{
-				add_history(query.c_str());
+				if (query != prev_query)
+				{
+					add_history(query.c_str());
+
+					if (append_history(1, history_file.c_str()))
+						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
+
+					prev_query = query;
+				}
 
 				try
 				{
