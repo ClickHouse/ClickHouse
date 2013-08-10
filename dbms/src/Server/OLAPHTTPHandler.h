@@ -24,7 +24,7 @@ namespace DB
 		
 		Logger * log;
 		
-		void processQuery(Poco::Net::HTTPServerResponse & response, std::istream & istr);
+		void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
 	};
 	
 }

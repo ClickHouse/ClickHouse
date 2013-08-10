@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/URI.h>
+
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <Poco/Net/HTTPServer.h>
@@ -9,6 +11,7 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTMLForm.h>
 
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
@@ -63,6 +66,18 @@ protected:
 	}
 
 	int main(const std::vector<std::string>& args);
+};
+
+
+/// Позволяет получать параметры URL даже если запрос POST.
+struct HTMLForm : public Poco::Net::HTMLForm
+{
+	HTMLForm(Poco::Net::HTTPRequest & request)
+	{
+		Poco::URI uri(request.getURI());
+		std::istringstream istr(uri.getRawQuery());
+		readUrl(istr);
+	}
 };
 
 

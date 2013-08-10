@@ -1,12 +1,16 @@
+#include <Poco/Net/HTTPBasicCredentials.h>
+
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/ReadBufferFromString.h>
+
 #include "OLAPQueryParser.h"
 #include "OLAPQueryConverter.h"
 
 #include "OLAPHTTPHandler.h"
+
 #include <statdaemons/Stopwatch.h>
 #include <iomanip>
 
@@ -14,16 +18,39 @@
 
 namespace DB
 {
-	
-	
-	void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerResponse & response, std::istream & istr)
+	void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
+		HTMLForm params(request);
+		
+		std::ostringstream request_ostream;
+		request_ostream << request.stream().rdbuf();
+		std::string request_string = request_ostream.str();
+
+		LOG_TRACE(log, "Request URI: " << request.getURI());
+		LOG_TRACE(log, "Request body: " << request_string);
+
+		std::istringstream request_istream(request_string);
+			
 		BlockInputStreamPtr query_plan;
+
+		/// Имя пользователя и пароль могут быть заданы как в параметрах URL, так и с помощью HTTP Basic authentification (и то, и другое не секъюрно).
+		std::string user = params.get("user", "default");
+		std::string password = params.get("password", "");
+
+		if (request.hasCredentials())
+		{
+			Poco::Net::HTTPBasicCredentials credentials(request);
+
+			user = credentials.getUsername();
+			password = credentials.getPassword();
+		}
 		
 		Context context = server.global_context;
 		context.setGlobalContext(server.global_context);
+
+		context.setUser(user, password, request.clientAddress().host());
 		
-		OLAP::QueryParseResult olap_query = server.olap_parser->parse(istr);
+		OLAP::QueryParseResult olap_query = server.olap_parser->parse(request_istream);
 		
 		std::string clickhouse_query;
 		server.olap_converter->OLAPServerQueryToClickhouse(olap_query, context, clickhouse_query);
@@ -64,16 +91,7 @@ namespace DB
 	{
 		try
 		{
-			std::ostringstream request_ostream;
-			request_ostream << request.stream().rdbuf();
-			std::string request_string = request_ostream.str();
-			
-			LOG_TRACE(log, "Request URI: " << request.getURI());
-			LOG_TRACE(log, "Request body: " << request_string);
-
-			std::istringstream request_istream(request_string);
-			processQuery(response, request_istream);
-
+			processQuery(request, response);
 			LOG_INFO(log, "Done processing query");
 		}
 		catch (DB::Exception & e)

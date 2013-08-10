@@ -1,6 +1,5 @@
 #include <iomanip>
 
-#include <Poco/URI.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #include <statdaemons/Stopwatch.h>
@@ -26,18 +25,6 @@
 
 namespace DB
 {
-
-
-/// Позволяет получать параметры URL даже если запрос POST.
-struct HTMLForm : public Poco::Net::HTMLForm
-{
-	HTMLForm(Poco::Net::HTTPRequest & request)
-	{
-		Poco::URI uri(request.getURI());
-		std::istringstream istr(uri.getRawQuery());
-		readUrl(istr);
-	}
-};
 
 
 void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
