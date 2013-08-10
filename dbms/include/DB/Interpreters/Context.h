@@ -16,6 +16,7 @@
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Dictionaries.h>
 
 
@@ -48,6 +49,7 @@ struct ContextShared
 	StorageFactory storage_factory;							/// Движки таблиц.
 	FormatFactory format_factory;							/// Форматы.
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
+	Users users;											/// Известные пользователи.
 	Logger * log;											/// Логгер.
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
@@ -68,6 +70,7 @@ private:
 	typedef SharedPtr<ContextShared> Shared;
 	Shared shared;
 
+	String user;						/// Текущий пользователь.
 	String current_database;			/// Текущая БД.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;					/// Настройки выполнения запроса.
@@ -84,6 +87,9 @@ public:
 
 	String getPath() const;
 	void setPath(const String & path);
+
+	void initUsersFromConfig();
+	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address);
 
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
 	bool isTableExist(const String & database_name, const String & table_name) const;

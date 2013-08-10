@@ -26,6 +26,25 @@ void Context::setPath(const String & path)
 }
 
 
+void Context::initUsersFromConfig()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	shared->users.initFromConfig();
+}
+
+
+void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	const User & user_props = shared->users.get(name, password, address);
+	setSetting("profile", user_props.profile);
+	// TODO setSetting("quota", user_props.quota);
+
+	user = name;
+}
+
+
 bool Context::isTableExist(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);

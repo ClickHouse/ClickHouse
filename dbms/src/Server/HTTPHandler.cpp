@@ -1,6 +1,7 @@
 #include <iomanip>
 
 #include <Poco/URI.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -39,10 +40,16 @@ struct HTMLForm : public Poco::Net::HTMLForm
 };
 
 
-void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Net::HTTPServerResponse & response, std::istream & istr, bool readonly)
+void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
+	LOG_TRACE(log, "Request URI: " << request.getURI());
+
+	HTMLForm params(request);
+	std::istream & istr = request.stream();
+	bool readonly = request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET;
+
 	BlockInputStreamPtr query_plan;
-	
+
 	/** Часть запроса может быть передана в параметре query, а часть - POST-ом
 	  *  (точнее - в теле запроса, а метод не обязательно должен быть POST).
 	  * В таком случае, считается, что запрос - параметр query, затем перевод строки, а затем - данные POST-а.
@@ -71,9 +78,23 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Ne
 		out_maybe_compressed = new CompressedWriteBuffer(*out);
 	else
 		out_maybe_compressed = out;
+
+	/// Имя пользователя и пароль могут быть заданы как в параметрах URL, так и с помощью HTTP Basic authentification (и то, и другое не секъюрно).
+	std::string user = params.get("user", "default");
+	std::string password = params.get("password", "");
+
+	if (request.hasCredentials())
+	{
+		Poco::Net::HTTPBasicCredentials credentials(request);
+
+		user = credentials.getUsername();
+		password = credentials.getPassword();
+	}
 	
 	Context context = server.global_context;
 	context.setGlobalContext(server.global_context);
+
+	context.setUser(user, password, request.clientAddress().host());
 
 	/// Настройки могут быть переопределены в запросе.
 	for (Poco::Net::NameValueCollection::ConstIterator it = params.begin(); it != params.end(); ++it)
@@ -92,7 +113,9 @@ void HTTPHandler::processQuery(Poco::Net::NameValueCollection & params, Poco::Ne
 		}
 		else if (it->first == "query"
 			|| it->first == "compress"
-			|| it->first == "decompress")
+			|| it->first == "decompress"
+			|| it->first == "user"
+			|| it->first == "password")
 		{
 		}
 		else	/// Все неизвестные параметры запроса рассматриваются, как настройки.
@@ -144,13 +167,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
 	try
 	{
-		LOG_TRACE(log, "Request URI: " << request.getURI());
-		
-		HTMLForm params(request);
-		std::istream & istr = request.stream();
-		bool readonly = request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET;
-		processQuery(params, response, istr, readonly);
-
+		processQuery(request, response);
 		LOG_INFO(log, "Done processing query");
 	}
 	catch (DB::Exception & e)

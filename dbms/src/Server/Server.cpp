@@ -95,6 +95,9 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.setGlobalContext(global_context);
 	global_context.setPath(config.getString("path"));
 
+	/// Загружаем пользователей.
+	global_context.initUsersFromConfig();
+
 	/// Загружаем настройки.
 	Settings & settings = global_context.getSettingsRef();
 	settings.setProfile(config.getString("default_profile", "default"));
