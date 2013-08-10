@@ -25,7 +25,7 @@ StorageDistributed::StorageDistributed(
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 		pools.push_back(new ConnectionPool(
 			settings.distributed_connections_pool_size,
-			it->host().toString(), it->port(), "", data_type_factory, "server", Protocol::Compression::Enable,
+			it->host_port.host().toString(), it->host_port.port(), "", it->user, it->password, data_type_factory, "server", Protocol::Compression::Enable,
 			settings.connect_timeout, settings.receive_timeout, settings.send_timeout));
 }
 
@@ -51,7 +51,7 @@ StorageDistributed::StorageDistributed(
 		for (Addresses::const_iterator jt = it->begin(); jt != it->end(); ++jt)
 			replicas.push_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,
-				jt->host().toString(), jt->port(), "", data_type_factory, "server", Protocol::Compression::Enable,
+				jt->host_port.host().toString(), jt->host_port.port(), "", jt->user, jt->password, data_type_factory, "server", Protocol::Compression::Enable,
 				settings.connect_timeout_with_failover_ms, settings.receive_timeout, settings.send_timeout));
 
 		pools.push_back(new ConnectionPoolWithFailover(replicas, settings.connections_with_failover_max_tries));

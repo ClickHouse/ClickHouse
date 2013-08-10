@@ -20,13 +20,14 @@ namespace detail
 	{
 		PooledConnection(Poco::Condition & available_,
 			const String & host_, UInt16 port_, const String & default_database_,
+			const String & user_, const String & password_,
 			const DataTypeFactory & data_type_factory_,
 			const String & client_name_ = "client",
 			Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
 			Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
 			Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 			Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
-			: conn(host_, port_, default_database_,
+			: conn(host_, port_, default_database_, user_, password_,
 				data_type_factory_, client_name_, compression_,
 				connect_timeout_, receive_timeout_, send_timeout_),
 			in_use(false), available(available_)
@@ -103,6 +104,7 @@ class ConnectionPool : public IConnectionPool
 public:
 	ConnectionPool(unsigned max_connections_,
 			const String & host_, UInt16 port_, const String & default_database_,
+			const String & user_, const String & password_,
 			const DataTypeFactory & data_type_factory_,
 			const String & client_name_ = "client",
 			Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
@@ -110,7 +112,8 @@ public:
 			Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 			Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
 	   : max_connections(max_connections_), host(host_), port(port_), default_database(default_database_),
-	    client_name(client_name_), compression(compression_), data_type_factory(data_type_factory_),
+		user(user_), password(password_),
+		client_name(client_name_), compression(compression_), data_type_factory(data_type_factory_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		log(&Logger::get("ConnectionPool (" + Poco::Net::SocketAddress(host, port).toString() + ")"))
 	{
@@ -144,6 +147,8 @@ private:
 	String host;
 	UInt16 port;
 	String default_database;
+	String user;
+	String password;
 
 	String client_name;
 	Protocol::Compression::Enum compression;		/// Сжимать ли данные при взаимодействии с сервером.
@@ -170,7 +175,7 @@ private:
 	{
 		connections.push_back(new detail::PooledConnection(
 			available,
-			host, port, default_database,
+			host, port, default_database, user, password,
 			data_type_factory, client_name, compression,
 			connect_timeout, receive_timeout, send_timeout));
 		

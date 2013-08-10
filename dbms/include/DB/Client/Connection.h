@@ -39,19 +39,26 @@ class Connection : private boost::noncopyable
 {
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
+		const String & user_, const String & password_,
 		const DataTypeFactory & data_type_factory_,
 		const String & client_name_ = "client",
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
 		Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
 		Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 		Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
-		: host(host_), port(port_), default_database(default_database_), client_name(client_name_), connected(false),
+		:
+		host(host_), port(port_), default_database(default_database_),
+		user(user_), password(password_),
+		client_name(client_name_), connected(false),
 		server_version_major(0), server_version_minor(0), server_revision(0),
 		query_id(0), compression(compression_), data_type_factory(data_type_factory_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		log(&Logger::get("Connection (" + Poco::Net::SocketAddress(host, port).toString() + ")"))
 	{
 		/// Соединеняемся не сразу, а при первой необходимости.
+
+		if (user.empty())
+			user = "default";
 	}
 
 	virtual ~Connection() {};
@@ -101,6 +108,8 @@ private:
 	String host;
 	UInt16 port;
 	String default_database;
+	String user;
+	String password;
 
 	String client_name;
 

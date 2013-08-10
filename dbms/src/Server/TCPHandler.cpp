@@ -37,8 +37,22 @@ void TCPHandler::runImpl()
 	
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
-	
-	receiveHello();
+
+	try
+	{
+		receiveHello();
+	}
+	catch (const DB::Exception & e)	/// Типично при неправильном имени пользователя, пароле, адресе.
+	{
+		try
+		{
+			/// Пытаемся отправить информацию об ошибке клиенту.
+			sendException(e);
+		}
+		catch (...) {}
+
+		throw;
+	}
 
 	/// При соединении может быть указана БД по-умолчанию.
 	if (!default_database.empty())
@@ -280,6 +294,8 @@ void TCPHandler::receiveHello()
 	String client_name;
 	UInt64 client_version_major = 0;
 	UInt64 client_version_minor = 0;
+	String user = "default";
+	String password;
 
 	readVarUInt(packet_type, *in);
 	if (packet_type != Protocol::Client::Hello)
@@ -291,12 +307,21 @@ void TCPHandler::receiveHello()
 	readVarUInt(client_revision, *in);
 	readStringBinary(default_database, *in);
 
+	if (client_revision >= DBMS_MIN_REVISION_WITH_USER_PASSWORD)
+	{
+		readStringBinary(user, *in);
+		readStringBinary(password, *in);
+	}
+
 	LOG_DEBUG(log, "Connected " << client_name
 		<< " version " << client_version_major
 		<< "." << client_version_minor
 		<< "." << client_revision
 		<< (!default_database.empty() ? ", database: " + default_database : "")
+		<< (!user.empty() ? ", user: " + user : "")
 		<< ".");
+
+	connection_context.setUser(user, password, socket().peerAddress().host());
 }
 
 

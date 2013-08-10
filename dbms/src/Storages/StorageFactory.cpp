@@ -163,6 +163,7 @@ StoragePtr StorageFactory::get(
 		  * <node>
 		  * 	<host>example01-01-1</host>
 		  * 	<port>9000</port>
+		  * 	<!-- <user>, <password>, если нужны -->
 		  * </node>
 		  * ...
 		  * либо в узлах <shard>, и внутри - <replica>
@@ -170,6 +171,7 @@ StoragePtr StorageFactory::get(
 		  * 	<replica>
 		  * 		<host>example01-01-1</host>
 		  * 		<port>9000</port>
+		  * 		<!-- <user>, <password>, если нужны -->
 		  *		</replica>
 		  * </shard>
 		  */
@@ -186,9 +188,12 @@ StoragePtr StorageFactory::get(
 		{
 			if (0 == strncmp(it->c_str(), "node", strlen("node")))
 			{
-				addresses.push_back(Poco::Net::SocketAddress(
-					config.getString(config_prefix + *it + ".host"),
-					config.getInt(config_prefix + *it + ".port")));
+				addresses.push_back(StorageDistributed::Address(
+					Poco::Net::SocketAddress(
+						config.getString(config_prefix + *it + ".host"),
+						config.getInt(config_prefix + *it + ".port")),
+					config.getString(config_prefix + *it + ".user", "default"),
+					config.getString(config_prefix + *it + ".password", "")));
 			}
 			else if (0 == strncmp(it->c_str(), "shard", strlen("shard")))
 			{
@@ -201,9 +206,12 @@ StoragePtr StorageFactory::get(
 				for (Poco::Util::AbstractConfiguration::Keys::const_iterator jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
 				{
 					if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
-						replica_addresses.push_back(Poco::Net::SocketAddress(
-							config.getString(config_prefix + *it + "." + *jt + ".host"),
-							config.getInt(config_prefix + *it + "." + *jt + ".port")));
+						replica_addresses.push_back(StorageDistributed::Address(
+							Poco::Net::SocketAddress(
+								config.getString(config_prefix + *it + "." + *jt + ".host"),
+								config.getInt(config_prefix + *it + "." + *jt + ".port")),
+							config.getString(config_prefix + *it + ".user", "default"),
+							config.getString(config_prefix + *it + ".password", "")));
 					else
 						throw Exception("Unknown element in config: " + *jt, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 				}

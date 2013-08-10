@@ -194,7 +194,6 @@ struct User
 	String password;
 
 	String profile;
-	String quota;
 
 	AddressPatterns addresses;
 
@@ -205,7 +204,6 @@ struct User
 
 		password 	= config.getString(config_elem + ".password");
 		profile 	= config.getString(config_elem + ".profile");
-		quota 		= config.getString(config_elem + ".quota");
 
 		addresses.addFromConfig(config_elem + ".networks");
 	}

@@ -18,8 +18,18 @@ namespace DB
 class StorageDistributed : public IStorage
 {
 public:
+	struct Address
+	{
+		Poco::Net::SocketAddress host_port;
+		String user;
+		String password;
+
+		Address(const Poco::Net::SocketAddress & host_port_, const String & user_, const String & password_)
+			: host_port(host_port_), user(user_), password(password_) {}
+	};
+	
 	/// Массив шардов. Каждый шард - адреса одного сервера.
-	typedef std::vector<Poco::Net::SocketAddress> Addresses;
+	typedef std::vector<Address> Addresses;
 
 	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
 	typedef std::vector<Addresses> AddressesWithFailover;

@@ -76,13 +76,15 @@ void Connection::disconnect()
 void Connection::sendHello()
 {
 	//LOG_TRACE(log, "Sending hello (" << getServerAddress() << ")");
-	
+
 	writeVarUInt(Protocol::Client::Hello, *out);
 	writeStringBinary((DBMS_NAME " ") + client_name, *out);
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
 	writeVarUInt(Revision::get(), *out);
 	writeStringBinary(default_database, *out);
+	writeStringBinary(user, *out);
+	writeStringBinary(password, *out);
 	
 	out->next();
 }
@@ -102,6 +104,11 @@ void Connection::receiveHello()
 		readVarUInt(server_version_major, *in);
 		readVarUInt(server_version_minor, *in);
 		readVarUInt(server_revision, *in);
+
+		/// Старые ревизии сервера не поддерживают имя пользователя и пароль, которые были отправлены в пакете hello.
+		if (server_revision < DBMS_MIN_REVISION_WITH_USER_PASSWORD)
+			throw Exception("Server revision is too old for this client. You must update server to at least " + toString(DBMS_MIN_REVISION_WITH_USER_PASSWORD) + ".",
+				ErrorCodes::SERVER_REVISION_IS_TOO_OLD);
 	}
 	else if (packet_type == Protocol::Server::Exception)
 		receiveException()->rethrow();

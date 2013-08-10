@@ -225,10 +225,15 @@ private:
 		}
 		catch (const DB::Exception & e)
 		{
- 			std::cerr << "Code: " << e.code() << ". " << e.displayText() << std::endl
-				<< std::endl
-				<< "Stack trace:" << std::endl
-				<< e.getStackTrace().toString();
+			std::string text = e.displayText();
+			
+ 			std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+
+			/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
+			if (std::string::npos == text.find("Stack trace"))
+				std::cerr << "Stack trace:" << std::endl
+					<< e.getStackTrace().toString();
+			
 			return e.code();
 		}
 		catch (const Poco::Exception & e)
@@ -320,15 +325,21 @@ private:
 		String host = config().getString("host", "localhost");
 		UInt16 port = config().getInt("port", DBMS_DEFAULT_PORT);
 		String default_database = config().getString("database", "");
+		String user = config().getString("user", "");
+		String password = config().getString("password", "");
 		
 		Protocol::Compression::Enum compression = config().getBool("compression", true)
 			? Protocol::Compression::Enable
 			: Protocol::Compression::Disable;
 
 		if (is_interactive)
-			std::cout << "Connecting to " << (!default_database.empty() ? default_database + "@" : "") << host << ":" << port << "." << std::endl;
+			std::cout << "Connecting to "
+				<< (!default_database.empty() ? "database " + default_database + " at " : "")
+				<< host << ":" << port
+				<< (!user.empty() ? " as user " + user : "")
+				<< "." << std::endl;
 
-		connection = new Connection(host, port, default_database, context.getDataTypeFactory(), "client", compression,
+		connection = new Connection(host, port, default_database, user, password, context.getDataTypeFactory(), "client", compression,
 			Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
@@ -824,11 +835,25 @@ private:
 				.binding("host"));
 
 		options.addOption(
-			Poco::Util::Option("port", "p")
+			Poco::Util::Option("port", "")
 				.required(false)
 				.repeatable(false)
 				.argument("<number>")
 				.binding("port"));
+
+		options.addOption(
+			Poco::Util::Option("user", "u")
+				.required(false)
+				.repeatable(false)
+				.argument("<number>")
+				.binding("user"));
+
+		options.addOption(
+			Poco::Util::Option("password", "")
+				.required(false)
+				.repeatable(false)
+				.argument("<number>")
+				.binding("password"));
 
 		options.addOption(
 			Poco::Util::Option("query", "e")
