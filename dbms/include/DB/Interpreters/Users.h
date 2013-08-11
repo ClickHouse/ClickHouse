@@ -103,15 +103,55 @@ private:
 
 public:
 	HostExactPattern(const String & host_) : host(host_) {}
-	
+
 	bool contains(const Poco::Net::IPAddress & addr) const
 	{
 		Poco::Net::IPAddress addr_v6 = toIPv6(addr);
-		Poco::Net::HostEntry entry = Poco::Net::DNS::hostByName(host);
 
-		for (size_t i = 0, size = entry.addresses().size(); i < size; ++i)
-			if (toIPv6(entry.addresses()[i]) == addr_v6)
-				return true;
+		/// Резолвим вручную, потому что в Poco не используется флаг AI_ALL, а он важен.
+		addrinfo * ai = NULL;
+
+		addrinfo hints;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_UNSPEC;
+		hints.ai_flags |= AI_V4MAPPED | AI_ALL;
+
+		int ret = getaddrinfo(host.c_str(), NULL, &hints, &ai);
+		if (0 != ret)
+			throw Exception("Cannot getaddrinfo: " + std::string(gai_strerror(ret)), ErrorCodes::DNS_ERROR);
+
+		try
+		{
+			for (; ai != NULL; ai = ai->ai_next)
+			{
+				if (ai->ai_addrlen && ai->ai_addr)
+				{
+					if (ai->ai_family == AF_INET6)
+					{
+						if (addr_v6 == Poco::Net::IPAddress(
+							&reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_addr, sizeof(in6_addr),
+							reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_scope_id))
+						{
+							return true;
+						}
+					}
+					else if (ai->ai_family == AF_INET)
+					{
+						if (addr_v6 == toIPv6(Poco::Net::IPAddress(
+							&reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr, sizeof(in_addr))))
+						{
+							return true;
+						}
+					}
+				}
+			}
+		}
+		catch (...)
+		{
+			freeaddrinfo(ai);
+			throw;
+		}
+		freeaddrinfo(ai);
 
 		return false;
 	}
