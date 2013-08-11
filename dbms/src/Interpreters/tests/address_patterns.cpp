@@ -19,14 +19,63 @@ namespace test
 		bool contains(const Poco::Net::IPAddress & addr) const
 		{
 			Poco::Net::IPAddress addr_v6 = toIPv6(addr);
-			Poco::Net::HostEntry entry = Poco::Net::DNS::hostByName(host);
 
-			for (size_t i = 0, size = entry.addresses().size(); i < size; ++i)
+			addrinfo * ai = NULL;
+
+			addrinfo hints;
+			memset(&hints, 0, sizeof(hints));
+			hints.ai_family = AF_INET6;
+			hints.ai_flags |= AI_V4MAPPED | AI_ALL;
+			
+			int ret = getaddrinfo(host.c_str(), NULL, NULL, &ai);
+			if (0 != ret)
+				throw Exception("Cannot getaddrinfo: " + std::string(gai_strerror(ret)), ErrorCodes::DNS_ERROR);
+
+			try
 			{
-				std::cerr << i << ", " << entry.addresses()[i].toString() << std::endl;
-				if (toIPv6(entry.addresses()[i]) == addr_v6)
-					return true;
+				for (; ai != NULL; ai = ai->ai_next)
+				{
+					if (ai->ai_addrlen && ai->ai_addr)
+					{
+						if (ai->ai_family == AF_INET6)
+						{
+							char buf[1024];
+							std::cerr << inet_ntop(ai->ai_family, &reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_addr, buf, sizeof(buf)) << std::endl;
+
+							std::cerr << Poco::Net::IPAddress(
+								&reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_addr, sizeof(in6_addr),
+								reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_scope_id).toString() << std::endl;
+
+							if (addr_v6 == Poco::Net::IPAddress(
+								&reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_addr, sizeof(in6_addr),
+								reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_scope_id))
+							{
+								return true;
+							}
+						}
+						else if (ai->ai_family == AF_INET)
+						{
+							char buf[1024];
+							std::cerr << inet_ntop(ai->ai_family, &reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr, buf, sizeof(buf)) << std::endl;
+
+							std::cerr << Poco::Net::IPAddress(
+								&reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr, sizeof(in_addr)).toString() << std::endl;
+
+							if (addr_v6 == toIPv6(Poco::Net::IPAddress(
+								&reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr, sizeof(in_addr))))
+							{
+								return true;
+							}
+						}
+					}
+				}
 			}
+			catch (...)
+			{
+				freeaddrinfo(ai);
+				throw;
+			}
+			freeaddrinfo(ai);
 
 			return false;
 		}
@@ -47,9 +96,9 @@ namespace test
 
 			/// Резолвим вручную, потому что в Poco нет такой функциональности.
 			char domain[1024];
-			int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), NULL, 0, NI_NAMEREQD);
-			if (0 != gai_errno)
-				throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::CANNOT_GETNAMEINFO);
+			int ret = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), NULL, 0, NI_NAMEREQD);
+			if (0 != ret)
+				throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(ret)), ErrorCodes::DNS_ERROR);
 
 			String domain_str = domain;
 			Poco::RegularExpression::Match match;

@@ -135,7 +135,7 @@ public:
 		char domain[1024];
 		int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), NULL, 0, NI_NAMEREQD);
 		if (0 != gai_errno)
-			throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::CANNOT_GETNAMEINFO);
+			throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::DNS_ERROR);
 
 		String domain_str = domain;
 		Poco::RegularExpression::Match match;
