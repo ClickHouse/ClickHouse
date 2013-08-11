@@ -4,6 +4,7 @@
 
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/IPAddress.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -128,12 +129,19 @@ public:
 	
 	bool contains(const Poco::Net::IPAddress & addr) const
 	{
-		Poco::RegularExpression::Match match;
-		Poco::Net::HostEntry entry = Poco::Net::DNS::hostByAddress(addr);
+		Poco::Net::SocketAddress sock_addr(addr, 0);
 
-		for (size_t i = 0, size = entry.aliases().size(); i < size; ++i)
-			if (host_regexp.match(entry.aliases()[i], match) && HostExactPattern(entry.aliases()[i]).contains(addr))
-				return true;
+		/// Резолвим вручную, потому что в Poco нет такой функциональности.
+		char domain[1024];
+		int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), NULL, 0, NI_NAMEREQD);
+		if (0 != gai_errno)
+			throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::CANNOT_GETNAMEINFO);
+
+		String domain_str = domain;
+		Poco::RegularExpression::Match match;
+
+		if (host_regexp.match(domain_str, match) && HostExactPattern(domain_str).contains(addr))
+			return true;
 
 		return false;
 	}
