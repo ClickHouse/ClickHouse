@@ -16,7 +16,7 @@ public:
 	: storage(storage_), marks_count(0), index_offset(0)
 	{
 		part_name = storage.getPartName(
-			Yandex::DayNum_t(min_date), Yandex::DayNum_t(max_date),
+			DayNum_t(min_date), DayNum_t(max_date),
 										min_part_id, max_part_id, level);
 		
 		part_tmp_path = storage.full_path + "tmp_" + part_name + "/";

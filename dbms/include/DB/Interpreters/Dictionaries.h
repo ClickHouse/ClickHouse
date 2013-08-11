@@ -22,10 +22,10 @@ using Poco::SharedPtr;
 class Dictionaries
 {
 private:
-	Yandex::MultiVersion<RegionsHierarchy> regions_hierarchy;
-	Yandex::MultiVersion<TechDataHierarchy> tech_data_hierarchy;
-	Yandex::MultiVersion<CategoriesHierarchy> categories_hierarchy;
-	Yandex::MultiVersion<RegionsNames> regions_names;
+	MultiVersion<RegionsHierarchy> regions_hierarchy;
+	MultiVersion<TechDataHierarchy> tech_data_hierarchy;
+	MultiVersion<CategoriesHierarchy> categories_hierarchy;
+	MultiVersion<RegionsNames> regions_names;
 
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
@@ -47,12 +47,12 @@ private:
 		{
 			LOG_INFO(log, "Loading dictionaries.");
 
-			Yandex::MultiVersion<TechDataHierarchy>::Version new_tech_data_hierarchy = new TechDataHierarchy;
-			Yandex::MultiVersion<RegionsHierarchy>::Version new_regions_hierarchy = new RegionsHierarchy;
+			MultiVersion<TechDataHierarchy>::Version new_tech_data_hierarchy = new TechDataHierarchy;
+			MultiVersion<RegionsHierarchy>::Version new_regions_hierarchy = new RegionsHierarchy;
 			new_regions_hierarchy->reload();
-			Yandex::MultiVersion<CategoriesHierarchy>::Version new_categories_hierarchy = new CategoriesHierarchy;
+			MultiVersion<CategoriesHierarchy>::Version new_categories_hierarchy = new CategoriesHierarchy;
 			new_categories_hierarchy->reload();
-			Yandex::MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
+			MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
 			new_regions_names->reload();
 			
 			tech_data_hierarchy.set(new_tech_data_hierarchy);
@@ -102,22 +102,22 @@ public:
 		reloading_thread.join();
 	}
 
-	Yandex::MultiVersion<RegionsHierarchy>::Version getRegionsHierarchy() const
+	MultiVersion<RegionsHierarchy>::Version getRegionsHierarchy() const
 	{
 		return regions_hierarchy.get();
 	}
 
-	Yandex::MultiVersion<TechDataHierarchy>::Version getTechDataHierarchy() const
+	MultiVersion<TechDataHierarchy>::Version getTechDataHierarchy() const
 	{
 		return tech_data_hierarchy.get();
 	}
 	
-	Yandex::MultiVersion<CategoriesHierarchy>::Version getCategoriesHierarchy() const
+	MultiVersion<CategoriesHierarchy>::Version getCategoriesHierarchy() const
 	{
 		return categories_hierarchy.get();
 	}
 	
-	Yandex::MultiVersion<RegionsNames>::Version getRegionsNames() const
+	MultiVersion<RegionsNames>::Version getRegionsNames() const
 	{
 		return regions_names.get();
 	}

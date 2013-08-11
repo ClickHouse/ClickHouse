@@ -6,7 +6,7 @@
 
 
 typedef std::string T;
-typedef Yandex::MultiVersion<T> MV;
+typedef MultiVersion<T> MV;
 typedef std::vector<T> Results;
 
 

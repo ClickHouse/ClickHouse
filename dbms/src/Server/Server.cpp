@@ -86,7 +86,7 @@ int Server::main(const std::vector<std::string> & args)
 	
 	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 	LOG_DEBUG(log, "Initializing DateLUT.");
-	Yandex::DateLUTSingleton::instance();
+	DateLUTSingleton::instance();
 	LOG_TRACE(log, "Initialized DateLUT.");
 
 	/** Контекст содержит всё, что влияет на обработку запроса:

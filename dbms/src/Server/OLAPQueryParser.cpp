@@ -85,15 +85,15 @@ QueryParseResult QueryParser::parse(std::istream & s)
 		result.CounterID = DB::parse<unsigned>(getValueOfOneTextElement(result.query, CounterID_element_name));
 	
 	int time_zone_diff = 0;
-	result.date_first = Yandex::Time2Date(Poco::DateTimeParser::parse(
+	result.date_first = Time2Date(Poco::DateTimeParser::parse(
 		getValueOfOneTextElement(result.query, date_first_element_name), time_zone_diff).timestamp().epochTime());
-	result.date_last = Yandex::Time2Date(Poco::DateTimeParser::parse(
+	result.date_last = Time2Date(Poco::DateTimeParser::parse(
 		getValueOfOneTextElement(result.query, date_last_element_name), time_zone_diff).timestamp().epochTime());
 	
 	if (result.date_first > result.date_last)
 		throw Exception("First date is bigger than last date.", ErrorCodes::FIRST_DATE_IS_BIGGER_THAN_LAST_DATE);
 	
-	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 	result.days = 1 + date_lut.toDayNum(result.date_last) - date_lut.toDayNum(result.date_first);
 	
 	result.cut_date_last = false;
@@ -176,7 +176,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 		result.limit = DB::parse<unsigned>(limit_nodes->item(0)->innerText());
 	
 	LOG_DEBUG(log, "CounterID: " << result.CounterID
-		<< ", dates: " << Yandex::Date2Str(result.date_first) << " - " << Yandex::Date2Str(result.date_last));
+		<< ", dates: " << Date2Str(result.date_first) << " - " << Date2Str(result.date_last));
 	
 	/// получаем список имён атрибутов
 	Poco::AutoPtr<Poco::XML::NodeList> attributes = result.query->getElementsByTagName("attribute");

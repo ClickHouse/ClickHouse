@@ -323,7 +323,7 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 
 
 /// в формате YYYY-MM-DD
-inline void readDateText(Yandex::DayNum_t & date, ReadBuffer & buf)
+inline void readDateText(DayNum_t & date, ReadBuffer & buf)
 {
 	char s[10];
 	size_t size = buf.read(s, 10);
@@ -337,7 +337,7 @@ inline void readDateText(Yandex::DayNum_t & date, ReadBuffer & buf)
 	UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
 	UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-	date = Yandex::DateLUTSingleton::instance().makeDayNum(year, month, day);
+	date = DateLUTSingleton::instance().makeDayNum(year, month, day);
 }
 
 inline void readDateText(mysqlxx::Date & date, ReadBuffer & buf)
@@ -378,7 +378,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 	if (unlikely(year == 0))
 		datetime = 0;
 	else
-		datetime = Yandex::DateLUTSingleton::instance().makeDateTime(year, month, day, hour, minute, second);
+		datetime = DateLUTSingleton::instance().makeDateTime(year, month, day, hour, minute, second);
 }
 
 inline void readDateTimeText(mysqlxx::DateTime & datetime, ReadBuffer & buf)
@@ -415,7 +415,7 @@ inline void readBinary(Float64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(String & x, 	ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(bool & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(Yandex::VisitID_t & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(VisitID_t & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(mysqlxx::Date & x, 	ReadBuffer & buf) 	{ readPODBinary(x, buf); }
 inline void readBinary(mysqlxx::DateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
@@ -434,7 +434,7 @@ inline void readText(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
 inline void readText(String & x, 	ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
 
-inline void readText(Yandex::VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(mysqlxx::Date & x, 	ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(mysqlxx::DateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 
@@ -453,7 +453,7 @@ inline void readQuoted(Float64 & x, ReadBuffer & buf) { readFloatText(x, buf); }
 inline void readQuoted(String & x, 	ReadBuffer & buf) { readQuotedString(x, buf); }
 inline void readQuoted(bool & x, 	ReadBuffer & buf) { readBoolText(x, buf); }
 
-inline void readQuoted(Yandex::VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 inline void readQuoted(mysqlxx::Date & x, ReadBuffer & buf)
 {
@@ -484,7 +484,7 @@ inline void readDoubleQuoted(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, 
 inline void readDoubleQuoted(String & x, 	ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 inline void readDoubleQuoted(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
 
-inline void readDoubleQuoted(Yandex::VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 inline void readDoubleQuoted(mysqlxx::Date & x, ReadBuffer & buf)
 {

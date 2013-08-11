@@ -48,32 +48,32 @@ namespace DB
 
 struct ToYearImpl
 {
-	static inline UInt16 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toYear(t); }
-	static inline UInt16 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toYear(Yandex::DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toYear(t); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toYear(DayNum_t(d)); }
 };
 
 struct ToMonthImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toMonth(t); }
-	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toMonth(Yandex::DayNum_t(d)); }
+	static inline UInt8 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toMonth(t); }
+	static inline UInt8 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toMonth(DayNum_t(d)); }
 };
 
 struct ToDayOfMonthImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toDayOfMonth(t); }
-	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toDayOfMonth(Yandex::DayNum_t(d)); }
+	static inline UInt8 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toDayOfMonth(t); }
+	static inline UInt8 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toDayOfMonth(DayNum_t(d)); }
 };
 
 struct ToDayOfWeekImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toDayOfWeek(t); }
-	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toDayOfWeek(Yandex::DayNum_t(d)); }
+	static inline UInt8 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toDayOfWeek(t); }
+	static inline UInt8 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toDayOfWeek(DayNum_t(d)); }
 };
 
 struct ToHourImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toHourInaccurate(t); }
-	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	static inline UInt8 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toHourInaccurate(t); }
+	static inline UInt8 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -81,8 +81,8 @@ struct ToHourImpl
 
 struct ToMinuteImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toMinuteInaccurate(t); }
-	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	static inline UInt8 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toMinuteInaccurate(t); }
+	static inline UInt8 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -90,8 +90,8 @@ struct ToMinuteImpl
 
 struct ToSecondImpl
 {
-	static inline UInt8 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toSecondInaccurate(t); }
-	static inline UInt8 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	static inline UInt8 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toSecondInaccurate(t); }
+	static inline UInt8 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toSecond", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -99,28 +99,28 @@ struct ToSecondImpl
 
 struct ToMondayImpl
 {
-	static inline UInt16 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfWeek(date_lut.toDayNum(t)); }
-	static inline UInt16 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfWeek(Yandex::DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfWeek(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfWeek(DayNum_t(d)); }
 };
 
 struct ToStartOfMonthImpl
 {
-	static inline UInt16 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfMonth(date_lut.toDayNum(t)); }
-	static inline UInt16 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfMonth(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfMonth(DayNum_t(d)); }
 };
 
 struct ToStartOfYearImpl
 {
-	static inline UInt16 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfYear(date_lut.toDayNum(t)); }
-	static inline UInt16 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfYear(Yandex::DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfYear(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfYear(DayNum_t(d)); }
 };
 
 
 struct ToTimeImpl
 {
 	/// При переводе во время, дату будем приравнивать к 1970-01-02.
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toTimeInaccurate(t) + 86400; }
-	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toTimeInaccurate(t) + 86400; }
+	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -128,8 +128,8 @@ struct ToTimeImpl
 
 struct ToStartOfMinuteImpl
 {
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfMinuteInaccurate(t); }
-	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toStartOfMinuteInaccurate(t); }
+	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -137,8 +137,8 @@ struct ToStartOfMinuteImpl
 
 struct ToStartOfHourImpl
 {
-	static inline UInt32 execute(UInt32 t, Yandex::DateLUTSingleton & date_lut) { return date_lut.toStartOfHourInaccurate(t); }
-	static inline UInt32 execute(UInt16 d, Yandex::DateLUTSingleton & date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toStartOfHourInaccurate(t); }
+	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -150,7 +150,7 @@ struct DateTimeTransformImpl
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 		if (const ColumnVector<FromType> * col_from = dynamic_cast<const ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{

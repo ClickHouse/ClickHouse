@@ -30,8 +30,8 @@ private:
 
 	void init(time_t time)
 	{
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
-		const Yandex::DateLUT::Values & values = date_lut.getValues(time);
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+		const DateLUT::Values & values = date_lut.getValues(time);
 
 		m_year = values.year;
 		m_month = values.month;
@@ -65,9 +65,9 @@ public:
 		init(time);
 	}
 
-	Date(Yandex::DayNum_t day_num)
+	Date(DayNum_t day_num)
 	{
-		const Yandex::DateLUT::Values & values = Yandex::DateLUTSingleton::instance().getValues(day_num);
+		const DateLUT::Values & values = DateLUTSingleton::instance().getValues(day_num);
 		m_year 	= values.year;
 		m_month = values.month;
 		m_day 	= values.day_of_month;
@@ -114,15 +114,15 @@ public:
 
 	operator time_t() const
 	{
-		return Yandex::DateLUTSingleton::instance().makeDate(m_year, m_month, m_day);
+		return DateLUTSingleton::instance().makeDate(m_year, m_month, m_day);
 	}
 
-	Yandex::DayNum_t getDayNum() const
+	DayNum_t getDayNum() const
 	{
-		return Yandex::DateLUTSingleton::instance().makeDayNum(m_year, m_month, m_day);
+		return DateLUTSingleton::instance().makeDayNum(m_year, m_month, m_day);
 	}
 
-	operator Yandex::DayNum_t() const
+	operator DayNum_t() const
 	{
 		return getDayNum();
 	}

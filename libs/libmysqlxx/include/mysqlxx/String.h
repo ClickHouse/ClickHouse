@@ -145,7 +145,7 @@ private:
 
 	time_t getDateTimeImpl() const
 	{
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 		if (m_length == 10)
 		{
@@ -173,7 +173,7 @@ private:
 
 	time_t getDateImpl() const
 	{
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 		if (m_length == 10 || m_length == 19)
 		{
@@ -216,7 +216,7 @@ private:
 			return getDateImpl();
 		else
 		{
-			Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+			DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 			return date_lut.toDate(getIntImpl());
 		}
 	}
@@ -413,7 +413,7 @@ template <> inline std::string			String::get<std::string			>() const { return ge
 template <> inline Date					String::get<Date				>() const { return getDate(); }
 template <> inline DateTime				String::get<DateTime			>() const { return getDateTime(); }
 
-template <> inline Yandex::VisitID_t	String::get<Yandex::VisitID_t	>() const { return Yandex::VisitID_t(getUInt()); }
+template <> inline VisitID_t	String::get<VisitID_t	>() const { return VisitID_t(getUInt()); }
 
 template <typename T> inline T			String::get() 						const { return T(*this); }
 

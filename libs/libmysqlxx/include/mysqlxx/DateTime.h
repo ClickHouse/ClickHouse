@@ -43,8 +43,8 @@ private:
 			return;
 		}
 		
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
-		const Yandex::DateLUT::Values & values = date_lut.getValues(time);
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+		const DateLUT::Values & values = date_lut.getValues(time);
 
 		m_year = values.year;
 		m_month = values.month;
@@ -124,7 +124,7 @@ public:
 	{
 		return m_year == 0
 			? 0
-			: Yandex::DateLUTSingleton::instance().makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
+			: DateLUTSingleton::instance().makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
 	}
 
 	unsigned short year() const 	{ return m_year; }

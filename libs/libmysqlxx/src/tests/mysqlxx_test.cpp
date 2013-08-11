@@ -23,8 +23,8 @@ int main(int argc, char ** argv)
 				std::cerr << row[1] << ", " << row["d"]
 					<< ", " << row[1].getDate()
 					<< ", " << row[1].getDateTime()
-					<< ", " << Yandex::Date2Str(row[1].getDate())
-					<< ", " << Yandex::Time2Str(row[1].getDateTime())
+					<< ", " << Date2Str(row[1].getDate())
+					<< ", " << Time2Str(row[1].getDateTime())
 					<< std::endl
 					<< mysqlxx::escape << row[1].getDate() << ", " << mysqlxx::escape << row[1].getDateTime() << std::endl
 					<< mysqlxx::quote << row[1].getDate() << ", " << mysqlxx::quote << row[1].getDateTime() << std::endl

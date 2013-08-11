@@ -300,7 +300,7 @@ private:
 				Poco::File(history_file).createFile();
 
 			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
-			Yandex::DateLUTSingleton::instance();
+			DateLUTSingleton::instance();
 
 			loop();
 

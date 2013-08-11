@@ -194,8 +194,8 @@ private:
 		DataPart(StorageMergeTree & storage_) : storage(storage_), currently_merging(false) {}
 
 		StorageMergeTree & storage;
-		Yandex::DayNum_t left_date;
-		Yandex::DayNum_t right_date;
+		DayNum_t left_date;
+		DayNum_t right_date;
 		UInt64 left;
 		UInt64 right;
 		/// Уровень игнорируется. Использовался предыдущей эвристикой слияния.
@@ -205,8 +205,8 @@ private:
 		size_t size;	/// в количестве засечек.
 		time_t modification_time;
 
-		Yandex::DayNum_t left_month;
-		Yandex::DayNum_t right_month;
+		DayNum_t left_month;
+		DayNum_t right_month;
 		
 		/// Смотреть и изменять это поле следует под залоченным data_parts_mutex.
 		bool currently_merging;
@@ -300,7 +300,7 @@ private:
 				  const String & sign_column_ = "",
 				  const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
 	
-	static String getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
+	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
 	BlockInputStreams spreadMarkRangesAmongThreads(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size);
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size);

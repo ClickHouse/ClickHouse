@@ -84,7 +84,7 @@ struct QueryParseResult
 	
 	Poco::AutoPtr<Poco::XML::Document> query;
 	
-	Yandex::CounterID_t CounterID;
+	CounterID_t CounterID;
 	time_t date_first;
 	time_t date_last;
 	unsigned days;

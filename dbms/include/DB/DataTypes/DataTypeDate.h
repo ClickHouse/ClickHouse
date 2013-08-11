@@ -20,12 +20,12 @@ public:
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeDateText(Yandex::DayNum_t(get<UInt64>(field)), ostr);
+		writeDateText(DayNum_t(get<UInt64>(field)), ostr);
 	}
 	
 	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
-		Yandex::DayNum_t x;
+		DayNum_t x;
 		readDateText(x, istr);
 		field = static_cast<UInt64>(x);
 	}

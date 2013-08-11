@@ -36,9 +36,9 @@ private:
 	/// <dates> => SELECT ... WHERE x
 	std::string convertDateRange(time_t date_first, time_t date_last);
 	/// <counter_id> => SELECT ... WHERE x
-	std::string convertCounterID(Yandex::CounterID_t CounterID);
+	std::string convertCounterID(CounterID_t CounterID);
 	
-	std::string getTableName(Yandex::CounterID_t CounterID);
+	std::string getTableName(CounterID_t CounterID);
 	std::string getHavingSection();
 
 	void fillFormattedAttributeMap();

@@ -457,15 +457,15 @@ void StorageMergeTree::createPositiveSignCondition(ExpressionActionsPtr & out_ex
 }
 
 
-String StorageMergeTree::getPartName(Yandex::DayNum_t left_date, Yandex::DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level)
+String StorageMergeTree::getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level)
 {
-	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 	
 	/// Имя директории для куска иммет вид: YYYYMMDD_YYYYMMDD_N_N_L.
 	String res;
 	{
-		unsigned left_date_id = Yandex::Date2OrderedIdentifier(date_lut.fromDayNum(left_date));
-		unsigned right_date_id = Yandex::Date2OrderedIdentifier(date_lut.fromDayNum(right_date));
+		unsigned left_date_id = Date2OrderedIdentifier(date_lut.fromDayNum(left_date));
+		unsigned right_date_id = Date2OrderedIdentifier(date_lut.fromDayNum(right_date));
 
 		WriteBufferFromString wb(res);
 
@@ -491,7 +491,7 @@ void StorageMergeTree::loadDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 		
-	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 	data_parts.clear();
 
 	Poco::DirectoryIterator end;
@@ -504,8 +504,8 @@ void StorageMergeTree::loadDataParts()
 			continue;
 			
 		DataPartPtr part = new DataPart(*this);
-		part->left_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
-		part->right_date = date_lut.toDayNum(Yandex::OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
+		part->left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
+		part->right_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
 		part->left = parse<UInt64>(file_name.substr(matches[3].offset, matches[3].length));
 		part->right = parse<UInt64>(file_name.substr(matches[4].offset, matches[4].length));
 		part->level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
@@ -679,7 +679,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
-	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 	
 	size_t min_max = -1U;
 	size_t min_min = -1U;
@@ -687,8 +687,8 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 	DataParts::iterator best_begin;
 	bool found = false;
 	
-	Yandex::DayNum_t now_day = date_lut.toDayNum(time(0));
-	Yandex::DayNum_t now_month = date_lut.toFirstDayNumOfMonth(now_day);
+	DayNum_t now_day = date_lut.toDayNum(time(0));
+	DayNum_t now_month = date_lut.toFirstDayNumOfMonth(now_day);
 		
 	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
 	/// Нужно для определения максимальности по включению.
@@ -724,7 +724,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 		size_t cur_sum = first_part->size;
 		int cur_len = 1;
 		
-		Yandex::DayNum_t month = first_part->left_month;
+		DayNum_t month = first_part->left_month;
 		UInt64 cur_id = first_part->right;
 		
 		/// Этот месяц кончился хотя бы день назад.
@@ -817,7 +817,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 		all_column_names.push_back(it->first);
 
-	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 	StorageMergeTree::DataPartPtr new_data_part = new DataPart(*this);
 	new_data_part->left_date = std::numeric_limits<UInt16>::max();

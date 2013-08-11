@@ -316,18 +316,18 @@ std::string QueryConverter::convertDateRange(time_t date_first, time_t date_last
 	{
 		WriteBufferFromString first_buf(first_str);
 		WriteBufferFromString last_buf(last_str);
-		writeDateText(Yandex::DateLUTSingleton::instance().toDayNum(date_first), first_buf);
-		writeDateText(Yandex::DateLUTSingleton::instance().toDayNum(date_last), last_buf);
+		writeDateText(DateLUTSingleton::instance().toDayNum(date_first), first_buf);
+		writeDateText(DateLUTSingleton::instance().toDayNum(date_last), last_buf);
 	}
 	return "StartDate >= toDate('" + first_str + "') AND StartDate <= toDate('" + last_str + "')";
 }
 
-std::string QueryConverter::convertCounterID(Yandex::CounterID_t CounterID)
+std::string QueryConverter::convertCounterID(CounterID_t CounterID)
 {
 	return "CounterID == " + toString(CounterID);
 }
 
-std::string QueryConverter::getTableName(Yandex::CounterID_t CounterID)
+std::string QueryConverter::getTableName(CounterID_t CounterID)
 {
 	if (CounterID == 0)
 		return table_for_all_counters;

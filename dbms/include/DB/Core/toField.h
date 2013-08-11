@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Yandex/Common.h>		/// Yandex::VisitID_t
+#include <Yandex/Common.h>		/// VisitID_t
 
 #include <DB/Core/Field.h>
 
@@ -26,7 +26,7 @@ inline Field toField(const mysqlxx::DateTime & x)
 	return toField(static_cast<UInt32>(static_cast<time_t>(x)));
 }
 
-inline Field toField(const Yandex::VisitID_t & x)
+inline Field toField(const VisitID_t & x)
 {
 	return toField(static_cast<UInt64>(x));
 }

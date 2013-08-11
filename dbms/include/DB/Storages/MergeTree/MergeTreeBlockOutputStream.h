@@ -16,7 +16,7 @@ public:
 	{
 		storage.check(block, true);
 		
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 		
 		size_t rows = block.rows();
 		size_t columns = block.columns();
@@ -40,8 +40,8 @@ public:
 		typedef std::map<UInt16, BlockWithDateInterval> BlocksByMonth;
 		BlocksByMonth blocks_by_month;
 		
-		UInt16 min_month = date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(min_date));
-		UInt16 max_month = date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(max_date));
+		UInt16 min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
+		UInt16 max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
 		
 		/// Типичный случай - когда месяц один (ничего разделять не нужно).
 		if (min_month == max_month)
@@ -50,7 +50,7 @@ public:
 		{
 			for (size_t i = 0; i < rows; ++i)
 			{
-				UInt16 month = date_lut.toFirstDayNumOfMonth(Yandex::DayNum_t(dates[i]));
+				UInt16 month = date_lut.toFirstDayNumOfMonth(DayNum_t(dates[i]));
 				
 				BlockWithDateInterval & block_for_month = blocks_by_month[month];
 				if (!block_for_month.block)
@@ -91,14 +91,14 @@ private:
 	
 	void writePart(Block & block, UInt16 min_date, UInt16 max_date)
 	{
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 		
 		size_t rows = block.rows();
 		size_t columns = block.columns();
 		UInt64 part_id = storage.increment.get(true);
 		
 		String part_name = storage.getPartName(
-			Yandex::DayNum_t(min_date), Yandex::DayNum_t(max_date),
+			DayNum_t(min_date), DayNum_t(max_date),
 												part_id, part_id, 0);
 		
 		String part_tmp_path = storage.full_path + "tmp_" + part_name + "/";
@@ -159,8 +159,8 @@ private:
 			Poco::ScopedLock<Poco::FastMutex> lock_all(storage.all_data_parts_mutex);
 			
 			StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart(storage);
-			new_data_part->left_date = Yandex::DayNum_t(min_date);
-			new_data_part->right_date = Yandex::DayNum_t(max_date);
+			new_data_part->left_date = DayNum_t(min_date);
+			new_data_part->right_date = DayNum_t(max_date);
 			new_data_part->left = part_id;
 			new_data_part->right = part_id;
 			new_data_part->level = 0;

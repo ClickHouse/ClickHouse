@@ -70,7 +70,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		typedef DataTypeDate::FieldType FromFieldType;
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = dynamic_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -84,12 +84,12 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				vec_to[i] = date_lut.fromDayNum(Yandex::DayNum_t(vec_from[i]));
+				vec_to[i] = date_lut.fromDayNum(DayNum_t(vec_from[i]));
 			}
 		}
 		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.fromDayNum(Yandex::DayNum_t(col_from->getData())));
+			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -109,7 +109,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
+		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = dynamic_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -139,7 +139,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 /** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.
   */
 template <typename DataType> void formatImpl(typename DataType::FieldType x, WriteBuffer & wb) { writeText(x, wb); }
-template <> inline void formatImpl<DataTypeDate>(DataTypeDate::FieldType x, WriteBuffer & wb) { writeDateText(Yandex::DayNum_t(x), wb); }
+template <> inline void formatImpl<DataTypeDate>(DataTypeDate::FieldType x, WriteBuffer & wb) { writeDateText(DayNum_t(x), wb); }
 template <> inline void formatImpl<DataTypeDateTime>(DataTypeDateTime::FieldType x, WriteBuffer & wb) { writeDateTimeText(x, wb); }
 
 template <typename FromDataType, typename Name>
@@ -192,7 +192,7 @@ template <typename DataType> void parseImpl(typename DataType::FieldType & x, Re
 
 template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb)
 {
-	Yandex::DayNum_t tmp(0);
+	DayNum_t tmp(0);
 	readDateText(tmp, rb);
 	x = tmp;
 }

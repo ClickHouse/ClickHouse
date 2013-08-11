@@ -294,7 +294,7 @@ inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 
 
 /// в формате YYYY-MM-DD
-inline void writeDateText(Yandex::DayNum_t date, WriteBuffer & buf)
+inline void writeDateText(DayNum_t date, WriteBuffer & buf)
 {
 	char s[10] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0'};
 
@@ -304,7 +304,7 @@ inline void writeDateText(Yandex::DayNum_t date, WriteBuffer & buf)
 		return;
 	}
 
-	const Yandex::DateLUT::Values & values = Yandex::DateLUTSingleton::instance().getValues(date);
+	const DateLUT::Values & values = DateLUTSingleton::instance().getValues(date);
 
 	s[0] += values.year / 1000;
 	s[1] += (values.year / 100) % 10;
@@ -346,8 +346,8 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 		return;
 	}
 
-	Yandex::DateLUTSingleton & date_lut = Yandex::DateLUTSingleton::instance();
-	const Yandex::DateLUT::Values & values = date_lut.getValues(datetime);
+	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+	const DateLUT::Values & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
 	s[1] += (values.year / 100) % 10;
@@ -429,7 +429,7 @@ inline void writeBinary(const Float64 & x, 	WriteBuffer & buf) { writePODBinary(
 inline void writeBinary(const String & x,	WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const bool & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 
-inline void writeBinary(const Yandex::VisitID_t & x, 	WriteBuffer & buf) { writePODBinary(static_cast<const UInt64 &>(x), buf); }
+inline void writeBinary(const VisitID_t & x, 	WriteBuffer & buf) { writePODBinary(static_cast<const UInt64 &>(x), buf); }
 inline void writeBinary(const mysqlxx::Date & x,		WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writePODBinary(x, buf); }
 
@@ -448,7 +448,7 @@ inline void writeText(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x,
 inline void writeText(const String & x,		WriteBuffer & buf) { writeEscapedString(x, buf); }
 inline void writeText(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
 
-inline void writeText(const Yandex::VisitID_t & x, 	WriteBuffer & buf) { writeIntText(static_cast<const UInt64 &>(x), buf); }
+inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(static_cast<const UInt64 &>(x), buf); }
 inline void writeText(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
@@ -467,7 +467,7 @@ inline void writeQuoted(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(
 inline void writeQuoted(const String & x,	WriteBuffer & buf) { writeQuotedString(x, buf); }
 inline void writeQuoted(const bool & x, 	WriteBuffer & buf) { writeBoolText(x, buf); }
 
-inline void writeQuoted(const Yandex::VisitID_t & x, 	WriteBuffer & buf)
+inline void writeQuoted(const VisitID_t & x, 	WriteBuffer & buf)
 {
 	writeIntText(static_cast<const UInt64 &>(x), buf);
 }
@@ -501,7 +501,7 @@ inline void writeDoubleQuoted(const Float64 & x, 	WriteBuffer & buf) { writeFloa
 inline void writeDoubleQuoted(const String & x,		WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 inline void writeDoubleQuoted(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
 
-inline void writeDoubleQuoted(const Yandex::VisitID_t & x, 	WriteBuffer & buf)
+inline void writeDoubleQuoted(const VisitID_t & x, 	WriteBuffer & buf)
 {
 	writeIntText(static_cast<const UInt64 &>(x), buf);
 }
