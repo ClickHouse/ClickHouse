@@ -41,6 +41,8 @@ typedef std::map<String, DatabaseDropperPtr> DatabaseDroppers;
   */
 struct ContextShared
 {
+	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
+
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
 	DatabaseDroppers database_droppers;						/// Reference counter'ы для ленивого удаления БД.
@@ -53,8 +55,6 @@ struct ContextShared
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	Logger * log;											/// Логгер.
-
-	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
 	ContextShared() : log(&Logger::get("Context")) {};
 };
