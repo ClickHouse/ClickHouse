@@ -321,7 +321,7 @@ void TCPHandler::receiveHello()
 		<< (!user.empty() ? ", user: " + user : "")
 		<< ".");
 
-	connection_context.setUser(user, password, socket().peerAddress().host());
+	connection_context.setUser(user, password, socket().peerAddress().host(), "");
 }
 
 

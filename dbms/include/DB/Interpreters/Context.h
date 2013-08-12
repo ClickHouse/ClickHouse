@@ -17,6 +17,7 @@
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
+#include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/Dictionaries.h>
 
 
@@ -50,6 +51,7 @@ struct ContextShared
 	FormatFactory format_factory;							/// Форматы.
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	Users users;											/// Известные пользователи.
+	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	Logger * log;											/// Логгер.
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
@@ -71,6 +73,7 @@ private:
 	Shared shared;
 
 	String user;						/// Текущий пользователь.
+	QuotaForIntervals * quota;			/// Текущая квота.
 	String current_database;			/// Текущая БД.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;					/// Настройки выполнения запроса.
@@ -83,13 +86,17 @@ private:
 	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
 public:
-	Context() : shared(new ContextShared), session_context(NULL), global_context(NULL) {}
+	Context() : shared(new ContextShared), quota(NULL), session_context(NULL), global_context(NULL) {}
 
 	String getPath() const;
 	void setPath(const String & path);
 
 	void initUsersFromConfig();
-	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address);
+	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key);
+
+	void initQuotasFromConfig();
+	void setQuota(const String & name, const String & quota_key, const Poco::Net::IPAddress & address);
+	QuotaForIntervals & getQuota();
 
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
 	bool isTableExist(const String & database_name, const String & table_name) const;

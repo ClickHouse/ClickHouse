@@ -36,6 +36,7 @@ namespace DB
 		/// Имя пользователя и пароль могут быть заданы как в параметрах URL, так и с помощью HTTP Basic authentification (и то, и другое не секъюрно).
 		std::string user = params.get("user", "default");
 		std::string password = params.get("password", "");
+		std::string quota_key = params.get("quota_key", "");
 
 		if (request.hasCredentials())
 		{
@@ -48,7 +49,7 @@ namespace DB
 		Context context = server.global_context;
 		context.setGlobalContext(server.global_context);
 
-		context.setUser(user, password, request.clientAddress().host());
+		context.setUser(user, password, request.clientAddress().host(), quota_key);
 		
 		OLAP::QueryParseResult olap_query = server.olap_parser->parse(request_istream);
 		

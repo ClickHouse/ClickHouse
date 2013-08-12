@@ -98,6 +98,9 @@ int Server::main(const std::vector<std::string> & args)
 	/// Загружаем пользователей.
 	global_context.initUsersFromConfig();
 
+	/// Загружаем квоты.
+	global_context.initQuotasFromConfig();
+
 	/// Загружаем настройки.
 	Settings & settings = global_context.getSettingsRef();
 	settings.setProfile(config.getString("default_profile", "default"));

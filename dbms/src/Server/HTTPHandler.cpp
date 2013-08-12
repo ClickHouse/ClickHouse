@@ -77,11 +77,13 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		user = credentials.getUsername();
 		password = credentials.getPassword();
 	}
+
+	std::string quota_key = params.get("quota_key", "");
 	
 	Context context = server.global_context;
 	context.setGlobalContext(server.global_context);
 
-	context.setUser(user, password, request.clientAddress().host());
+	context.setUser(user, password, request.clientAddress().host(), quota_key);
 
 	/// Настройки могут быть переопределены в запросе.
 	for (Poco::Net::NameValueCollection::ConstIterator it = params.begin(); it != params.end(); ++it)

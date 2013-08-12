@@ -71,8 +71,23 @@ void executeQuery(
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
 
-	InterpreterQuery interpreter(ast, context, stage);
-	interpreter.execute(ostr, &istr, query_plan);
+	QuotaForIntervals & quota = context.getQuota();
+	time_t current_time = time(0);
+	
+	quota.checkExceeded(current_time);
+
+	try
+	{
+		InterpreterQuery interpreter(ast, context, stage);
+		interpreter.execute(ostr, &istr, query_plan);
+	}
+	catch (...)
+	{
+		quota.addError(current_time);
+		throw;
+	}
+
+	quota.addQuery(current_time);
 }
 
 
@@ -105,8 +120,26 @@ BlockIO executeQuery(
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
 
-	InterpreterQuery interpreter(ast, context, stage);
-	return interpreter.execute();
+	QuotaForIntervals & quota = context.getQuota();
+	time_t current_time = time(0);
+
+	quota.checkExceeded(current_time);
+
+	BlockIO res;
+
+	try
+	{
+		InterpreterQuery interpreter(ast, context, stage);
+		res = interpreter.execute();
+	}
+	catch (...)
+	{
+		quota.addError(current_time);
+		throw;
+	}
+
+	quota.addQuery(current_time);
+	return res;
 }
 
 
