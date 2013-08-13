@@ -154,6 +154,10 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 	if (is_browser)
 		response.setContentType("text/plain; charset=UTF-8");
 
+	/// Для того, чтобы работал keep-alive.
+	if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+		response.setChunkedTransferEncoding(true);
+
 	try
 	{
 		processQuery(request, response);

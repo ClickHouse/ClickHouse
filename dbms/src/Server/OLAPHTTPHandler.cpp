@@ -90,6 +90,10 @@ namespace DB
 
 	void OLAPHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
+		/// Для того, чтобы работал keep-alive.
+		if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+			response.setChunkedTransferEncoding(true);
+
 		try
 		{
 			processQuery(request, response);
