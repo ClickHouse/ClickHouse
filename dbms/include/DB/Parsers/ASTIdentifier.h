@@ -40,6 +40,11 @@ public:
 	String getID() const { return "Identifier_" + name; }
 
 	ASTPtr clone() const { return new ASTIdentifier(*this); }
+
+	void collectIdentifierNames(IdentifierNameSet & set) const
+	{
+		set.insert(name);
+	}
 };
 
 }

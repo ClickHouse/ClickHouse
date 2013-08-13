@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <set>
 #include <sstream>
 
 #include <Poco/SharedPtr.h>
@@ -20,6 +21,7 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+typedef std::set<String> IdentifierNameSet;
 
 
 /** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
@@ -114,6 +116,14 @@ public:
 			throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
 		
 		return res;
+	}
+
+	/**  Получить set из имен индентификаторов
+	 */
+	virtual void collectIdentifierNames(IdentifierNameSet & set) const
+	{
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			(*it)->collectIdentifierNames(set);
 	}
 };
 

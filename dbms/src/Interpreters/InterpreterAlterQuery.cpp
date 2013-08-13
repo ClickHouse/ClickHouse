@@ -55,6 +55,9 @@ void InterpreterAlterQuery::execute()
 	Poco::RegularExpression::MatchVec matches;
 
 	const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
+
+	IdentifierNameSet identifier_names;
+	attach.storage->collectIdentifierNames(identifier_names);
 	for (ASTAlterQuery::ParameterContainer::const_iterator alter_it = alter.parameters.begin();
 			alter_it != alter.parameters.end(); ++alter_it)
 	{
@@ -91,14 +94,13 @@ void InterpreterAlterQuery::execute()
 		}
 		else if (params.type == ASTAlterQuery::DROP)
 		{
-			/// Проверяем, что поле не является ключевым
 			const ASTIdentifier & drop_column = dynamic_cast <const ASTIdentifier &>(*params.column);
-			Poco::RegularExpression key_column_re("[\\(,\\s]\\s*" + drop_column.name + "\\s*[,\\)]");
-			if (key_column_re.match(engine_string, 0, matches))
+
+			/// Проверяем, что поле не является ключевым
+			if (identifier_names.find(drop_column.name) != identifier_names.end())
 				throw DB::Exception("Cannot drop key column", DB::ErrorCodes::ILLEGAL_COLUMN);
 
 			ASTs::iterator drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
-
 			if (drop_it == columns.end())
 				throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
 			else
