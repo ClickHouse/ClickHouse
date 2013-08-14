@@ -12,6 +12,8 @@
 
 #include <DB/DataTypes/DataTypeNested.h>
 
+#include <DB/DataTypes/DataTypeArray.h>
+
 #include <Poco/StringTokenizer.h>
 
 
@@ -229,4 +231,23 @@ ColumnPtr DataTypeNested::createConstColumn(size_t size, const Field & field) co
 	throw Exception("Method createConstColumn is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
+NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList & names_and_types)
+{
+	NamesAndTypesListPtr columns = new NamesAndTypesList;
+	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
+	{
+		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&*it->second))
+		{
+			const NamesAndTypesList & nested = *type_nested->getNestedTypesList();
+			for (NamesAndTypesList::const_iterator jt = nested.begin(); jt != nested.end(); ++jt)
+			{
+				String nested_name = DataTypeNested::concatenateNestedName(it->first, jt->first);
+				columns->push_back(NameAndTypePair(nested_name, new DataTypeArray(jt->second)));
+			}
+		}
+		else
+			columns->push_back(*it);
+	}
+	return columns;
+}
 }

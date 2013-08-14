@@ -22,7 +22,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & contex
 {
 }
 
-bool namesEqual( const String &name, const ASTPtr & name_type_)
+bool namesEqual(const String &name, const ASTPtr & name_type_)
 {
 	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*name_type_);
 	return name_type.name == name;

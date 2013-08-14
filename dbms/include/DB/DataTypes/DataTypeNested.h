@@ -80,6 +80,9 @@ public:
 
 	const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }
 	const DataTypePtr & getOffsetsType() const { return offsets; }
+
+	/// Создает новый список в котором колонки типа Nested заменены на несколько вида имя_колонки.имя_вложенной_ячейки
+	static NamesAndTypesListPtr expandNestedColumns(const NamesAndTypesList & names_and_types);
 };
 
 }

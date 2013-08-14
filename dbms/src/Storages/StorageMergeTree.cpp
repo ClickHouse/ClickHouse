@@ -917,10 +917,11 @@ void StorageMergeTree::dropImpl()
 	Poco::File(full_path).remove(true);
 }
 
-
-bool namesEqual(const String & name, const DB::NameAndTypePair & name_type)
+/// одинаковыми считаются имена, если они совпадают целиком или nameWithoutDot совпадает с частью имени до точки
+bool namesEqual(const String & nameWithoutDot, const DB::NameAndTypePair & name_type)
 {
-	return name_type.first == name;
+	String nameWithDot = nameWithoutDot + ".";
+	return (nameWithDot == name_type.first.substr(0, nameWithoutDot.length() + 1) || nameWithoutDot == name_type.first);
 }
 
 
@@ -929,33 +930,46 @@ void StorageMergeTree::removeColumn(String column_name)
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
-	NamesAndTypesList::iterator column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
-	if (column_it == columns->end())
-		throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
-	else
-		columns->erase(column_it);
+	/// Удаляем колонки из листа columns
+	bool is_first = true;
+	NamesAndTypesList::iterator column_it;
+	do
+	{
+		column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
 
+		if (column_it == columns->end())
+		{
+			if (is_first)
+				throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
+			columns->erase(column_it);
+		is_first = false;
+	}
+	while (column_it != columns->end());
+
+	/// Регэксп выбирает файлы столбца для удаления
+	Poco::RegularExpression re(column_name + "(?:(?:\\.|\\%2E).+){0,1}" +"(?:\\.mrk|\\.bin|\\.size\\d+\\.bin|\\.size\\d+\\.mrk)");
+	/// Цикл по всем директориям кусочков
 	Poco::RegularExpression::MatchVec matches;
 	Poco::DirectoryIterator end;
-	for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path); it != end; ++it)
+	for (Poco::DirectoryIterator it_dir = Poco::DirectoryIterator(full_path); it_dir != end; ++it_dir)
 	{
-		std::string file_name = it.name();
+		std::string dir_name = it_dir.name();
 
-		if (!isPartDirectory(file_name, matches))
+		if (!isPartDirectory(dir_name, matches))
 			continue;
 
-		String full_dir_name = full_path + file_name + "/";
-
+		/// Цикл по каждому из файлов в директории кусочков
+		String full_dir_name = full_path + dir_name + "/";
+		for (Poco::DirectoryIterator it_file(full_dir_name); it_file != end; ++it_file)
 		{
-			Poco::File file(full_dir_name + column_name + ".mrk");
-			if (file.exists())
-				file.remove();
-		}
-
-		{
-			Poco::File file(full_dir_name + column_name + ".bin");
-			if (file.exists())
-				file.remove();
+			if (re.match(it_file.name()))
+			{
+				Poco::File file(full_dir_name + it_file.name());
+				if (file.exists())
+					file.remove();
+			}
 		}
 	}
 }
@@ -972,19 +986,29 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 		if (params.column)
 		{
 			String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
-			insert_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1) );
 
-			if (insert_it == columns->end())
+			/// Пытаемся найти первую с конца колонку с именем column_name или column_name.*
+			NamesAndTypesList::reverse_iterator reverse_insert_it = std::find_if(columns->rbegin(), columns->rend(),  boost::bind(namesEqual, column_name, _1) );
+
+			if (reverse_insert_it == columns->rend())
 				throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
 			else
-				++insert_it;
+			{
+				/// base возвращает итератор уже смещенный на один элемент вправо
+				insert_it = reverse_insert_it.base();
+			}
 		}
 
 		const ASTNameTypePair & ast_name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
 		StringRange type_range = ast_name_type.type->range;
 		String type_string = String(type_range.first, type_range.second - type_range.first);
-		NameAndTypePair pair(ast_name_type.name, context.getDataTypeFactory().get(type_string));
+
+		DB::DataTypePtr data_type = context.getDataTypeFactory().get(type_string);
+		NameAndTypePair pair(ast_name_type.name, data_type );
 		columns->insert(insert_it, pair);
+
+		/// Медленно, так как каждый раз копируется список
+		columns = DataTypeNested::expandNestedColumns(*columns);
 		return;
 	}
 	else if (params.type == ASTAlterQuery::DROP)
