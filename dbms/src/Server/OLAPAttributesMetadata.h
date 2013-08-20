@@ -76,7 +76,8 @@ struct AttributeDateTimeBase : public IAttributeMetadata
 		tm.tm_year -= 1900;
 		tm.tm_isdst = -1;
 		
-		return mktime(&tm);
+		time_t res = mktime(&tm);
+		return res >= 0 ? res : 0;
 	}
 };
 
@@ -94,7 +95,8 @@ struct AttributeDateBase : public IAttributeMetadata
 		tm.tm_year -= 1900;
 		tm.tm_isdst = -1;
 		
-		return mktime(&tm);
+		time_t res = mktime(&tm);
+		return res >= 0 ? res : 0;
 	}
 };
 
@@ -109,7 +111,8 @@ struct AttributeTimeBase : public IAttributeMetadata
 		sscanf(s.c_str(), "%02d:%02d:%02d",
 			   &tm.tm_hour, &tm.tm_min, &tm.tm_sec);
 		
-		return mktime(&tm);
+		time_t res = mktime(&tm);
+		return res >= 0 ? res : 0;
 	}
 };
 
