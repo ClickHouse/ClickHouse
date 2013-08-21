@@ -342,6 +342,8 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 		"uniq",
 		"uniqIf",
 		"uniqState",
+		"uniqHLL12",
+		"uniqHLL12State",
 		"groupArray",
 		"groupUniqArray",
 		"median",
