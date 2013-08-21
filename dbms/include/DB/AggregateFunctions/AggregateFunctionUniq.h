@@ -3,6 +3,7 @@
 #include <city.h>
 
 #include <stats/UniquesHashSet.h>
+#include <statdaemons/HyperLogLogCounter.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
@@ -46,20 +47,35 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 };
 
 
-struct AggregateFunctionUniqData
+struct AggregateFunctionUniqUniquesHashSetData
 {
-	UniquesHashSet set;
+	typedef UniquesHashSet Set;
+	Set set;
+	
+	static String getName() { return "uniq"; }
 };
 
+struct AggregateFunctionUniqHLL12Data
+{
+	typedef HyperLogLogCounter<12> Set;
+	Set set;
+	
+	static String getName() { return "uniqHLL12"; }
+};
+
+/// Структура для делегации работы по добавлению одного элемента
+/// в аггрегатную функцию uniq. Используется для частичной специализации
+/// для добавления строк.
+template<typename T, typename Data> struct OneAdder;
 
 /// Приближённо вычисляет количество различных значений.
-template <typename T>
-class AggregateFunctionUniq : public IUnaryAggregateFunction<AggregateFunctionUniqData>
+template <typename T, typename Data>
+class AggregateFunctionUniq : public IUnaryAggregateFunction<Data>
 {
 public:
 	AggregateFunctionUniq() {}
 
-	String getName() const { return "uniq"; }
+	String getName() const { return Data::getName(); }
 
 	DataTypePtr getReturnType() const
 	{
@@ -72,50 +88,66 @@ public:
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		data(place).set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
+		OneAdder<T, Data>::addOne(*this, place, column, row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).set.merge(data(rhs).set);
+		this->data(place).set.merge(this->data(rhs).set);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		data(place).set.write(buf);
+		this->data(place).set.write(buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		UniquesHashSet tmp_set;
+		typename Data::Set tmp_set;
 		tmp_set.read(buf);
-		data(place).set.merge(tmp_set);
+		this->data(place).set.merge(tmp_set);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).set.size());
+		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+	}
+	
+private:
+	template<typename T0, typename Data0> friend struct OneAdder;
+};
+
+template<typename T, typename Data>
+struct OneAdder
+{
+	static void addOne(const AggregateFunctionUniq<T, Data> & aggregate_function, AggregateDataPtr place, const IColumn & column, size_t row_num)
+	{
+		aggregate_function.data(place).set.insert(
+			AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
 	}
 };
 
-template <>
-inline void AggregateFunctionUniq<String>::addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+template<typename Data>
+struct OneAdder<String, Data>
 {
-	/// Имейте ввиду, что вычисление приближённое.
-	StringRef value = column.getDataAt(row_num);
-	data(place).set.insert(CityHash64(value.data, value.size));
-}
+	static void addOne(const AggregateFunctionUniq<String, Data> & aggregate_function, AggregateDataPtr place, const IColumn & column, size_t row_num)
+	{
+		/// Имейте ввиду, что вычисление приближённое.
+		StringRef value = column.getDataAt(row_num);
+		aggregate_function.data(place).set.insert(CityHash64(value.data, value.size));
+	}
+};
 
 
 /** То же самое, но выводит состояние вычислений в строке в текстовом виде.
   * Используется, если какой-то внешней программе (сейчас это ███████████)
   *  надо получить это состояние и потом использовать по-своему.
   */
-template <typename T>
-class AggregateFunctionUniqState : public AggregateFunctionUniq<T>
+template <typename T, typename Data>
+class AggregateFunctionUniqState : public AggregateFunctionUniq<T, Data>
 {
 public:
-	String getName() const { return "uniqState"; }
+	String getName() const { return Data::getName() + "State"; }
 
 	DataTypePtr getReturnType() const
 	{
@@ -139,7 +171,7 @@ public:
   * Приближённо считает количество различных значений, когда выполнено это условие.
   */
 template <typename T>
-class AggregateFunctionUniqIf : public IAggregateFunctionHelper<AggregateFunctionUniqData>
+class AggregateFunctionUniqIf : public IAggregateFunctionHelper<AggregateFunctionUniqUniquesHashSetData>
 {
 public:
 	AggregateFunctionUniqIf() {}

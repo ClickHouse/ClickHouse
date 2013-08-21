@@ -198,6 +198,12 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	if (name == "uniq_state")
 		return "uniqState(" + numeric + ")";
 	
+	if (name == "uniq_hll12")
+		return "uniqHLL12(" + numeric + ")";
+	
+	if (name == "uniq_hll12_state")
+		return "uniqHLL12State(" + numeric + ")";
+	
 	if (name == "count_non_zero")
 		return "sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";
 	if (name == "count_non_minus_one")

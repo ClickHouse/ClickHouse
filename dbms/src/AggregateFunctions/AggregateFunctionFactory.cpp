@@ -46,6 +46,23 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 		return NULL;
 }
 
+template<template <typename, typename> class AggregateFunctionTemplate, class Data>
+static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
+{
+	     if (dynamic_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data>;
+	else if (dynamic_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16, Data>;
+	else if (dynamic_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32, Data>;
+	else if (dynamic_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64, Data>;
+	else if (dynamic_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Int8, Data>;
+	else if (dynamic_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Int16, Data>;
+	else if (dynamic_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Int32, Data>;
+	else if (dynamic_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64, Data>;
+	else if (dynamic_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32, Data>;
+	else if (dynamic_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64, Data>;
+	else
+		return NULL;
+}
+
 
 AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types) const
 {
@@ -135,16 +152,36 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		const IDataType & argument_type = *argument_types[0];
 
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq>(*argument_types[0]);
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqUniquesHashSetData>(*argument_types[0]);
 
 		if (res)
 			return res;
 		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType>;
+			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqUniquesHashSetData>;
 		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType>;
+			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqUniquesHashSetData>;
 		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String>;
+			return new AggregateFunctionUniq<String, AggregateFunctionUniqUniquesHashSetData>;
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+	else if (name == "uniqHLL12")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const IDataType & argument_type = *argument_types[0];
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqHLL12Data>(*argument_types[0]);
+
+		if (res)
+			return res;
+		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
+			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqHLL12Data>;
+		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
+			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqHLL12Data>;
+		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
+			return new AggregateFunctionUniq<String, AggregateFunctionUniqHLL12Data>;
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -175,16 +212,36 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		const IDataType & argument_type = *argument_types[0];
 
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqState>(*argument_types[0]);
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqState, AggregateFunctionUniqUniquesHashSetData>(*argument_types[0]);
 
 		if (res)
 			return res;
 		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniqState<DataTypeDate::FieldType>;
+			return new AggregateFunctionUniqState<DataTypeDate::FieldType, AggregateFunctionUniqUniquesHashSetData>;
 		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniqState<DataTypeDateTime::FieldType>;
+			return new AggregateFunctionUniqState<DataTypeDateTime::FieldType, AggregateFunctionUniqUniquesHashSetData>;
 		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniqState<String>;
+			return new AggregateFunctionUniqState<String, AggregateFunctionUniqUniquesHashSetData>;
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+	else if (name == "uniqHLL12State")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const IDataType & argument_type = *argument_types[0];
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqState, AggregateFunctionUniqHLL12Data>(*argument_types[0]);
+
+		if (res)
+			return res;
+		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
+			return new AggregateFunctionUniqState<DataTypeDate::FieldType, AggregateFunctionUniqHLL12Data>;
+		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
+			return new AggregateFunctionUniqState<DataTypeDateTime::FieldType, AggregateFunctionUniqHLL12Data>;
+		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
+			return new AggregateFunctionUniqState<String, AggregateFunctionUniqHLL12Data>;
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
