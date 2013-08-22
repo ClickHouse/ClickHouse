@@ -57,7 +57,7 @@ struct AggregateFunctionUniqUniquesHashSetData
 
 struct AggregateFunctionUniqHLL12Data
 {
-	typedef HyperLogLogCounter<12, double> Set;
+	typedef HLL12 Set;
 	Set set;
 	
 	static String getName() { return "uniqHLL12"; }
