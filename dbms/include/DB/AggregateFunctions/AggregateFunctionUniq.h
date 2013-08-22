@@ -63,10 +63,6 @@ struct AggregateFunctionUniqHLL12Data
 	static String getName() { return "uniqHLL12"; }
 };
 
-/// Структура для делегации работы по добавлению одного элемента
-/// в аггрегатную функцию uniq. Используется для частичной специализации
-/// для добавления строк.
-template<typename T, typename Data> struct OneAdder;
 
 /// Приближённо вычисляет количество различных значений.
 template <typename T, typename Data>
@@ -114,28 +110,31 @@ public:
 	}
 	
 private:
-	template<typename T0, typename Data0> friend struct OneAdder;
-};
-
-template<typename T, typename Data>
-struct OneAdder
-{
-	static void addOne(const AggregateFunctionUniq<T, Data> & aggregate_function, AggregateDataPtr place, const IColumn & column, size_t row_num)
+	/// Структура для делегации работы по добавлению одного элемента
+	/// в аггрегатную функцию uniq. Используется для частичной специализации
+	/// для добавления строк.
+	template<typename T0, typename Data0>
+	struct OneAdder
 	{
-		aggregate_function.data(place).set.insert(
-			AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
-	}
-};
-
-template<typename Data>
-struct OneAdder<String, Data>
-{
-	static void addOne(const AggregateFunctionUniq<String, Data> & aggregate_function, AggregateDataPtr place, const IColumn & column, size_t row_num)
+		static void addOne(const AggregateFunctionUniq<T0, Data0> & aggregate_function,
+						   AggregateDataPtr place, const IColumn & column, size_t row_num)
+		{
+			aggregate_function.data(place).set.insert(
+				AggregateFunctionUniqTraits<T0>::hash(static_cast<const ColumnVector<T0> &>(column).getData()[row_num]));
+		}
+	};
+	
+	template<typename Data0>
+	struct OneAdder<String, Data0>
 	{
-		/// Имейте ввиду, что вычисление приближённое.
-		StringRef value = column.getDataAt(row_num);
-		aggregate_function.data(place).set.insert(CityHash64(value.data, value.size));
-	}
+		static void addOne(const AggregateFunctionUniq<String, Data0> & aggregate_function,
+						   AggregateDataPtr place, const IColumn & column, size_t row_num)
+		{
+			/// Имейте ввиду, что вычисление приближённое.
+			StringRef value = column.getDataAt(row_num);
+			aggregate_function.data(place).set.insert(CityHash64(value.data, value.size));
+		}
+	};
 };
 
 
