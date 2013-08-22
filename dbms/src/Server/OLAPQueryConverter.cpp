@@ -281,9 +281,9 @@ std::string QueryConverter::convertCondition(const std::string & attribute, unsi
 	if (name == "greater_or_equals")
 		return "(" + value + ")" + " >= " + constant;
 	if (name == "region_in")
-		return "regionIn(" + value + ", " + constant + ")";
+		return "regionIn(" + value + ", toUInt32(" + constant + "))";
 	if (name == "region_not_in")
-		return "NOT regionIn(" + value + ", " + constant + ")";
+		return "NOT regionIn(" + value + ", toUInt32(" + constant + "))";
 	if (name == "os_in")
 		return "OSIn(" + value + ", " + constant + ")";
 	if (name == "os_not_in")
