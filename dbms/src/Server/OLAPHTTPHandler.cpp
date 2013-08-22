@@ -102,42 +102,40 @@ namespace DB
 		catch (DB::Exception & e)
 		{
 			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-			std::ostream & ostr = response.send();
 			std::stringstream s;
 			s << "Code: " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-			ostr << s.str() << std::endl;
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+			if (!response.sent())
+				response.send() << s.str() << std::endl;
 			LOG_ERROR(log, s.str());
 		}
 		catch (Poco::Exception & e)
 		{
 			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-			std::ostream & ostr = response.send();
 			std::stringstream s;
 			s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-			ostr << s.str() << std::endl;
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+			if (!response.sent())
+				response.send() << s.str() << std::endl;
 			LOG_ERROR(log, s.str());
 		}
 		catch (std::exception & e)
 		{
 			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-			std::ostream & ostr = response.send();
 			std::stringstream s;
 			s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
-			ostr << s.str() << std::endl;
+			if (!response.sent())
+				response.send() << s.str() << std::endl;
 			LOG_ERROR(log, s.str());
 		}
 		catch (...)
 		{
 			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-			std::ostream & ostr = response.send();
 			std::stringstream s;
 			s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
-			ostr << s.str() << std::endl;
+			if (!response.sent())
+				response.send() << s.str() << std::endl;
 			LOG_ERROR(log, s.str());
 		}
 	}
-	
-	
 }
