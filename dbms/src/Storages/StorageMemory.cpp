@@ -21,9 +21,21 @@ MemoryBlockInputStream::MemoryBlockInputStream(const Names & column_names_, Bloc
 Block MemoryBlockInputStream::readImpl()
 {
 	if (it == end)
+	{
 		return Block();
+	}
 	else
-		return *it++;
+	{
+		Block src = *it;
+		Block res;
+
+		/// Добавляем только нужные столбцы в res.
+		for (size_t i = 0, size = column_names.size(); i < size; ++i)
+			res.insert(src.getByName(column_names[i]));
+
+		++it;
+		return res;
+	}
 }
 
 
