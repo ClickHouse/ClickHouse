@@ -501,6 +501,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		AggregatedDataWithUInt64Key & data = data_variants.key64;
 
 		IColumn & first_column = *key_columns[0];
+		first_column.reserve(data.size() + with_totals);
 
 		size_t j = with_totals ? 1 : 0;
 		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
@@ -515,6 +516,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	{
 		AggregatedDataWithStringKey & data = data_variants.key_string;
 		IColumn & first_column = *key_columns[0];
+		first_column.reserve(data.size() + with_totals);
 
 		size_t j = with_totals ? 1 : 0;
 		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
@@ -528,6 +530,9 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	else if (data_variants.type == AggregatedDataVariants::KEYS_128)
 	{
 		AggregatedDataWithKeys128 & data = data_variants.keys128;
+
+		for (size_t i = 0; i < keys_size; ++i)
+			key_columns[i]->reserve(data.size() + with_totals);
 
 		size_t j = with_totals ? 1 : 0;
 		for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
@@ -547,6 +552,9 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
 	{
 		AggregatedDataHashed & data = data_variants.hashed;
+
+		for (size_t i = 0; i < keys_size; ++i)
+			key_columns[i]->reserve(data.size() + with_totals);
 
 		size_t j = with_totals ? 1 : 0;
 		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
