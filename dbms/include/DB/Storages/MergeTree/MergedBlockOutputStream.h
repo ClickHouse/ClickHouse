@@ -195,7 +195,7 @@ private:
 				}
 			}
 		}
-		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 		{
 			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
