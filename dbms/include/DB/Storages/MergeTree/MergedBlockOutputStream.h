@@ -63,10 +63,9 @@ public:
 			const ColumnWithNameAndType & column = block.getByName(it->first);
 			writeData(column.name, *column.type, *column.column, offset_columns);
 		}
-		
-		index_offset = rows % storage.index_granularity
-			? (storage.index_granularity - rows % storage.index_granularity)
-			: 0;
+
+		size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
+		index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
 	}
 	
 	void writeSuffix()
