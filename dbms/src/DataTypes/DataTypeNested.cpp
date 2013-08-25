@@ -100,14 +100,30 @@ void DataTypeNested::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 	const ColumnNested & column_nested = dynamic_cast<const ColumnNested &>(column);
 	const ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
 
+	if (offset > offsets.size())
+		return;
+
+	/** offset - с какого массива писать.
+	  * limit - сколько массивов максимум записать, или 0, если писать всё, что есть.
+	  * end - до какого массива заканчивается записываемый кусок.
+	  *
+	  * nested_offset - с какого элемента внутренностей писать.
+	  * nested_limit - сколько элементов внутренностей писать, или 0, если писать всё, что есть.
+	  */
+
+	size_t end = std::min(offset + limit, offsets.size());
+
 	size_t nested_offset = offset ? offsets[offset - 1] : 0;
-	size_t nested_limit = limit && (offset + limit < offsets.size())
-		? offsets[offset + limit - 1] - nested_offset
+	size_t nested_limit = limit
+		? offsets[end - 1] - nested_offset
 		: 0;
 
-	NamesAndTypesList::const_iterator it = nested->begin();
-	for (size_t i = 0; i < nested->size(); ++i, ++it)
-		it->second->serializeBinary(*column_nested.getData()[i], ostr, nested_offset, nested_limit);
+	if (limit == 0 || nested_limit)
+	{
+		NamesAndTypesList::const_iterator it = nested->begin();
+		for (size_t i = 0; i < nested->size(); ++i, ++it)
+			it->second->serializeBinary(*column_nested.getData()[i], ostr, nested_offset, nested_limit);
+	}
 }
 
 
