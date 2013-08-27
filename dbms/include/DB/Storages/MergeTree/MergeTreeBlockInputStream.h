@@ -218,7 +218,18 @@ protected:
 		
 		if (res)
 		{
-			rows_left_in_current_range -= res.rows();
+			try
+			{
+				rows_left_in_current_range -= res.rows();
+			}
+			catch (const Exception & e)
+			{
+				/// Более хорошая диагностика.
+				if (e.code() == ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH)
+					throw Exception(e.message() + " (while reading from part " + path + ")", e.code());
+				else
+					throw;
+			}
 			
 			/// Заполним столбцы, для которых нет файлов, значениями по-умолчанию.
 			if (has_missing_columns)
