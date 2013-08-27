@@ -90,7 +90,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 		
 		if (query.key_attributes.size() + i > 0)
 			out_query += ", ";
-		out_query += s + " AS _" + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute) + (key.parameter ? "_" + toString(key.parameter) : "");
+		out_query += s + " AS _" + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute) + (aggregate.parameter ? "_" + toString(aggregate.parameter) : "");
 		selected_expressions.push_back(s);
 	}
 	
