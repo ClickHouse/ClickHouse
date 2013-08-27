@@ -79,7 +79,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 		
 		if (i > 0)
 			out_query += ", ";
-		out_query += s + " AS _" + FirstWord(key.attribute);
+		out_query += s + " AS _" + FirstWord(key.attribute) + (key.parameter ? "_" + toString(key.parameter) : "");
 		selected_expressions.push_back(s);
 	}
 	
@@ -90,7 +90,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 		
 		if (query.key_attributes.size() + i > 0)
 			out_query += ", ";
-		out_query += s + " AS _" + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute);
+		out_query += s + " AS _" + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute) + (key.parameter ? "_" + toString(key.parameter) : "");
 		selected_expressions.push_back(s);
 	}
 	
