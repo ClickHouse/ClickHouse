@@ -122,7 +122,7 @@ namespace mysqlxx
 			{
 				full_pool = NULL;
 				
-				for (ReplicasByPriority::reverse_iterator it = replicas_by_priority.rbegin(); it != replicas_by_priority.rend(); ++it)
+				for (ReplicasByPriority::iterator it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
 				{
 					Replicas & replicas = it->second;
 					for (size_t i = 0; i < replicas.size(); ++i)
