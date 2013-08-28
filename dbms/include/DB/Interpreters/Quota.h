@@ -36,7 +36,9 @@ struct QuotaValues
 	size_t queries;					/// Количество запросов.
 	size_t errors;					/// Количество запросов с эксепшенами.
 	size_t result_rows;				/// Количество строк, отданных в качестве результата.
+	size_t result_bytes;			/// Количество байт, отданных в качестве результата.
 	size_t read_rows;				/// Количество строк, прочитанных из таблиц.
+	size_t read_bytes;				/// Количество байт, прочитанных из таблиц.
 	Poco::Timespan execution_time;	/// Суммарное время выполнения запросов.
 
 	QuotaValues()
@@ -74,14 +76,16 @@ struct QuotaForInterval
 	void checkExceeded(time_t current_time, const String & quota_name);
 
 	/// Проверить соответствующее значение. Если превышено - кинуть исключение. Иначе - увеличить его.
-	void checkAndAddResultRows(time_t current_time, const String & quota_name, size_t ammount);
-	void checkAndAddReadRows(time_t current_time, const String & quota_name, size_t ammount);
-	void checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan ammount);
+	void checkAndAddResultRows(time_t current_time, const String & quota_name, size_t amount);
+	void checkAndAddResultBytes(time_t current_time, const String & quota_name, size_t amount);
+	void checkAndAddReadRows(time_t current_time, const String & quota_name, size_t amount);
+	void checkAndAddReadBytes(time_t current_time, const String & quota_name, size_t amount);
+	void checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan amount);
 
 private:
 	/// Сбросить счётчик использованных ресурсов, если соответствующий интервал, за который считается квота, прошёл.
 	void updateTime(time_t current_time);
-	void check(size_t max_ammount, size_t used_ammount, time_t current_time, const String & quota_name, const char * resource_name);
+	void check(size_t max_amount, size_t used_amount, time_t current_time, const String & quota_name, const char * resource_name);
 };
 
 
@@ -107,9 +111,11 @@ public:
 
 	void checkExceeded(time_t current_time);
 
-	void checkAndAddResultRows(time_t current_time, size_t ammount);
-	void checkAndAddReadRows(time_t current_time, size_t ammount);
-	void checkAndAddExecutionTime(time_t current_time, Poco::Timespan ammount);
+	void checkAndAddResultRows(time_t current_time, size_t amount);
+	void checkAndAddResultBytes(time_t current_time, size_t amount);
+	void checkAndAddReadRows(time_t current_time, size_t amount);
+	void checkAndAddReadBytes(time_t current_time, size_t amount);
+	void checkAndAddExecutionTime(time_t current_time, Poco::Timespan amount);
 };
 
 

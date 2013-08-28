@@ -1,3 +1,4 @@
+#include <DB/Common/SipHash.h>
 #include <DB/Interpreters/Quota.h>
 
 
@@ -8,10 +9,12 @@ void QuotaValues::initFromConfig(const String & config_elem)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 
-	queries 	= config.getInt(config_elem + ".queries", 		0);
-	errors 		= config.getInt(config_elem + ".errors", 		0);
-	result_rows = config.getInt(config_elem + ".result_rows",	0);
-	read_rows 	= config.getInt(config_elem + ".read_rows", 	0);
+	queries 		= config.getInt(config_elem + ".queries", 		0);
+	errors 			= config.getInt(config_elem + ".errors", 		0);
+	result_rows 	= config.getInt(config_elem + ".result_rows",	0);
+	result_bytes 	= config.getInt(config_elem + ".result_bytes",	0);
+	read_rows 		= config.getInt(config_elem + ".read_rows", 	0);
+	read_bytes 		= config.getInt(config_elem + ".read_bytes", 	0);
 	execution_time = Poco::Timespan(config.getInt(config_elem + ".execution_time", 0), 0);
 }
 
@@ -29,7 +32,9 @@ void QuotaForInterval::checkExceeded(time_t current_time, const String & quota_n
 	check(max.queries, used.queries, current_time, quota_name, "Queries");
 	check(max.errors, used.errors, current_time, quota_name, "Errors");
 	check(max.result_rows, used.result_rows, current_time, quota_name, "Total result rows");
+	check(max.result_bytes, used.result_bytes, current_time, quota_name, "Total result bytes");
 	check(max.read_rows, used.read_rows, current_time, quota_name, "Total rows read");
+	check(max.read_bytes, used.read_bytes, current_time, quota_name, "Total bytes read");
 	check(max.execution_time.totalSeconds(), used.execution_time.totalSeconds(), current_time, quota_name, "Total execution time");
 
 	std::cerr << "Current values for interval " << mysqlxx::DateTime(rounded_time) << " - " << mysqlxx::DateTime(rounded_time + duration) << ":\n"
@@ -47,22 +52,34 @@ void QuotaForInterval::addError(time_t current_time, const String & quota_name)
 	++used.errors;
 }
 
-void QuotaForInterval::checkAndAddResultRows(time_t current_time, const String & quota_name, size_t ammount)
+void QuotaForInterval::checkAndAddResultRows(time_t current_time, const String & quota_name, size_t amount)
 {
 	checkExceeded(current_time, quota_name);
-	used.result_rows += ammount;
+	used.result_rows += amount;
 }
 
-void QuotaForInterval::checkAndAddReadRows(time_t current_time, const String & quota_name, size_t ammount)
+void QuotaForInterval::checkAndAddResultBytes(time_t current_time, const String & quota_name, size_t amount)
 {
 	checkExceeded(current_time, quota_name);
-	used.read_rows += ammount;
+	used.result_bytes += amount;
 }
 
-void QuotaForInterval::checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan ammount)
+void QuotaForInterval::checkAndAddReadRows(time_t current_time, const String & quota_name, size_t amount)
 {
 	checkExceeded(current_time, quota_name);
-	used.execution_time += ammount;
+	used.read_rows += amount;
+}
+
+void QuotaForInterval::checkAndAddReadBytes(time_t current_time, const String & quota_name, size_t amount)
+{
+	checkExceeded(current_time, quota_name);
+	used.read_bytes += amount;
+}
+
+void QuotaForInterval::checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan amount)
+{
+	checkExceeded(current_time, quota_name);
+	used.execution_time += amount;
 }
 
 void QuotaForInterval::updateTime(time_t current_time)
@@ -74,9 +91,9 @@ void QuotaForInterval::updateTime(time_t current_time)
 	}
 }
 
-void QuotaForInterval::check(size_t max_ammount, size_t used_ammount, time_t current_time, const String & quota_name, const char * resource_name)
+void QuotaForInterval::check(size_t max_amount, size_t used_amount, time_t current_time, const String & quota_name, const char * resource_name)
 {
-	if (max_ammount && used_ammount >= max_ammount)
+	if (max_amount && used_amount >= max_amount)
 	{
 		std::stringstream message;
 		message << "Quota '" << quota_name << "' for ";
@@ -93,7 +110,7 @@ void QuotaForInterval::check(size_t max_ammount, size_t used_ammount, time_t cur
 			message << duration << " seconds";
 
 		message << " has been expired. "
-			<< resource_name << ": " << used_ammount << ", max: " << max_ammount << ". "
+			<< resource_name << ": " << used_amount << ", max: " << max_amount << ". "
 			<< "Interval will end at " << mysqlxx::DateTime(rounded_time + duration) << ".";
 
 		throw Exception(message.str(), ErrorCodes::QUOTA_EXPIRED);
@@ -141,25 +158,39 @@ void QuotaForIntervals::addError(time_t current_time)
 		it->second.addError(current_time, parent->name);
 }
 
-void QuotaForIntervals::checkAndAddResultRows(time_t current_time, size_t ammount)
+void QuotaForIntervals::checkAndAddResultRows(time_t current_time, size_t amount)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.checkAndAddResultRows(current_time, parent->name, ammount);
+		it->second.checkAndAddResultRows(current_time, parent->name, amount);
 }
 
-void QuotaForIntervals::checkAndAddReadRows(time_t current_time, size_t ammount)
+void QuotaForIntervals::checkAndAddResultBytes(time_t current_time, size_t amount)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.checkAndAddReadRows(current_time, parent->name, ammount);
+		it->second.checkAndAddResultBytes(current_time, parent->name, amount);
 }
 
-void QuotaForIntervals::checkAndAddExecutionTime(time_t current_time, Poco::Timespan ammount)
+void QuotaForIntervals::checkAndAddReadRows(time_t current_time, size_t amount)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.checkAndAddExecutionTime(current_time, parent->name, ammount);
+		it->second.checkAndAddReadRows(current_time, parent->name, amount);
+}
+
+void QuotaForIntervals::checkAndAddReadBytes(time_t current_time, size_t amount)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
+	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
+		it->second.checkAndAddReadBytes(current_time, parent->name, amount);
+}
+
+void QuotaForIntervals::checkAndAddExecutionTime(time_t current_time, Poco::Timespan amount)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
+	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
+		it->second.checkAndAddExecutionTime(current_time, parent->name, amount);
 }
 
 
@@ -185,17 +216,9 @@ QuotaForIntervals & Quota::get(const String & quota_key, const Poco::Net::IPAddr
 
 	if (!quota_key_or_ip.empty())
 	{
-		union
-		{
-			char bytes[16];
-			UInt64 u64[2];
-		};
-
 		SipHash hash;
 		hash.update(quota_key_or_ip.data(), quota_key_or_ip.size());
-		hash.final(bytes);
-
-		quota_key_hashed = u64[0] ^ u64[1];
+		quota_key_hashed = hash.get64;
 	}
 
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
