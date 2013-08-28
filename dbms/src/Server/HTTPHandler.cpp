@@ -138,6 +138,10 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 				<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
 		}
 	}
+
+	QuotaForIntervals & quota = context.getQuota();
+	if (!quota.empty())
+		LOG_INFO(log, "Quota:\n" << quota.toString());
 }
 
 

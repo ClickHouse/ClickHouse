@@ -284,6 +284,10 @@ void TCPHandler::logProfileInfo(Stopwatch & watch, IBlockInputStream & in)
 			<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
 			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
 	}
+
+	QuotaForIntervals & quota = query_context.getQuota();
+	if (!quota.empty())
+		LOG_INFO(log, "Quota:\n" << quota.toString());
 }
 
 

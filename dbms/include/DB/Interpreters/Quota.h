@@ -75,11 +75,12 @@ struct QuotaForInterval
 	void checkExceeded(time_t current_time, const String & quota_name);
 
 	/// Проверить соответствующее значение. Если превышено - кинуть исключение. Иначе - увеличить его.
-	void checkAndAddResultRows(time_t current_time, const String & quota_name, size_t amount);
-	void checkAndAddResultBytes(time_t current_time, const String & quota_name, size_t amount);
-	void checkAndAddReadRows(time_t current_time, const String & quota_name, size_t amount);
-	void checkAndAddReadBytes(time_t current_time, const String & quota_name, size_t amount);
+	void checkAndAddResultRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes);
+	void checkAndAddReadRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes);
 	void checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan amount);
+
+	/// Получить текст, описывающий, какая часть квоты израсходована.
+	String toString() const;
 
 private:
 	/// Сбросить счётчик использованных ресурсов, если соответствующий интервал, за который считается квота, прошёл.
@@ -102,6 +103,12 @@ private:
 
 public:
 	QuotaForIntervals(Quota * parent_) : parent(parent_) {}
+
+	/// Есть ли хотя бы один интервал, за который считается квота?
+	bool empty() const
+	{
+		return cont.empty();
+	}
 	
 	void initFromConfig(const String & config_elem);
 
@@ -110,11 +117,12 @@ public:
 
 	void checkExceeded(time_t current_time);
 
-	void checkAndAddResultRows(time_t current_time, size_t amount);
-	void checkAndAddResultBytes(time_t current_time, size_t amount);
-	void checkAndAddReadRows(time_t current_time, size_t amount);
-	void checkAndAddReadBytes(time_t current_time, size_t amount);
+	void checkAndAddResultRowsBytes(time_t current_time, size_t rows, size_t bytes);
+	void checkAndAddReadRowsBytes(time_t current_time, size_t rows, size_t bytes);
 	void checkAndAddExecutionTime(time_t current_time, Poco::Timespan amount);
+
+	/// Получить текст, описывающий, какая часть квоты израсходована.
+	String toString() const;
 };
 
 

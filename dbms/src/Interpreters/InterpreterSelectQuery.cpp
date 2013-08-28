@@ -302,7 +302,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	executeUnion(streams);
 
-	/// Ограничения на результат, а также колбек для прогресса.
+	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
 	{
 		IProfilingBlockInputStream::LocalLimits limits;
@@ -311,6 +311,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		limits.read_overflow_mode = settings.limits.result_overflow_mode;
 
 		stream->setLimits(limits);
+		stream->setQuota(context.getQuota(), IProfilingBlockInputStream::QUOTA_RESULT);
 
 		stream->setProgressCallback(context.getProgressCallback());
 	}
@@ -405,7 +406,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (streams.size() > settings.max_threads)
 		streams = narrowBlockInputStreams(streams, settings.max_threads);
 
-	/** Установка ограничений на чтение данных.
+	/** Установка ограничений и квоты на чтение данных.
 	  * Они устанавливаются на самые "глубокие" чтения.
 	  * То есть, не должны устанавливаться для чтений из удалённых серверов и подзапросов.
 	  */
@@ -419,10 +420,17 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		limits.timeout_overflow_mode = settings.limits.timeout_overflow_mode;
 		limits.min_execution_speed = settings.limits.min_execution_speed;
 		limits.timeout_before_checking_execution_speed = settings.limits.timeout_before_checking_execution_speed;
+
+		QuotaForIntervals & quota = context.getQuota();
 		
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		{
 			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			{
 				stream->setLimits(limits);
+				stream->setQuota(quota, IProfilingBlockInputStream::QUOTA_READ);
+			}
+		}
 	}
 
 	return from_stage;

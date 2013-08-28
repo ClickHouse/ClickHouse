@@ -7,6 +7,7 @@
 #include <DB/Core/Names.h>
 
 #include <DB/Interpreters/Limits.h>
+#include <DB/Interpreters/Quota.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -68,7 +69,8 @@ private:
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr()) : IBlockInputStream(owned_storage_), is_cancelled(false) {}
+	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr())
+		: IBlockInputStream(owned_storage_), is_cancelled(false), quota(NULL), quota_mode(QUOTA_READ) {}
 	
 	Block read();
 
@@ -130,12 +132,30 @@ public:
 		limits = limits_;
 	}
 
+
+	/// Какая квота используется - на объём исходных данных или на объём результата.
+	enum QuotaMode
+	{
+		QUOTA_READ,
+		QUOTA_RESULT,
+	};
+
+	/// Установить квоту.
+	void setQuota(QuotaForIntervals & quota_, QuotaMode quota_mode_)
+	{
+		quota = &quota_;
+		quota_mode = quota_mode_;
+	}
+
 protected:
 	BlockStreamProfileInfo info;
 	volatile bool is_cancelled;
 	ProgressCallback progress_callback;
 
 	LocalLimits limits;
+
+	QuotaForIntervals * quota;	/// Если NULL - квота не используется.
+	QuotaMode quota_mode;
 
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;
