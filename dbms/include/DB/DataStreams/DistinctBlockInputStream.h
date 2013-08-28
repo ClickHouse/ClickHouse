@@ -73,12 +73,7 @@ protected:
 				  * Для оптимизации, можно добавить другие методы из Set.h.
 				  */
 
-				union
-				{
-					UInt128 key;
-					char char_key[16];
-				};
-
+				UInt128 key;
 				SipHash hash;
 
 				for (size_t j = 0; j < columns; ++j)
@@ -87,7 +82,7 @@ protected:
 					hash.update(data.data, data.size);
 				}
 
-				hash.final(char_key);
+				hash.get128(key.first, key.second);
 
 				/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
 				filter[i] = set.insert(key).second;

@@ -94,7 +94,7 @@ int main(int argc, char ** argv)
 		{
 			SipHash hash;
 			hash.update(strings[i].data(), strings[i].size());
-			hash.final(&hashes[i * 16]);
+			hash.get128(&hashes[i * 16]);
 		}
 
 		watch.stop();

@@ -121,7 +121,7 @@ int test_vectors()
 	hash.update(in, part);
 	hash.update(in + part, i - part);
 	
-	hash.final(out);
+	hash.get128(out);
 
 	uint64_t test_vector;
 	memcpy(&test_vector, vectors[i], 8);

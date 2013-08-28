@@ -47,6 +47,22 @@ private:
 		u8 current_bytes[8];
 	};
 
+	void finalize()
+	{
+		/// В последний свободный байт пишем остаток от деления длины на 256.
+		current_bytes[7] = cnt;
+
+		v3 ^= current_word;
+		SIPROUND;
+		SIPROUND;
+		v0 ^= current_word;
+
+		v2 ^= 0xff;
+		SIPROUND;
+		SIPROUND;
+		SIPROUND;
+		SIPROUND;
+	}
 
 public:
 	/// Аргументы - seed.
@@ -114,24 +130,26 @@ public:
 		}
 	}
 
-	void final(char * out)
+	/// Получить результат в некотором виде. Это можно сделать только один раз!
+	
+	void get128(char * out)
 	{
-		/// В последний свободный байт пишем остаток от деления длины на 256.
-		current_bytes[7] = cnt;
-
-		v3 ^= current_word;
-		SIPROUND;
-		SIPROUND;
-		v0 ^= current_word;
-
-		v2 ^= 0xff;
-		SIPROUND;
-		SIPROUND;
-		SIPROUND;
-		SIPROUND;
-
+		finalize();
 		reinterpret_cast<u64 *>(out)[0] = v0 ^ v1;
 		reinterpret_cast<u64 *>(out)[1] = v2 ^ v3;
+	}
+
+	void get128(u64 & lo, u64 & hi)
+	{
+		finalize();
+		lo = v0 ^ v1;
+		hi = v2 ^ v3;
+	}
+
+	u64 get64()
+	{
+		finalize();
+		return v0 ^ v1 ^ v2 ^ v3;
 	}
 };
 

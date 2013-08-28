@@ -75,14 +75,7 @@ static inline UInt128 __attribute__((__always_inline__)) pack128(
 static inline UInt128 __attribute__((__always_inline__)) hash128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys)
 {
-	union
-	{
-		UInt128 key;
-		char bytes[16];
-	};
-
-	memset(bytes, 0, 16);
-
+	UInt128 key;
 	SipHash hash;
 
 	for (size_t j = 0; j < keys_size; ++j)
@@ -92,7 +85,7 @@ static inline UInt128 __attribute__((__always_inline__)) hash128(
 		hash.update(keys[j].data, keys[j].size);
 	}
 
-    hash.final(bytes);
+    hash.get128(key.first, key.second);
 
 	return key;
 }
@@ -102,14 +95,7 @@ static inline UInt128 __attribute__((__always_inline__)) hash128(
 static inline UInt128 __attribute__((__always_inline__)) hash128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns)
 {
-	union
-	{
-		UInt128 key;
-		char bytes[16];
-	};
-
-	memset(bytes, 0, 16);
-
+	UInt128 key;
 	SipHash hash;
 
 	for (size_t j = 0; j < keys_size; ++j)
@@ -119,7 +105,7 @@ static inline UInt128 __attribute__((__always_inline__)) hash128(
 		hash.update(key.data, key.size);
 	}
 
-    hash.final(bytes);
+    hash.get128(key.first, key.second);
 
 	return key;
 }
