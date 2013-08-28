@@ -70,7 +70,7 @@ class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
 	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr())
-		: IBlockInputStream(owned_storage_), is_cancelled(false), quota(NULL), quota_mode(QUOTA_READ) {}
+		: IBlockInputStream(owned_storage_), is_cancelled(false), quota(NULL), quota_mode(QUOTA_READ), prev_elapsed(0) {}
 	
 	Block read();
 
@@ -156,6 +156,7 @@ protected:
 
 	QuotaForIntervals * quota;	/// Если NULL - квота не используется.
 	QuotaMode quota_mode;
+	double prev_elapsed;
 
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;

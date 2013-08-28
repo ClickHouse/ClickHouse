@@ -3,6 +3,7 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/Common/SipHash.h>
+#include <DB/IO/ReadHelpers.h>
 #include <DB/Interpreters/Quota.h>
 
 
@@ -13,12 +14,12 @@ void QuotaValues::initFromConfig(const String & config_elem)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 
-	queries 		= config.getInt(config_elem + ".queries", 		0);
-	errors 			= config.getInt(config_elem + ".errors", 		0);
-	result_rows 	= config.getInt(config_elem + ".result_rows",	0);
-	result_bytes 	= config.getInt(config_elem + ".result_bytes",	0);
-	read_rows 		= config.getInt(config_elem + ".read_rows", 	0);
-	read_bytes 		= config.getInt(config_elem + ".read_bytes", 	0);
+	queries 		= parse<UInt64>(config.getString(config_elem + ".queries", 		"0"));
+	errors 			= parse<UInt64>(config.getString(config_elem + ".errors", 		"0"));
+	result_rows 	= parse<UInt64>(config.getString(config_elem + ".result_rows",	"0"));
+	result_bytes 	= parse<UInt64>(config.getString(config_elem + ".result_bytes",	"0"));
+	read_rows 		= parse<UInt64>(config.getString(config_elem + ".read_rows", 	"0"));
+	read_bytes 		= parse<UInt64>(config.getString(config_elem + ".read_bytes", 	"0"));
 	execution_time = Poco::Timespan(config.getInt(config_elem + ".execution_time", 0), 0);
 }
 
@@ -47,14 +48,14 @@ String QuotaForInterval::toString() const
 	std::stringstream res;
 
 	res << std::fixed << std::setprecision(3)
-		<< "Interval:       " << mysqlxx::DateTime(rounded_time) << " - " << mysqlxx::DateTime(rounded_time + duration) << "."
-		<< "Queries:        " << used.queries 		<< "."
-		<< "Errors:         " << used.errors 		<< "."
-		<< "Result rows:    " << used.result_rows 	<< "."
-		<< "Result bytes:   " << used.result_bytes 	<< "."
-		<< "Read rows:      " << used.read_rows 	<< "."
-		<< "Read bytes:     " << used.read_bytes 	<< "."
-		<< "Execution time: " << used.execution_time.totalMilliseconds() / 1000.0 << " seconds.";
+		<< "Interval:       " << mysqlxx::DateTime(rounded_time) << " - " << mysqlxx::DateTime(rounded_time + duration) << ".\n"
+		<< "Queries:        " << used.queries 		<< ".\n"
+		<< "Errors:         " << used.errors 		<< ".\n"
+		<< "Result rows:    " << used.result_rows 	<< ".\n"
+		<< "Result bytes:   " << used.result_bytes 	<< ".\n"
+		<< "Read rows:      " << used.read_rows 	<< ".\n"
+		<< "Read bytes:     " << used.read_bytes 	<< ".\n"
+		<< "Execution time: " << used.execution_time.totalMilliseconds() / 1000.0 << " sec.\n";
 
 	return res.str();
 }
@@ -193,7 +194,7 @@ String QuotaForIntervals::toString() const
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 		for (Container::const_reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-			res << std::endl << it->second.toString() << std::endl;
+			res << std::endl << it->second.toString();
 	}
 
 	return res.str();
