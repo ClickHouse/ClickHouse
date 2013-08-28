@@ -142,7 +142,7 @@ namespace mysqlxx
 								return entry;
 							}
 						}
-						catch (Poco::Exception & e)
+						catch (const Poco::Exception & e)
 						{
 							if (e.displayText() == "mysqlxx::Pool is full")
 							{
@@ -150,7 +150,10 @@ namespace mysqlxx
 							}
 							
 							app.logger().error("Connection to " + replica.pool->getDescription() + " failed: " + e.displayText());
+							continue;
 						}
+
+						app.logger().error("Connection to " + replica.pool->getDescription() + " failed.");
 					}
 				}
 				
@@ -162,8 +165,14 @@ namespace mysqlxx
 				app.logger().error("All connections failed, trying to wait on a full pool " + full_pool->pool->getDescription());
 				return full_pool->pool->Get();
 			}
+
+			std::stringstream message;
+			message << "Connections to all replicas failed: ";
+			for (ReplicasByPriority::const_iterator it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
+				for (Replicas::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
+					message << (it == replicas_by_priority.begin() && jt == it->second.begin() ? "" : ", ") << jt->pool->getDescription();
 			
-			throw Poco::Exception("Connections to all replicas failed");
+			throw Poco::Exception(message.str());
 		}
 	};
 }
