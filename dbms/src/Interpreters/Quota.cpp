@@ -192,7 +192,7 @@ String QuotaForIntervals::toString() const
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
-		for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
+		for (Container::const_reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 			res << std::endl << it->second.toString() << std::endl;
 	}
 
