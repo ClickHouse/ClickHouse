@@ -16,7 +16,6 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/Common/SipHash.h>
 
 
 namespace DB
