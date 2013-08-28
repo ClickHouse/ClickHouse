@@ -38,7 +38,7 @@ private:
 	/// <counter_id> => SELECT ... WHERE x
 	std::string convertCounterID(CounterID_t CounterID);
 	
-	std::string getTableName(CounterID_t CounterID);
+	std::string getTableName(CounterID_t CounterID, bool local);
 	std::string getHavingSection();
 
 	void fillFormattedAttributeMap();
