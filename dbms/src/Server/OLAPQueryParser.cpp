@@ -102,6 +102,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	result.concurrency = 0;
 	result.max_threads_per_counter = 0;
 	result.limit = 0;
+	result.local = false;
 	
 	Poco::AutoPtr<Poco::XML::NodeList> settings_nodes = result.query->getElementsByTagName("settings");
 	if (settings_nodes->length() > 1)
@@ -165,6 +166,10 @@ QueryParseResult QueryParser::parse(std::istream & s)
 					* Оно может быть больше, чем ограничение по-умолчанию.
 					*/
 				result.max_threads_per_counter = DB::parse<unsigned>(settings_child_nodes->item(i)->innerText());
+			}
+			else if (settings_child_nodes->item(i)->nodeName() == "local")
+			{
+				result.local = true;
 			}
 		}
 	}

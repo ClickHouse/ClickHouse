@@ -95,7 +95,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	}
 	
 	/// Из какой таблицы.
-	out_query += " FROM " + getTableName(query.CounterID);
+	out_query += " FROM " + getTableName(query.CounterID, query.local);
 	
 	/// Условия.
 	out_query += " WHERE ";
@@ -333,9 +333,9 @@ std::string QueryConverter::convertCounterID(CounterID_t CounterID)
 	return "CounterID == " + toString(CounterID);
 }
 
-std::string QueryConverter::getTableName(CounterID_t CounterID)
+std::string QueryConverter::getTableName(CounterID_t CounterID, bool local)
 {
-	if (CounterID == 0)
+	if (CounterID == 0 && !local)
 		return table_for_all_counters;
 	else
 		return table_for_single_counter;

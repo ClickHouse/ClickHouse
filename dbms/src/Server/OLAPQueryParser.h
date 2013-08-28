@@ -78,6 +78,9 @@ struct QueryParseResult
 	
 	bool cut_date_last;
 	bool cut_dates_for_goals; /// если за какую-то дату цели не существовало - то всего лишь пропускать эту дату
+
+	/// Использовать таблицу для одного слоя, даже если указан CounterID = 0.
+	bool local;
 	
 	Format format;
 	OverflowMode overflow_mode;
