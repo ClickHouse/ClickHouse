@@ -10,6 +10,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/FunctionsStringSearch.h>
 
@@ -299,8 +300,10 @@ struct ExtractParamImpl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
+		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+
 		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end && NULL != (pos = reinterpret_cast<UInt8 *>(memmem(pos, end - pos, needle.data(), needle.size()))))
+		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] < pos)
@@ -353,8 +356,10 @@ struct ExtractParamToStringImpl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
+		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+
 		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end && NULL != (pos = reinterpret_cast<UInt8 *>(memmem(pos, end - pos, needle.data(), needle.size()))))
+		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] < pos)
@@ -387,10 +392,10 @@ struct ExtractParamToStringImpl
 
 struct NameVisitParamHas			{ static const char * get() { return "visitParamHas"; } };
 struct NameVisitParamExtractUInt	{ static const char * get() { return "visitParamExtractUInt"; } };
-struct NameVisitParamExtractInt	{ static const char * get() { return "visitParamExtractInt"; } };
+struct NameVisitParamExtractInt		{ static const char * get() { return "visitParamExtractInt"; } };
 struct NameVisitParamExtractFloat	{ static const char * get() { return "visitParamExtractFloat"; } };
 struct NameVisitParamExtractBool	{ static const char * get() { return "visitParamExtractBool"; } };
-struct NameVisitParamExtractRaw	{ static const char * get() { return "visitParamExtractRaw"; } };
+struct NameVisitParamExtractRaw		{ static const char * get() { return "visitParamExtractRaw"; } };
 struct NameVisitParamExtractString	{ static const char * get() { return "visitParamExtractString"; } };
 
 

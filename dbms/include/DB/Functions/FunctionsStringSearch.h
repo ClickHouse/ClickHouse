@@ -8,6 +8,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
 
 
@@ -53,8 +54,10 @@ struct PositionImpl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
+		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+
 		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end && NULL != (pos = reinterpret_cast<UInt8 *>(memmem(pos, end - pos, needle.data(), needle.size()))))
+		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] < pos)
@@ -95,8 +98,10 @@ struct PositionUTF8Impl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
+		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+
 		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end && NULL != (pos = reinterpret_cast<UInt8 *>(memmem(pos, end - pos, needle.data(), needle.size()))))
+		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] < pos)
@@ -280,8 +285,10 @@ struct MatchImpl
 			/// Текущий индекс в массиве строк.
 			size_t i = 0;
 
+			Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
+
 			/// Искать будем следующее вхождение сразу во всех строках.
-			while (pos < end && NULL != (pos = reinterpret_cast<UInt8 *>(memmem(pos, end - pos, strstr_pattern.data(), strstr_pattern.size()))))
+			while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 			{
 				/// Определим, к какому индексу оно относится.
 				while (begin + offsets[i] < pos)
