@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ck="clickhouse-client "
-test_table="hits_mem_test_10m"
+test_table="hits_mt_test_10m"
 claster="self"
 
 start_date="'2013-07-01'"
@@ -35,7 +35,6 @@ function execute()
 	else	    
 	    sync
 	    sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
-	    #run_ck_server
 
 	    for i in $(seq $TIMES)
 	    do
@@ -44,6 +43,12 @@ function execute()
 		if [ "$?" != "0" ]; then
 		    echo "Error: $?"
 		    #break
+		fi
+
+		# restart clickhouse if failed
+		ps aux | grep -P '\d+ /usr/bin/clickhouse-server'
+		if [ "$?" != "0" ]; then
+		    run_ck_server
 		fi
 	    done
 	fi
@@ -292,9 +297,6 @@ function init {
 function debug {
     TIMES=3
     debug_queries=(
-"SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM $test_table GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;"
-"SELECT CounterID, avg(length(URL)) AS l, count() AS c FROM $test_table WHERE URL != '' GROUP BY CounterID HAVING c > 100000 ORDER BY l DESC LIMIT 25;"
-
 )
     execute "${debug_queries[@]}"
 }
