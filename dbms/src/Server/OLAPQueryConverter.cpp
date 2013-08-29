@@ -547,6 +547,10 @@ void QueryConverter::fillNumericAttributeMap()
 	M("CLID",                 "CLID")
 	
 	M("SocialSourceNetworkID","SocialSourceNetworkID")
+	/// где 26 это Яндекс (db_dumps/SearchEngines).
+	M("CorrectedTraficSourceID", "(IsYandex AND SEIn(toUInt8(SearchEngineID), 26)) ? -1 : TraficSourceID")
+	M("CorrectedSearchEngineID", "(IsYandex AND SEIn(toUInt8(SearchEngineID), 26)) ? 0 : toUInt8(SearchEngineID)")
+	
 #undef M
 }
 

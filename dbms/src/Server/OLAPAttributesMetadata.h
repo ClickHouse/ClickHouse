@@ -204,6 +204,9 @@ typedef AttributeUIntBase RegionCity;
 typedef AttributeUIntBase RegionArea;
 typedef AttributeUIntBase RegionCountry;
 typedef AttributeIntBase TraficSourceID;
+typedef AttributeIntBase CorrectedTraficSourceID;
+typedef AttributeUIntBase CorrectedSearchEngineID;
+
 typedef AttributeUIntBase IsNewUser;
 typedef AttributeUIntBase UserNewness;
 
@@ -799,6 +802,8 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 		("URLRegionCity", 			new URLRegionCity)
 		("URLRegionArea", 			new URLRegionArea)
 		("URLRegionCountry",		new URLRegionCountry)
+		("CorrectedTraficSourceID",	new CorrectedTraficSourceID)
+		("CorrectedSearchEngineID", new CorrectedSearchEngineID)
 		;
 }
 
