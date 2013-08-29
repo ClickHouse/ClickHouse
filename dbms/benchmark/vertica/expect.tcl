@@ -2,7 +2,7 @@
 #!/bin/expect
 
 # Set timeout
-set timeout 10
+set timeout 600
 
 # Get arguments
 set query [lindex $argv 0]

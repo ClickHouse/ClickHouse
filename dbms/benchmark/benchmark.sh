@@ -1,13 +1,14 @@
 #!/bin/bash
 # script to run query to databases
-if [ "$#" != "2" ]; then 
+if [[ "$#" != "2" &&  "$#" != "3" ]]; then 
     echo "script to run request for database."
-    echo "usage: query_file  expect_file"
+    echo "usage: query_file  expect_file [etc_init_d_service]"
     exit 1
 fi
 
 test_file=$1
 expect_file=$2
+etc_init_d_service=$3
 
 TIMES=3
 
@@ -45,9 +46,11 @@ function execute()
 		echo "query:" $query
                 expect -f $expect_file "$query"		
 
-		if [ "$?" != "0" ]; then
-		    echo "Error: $?"
-		    #break
+		if [ -e $etc_init_d_service ]; then
+		    sudo $etc_init_d_service status
+		    if [ "$?" != "0" ]; then
+			sudo $etc_init_d_service restart
+		    fi
 		fi
 	    done
 	fi
@@ -57,4 +60,7 @@ function execute()
 }
 
 mapfile -t test_queries < $test_file
+
+echo "start time: $(date)"
 time execute "${test_queries[@]}"
+echo "stop time: $(date)"
