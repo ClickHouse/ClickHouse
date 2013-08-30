@@ -43,7 +43,7 @@ function execute()
 		echo
 		echo "times: $i"  
 		
-		echo "query:" $query
+		echo "query:" "$query"
                 expect -f $expect_file "$query"		
 
 		if [ -e $etc_init_d_service ]; then
