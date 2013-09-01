@@ -19,8 +19,9 @@ class AggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
-		bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
-		: aggregator(new Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_)), has_been_read(false)
+		bool with_totals_, bool separate_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
+		: aggregator(new Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_)),
+		separate_totals(separate_totals_), has_been_read(false)
 	{
 		children.push_back(input_);
 	}
@@ -30,7 +31,7 @@ public:
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const Names & key_names, const AggregateDescriptions & aggregates,
-		bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_);
+		bool with_totals_, bool separate_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_);
 
 	String getName() const { return "AggregatingBlockInputStream"; }
 
@@ -45,6 +46,7 @@ protected:
 	Block readImpl();
 
 	SharedPtr<Aggregator> aggregator;
+	bool separate_totals;
 	bool has_been_read;
 };
 

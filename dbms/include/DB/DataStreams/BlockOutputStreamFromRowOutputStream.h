@@ -19,6 +19,7 @@ public:
 	void writeSuffix() { row_output->writeSuffix(); }
 	
 	void setRowsBeforeLimit(size_t rows_before_limit);
+	void setTotals(const Block & totals);
 
 private:
 	RowOutputStreamPtr row_output;

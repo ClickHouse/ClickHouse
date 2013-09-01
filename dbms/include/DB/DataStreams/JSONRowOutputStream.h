@@ -32,9 +32,15 @@ public:
 		rows_before_limit = rows_before_limit_;
 	}
 
+	void setTotals(const Block & totals_)
+	{
+		totals = totals_;
+	}
+
 protected:
 	
 	void writeRowsBeforeLimitAtLeast();
+	virtual void writeTotals();
 	
 	typedef std::vector<NameAndTypePair> NamesAndTypesVector;
 	
@@ -43,7 +49,8 @@ protected:
 	size_t row_count;
 	bool applied_limit;
 	size_t rows_before_limit;
-	NamesAndTypesVector fields;	
+	NamesAndTypesVector fields;
+	Block totals;
 };
 
 }

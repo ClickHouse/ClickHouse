@@ -22,6 +22,9 @@ public:
 	void writeFieldDelimiter();
 	void writeRowStartDelimiter();
 	void writeRowEndDelimiter();
+
+protected:
+	void writeTotals();
 };
 
 }

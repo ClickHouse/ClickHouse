@@ -48,6 +48,27 @@ protected:
 		LOG_TRACE(log, "Finalizing aggregate functions");
 		Stopwatch watch;
 
+		finalizeBlock(res);
+
+		double elapsed_seconds = watch.elapsedSeconds();
+		if (elapsed_seconds > 0.001)
+		{
+			LOG_TRACE(log, std::fixed << std::setprecision(3)
+				<< "Finalized aggregate functions. "
+				<< res.rows() << " rows, " << res.bytes() / 1048576.0 << " MiB"
+				<< " in " << elapsed_seconds << " sec."
+				<< " (" << res.rows() / elapsed_seconds << " rows/sec., " << res.bytes() / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+		}
+
+		return res;
+	}
+
+private:
+	AggregateDescriptions aggregates;
+	Logger * log;
+
+	void finalizeBlock(Block & res)
+	{
 		size_t rows = res.rows();
 		size_t columns = res.columns();
 		size_t number_of_aggregate = 0;
@@ -69,23 +90,7 @@ protected:
 				++number_of_aggregate;
 			}
 		}
-
-		double elapsed_seconds = watch.elapsedSeconds();
-		if (elapsed_seconds > 0.001)
-		{
-			LOG_TRACE(log, std::fixed << std::setprecision(3)
-				<< "Finalized aggregate functions. "
-				<< res.rows() << " rows, " << res.bytes() / 1048576.0 << " MiB"
-				<< " in " << elapsed_seconds << " sec."
-				<< " (" << res.rows() / elapsed_seconds << " rows/sec., " << res.bytes() / elapsed_seconds / 1048576.0 << " MiB/sec.)");
-		}
-
-		return res;
 	}
-
-private:
-	AggregateDescriptions aggregates;
-	Logger * log;
 };
 
 }

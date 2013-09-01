@@ -3,6 +3,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <DB/Core/Row.h>
+#include <DB/Core/Block.h>
 
 
 namespace DB
@@ -30,6 +31,11 @@ public:
 	virtual void writeRowBetweenDelimiter() {};	/// разделитель между строками
 	virtual void writePrefix() {};				/// разделитель перед началом результата
 	virtual void writeSuffix() {};				/// разделитель после конца результата
+
+	/** Методы для установки дополнительной информации для вывода в поддерживающих её форматах.
+	  */
+	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
+	virtual void setTotals(const Block & totals) {}
 
 	virtual ~IRowOutputStream() {}
 };

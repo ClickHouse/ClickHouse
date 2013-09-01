@@ -5,6 +5,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
+#include <DB/Core/Row.h>
 #include <DB/Storages/StoragePtr.h>
 
 
@@ -31,9 +32,10 @@ public:
 	virtual void writePrefix() {}
 	virtual void writeSuffix() {}
 	
-	/** Метод для установки поля rows_before_limit для вывода в формате JSON[Compact]
-	 */
+	/** Методы для установки дополнительной информации для вывода в поддерживающих её форматах.
+	  */
 	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
+	virtual void setTotals(const Block & totals) {}
 
 	virtual ~IBlockOutputStream() {}
 	

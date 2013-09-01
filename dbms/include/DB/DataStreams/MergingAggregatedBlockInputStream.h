@@ -17,14 +17,16 @@ using Poco::SharedPtr;
 class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool with_totals_)
-		: aggregator(new Aggregator(keys_, aggregates_, with_totals_)), has_been_read(false)
+	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
+		bool with_totals_, bool separate_totals_)
+		: aggregator(new Aggregator(keys_, aggregates_, with_totals_)), separate_totals(separate_totals_), has_been_read(false)
 	{
 		children.push_back(input_);
 	}
 
-	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const Names & keys_names_, const AggregateDescriptions & aggregates_, bool with_totals_)
-		: aggregator(new Aggregator(keys_names_, aggregates_, with_totals_)), has_been_read(false)
+	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const Names & keys_names_, const AggregateDescriptions & aggregates_,
+		bool with_totals_, bool separate_totals_)
+		: aggregator(new Aggregator(keys_names_, aggregates_, with_totals_)), separate_totals(separate_totals_), has_been_read(false)
 	{
 		children.push_back(input_);
 	}
@@ -43,6 +45,7 @@ protected:
 
 private:
 	SharedPtr<Aggregator> aggregator;
+	bool separate_totals;
 	bool has_been_read;
 };
 

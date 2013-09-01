@@ -85,11 +85,14 @@ void JSONRowOutputStream::writeRowEndDelimiter()
 void JSONRowOutputStream::writeSuffix()
 {
 	writeChar('\n', ostr);
-	writeCString("\t],\n", ostr);
-	writeChar('\n', ostr);
+	writeCString("\t]", ostr);
+
+	writeTotals();
+
+	writeCString(",\n\n", ostr);
 	writeCString("\t\"rows\": ", ostr);
 	writeIntText(row_count, ostr);
-		
+	
 	writeRowsBeforeLimitAtLeast();
 	
 	writeChar('\n', ostr);
@@ -101,10 +104,37 @@ void JSONRowOutputStream::writeRowsBeforeLimitAtLeast()
 {
 	if (applied_limit)
 	{
-		writeCString(",\n", ostr);
-		writeChar('\n', ostr);
+		writeCString(",\n\n", ostr);
 		writeCString("\t\"rows_before_limit_at_least\": ", ostr);
 		writeIntText(rows_before_limit, ostr);
+	}
+}
+
+void JSONRowOutputStream::writeTotals()
+{
+	if (totals)
+	{
+		writeCString(",\n", ostr);
+		writeChar('\n', ostr);
+		writeCString("\t\"totals\":\n", ostr);
+		writeCString("\t{\n", ostr);
+
+		size_t totals_columns = totals.columns();
+		for (size_t i = 0; i < totals_columns; ++i)
+		{
+			const ColumnWithNameAndType & column = totals.getByPosition(i);
+
+			if (i != 0)
+				writeCString(",\n", ostr);
+
+			writeCString("\t\t", ostr);
+			writeDoubleQuotedString(column.name, ostr);
+			writeCString(": ", ostr);
+			column.type->serializeTextJSON((*column.column)[0], ostr);
+		}
+
+		writeChar('\n', ostr);
+		writeCString("\t}", ostr);
 	}
 }
 

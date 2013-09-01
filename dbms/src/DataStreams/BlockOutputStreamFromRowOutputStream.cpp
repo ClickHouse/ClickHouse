@@ -35,10 +35,12 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 
 void BlockOutputStreamFromRowOutputStream::setRowsBeforeLimit(size_t rows_before_limit)
 {
-	if (JSONRowOutputStream * json_out = dynamic_cast<JSONRowOutputStream *>(&*row_output))
-	{
-		json_out->setRowsBeforeLimit(rows_before_limit);
-	}
+	row_output->setRowsBeforeLimit(rows_before_limit);
+}
+
+void BlockOutputStreamFromRowOutputStream::setTotals(const Block & totals)
+{
+	row_output->setTotals(totals);
 }
 
 }

@@ -185,8 +185,11 @@ public:
 	/// Получить пример блока, описывающего результат. Следует вызывать только после execute.
 	Block getSampleBlock() { return sample; }
 
-	/// Преобразовать структуру данных агрегации в блок.
-	Block convertToBlock(AggregatedDataVariants & data_variants);
+	/** Преобразовать структуру данных агрегации в блок.
+	  * Если with_totals = true и serarate_totals = true, то тотальные значения кладутся в totals.
+	  * Если with_totals = true и serarate_totals = false, то тотальные значения кладутся в первую строчку возвращаемого блока.
+	  */
+	Block convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals);
 
 	/** Объединить несколько структур данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
 	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить, пока не будет вызвана функция convertToBlock.
@@ -195,7 +198,8 @@ public:
 	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants);
 
 	/** Объединить несколько агрегированных блоков в одну структуру данных.
-	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций.)
+	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
+	  * Если with_totals = true, то предполагается, что тотальные значения расположены в первой строке каждого блока.
 	  */
 	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 

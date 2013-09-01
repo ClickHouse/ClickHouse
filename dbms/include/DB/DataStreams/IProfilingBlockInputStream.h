@@ -77,6 +77,9 @@ public:
 	/// Получить информацию о скорости выполнения.
 	const BlockStreamProfileInfo & getInfo() const;
 
+	/// Получить "тотальные" значения. Берёт их из себя или из первого дочернего источника, в котором они есть. Их может не быть.
+	const Block & getTotals() const;
+
 
 	/** Установить колбэк прогресса выполнения.
 	  * Колбэк пробрасывается во все источники.
@@ -152,6 +155,13 @@ protected:
 	volatile bool is_cancelled;
 	ProgressCallback progress_callback;
 
+	/// Дополнительная информация, которая может образоваться в процессе работы.
+
+	/// Тотальные значения при агрегации.
+	Block totals;
+
+	/// Ограничения и квоты.
+	
 	LocalLimits limits;
 
 	QuotaForIntervals * quota;	/// Если NULL - квота не используется.

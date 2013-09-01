@@ -447,10 +447,13 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 }
 
 
-Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
+Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals)
 {
 	Block res = getSampleBlock();
 	size_t rows = data_variants.size();
+
+	if (with_totals && separate_totals && rows != 0)
+		--rows;		/// Строчка с "тотальными" значениями идёт отдельно.
 
 	LOG_TRACE(log, "Converting aggregated data to block");
 
@@ -487,13 +490,34 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	{
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
-		for (size_t i = 0; i < aggregates_size; ++i)
-			(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+		if (separate_totals)
+		{
+			for (size_t i = 0; i < aggregates_size; ++i)
+			{
+				totals = res.cloneEmpty();
 
-		/// Для тотальных агрегатов вместо ключей пишутся значения по-умолчанию (нули, пустые строки).
-		if (with_totals)
-			for (size_t i = 0; i < keys_size; ++i)
-				key_columns[i]->insertDefault();
+				/// Для тотальных данных вместо ключей пишутся значения по-умолчанию (нули, пустые строки).
+				for (size_t i = 0; i < keys_size; ++i)
+					totals.getByPosition(i).column->insertDefault();
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+				{
+					ColumnWithNameAndType & column = totals.getByPosition(i + keys_size);
+					column.type = aggregate_functions[i]->getReturnType();
+					column.column = column.type->createColumn();
+					aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *column.column);
+				}
+			}
+		}
+		else
+		{
+			for (size_t i = 0; i < aggregates_size; ++i)
+				(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+
+			if (with_totals)
+				for (size_t i = 0; i < keys_size; ++i)
+					key_columns[i]->insertDefault();
+		}
 	}
 	
 	if (data_variants.type == AggregatedDataVariants::KEY_64)
@@ -501,9 +525,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 		AggregatedDataWithUInt64Key & data = data_variants.key64;
 
 		IColumn & first_column = *key_columns[0];
-		first_column.reserve(data.size() + with_totals);
 
-		size_t j = with_totals ? 1 : 0;
+		size_t j = with_totals && !separate_totals ? 1 : 0;
 		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
@@ -516,9 +539,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	{
 		AggregatedDataWithStringKey & data = data_variants.key_string;
 		IColumn & first_column = *key_columns[0];
-		first_column.reserve(data.size() + with_totals);
 
-		size_t j = with_totals ? 1 : 0;
+		size_t j = with_totals && !separate_totals ? 1 : 0;
 		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			first_column.insertData(it->first.data, it->first.size);
@@ -531,10 +553,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	{
 		AggregatedDataWithKeys128 & data = data_variants.keys128;
 
-		for (size_t i = 0; i < keys_size; ++i)
-			key_columns[i]->reserve(data.size() + with_totals);
-
-		size_t j = with_totals ? 1 : 0;
+		size_t j = with_totals && !separate_totals ? 1 : 0;
 		for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			size_t offset = 0;
@@ -553,10 +572,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants)
 	{
 		AggregatedDataHashed & data = data_variants.hashed;
 
-		for (size_t i = 0; i < keys_size; ++i)
-			key_columns[i]->reserve(data.size() + with_totals);
-
-		size_t j = with_totals ? 1 : 0;
+		size_t j = with_totals && !separate_totals ? 1 : 0;
 		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
 		{
 			for (size_t i = 0; i < keys_size; ++i)

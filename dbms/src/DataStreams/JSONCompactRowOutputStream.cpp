@@ -43,4 +43,28 @@ void JSONCompactRowOutputStream::writeRowEndDelimiter()
 	++row_count;
 }
 
+
+void JSONCompactRowOutputStream::writeTotals()
+{
+	if (totals)
+	{
+		writeCString(",\n", ostr);
+		writeChar('\n', ostr);
+		writeCString("\t\"totals\": [", ostr);
+
+		size_t totals_columns = totals.columns();
+		for (size_t i = 0; i < totals_columns; ++i)
+		{
+			if (i != 0)
+				writeChar(',', ostr);
+
+			const ColumnWithNameAndType & column = totals.getByPosition(i);
+			column.type->serializeTextJSON((*column.column)[0], ostr);
+		}
+
+		writeChar(']', ostr);
+	}
+}
+
+
 }

@@ -9,8 +9,8 @@ namespace DB
 
 AggregatingBlockInputStream::AggregatingBlockInputStream(BlockInputStreamPtr input_,
 	const Names & key_names, const AggregateDescriptions & aggregates,
-	bool with_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
-	: has_been_read(false)
+	bool with_totals_, bool separate_totals_, size_t max_rows_to_group_by_, Limits::OverflowMode group_by_overflow_mode_)
+	: separate_totals(separate_totals_), has_been_read(false)
 {
 	children.push_back(input_);
 
@@ -32,7 +32,7 @@ Block AggregatingBlockInputStream::readImpl()
 	if (isCancelled())
 		return Block();
 		
-	return aggregator->convertToBlock(data_variants);
+	return aggregator->convertToBlock(data_variants, separate_totals, totals);
 }
 
 

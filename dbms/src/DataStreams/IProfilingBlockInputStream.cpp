@@ -225,6 +225,30 @@ Block IProfilingBlockInputStream::read()
 			+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
 			ErrorCodes::TOO_SLOW);
 	}
+
+	/// Проверка квоты.
+	if (quota != NULL)
+	{
+		time_t current_time = time(0);
+		double total_elapsed = info.total_stopwatch.elapsedSeconds();
+
+		switch (quota_mode)
+		{
+			case QUOTA_READ:
+				quota->checkAndAddReadRowsBytes(current_time, res.rows(), res.bytes());
+				break;
+
+			case QUOTA_RESULT:
+				quota->checkAndAddResultRowsBytes(current_time, res.rows(), res.bytes());
+				quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
+				break;
+
+			default:
+				throw Exception("Logical error: unknown quota mode.", ErrorCodes::LOGICAL_ERROR);
+		}
+
+		prev_elapsed = total_elapsed;
+	}
 	
 	return res;
 }
@@ -261,6 +285,25 @@ void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
 	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
 			child->setProgressCallback(callback);
+}
+
+
+const Block & IProfilingBlockInputStream::getTotals() const
+{
+	if (totals)
+		return totals;
+
+	for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+	{
+		if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+		{
+			const Block & res = child->getTotals();
+			if (res)
+				return res;
+		}
+	}
+
+	return totals;
 }
 
 
