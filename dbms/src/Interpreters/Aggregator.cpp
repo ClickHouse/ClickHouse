@@ -490,7 +490,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	{
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
-		if (separate_totals)
+		if (with_totals && separate_totals)
 		{
 			for (size_t i = 0; i < aggregates_size; ++i)
 			{
