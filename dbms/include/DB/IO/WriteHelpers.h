@@ -141,6 +141,10 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 				writeChar('\\', buf);
 				writeChar('/', buf);
 				break;
+			case '"':
+				writeChar('\\', buf);
+				writeChar('"', buf);
+				break;
 			default:
 				if (0x00 <= *it && *it <= 0x1F)
 				{
