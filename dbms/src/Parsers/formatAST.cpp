@@ -66,6 +66,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(OrderByElement)
 	DISPATCH(Subquery)
 	DISPATCH(AlterQuery)
+	DISPATCH(ShowProcesslistQuery)
 	else
 		throw DB::Exception("Unknown element in AST: " + ast.getID() + " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'",
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
@@ -328,6 +329,12 @@ void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent,
 void formatAST(const ASTUseQuery				& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_keyword : "") << "USE " << (hilite ? hilite_none : "") << backQuoteIfNeed(ast.database);
+	return;
+}
+
+void formatAST(const ASTShowProcesslistQuery	& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << "SHOW PROCESSLIST" << (hilite ? hilite_none : "");
 	return;
 }
 

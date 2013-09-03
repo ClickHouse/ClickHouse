@@ -19,6 +19,7 @@
 #include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/ProcessList.h>
 
 
 namespace DB
@@ -54,6 +55,7 @@ struct ContextShared
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
+	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	Logger * log;											/// Логгер.
 
 	ContextShared() : log(&Logger::get("Context")) {};
@@ -164,6 +166,9 @@ public:
 	void setProgressCallback(ProgressCallback callback);
 	/// Используется в InterpreterSelectQuery, чтобы передать его в IProfilingBlockInputStream.
 	ProgressCallback getProgressCallback() const;
+
+	ProcessList & getProcessList()											{ return shared->process_list; }
+	const ProcessList & getProcessList() const								{ return shared->process_list; }
 };
 
 

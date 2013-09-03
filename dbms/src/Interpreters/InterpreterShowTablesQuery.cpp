@@ -21,11 +21,11 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(ASTPtr query_ptr_, Contex
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
 {
-	ASTShowTablesQuery query = dynamic_cast<const ASTShowTablesQuery &>(*query_ptr);
+	const ASTShowTablesQuery & query = dynamic_cast<const ASTShowTablesQuery &>(*query_ptr);
 	
 	String format_or_nothing;
 	if (query.format)
-		format_or_nothing = " FORMAT " + dynamic_cast<ASTIdentifier &>(*query.format).name;
+		format_or_nothing = " FORMAT " + dynamic_cast<const ASTIdentifier &>(*query.format).name;
 	
 	/// SHOW DATABASES
 	if (query.databases)

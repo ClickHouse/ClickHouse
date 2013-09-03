@@ -24,6 +24,7 @@
 #include <DB/Interpreters/InterpreterShowCreateQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Interpreters/InterpreterShowProcesslistQuery.h>
 
 
 namespace DB
@@ -102,6 +103,11 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 	else if (dynamic_cast<ASTDescribeQuery *>(&*query_ptr))
 	{
 		InterpreterDescribeQuery interpreter(query_ptr, context);
+		query_plan = interpreter.executeAndFormat(ostr);
+	}
+	else if (dynamic_cast<ASTShowProcesslistQuery *>(&*query_ptr))
+	{
+		InterpreterShowProcesslistQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
 	else if (dynamic_cast<ASTAlterQuery *>(&*query_ptr))
@@ -185,6 +191,11 @@ BlockIO InterpreterQuery::execute()
 	else if (dynamic_cast<ASTDescribeQuery *>(&*query_ptr))
 	{
 		InterpreterDescribeQuery interpreter(query_ptr, context);
+		res = interpreter.execute();
+	}
+	else if (dynamic_cast<ASTShowProcesslistQuery *>(&*query_ptr))
+	{
+		InterpreterShowProcesslistQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
 	else if (dynamic_cast<ASTAlterQuery *>(&*query_ptr))

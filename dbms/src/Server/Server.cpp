@@ -6,6 +6,7 @@
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>
 #include <DB/Storages/StorageSystemDatabases.h>
+#include <DB/Storages/StorageSystemProcesses.h>
 #include <DB/Storages/StorageSystemOne.h>
 
 #include "Server.h"
@@ -101,6 +102,9 @@ int Server::main(const std::vector<std::string> & args)
 	/// Загружаем квоты.
 	global_context.initQuotasFromConfig();
 
+	/// Максимальное количество одновременно выполняющихся запросов.
+	global_context.getProcessList().setMaxSize(config.getInt("max_concurrent_queries", 0));
+
 	/// Загружаем настройки.
 	Settings & settings = global_context.getSettingsRef();
 	settings.setProfile(config.getString("default_profile", "default"));
@@ -116,6 +120,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context.addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
 	global_context.addTable("system", "tables", 	StorageSystemTables::create("tables", global_context));
 	global_context.addTable("system", "databases", 	StorageSystemDatabases::create("databases", global_context));
+	global_context.addTable("system", "processes", 	StorageSystemProcesses::create("processes", global_context));
 		
 	global_context.setCurrentDatabase(config.getString("default_database", "default"));
 

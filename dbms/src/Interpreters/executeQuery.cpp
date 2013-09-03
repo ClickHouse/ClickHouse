@@ -66,7 +66,10 @@ void executeQuery(
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			ErrorCodes::SYNTAX_ERROR);
 
-	LOG_DEBUG(&Logger::get("executeQuery"), std::string(begin, pos - begin));
+	String query(begin, pos - begin);
+
+	LOG_DEBUG(&Logger::get("executeQuery"), query);
+	ProcessList::EntryPtr process_list_entry = context.getProcessList().insert(query);
 
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
@@ -96,6 +99,9 @@ BlockIO executeQuery(
 	Context & context,
 	QueryProcessingStage::Enum stage)
 {
+	BlockIO res;
+	res.process_list_entry = context.getProcessList().insert(query);
+
 	ParserQuery parser;
 	ASTPtr ast;
 	std::string expected;
@@ -114,9 +120,6 @@ BlockIO executeQuery(
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			ErrorCodes::SYNTAX_ERROR);
 
-//	formatAST(*ast, std::cerr);
-//	std::cerr << std::endl;
-
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
 
@@ -124,8 +127,6 @@ BlockIO executeQuery(
 	time_t current_time = time(0);
 
 	quota.checkExceeded(current_time);
-
-	BlockIO res;
 
 	try
 	{

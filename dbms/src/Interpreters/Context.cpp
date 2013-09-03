@@ -387,4 +387,5 @@ ProgressCallback Context::getProgressCallback() const
 	return progress_callback;
 }
 
+
 }
