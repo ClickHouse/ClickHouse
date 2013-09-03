@@ -56,7 +56,7 @@ def process_log(filename, pattern_select, pattern_sec, pattern_ignore):
 def main():
     parser = argparse.ArgumentParser(description="Process log files form different databases")
     parser.add_argument('log_file', metavar = 'log_file', help = 'database log file')
-    parser.add_argument('db_name', metavar = 'db_name', help = ' database name one of clickhouse, vertica, infinidb, monetdb (... more later)')
+    parser.add_argument('db_name', metavar = 'db_name', help = ' database name one of clickhouse, vertica, infinidb, monetdb, infobright (... more later)')
     args = parser.parse_args()
 
     log_file = args.log_file
@@ -79,6 +79,10 @@ def main():
             ignore_pattern = '#'            
     elif db_name == 'monetdb' :
             sec_pattern = '(\d+[m. ]*\d+[ms]+)\)'
+            select_pattern = 'query: select '
+            ignore_pattern = '#'            
+    elif db_name == 'infobright' :
+            sec_pattern = '(\d+.\d+) sec'
             select_pattern = 'query: select '
             ignore_pattern = '#'            
     else:
