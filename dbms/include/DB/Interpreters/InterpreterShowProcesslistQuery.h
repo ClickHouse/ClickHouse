@@ -23,7 +23,7 @@ public:
 
 	BlockIO execute()
 	{
-		return executeQuery(getRewrittenQuery(), context);
+		return executeQuery(getRewrittenQuery(), context, true);
 	}
 
 	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf)
@@ -31,7 +31,7 @@ public:
 		String query = getRewrittenQuery();
 		ReadBufferFromString in(query);
 		BlockInputStreamPtr query_plan;
-		executeQuery(in, buf, context, query_plan);
+		executeQuery(in, buf, context, query_plan, true);
 		return query_plan;
 	}
 

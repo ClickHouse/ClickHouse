@@ -22,6 +22,7 @@ void executeQuery(
 	WriteBuffer & ostr,
 	Context & context,
 	BlockInputStreamPtr & query_plan,
+	bool internal,
 	QueryProcessingStage::Enum stage)
 {
 	ParserQuery parser;
@@ -72,7 +73,7 @@ void executeQuery(
 
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
-	if (NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
 		process_list_entry = context.getProcessList().insert(query);
 
 	/// Проверка ограничений.
@@ -101,6 +102,7 @@ void executeQuery(
 BlockIO executeQuery(
 	const String & query,
 	Context & context,
+	bool internal,
 	QueryProcessingStage::Enum stage)
 {
 	ParserQuery parser;
@@ -121,12 +123,6 @@ BlockIO executeQuery(
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			ErrorCodes::SYNTAX_ERROR);
 
-	BlockIO res;
-
-	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
-	if (NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
-		res.process_list_entry = context.getProcessList().insert(query);
-
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
 
@@ -134,6 +130,8 @@ BlockIO executeQuery(
 	time_t current_time = time(0);
 
 	quota.checkExceeded(current_time);
+
+	BlockIO res;
 
 	try
 	{
@@ -145,6 +143,10 @@ BlockIO executeQuery(
 		quota.addError(current_time);
 		throw;
 	}
+
+	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
+	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+		res.process_list_entry = context.getProcessList().insert(query);
 
 	quota.addQuery(current_time);
 	return res;

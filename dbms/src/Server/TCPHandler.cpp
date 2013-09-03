@@ -407,7 +407,7 @@ void TCPHandler::receiveQuery()
 	LOG_DEBUG(log, "Query: " << state.query);
 	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(stage));
 
-	state.io = executeQuery(state.query, query_context, state.stage);
+	state.io = executeQuery(state.query, query_context, false, state.stage);
 }
 
 

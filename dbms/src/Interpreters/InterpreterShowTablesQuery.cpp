@@ -48,7 +48,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 BlockIO InterpreterShowTablesQuery::execute()
 {
-	return executeQuery(getRewrittenQuery(), context);
+	return executeQuery(getRewrittenQuery(), context, true);
 }
 
 
@@ -57,7 +57,7 @@ BlockInputStreamPtr InterpreterShowTablesQuery::executeAndFormat(WriteBuffer & b
 	String query = getRewrittenQuery();
 	ReadBufferFromString in(query);
 	BlockInputStreamPtr query_plan;
-	executeQuery(in, buf, context, query_plan);
+	executeQuery(in, buf, context, query_plan, true);
 	return query_plan;
 }
 
