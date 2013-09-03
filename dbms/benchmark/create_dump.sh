@@ -4,6 +4,7 @@ num=1000000000
 
 dump_replaced=$path/dump_"$db_name"_replaced.tsv
 dump_meshed=$path/dump_"$db_name"_meshed.tsv
+dump_meshed_utf8=$path/dump_"$db_name"_meshed_utf8.tsv
 
 clickhouse-client --query="SET GLOBAL max_block_size=100000"
 clickhouse-client --query="SET GLOBAL max_threads=1"
@@ -13,3 +14,5 @@ clickhouse-client --query="SELECT toInt64(WatchID), JavaEnable, Title, GoodEvent
 /etc/init.d/clickhouse-server-metrika-yandex-ulimit restart
 
 sudo nsort -format=maximum_size:65535 -k1 -T /opt -o $dump_meshed $dump_replaced
+
+cat $dump_meshed | iconv -futf8 -tutf8//IGNORE 2>/dev/null 1> $dump_meshed_utf8
