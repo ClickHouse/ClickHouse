@@ -24,7 +24,7 @@ public:
 
 
 	ConnectionPoolWithFailover(ConnectionPools & nested_pools_, size_t max_tries_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES)
-	   : nested_pools(nested_pools_.begin(), nested_pools_.end()), max_tries(max_tries_), error_counts(nested_pools.size()),
+	   : nested_pools(nested_pools_.begin(), nested_pools_.end()), max_tries(max_tries_),
 	   log(&Logger::get("ConnectionPoolWithFailover"))
 	{
 	}
@@ -33,6 +33,8 @@ public:
 	/** Выделяет соединение для работы. */
 	Entry get()
 	{
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		
 		for (size_t i = 0, size = nested_pools.size(); i < size; ++i)
 			nested_pools[i].randomize();
 
@@ -105,13 +107,12 @@ private:
 		}
 	};
 
+	Poco::FastMutex mutex;
+
 	typedef std::vector<PoolWithErrorCount> PoolsWithErrorCount;
 	PoolsWithErrorCount nested_pools;
 	
 	size_t max_tries;
-
-	typedef std::vector<UInt64> ErrorCounts;
-	ErrorCounts error_counts;
 
 	Logger * log;
 };
