@@ -288,6 +288,10 @@ Connection::Packet Connection::receivePacket()
 			res.profile_info = receiveProfileInfo();
 			return res;
 
+		case Protocol::Server::Totals:
+			res.block = receiveTotals();
+			return res;
+
 		case Protocol::Server::EndOfStream:
 			return res;
 
@@ -305,6 +309,15 @@ Block Connection::receiveData()
 {
 	//LOG_TRACE(log, "Receiving data (" << getServerAddress() << ")");
 		
+	initBlockInput();
+
+	/// Прочитать из сети один блок
+	return block_in->read();
+}
+
+
+void Connection::initBlockInput()
+{
 	if (!block_in)
 	{
 		if (compression == Protocol::Compression::Enable)
@@ -314,9 +327,6 @@ Block Connection::receiveData()
 
 		block_in = new NativeBlockInputStream(*maybe_compressed_in, data_type_factory);
 	}
-
-	/// Прочитать из сети один блок
-	return block_in->read();
 }
 
 
@@ -351,6 +361,13 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
 	BlockStreamProfileInfo profile_info;
 	profile_info.read(*in);
 	return profile_info;
+}
+
+
+Block Connection::receiveTotals()
+{
+	/// Блок с тотальными значениями передаётся так же, как обычный блок данных. Разница только в идентификаторе пакета.
+	return receiveData();
 }
 
 }

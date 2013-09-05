@@ -239,11 +239,14 @@ void TCPHandler::processOrdinaryQuery()
 				}
 			}
 
-			/// Если закончились данные, то отправим данные профайлинга до
+			/// Если закончились данные, то отправим данные профайлинга и тотальные значения до
 			/// последнего нулевого блока, чтобы иметь возможность использовать
 			/// эту информацию в выводе суффикса output stream'а
 			if (!block)
+			{
+				sendTotals();
 				sendProfileInfo();
+			}
 			
 			sendData(block);			
 			if (!block)
@@ -266,6 +269,29 @@ void TCPHandler::sendProfileInfo()
 		writeVarUInt(Protocol::Server::ProfileInfo, *out);
 		input->getInfo().write(*out);
 		out->next();
+	}
+}
+
+
+void TCPHandler::sendTotals()
+{
+	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS)
+		return;
+
+	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+	{
+		const Block & totals = input->getTotals();
+
+		if (totals)
+		{
+			initBlockOutput();
+
+			writeVarUInt(Protocol::Server::Totals, *out);
+
+			state.block_out->write(input->getTotals());
+			state.maybe_compressed_out->next();
+			out->next();
+		}
 	}
 }
 
@@ -413,6 +439,22 @@ void TCPHandler::receiveQuery()
 
 bool TCPHandler::receiveData()
 {
+	initBlockInput();
+	
+	/// Прочитать из сети один блок и засунуть его в state.io.out (данные для INSERT-а)
+	Block block = state.block_in->read();
+	if (block)
+	{
+		state.io.out->write(block);
+		return true;
+	}
+	else
+		return false;
+}
+
+
+void TCPHandler::initBlockInput()
+{
 	if (!state.block_in)
 	{
 		if (state.compression == Protocol::Compression::Enable)
@@ -425,18 +467,25 @@ bool TCPHandler::receiveData()
 			*state.maybe_compressed_in,
 			state.io.out_sample,
 			query_context.getSettingsRef().max_block_size,
-			query_context.getDataTypeFactory());
+																   query_context.getDataTypeFactory());
 	}
-	
-	/// Прочитать из сети один блок и засунуть его в state.io.out (данные для INSERT-а)
-	Block block = state.block_in->read();
-	if (block)
+}
+
+
+void TCPHandler::initBlockOutput()
+{
+	if (!state.block_out)
 	{
-		state.io.out->write(block);
-		return true;
+		if (state.compression == Protocol::Compression::Enable)
+			state.maybe_compressed_out = new CompressedWriteBuffer(*out);
+		else
+			state.maybe_compressed_out = out;
+
+		state.block_out = query_context.getFormatFactory().getOutput(
+			"Native",
+			*state.maybe_compressed_out,
+			state.io.in_sample);
 	}
-	else
-		return false;
 }
 
 
@@ -478,18 +527,7 @@ void TCPHandler::sendData(Block & block)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 	
-	if (!state.block_out)
-	{
-		if (state.compression == Protocol::Compression::Enable)
-			state.maybe_compressed_out = new CompressedWriteBuffer(*out);
-		else
-			state.maybe_compressed_out = out;
-
-		state.block_out = query_context.getFormatFactory().getOutput(
-			"Native",
-			*state.maybe_compressed_out,
-			state.io.in_sample);
-	}
+	initBlockOutput();
 
 	writeVarUInt(Protocol::Server::Data, *out);
 

@@ -671,6 +671,10 @@ private:
 				onProfileInfo(packet.profile_info);
 				return true;
 
+			case Protocol::Server::Totals:
+				onTotals(packet.block);
+				return true;
+
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
 				last_exception = packet.exception;
@@ -743,13 +747,12 @@ private:
 			
 			std_out.next();
 		}
-		else
-		{
-			if (block_std_out)
-				block_std_out->writeSuffix();
-			
-			std_out.next();
-		}
+	}
+
+
+	void onTotals(Block & block)
+	{
+		block_std_out->setTotals(block);
 	}
 
 
@@ -811,6 +814,11 @@ private:
 
 	void onEndOfStream()
 	{
+		if (block_std_out)
+			block_std_out->writeSuffix();
+
+		std_out.next();
+
 		if (is_interactive && !written_first_block)
 			std::cout << "Ok." << std::endl;
 	}

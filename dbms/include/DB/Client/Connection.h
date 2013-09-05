@@ -152,6 +152,9 @@ private:
 	SharedPtr<Exception> receiveException();
 	Progress receiveProgress();
 	BlockStreamProfileInfo receiveProfileInfo();
+	Block receiveTotals();
+
+	void initBlockInput();
 };
 
 

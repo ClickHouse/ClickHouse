@@ -121,6 +121,11 @@ private:
 	void sendProgress(size_t rows, size_t bytes);
 	void sendEndOfStream();
 	void sendProfileInfo();
+	void sendTotals();
+
+	/// Создаёт state.block_in/block_out для чтения/записи блоков, в зависимости от того, включено ли сжатие.
+	void initBlockInput();
+	void initBlockOutput();
 
 	bool isQueryCancelled();
 

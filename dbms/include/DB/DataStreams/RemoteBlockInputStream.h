@@ -122,6 +122,7 @@ public:
 				case Protocol::Server::Data:
 				case Protocol::Server::Progress:
 				case Protocol::Server::ProfileInfo:
+				case Protocol::Server::Totals:
 					break;
 
 				case Protocol::Server::EndOfStream:
@@ -178,6 +179,10 @@ protected:
 					break;
 
 				case Protocol::Server::ProfileInfo:
+					break;
+
+				case Protocol::Server::Totals:
+					totals = packet.block;
 					break;
 
 				default:
