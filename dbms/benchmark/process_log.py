@@ -3,15 +3,16 @@ import argparse
 
 import re
 import sys
-
-def log_to_rows(filename, pattern_select, pattern_sec, pattern_ignore):
-    sec_matcher = re.compile(pattern_sec)
+    
+def log_to_rows(filename, pattern_select, time_pattern, pattern_ignore):
+    time_matcher = re.compile(time_pattern)
     select_matcher = re.compile(pattern_select, re.IGNORECASE);
     ignore_matcher = re.compile(pattern_ignore)
 
     f = open(filename, 'r');
 
     query = ''
+    raw_time = ''
     for line in f:
         if ignore_matcher.match(line):
             continue
@@ -21,22 +22,41 @@ def log_to_rows(filename, pattern_select, pattern_sec, pattern_ignore):
             if line != query:
                 query = line
                 sys.stdout.write("\n")
+                raw_time = raw_time + "\n"
 
-        m = sec_matcher.search(line)
+        m = time_matcher.search(line)
         if m:
-            sys.stdout.write(m.group(1) + " " )            
+            sec = 0
+            minute = 0
+            ms = 0
+            if 'min' in m.groupdict() and m.group('min'):
+                minute = float(m.group('min').replace(',','.'))
+            if 'sec' in m.groupdict() and m.group('sec'):
+                sec = float(m.group('sec').replace(',','.'))
+            if 'ms' in m.groupdict() and m.group('ms'):
+                ms = float(m.group('ms').replace(',', '.'))
+
+            sys.stdout.write( str(minute*60 + sec + ms/1000.)  + " " )    
+            raw_time = raw_time + " | " + m.group('time')
+
     print
+    print " =======raw time====== \n" + raw_time
 
 
-def process_log(filename, pattern_select, pattern_sec, pattern_ignore):
-    sec_matcher = re.compile(pattern_sec)
+def process_log(filename, pattern_select, time_pattern, pattern_ignore, error_pattern):
+    time_matcher = re.compile(time_pattern)
     select_matcher = re.compile(pattern_select, re.IGNORECASE);
     ignore_matcher = re.compile(pattern_ignore)
+    error_matcher = re.compile(error_pattern, re.IGNORECASE)
 
     f = open(filename, 'r');
 
     query = ''
     for line in f:
+        if error_matcher.match(line):
+            print line
+            continue
+
         if ignore_matcher.match(line):
             continue
 
@@ -48,10 +68,9 @@ def process_log(filename, pattern_select, pattern_sec, pattern_ignore):
                 print "\n\n"
                 print query 
 
-        m = sec_matcher.search(line)
+        m = time_matcher.search(line)
         if m:
-            sys.stdout.write(m.group(1) + " " )            
-    print
+            sys.stdout.write(m.group('time') + " " )
 
 def main():
     parser = argparse.ArgumentParser(description="Process log files form different databases")
@@ -62,33 +81,28 @@ def main():
     log_file = args.log_file
     db_name = args.db_name
 
-    sec_pattern = ''
-    select_pattern = ''
-    ignore_pattern = ''
+    time_pattern = ''
+    select_pattern = r'query: select '
+    ignore_pattern = r'#'
+    error_pattern = r'error .*'
     if db_name == 'clickhouse':
-            sec_pattern = '(\d+.\d{3}) sec'
-            select_pattern = 'select '
-            ignore_pattern = ':\).*'
+            time_pattern = r'(?P<time>(?P<sec>\d+.\d{3}) sec\.)'
+            select_pattern = r'select '
+            ignore_pattern = r':\).*'
     elif db_name == 'vertica' :
-            sec_pattern = '(\d+,\d+) ms\.'
-            select_pattern = 'select '
-            ignore_pattern = '(.*dbadmin=>|query:|.*Timing is on\.).*'            
+            time_pattern = r'(?P<time>(?P<ms>\d+.\d+) ms\.)'
+            select_pattern = r'select '
+            ignore_pattern = r'(.*dbadmin=>|query:|.*Timing is on\.).*'            
     elif db_name == 'infinidb' :
-            sec_pattern = '(\d+.\d+) sec'
-            select_pattern = 'query: select '
-            ignore_pattern = '#'            
+            time_pattern = r'(?P<time>(?:(?P<min>\d+) min )?(?P<sec>\d+.\d+) sec)'
     elif db_name == 'monetdb' :
-            sec_pattern = '(\d+[m. ]*\d+[ms]+)\)'
-            select_pattern = 'query: select '
-            ignore_pattern = '#'            
+            time_pattern = r'tuples? \((?P<time>(?:(?P<min>\d+)m )?(?:(?P<sec>\d+.?\d+)s)?(?:(?P<ms>\d+.\d+)ms)?)\)'
     elif db_name == 'infobright' :
-            sec_pattern = '(\d+.\d+) sec'
-            select_pattern = 'query: select '
-            ignore_pattern = '#'            
+            time_pattern = r'(?P<time>(?:(?P<min>\d+) min ){0,1}(?P<sec>\d+.\d+) sec)'
     else:
         sys.exit("unknown db_name")
     
-    process_log(log_file, select_pattern, sec_pattern, ignore_pattern )
-    log_to_rows(log_file, select_pattern, sec_pattern, ignore_pattern )
+    process_log(log_file, select_pattern, time_pattern, ignore_pattern, error_pattern )
+    log_to_rows(log_file, select_pattern, time_pattern, ignore_pattern )
 
 main()
