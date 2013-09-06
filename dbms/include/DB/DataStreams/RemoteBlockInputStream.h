@@ -179,6 +179,7 @@ protected:
 					break;
 
 				case Protocol::Server::ProfileInfo:
+					info = packet.profile_info;
 					break;
 
 				case Protocol::Server::Totals:
