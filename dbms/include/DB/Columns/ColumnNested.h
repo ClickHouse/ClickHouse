@@ -262,6 +262,11 @@ public:
 		return size;
 	}
 
+	void getExtremes(Field & min, Field & max) const
+	{
+		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/** Более эффективные методы манипуляции */
 	Columns & getData() { return data; }
 	const Columns & getData() const { return data; }

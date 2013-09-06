@@ -200,6 +200,11 @@ public:
 		return res;
 	}
 
+	void getExtremes(Field & min, Field & max) const
+	{
+		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 
 	const Block & getData() const { return data; }
 };

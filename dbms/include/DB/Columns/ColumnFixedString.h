@@ -212,6 +212,12 @@ public:
 		return res;
 	}
 
+	void getExtremes(Field & min, Field & max) const
+	{
+		min = String();
+		max = String();
+	}
+
 
 	Chars_t & getChars() { return chars; }
 	const Chars_t & getChars() const { return chars; }

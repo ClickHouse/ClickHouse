@@ -276,6 +276,12 @@ public:
 	{
 		return data->byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
+
+	void getExtremes(Field & min, Field & max) const
+	{
+		min = Array();
+		max = Array();
+	}
 	
 	bool hasEqualOffsets(const ColumnArray & other) const
 	{

@@ -103,6 +103,11 @@ public:
 			ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	void getExtremes(Field & min, Field & max) const
+	{
+		throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
 	{
 		return 0;

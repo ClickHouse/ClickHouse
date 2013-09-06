@@ -215,6 +215,33 @@ public:
 
 		return res;
 	}
+
+	void getExtremes(Field & min, Field & max) const
+	{
+		size_t size = this->data.size();
+
+		if (size == 0)
+		{
+			min = typename NearestFieldType<T>::Type(0);
+			max = typename NearestFieldType<T>::Type(0);
+			return;
+		}
+
+		T cur_min = this->data[0];
+		T cur_max = this->data[0];
+
+		for (size_t i = 1; i < size; ++i)
+		{
+			if (this->data[i] < cur_min)
+				cur_min = this->data[i];
+
+			if (this->data[i] > cur_max)
+				cur_max = this->data[i];
+		}
+
+		min = typename NearestFieldType<T>::Type(cur_min);
+		max = typename NearestFieldType<T>::Type(cur_max);
+	}
 };
 
 

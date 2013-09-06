@@ -121,6 +121,12 @@ public:
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const;
 
+	void getExtremes(Field & min, Field & max) const
+	{
+		min = typename NearestFieldType<T>::Type(data);
+		max = typename NearestFieldType<T>::Type(data);
+	}
+
 private:
 	size_t s;
 	T data;

@@ -29,7 +29,12 @@ public:
 	void insert(const Field & x) { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	StringRef getDataAt(size_t n) const { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	void insertData(const char * pos, size_t length) { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-	
+
+	void getExtremes(Field & min, Field & max) const
+	{
+		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	ColumnPtr cut(size_t start, size_t length) const
 	{
 		return cloneDummy(length);
