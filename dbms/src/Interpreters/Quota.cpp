@@ -62,32 +62,33 @@ String QuotaForInterval::toString() const
 
 void QuotaForInterval::addQuery(time_t current_time, const String & quota_name)
 {
-	++used.queries;
+	__sync_fetch_and_add(&used.queries, 1);
 }
 
 void QuotaForInterval::addError(time_t current_time, const String & quota_name)
 {
-	++used.errors;
+	__sync_fetch_and_add(&used.errors, 1);
 }
 
 void QuotaForInterval::checkAndAddResultRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes)
 {
 	checkExceeded(current_time, quota_name);
-	used.result_rows += rows;
-	used.result_bytes += bytes;
+	__sync_fetch_and_add(&used.result_rows, rows);
+	__sync_fetch_and_add(&used.result_bytes, bytes);
 }
 
 void QuotaForInterval::checkAndAddReadRowsBytes(time_t current_time, const String & quota_name, size_t rows, size_t bytes)
 {
 	checkExceeded(current_time, quota_name);
-	used.read_rows += rows;
-	used.read_bytes += bytes;
+	__sync_fetch_and_add(&used.read_rows, rows);
+	__sync_fetch_and_add(&used.read_bytes, bytes);
 }
 
 void QuotaForInterval::checkAndAddExecutionTime(time_t current_time, const String & quota_name, Poco::Timespan amount)
 {
 	checkExceeded(current_time, quota_name);
-	used.execution_time += amount;
+	/// Используется информация о внутреннем представлении Poco::Timespan.
+	__sync_fetch_and_add(reinterpret_cast<Int64 *>(&used.execution_time), amount.totalMicroseconds());
 }
 
 void QuotaForInterval::updateTime(time_t current_time)
@@ -147,42 +148,36 @@ void QuotaForIntervals::initFromConfig(const String & config_elem)
 
 void QuotaForIntervals::checkExceeded(time_t current_time)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 		it->second.checkExceeded(current_time, parent->name);
 }
 
 void QuotaForIntervals::addQuery(time_t current_time)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 		it->second.addQuery(current_time, parent->name);
 }
 
 void QuotaForIntervals::addError(time_t current_time)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 		it->second.addError(current_time, parent->name);
 }
 
 void QuotaForIntervals::checkAndAddResultRowsBytes(time_t current_time, size_t rows, size_t bytes)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 		it->second.checkAndAddResultRowsBytes(current_time, parent->name, rows, bytes);
 }
 
 void QuotaForIntervals::checkAndAddReadRowsBytes(time_t current_time, size_t rows, size_t bytes)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 		it->second.checkAndAddReadRowsBytes(current_time, parent->name, rows, bytes);
 }
 
 void QuotaForIntervals::checkAndAddExecutionTime(time_t current_time, Poco::Timespan amount)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 		it->second.checkAndAddExecutionTime(current_time, parent->name, amount);
 }
@@ -191,11 +186,8 @@ String QuotaForIntervals::toString() const
 {
 	std::stringstream res;
 
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(parent->mutex);
-		for (Container::const_reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-			res << std::endl << it->second.toString();
-	}
+	for (Container::const_reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
+		res << std::endl << it->second.toString();
 
 	return res.str();
 }
