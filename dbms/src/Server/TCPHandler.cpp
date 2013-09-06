@@ -288,7 +288,7 @@ void TCPHandler::sendTotals()
 
 			writeVarUInt(Protocol::Server::Totals, *out);
 
-			state.block_out->write(input->getTotals());
+			state.block_out->write(totals);
 			state.maybe_compressed_out->next();
 			out->next();
 		}
