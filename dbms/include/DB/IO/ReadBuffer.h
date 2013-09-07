@@ -103,45 +103,6 @@ public:
 		return bytes_copied;
 	}
 
-	/** Отличается от предыдущего метода тем, что делает меньше копирований:
-	  * - если в текущем буфере есть данные, то копируем их;
-	  * - если нужны ещё данные, то используем в качестве буфера для чтения to - то есть, читаем сразу куда сказали.
-	  */
-	size_t readBig(char * to, size_t n)
-	{
-		size_t bytes_copied = 0;
-
-		/// Копируем то, что есть в буфере (уже было считано раньше).
-		if (pos != working_buffer.end())
-		{
-			size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n);
-			std::memcpy(to, pos, bytes_to_copy);
-			pos += bytes_to_copy;
-			bytes_copied += bytes_to_copy;
-		}
-
-		/// Запоминаем старый буфер для чтения.
-		Buffer old_buffer = internal_buffer;
-
-		/// Если не хватило.
-		while (bytes_copied < n)
-		{
-			/// Выставляем в качестве буфера для чтения кусок памяти, куда нужно положить результат.
-			set(to + bytes_copied, n - bytes_copied);
-
-			/// Эта штука читает данные 
-			if (!next())
-				break;
-
-			bytes_copied += working_buffer.size();
-		}
-
-		/// Выставляем обратно старый буфер.
-		set(old_buffer.begin(), old_buffer.size());
-
-		return bytes_copied;
-	}
-
 	/** Читает n байт, если есть меньше - кидает исключение. */
 	void readStrict(char * to, size_t n)
 	{

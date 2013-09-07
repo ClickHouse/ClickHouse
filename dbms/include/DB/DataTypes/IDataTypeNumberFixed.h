@@ -55,7 +55,7 @@ public:
 	{
 		typename ColumnType::Container_t & x =  dynamic_cast<ColumnType &>(column).getData();
 		x.resize(limit);
-		size_t size = istr.readBig(reinterpret_cast<char*>(&x[0]), sizeof(typename ColumnType::value_type) * limit);
+		size_t size = istr.read(reinterpret_cast<char*>(&x[0]), sizeof(typename ColumnType::value_type) * limit);
 		x.resize(size / sizeof(typename ColumnType::value_type));
 	}
 
