@@ -70,7 +70,7 @@ class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
 	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr())
-		: IBlockInputStream(owned_storage_), is_cancelled(false), quota(NULL), quota_mode(QUOTA_READ), prev_elapsed(0) {}
+		: IBlockInputStream(owned_storage_), is_cancelled(false), enabled_extremes(false), quota(NULL), quota_mode(QUOTA_READ), prev_elapsed(0) {}
 	
 	Block read();
 
@@ -79,6 +79,8 @@ public:
 
 	/// Получить "тотальные" значения. Берёт их из себя или из первого дочернего источника, в котором они есть. Их может не быть.
 	const Block & getTotals() const;
+	/// То же самое для минимумов и максимумов.
+	const Block & getExtremes() const;
 
 
 	/** Установить колбэк прогресса выполнения.
@@ -150,15 +152,22 @@ public:
 		quota_mode = quota_mode_;
 	}
 
+	/// Включить рассчёт минимумов и максимумов по столбцам результата.
+	void enableExtremes() { enabled_extremes = true; }
+
 protected:
 	BlockStreamProfileInfo info;
 	volatile bool is_cancelled;
 	ProgressCallback progress_callback;
 
+	bool enabled_extremes;
+
 	/// Дополнительная информация, которая может образоваться в процессе работы.
 
 	/// Тотальные значения при агрегации.
 	Block totals;
+	/// Минимумы и максимумы. Первая строчка блока - минимумы, вторая - максимумы.
+	Block extremes;
 
 	/// Ограничения и квоты.
 	
@@ -170,6 +179,11 @@ protected:
 
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;
+
+
+	void updateExtremes(Block & block);
+	bool checkLimits();
+	void checkQuota(Block & block);
 };
 
 }

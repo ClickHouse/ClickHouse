@@ -88,6 +88,7 @@ void JSONRowOutputStream::writeSuffix()
 	writeCString("\t]", ostr);
 
 	writeTotals();
+	writeExtremes();
 
 	writeCString(",\n\n", ostr);
 	writeCString("\t\"rows\": ", ostr);
@@ -132,6 +133,50 @@ void JSONRowOutputStream::writeTotals()
 			writeCString(": ", ostr);
 			column.type->serializeTextJSON((*column.column)[0], ostr);
 		}
+
+		writeChar('\n', ostr);
+		writeCString("\t}", ostr);
+	}
+}
+
+
+static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr)
+{
+	writeCString("\t\t\"", ostr);
+	writeCString(title, ostr);
+	writeCString("\":\n", ostr);
+	writeCString("\t\t{\n", ostr);
+
+	size_t extremes_columns = extremes.columns();
+	for (size_t i = 0; i < extremes_columns; ++i)
+	{
+		const ColumnWithNameAndType & column = extremes.getByPosition(i);
+
+		if (i != 0)
+			writeCString(",\n", ostr);
+
+		writeCString("\t\t\t", ostr);
+		writeDoubleQuotedString(column.name, ostr);
+		writeCString(": ", ostr);
+		column.type->serializeTextJSON((*column.column)[row_num], ostr);
+	}
+
+	writeChar('\n', ostr);
+	writeCString("\t\t}", ostr);
+}
+
+void JSONRowOutputStream::writeExtremes()
+{
+	if (extremes)
+	{
+		writeCString(",\n", ostr);
+		writeChar('\n', ostr);
+		writeCString("\t\"extremes\":\n", ostr);
+		writeCString("\t{\n", ostr);
+
+		writeExtremesElement("min", extremes, 0, ostr);
+		writeCString(",\n", ostr);
+		writeExtremesElement("max", extremes, 1, ostr);
 
 		writeChar('\n', ostr);
 		writeCString("\t}", ostr);

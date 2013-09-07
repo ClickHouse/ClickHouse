@@ -63,6 +63,7 @@ namespace Protocol
 			EndOfStream = 5,	/// Все пакеты были переданы.
 			ProfileInfo = 6,	/// Пакет с профайлинговой информацией.
 			Totals = 7,			/// Блок данных с тотальными значениями, со сжатием или без.
+			Extremes = 8,		/// Блок данных с минимумами и максимумами, аналогично.
 		};
 
 		/** NOTE: Если бы в качестве типа агрумента функции был бы Enum, то сравнение packet >= 0 && packet < 7
@@ -71,8 +72,8 @@ namespace Protocol
 		  */
 		inline const char * toString(UInt64 packet)
 		{
-			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo" };
-			return packet >= 0 && packet < 7
+			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes" };
+			return packet >= 0 && packet < 9
 				? data[packet]
 				: "Unknown packet";
 		}

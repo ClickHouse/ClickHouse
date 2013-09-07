@@ -36,6 +36,7 @@ public:
 	  */
 	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
 	virtual void setTotals(const Block & totals) {}
+	virtual void setExtremes(const Block & extremes) {}
 
 	virtual ~IRowOutputStream() {}
 };

@@ -43,4 +43,9 @@ void BlockOutputStreamFromRowOutputStream::setTotals(const Block & totals)
 	row_output->setTotals(totals);
 }
 
+void BlockOutputStreamFromRowOutputStream::setExtremes(const Block & extremes)
+{
+	row_output->setExtremes(extremes);
+}
+
 }

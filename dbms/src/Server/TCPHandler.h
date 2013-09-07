@@ -122,6 +122,7 @@ private:
 	void sendEndOfStream();
 	void sendProfileInfo();
 	void sendTotals();
+	void sendExtremes();
 
 	/// Создаёт state.block_in/block_out для чтения/записи блоков, в зависимости от того, включено ли сжатие.
 	void initBlockInput();

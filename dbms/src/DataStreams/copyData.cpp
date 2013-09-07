@@ -22,6 +22,7 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to)
 			to.setRowsBeforeLimit(input->getInfo().getRowsBeforeLimit());
 
 		to.setTotals(input->getTotals());
+		to.setExtremes(input->getExtremes());
 	}
 
 	from.readSuffix();

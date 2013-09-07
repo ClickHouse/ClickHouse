@@ -289,7 +289,13 @@ Connection::Packet Connection::receivePacket()
 			return res;
 
 		case Protocol::Server::Totals:
-			res.block = receiveTotals();
+			/// Блок с тотальными значениями передаётся так же, как обычный блок данных. Разница только в идентификаторе пакета.
+			res.block = receiveData();
+			return res;
+
+		case Protocol::Server::Extremes:
+			/// Аналогично.
+			res.block = receiveData();
 			return res;
 
 		case Protocol::Server::EndOfStream:
@@ -363,11 +369,5 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
 	return profile_info;
 }
 
-
-Block Connection::receiveTotals()
-{
-	/// Блок с тотальными значениями передаётся так же, как обычный блок данных. Разница только в идентификаторе пакета.
-	return receiveData();
-}
 
 }

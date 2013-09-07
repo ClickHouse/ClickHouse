@@ -675,6 +675,10 @@ private:
 				onTotals(packet.block);
 				return true;
 
+			case Protocol::Server::Extremes:
+				onExtremes(packet.block);
+				return true;
+
 			case Protocol::Server::Exception:
 				onException(*packet.exception);
 				last_exception = packet.exception;
@@ -753,6 +757,11 @@ private:
 	void onTotals(Block & block)
 	{
 		block_std_out->setTotals(block);
+	}
+
+	void onExtremes(Block & block)
+	{
+		block_std_out->setExtremes(block);
 	}
 
 

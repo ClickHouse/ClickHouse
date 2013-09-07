@@ -245,6 +245,7 @@ void TCPHandler::processOrdinaryQuery()
 			if (!block)
 			{
 				sendTotals();
+				sendExtremes();
 				sendProfileInfo();
 			}
 			
@@ -275,7 +276,7 @@ void TCPHandler::sendProfileInfo()
 
 void TCPHandler::sendTotals()
 {
-	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS)
+	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
 		return;
 
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
@@ -289,6 +290,29 @@ void TCPHandler::sendTotals()
 			writeVarUInt(Protocol::Server::Totals, *out);
 
 			state.block_out->write(totals);
+			state.maybe_compressed_out->next();
+			out->next();
+		}
+	}
+}
+
+
+void TCPHandler::sendExtremes()
+{
+	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
+		return;
+
+	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+	{
+		const Block & extremes = input->getExtremes();
+
+		if (extremes)
+		{
+			initBlockOutput();
+
+			writeVarUInt(Protocol::Server::Extremes, *out);
+
+			state.block_out->write(extremes);
 			state.maybe_compressed_out->next();
 			out->next();
 		}

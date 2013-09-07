@@ -20,6 +20,7 @@ public:
 	
 	void setRowsBeforeLimit(size_t rows_before_limit);
 	void setTotals(const Block & totals);
+	void setExtremes(const Block & extremes);
 
 private:
 	RowOutputStreamPtr row_output;

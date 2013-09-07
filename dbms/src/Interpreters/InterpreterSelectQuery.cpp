@@ -278,6 +278,12 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			/// Сначала выполняем DISTINCT во всех источниках.
 			executeDistinct(streams, true);
 
+			/// На этой стадии можно считать минимумы и максимумы, если надо.
+			if (settings.extremes)
+				for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+					if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+						stream->enableExtremes();
+
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 			  * ограничивающий число записей в каждом до offset + limit.
 			  */

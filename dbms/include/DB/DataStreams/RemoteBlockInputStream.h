@@ -123,6 +123,7 @@ public:
 				case Protocol::Server::Progress:
 				case Protocol::Server::ProfileInfo:
 				case Protocol::Server::Totals:
+				case Protocol::Server::Extremes:
 					break;
 
 				case Protocol::Server::EndOfStream:
@@ -184,6 +185,10 @@ protected:
 
 				case Protocol::Server::Totals:
 					totals = packet.block;
+					break;
+
+				case Protocol::Server::Extremes:
+					extremes = packet.block;
 					break;
 
 				default:

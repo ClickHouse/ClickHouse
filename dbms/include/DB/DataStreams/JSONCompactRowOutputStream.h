@@ -25,6 +25,7 @@ public:
 
 protected:
 	void writeTotals();
+	void writeExtremes();
 };
 
 }

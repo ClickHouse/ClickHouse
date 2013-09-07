@@ -3,6 +3,7 @@
 /*#include <Poco/Mutex.h>
 #include <Poco/Ext/ThreadNumber.h>*/
 
+#include <DB/Columns/ColumnConst.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
@@ -174,7 +175,18 @@ Block IProfilingBlockInputStream::read()
 	}*/
 
 	if (res)
+	{
 		info.update(res);
+
+		if (enabled_extremes)
+			updateExtremes(res);
+
+		if (!checkLimits())
+			return Block();
+
+		if (quota != NULL)
+			checkQuota(res);
+	}
 	else
 	{
 		/** Если поток закончился, то ещё попросим всех детей прервать выполнение.
@@ -188,6 +200,63 @@ Block IProfilingBlockInputStream::read()
 
 	progress(res);
 
+	return res;
+}
+
+
+void IProfilingBlockInputStream::updateExtremes(Block & block)
+{
+	size_t columns = block.columns();
+
+	if (!extremes)
+	{
+		extremes = block.cloneEmpty();
+
+		for (size_t i = 0; i < columns; ++i)
+		{
+			Field min_value;
+			Field max_value;
+
+			block.getByPosition(i).column->getExtremes(min_value, max_value);
+
+			ColumnPtr & column = extremes.getByPosition(i).column;
+
+			if (column->isConst())
+				column = dynamic_cast<const IColumnConst &>(*column).convertToFullColumn();
+
+			column->insert(min_value);
+			column->insert(max_value);
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < columns; ++i)
+		{
+			ColumnPtr & column = extremes.getByPosition(i).column;
+			
+			Field min_value = (*column)[0];
+			Field max_value = (*column)[1];
+
+			Field cur_min_value;
+			Field cur_max_value;
+
+			block.getByPosition(i).column->getExtremes(cur_min_value, cur_max_value);
+
+			if (cur_min_value < min_value)
+				min_value = cur_min_value;
+			if (cur_max_value > max_value)
+				max_value = cur_max_value;
+
+			column = column->cloneEmpty();
+			column->insert(min_value);
+			column->insert(max_value);
+		}
+	}
+}
+
+
+bool IProfilingBlockInputStream::checkLimits()
+{
 	/// Проверка ограничений.
 	if ((limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
 		|| (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read))
@@ -198,7 +267,7 @@ Block IProfilingBlockInputStream::read()
 				ErrorCodes::TOO_MUCH_ROWS);
 
 		if (limits.read_overflow_mode == Limits::BREAK)
-			return Block();
+			return false;
 
 		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -212,7 +281,7 @@ Block IProfilingBlockInputStream::read()
 			ErrorCodes::TIMEOUT_EXCEEDED);
 
 		if (limits.timeout_overflow_mode == Limits::BREAK)
-			return Block();
+			return false;
 
 		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -226,31 +295,31 @@ Block IProfilingBlockInputStream::read()
 			ErrorCodes::TOO_SLOW);
 	}
 
-	/// Проверка квоты.
-	if (quota != NULL)
+	return true;
+}
+
+
+void IProfilingBlockInputStream::checkQuota(Block & block)
+{
+	time_t current_time = time(0);
+	double total_elapsed = info.total_stopwatch.elapsedSeconds();
+
+	switch (quota_mode)
 	{
-		time_t current_time = time(0);
-		double total_elapsed = info.total_stopwatch.elapsedSeconds();
+		case QUOTA_READ:
+			quota->checkAndAddReadRowsBytes(current_time, block.rows(), block.bytes());
+			break;
 
-		switch (quota_mode)
-		{
-			case QUOTA_READ:
-				quota->checkAndAddReadRowsBytes(current_time, res.rows(), res.bytes());
-				break;
+		case QUOTA_RESULT:
+			quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
+			quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
+			break;
 
-			case QUOTA_RESULT:
-				quota->checkAndAddResultRowsBytes(current_time, res.rows(), res.bytes());
-				quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
-				break;
-
-			default:
-				throw Exception("Logical error: unknown quota mode.", ErrorCodes::LOGICAL_ERROR);
-		}
-
-		prev_elapsed = total_elapsed;
+		default:
+			throw Exception("Logical error: unknown quota mode.", ErrorCodes::LOGICAL_ERROR);
 	}
-	
-	return res;
+
+	prev_elapsed = total_elapsed;
 }
 
 
@@ -304,6 +373,24 @@ const Block & IProfilingBlockInputStream::getTotals() const
 	}
 
 	return totals;
+}
+
+const Block & IProfilingBlockInputStream::getExtremes() const
+{
+	if (extremes)
+		return extremes;
+
+	for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+	{
+		if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+		{
+			const Block & res = child->getExtremes();
+			if (res)
+				return res;
+		}
+	}
+
+	return extremes;
 }
 
 
