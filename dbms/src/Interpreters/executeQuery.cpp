@@ -74,7 +74,7 @@ void executeQuery(
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
 	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
-		process_list_entry = context.getProcessList().insert(query);
+		process_list_entry = context.getProcessList().insert(query, context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
 
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
@@ -132,21 +132,25 @@ BlockIO executeQuery(
 	quota.checkExceeded(current_time);
 
 	BlockIO res;
+	
+	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
+	ProcessList::EntryPtr process_list_entry;
+	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+		process_list_entry = context.getProcessList().insert(query, context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
 
 	try
 	{
 		InterpreterQuery interpreter(ast, context, stage);
 		res = interpreter.execute();
+
+		/// Держим элемент списка процессов до конца обработки запроса.
+		res.process_list_entry = process_list_entry;
 	}
 	catch (...)
 	{
 		quota.addError(current_time);
 		throw;
 	}
-
-	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
-	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
-		res.process_list_entry = context.getProcessList().insert(query);
 
 	quota.addQuery(current_time);
 	return res;

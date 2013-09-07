@@ -22,6 +22,7 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "connect_timeout")		connect_timeout 	= Poco::Timespan(safeGet<UInt64>(value), 0);
 	else if (name == "receive_timeout")		receive_timeout 	= Poco::Timespan(safeGet<UInt64>(value), 0);
 	else if (name == "send_timeout")		send_timeout 		= Poco::Timespan(safeGet<UInt64>(value), 0);
+	else if (name == "queue_max_wait_ms")	queue_max_wait_ms 	= Poco::Timespan(safeGet<UInt64>(value) * 1000);
 	else if (name == "poll_interval")		poll_interval 		= safeGet<UInt64>(value);
 	else if (name == "connect_timeout_with_failover_ms")
 		connect_timeout_with_failover_ms = Poco::Timespan(safeGet<UInt64>(value) * 1000);
@@ -45,6 +46,7 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		|| name == "connect_timeout"
 		|| name == "receive_timeout"
 		|| name == "send_timeout"
+		|| name == "queue_max_wait_ms"
 		|| name == "poll_interval"
 		|| name == "connect_timeout_with_failover_ms"
 		|| name == "max_distributed_connections"
@@ -77,6 +79,7 @@ void Settings::set(const String & name, const String & value)
 		|| name == "connect_timeout"
 		|| name == "receive_timeout"
 		|| name == "send_timeout"
+		|| name == "queue_max_wait_ms"
 		|| name == "poll_interval"
 		|| name == "connect_timeout_with_failover_ms"
 		|| name == "max_distributed_connections"
@@ -135,6 +138,7 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("connect_timeout", buf);						writeVarUInt(connect_timeout.totalSeconds(), buf);
 	writeStringBinary("receive_timeout", buf);						writeVarUInt(receive_timeout.totalSeconds(), buf);
 	writeStringBinary("send_timeout", buf);							writeVarUInt(send_timeout.totalSeconds(), buf);
+	writeStringBinary("queue_max_wait_ms", buf);					writeVarUInt(queue_max_wait_ms.totalMilliseconds(), buf);
 	writeStringBinary("poll_interval", buf);						writeVarUInt(poll_interval, buf);
 	writeStringBinary("connect_timeout_with_failover_ms", buf);		writeVarUInt(connect_timeout_with_failover_ms.totalMilliseconds(), buf);
 	writeStringBinary("max_distributed_connections", buf);			writeVarUInt(max_distributed_connections, buf);

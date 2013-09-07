@@ -30,6 +30,7 @@ struct Settings
 	Poco::Timespan connect_timeout_with_failover_ms;	/// Если следует выбрать одну из рабочих реплик.
 	Poco::Timespan receive_timeout;
 	Poco::Timespan send_timeout;
+	Poco::Timespan queue_max_wait_ms;	/// Время ожидания в очереди запросов, если количество одновременно выполняющихся запросов превышает максимальное.
 	/// Блокироваться в цикле ожидания запроса в сервере на указанное количество секунд.
 	size_t poll_interval;
 	/// Максимальное количество соединений с одним удалённым сервером в пуле.
@@ -54,9 +55,10 @@ struct Settings
 		asynchronous(true),
 		interactive_delay(DEFAULT_INTERACTIVE_DELAY),
 		connect_timeout(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
-		connect_timeout_with_failover_ms(0, 1000 * DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS),
+		connect_timeout_with_failover_ms(1000 * DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS),
 		receive_timeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
+		queue_max_wait_ms(1000 * DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS),
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
 		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
