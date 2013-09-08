@@ -54,7 +54,7 @@ struct Settings
 		max_threads(DEFAULT_MAX_THREADS),
 		max_distributed_connections(DEFAULT_MAX_DISTRIBUTED_CONNECTIONS),
 		max_query_size(DEFAULT_MAX_QUERY_SIZE),
-		asynchronous(true),
+		asynchronous(false),
 		interactive_delay(DEFAULT_INTERACTIVE_DELAY),
 		connect_timeout(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
 		connect_timeout_with_failover_ms(1000 * DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS),
