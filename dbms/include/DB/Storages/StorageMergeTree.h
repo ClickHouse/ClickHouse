@@ -67,6 +67,11 @@ struct StorageMergeTreeSettings
 	
 	/// Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их.
 	size_t coarse_index_granularity;
+
+	/** Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется.
+	  * (Чтобы большие запросы не вымывали кэш.)
+	  */
+	size_t max_rows_to_use_cache;
 	
 	StorageMergeTreeSettings() :
 		max_size_ratio_to_merge_parts(5),
@@ -75,7 +80,8 @@ struct StorageMergeTreeSettings
 		merging_threads(2),
 		min_rows_for_concurrent_read(20 * 8192),
 		min_rows_for_seek(5 * 8192),
-		coarse_index_granularity(8) {}
+		coarse_index_granularity(8),
+		max_rows_to_use_cache(1024 * 1024) {}
 };
 
 /// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
@@ -171,6 +177,7 @@ private:
 	
 	size_t min_marks_for_seek;
 	size_t min_marks_for_concurrent_read;
+	size_t max_marks_to_use_cache;
 
 	/// Для схлопывания записей об изменениях, если это требуется.
 	String sign_column;

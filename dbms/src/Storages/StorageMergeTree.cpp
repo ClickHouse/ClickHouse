@@ -74,6 +74,7 @@ StorageMergeTree::StorageMergeTree(
 {
 	min_marks_for_seek = (settings.min_rows_for_seek + index_granularity - 1) / index_granularity;
 	min_marks_for_concurrent_read = (settings.min_rows_for_concurrent_read + index_granularity - 1) / index_granularity;
+	max_marks_to_use_cache = (settings.max_rows_to_use_cache + index_granularity - 1) / index_granularity;
 
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
@@ -314,6 +315,9 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
 		}
 		sum_marks += sum_marks_in_parts[i];
 	}
+
+	if (sum_marks > max_marks_to_use_cache)
+		use_uncompressed_cache = false;
 	
 	BlockInputStreams res;
 	
@@ -400,6 +404,14 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
 BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(
 	RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size, bool use_uncompressed_cache)
 {
+	size_t sum_marks = 0;
+	for (size_t i = 0; i < parts.size(); ++i)
+		for (size_t j = 0; j < parts[i].ranges.size(); ++j)
+			sum_marks += parts[i].ranges[j].end - parts[i].ranges[j].begin;
+
+	if (sum_marks > max_marks_to_use_cache)
+		use_uncompressed_cache = false;
+	
 	ExpressionActionsPtr sign_filter_expression;
 	String sign_filter_column;
 	createPositiveSignCondition(sign_filter_expression, sign_filter_column);
