@@ -24,6 +24,12 @@ private:
 	std::vector<char> compressed_buffer;
 	qlz_state_decompress * qlz_state;
 
+	/** Указатель на кусок памяти, куда будут разжиматься блоки.
+	  * Это может быть либо свой кусок памяти из BufferWithOwnMemory (по-умолчанию),
+	  *  либо пользователь может попросить разжимать данные в свой кусок памяти (метод setMemory).
+	  */
+	Memory * maybe_own_memory;
+
 
 	/// Прочитать сжатые данные в compressed_buffer. Достать из их заголовка размер разжатых данных. Проверить чексумму.
 	bool readCompressedData(size_t & size_decompressed)
@@ -72,9 +78,9 @@ private:
 		if (!readCompressedData(size_decompressed))
 			return false;
 
-		memory.resize(size_decompressed);
-		internal_buffer = Buffer(&memory[0], &memory[size_decompressed]);
-		working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
+		maybe_own_memory->resize(size_decompressed);
+		internal_buffer = Buffer(&(*maybe_own_memory)[0], &(*maybe_own_memory)[size_decompressed]);
+		working_buffer = Buffer(&(*maybe_own_memory)[0], &(*maybe_own_memory)[size_decompressed]);
 
 		decompress(working_buffer.begin(), size_decompressed);
 
@@ -86,7 +92,8 @@ public:
 		: BufferWithOwnMemory<ReadBuffer>(0),
 		in(in_),
 		compressed_buffer(QUICKLZ_HEADER_SIZE),
-		qlz_state(NULL)
+		qlz_state(NULL),
+		maybe_own_memory(&memory)
 	{
 	}
 
@@ -94,6 +101,13 @@ public:
 	{
 		if (qlz_state)
 			delete qlz_state;
+	}
+
+
+	/// Использовать предоставленный пользователем кусок памяти для разжатия. (Для реализации кэша разжатых блоков.)
+	void setMemory(Memory & memory_)
+	{
+		maybe_own_memory = &memory_;
 	}
 
 
@@ -129,9 +143,9 @@ public:
 			}
 			else
 			{
-				memory.resize(size_decompressed);
-				internal_buffer = Buffer(&memory[0], &memory[size_decompressed]);
-				working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
+				maybe_own_memory->resize(size_decompressed);
+				internal_buffer = Buffer(&(*maybe_own_memory)[0], &(*maybe_own_memory)[size_decompressed]);
+				working_buffer = Buffer(&(*maybe_own_memory)[0], &(*maybe_own_memory)[size_decompressed]);
 				pos = working_buffer.begin();
 
 				decompress(working_buffer.begin(), size_decompressed);

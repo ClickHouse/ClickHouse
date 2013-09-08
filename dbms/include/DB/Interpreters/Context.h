@@ -9,6 +9,7 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/Core/NamesAndTypes.h>
+#include <DB/IO/UncompressedCache.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Functions/FunctionFactory.h>
@@ -56,6 +57,7 @@ struct ContextShared
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
+	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	Logger * log;											/// Логгер.
 
 	ContextShared() : log(&Logger::get("Context")) {};
@@ -169,6 +171,10 @@ public:
 
 	ProcessList & getProcessList()											{ return shared->process_list; }
 	const ProcessList & getProcessList() const								{ return shared->process_list; }
+
+	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
+	void setUncompressedCache(size_t cache_size_in_cells);
+	UncompressedCachePtr getUncompressedCache() const;
 };
 
 

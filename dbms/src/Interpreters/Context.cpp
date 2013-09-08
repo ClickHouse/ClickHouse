@@ -388,4 +388,21 @@ ProgressCallback Context::getProgressCallback() const
 }
 
 
+void Context::setUncompressedCache(size_t cache_size_in_cells)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (shared->uncompressed_cache)
+		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+	shared->uncompressed_cache = new UncompressedCache(cache_size_in_cells);
+}
+
+
+UncompressedCachePtr Context::getUncompressedCache() const
+{
+	/// Исходим из допущения, что функция setUncompressedCache, если вызывалась, то раньше. Иначе поставьте mutex.
+	return shared->uncompressed_cache;
+}
+
 }

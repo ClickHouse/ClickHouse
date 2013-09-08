@@ -43,6 +43,8 @@ struct Settings
 	bool sign_rewrite;
 	/// Считать минимумы и максимумы столбцов результата. Они могут выводиться в JSON-форматах.
 	bool extremes;
+	/// Использовать ли кэш разжатых блоков.
+	bool use_uncompressed_cache;
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
@@ -62,7 +64,7 @@ struct Settings
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
 		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
-		sign_rewrite(false), extremes(false)
+		sign_rewrite(false), extremes(false), use_uncompressed_cache(true)
 	{
 	}
 

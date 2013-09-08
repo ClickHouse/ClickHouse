@@ -105,6 +105,11 @@ int Server::main(const std::vector<std::string> & args)
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context.getProcessList().setMaxSize(config.getInt("max_concurrent_queries", 0));
 
+	/// Размер кэша разжатых блоков. Если нулевой - кэш отключён.
+	size_t uncompressed_cache_size = config.getInt("uncompressed_cache_size", 0);
+	if (uncompressed_cache_size)
+		global_context.setUncompressedCache(uncompressed_cache_size);
+
 	/// Загружаем настройки.
 	Settings & settings = global_context.getSettingsRef();
 	settings.setProfile(config.getString("default_profile", "default"));

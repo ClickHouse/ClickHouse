@@ -62,6 +62,7 @@ public:
 
 	off_t seek(off_t offset, int whence = SEEK_SET)
 	{
+		pos = working_buffer.end();
 		off_t res = lseek(fd, offset, whence);
 		if (-1 == res)
 			throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);

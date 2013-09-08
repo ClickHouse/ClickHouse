@@ -269,11 +269,11 @@ BlockInputStreams StorageMergeTree::read(
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 		
-		res = spreadMarkRangesAmongThreadsFinal(parts_with_ranges, threads, column_names_to_read, max_block_size);
+		res = spreadMarkRangesAmongThreadsFinal(parts_with_ranges, threads, column_names_to_read, max_block_size, settings.use_uncompressed_cache);
 	}
 	else
 	{
-		res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names_to_read, max_block_size);
+		res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names_to_read, max_block_size, settings.use_uncompressed_cache);
 	}
 	
 	if (select.sample_size)
@@ -292,7 +292,8 @@ BlockInputStreams StorageMergeTree::read(
 
 
 /// Примерно поровну распределить засечки между потоками.
-BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
+BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
+	RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size, bool use_uncompressed_cache)
 {
 	/// На всякий случай перемешаем куски.
 	std::random_shuffle(parts.begin(), parts.end());
@@ -347,9 +348,9 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 					/// Восстановим порядок отрезков.
 					std::reverse(part.ranges.begin(), part.ranges.end());
 					
-					streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
-																	  max_block_size, column_names, *this,
-																	  part.data_part, part.ranges, thisPtr()));
+					streams.push_back(new MergeTreeBlockInputStream(
+						full_path + part.data_part->name + '/', max_block_size, column_names, *this,
+						part.data_part, part.ranges, thisPtr(), use_uncompressed_cache));
 					need_marks -= marks_in_part;
 					parts.pop_back();
 					sum_marks_in_parts.pop_back();
@@ -376,9 +377,9 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 						part.ranges.pop_back();
 				}
 				
-				streams.push_back(new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
-																  max_block_size, column_names, *this,
-																  part.data_part, ranges_to_get_from_part, thisPtr()));
+				streams.push_back(new MergeTreeBlockInputStream(
+					full_path + part.data_part->name + '/', max_block_size, column_names, *this,
+					part.data_part, ranges_to_get_from_part, thisPtr(), use_uncompressed_cache));
 			}
 			
 			if (streams.size() == 1)
@@ -396,7 +397,8 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(RangesInDataPar
 
 
 /// Распределить засечки между потоками и сделать, чтобы в ответе (почти) все данные были сколлапсированы (модификатор FINAL).
-BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size)
+BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(
+	RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size, bool use_uncompressed_cache)
 {
 	ExpressionActionsPtr sign_filter_expression;
 	String sign_filter_column;
@@ -408,9 +410,9 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(RangesInDa
 	{
 		RangesInDataPart & part = parts[part_index];
 		
-		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(full_path + part.data_part->name + '/',
-																			max_block_size, column_names, *this,
-																			part.data_part, part.ranges, thisPtr());
+		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
+			full_path + part.data_part->name + '/', max_block_size, column_names, *this,
+			part.data_part, part.ranges, thisPtr(), use_uncompressed_cache);
 		
 		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
 	}
@@ -846,7 +848,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], ranges, StoragePtr()), primary_expr));
+			full_path + parts[i]->name + '/', DEFAULT_BLOCK_SIZE, all_column_names, *this, parts[i], ranges, StoragePtr(), false), primary_expr));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.

@@ -4,6 +4,8 @@
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/MergeTree/PKCondition.h>
 
+#include <DB/IO/CachedCompressedReadBuffer.h>
+
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
 
@@ -17,12 +19,14 @@ public:
 	/// Параметры storage_ и owned_storage разделены, чтобы можно было сделать поток, не владеющий своим storage
 	/// (например, поток, сливаящий куски). В таком случае сам storage должен следить, чтобы не удалить данные, пока их читают.
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
-								size_t block_size_, const Names & column_names_,
-						StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
-						const MarkRanges & mark_ranges_, StoragePtr owned_storage)
-	: IProfilingBlockInputStream(owned_storage), path(path_), block_size(block_size_), column_names(column_names_),
-	storage(storage_), owned_data_part(owned_data_part_),
-	mark_ranges(mark_ranges_), current_range(-1), rows_left_in_current_range(0)
+		size_t block_size_, const Names & column_names_,
+		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
+		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_)
+		: IProfilingBlockInputStream(owned_storage),
+		path(path_), block_size(block_size_), column_names(column_names_),
+		storage(storage_), owned_data_part(owned_data_part_),
+		mark_ranges(mark_ranges_), use_uncompressed_cache(use_uncompressed_cache_),
+		current_range(-1), rows_left_in_current_range(0)
 	{
 		LOG_TRACE(storage.log, "Reading " << mark_ranges.size() << " ranges from part " << owned_data_part->name
 		<< ", up to " << (mark_ranges.back().end - mark_ranges.front().begin) * storage.index_granularity
@@ -275,36 +279,50 @@ private:
 	StorageMergeTree & storage;
 	const StorageMergeTree::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
 	MarkRanges mark_ranges; /// В каких диапазонах засечек читать.
+	bool use_uncompressed_cache;
 	
 	int current_range; /// Какой из mark_ranges сейчас читаем.
 	size_t rows_left_in_current_range; /// Сколько строк уже прочитали из текущего элемента mark_ranges.
 	
 	struct Stream
 	{
-		Stream(const String & path_prefix, size_t mark_number)
-		: plain(path_prefix + ".bin", std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path_prefix + ".bin").getSize())),
-		compressed(plain)
+		Stream(const String & path_prefix, size_t mark_number, UncompressedCache * uncompressed_cache)
 		{
+			size_t buf_size = std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path_prefix + ".bin").getSize());
+			
+			size_t offset_in_compressed_file = 0;
+			size_t offset_in_decompressed_block = 0;
+
 			if (mark_number)
 			{
 				/// Прочитаем из файла с засечками смещение в файле с данными.
 				ReadBufferFromFile marks(path_prefix + ".mrk", MERGE_TREE_MARK_SIZE);
 				marks.seek(mark_number * MERGE_TREE_MARK_SIZE);
-				
-				size_t offset_in_compressed_file = 0;
-				size_t offset_in_decompressed_block = 0;
-				
+
 				readIntBinary(offset_in_compressed_file, marks);
 				readIntBinary(offset_in_decompressed_block, marks);
-				
-				plain.seek(offset_in_compressed_file);
-				compressed.next();
-				compressed.position() += offset_in_decompressed_block;
 			}
+
+			if (uncompressed_cache)
+			{
+				compressed = new CachedCompressedReadBuffer(
+					path_prefix + ".bin", offset_in_compressed_file, *uncompressed_cache, buf_size);
+			}
+			else
+			{
+				plain = new ReadBufferFromFile(path_prefix + ".bin", buf_size);
+				compressed = new CompressedReadBuffer(*plain);
+
+				if (offset_in_compressed_file)
+					plain->seek(offset_in_compressed_file);
+			}
+
+			compressed->next();
+			compressed->position() += offset_in_decompressed_block;
 		}
-		
-		ReadBufferFromFile plain;
-		CompressedReadBuffer compressed;
+
+		SharedPtr<ReadBufferFromFile> plain;	/// Может отсутствовать, если используется CachedCompressedReadBuffer.
+		SharedPtr<ReadBuffer> compressed;		/// Либо CompressedReadBuffer, либо CachedCompressedReadBuffer.
 	};
 	
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
@@ -320,6 +338,8 @@ private:
 			*/
 		if (!Poco::File(path + escaped_column_name + ".bin").exists())
 			return;
+
+		UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
 		
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
@@ -330,8 +350,7 @@ private:
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			streams.insert(std::make_pair(size_name, new Stream(
-				path + escaped_size_name,
-				mark_number)));
+				path + escaped_size_name, mark_number, uncompressed_cache)));
 			
 			addStream(name, *type_arr->getNestedType(), mark_number, level + 1);
 		}
@@ -341,8 +360,7 @@ private:
 			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			
 			streams.insert(std::make_pair(size_name, new Stream(
-				path + escaped_size_name,
-				mark_number)));
+				path + escaped_size_name, mark_number, uncompressed_cache)));
 
 			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
@@ -350,8 +368,7 @@ private:
 		}
 		else
 			streams.insert(std::make_pair(name, new Stream(
-				path + escaped_column_name,
-				mark_number)));
+				path + escaped_column_name, mark_number, uncompressed_cache)));
 	}
 	
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0, bool read_offsets = true)
@@ -363,7 +380,7 @@ private:
 			{
 				type_arr->deserializeOffsets(
 					column,
-					streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
+					*streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
 					max_rows_to_read);
 			}
 			
@@ -379,7 +396,7 @@ private:
 		{
 			type_nested->deserializeOffsets(
 				column,
-				streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
+				*streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
 				max_rows_to_read);
 
 			if (column.size())
@@ -399,7 +416,7 @@ private:
 			}
 		}
 		else
-			type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read);
+			type.deserializeBinary(column, *streams[name]->compressed, max_rows_to_read);
 	}
 };
 
