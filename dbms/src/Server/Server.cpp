@@ -132,7 +132,7 @@ int Server::main(const std::vector<std::string> & args)
 	bool use_olap_server = config.getBool("use_olap_http_server", false);
 	Poco::Timespan keep_alive_timeout(config.getInt("keep_alive_timeout", 10), 0);
 	
-	Poco::ThreadPool server_pool(3, config.getInt("max_connections", 128));
+	Poco::ThreadPool server_pool(3, config.getInt("max_connections", 1024));
 	Poco::Net::HTTPServerParams * http_params = new Poco::Net::HTTPServerParams;
 	http_params->setTimeout(settings.receive_timeout);
 	http_params->setKeepAliveTimeout(keep_alive_timeout);
