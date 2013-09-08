@@ -357,14 +357,14 @@ void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
 }
 
 
-const Block & IProfilingBlockInputStream::getTotals() const
+const Block & IProfilingBlockInputStream::getTotals()
 {
 	if (totals)
 		return totals;
 
-	for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 	{
-		if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
 		{
 			const Block & res = child->getTotals();
 			if (res)

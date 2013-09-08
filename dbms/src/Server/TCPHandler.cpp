@@ -279,7 +279,7 @@ void TCPHandler::sendTotals()
 	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
 		return;
 
-	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		const Block & totals = input->getTotals();
 

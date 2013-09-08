@@ -35,6 +35,19 @@ public:
 		return res.str();
 	}
 
+	const Block & getTotals()
+	{
+		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
+		{
+			totals = child->getTotals();
+
+			if (totals)
+				expression->execute(totals);
+		}
+
+		return totals;
+	}
+
 protected:
 	Block readImpl()
 	{

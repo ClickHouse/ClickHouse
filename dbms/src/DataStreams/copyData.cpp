@@ -16,7 +16,7 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to)
 		to.write(block);
 
 	/// Для вывода дополнительной информации в некоторых форматах.
-	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&from))
+	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&from))
 	{
 		if (input->getInfo().hasAppliedLimit())
 			to.setRowsBeforeLimit(input->getInfo().getRowsBeforeLimit());
