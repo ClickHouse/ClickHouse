@@ -25,7 +25,7 @@ int main(int argc, char ** argv)
 		{
 			Stopwatch watch;
 			CachedCompressedReadBuffer in(path, 0, cache);
-			WriteBufferFromFile out("1.tsv");
+			WriteBufferFromFile out("/dev/null");
 			copyData(in, out);
 
 			std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
@@ -37,7 +37,7 @@ int main(int argc, char ** argv)
 		{
 			Stopwatch watch;
 			CachedCompressedReadBuffer in(path, 0, cache);
-			WriteBufferFromFile out("2.tsv");
+			WriteBufferFromFile out("/dev/null");
 			copyData(in, out);
 
 			std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
