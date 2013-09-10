@@ -289,7 +289,7 @@ public:
 		if (!pos || pos > end)
 			return false;
 
-		if (!re->match(pos, end - pos, matches))
+		if (!re->match(pos, end - pos, matches) || !matches[capture].length)
 			return false;
 
 		token_begin = pos + matches[capture].offset;
