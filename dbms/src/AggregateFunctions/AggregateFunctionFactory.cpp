@@ -9,6 +9,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionGroupUniqArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantileTiming.h>
+#include <DB/AggregateFunctions/AggregateFunctionIf.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -109,36 +110,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
-	else if (name == "sumIf")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionSumIf>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
 	else if (name == "avg")
 	{
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionAvg>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "avgIf")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionAvgIf>(*argument_types[0]);
 
 		if (!res)
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -182,26 +159,6 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqHLL12Data>;
 		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
 			return new AggregateFunctionUniq<String, AggregateFunctionUniqHLL12Data>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqIf")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqIf>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniqIf<DataTypeDate::FieldType>;
-		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniqIf<DataTypeDateTime::FieldType>;
-		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniqIf<String>;
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -313,6 +270,15 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
+	else if (name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
+	{
+		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции. TODO сделать, чтобы был максимум один рекурсивный вызов.
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), DataTypes(1, argument_types[0]));
+		return new AggregateFunctionIf(nested);
+	}
 	else
 		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
@@ -336,11 +302,8 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 		"min",
 		"max",
 		"sum",
-		"sumIf",
 		"avg",
-		"avgIf",
 		"uniq",
-		"uniqIf",
 		"uniqState",
 		"uniqHLL12",
 		"uniqHLL12State",
@@ -358,6 +321,10 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 	for (const char ** it = names; *it; ++it)
 		if (0 == strcmp(*it, name.data()))
 			return true;
+
+	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции. TODO сделать, чтобы был максимум один рекурсивный вызов.
+	if (name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
+		return isAggregateFunctionName(String(name.data(), name.size() - 2));
 
 	return false;
 }
