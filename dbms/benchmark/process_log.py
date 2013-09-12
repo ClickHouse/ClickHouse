@@ -75,7 +75,7 @@ def process_log(filename, pattern_select, time_pattern, pattern_ignore, error_pa
 def main():
     parser = argparse.ArgumentParser(description="Process log files form different databases")
     parser.add_argument('log_file', metavar = 'log_file', help = 'database log file')
-    parser.add_argument('db_name', metavar = 'db_name', help = ' database name one of clickhouse, vertica, infinidb, monetdb, infobright (... more later)')
+    parser.add_argument('db_name', metavar = 'db_name', help = ' database name one of clickhouse, vertica, infinidb, monetdb, infobright, hive (... more later)')
     args = parser.parse_args()
 
     log_file = args.log_file
@@ -86,19 +86,23 @@ def main():
     ignore_pattern = r'#'
     error_pattern = r'error .*'
     if db_name == 'clickhouse':
-            time_pattern = r'(?P<time>(?P<sec>\d+.\d{3}) sec\.)'
-            select_pattern = r'select '
-            ignore_pattern = r':\).*'
+        time_pattern = r'(?P<time>(?P<sec>\d+.\d{3}) sec\.)'
+        select_pattern = r'query\: select '
+        ignore_pattern = r':\).*'
     elif db_name == 'vertica' :
-            time_pattern = r'(?P<time>(?P<ms>\d+.\d+) ms\.)'
-            select_pattern = r'select '
-            ignore_pattern = r'(.*dbadmin=>|query:|.*Timing is on\.).*'            
+        time_pattern = r'(?P<time>(?P<ms>\d+.\d+) ms\.)'
+        select_pattern = r'select '
+        ignore_pattern = r'(.*dbadmin=>|query:|.*Timing is on\.).*'            
     elif db_name == 'infinidb' :
-            time_pattern = r'(?P<time>(?:(?P<min>\d+) min )?(?P<sec>\d+.\d+) sec)'
+        time_pattern = r'(?P<time>(?:(?P<min>\d+) min )?(?P<sec>\d+.\d+) sec)'
+        ignore_pattern = r'Query OK, 0 rows affected \(0\.00 sec\)'
     elif db_name == 'monetdb' :
-            time_pattern = r'tuples? \((?P<time>(?:(?P<min>\d+)m )?(?:(?P<sec>\d+.?\d+)s)?(?:(?P<ms>\d+.\d+)ms)?)\)'
+        time_pattern = r'tuples? \((?P<time>(?:(?P<min>\d+)m )?(?:(?P<sec>\d+.?\d+)s)?(?:(?P<ms>\d+.\d+)ms)?)\)'
     elif db_name == 'infobright' :
-            time_pattern = r'(?P<time>(?:(?P<min>\d+) min ){0,1}(?P<sec>\d+.\d+) sec)'
+        time_pattern = r'(?P<time>(?:(?P<min>\d+) min ){0,1}(?P<sec>\d+.\d+) sec)'
+    elif db_name == 'hive':
+        time_pattern = r'Time taken\: (?P<time>(?:(?P<sec>\d+.?\d+) seconds))'
+        error_pattern = r'failed\: .*'
     else:
         sys.exit("unknown db_name")
     
