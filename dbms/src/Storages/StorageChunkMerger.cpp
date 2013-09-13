@@ -381,7 +381,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				select_list->children.push_back(newIdentifier(it->first, ASTIdentifier::Column));
 			}
 			
-			QueryProcessingStage::Enum processed_stage;
+			QueryProcessingStage::Enum processed_stage = QueryProcessingStage::Complete;
 
 			Settings settings = context.getSettings();
 			
@@ -389,7 +389,8 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				src_column_names,
 				select_query_ptr,
 				settings,
-				processed_stage);
+				processed_stage,
+				DEFAULT_MERGE_BLOCK_SIZE);
 			
 			BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
 			
