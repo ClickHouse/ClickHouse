@@ -171,7 +171,7 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 }
 
 
-void MergingSortedBlockInputStream::readSuffix()
+void MergingSortedBlockInputStream::readSuffixImpl()
 {
 	const BlockStreamProfileInfo & profile_info = getInfo();
 	double seconds = profile_info.work_stopwatch.elapsedSeconds();

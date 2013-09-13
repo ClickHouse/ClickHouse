@@ -82,62 +82,10 @@ public:
 
 	~RemoteBlockInputStream()
 	{
-		bool uncaught_exception = std::uncaught_exception();
-
 		/** В случае эксепшена, закрываем соединение, чтобы оно не осталось висеть в рассихронизированном состоянии.
 		  */
-		if (uncaught_exception)
+		if (std::uncaught_exception())
 			connection.disconnect();
-		
-		/** Если одно из:
-		  *   - ничего не начинали делать;
-		  *   - получили все пакеты до EndOfStream;
-		  *   - получили с сервера эксепшен;
-		  *   - объект уничтожается из-за эксепшена;
-		  * - то больше читать ничего не нужно.
-		  */
-		if (!sent_query || finished || got_exception_from_server || uncaught_exception)
-			return;
-
-		/** Если ещё прочитали не все данные, но они больше не нужны.
-		  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT).
-		  */
-
-		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
-		if (!was_cancelled)
-		{
-			LOG_TRACE(log, "Cancelling query because enough data has been read");
-				
-			was_cancelled = true;
-			connection.sendCancel();
-		}
-
-		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
-		while (true)
-		{
-			Connection::Packet packet = connection.receivePacket();
-
-			switch (packet.type)
-			{
-				case Protocol::Server::Data:
-				case Protocol::Server::Progress:
-				case Protocol::Server::ProfileInfo:
-				case Protocol::Server::Totals:
-				case Protocol::Server::Extremes:
-					break;
-
-				case Protocol::Server::EndOfStream:
-					return;
-
-				case Protocol::Server::Exception:
-					got_exception_from_server = true;
-					packet.exception->rethrow();
-					break;
-
-				default:
-					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-			}
-		}
 	}
 
 protected:
@@ -189,6 +137,60 @@ protected:
 
 				case Protocol::Server::Extremes:
 					extremes = packet.block;
+					break;
+
+				default:
+					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+			}
+		}
+	}
+
+	void readSuffixImpl()
+	{
+		/** Если одно из:
+		 *   - ничего не начинали делать;
+		 *   - получили все пакеты до EndOfStream;
+		 *   - получили с сервера эксепшен;
+		 * - то больше читать ничего не нужно.
+		 */
+		if (!sent_query || finished || got_exception_from_server)
+			return;
+
+		finished = true;
+
+		/** Если ещё прочитали не все данные, но они больше не нужны.
+		 * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT).
+		 */
+
+		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
+		if (!was_cancelled)
+		{
+			LOG_TRACE(log, "Cancelling query because enough data has been read");
+
+			was_cancelled = true;
+			connection.sendCancel();
+		}
+
+		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
+		while (true)
+		{
+			Connection::Packet packet = connection.receivePacket();
+
+			switch (packet.type)
+			{
+				case Protocol::Server::Data:
+				case Protocol::Server::Progress:
+				case Protocol::Server::ProfileInfo:
+				case Protocol::Server::Totals:
+				case Protocol::Server::Extremes:
+					break;
+
+				case Protocol::Server::EndOfStream:
+					return;
+
+				case Protocol::Server::Exception:
+					got_exception_from_server = true;
+					packet.exception->rethrow();
 					break;
 
 				default:

@@ -42,6 +42,7 @@ public:
 	virtual Block read() = 0;
 
 	/** Прочитать что-нибудь перед началом всех данных или после конца всех данных.
+	  * В функции readSuffix можно реализовать финализацию, которая может привести к исключению.
 	  */
 	virtual void readPrefix() {}
 	virtual void readSuffix() {}

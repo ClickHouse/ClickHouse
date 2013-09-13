@@ -213,6 +213,8 @@ void TCPHandler::processOrdinaryQuery()
 		/// Отправим блок-заголовок, чтобы клиент мог подготовить формат вывода
 		if (state.io.in_sample && client_revision >= DBMS_MIN_REVISION_WITH_HEADER_BLOCK)
 			sendData(state.io.in_sample);
+
+		state.io.in->readPrefix();
 		
 		AsynchronousBlockInputStream async_in(state.io.in);
 
@@ -253,6 +255,8 @@ void TCPHandler::processOrdinaryQuery()
 			if (!block)
 				break;
 		}
+
+		state.io.in->readSuffix();
 
 		watch.stop();
 		logProfileInfo(watch, *state.io.in);

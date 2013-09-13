@@ -24,8 +24,6 @@ public:
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
 
-	void readSuffix();
-
 	String getName() const { return "MergingSortedBlockInputStream"; }
 
 	String getID() const
@@ -52,6 +50,7 @@ public:
 
 protected:
 	Block readImpl();
+	void readSuffixImpl();
 	
 	/// Инициализирует очередь и следующий блок результата.
 	void init(Block & merged_block, ColumnPlainPtrs & merged_columns);

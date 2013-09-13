@@ -74,6 +74,9 @@ public:
 	
 	Block read();
 
+	/// Реализация по-умолчанию вызывает рекурсивно readSuffix() у всех детей, а затем readSuffixImpl() у себя.
+	void readSuffix();
+
 	/// Получить информацию о скорости выполнения.
 	const BlockStreamProfileInfo & getInfo() const;
 
@@ -185,6 +188,8 @@ protected:
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;
 
+	/// Здесь необходимо делать финализацию, которая может привести к исключению.
+	virtual void readSuffixImpl() {}
 
 	void updateExtremes(Block & block);
 	bool checkLimits();

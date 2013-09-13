@@ -823,6 +823,9 @@ private:
 
 	void onEndOfStream()
 	{
+		if (block_std_in)
+			block_std_in->readSuffix();
+
 		if (block_std_out)
 			block_std_out->writeSuffix();
 

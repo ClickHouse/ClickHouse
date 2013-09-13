@@ -204,6 +204,15 @@ Block IProfilingBlockInputStream::read()
 }
 
 
+void IProfilingBlockInputStream::readSuffix()
+{
+	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+		(*it)->readSuffix();
+
+	readSuffixImpl();
+}
+
+
 void IProfilingBlockInputStream::updateExtremes(Block & block)
 {
 	size_t columns = block.columns();

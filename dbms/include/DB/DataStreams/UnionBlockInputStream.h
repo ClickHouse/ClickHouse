@@ -37,7 +37,7 @@ class UnionBlockInputStream : public IProfilingBlockInputStream
 public:
 	UnionBlockInputStream(BlockInputStreams inputs_, unsigned max_threads_ = 1)
 		: max_threads(std::min(inputs_.size(), static_cast<size_t>(max_threads_))),
-		output_queue(max_threads), exhausted_inputs(0), finish(false), all_read(false),
+		output_queue(max_threads), exhausted_inputs(0), finish(false), all_read(false), finalized(false),
 		log(&Logger::get("UnionBlockInputStream"))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
@@ -71,37 +71,10 @@ public:
 		return res.str();
 	}
 
+
 	~UnionBlockInputStream()
 	{
-		LOG_TRACE(log, "Waiting for threads to finish");
-
-		finish = true;
-		cancel();
-
-		ExceptionPtr exception;
-
-		/// Вынем всё, что есть в очереди готовых данных.
-		OutputData res;
-		while (output_queue.tryPop(res))
-			if (res.exception && !exception)
-				exception = res.exception;
-
-		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
-		  * PS. Может быть, для переменной finish нужен барьер?
-		  */
-
-		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-			it->thread->join();
-
-		/// Может быть, нам под конец положили эксепшен.
-		while (output_queue.tryPop(res))
-			if (res.exception && !exception)
-				exception = res.exception;
-
-		if (exception && !std::uncaught_exception())
-			exception->rethrow();
-
-		LOG_TRACE(log, "Waited for threads to finish");
+		readSuffixImpl();
 	}
 
 	/** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
@@ -177,6 +150,44 @@ protected:
 			all_read = true;
 
 		return res.block;
+	}
+
+	void readSuffixImpl()
+	{
+		if (finalized)
+			return;
+
+		finalized = true;
+
+		LOG_TRACE(log, "Waiting for threads to finish");
+
+		finish = true;
+		cancel();
+
+		ExceptionPtr exception;
+
+		/// Вынем всё, что есть в очереди готовых данных.
+		OutputData res;
+		while (output_queue.tryPop(res))
+			if (res.exception && !exception)
+				exception = res.exception;
+
+			/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
+			 * PS. Может быть, для переменной finish нужен барьер?
+			 */
+
+			for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
+				it->thread->join();
+
+			/// Может быть, нам под конец положили эксепшен.
+			while (output_queue.tryPop(res))
+				if (res.exception && !exception)
+					exception = res.exception;
+
+				if (exception && !std::uncaught_exception())
+					exception->rethrow();
+
+				LOG_TRACE(log, "Waited for threads to finish");
 	}
 
 private:
@@ -337,6 +348,9 @@ private:
 	/// Завершить работу потоков (раньше, чем иссякнут источники).
 	volatile bool finish;
 	bool all_read;
+
+	/// Была вызвана функция readSuffixImpl.
+	bool finalized;
 
 	Logger * log;
 };
