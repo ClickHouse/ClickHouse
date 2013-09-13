@@ -6,7 +6,7 @@ fi
 
 while [ 1=1 ];
 do
-    FREE_MEMORY_MB=$(free -m | sed -n '2,2p' | awk '{print $4}')
+    FREE_MEMORY_MB=$(free -m | sed -n '3,3p' | awk '{print $4}')
 
     PID="$(ps -eF --sort -rss | sed -n '2,2p' | awk '{print $2}')"
     NAME="$(ps -eF --sort -rss | sed -n '2,2p' | awk '{print $11}')"
