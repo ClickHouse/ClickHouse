@@ -617,7 +617,8 @@ void StorageMergeTree::clearOldParts()
 void StorageMergeTree::merge(size_t iterations, bool async)
 {
 	bool while_can = false;
-	if (iterations == 0){
+	if (iterations == 0)
+	{
 		while_can = true;
 		iterations = settings.merging_threads;
 	}
