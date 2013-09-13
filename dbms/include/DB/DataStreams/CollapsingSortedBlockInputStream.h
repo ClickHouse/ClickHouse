@@ -28,7 +28,7 @@ public:
 		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
 		sign_column(sign_column_), sign_column_number(0),
 		log(&Logger::get("CollapsingSortedBlockInputStream")),
-		count_positive(0), count_negative(0)
+		count_positive(0), count_negative(0), count_incorrect_data(0)
 	{
 	}
 
@@ -69,6 +69,8 @@ private:
 
 	size_t count_positive;	/// Количество положительных строк для текущего первичного ключа.
 	size_t count_negative;	/// Количество отрицательных строк для текущего первичного ключа.
+
+	size_t count_incorrect_data;	/// Чтобы не писать в лог слишком много сообщений об ошибке.
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.

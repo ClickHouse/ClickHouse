@@ -18,7 +18,7 @@ public:
 									 const String & sign_column_)
 		: description(description_), sign_column(sign_column_),
 		log(&Logger::get("CollapsingSortedBlockInputStream")),
-		first(true), count_positive(0), count_negative(0), blocks_fetched(0), blocks_output(0)
+		first(true), count_positive(0), count_negative(0), count_incorrect_data(0), blocks_fetched(0), blocks_output(0)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
@@ -249,6 +249,8 @@ private:
 	
 	size_t count_positive;	/// Количество положительных строк для текущего первичного ключа.
 	size_t count_negative;	/// Количество отрицательных строк для текущего первичного ключа.
+
+	size_t count_incorrect_data;	/// Чтобы не писать в лог слишком много сообщений об ошибке.
 	
 	/// Посчитаем, сколько блоков получили на вход и отдали на выход.
 	size_t blocks_fetched;

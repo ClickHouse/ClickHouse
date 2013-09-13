@@ -1,5 +1,8 @@
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 
+/// Максимальное количество сообщений о некорректных данных в логе.
+#define MAX_ERROR_MESSAGES 10
+
 
 namespace DB
 {
@@ -23,8 +26,9 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 
 	/** Пока ограничимся всего лишь логгированием таких ситуаций,
 	  *  так как данные генерируются внешними программами.
+	  * При неконсистентных данных, это - неизбежная ошибка, которая не может быть легко исправлена админами. Поэтому Warning.
 	  */
-	LOG_ERROR(log, s.rdbuf());
+	LOG_WARNING(log, s.rdbuf());
 }
 
 
@@ -47,7 +51,11 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 		}
 			
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-			reportIncorrectData();
+		{
+			if (count_incorrect_data < MAX_ERROR_MESSAGES)
+				reportIncorrectData();
+			++count_incorrect_data;
+		}
 	}
 }
 	

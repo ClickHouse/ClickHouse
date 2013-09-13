@@ -1,5 +1,8 @@
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 
+/// Максимальное количество сообщений о некорректных данных в логе.
+#define MAX_ERROR_MESSAGES 10
+
 
 namespace DB
 {
@@ -23,9 +26,10 @@ CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 
 void CollapsingFinalBlockInputStream::reportBadCounts()
 {
-	LOG_ERROR(log, "Incorrect data: number of rows with sign = 1 (" << count_positive
-	<< ") differs with number of rows with sign = -1 (" << count_negative
-	<< ") by more than one");
+	/// При неконсистентных данных, это - неизбежная ошибка, которая не может быть легко исправлена админами. Поэтому Warning.
+	LOG_WARNING(log, "Incorrect data: number of rows with sign = 1 (" << count_positive
+		<< ") differs with number of rows with sign = -1 (" << count_negative
+		<< ") by more than one");
 }
 
 void CollapsingFinalBlockInputStream::reportBadSign(Int8 sign)
@@ -54,7 +58,11 @@ void CollapsingFinalBlockInputStream::commitCurrent()
 		}
 		
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-			reportBadCounts();
+		{
+			if (count_incorrect_data < MAX_ERROR_MESSAGES)
+				reportBadCounts();
+			++count_incorrect_data;
+		}
 		
 		last_positive = Cursor();
 		previous = Cursor();
