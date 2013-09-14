@@ -92,7 +92,6 @@ public:
 		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
 			return;
 
-		ExceptionPtr exception;
 		for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 		{
 			if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
@@ -101,31 +100,12 @@ public:
 				{
 					child->cancel();
 				}
-				catch (const Exception & e)
-				{
-					if (!exception)
-						exception = e.clone();
-				}
-				catch (const Poco::Exception & e)
-				{
-					if (!exception)
-						exception = e.clone();
-				}
-				catch (const std::exception & e)
-				{
-					if (!exception)
-						exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
-				}
 				catch (...)
 				{
-					if (!exception)
-						exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+					LOG_ERROR(log, "Exception while cancelling " << child->getName());
 				}
 			}
 		}
-
-		if (exception)
-			exception->rethrow();
 	}
 
 protected:
