@@ -51,24 +51,44 @@ private:
 	};
 
 	size_t growth_factor;
+	size_t linear_growth_threshold;
+	
 	/// Последний непрерывный кусок памяти.
 	Chunk * head;
 	size_t size_in_bytes;
 
+	static size_t roundUpToPageSize(size_t s)
+	{
+		return (s + 4096 - 1) / 4096;
+	}
+
+	/// Если размер чанка меньше linear_growth_threshold, то рост экспоненциальный, иначе - линейный, для уменьшения потребления памяти.
+	size_t nextSize(size_t min_next_size) const
+	{
+		size_t size_after_grow = 0;
+		
+		if (head->size() < linear_growth_threshold)
+			size_after_grow = head->size() * growth_factor;
+		else
+			size_after_grow = head->size() + linear_growth_threshold;
+
+		if (size_after_grow < min_next_size)
+			size_after_grow = min_next_size;
+
+		return roundUpToPageSize(size_after_grow);
+	}
+
 	/// Добавить следующий непрерывный кусок памяти размера не меньше заданного.
 	void addChunk(size_t min_size)
 	{
-		if (unlikely(head->size() * growth_factor > min_size))
-			min_size = head->size() * growth_factor;
-
-		head = new Chunk(min_size, head);
-		
+		head = new Chunk(nextSize(min_size), head);
 		size_in_bytes += head->size();
 	}
 
 public:
-	Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2)
-		: growth_factor(growth_factor_), head(new Chunk(initial_size_, NULL)), size_in_bytes(head->size())
+	Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
+		: growth_factor(growth_factor_), linear_growth_threshold(linear_growth_threshold_),
+		head(new Chunk(initial_size_, NULL)), size_in_bytes(head->size())
 	{
 	}
 
