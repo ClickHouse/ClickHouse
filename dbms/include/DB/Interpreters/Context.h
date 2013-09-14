@@ -39,10 +39,23 @@ typedef std::map<String, DatabaseDropperPtr> DatabaseDroppers;
 
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
-  * Разделяемая часть.
+  * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
   */
 struct ContextShared
 {
+	Logger * log;											/// Логгер.
+	
+	struct AfterDestroy
+	{
+		Logger * log;
+
+		AfterDestroy(Logger * log_) : log(log_) {}
+		~AfterDestroy()
+		{
+			LOG_INFO(log, "Uninitialized shared context.");
+		}
+	} after_destroy;
+
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
@@ -56,11 +69,24 @@ struct ContextShared
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
-	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
-	Logger * log;											/// Логгер.
+	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
+		
+	ContextShared() : log(&Logger::get("Context")), after_destroy(log) {};
 
-	ContextShared() : log(&Logger::get("Context")) {};
+	~ContextShared()
+	{
+		LOG_INFO(log, "Uninitializing shared context.");
+
+		/** Под mutex-ом очистим список БД и таблиц.
+		  * - так как некоторые таблицы имеют ссылку на этот контекст, и в дестркуторе могут дожидаться потоков,
+		  *  которые в этот момент пытаются работать с этим списком таблиц, под этим mutex-ом.
+		  * TODO: упростить - сделать, чтобы таблицы имели не обычные ссылки, а weak_ptr-ы на контекст.
+		  */
+		Poco::ScopedLock<Poco::Mutex> lock(mutex);
+		database_droppers.clear();
+		databases.clear();
+	}
 };
 
 

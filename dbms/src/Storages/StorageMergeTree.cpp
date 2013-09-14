@@ -673,7 +673,7 @@ void StorageMergeTree::mergeThread(bool while_can)
 
 void StorageMergeTree::joinMergeThreads()
 {
-	LOG_DEBUG(log, "Waiting for merge thread to finish.");
+	LOG_DEBUG(log, "Waiting for merge threads to finish.");
 	merge_threads->wait();
 }
 

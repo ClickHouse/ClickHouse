@@ -138,7 +138,8 @@ StorageChunkMerger::StorageChunkMerger(
 	size_t chunks_to_merge_,
 	Context & context_)
 	: this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
-	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_), context(context_),
+	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_),
+	context(context_), settings(context.getSettings()),
 	log(&Logger::get("StorageChunkMerger"))
 {
 	merge_thread = boost::thread(&StorageChunkMerger::mergeThread, this);
@@ -206,14 +207,14 @@ bool StorageChunkMerger::maybeMergeSomething()
 StorageChunkMerger::Storages StorageChunkMerger::selectChunksToMerge()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-	
+
 	Storages res;
-	
+
 	Databases & databases = context.getDatabases();
 	
 	if (!databases.count(source_database))
 		throw Exception("No database " + source_database, ErrorCodes::UNKNOWN_DATABASE);
-	
+
 	Tables & tables = databases[source_database];
 	for (Tables::iterator it = tables.begin(); it != tables.end(); ++it)
 	{
@@ -229,7 +230,7 @@ StorageChunkMerger::Storages StorageChunkMerger::selectChunksToMerge()
 				break;
 		}
 	}
-	
+
 	if (res.size() < chunks_to_merge)
 		res.clear();
 	
@@ -383,8 +384,6 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			
 			QueryProcessingStage::Enum processed_stage = QueryProcessingStage::Complete;
 
-			Settings settings = context.getSettings();
-			
 			BlockInputStreams input_streams = src_storage->read(
 				src_column_names,
 				select_query_ptr,

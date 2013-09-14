@@ -46,8 +46,8 @@ namespace DB
 			password = credentials.getPassword();
 		}
 		
-		Context context = server.global_context;
-		context.setGlobalContext(server.global_context);
+		Context context = *server.global_context;
+		context.setGlobalContext(*server.global_context);
 
 		context.setUser(user, password, request.clientAddress().host(), quota_key);
 		

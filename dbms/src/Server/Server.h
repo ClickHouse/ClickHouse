@@ -45,7 +45,7 @@ public:
 	Poco::Util::LayeredConfiguration & config;
 
 	/// Глобальные настройки севрера
-	Context global_context;
+	Poco::SharedPtr<Context> global_context;
 	
 	Poco::SharedPtr<OLAP::QueryParser> olap_parser;
 	Poco::SharedPtr<OLAP::QueryConverter> olap_converter;

@@ -35,11 +35,12 @@ public:
 	typedef std::list<Element> Containter;
 
 private:
+	mutable Poco::FastMutex mutex;
+	mutable Poco::Condition have_space;		/// Количество одновременно выполняющихся запросов стало меньше максимального.
+	
 	Containter cont;
 	size_t cur_size;		/// В C++03 std::list::size не O(1).
 	size_t max_size;		/// Если 0 - не ограничено. Иначе, если пытаемся добавить больше - кидается исключение.
-	mutable Poco::FastMutex mutex;
-	mutable Poco::Condition have_space;		/// Количество одновременно выполняющихся запросов стало меньше максимального.
 
 	/// Держит итератор на список, и удаляет элемент из списка в деструкторе.
 	class Entry

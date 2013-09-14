@@ -74,7 +74,14 @@ public:
 
 	~UnionBlockInputStream()
 	{
-		readSuffixImpl();
+		try
+		{
+			readSuffixImpl();
+		}
+		catch (...)
+		{
+			LOG_ERROR(log, "Exception while destroying UnionBlockInputStream.");
+		}
 	}
 
 	/** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
@@ -164,30 +171,19 @@ protected:
 		finish = true;
 		cancel();
 
-		ExceptionPtr exception;
-
 		/// Вынем всё, что есть в очереди готовых данных.
 		OutputData res;
 		while (output_queue.tryPop(res))
-			if (res.exception && !exception)
-				exception = res.exception;
+			;
 
-			/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
-			 * PS. Может быть, для переменной finish нужен барьер?
-			 */
+		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
+		  * PS. Может быть, для переменной finish нужен барьер?
+		  */
 
-			for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-				it->thread->join();
+		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
+			it->thread->join();
 
-			/// Может быть, нам под конец положили эксепшен.
-			while (output_queue.tryPop(res))
-				if (res.exception && !exception)
-					exception = res.exception;
-
-				if (exception && !std::uncaught_exception())
-					exception->rethrow();
-
-				LOG_TRACE(log, "Waited for threads to finish");
+		LOG_TRACE(log, "Waited for threads to finish");
 	}
 
 private:

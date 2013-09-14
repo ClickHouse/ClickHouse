@@ -52,6 +52,7 @@ private:
 	std::string destination_name_prefix;
 	size_t chunks_to_merge;
 	Context & context;
+	Settings settings;
 	
 	boost::thread merge_thread;
 	Poco::Event cancel_merge_thread;

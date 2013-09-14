@@ -80,8 +80,8 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	std::string quota_key = params.get("quota_key", "");
 	
-	Context context = server.global_context;
-	context.setGlobalContext(server.global_context);
+	Context context = *server.global_context;
+	context.setGlobalContext(*server.global_context);
 
 	context.setUser(user, password, request.clientAddress().host(), quota_key);
 

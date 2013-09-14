@@ -71,7 +71,7 @@ public:
 	TCPHandler(Server & server_, const Poco::Net::StreamSocket & socket_)
 		: Poco::Net::TCPServerConnection(socket_), server(server_),
 		log(&Logger::get("TCPHandler")), client_revision(0),
-		connection_context(server.global_context), query_context(connection_context)
+		connection_context(*server.global_context), query_context(connection_context)
 	{
 	}
 
