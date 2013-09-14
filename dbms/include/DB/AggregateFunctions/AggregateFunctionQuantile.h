@@ -19,7 +19,7 @@ namespace DB
 template <typename ArgumentFieldType>
 struct AggregateFunctionQuantileData
 {
-	typedef ReservoirSampler<ArgumentFieldType> Sample;
+	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_DEFAULT> Sample;
 	Sample sample;
 };
 
@@ -33,7 +33,7 @@ template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantile : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType> >
 {
 private:
-	typedef ReservoirSampler<ArgumentFieldType> Sample;
+	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_DEFAULT> Sample;
 
 	double level;
 	DataTypePtr type;
@@ -108,7 +108,7 @@ template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantiles : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType> >
 {
 private:
-	typedef ReservoirSampler<ArgumentFieldType> Sample;
+	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_DEFAULT> Sample;
 
 	typedef std::vector<double> Levels;
 	Levels levels;

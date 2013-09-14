@@ -1,7 +1,5 @@
 #pragma once
 
-#include <stats/ReservoirSampler.h>
-
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
