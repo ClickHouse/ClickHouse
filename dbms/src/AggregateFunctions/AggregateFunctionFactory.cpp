@@ -65,7 +65,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
-AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types) const
+AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types, int recursion_level) const
 {
 	if (name == "count")
 		return new AggregateFunctionCount;
@@ -270,13 +270,13 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
-	else if (name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
+	else if (recursion_level == 0 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
 	{
-		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции. TODO сделать, чтобы был максимум один рекурсивный вызов.
+		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), DataTypes(1, argument_types[0]));
+		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), DataTypes(1, argument_types[0]), 1);
 		return new AggregateFunctionIf(nested);
 	}
 	else
@@ -292,7 +292,7 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 }
 
 
-bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
+bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
 {
 	static const char * names[] =
 	{
@@ -322,9 +322,9 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) cons
 		if (0 == strcmp(*it, name.data()))
 			return true;
 
-	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции. TODO сделать, чтобы был максимум один рекурсивный вызов.
-	if (name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
-		return isAggregateFunctionName(String(name.data(), name.size() - 2));
+	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
+	if (recursion_level == 0 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
+		return isAggregateFunctionName(String(name.data(), name.size() - 2), 1);
 
 	return false;
 }

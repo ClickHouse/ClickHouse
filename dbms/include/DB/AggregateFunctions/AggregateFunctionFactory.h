@@ -10,18 +10,14 @@ namespace DB
 
 
 /** Позволяет создать агрегатную функцию по её имени.
-  * 
-  * Чтобы создать большое количество экземпляров агрегатных функций
-  *  для агрегации и последующей вставки в ColumnAggregateFunction,
-  *  создайте один объект - "прототип", и затем используйте метод cloneEmpty.
   */
 class AggregateFunctionFactory
 {
 public:
 	AggregateFunctionFactory();
-	AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
+	AggregateFunctionPtr get(const String & name, const DataTypes & argument_types, int recursion_level = 0) const;
 	AggregateFunctionPtr tryGet(const String & name, const DataTypes & argument_types) const;
-	bool isAggregateFunctionName(const String & name) const;
+	bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
 };
 
 
