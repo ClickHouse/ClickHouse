@@ -101,7 +101,10 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		to.insert(data(place).value);
+		if (unlikely(data(place).value.isNull()))
+			to.insertDefault();
+		else
+			to.insert(data(place).value);
 	}
 };
 
