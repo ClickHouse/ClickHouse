@@ -59,7 +59,7 @@ private:
 
 	static size_t roundUpToPageSize(size_t s)
 	{
-		return (s + 4096 - 1) / 4096;
+		return (s + 4096 - 1) / 4096 * 4096;
 	}
 
 	/// Если размер чанка меньше linear_growth_threshold, то рост экспоненциальный, иначе - линейный, для уменьшения потребления памяти.
