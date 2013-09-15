@@ -70,6 +70,7 @@ class TinyLogBlockOutputStream : public IBlockOutputStream
 public:
 	TinyLogBlockOutputStream(StoragePtr owned_storage);
 	void write(const Block & block);
+	void writeSuffix();
 private:
 	StorageTinyLog & storage;
 
@@ -83,6 +84,12 @@ private:
 
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
+
+		void sync()
+		{
+			compressed.next();
+			plain.sync();
+		}
 	};
 
 	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;

@@ -245,6 +245,16 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 }
 
 
+void TinyLogBlockOutputStream::writeSuffix()
+{
+	/// Заканчиваем запись.
+	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		it->second->sync();
+
+	streams.clear();
+}
+
+
 void TinyLogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block, true);

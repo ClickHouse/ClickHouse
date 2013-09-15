@@ -88,6 +88,7 @@ class LogBlockOutputStream : public IBlockOutputStream
 public:
 	LogBlockOutputStream(StoragePtr owned_storage);
 	void write(const Block & block);
+	void writeSuffix();
 private:
 	StorageLog & storage;
 	Poco::ScopedWriteRWLock lock;
@@ -105,6 +106,12 @@ private:
 		CompressedWriteBuffer compressed;
 
 		size_t plain_offset;	/// Сколько байт было в файле на момент создания LogBlockOutputStream.
+
+		void sync()
+		{
+			compressed.next();
+			plain.sync();
+		}
 	};
 
 	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;

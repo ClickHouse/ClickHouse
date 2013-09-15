@@ -216,6 +216,18 @@ void LogBlockOutputStream::write(const Block & block)
 }
 
 
+void LogBlockOutputStream::writeSuffix()
+{
+	/// Заканчиваем запись.
+	marks_stream.sync();
+
+	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		it->second->sync();
+
+	streams.clear();
+}
+
+
 void LogBlockOutputStream::addStream(const String & name, const IDataType & type, size_t level)
 {
 	/// Для массивов используются отдельные потоки для размеров.
