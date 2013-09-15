@@ -9,6 +9,7 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
+#include <DB/DataStreams/SplittingAggregatingBlockInputStream.h>
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
@@ -478,6 +479,13 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals,
 			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 		streams.resize(1);
+
+	/*	stream = maybeAsynchronous(
+			new SplittingAggregatingBlockInputStream(
+				new UnionBlockInputStream(streams, settings.max_threads), key_names, aggregates, settings.max_threads),
+			settings.asynchronous);
+		
+		streams.resize(1);*/
 	}
 	else
 		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, query.group_by_with_totals, separate_totals,

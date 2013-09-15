@@ -1,5 +1,3 @@
-#include <openssl/md5.h>
-
 #include <iomanip>
 
 #include <statdaemons/Stopwatch.h>
@@ -449,7 +447,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals)
 {
-	Block res = getSampleBlock();
+	Block res = getSampleBlock().cloneEmpty();
 	size_t rows = data_variants.size();
 
 	if (with_totals && separate_totals && rows != 0)

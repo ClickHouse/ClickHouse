@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <malloc.h>
+#include <math.h>
 
 #include <map>	/// pair
 
@@ -430,6 +431,54 @@ public:
 	}
 
 
+	/// То же самое, но с заранее вычисленным значением хэш-функции.
+	void emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+	{
+		if (ZeroTraits::check(x))
+		{
+			if (!has_zero)
+			{
+				++m_size;
+				has_zero = true;
+				inserted = true;
+			}
+			else
+				inserted = false;
+
+			it = begin();
+			return;
+		}
+
+		size_t place_value = place(hash_value);
+		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
+		{
+			++place_value;
+			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
+		}
+
+		it = iterator(this, &buf[place_value]);
+
+		if (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first == x)
+		{
+			inserted = false;
+			return;
+		}
+
+		new(&buf[place_value].first) Key(x);
+		inserted = true;
+		++m_size;
+
+		if (unlikely(m_size > max_fill()))
+		{
+			resize();
+			it = find(x);
+		}
+	}
+
+
 	iterator find(Key x)
 	{
 		if (ZeroTraits::check(x))
@@ -485,5 +534,6 @@ public:
 	}
 #endif
 };
+
 
 }

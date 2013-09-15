@@ -135,4 +135,24 @@ static inline StringRef * __attribute__((__always_inline__)) placeKeysInPool(
 }
 
 
+/// Скопировать ключи в пул. Потом разместить в пуле StringRef-ы на них и вернуть указатель на первый.
+static inline StringRef * __attribute__((__always_inline__)) extractKeysAndPlaceInPool(
+	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+{
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
+		char * place = pool.alloc(keys[j].size);
+		memcpy(place, keys[j].data, keys[j].size);
+		keys[j].data = place;
+	}
+
+	/// Размещаем в пуле StringRef-ы на только что скопированные ключи.
+	char * res = pool.alloc(keys_size * sizeof(StringRef));
+	memcpy(res, &keys[0], keys_size * sizeof(StringRef));
+
+	return reinterpret_cast<StringRef *>(res);
+}
+
+
 }
