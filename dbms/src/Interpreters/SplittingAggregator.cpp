@@ -84,6 +84,8 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 			{
 				results[i] = new AggregatedDataVariants;
 				results[i]->type = method;
+				results[i]->keys_size = keys_size;
+				results[i]->key_sizes = key_sizes;
 			}
 		}
 
