@@ -26,7 +26,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 				continue;
 
 			if (!num_columns)
-				num_columns = source_blocks[0].columns();
+				num_columns = it->columns();
 
 			cursors[i] = SortCursorImpl(*it, description, i);
 			has_collation |= cursors[i].has_collation;
@@ -81,11 +81,12 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 }
 
 
-template<class TSortCursor>
+template <typename TSortCursor>
 void MergingSortedBlockInputStream::initQueue(std::priority_queue<TSortCursor> & queue)
 {
 	for (size_t i = 0; i < cursors.size(); ++i)
-		queue.push(TSortCursor(&cursors[i]));
+		if (!cursors[i].empty())
+			queue.push(TSortCursor(&cursors[i]));
 }
 	
 
@@ -99,7 +100,7 @@ Block MergingSortedBlockInputStream::readImpl()
 
 	Block merged_block;
 	ColumnPlainPtrs merged_columns;
-	
+
 	init(merged_block, merged_columns);
 	if (merged_columns.empty())
 		return Block();
@@ -112,7 +113,7 @@ Block MergingSortedBlockInputStream::readImpl()
 	return merged_block;
 }
 
-template<class TSortCursor>
+template <typename TSortCursor>
 void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {	
 	size_t merged_rows = 0;
@@ -146,7 +147,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 }
 
 
-template<class TSortCursor>
+template <typename TSortCursor>
 void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
 {
 	size_t i = 0;

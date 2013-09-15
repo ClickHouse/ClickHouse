@@ -67,13 +67,15 @@ struct SortCursorImpl
 	/** Есть ли хотя бы один столбец с Collator. */
 	bool has_collation;
 	
-	SortCursorImpl() {}
+	SortCursorImpl() : sort_columns(0), pos(0), rows(0) {}
 
 	SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0)
 		: desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size()), has_collation(false)
 	{
 		reset(block);
 	}
+
+	bool empty() const { return rows == 0; }
 
 	/// Установить курсор в начало нового блока.
 	void reset(const Block & block)

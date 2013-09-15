@@ -56,7 +56,7 @@ protected:
 	void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
 	
 	/// Достаёт из источника, соответствующего current следующий блок.
-	template<class TSortCursor>
+	template <typename TSortCursor>
 	void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
 	
 	
@@ -85,10 +85,10 @@ private:
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
 	 */
-	template<class TSortCursor>
+	template <typename TSortCursor>
 	void initQueue(std::priority_queue<TSortCursor> & queue);	
 	
-	template<class TSortCursor>
+	template <typename TSortCursor>
 	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 	
 	Logger * log;
