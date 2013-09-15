@@ -118,7 +118,7 @@ static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
 	return res;
 }
 
-static inline void stringWidthVector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
+static inline void stringWidthVector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
 {
 	size_t size = offsets.size();
 
@@ -130,7 +130,7 @@ static inline void stringWidthVector(const std::vector<UInt8> & data, const Colu
 	}
 }
 
-static inline void stringWidthFixedVector(const std::vector<UInt8> & data, size_t n, std::vector<UInt64> & res)
+static inline void stringWidthFixedVector(const ColumnString::Chars_t & data, size_t n, std::vector<UInt64> & res)
 {
 	size_t size = data.size() / n;
 	for (size_t i = 0; i < size; ++i)

@@ -77,7 +77,7 @@ struct ExtractBool
 
 struct ExtractRaw
 {
-	static void extract(const UInt8 * pos, const UInt8 * end, std::vector<UInt8> & res_data)
+	static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
 	{
 		if (pos == end)
 			return;
@@ -184,7 +184,7 @@ struct ExtractString
 		return true;
 	}
 	
-	static bool tryExtract(const UInt8 * pos, const UInt8 * end, std::vector<UInt8> & res_data)
+	static bool tryExtract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
 	{
 		if (pos == end || *pos != '"')
 			return false;
@@ -262,7 +262,7 @@ struct ExtractString
 		return false;
 	}
 	
-	static void extract(const UInt8 * pos, const UInt8 * end, std::vector<UInt8> & res_data)
+	static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
 	{
 		size_t old_size = res_data.size();
 		
@@ -286,7 +286,7 @@ struct ExtractParamImpl
 	typedef typename ParamExtractor::ResultType ResultType;
 
 	/// Предполагается, что res нужного размера и инициализирован нулями.
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		std::string needle,
 		std::vector<ResultType> & res)
 	{
@@ -338,9 +338,9 @@ struct ExtractParamImpl
 template<typename ParamExtractor>
 struct ExtractParamToStringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 					   std::string needle,
-					   std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
+					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		/// Константа 5 взята из функции, выполняющей похожую задачу FunctionsStringSearch.h::ExtractImpl
 		res_data.reserve(data.size()  / 5);

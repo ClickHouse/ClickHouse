@@ -272,10 +272,10 @@ struct ExtractWWW
 
 struct ExtractURLParameterImpl
 {
-	static void vector(const std::vector<UInt8> & data,
+	static void vector(const ColumnString::Chars_t & data,
 					    const ColumnString::Offsets_t & offsets,
 					    std::string pattern,
-						std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
+						ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size()  / 5);
 		res_offsets.resize(offsets.size());
@@ -340,10 +340,10 @@ struct ExtractURLParameterImpl
 
 struct CutURLParameterImpl
 {
-	static void vector(const std::vector<UInt8> & data,
+	static void vector(const ColumnString::Chars_t & data,
 					    const ColumnString::Offsets_t & offsets,
 					    std::string pattern,
-						std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
+						ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		res_offsets.resize(offsets.size());
@@ -645,8 +645,8 @@ public:
 template <typename Extractor>
 struct ExtractSubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		size_t size = offsets.size();
 		res_offsets.resize(size);
@@ -682,8 +682,8 @@ struct ExtractSubstringImpl
 		res_data.assign(start, length);
 	}
 
-	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
-		std::vector<UInt8> & res_data)
+	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
+		ColumnString::Chars_t & res_data)
 	{
 		throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -695,8 +695,8 @@ struct ExtractSubstringImpl
 template <typename Extractor>
 struct CutSubstringImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
-		std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
@@ -734,8 +734,8 @@ struct CutSubstringImpl
 		res_data.erase(start - data.data(), length);
 	}
 
-	static void vector_fixed(const std::vector<UInt8> & data, size_t n,
-		std::vector<UInt8> & res_data)
+	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
+		ColumnString::Chars_t & res_data)
 	{
 		throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
 	}

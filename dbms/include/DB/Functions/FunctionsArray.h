@@ -87,9 +87,9 @@ struct ArrayElementNumImpl
 struct ArrayElementStringImpl
 {
 	static void vector(
-		const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
 		const ColumnArray::Offset_t index,	/// Передаётся индекс начиная с нуля, а не с единицы.
-		std::vector<UInt8> & result_data, ColumnArray::Offsets_t & result_offsets)
+		ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = offsets.size();
 		result_offsets.resize(size);
@@ -309,7 +309,7 @@ template <typename IndexConv>
 struct ArrayIndexStringImpl
 {
 	static void vector(
-		const std::vector<UInt8> & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
 		const String & value,
 		std::vector<typename IndexConv::ResultType> & result)
 	{

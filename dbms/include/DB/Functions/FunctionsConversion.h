@@ -161,7 +161,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 			data_to.resize(size * 2);
 			offsets_to.resize(size);
 
-			WriteBufferFromVector<UInt8> write_buffer(data_to);
+			WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
 
 			for (size_t i = 0; i < size; ++i)
 			{
@@ -174,7 +174,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			std::vector<char> buf;
-			WriteBufferFromVector<char> write_buffer(buf);
+			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
 			formatImpl<FromDataType>(col_from->getData(), write_buffer);
 			block.getByPosition(result).column = new ColumnConstString(col_from->size(), std::string(&buf[0], write_buffer.count()));
 		}

@@ -43,7 +43,7 @@ struct PositionImpl
 	typedef UInt64 ResultType;
 
 	/// Предполагается, что res нужного размера и инициализирован нулями.
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
 		std::vector<UInt64> & res)
 	{
@@ -87,7 +87,7 @@ struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
 	
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
 		std::vector<UInt64> & res)
 	{
@@ -266,7 +266,7 @@ struct MatchImpl
 {
 	typedef UInt8 ResultType;
 
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & pattern,
 		std::vector<UInt8> & res)
 	{
@@ -322,9 +322,9 @@ struct MatchImpl
 
 struct ExtractImpl
 {
-	static void vector(const std::vector<UInt8> & data, const ColumnString::Offsets_t & offsets,
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 					   const std::string & pattern,
-					   std::vector<UInt8> & res_data, ColumnString::Offsets_t & res_offsets)
+					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size()  / 5);
 		res_offsets.resize(offsets.size());
@@ -481,13 +481,15 @@ public:
 		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
 		{
 			const std::string & data = col->getData();
-			std::vector<UInt8> vdata(data.c_str(), data.c_str() + data.size() + 1);
+			ColumnString::Chars_t vdata(
+				reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str()),
+				reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str() + data.size() + 1));
 			ColumnString::Offsets_t offsets(1, vdata.size());
-			std::vector<UInt8> res_vdata;
+			ColumnString::Chars_t res_vdata;
 			ColumnString::Offsets_t res_offsets;
 			Impl::vector(vdata, offsets, col_needle->getData(), res_vdata, res_offsets);
 			
-			std::string res = std::string(res_vdata.begin(), res_vdata.end() - 1);
+			std::string res = std::string(*res_vdata.begin(), *res_vdata.end() - 1);
 			
 			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
 			block.getByPosition(result).column = col_res;
@@ -510,8 +512,8 @@ struct NameExtract			{ static const char * get() { return "extract"; } };
 typedef FunctionsStringSearch<PositionImpl, 			NamePosition> 		FunctionPosition;
 typedef FunctionsStringSearch<PositionUTF8Impl, 		NamePositionUTF8> 	FunctionPositionUTF8;
 typedef FunctionsStringSearch<MatchImpl<false>, 		NameMatch> 			FunctionMatch;
-typedef FunctionsStringSearch<MatchImpl<true>, 		NameLike> 			FunctionLike;
+typedef FunctionsStringSearch<MatchImpl<true>, 			NameLike> 			FunctionLike;
 typedef FunctionsStringSearch<MatchImpl<true, true>, 	NameNotLike> 		FunctionNotLike;
-typedef FunctionsStringSearchToString<ExtractImpl, 	NameExtract> 		FunctionExtract;
+typedef FunctionsStringSearchToString<ExtractImpl, 		NameExtract> 		FunctionExtract;
 
 }

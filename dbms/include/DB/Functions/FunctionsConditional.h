@@ -66,9 +66,9 @@ struct StringIfImpl
 {
 	static void vector_vector(
 		const std::vector<UInt8> & cond,
-		const std::vector<UInt8> & a_data, const ColumnString::Offsets_t & a_offsets,
-		const std::vector<UInt8> & b_data, const ColumnString::Offsets_t & b_offsets,
-		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
@@ -104,9 +104,9 @@ struct StringIfImpl
 
 	static void vector_constant(
 		const std::vector<UInt8> & cond,
-		const std::vector<UInt8> & a_data, const ColumnString::Offsets_t & a_offsets,
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const String & b,
-		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
@@ -141,8 +141,8 @@ struct StringIfImpl
 	static void constant_vector(
 		const std::vector<UInt8> & cond,
 		const String & a,
-		const std::vector<UInt8> & b_data, const ColumnString::Offsets_t & b_offsets,
-		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
+		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
@@ -177,7 +177,7 @@ struct StringIfImpl
 	static void constant_constant(
 		const std::vector<UInt8> & cond,
 		const String & a, const String & b,
-		std::vector<UInt8> & c_data, ColumnString::Offsets_t & c_offsets)
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
 	{
 		size_t size = cond.size();
 		c_offsets.resize(size);

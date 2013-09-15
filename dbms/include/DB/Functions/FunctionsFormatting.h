@@ -78,7 +78,7 @@ public:
 			data_to.resize(size * 2);
 			offsets_to.resize(size);
 
-			WriteBufferFromVector<UInt8> buf_to(data_to);
+			WriteBufferFromVector<ColumnString::Chars_t> buf_to(data_to);
 
 			for (size_t i = 0; i < size; ++i)
 			{
