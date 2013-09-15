@@ -340,6 +340,9 @@ private:
 
 	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
 	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
+
+	/// Если директория с куском содержит битые данные, то удаляем её и возвращаем true.
+	bool removeIfBroken(const String & path);
 };
 
 }
