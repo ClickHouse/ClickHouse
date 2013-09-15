@@ -52,6 +52,8 @@ void loadMetadata(Context & context)
 {
 	/// Создадим все таблицы атомарно (иначе какой-нибудь движок таблицы может успеть в фоновом потоке попытаться выполнить запрос).
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+	Logger * log = &Logger::get("loadMetadata");
 	
 	/// Здесь хранятся определения таблиц
 	String path = context.getPath() + "metadata";
@@ -67,7 +69,7 @@ void loadMetadata(Context & context)
 		if (it.name().at(0) == '.')
 			continue;
 
-		LOG_INFO(&Logger::get("loadMetadata"), "Loading database " << it.name());
+		LOG_INFO(log, "Loading database " << it.name());
 
 		executeCreateQuery("ATTACH DATABASE " + it.name(), context, it.name(), it->path());
 
@@ -87,7 +89,7 @@ void loadMetadata(Context & context)
 			tables.push_back(jt->path());
 		}
 
-		LOG_INFO(&Logger::get("loadMetadata"), "Found " << tables.size() << " tables.");
+		LOG_INFO(log, "Found " << tables.size() << " tables.");
 
 		/** Таблицы быстрее грузятся, если их грузить в сортированном (по именам) порядке.
 		  * Иначе (для файловой системы ext4) DirectoryIterator перебирает их в некотором порядке,
@@ -102,7 +104,7 @@ void loadMetadata(Context & context)
 			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
 			if (j % 256 == 0 && watch.elapsedSeconds() > 5)
 			{
-				LOG_INFO(&Logger::get("loadMetadata"), std::fixed << std::setprecision(2) << j * 100.0 / size << "%");
+				LOG_INFO(log, std::fixed << std::setprecision(2) << j * 100.0 / size << "%");
 				watch.restart();
 			}
 			
@@ -113,6 +115,16 @@ void loadMetadata(Context & context)
 				ReadBufferFromFile in(tables[j], 32768, in_buf);
 				WriteBufferFromString out(s);
 				copyData(in, out);
+			}
+
+			/** Пустые файлы с метаданными образуются после грубого перезапуска сервера.
+			  * Удаляем эти файлы, чтобы чуть-чуть уменьшить работу админов по запуску.
+			  */
+			if (s.empty())
+			{
+				LOG_ERROR(log, "File " << tables[j] << " is empty. Removing.");
+				Poco::File(tables[j]).remove();
+				continue;
 			}
 
 			try
