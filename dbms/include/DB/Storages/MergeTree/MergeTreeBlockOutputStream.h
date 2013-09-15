@@ -1,6 +1,14 @@
 #pragma once
 
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedWriteBuffer.h>
+
+#include <DB/Columns/ColumnsNumber.h>
+
+#include <DB/Interpreters/sortBlock.h>
+
 #include <DB/Storages/StorageMergeTree.h>
+
 
 namespace DB
 {
@@ -135,6 +143,8 @@ private:
 			for (size_t i = 0; i < rows; i += storage.index_granularity)
 				for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
 					(*it)->type->serializeBinary((*(*it)->column)[i], index);
+
+			index.sync();
 		}
 		
 		LOG_TRACE(storage.log, "Writing data.");
@@ -208,6 +218,10 @@ private:
 					type_arr->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
 					prev_mark += storage.index_granularity;
 				}
+
+				compressed.next();
+				plain.sync();
+				marks.sync();
 			}
 		}
 		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
@@ -228,6 +242,10 @@ private:
 				type_nested->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
 				prev_mark += storage.index_granularity;
 			}
+
+			compressed.next();
+			plain.sync();
+			marks.sync();
 		}
 		
 		{
@@ -244,6 +262,10 @@ private:
 				type.serializeBinary(column, compressed, prev_mark, storage.index_granularity);
 				prev_mark += storage.index_granularity;
 			}
+
+			compressed.next();
+			plain.sync();
+			marks.sync();
 		}
 	}
 };

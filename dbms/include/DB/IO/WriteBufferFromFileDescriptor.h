@@ -82,6 +82,17 @@ public:
 		if (-1 == res)
 			throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
 	}
+
+	void sync()
+	{
+		/// Если в буфере ещё остались данные - запишем их.
+		next();
+
+		/// Попросим ОС сбросить данные на диск.
+		int res = fsync(fd);
+		if (-1 == res)
+			throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
+	}
 };
 
 }

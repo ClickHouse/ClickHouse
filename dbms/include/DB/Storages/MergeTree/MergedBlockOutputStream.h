@@ -1,13 +1,17 @@
 #pragma once
 
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedWriteBuffer.h>
+
 #include <DB/Storages/StorageMergeTree.h>
+
 
 namespace DB
 {
-	
+
 /** Для записи куска, полученного слиянием нескольких других.
-	* Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
-	*/
+  * Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
+  */
 class MergedBlockOutputStream : public IBlockOutputStream
 {
 public:
@@ -71,7 +75,12 @@ public:
 	void writeSuffix()
 	{
 		/// Заканчиваем запись.
+		index_stream->sync();
 		index_stream = NULL;
+
+		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
+			it->second->sync();
+		
 		column_streams.clear();
 		
 		if (marks_count == 0)
@@ -106,12 +115,19 @@ private:
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
 		WriteBufferFromFile marks;
+
+		void sync()
+		{
+			compressed.next();
+			plain.sync();
+			marks.sync();
+		}
 	};
 	
 	typedef std::map<String, SharedPtr<ColumnStream> > ColumnStreams;
 	ColumnStreams column_streams;
 	
-	SharedPtr<WriteBuffer> index_stream;
+	SharedPtr<WriteBufferFromFile> index_stream;
 	
 	/// Смещение до первой строчки блока, для которой надо записать индекс.
 	size_t index_offset;
