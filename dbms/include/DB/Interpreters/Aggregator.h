@@ -44,7 +44,7 @@ typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
 typedef HashMap<StringRef, AggregateDataPtr, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
 typedef HashMap<UInt128, AggregateDataPtr, UInt128Hash, UInt128ZeroTraits> AggregatedDataWithKeys128;
-typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128Hash, UInt128ZeroTraits> AggregatedDataHashed;
+typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash, UInt128ZeroTraits> AggregatedDataHashed;
 
 class Aggregator;
 
@@ -206,7 +206,7 @@ public:
 	/// Для IBlockInputStream.
 	String getID() const;
 
-private:
+protected:
 	friend struct AggregatedDataVariants;
 	
 	ColumnNumbers keys;
