@@ -182,9 +182,6 @@ public:
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
-	/// Получить пример блока, описывающего результат. Следует вызывать только после execute.
-	Block getSampleBlock() { return sample; }
-
 	/** Преобразовать структуру данных агрегации в блок.
 	  * Если with_totals = true и serarate_totals = true, то тотальные значения кладутся в totals.
 	  * Если with_totals = true и serarate_totals = false, то тотальные значения кладутся в первую строчку возвращаемого блока.
