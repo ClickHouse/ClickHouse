@@ -80,12 +80,15 @@ private:
 				ColumnAggregateFunction::Container_t & data = col->getData();
 				IAggregateFunction * func = aggregates[number_of_aggregate].function;
 				column.type = func->getReturnType();
-				column.column = column.type->createColumn();
-				IColumn & finalized_column = *column.column;
+				ColumnPtr finalized_column_ptr = column.type->createColumn();
+				IColumn & finalized_column = *finalized_column_ptr;
 				finalized_column.reserve(rows);
 
 				for (size_t j = 0; j < rows; ++j)
 					func->insertResultInto(data[j], finalized_column);
+
+				/// Заменяем в блоке столбец на финализированный.
+				column.column = finalized_column_ptr;
 
 				++number_of_aggregate;
 			}

@@ -447,7 +447,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals)
 {
-	Block res = getSampleBlock().cloneEmpty();
+	Block res = sample.cloneEmpty();
 	size_t rows = data_variants.size();
 
 	if (with_totals && separate_totals && rows != 0)
@@ -459,7 +459,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 
 	/// В какой структуре данных агрегированы данные?
 	if (data_variants.empty())
-		return res;
+		return Block();
 
 	typedef std::vector<ColumnAggregateFunction::Container_t *> AggregateColumns;
 	
