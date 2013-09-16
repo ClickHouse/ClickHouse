@@ -78,14 +78,37 @@ public:
 		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] < parent.data[rhs]; }
 	};
 
-	Permutation getPermutation() const
+	struct greater
+	{
+		const Self & parent;
+		greater(const Self & parent_) : parent(parent_) {}
+		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] > parent.data[rhs]; }
+	};
+
+	Permutation getPermutation(bool reverse, size_t limit) const
 	{
 		size_t s = data.size();
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		std::sort(res.begin(), res.end(), less(*this));
+		if (limit > s)
+			limit = 0;
+
+		if (limit)
+		{
+			if (reverse)
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this));
+			else
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this));
+		}
+		else
+		{
+			if (reverse)
+				std::sort(res.begin(), res.end(), greater(*this));
+			else
+				std::sort(res.begin(), res.end(), less(*this));
+		}
 		
 		return res;
 	}
@@ -177,16 +200,22 @@ public:
 		return res;
 	}
 
-	ColumnPtr permute(const IColumn::Permutation & perm) const
+	ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const
 	{
 		size_t size = this->data.size();
-		if (size != perm.size())
-			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		Self * res_ = new Self(size);
+		if (limit == 0)
+			limit = size;
+		else
+			limit = std::min(size, limit);
+		
+		if (perm.size() < limit)
+			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Self * res_ = new Self(limit);
 		ColumnPtr res = res_;
 		typename Self::Container_t & res_data = res_->getData();
-		for (size_t i = 0; i < size; ++i)
+		for (size_t i = 0; i < limit; ++i)
 			res_data[i] = this->data[perm[i]];
 
 		return res;

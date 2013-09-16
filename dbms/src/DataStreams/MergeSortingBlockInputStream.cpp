@@ -73,7 +73,8 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 	return merged;
 }
 
-template<class TSortCursor> Block MergeSortingBlockInputStream::mergeImpl(Blocks & blocks, CursorImpls & cursors)
+template <typename TSortCursor>
+Block MergeSortingBlockInputStream::mergeImpl(Blocks & blocks, CursorImpls & cursors)
 {
 	Block merged = blocks[0].cloneEmpty();
 	size_t num_columns = blocks[0].columns();
@@ -85,11 +86,11 @@ template<class TSortCursor> Block MergeSortingBlockInputStream::mergeImpl(Blocks
 		queue.push(TSortCursor(&cursors[i]));
 	
 	ColumnPlainPtrs merged_columns;
-	for (size_t i = 0; i < num_columns; ++i)
+	for (size_t i = 0; i < num_columns; ++i)	/// TODO: reserve
 		merged_columns.push_back(&*merged.getByPosition(i).column);
 
 	/// Вынимаем строки в нужном порядке и кладём в merged.
-	while (!queue.empty())
+	for (size_t row = 0; (!limit || row < limit) && !queue.empty(); ++row)
 	{
 		TSortCursor current = queue.top();
 		queue.pop();

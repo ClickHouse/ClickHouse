@@ -205,13 +205,21 @@ public:
 		throw Exception("Replication of ColumnNested is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr permute(const Permutation & perm) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
 		size_t size = getOffsets().size();
 		if (size != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		if (size == 0)
+		if (limit == 0)
+			limit = size;
+		else
+			limit = std::min(size, limit);
+
+		if (perm.size() < limit)
+			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (limit == 0)
  			return new ColumnNested(data);
 
 		Permutation nested_perm(getOffsets().back());
@@ -220,10 +228,10 @@ public:
 		ColumnPtr res = res_;
 
 		Offsets_t & res_offsets = res_->getOffsets();
-		res_offsets.resize(size);
+		res_offsets.resize(limit);
 		size_t current_offset = 0;
 
-		for (size_t i = 0; i < size; ++i)
+		for (size_t i = 0; i < limit; ++i)
 		{
 			for (size_t j = 0; j < sizeAt(perm[i]); ++j)
 				nested_perm[current_offset + j] = offsetAt(perm[i]) + j;
@@ -232,7 +240,7 @@ public:
 		}
 
 		for (size_t i = 0; i < data.size(); ++i)
-			res_->data[i] = data[i]->permute(nested_perm);
+			res_->data[i] = data[i]->permute(nested_perm, current_offset);
 
 		return res;
 	}
@@ -242,7 +250,7 @@ public:
 		throw Exception("Method compareAt is not supported for ColumnNested.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	Permutation getPermutation() const
+	Permutation getPermutation(bool reverse, size_t limit) const
 	{
 		throw Exception("Method getPermutation is not supported for ColumnNested.", ErrorCodes::NOT_IMPLEMENTED);
 	}

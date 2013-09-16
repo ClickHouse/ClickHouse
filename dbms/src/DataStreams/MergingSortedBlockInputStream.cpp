@@ -138,11 +138,20 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			fetchNextBlock(current, queue);
 		}
 
+		++total_merged_rows;
+		if (limit && total_merged_rows == limit)
+		{
+			cancel();
+			children.clear();
+			return;
+		}
+
 		++merged_rows;
 		if (merged_rows == max_block_size)
 			return;
 	}
 
+	cancel();
 	children.clear();
 }
 

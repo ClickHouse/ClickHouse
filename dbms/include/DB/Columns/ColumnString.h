@@ -6,6 +6,7 @@
 
 #include <DB/Columns/IColumn.h>
 #include <DB/Common/Collator.h>
+#include <DB/Common/PODArray.h>
 
 
 namespace DB
@@ -16,7 +17,8 @@ namespace DB
 class ColumnString : public IColumn
 {
 public:
-	typedef std::vector<UInt8> Chars_t;
+	//typedef std::vector<UInt8> Chars_t;
+	typedef PODArray<UInt8> Chars_t;
 
 private:
 	/// По индексу i находится смещение до начала i + 1 -го элемента.
@@ -185,13 +187,19 @@ public:
 		return res;
 	}
 
-	ColumnPtr permute(const Permutation & perm) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
 		size_t size = offsets.size();
-		if (size != perm.size())
-			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		if (size == 0)
+		if (limit == 0)
+			limit = size;
+		else
+			limit = std::min(size, limit);
+
+		if (perm.size() < limit)
+			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (limit == 0)
 			return new ColumnString;
 
 		ColumnString * res_ = new ColumnString;
@@ -201,11 +209,11 @@ public:
 		Offsets_t & res_offsets = res_->offsets;
 
 		res_chars.resize(chars.size());
-		res_offsets.resize(size);
+		res_offsets.resize(limit);
 
 		Offset_t current_new_offset = 0;
 
-		for (size_t i = 0; i < size; ++i)
+		for (size_t i = 0; i < limit; ++i)
 		{
 			size_t j = perm[i];
 			size_t string_offset = j == 0 ? 0 : offsets[j - 1];
@@ -216,6 +224,8 @@ public:
 			current_new_offset += string_size;
 			res_offsets[i] = current_new_offset;
 		}
+
+		res_chars.resize(res_offsets[limit - 1]);
 
 		return res;
 	}
@@ -249,29 +259,48 @@ public:
 			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
 	}
 
+	template <bool positive>
 	struct less
 	{
 		const ColumnString & parent;
 		less(const ColumnString & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			return 0 > strcmp(
+			return positive == (0 > strcmp(
 				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]),
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]));
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)])));
 		}
 	};
 
-	Permutation getPermutation() const
+	Permutation getPermutation(bool reverse, size_t limit) const
 	{
 		size_t s = offsets.size();
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		std::sort(res.begin(), res.end(), less(*this));
+		if (limit > s)
+			limit = 0;
+
+		if (limit)
+		{
+			if (reverse)
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+			else
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+		}
+		else
+		{
+			if (reverse)
+				std::sort(res.begin(), res.end(), less<false>(*this));
+			else
+				std::sort(res.begin(), res.end(), less<true>(*this));
+		}
+
 		return res;
 	}
-	
+
+	template <bool positive>
 	struct lessWithCollation
 	{
 		const ColumnString & parent;
@@ -281,21 +310,38 @@ public:
 		
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			return 0 > collator.compare(
+			return positive == (0 > collator.compare(
 				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs)));
 		}
 	};
 
 	/// Сортировка с учетом Collation
-	Permutation getPermutationWithCollation(const Collator & collator) const
+	Permutation getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit) const
 	{
 		size_t s = offsets.size();
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		std::sort(res.begin(), res.end(), lessWithCollation(*this, collator));
+		if (limit > s)
+			limit = 0;
+
+		if (limit)
+		{
+			if (reverse)
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), lessWithCollation<false>(*this, collator));
+			else
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), lessWithCollation<true>(*this, collator));
+		}
+		else
+		{
+			if (reverse)
+				std::sort(res.begin(), res.end(), lessWithCollation<false>(*this, collator));
+			else
+				std::sort(res.begin(), res.end(), lessWithCollation<true>(*this, collator));
+		}
+
 		return res;
 	}
 

@@ -50,15 +50,15 @@ public:
 			return cloneDummy(new_size);
 	}
 	
-	ColumnPtr permute(const Permutation & perm) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
 		if (s != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 		
-		return cloneDummy(s);
+		return cloneDummy(limit ? std::min(s, limit) : s);
 	}
 	
-	Permutation getPermutation() const
+	Permutation getPermutation(bool reverse, size_t limit) const
 	{
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)

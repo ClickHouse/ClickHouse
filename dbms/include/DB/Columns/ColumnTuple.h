@@ -120,12 +120,12 @@ public:
 		return new ColumnTuple(res_block);
 	}
 
-	ColumnPtr permute(const Permutation & perm) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.getByPosition(i).column = data.getByPosition(i).column->permute(perm);
+			res_block.getByPosition(i).column = data.getByPosition(i).column->permute(perm, limit);
 
 		return new ColumnTuple(res_block);
 	}
@@ -150,6 +150,7 @@ public:
 		return 0;
 	}
 
+	template <bool positive>
 	struct Less
 	{
 		ConstColumnPlainPtrs plain_columns;
@@ -166,23 +167,39 @@ public:
 			{
 				int res = (*it)->compareAt(a, b, **it);
 				if (res < 0)
-					return true;
+					return positive;
 				else if (res > 0)
-					return false;
+					return !positive;
 			}
 			return false;
 		}
 	};
 
-	Permutation getPermutation() const
+	Permutation getPermutation(bool reverse, size_t limit) const
 	{
 		size_t rows = size();
 		Permutation perm(rows);
 		for (size_t i = 0; i < rows; ++i)
 			perm[i] = i;
 
-		Less less(columns);
-		std::sort(perm.begin(), perm.end(), less);
+		if (limit > rows)
+			limit = 0;
+
+		if (limit)
+		{
+			if (reverse)
+				std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), Less<false>(columns));
+			else
+				std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), Less<true>(columns));
+		}
+		else
+		{
+			if (reverse)
+				std::sort(perm.begin(), perm.end(), Less<false>(columns));
+			else
+				std::sort(perm.begin(), perm.end(), Less<true>(columns));
+		}
+
 		return perm;
 	}
 

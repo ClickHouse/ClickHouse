@@ -132,9 +132,10 @@ public:
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
+	  * limit - если не равно 0 - положить в результат только первые limit значений.
 	  */
 	typedef std::vector<size_t> Permutation;
-	virtual SharedPtr<IColumn> permute(const Permutation & perm) const = 0;
+	virtual SharedPtr<IColumn> permute(const Permutation & perm, size_t limit) const = 0;
 
 	/** Сравнить (*this)[n] и rhs[m].
 	  * Вернуть отрицательное число, 0, или положительное число, если меньше, равно, или больше, соответственно.
@@ -142,10 +143,12 @@ public:
 	  */
 	virtual int compareAt(size_t n, size_t m, const IColumn & rhs) const = 0;
 
-	/** Получить перестановку чисел, такую, что их порядок соответствует порядку значений в столбце.
+	/** Получить перестановку чисел, такую, что для упорядочивания значений в столбце,
+	  *  надо применить эту сортировку - то есть, поставить на i-е место значение по индексу perm[i].
 	  * Используется при сортировке.
+	  * reverse - обратный порядок (по возрастанию). limit - если не равно 0 - для частичной сортировки только первых значений.
 	  */
-	virtual Permutation getPermutation() const = 0;
+	virtual Permutation getPermutation(bool reverse, size_t limit) const = 0;
 
 	/** Размножить все значения столько раз, сколько прописано в offsets.
 	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)

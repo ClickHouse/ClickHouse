@@ -17,8 +17,9 @@ namespace DB
 class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
-		: description(description_), max_block_size(max_block_size_), first(true), has_collation(false),
+	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
+	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_, size_t limit_ = 0)
+		: description(description_), max_block_size(max_block_size_), limit(limit_), total_merged_rows(0), first(true), has_collation(false),
 		num_columns(0), source_blocks(inputs_.size()), cursors(inputs_.size()), log(&Logger::get("MergingSortedBlockInputStream"))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
@@ -62,6 +63,8 @@ protected:
 	
 	SortDescription description;
 	size_t max_block_size;
+	size_t limit;
+	size_t total_merged_rows;
 
 	bool first;
 	

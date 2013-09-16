@@ -63,7 +63,7 @@ struct PartialSortingLessWithCollation
 };
 
 
-void sortBlock(Block & block, const SortDescription & description)
+void sortBlock(Block & block, const SortDescription & description, size_t limit)
 {
 	if (!block)
 		return;
@@ -71,26 +71,24 @@ void sortBlock(Block & block, const SortDescription & description)
 	/// Если столбец сортировки один
 	if (description.size() == 1)
 	{
+		bool reverse = description[0].direction == -1;
+
 		IColumn * column = !description[0].column_name.empty()
 			? block.getByName(description[0].column_name).column
 			: block.getByPosition(description[0].column_number).column;
-		
+
 		IColumn::Permutation perm;
 		if (needCollation(column, description[0]))
 		{
 			const ColumnString & column_string = dynamic_cast<const ColumnString &>(*column);
-			perm = column_string.getPermutationWithCollation(*description[0].collator);
+			perm = column_string.getPermutationWithCollation(*description[0].collator, reverse, limit);
 		}
 		else
-			perm = column->getPermutation();
-
-		if (description[0].direction == -1)
-			for (size_t i = 0, size = perm.size(); i < size / 2; ++i)
-				std::swap(perm[i], perm[size - 1 - i]);
+			perm = column->getPermutation(reverse, limit);
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm);
+			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
 	}
 	else
 	{
@@ -98,6 +96,9 @@ void sortBlock(Block & block, const SortDescription & description)
 		IColumn::Permutation perm(size);
 		for (size_t i = 0; i < size; ++i)
 			perm[i] = i;
+
+		if (limit > size)
+			limit = 0;
 		
 		bool need_collation = false;
 		ColumnsWithSortDescriptions columns_with_sort_desc;
@@ -117,17 +118,25 @@ void sortBlock(Block & block, const SortDescription & description)
 		if (need_collation)
 		{
 			PartialSortingLessWithCollation less_with_collation(columns_with_sort_desc);
-			std::sort(perm.begin(), perm.end(), less_with_collation);
+
+			if (limit)
+				std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less_with_collation);
+			else
+				std::sort(perm.begin(), perm.end(), less_with_collation);
 		}
 		else
 		{
 			PartialSortingLess less(columns_with_sort_desc);
-			std::sort(perm.begin(), perm.end(), less);
+
+			if (limit)
+				std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less);
+			else
+				std::sort(perm.begin(), perm.end(), less);
 		}
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm);
+			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
 	}
 }
 

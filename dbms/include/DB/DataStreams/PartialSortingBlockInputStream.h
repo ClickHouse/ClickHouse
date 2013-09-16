@@ -14,8 +14,9 @@ namespace DB
 class PartialSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	PartialSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_)
-		: description(description_)
+	/// limit - если не 0, то можно каждый блок сортировать не полностью, а только limit первых по порядку строк.
+	PartialSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_, size_t limit_ = 0)
+		: description(description_), limit(limit_)
 	{
 		children.push_back(input_);
 	}
@@ -39,6 +40,7 @@ protected:
 
 private:
 	SortDescription description;
+	size_t limit;
 };
 
 }

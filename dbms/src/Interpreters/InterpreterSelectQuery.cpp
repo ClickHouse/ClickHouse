@@ -560,11 +560,17 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
 	}
 
+	/// Если есть LIMIT - можно делать частичную сортировку.
+	size_t limit_length = 0;
+	size_t limit_offset = 0;
+	getLimitLengthAndOffset(query, limit_length, limit_offset);
+	size_t limit = limit_length + limit_offset;
+
 	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 	{
 		BlockInputStreamPtr & stream = *it;
-		IProfilingBlockInputStream * sorting_stream = new PartialSortingBlockInputStream(stream, order_descr);
+		IProfilingBlockInputStream * sorting_stream = new PartialSortingBlockInputStream(stream, order_descr, limit);
 
 		/// Ограничения на сортировку
 		IProfilingBlockInputStream::LocalLimits limits;
@@ -586,7 +592,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 	}
 
 	/// Сливаем сортированные блоки TODO: таймаут на слияние.
-	stream = maybeAsynchronous(new MergeSortingBlockInputStream(stream, order_descr), is_async);
+	stream = maybeAsynchronous(new MergeSortingBlockInputStream(stream, order_descr, limit), is_async);
 }
 
 

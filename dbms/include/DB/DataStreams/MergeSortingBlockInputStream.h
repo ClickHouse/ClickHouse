@@ -15,8 +15,9 @@ namespace DB
 class MergeSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_)
-		: description(description_), has_been_read(false), log(&Logger::get("MergeSortingBlockInputStream"))
+	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
+	MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_, size_t limit_ = 0)
+		: description(description_), limit(limit_), has_been_read(false), log(&Logger::get("MergeSortingBlockInputStream"))
 	{
 		children.push_back(input_);
 	}
@@ -40,6 +41,7 @@ protected:
 
 private:
 	SortDescription description;
+	size_t limit;
 
 	/// Всё было прочитано.
 	bool has_been_read;
@@ -55,7 +57,8 @@ private:
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
 	 */
-	template<class TSortCursor> Block mergeImpl(Blocks & block, CursorImpls & cursors);
+	template <typename TSortCursor>
+	Block mergeImpl(Blocks & block, CursorImpls & cursors);
 };
 
 }

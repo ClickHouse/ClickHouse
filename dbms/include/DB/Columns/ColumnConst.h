@@ -85,12 +85,17 @@ public:
 
 	size_t byteSize() const { return sizeof(data) + sizeof(s); }
 
-	ColumnPtr permute(const Permutation & perm) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
-		if (s != perm.size())
-			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+		if (limit == 0)
+			limit = s;
+		else
+			limit = std::min(s, limit);
 
-		return new ColumnConst<T>(s, data, data_type);
+		if (perm.size() < limit)
+			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		return new ColumnConst<T>(limit, data, data_type);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
@@ -103,7 +108,7 @@ public:
 				: 1);
 	}
 
-	Permutation getPermutation() const
+	Permutation getPermutation(bool reverse, size_t limit) const
 	{
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)

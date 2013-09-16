@@ -87,7 +87,7 @@ public:
 		throw Exception("Method filter is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr permute(const Permutation & perm) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
 		throw Exception("Method permute is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}

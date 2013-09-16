@@ -2,6 +2,7 @@
 
 #include <string.h> // memcpy
 
+#include <DB/Common/PODArray.h>
 #include <DB/Columns/IColumn.h>
 
 
@@ -14,7 +15,8 @@ namespace DB
 class ColumnFixedString : public IColumn
 {
 public:
-	typedef std::vector<UInt8> Chars_t;
+	//typedef std::vector<UInt8> Chars_t;
+	typedef PODArray<UInt8> Chars_t;
 
 private:
 	/// Размер строк.
@@ -110,24 +112,43 @@ public:
 		return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
 	}
 
+	template <bool positive>
 	struct less
 	{
 		const ColumnFixedString & parent;
 		less(const ColumnFixedString & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			return 0 > memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
+			/// TODO: memcmp тормозит.
+			return positive == (0 > memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n));
 		}
 	};
 
-	Permutation getPermutation() const
+	Permutation getPermutation(bool reverse, size_t limit) const
 	{
 		size_t s = size();
 		Permutation res(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		std::sort(res.begin(), res.end(), less(*this));
+		if (limit > s)
+			limit = 0;
+
+		if (limit)
+		{
+			if (reverse)
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+			else
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+		}
+		else
+		{
+			if (reverse)
+				std::sort(res.begin(), res.end(), less<false>(*this));
+			else
+				std::sort(res.begin(), res.end(), less<true>(*this));
+		}
+
 		return res;
 	}
 
@@ -163,13 +184,19 @@ public:
 		return res;
 	}
 
-	ColumnPtr permute(const Permutation & perm) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
 		size_t col_size = size();
-		if (col_size != perm.size())
-			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		if (col_size == 0)
+		if (limit == 0)
+			limit = col_size;
+		else
+			limit = std::min(col_size, limit);
+
+		if (perm.size() < limit)
+			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		if (limit == 0)
 			return new ColumnFixedString(n);
 
 		ColumnFixedString * res_ = new ColumnFixedString(n);
@@ -177,10 +204,10 @@ public:
 
 		Chars_t & res_chars = res_->chars;
 
-		res_chars.resize(chars.size());
+		res_chars.resize(n * limit);
 
 		size_t offset = 0;
-		for (size_t i = 0; i < col_size; ++i, offset += n)
+		for (size_t i = 0; i < limit; ++i, offset += n)
 			memcpy(&res_chars[offset], &chars[perm[i] * n], n);
 
 		return res;
