@@ -5,6 +5,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnReplicated.h>
 #include <DB/Columns/ColumnExpression.h>
 
 #include <DB/Functions/IFunction.h>
@@ -485,6 +486,7 @@ public:
 				ColumnWithNameAndType replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
 
 				replicated_column.name = name;
+				replicated_column.column = dynamic_cast<ColumnReplicated &>(*replicated_column.column).getData();
 				temp_block.insert(replicated_column);
 				
 				++prerequisite_index;

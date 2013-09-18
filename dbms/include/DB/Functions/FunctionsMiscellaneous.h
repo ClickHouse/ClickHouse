@@ -17,6 +17,7 @@
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnReplicated.h>
 #include <DB/Functions/IFunction.h>
 
 
@@ -723,8 +724,8 @@ class FunctionReplicate : public IFunction
 			temp_column = const_array_column->convertToFullColumn();
 			array_column = dynamic_cast<ColumnArray *>(&*temp_column);
 		}
-		
-		block.getByPosition(result).column = first_column->replicate(array_column->getOffsets());
+
+		block.getByPosition(result).column = new ColumnReplicated(first_column->size(), first_column->replicate(array_column->getOffsets()));
 	}
 };
 
