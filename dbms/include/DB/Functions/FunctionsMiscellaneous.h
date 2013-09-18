@@ -33,9 +33,6 @@ namespace DB
   * ignore(...)		- функция, принимающая любые аргументы, и всегда возвращающая 0.
   * sleep(seconds)	- спит указанное количество секунд каждый блок.
   * 
-  * replicate(x, arr) - копирует x столько раз, сколько элементов в массиве arr;
-  * 					 например: replicate(1, ['a', 'b', 'c']) = [1, 1, 1].
-  *
   * in(x, set)		- функция для вычисления оператора IN
   * notIn(x, set)	-  и NOT IN.
   *
@@ -44,7 +41,11 @@ namespace DB
   *
   * arrayJoin(arr)	- особая функция - выполнить её напрямую нельзя;
   *                   используется только чтобы получить тип результата соответствующего выражения.
-  * 
+  *
+  * replicate(x, arr) - копирует x столько раз, сколько элементов в массиве arr;
+  * 					например: replicate(1, ['a', 'b', 'c']) = 1, 1, 1.
+  *                     не предназначена для пользователя, а используется только как prerequisites для функций высшего порядка.
+  *
   * sleep(n)		- спит n секунд каждый блок.
   */
 
@@ -676,6 +677,13 @@ public:
 	}
 };
 
+
+/** Размножает столбец (первый аргумент) по количеству элементов в массиве (втором аргументе).
+  * Не предназначена для внешнего использования.
+  * Так как возвращаемый столбец будет иметь несовпадающий размер с исходными,
+  *  то результат не может быть потом использован в том же блоке, что и аргументы.
+  * Используется только в качестве prerequisites для функций высшего порядка.
+  */
 class FunctionReplicate : public IFunction
 {
 	/// Получить имя функции.
@@ -696,19 +704,17 @@ class FunctionReplicate : public IFunction
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(arguments[0]);
+		return arguments[0]->clone();
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		ColumnPtr first_column = block.getByPosition(arguments[0]).column;
-		
+
 		ColumnArray * array_column = dynamic_cast<ColumnArray *>(&*block.getByPosition(arguments[1]).column);
 		ColumnPtr temp_column;
-		
-		ColumnPtr res;
-		
+
 		if (!array_column)
 		{
 			ColumnConstArray * const_array_column = dynamic_cast<ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
@@ -718,12 +724,7 @@ class FunctionReplicate : public IFunction
 			array_column = dynamic_cast<ColumnArray *>(&*temp_column);
 		}
 		
-		res = first_column->replicate(array_column->getOffsets());
-		if (res->isConst())
-			res = dynamic_cast<IColumnConst &>(*res).convertToFullColumn();
-		res = new ColumnArray(res, array_column->getOffsetsColumn());
-		
-		block.getByPosition(result).column = res;
+		block.getByPosition(result).column = first_column->replicate(array_column->getOffsets());
 	}
 };
 

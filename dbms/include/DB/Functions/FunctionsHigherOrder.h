@@ -483,16 +483,8 @@ public:
 					continue;
 				
 				ColumnWithNameAndType replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
-				
-				const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*replicated_column.column);
-				const DataTypeArray * type = dynamic_cast<const DataTypeArray *>(&*replicated_column.type);
-				if (!col || !type)
-					throw Exception("Unexpected replicated column", ErrorCodes::LOGICAL_ERROR);
-				
+
 				replicated_column.name = name;
-				replicated_column.column = col->getDataPtr();
-				replicated_column.type = type->getNestedType();
-				
 				temp_block.insert(replicated_column);
 				
 				++prerequisite_index;
