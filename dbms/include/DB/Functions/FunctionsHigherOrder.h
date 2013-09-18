@@ -159,6 +159,7 @@ struct ArrayExistsImpl
 				if (filter[pos])
 				{
 					exists = 1;
+					pos = offsets[i];
 					break;
 				}
 			}
@@ -201,6 +202,7 @@ struct ArrayAllImpl
 				if (!filter[pos])
 				{
 					all = 0;
+					pos = offsets[i];
 					break;
 				}
 			}
