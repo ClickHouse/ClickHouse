@@ -82,10 +82,14 @@ if [[ ! -f $test_file ]]; then
     echo "Not found: test file"
     exit 1
 fi
+
 if [[ ! -f $etc_init_d_service ]]; then
-    echo "Not found: /etc/init.d/service"
-    exit 1
+    echo "Not found: /etc/init.d/service with path=$etc_init_d_service"
+    use_service=0
+else
+    use_service=1
 fi
+
 if [[ "$table_name_pattern" == "" ]]; then
     echo "Empty table_name_pattern"
     exit 1
@@ -121,14 +125,14 @@ function execute()
 	    sync
 	    sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
 
-	    if [[  "$restart_server_each_query" == "1" ]]; then
+	    if [[  "$restart_server_each_query" == "1"  && "$use_service" == "1" ]]; then
 		echo "restart server: $etc_init_d_service restart"
 		sudo $etc_init_d_service restart
 	    fi	    
 
 	    for i in $(seq $TIMES)
 	    do
-		if [ -f $etc_init_d_service ]; then
+		if [[ -f $etc_init_d_service && "$use_service" == "1" ]]; then
 		    sudo $etc_init_d_service status 
 		    server_status=$?
                     expect -f $expect_file ""		
@@ -143,8 +147,8 @@ function execute()
 		    restart_limit=60
                     expect -f $expect_file "" &> /dev/null	
 		    while [ "$?" != "0" ]; do
-			sleep 1
 			echo "waiting"
+			sleep 1			
 			let "restart_timer = $restart_timer + 1"
 			if (( $restart_limit < $restart_timer )); then 
 			    sudo $etc_init_d_service restart
