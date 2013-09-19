@@ -1082,8 +1082,9 @@ bool StorageMergeTree::removeIfBroken(const String & path)
 	{
 		Poco::File marks_file(path + "/" + escapeForFileName(it->first) + ".mrk");
 
-		if (!marks_file.exists())	/// Возможно, логическая ошибка. Не будем ничего удалять.
-			throw Exception("File " + marks_file.path() + " doesn't exist.", ErrorCodes::FILE_DOESNT_EXIST);
+		/// Такое случается при добавлении нового столбца в таблицу. Не будем ничего удалять.
+		if (!marks_file.exists())
+			return false;
 
 		if (marks_size == -1)
 		{
