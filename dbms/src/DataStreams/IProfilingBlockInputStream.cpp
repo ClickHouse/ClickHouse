@@ -60,20 +60,42 @@ void BlockStreamProfileInfo::update(Block & block)
 }
 
 
+void BlockStreamProfileInfo::collectInfosForStreamsWithName(const String & name, BlockStreamProfileInfos & res) const
+{
+	if (stream_name == name)
+	{
+		res.push_back(this);
+		return;
+	}
+
+	for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
+		(*it)->collectInfosForStreamsWithName(name, res);
+}
+
+
 void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 {
 	calculated_rows_before_limit = true;
-	applied_limit |= stream_name == "Limit";
-	rows_before_limit = 0;
-	for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
-	{
-		const BlockStreamProfileInfo & info = **it;
-		info.calculateRowsBeforeLimit();
-		if (stream_name == "Limit" && info.rows_before_limit == 0) 
-			rows_before_limit += info.rows;
-		else
-			rows_before_limit += info.rows_before_limit;
-	}
+	
+	/// есть ли Limit?
+	BlockStreamProfileInfos limits;
+	collectInfosForStreamsWithName("Limit", limits);
+	if (limits.empty())
+		return;
+
+	applied_limit = true;
+
+	/** Берём количество строчек, прочитанных ниже PartialSorting-а, если есть, или ниже Limit-а.
+	  * Это нужно, потому что сортировка может вернуть только часть строк.
+	  */
+	BlockStreamProfileInfos partial_sortings;
+	collectInfosForStreamsWithName("PartialSorting", partial_sortings);
+
+	BlockStreamProfileInfos & limits_or_sortings = partial_sortings.empty() ? limits : partial_sortings;
+
+	for (BlockStreamProfileInfos::const_iterator it = limits_or_sortings.begin(); it != limits_or_sortings.end(); ++it)
+		for (BlockStreamProfileInfos::const_iterator jt = (*it)->nested_infos.begin(); jt != (*it)->nested_infos.end(); ++jt)
+			rows_before_limit += (*jt)->rows;
 }
 
 
