@@ -52,7 +52,9 @@ struct ContextShared
 		AfterDestroy(Logger * log_) : log(log_) {}
 		~AfterDestroy()
 		{
+#ifndef DBMS_CLIENT
 			LOG_INFO(log, "Uninitialized shared context.");
+#endif
 		}
 	} after_destroy;
 
@@ -76,7 +78,9 @@ struct ContextShared
 
 	~ContextShared()
 	{
+#ifndef DBMS_CLIENT
 		LOG_INFO(log, "Uninitializing shared context.");
+#endif
 
 		/** Под mutex-ом очистим список БД и таблиц.
 		  * - так как некоторые таблицы имеют ссылку на этот контекст, и в дестркуторе могут дожидаться потоков,
