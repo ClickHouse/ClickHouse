@@ -51,7 +51,6 @@ void InterpreterAlterQuery::execute()
 
 	const ASTFunction & storage = dynamic_cast<const ASTFunction &>(*attach.storage);
 
-	String engine_string =  storage.getColumnName();
 	Poco::RegularExpression::MatchVec matches;
 
 	const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
