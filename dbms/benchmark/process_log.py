@@ -103,6 +103,8 @@ def main():
     elif db_name == 'hive':
         time_pattern = r'Time taken\: (?P<time>(?:(?P<sec>\d+.?\d+) seconds))'
         error_pattern = r'failed\: .*'
+    elif db_name == 'mysql':
+        time_pattern = r'(?P<time>(?:(?P<min>\d+) min )?(?P<sec>\d+.\d+) sec)'
     else:
         sys.exit("unknown db_name")
     
