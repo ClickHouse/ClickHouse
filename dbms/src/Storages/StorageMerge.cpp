@@ -47,15 +47,11 @@ BlockInputStreams StorageMerge::read(
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 		context.assertDatabaseExists(source_database);
-
-		const Tables & tables = context.getDatabases().at(source_database);
-
+		
 		/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
 		  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
 		  */
-		for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
-			if (it->second != this && table_name_regexp.match(it->first))
-				selected_tables.push_back(it->second);
+		getSelectedTables(selected_tables);
 	}
 
 	for (SelectedTables::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
@@ -83,4 +79,18 @@ BlockInputStreams StorageMerge::read(
 	return res;
 }
 
+void StorageMerge::getSelectedTables(StorageVector & selected_tables)
+{
+	const Tables & tables = context.getDatabases().at(source_database);
+	for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
+		if (it->second != this && table_name_regexp.match(it->first))
+			selected_tables.push_back(it->second);
 }
+
+
+void StorageMerge::alter(const ASTAlterQuery::Parameters & params)
+{
+	alter_columns(params, columns, context);
+}
+}
+

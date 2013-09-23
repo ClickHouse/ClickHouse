@@ -32,7 +32,7 @@ class PODArray : private boost::noncopyable, private std::allocator<char>	/// em
 {
 private:
 	typedef std::allocator<char> Allocator;
-	static const size_t initial_size = 4096;
+	static const size_t initial_size;
 
 	char * c_start;
 	char * c_end;
@@ -263,6 +263,10 @@ public:
 		assign(from.begin(), from.end());
 	}
 };
+
+template <typename T>
+const size_t PODArray<T>::initial_size = 4096;
+
 
 
 }

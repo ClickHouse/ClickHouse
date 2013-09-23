@@ -16,11 +16,13 @@ StorageDistributed::StorageDistributed(
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
 	const Settings & settings,
+	const Context & context_,
 	const String & sign_column_name_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	data_type_factory(data_type_factory_),
-	sign_column_name(sign_column_name_)
+	sign_column_name(sign_column_name_),
+	context(context_)
 {
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 		pools.push_back(new ConnectionPool(
@@ -37,11 +39,13 @@ StorageDistributed::StorageDistributed(
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
 	const Settings & settings,
+	const Context & context_,
 	const String & sign_column_name_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	data_type_factory(data_type_factory_),
-	sign_column_name(sign_column_name_)
+	sign_column_name(sign_column_name_),
+	context(context_)
 {
 	for (AddressesWithFailover::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 	{
@@ -66,9 +70,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
 	const Settings & settings,
+	const Context & context_,
 	const String & sign_column_name_)
 {
-	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings, sign_column_name_))->thisPtr();
+	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
 }
 
 StoragePtr StorageDistributed::create(
@@ -79,9 +84,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_table_,
 	const DataTypeFactory & data_type_factory_,
 	const Settings & settings,
+	const Context  & context_,
 	const String & sign_column_name_)
 {
-	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings, sign_column_name_))->thisPtr();
+	return (new StorageDistributed(name_, columns_, addresses, remote_database_, remote_table_, data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
 }
 
 
@@ -119,4 +125,8 @@ BlockInputStreams StorageDistributed::read(
 	return res;
 }
 
+void StorageDistributed::alter(const ASTAlterQuery::Parameters &params)
+{
+	alter_columns(params, columns, context);
+}
 }

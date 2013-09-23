@@ -204,10 +204,10 @@ StoragePtr StorageFactory::get(
 		
 		if (!addresses_with_failover.empty())
 			return StorageDistributed::create(table_name, columns, addresses_with_failover, remote_database, remote_table,
-										  context.getDataTypeFactory(), context.getSettings(), sign_column_name);
+										  context.getDataTypeFactory(), context.getSettings(), context, sign_column_name);
 		else if (!addresses.empty())
 			return StorageDistributed::create(table_name, columns, addresses, remote_database, remote_table,
-										  context.getDataTypeFactory(), context.getSettings(), sign_column_name);
+										  context.getDataTypeFactory(), context.getSettings(), context, sign_column_name);
 		else
 			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 	}

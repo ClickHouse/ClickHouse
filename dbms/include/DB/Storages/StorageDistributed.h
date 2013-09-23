@@ -4,6 +4,7 @@
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Interpreters/Settings.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -42,6 +43,7 @@ public:
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const DataTypeFactory & data_type_factory_,
 		const Settings & settings,
+		const Context & context_,
 		const String & sign_column_name_ = "");
 	
 	/// Использовать реплики для отказоустойчивости.
@@ -53,6 +55,7 @@ public:
 		const String & remote_table_,				/// Имя таблицы на удалённых серверах.
 		const DataTypeFactory & data_type_factory_,
 		const Settings & settings,
+		const Context & context_,
 		const String & sign_column_name_ = "");
 
 	std::string getName() const { return "Distributed"; }
@@ -75,6 +78,9 @@ public:
 
 	void dropImpl() {}
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
+	/// в подтаблицах добавлять и удалять столбы нужно вручную
+	/// структура подтаблиц не проверяется
+	void alter(const ASTAlterQuery::Parameters &params);
 
 private:
 	StorageDistributed(
@@ -85,6 +91,7 @@ private:
 		const String & remote_table_,
 		const DataTypeFactory & data_type_factory_,
 		const Settings & settings,
+		const Context & context_,
 		const String & sign_column_name_ = "");
 	
 	/// Использовать реплики для отказоустойчивости.
@@ -96,6 +103,7 @@ private:
 		const String & remote_table_,
 		const DataTypeFactory & data_type_factory_,
 		const Settings & settings,
+		const Context & context_,
 		const String & sign_column_name_ = "");
 	
 	String name;
@@ -105,6 +113,7 @@ private:
 	const DataTypeFactory & data_type_factory;
 	String sign_column_name;
 
+	const Context & context;
 	/// Соединения с удалёнными серверами.
 	ConnectionPools pools;
 };

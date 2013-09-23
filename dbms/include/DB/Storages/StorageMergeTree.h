@@ -335,8 +335,7 @@ private:
 
 	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
 
-	/// берет нерекурсивные блокировки data_parts_mutex и all_data_parts_mutex
-	void removeColumn(String column_name);
+	void removeColumnFiles(String column_name);
 
 	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
 	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;

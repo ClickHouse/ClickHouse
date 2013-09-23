@@ -950,36 +950,10 @@ void StorageMergeTree::dropImpl()
 	Poco::File(full_path).remove(true);
 }
 
-/// одинаковыми считаются имена, если они совпадают целиком или nameWithoutDot совпадает с частью имени до точки
-bool namesEqual(const String & nameWithoutDot, const DB::NameAndTypePair & name_type)
-{
-	String nameWithDot = nameWithoutDot + ".";
-	return (nameWithDot == name_type.first.substr(0, nameWithoutDot.length() + 1) || nameWithoutDot == name_type.first);
-}
-
-
-void StorageMergeTree::removeColumn(String column_name)
+void StorageMergeTree::removeColumnFiles(String column_name)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-
-	/// Удаляем колонки из листа columns
-	bool is_first = true;
-	NamesAndTypesList::iterator column_it;
-	do
-	{
-		column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
-
-		if (column_it == columns->end())
-		{
-			if (is_first)
-				throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
-		}
-		else
-			columns->erase(column_it);
-		is_first = false;
-	}
-	while (column_it != columns->end());
 
 	/// Регэксп выбирает файлы столбца для удаления
 	Poco::RegularExpression re(column_name + "(?:(?:\\.|\\%2E).+){0,1}" +"(?:\\.mrk|\\.bin|\\.size\\d+\\.bin|\\.size\\d+\\.mrk)");
@@ -1007,51 +981,18 @@ void StorageMergeTree::removeColumn(String column_name)
 	}
 }
 
-
 void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 {
-	if (params.type == ASTAlterQuery::ADD)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-
-		NamesAndTypesList::iterator insert_it = columns->end();
-		if (params.column)
-		{
-			String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
-
-			/// Пытаемся найти первую с конца колонку с именем column_name или column_name.*
-			NamesAndTypesList::reverse_iterator reverse_insert_it = std::find_if(columns->rbegin(), columns->rend(),  boost::bind(namesEqual, column_name, _1) );
-
-			if (reverse_insert_it == columns->rend())
-				throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
-			else
-			{
-				/// base возвращает итератор уже смещенный на один элемент вправо
-				insert_it = reverse_insert_it.base();
-			}
-		}
-
-		const ASTNameTypePair & ast_name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
-		StringRange type_range = ast_name_type.type->range;
-		String type_string = String(type_range.first, type_range.second - type_range.first);
-
-		DB::DataTypePtr data_type = context.getDataTypeFactory().get(type_string);
-		NameAndTypePair pair(ast_name_type.name, data_type );
-		columns->insert(insert_it, pair);
-
-		/// Медленно, так как каждый раз копируется список
-		columns = DataTypeNested::expandNestedColumns(*columns);
-		return;
+		alter_columns(params, columns, context);
 	}
-	else if (params.type == ASTAlterQuery::DROP)
+	if (params.type == ASTAlterQuery::DROP)
 	{
 		String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
-		removeColumn(column_name);
+		removeColumnFiles(column_name);
 	}
-	else
-		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
-
 }
 
 
@@ -1082,7 +1023,7 @@ bool StorageMergeTree::removeIfBroken(const String & path)
 	{
 		Poco::File marks_file(path + "/" + escapeForFileName(it->first) + ".mrk");
 
-		/// Такое случается при добавлении нового столбца в таблицу. Не будем ничего удалять.
+		/// при добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
 		if (!marks_file.exists())
 			return false;
 

@@ -1,9 +1,15 @@
 #include <set>
+#include <boost/bind.hpp>
 
 #include <sparsehash/dense_hash_set>
 #include <sparsehash/dense_hash_map>
 
+#include <DB/Columns/ColumnNested.h>
+#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -137,5 +143,79 @@ void IStorage::check(const Block & block, bool need_all) const
 	}
 }
 
+
+/// одинаковыми считаются имена, если они совпадают целиком или nameWithoutDot совпадает с частью имени до точки
+bool namesEqual(const String & nameWithoutDot, const DB::NameAndTypePair & name_type)
+{
+	String nameWithDot = nameWithoutDot + ".";
+	return (nameWithDot == name_type.first.substr(0, nameWithoutDot.length() + 1) || nameWithoutDot == name_type.first);
+}
+
+void IStorage::alter_columns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context) const
+{
+	if (params.type == ASTAlterQuery::ADD)
+	{
+		/// TODO: нужны ли блокировки
+		//Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		//Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+		NamesAndTypesList::iterator insert_it = columns->end();
+		if (params.column)
+		{
+			String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
+
+			/// Пытаемся найти первую с конца колонку с именем column_name или column_name.*
+			NamesAndTypesList::reverse_iterator reverse_insert_it = std::find_if(columns->rbegin(), columns->rend(),  boost::bind(namesEqual, column_name, _1) );
+
+			if (reverse_insert_it == columns->rend())
+				throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
+			else
+			{
+				/// base возвращает итератор уже смещенный на один элемент вправо
+				insert_it = reverse_insert_it.base();
+			}
+		}
+
+		const ASTNameTypePair & ast_name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+		StringRange type_range = ast_name_type.type->range;
+		String type_string = String(type_range.first, type_range.second - type_range.first);
+
+		DB::DataTypePtr data_type = context.getDataTypeFactory().get(type_string);
+		NameAndTypePair pair(ast_name_type.name, data_type );
+		columns->insert(insert_it, pair);
+
+		/// Медленно, так как каждый раз копируется список
+		columns = DataTypeNested::expandNestedColumns(*columns);
+		return;
+	}
+	else if (params.type == ASTAlterQuery::DROP)
+	{
+		String column_name = dynamic_cast<const ASTIdentifier &>(*(params.column)).name;
+		
+		/// TODO: нужны ли блокировки
+		///Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		///Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	
+		/// Удаляем колонки из листа columns
+		bool is_first = true;
+		NamesAndTypesList::iterator column_it;
+		do
+		{
+			column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
+	
+			if (column_it == columns->end())
+			{
+				if (is_first)
+					throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else
+				columns->erase(column_it);
+			is_first = false;
+		}
+		while (column_it != columns->end());
+	}
+	else
+		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);	
+}
 
 }

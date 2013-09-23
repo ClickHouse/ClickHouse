@@ -9,6 +9,9 @@
 namespace DB
 {
 
+class StorageMerge;
+typedef Poco::SharedPtr<StorageMerge> StorageMergePtr;
+
 /** Таблица, представляющая собой объединение произвольного количества других таблиц.
   * У всех таблиц должна быть одинаковая структура.
   */
@@ -38,7 +41,12 @@ public:
 
 	void dropImpl() {}
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
+	
+	void getSelectedTables(StorageVector & selected_tables);
 
+	/// в подтаблицах добавлять и удалять столбы нужно вручную
+	/// структура подтаблиц не проверяется
+	void alter(const ASTAlterQuery::Parameters & params);
 private:
 	String name;
 	NamesAndTypesListPtr columns;
