@@ -49,7 +49,9 @@ void InterpreterAlterQuery::execute()
 	attach.attach = true;
 	ASTs & columns = dynamic_cast<ASTExpressionList &>(*attach.columns).children;
 
+
 	/// Различные проверки, на возможность выполнения запроса
+	ASTs columns_copy = columns;
 	IdentifierNameSet identifier_names;
 	attach.storage->collectIdentifierNames(identifier_names);
 	for (ASTAlterQuery::ParameterContainer::const_iterator alter_it = alter.parameters.begin();
@@ -66,18 +68,19 @@ void InterpreterAlterQuery::execute()
 			data_type_factory.get(String(type_range.first, type_range.second - type_range.first));
 
 			/// Проверяем, что колонка еще не существует
-			if (std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, name_type.name, _1)) != columns.end())
+			if (std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, name_type.name, _1)) != columns_copy.end())
 				throw DB::Exception("Wrong column name. Column already exists", DB::ErrorCodes::ILLEGAL_COLUMN);
 
 			/// Проверяем опциональный аргумент AFTER
-			ASTs::iterator insert_it = columns.end();
+			ASTs::iterator insert_it = columns_copy.end();
 			if (params.column)
 			{
 				const ASTIdentifier & col_after = dynamic_cast<const ASTIdentifier &>(*params.column);
-				insert_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, col_after.name, _1)) ;
-				if (insert_it == columns.end())
+				insert_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, col_after.name, _1)) ;
+				if (insert_it == columns_copy.end())
 					throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
 			}
+			columns_copy.insert(insert_it, params.name_type);
 		}
 		else if (params.type == ASTAlterQuery::DROP)
 		{
@@ -87,9 +90,11 @@ void InterpreterAlterQuery::execute()
 			if (identifier_names.find(drop_column.name) != identifier_names.end())
 				throw DB::Exception("Cannot drop key column", DB::ErrorCodes::ILLEGAL_COLUMN);
 
-			ASTs::iterator drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
-			if (drop_it == columns.end())
+			ASTs::iterator drop_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, drop_column.name, _1));
+			if (drop_it == columns_copy.end())
 				throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+			else
+				columns_copy.erase(drop_it);
 		}
 	}
 
