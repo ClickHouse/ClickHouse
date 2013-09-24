@@ -1,5 +1,7 @@
 #pragma once
 
+#include <limits>
+
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
@@ -115,9 +117,9 @@ public:
 		return BIG_THRESHOLD;
 	}
 
-
 	/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
-	void getMany(const double * levels, size_t size, UInt16 * result) const
+	template <typename ResultType>
+	void getMany(const double * levels, size_t size, ResultType * result) const
 	{
 		const double * levels_end = levels + size;
 		const double * level = levels;
@@ -179,6 +181,23 @@ public:
 			++result;
 		}
 	}
+
+	/// То же самое, но в случае пустого состояния возвращается NaN.
+	float getFloat(double level) const
+	{
+		return count
+			? get(level)
+			: std::numeric_limits<float>::quiet_NaN();
+	}
+
+	void getManyFloat(const double * levels, size_t size, float * result) const
+	{
+		if (count)
+			getMany(levels, size, result);
+		else
+			for (size_t i = 0; i < size; ++i)
+				result[i] = std::numeric_limits<float>::quiet_NaN();
+	}
 };
 
 #undef SMALL_THRESHOLD
@@ -200,7 +219,7 @@ public:
 
 	DataTypePtr getReturnType() const
 	{
-		return new DataTypeUInt16;
+		return new DataTypeFloat32;
 	}
 
 	void setArgument(const DataTypePtr & argument)
@@ -238,7 +257,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		static_cast<ColumnUInt16 &>(to).getData().push_back(this->data(place).get(level));
+		static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
 	}
 };
 
@@ -259,7 +278,7 @@ public:
 
 	DataTypePtr getReturnType() const
 	{
-		return new DataTypeArray(new DataTypeUInt16);
+		return new DataTypeArray(new DataTypeFloat32);
 	}
 
 	void setArgument(const DataTypePtr & argument)
@@ -307,11 +326,11 @@ public:
 		size_t size = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 		
-		typename ColumnUInt16::Container_t & data_to = static_cast<ColumnUInt16 &>(arr_to.getData()).getData();
+		typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
 		size_t old_size = data_to.size();
 		data_to.resize(data_to.size() + size);
 			
-		this->data(place).getMany(&levels[0], size, &data_to[old_size]);
+		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
 	}
 };
 
