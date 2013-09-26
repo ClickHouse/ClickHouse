@@ -27,7 +27,7 @@ public:
 			throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
-    ~WriteBufferFromFile()
+	~WriteBufferFromFile()
 	{
 		bool uncaught_exception = std::uncaught_exception();
 
