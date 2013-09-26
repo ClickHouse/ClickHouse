@@ -32,6 +32,7 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "sign_rewrite")		sign_rewrite 		= safeGet<UInt64>(value);
 	else if (name == "extremes")			extremes 			= safeGet<UInt64>(value);
 	else if (name == "use_uncompressed_cache") use_uncompressed_cache = safeGet<UInt64>(value);
+	else if (name == "min_rows_to_sync")	min_rows_to_sync 	= safeGet<UInt64>(value);
 	else if (name == "profile") 			setProfile(get<const String &>(value));
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
@@ -55,7 +56,8 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		|| name == "connections_with_failover_max_tries"
 		|| name == "sign_rewrite"
 		|| name == "extremes"
-		|| name == "use_uncompressed_cache")
+		|| name == "use_uncompressed_cache"
+		|| name == "min_rows_to_sync")
 	{
 		UInt64 value = 0;
 		readVarUInt(value, buf);
@@ -89,7 +91,8 @@ void Settings::set(const String & name, const String & value)
 		|| name == "connections_with_failover_max_tries"
 		|| name == "sign_rewrite"
 		|| name == "extremes"
-		|| name == "use_uncompressed_cache")
+		|| name == "use_uncompressed_cache"
+		|| name == "min_rows_to_sync")
 	{
 		set(name, parse<UInt64>(value));
 	}
@@ -150,6 +153,7 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("sign_rewrite", buf);							writeVarUInt(sign_rewrite, buf);
 	writeStringBinary("extremes", buf);								writeVarUInt(extremes, buf);
 	writeStringBinary("use_uncompressed_cache", buf);				writeVarUInt(use_uncompressed_cache, buf);
+	writeStringBinary("min_rows_to_sync", buf);						writeVarUInt(min_rows_to_sync, buf);
 
 	limits.serialize(buf);
 

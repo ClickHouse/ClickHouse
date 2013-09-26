@@ -107,10 +107,10 @@ private:
 
 		size_t plain_offset;	/// Сколько байт было в файле на момент создания LogBlockOutputStream.
 
-		void sync()
+		void finalize()
 		{
 			compressed.next();
-			plain.sync();
+			plain.next();
 		}
 	};
 

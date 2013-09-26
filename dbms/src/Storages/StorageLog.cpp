@@ -219,10 +219,10 @@ void LogBlockOutputStream::write(const Block & block)
 void LogBlockOutputStream::writeSuffix()
 {
 	/// Заканчиваем запись.
-	marks_stream.sync();
+	marks_stream.next();
 
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
-		it->second->sync();
+		it->second->finalize();
 
 	streams.clear();
 }

@@ -144,7 +144,7 @@ void StorageChunks::appendChunkToIndex(const std::string & chunk_name, size_t ma
 	WriteBufferFromFile index(index_path, 4096, O_APPEND | O_CREAT | O_WRONLY);
 	writeStringBinary(chunk_name, index);
 	writeIntBinary<UInt64>(mark, index);
-	index.sync();
+	index.next();
 }
 
 void StorageChunks::dropThis()

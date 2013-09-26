@@ -249,7 +249,7 @@ void TinyLogBlockOutputStream::writeSuffix()
 {
 	/// Заканчиваем запись.
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
-		it->second->sync();
+		it->second->finalize();
 
 	streams.clear();
 }

@@ -85,10 +85,10 @@ private:
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
 
-		void sync()
+		void finalize()
 		{
 			compressed.next();
-			plain.sync();
+			plain.next();
 		}
 	};
 

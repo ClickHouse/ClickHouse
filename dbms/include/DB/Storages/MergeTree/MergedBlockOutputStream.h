@@ -16,8 +16,8 @@ class MergedBlockOutputStream : public IBlockOutputStream
 {
 public:
 	MergedBlockOutputStream(StorageMergeTree & storage_,
-							UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
-	: storage(storage_), marks_count(0), index_offset(0)
+		UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
+		: storage(storage_), marks_count(0), index_offset(0), total_rows(0)
 	{
 		part_name = storage.getPartName(
 			DayNum_t(min_date), DayNum_t(max_date),
@@ -37,6 +37,7 @@ public:
 	void write(const Block & block)
 	{
 		size_t rows = block.rows();
+		total_rows += rows;
 		
 		/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
 		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
@@ -75,16 +76,24 @@ public:
 	void writeSuffix()
 	{
 		/// Заканчиваем запись.
-		index_stream->sync();
+		index_stream->next();
 		index_stream = NULL;
 
 		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
-			it->second->sync();
+			it->second->finalize();
 		
 		column_streams.clear();
 		
 		if (marks_count == 0)
 			throw Exception("Empty part", ErrorCodes::LOGICAL_ERROR);
+
+		/// Если надо - попросим ОС сбросить данные на диск.
+		size_t min_rows_to_sync = storage.context.getSettings().min_rows_to_sync;
+		if (min_rows_to_sync && total_rows >= min_rows_to_sync)
+		{
+			LOG_TRACE(storage.log, "sync()");
+			::sync();	/// Если вызывать fsync для каждого файла по отдельности, то всё больше тормозит.
+		}
 		
 		/// Переименовываем кусок.
 		Poco::File(part_tmp_path).renameTo(part_res_path);
@@ -116,11 +125,11 @@ private:
 		CompressedWriteBuffer compressed;
 		WriteBufferFromFile marks;
 
-		void sync()
+		void finalize()
 		{
 			compressed.next();
-			plain.sync();
-			marks.sync();
+			plain.next();
+			marks.next();
 		}
 	};
 	
@@ -131,6 +140,9 @@ private:
 	
 	/// Смещение до первой строчки блока, для которой надо записать индекс.
 	size_t index_offset;
+
+	/// Общее количество записанных строк.
+	size_t total_rows;
 	
 	typedef std::set<std::string> OffsetColumns;
 	
