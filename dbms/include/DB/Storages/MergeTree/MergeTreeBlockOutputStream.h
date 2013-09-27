@@ -158,16 +158,8 @@ private:
 			writeData(part_tmp_path, column.name, *column.type, *column.column, offset_columns);
 		}
 
-		/// Если надо - попросим ОС сбросить данные на диск.
-		size_t min_rows_to_sync = storage.context.getSettings().min_rows_to_sync;
-		if (min_rows_to_sync && rows >= min_rows_to_sync)
-		{
-			LOG_TRACE(storage.log, "sync()");
-			::sync();	/// Если вызывать fsync для каждого файла по отдельности, то всё больше тормозит.
-		}
-		
 		LOG_TRACE(storage.log, "Renaming.");
-		
+
 		/// Переименовываем кусок.
 		Poco::File(part_tmp_path).renameTo(part_res_path);
 		
