@@ -17,119 +17,181 @@ namespace DB
 {
 
 /** Вычисляет квантиль для времени в миллисекундах, меньшего 30 сек.
-  * Если время меньше 1024 мс., то вычисление точное.
-  * Если время меньше 30 сек., то вычисление идёт с округлением до числа, кратного 16 мс.
-  * Иначе, время приравнивается к 30 сек.
+  * Если значение больше 30 сек, то значение приравнивается к 30 сек.
+  *
+  * Если всего значений не больше 32, то вычисление точное.
+  *
+  * Иначе:
+  *  Если время меньше 1024 мс., то вычисление точное.
+  *  Иначе вычисление идёт с округлением до числа, кратного 16 мс.
   */
 
-#define SMALL_THRESHOLD 1024
+#define TINY_MAX_ELEMS 31
 #define BIG_THRESHOLD 30000
-#define BIG_SIZE ((BIG_THRESHOLD - SMALL_THRESHOLD) / BIG_PRECISION)
-#define BIG_PRECISION 16
 
-class QuantileTiming
+namespace detail
 {
-private:
-	/// Общее число значений.
-	UInt64 count;
-
-	/// Число значений для каждого значения меньше small_threshold.
-	UInt64 count_small[SMALL_THRESHOLD];
-
-	/// Число значений для каждого значения от small_threshold до big_threshold, округлённого до big_precision.
-	UInt64 count_big[BIG_SIZE];
-
-public:
-	QuantileTiming()
+	/** Вспомогательная структура для оптимизации в случае маленького количества значений.
+	  * Размер - 64 байта. Должна быть POD-типом (используется в union).
+	  */
+	struct QuantileTimingTiny
 	{
-		memset(this, 0, sizeof(*this));
-	}
+		mutable UInt16 elems[TINY_MAX_ELEMS];	/// mutable потому что сортировка массива не считается изменением состояния.
+		UInt16 count;	/// Важно, чтобы count был не в первых 8 байтах структуры. Вы должны сами инициализировать его нулём.
 
-	QuantileTiming(ReadBuffer & buf)
-	{
-		deserialize(buf);
-	}
-
-	void insert(UInt64 x)
-	{
-		++count;
-
-		if (x < SMALL_THRESHOLD)
-			++count_small[x];
-		else if (x < BIG_THRESHOLD)
-			++count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
-	}
-
-	void merge(const QuantileTiming & rhs)
-	{
-		count += rhs.count;
-
-		for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
-			count_small[i] += rhs.count_small[i];
-
-		for (size_t i = 0; i < BIG_SIZE; ++i)
-			count_big[i] += rhs.count_big[i];
-	}
-
-	void serialize(WriteBuffer & buf) const
-	{
-		buf.write(reinterpret_cast<const char *>(this), sizeof(*this));
-	}
-
-	void deserialize(ReadBuffer & buf)
-	{
-		buf.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
-	}
-
-	void deserializeMerge(ReadBuffer & buf)
-	{
-		merge(QuantileTiming(buf));
-	}
-
-
-	/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
-	UInt16 get(double level) const
-	{
-		UInt64 pos = count * level;
-
-		UInt64 accumulated = 0;
-
-		size_t i = 0;
-		while (i < SMALL_THRESHOLD && accumulated < pos)
+		/// Можно использовать только пока count < TINY_MAX_ELEMS.
+		void insert(UInt64 x)
 		{
-			accumulated += count_small[i];
-			++i;
+			if (unlikely(x > BIG_THRESHOLD))
+				x = BIG_THRESHOLD;
+
+			elems[count] = x;
+			++count;
 		}
 
-		if (i < SMALL_THRESHOLD)
-			return i;
-
-		i = 0;
-		while (i < BIG_SIZE && accumulated < pos)
+		/// Можно использовать только пока count + rhs.count <= TINY_MAX_ELEMS.
+		void merge(const QuantileTimingTiny & rhs)
 		{
-			accumulated += count_big[i];
-			++i;
+			for (size_t i = 0; i < rhs.count; ++i)
+			{
+				elems[count] = rhs.elems[i];
+				++count;
+			}
 		}
 
-		if (i < BIG_SIZE)
-			return (i * BIG_PRECISION) + SMALL_THRESHOLD;
-
-		return BIG_THRESHOLD;
-	}
-
-	/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
-	template <typename ResultType>
-	void getMany(const double * levels, size_t size, ResultType * result) const
-	{
-		const double * levels_end = levels + size;
-		const double * level = levels;
-		UInt64 pos = count * *level;
-
-		UInt64 accumulated = 0;
-
-		size_t i = 0;
-		while (i < SMALL_THRESHOLD)
+		void serialize(WriteBuffer & buf) const
 		{
+			writeBinary(count, buf);
+			buf.write(reinterpret_cast<const char *>(elems), count * sizeof(elems[0]));
+		}
+
+		void deserialize(ReadBuffer & buf)
+		{
+			readBinary(count, buf);
+			buf.readStrict(reinterpret_cast<char *>(elems), count * sizeof(elems[0]));
+		}
+
+		/** Эту функцию обязательно нужно позвать перед get-функциями. */
+		void prepare() const
+		{
+			std::sort(elems, elems + count);
+		}
+
+		UInt16 get(double level) const
+		{
+			return level != 1
+				? elems[static_cast<size_t>(count * level)]
+				: elems[count - 1];
+		}
+
+		template <typename ResultType>
+		void getMany(const double * levels, size_t size, ResultType * result) const
+		{
+			const double * levels_end = levels + size;
+
+			while (levels != levels_end)
+			{
+				*result = get(*levels);
+				++levels;
+				++result;
+			}
+		}
+
+		/// То же самое, но в случае пустого состояния возвращается NaN.
+		float getFloat(double level) const
+		{
+			return count
+				? get(level)
+				: std::numeric_limits<float>::quiet_NaN();
+		}
+
+		void getManyFloat(const double * levels, size_t size, float * result) const
+		{
+			if (count)
+				getMany(levels, size, result);
+			else
+				for (size_t i = 0; i < size; ++i)
+					result[i] = std::numeric_limits<float>::quiet_NaN();
+		}
+	};
+
+
+	#define SMALL_THRESHOLD 1024
+	#define BIG_SIZE ((BIG_THRESHOLD - SMALL_THRESHOLD) / BIG_PRECISION)
+	#define BIG_PRECISION 16
+
+
+	/** Для большого количества значений. Размер около 20 КБ.
+	  * TODO: Есть off-by-one ошибки - может возвращаться значение на 1 больше нужного.
+	  */
+	class QuantileTimingLarge
+	{
+	private:
+		/// Общее число значений.
+		UInt64 count;
+
+		/// Число значений для каждого значения меньше small_threshold.
+		UInt64 count_small[SMALL_THRESHOLD];
+
+		/// Число значений для каждого значения от small_threshold до big_threshold, округлённого до big_precision.
+		UInt64 count_big[BIG_SIZE];
+
+	public:
+		QuantileTimingLarge()
+		{
+			memset(this, 0, sizeof(*this));
+		}
+
+		QuantileTimingLarge(ReadBuffer & buf)
+		{
+			deserialize(buf);
+		}
+
+		void insert(UInt64 x)
+		{
+			++count;
+
+			if (x < SMALL_THRESHOLD)
+				++count_small[x];
+			else if (x < BIG_THRESHOLD)
+				++count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
+		}
+
+		void merge(const QuantileTimingLarge & rhs)
+		{
+			count += rhs.count;
+
+			for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
+				count_small[i] += rhs.count_small[i];
+
+			for (size_t i = 0; i < BIG_SIZE; ++i)
+				count_big[i] += rhs.count_big[i];
+		}
+
+		void serialize(WriteBuffer & buf) const
+		{
+			buf.write(reinterpret_cast<const char *>(this), sizeof(*this));
+		}
+
+		void deserialize(ReadBuffer & buf)
+		{
+			buf.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
+		}
+
+		void deserializeMerge(ReadBuffer & buf)
+		{
+			merge(QuantileTimingLarge(buf));
+		}
+
+
+		/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
+		UInt16 get(double level) const
+		{
+			UInt64 pos = count * level;
+
+			UInt64 accumulated = 0;
+
+			size_t i = 0;
 			while (i < SMALL_THRESHOLD && accumulated < pos)
 			{
 				accumulated += count_small[i];
@@ -137,22 +199,9 @@ public:
 			}
 
 			if (i < SMALL_THRESHOLD)
-			{
-				*result = i;
+				return i;
 
-				++level;
-				++result;
-
-				if (level == levels_end)
-					return;
-				
-				pos = count * *level;
-			}
-		}
-
-		i = 0;
-		while (i < BIG_SIZE)
-		{
+			i = 0;
 			while (i < BIG_SIZE && accumulated < pos)
 			{
 				accumulated += count_big[i];
@@ -160,39 +209,265 @@ public:
 			}
 
 			if (i < BIG_SIZE)
+				return (i * BIG_PRECISION) + SMALL_THRESHOLD;
+
+			return BIG_THRESHOLD;
+		}
+
+		/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
+		template <typename ResultType>
+		void getMany(const double * levels, size_t size, ResultType * result) const
+		{
+			const double * levels_end = levels + size;
+			const double * level = levels;
+			UInt64 pos = count * *level;
+
+			UInt64 accumulated = 0;
+
+			size_t i = 0;
+			while (i < SMALL_THRESHOLD)
 			{
-				*result = (i * BIG_PRECISION) + SMALL_THRESHOLD;
+				while (i < SMALL_THRESHOLD && accumulated < pos)
+				{
+					accumulated += count_small[i];
+					++i;
+				}
+
+				if (i < SMALL_THRESHOLD)
+				{
+					*result = i;
+
+					++level;
+					++result;
+
+					if (level == levels_end)
+						return;
+
+					pos = count * *level;
+				}
+			}
+
+			i = 0;
+			while (i < BIG_SIZE)
+			{
+				while (i < BIG_SIZE && accumulated < pos)
+				{
+					accumulated += count_big[i];
+					++i;
+				}
+
+				if (i < BIG_SIZE)
+				{
+					*result = (i * BIG_PRECISION) + SMALL_THRESHOLD;
+
+					++level;
+					++result;
+
+					if (level == levels_end)
+						return;
+
+					pos = count * *level;
+				}
+			}
+
+			while (level < levels_end)
+			{
+				*result = BIG_THRESHOLD;
 
 				++level;
 				++result;
-
-				if (level == levels_end)
-					return;
-
-				pos = count * *level;
 			}
 		}
 
-		while (level < levels_end)
+		/// То же самое, но в случае пустого состояния возвращается NaN.
+		float getFloat(double level) const
 		{
-			*result = BIG_THRESHOLD;
+			return count
+				? get(level)
+				: std::numeric_limits<float>::quiet_NaN();
+		}
+
+		void getManyFloat(const double * levels, size_t size, float * result) const
+		{
+			if (count)
+				getMany(levels, size, result);
+			else
+				for (size_t i = 0; i < size; ++i)
+					result[i] = std::numeric_limits<float>::quiet_NaN();
+		}
+	};
+}
+
+
+/** sizeof - 64 байта.
+  * Если их не хватает - выделяет дополнительно около 20 КБ памяти.
+  */
+class QuantileTiming : private boost::noncopyable
+{
+private:
+	union
+	{
+		detail::QuantileTimingTiny tiny;
+		detail::QuantileTimingLarge * large;
+	};
+
+	bool isLarge() const { return tiny.count == TINY_MAX_ELEMS + 1; }
+
+	void toLarge()
+	{
+		large = new detail::QuantileTimingLarge;
+
+		for (size_t i = 0; i < tiny.count; ++i)
+			large->insert(tiny.elems[i]);
+
+		tiny.count = TINY_MAX_ELEMS + 1;
+	}
+
+public:
+	QuantileTiming()
+	{
+		tiny.count = 0;
+	}
+
+	~QuantileTiming()
+	{
+		if (isLarge())
+			delete large;
+	}
+
+	void insert(UInt64 x)
+	{
+		if (tiny.count < TINY_MAX_ELEMS)
+		{
+			tiny.insert(x);
+		}
+		else
+		{
+			if (unlikely(tiny.count == TINY_MAX_ELEMS))
+				toLarge();
+
+			large->insert(x);
+		}
+	}
+
+	void merge(const QuantileTiming & rhs)
+	{
+		if (tiny.count + rhs.tiny.count <= TINY_MAX_ELEMS)
+		{
+			tiny.merge(rhs.tiny);
+		}
+		else
+		{
+			if (!isLarge())
+				toLarge();
+
+			if (rhs.isLarge())
+			{
+				large->merge(*rhs.large);
+			}
+			else
+			{
+				for (size_t i = 0; i < rhs.tiny.count; ++i)
+					large->insert(rhs.tiny.elems[i]);
+			}
+		}
+	}
+
+	void serialize(WriteBuffer & buf) const
+	{
+		bool is_large = isLarge();
+		DB::writeBinary(is_large, buf);
+
+		if (is_large)
+			large->serialize(buf);
+		else
+			tiny.serialize(buf);
+	}
+
+	void deserialize(ReadBuffer & buf)
+	{
+		bool is_rhs_large;
+		DB::readBinary(is_rhs_large, buf);
+
+		if (is_rhs_large)
+		{
+			if (!isLarge())
+			{
+				tiny.count = TINY_MAX_ELEMS + 1;
+				large = new detail::QuantileTimingLarge;
+			}
+
+			large->deserialize(buf);
+		}
+		else
+			tiny.deserialize(buf);
+	}
+
+	void deserializeMerge(ReadBuffer & buf)
+	{
+		bool is_rhs_large;
+		DB::readBinary(is_rhs_large, buf);
+
+		if (is_rhs_large)
+		{
+			if (!isLarge())
+			{
+				tiny.count = TINY_MAX_ELEMS + 1;
+				large = new detail::QuantileTimingLarge;
+			}
 			
-			++level;
-			++result;
+			large->merge(detail::QuantileTimingLarge(buf));
+		}
+		else
+		{
+			QuantileTiming rhs;
+			rhs.tiny.deserialize(buf);
+
+			merge(rhs);
+		}
+	}
+
+
+	/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
+	UInt16 get(double level) const
+	{
+		if (isLarge())
+		{
+			return large->get(level);
+		}
+		else
+		{
+			tiny.prepare();
+			return tiny.get(level);
+		}
+	}
+
+	/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
+	template <typename ResultType>
+	void getMany(const double * levels, size_t size, ResultType * result) const
+	{
+		if (isLarge())
+		{
+			return large->getMany(levels, size, result);
+		}
+		else
+		{
+			tiny.prepare();
+			return tiny.getMany(levels, size, result);
 		}
 	}
 
 	/// То же самое, но в случае пустого состояния возвращается NaN.
 	float getFloat(double level) const
 	{
-		return count
+		return tiny.count
 			? get(level)
 			: std::numeric_limits<float>::quiet_NaN();
 	}
 
 	void getManyFloat(const double * levels, size_t size, float * result) const
 	{
-		if (count)
+		if (tiny.count)
 			getMany(levels, size, result);
 		else
 			for (size_t i = 0; i < size; ++i)
@@ -204,6 +479,7 @@ public:
 #undef BIG_THRESHOLD
 #undef BIG_SIZE
 #undef BIG_PRECISION
+#undef TINY_MAX_ELEMS
 
 
 template <typename ArgumentFieldType>
