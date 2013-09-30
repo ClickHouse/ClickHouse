@@ -37,9 +37,12 @@ namespace DB
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
   *
-  * Если указано sign_column, то при склейке кусков, также "схлопываются"
-  *  пары записей с разными значениями sign_column для одного значения первичного ключа.
-  *  (см. CollapsingSortedBlockInputStream.h)
+  * Имеется несколько режимов работы, определяющих, что делать при мердже:
+  * - Ordinary - ничего дополнительно не делать;
+  * - Collapsing - при склейке кусков "схлопывать"
+  *   пары записей с разными значениями sign_column для одного значения первичного ключа.
+  *   (см. CollapsingSortedBlockInputStream.h)
+  * - Summing - при склейке кусков, при совпадении PK суммировать все числовые столбцы, не входящие в PK.
   */
 
 struct StorageMergeTreeSettings
@@ -104,6 +107,14 @@ friend class MergeTreeBlockOutputStream;
 friend class MergedBlockOutputStream;
 
 public:
+	/// Режим работы. См. выше.
+	enum Mode
+	{
+		Ordinary,
+		Collapsing,
+		Summing,
+	};
+
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов.
@@ -118,13 +129,26 @@ public:
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
 		size_t index_granularity_,
+		Mode mode_ = Ordinary,
 		const String & sign_column_ = "",
 		const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
 
 	void shutdown();
 	~StorageMergeTree();
 
-	std::string getName() const { return sign_column.empty() ? "MergeTree" : "CollapsingMergeTree"; }
+	std::string getName() const
+	{
+		switch (mode)
+		{
+			case Ordinary: 		return "MergeTree";
+			case Collapsing: 	return "CollapsingMergeTree";
+			case Summing: 		return "SummingMergeTree";
+
+			default:
+				throw Exception("Unknown mode of operation for StorageMergeTree: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
+		}
+	}
+
 	std::string getTableName() const { return name; }
 	std::string getSignColumnName() const { return sign_column; }
 	bool supportsSampling() const { return !!sampling_expression; }
@@ -180,7 +204,9 @@ private:
 	size_t min_marks_for_concurrent_read;
 	size_t max_marks_to_use_cache;
 
-	/// Для схлопывания записей об изменениях, если это требуется.
+	/// Режим работы - какие дополнительные действия делать при мердже.
+	Mode mode;
+	/// Для схлопывания записей об изменениях, если используется Collapsing режим работы.
 	String sign_column;
 	
 	StorageMergeTreeSettings settings;
@@ -306,6 +332,7 @@ private:
 				  const String & date_column_name_,
 				  const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
 				  size_t index_granularity_,
+				  Mode mode_ = Ordinary,
 				  const String & sign_column_ = "",
 				  const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
 	

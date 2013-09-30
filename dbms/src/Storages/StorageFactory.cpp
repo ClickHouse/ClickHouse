@@ -211,7 +211,7 @@ StoragePtr StorageFactory::get(
 		else
 			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 	}
-	else if (name == "MergeTree")
+	else if (name == "MergeTree" || name == "SummingMergeTree")
 	{
 		/** В качестве аргумента для движка должно быть указано:
 		  *  - имя столбца с датой;
@@ -220,18 +220,20 @@ StoragePtr StorageFactory::get(
 		  *  - index_granularity.
 		  * Например: ENGINE = MergeTree(EventDate, intHash32(UniqID), (CounterID, EventDate, intHash32(UniqID), EventTime), 8192).
 		  * 
+		  * SummingMergeTree - вариант, в котором при слиянии делается суммирование всех числовых столбцов кроме PK
+		  *  - для Баннерной Крутилки.
 		  */
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
 		if (args_func.size() != 1)
-			throw Exception("Storage MergeTree requires 3 or 4 parameters"
+			throw Exception("Storage " + name + " requires 3 or 4 parameters"
 				" - name of column with date, [name of column for sampling], primary key expression, index granularity.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		if (args.size() != 3 && args.size() != 4)
-			throw Exception("Storage MergeTree requires 3 or 4 parameters"
+			throw Exception("Storage " + name + " requires 3 or 4 parameters"
 				" - name of column with date, [name of column for sampling], primary key expression, index granularity.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -243,12 +245,14 @@ StoragePtr StorageFactory::get(
 		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 		
 		if (primary_expr_func.name != "tuple")
-			throw Exception("Primary expression for storage MergeTree must be in parentheses.",
+			throw Exception("Primary expression for storage " + name + " must be in parentheses.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return StorageMergeTree::create(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity);
+		return StorageMergeTree::create(
+			data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity,
+			name == "SummingMergeTree" ? StorageMergeTree::Summing : StorageMergeTree::Ordinary);
 	}
 	else if (name == "CollapsingMergeTree")
 	{
@@ -288,7 +292,9 @@ StoragePtr StorageFactory::get(
 
 		ASTPtr primary_expr = primary_expr_func.children.at(0);
 
-		return StorageMergeTree::create(data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity, sign_column_name);
+		return StorageMergeTree::create(
+			data_path, table_name, columns, context, primary_expr, date_column_name,
+			sampling_expression, index_granularity, StorageMergeTree::Collapsing, sign_column_name);
 	}
 	else if (name == "SystemNumbers")
 	{

@@ -61,13 +61,14 @@ StorageMergeTree::StorageMergeTree(
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
+	Mode mode_,
 	const String & sign_column_,
 	const StorageMergeTreeSettings & settings_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), columns(columns_),
 	context(context_), primary_expr_ast(primary_expr_ast_->clone()),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_), 
 	index_granularity(index_granularity_),
-	sign_column(sign_column_),
+	mode(mode_), sign_column(sign_column_),
 	settings(settings_),
 	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name)), shutdown_called(false),
 	file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)")
@@ -105,10 +106,13 @@ StoragePtr StorageMergeTree::create(
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
 	size_t index_granularity_,
+	Mode mode_,
 	const String & sign_column_,
 	const StorageMergeTreeSettings & settings_)
 {
-	return (new StorageMergeTree(path_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_, index_granularity_, sign_column_, settings_))->thisPtr();
+	return (new StorageMergeTree(
+		path_, name_, columns_, context_, primary_expr_ast_, date_column_name_,
+		sampling_expression_, index_granularity_, mode_, sign_column_, settings_))->thisPtr();
 }
 
 
@@ -894,10 +898,26 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
 	/// В слитом куске строки с одинаковым ключом должны идти в порядке возрастания идентификатора исходного куска, то есть (примерного) возрастания времени вставки.
-	BlockInputStreamPtr merged_stream = sign_column.empty()
-		? new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_MERGE_BLOCK_SIZE)
-		: new CollapsingSortedBlockInputStream(src_streams, sort_descr, sign_column, DEFAULT_MERGE_BLOCK_SIZE);
-	
+	BlockInputStreamPtr merged_stream;
+
+	switch (mode)
+	{
+		case Ordinary:
+			merged_stream = new MergingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case Collapsing:
+			merged_stream = new CollapsingSortedBlockInputStream(src_streams, sort_descr, sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case Summing:
+		/*	TODO merged_stream =
+			break;*/
+
+		default:
+			throw Exception("Unknown mode of operation for StorageMergeTree: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
+	}
+
 	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
 		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
 
