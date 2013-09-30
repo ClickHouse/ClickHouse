@@ -69,7 +69,7 @@ StorageMergeTree::StorageMergeTree(
 	index_granularity(index_granularity_),
 	sign_column(sign_column_),
 	settings(settings_),
-	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name)),
+	increment(full_path + "increment.txt"), log(&Logger::get("StorageMergeTree: " + name)), shutdown_called(false),
 	file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)")
 {
 	min_marks_for_seek = (settings.min_rows_for_seek + index_granularity - 1) / index_granularity;
@@ -112,9 +112,19 @@ StoragePtr StorageMergeTree::create(
 }
 
 
+void StorageMergeTree::shutdown()
+{
+	if (shutdown_called)
+		return;
+	shutdown_called = true;
+
+	joinMergeThreads();
+}
+
+
 StorageMergeTree::~StorageMergeTree()
 {
-	joinMergeThreads();
+	shutdown();
 }
 
 

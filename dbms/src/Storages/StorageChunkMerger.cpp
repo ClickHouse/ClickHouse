@@ -140,15 +140,24 @@ StorageChunkMerger::StorageChunkMerger(
 	: this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
 	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_),
 	context(context_), settings(context.getSettings()),
-	log(&Logger::get("StorageChunkMerger"))
+	log(&Logger::get("StorageChunkMerger")), shutdown_called(false)
 {
 	merge_thread = boost::thread(&StorageChunkMerger::mergeThread, this);
 }
 
-StorageChunkMerger::~StorageChunkMerger()
+void StorageChunkMerger::shutdown()
 {
+	if (shutdown_called)
+		return;
+	shutdown_called = true;
+
 	cancel_merge_thread.set();
 	merge_thread.join();
+}
+
+StorageChunkMerger::~StorageChunkMerger()
+{
+	shutdown();
 }
 
 void StorageChunkMerger::mergeThread()

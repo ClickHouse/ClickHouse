@@ -82,14 +82,29 @@ struct ContextShared
 		LOG_INFO(log, "Uninitializing shared context.");
 #endif
 
-		/** Под mutex-ом очистим список БД и таблиц.
-		  * - так как некоторые таблицы имеют ссылку на этот контекст, и в дестркуторе могут дожидаться потоков,
-		  *  которые в этот момент пытаются работать с этим списком таблиц, под этим mutex-ом.
-		  * TODO: упростить - сделать, чтобы таблицы имели не обычные ссылки, а weak_ptr-ы на контекст.
+		/** В этот момент, некоторые таблицы могут иметь потоки,
+		  *  которые модифицируют список таблиц, и блокируют наш mutex (см. StorageChunkMerger).
+		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
+		  *  и попросим их всех закончить свою работу.
+		  * Потом удалим все объекты с таблицами.
 		  */
-		Poco::ScopedLock<Poco::Mutex> lock(mutex);
-		database_droppers.clear();
-		databases.clear();
+		
+		Databases current_databases;
+
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			database_droppers.clear();
+			current_databases = databases;
+		}
+
+		for (Databases::iterator it = current_databases.begin(); it != current_databases.end(); ++it)
+			for (Tables::iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
+				jt->second->shutdown();
+
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			databases.clear();
+		}
 	}
 };
 
@@ -145,7 +160,9 @@ public:
 	void addTable(const String & database_name, const String & table_name, StoragePtr table);
 	void addDatabase(const String & database_name);
 
-	void detachTable(const String & database_name, const String & table_name);
+	/// Возвращает отцепленную таблицу.
+	StoragePtr detachTable(const String & database_name, const String & table_name);
+	
 	void detachDatabase(const String & database_name);
 
 	String getCurrentDatabase() const;

@@ -63,7 +63,16 @@ void InterpreterDropQuery::execute()
 			}
 
 			/// Удаляем информацию о таблице из оперативки
-			context.detachTable(database_name, table_name);
+			StoragePtr detached_table = context.detachTable(database_name, table_name);
+
+			{
+				/** Во время уничтожения объекта с таблицей, mutex должен быть разблокирован,
+				  * так как таблица может ожидать завершения потоков, которые прямо сейчас ждут этого mutex-а.
+				  */
+				Poco::ScopedUnlock<Poco::Mutex> unlock(context.getMutex());
+				detached_table->shutdown();
+				detached_table = StoragePtr();
+			}
 		}
 	}
 	else
@@ -76,14 +85,26 @@ void InterpreterDropQuery::execute()
 				/// Тот, кто удалит директорию с БД, когда все ее таблицы будут удалены.
 				DatabaseDropperPtr database_dropper = context.getDatabaseDropper(database_name);
 				database_dropper->drop_on_destroy = true;
+
+				Tables detached_tables = context.getDatabases()[database_name];
 				
 				/// Удаление всех таблиц
-				for (Tables::iterator it = context.getDatabases()[database_name].begin(); it != context.getDatabases()[database_name].end(); ++it)
+				for (Tables::iterator it = detached_tables.begin(); it != detached_tables.end(); ++it)
+					context.detachTable(database_name, it->first);
+
 				{
-					StoragePtr table = it->second;
-					table->path_to_remove_on_drop = data_path + escapeForFileName(it->first);
-					table->database_to_drop = database_dropper;
-					table->drop();
+					Poco::ScopedUnlock<Poco::Mutex> unlock(context.getMutex());
+
+					for (Tables::iterator it = detached_tables.begin(); it != detached_tables.end(); ++it)
+					{
+						StoragePtr & table = it->second;
+
+						table->path_to_remove_on_drop = data_path + escapeForFileName(it->first);
+						table->database_to_drop = database_dropper;
+						table->drop();
+						table->shutdown();
+						table = StoragePtr();
+					}
 				}
 
 				Poco::File(metadata_path).remove(true);

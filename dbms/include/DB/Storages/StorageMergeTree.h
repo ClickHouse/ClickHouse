@@ -121,7 +121,8 @@ public:
 		const String & sign_column_ = "",
 		const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
 
-    ~StorageMergeTree();
+	void shutdown();
+	~StorageMergeTree();
 
 	std::string getName() const { return sign_column.empty() ? "MergeTree" : "CollapsingMergeTree"; }
 	std::string getTableName() const { return name; }
@@ -191,6 +192,7 @@ private:
 	Increment increment;
 
 	Logger * log;
+	bool shutdown_called;
 
 	/// Регулярное выражение соответсвующее названию директории с кусочками
 	Poco::RegularExpression file_name_regexp;

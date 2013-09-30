@@ -145,6 +145,12 @@ public:
 	{
 		throw Exception("Method getCustomCreateQuery is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
+
+	/** Если при уничтожении объекта надо сделать какую-то сложную работу - сделать её заранее.
+	  * Например, если таблица содержит какие-нибудь потоки для фоновой работы - попросить их завершиться и дождаться завершения.
+	  * По-умолчанию - ничего не делать.
+	  */
+	virtual void shutdown() {}
 	
 	virtual ~IStorage() {}
 

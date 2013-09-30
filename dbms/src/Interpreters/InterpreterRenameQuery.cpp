@@ -91,9 +91,8 @@ void InterpreterRenameQuery::execute()
 		}
 
 		/// Переименовываем таблицу в контексте.
-		StoragePtr table = context.getTable(from_database_name, from_table_name);
-		context.detachTable(from_database_name, from_table_name);
-		context.addTable(to_database_name, to_table_name, table);
+		context.addTable(to_database_name, to_table_name,
+			context.detachTable(from_database_name, from_table_name));
 
 		/// Удаляем старый файл с метаданными.
 		Poco::File(from_metadata_path).remove();

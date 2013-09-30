@@ -38,6 +38,8 @@ public:
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
+
+	void shutdown();
 	
 	~StorageChunkMerger();
 	
@@ -58,6 +60,7 @@ private:
 	Poco::Event cancel_merge_thread;
 	
 	Logger * log;
+	bool shutdown_called;
 	
 	StorageChunkMerger(
 		const std::string & this_database_,

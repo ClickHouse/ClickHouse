@@ -194,14 +194,17 @@ void Context::addDatabase(const String & database_name)
 }
 
 
-void Context::detachTable(const String & database_name, const String & table_name)
+StoragePtr Context::detachTable(const String & database_name, const String & table_name)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
 
 	assertTableExists(db, table_name);
-	shared->databases[db].erase(shared->databases[db].find(table_name));
+	Tables::iterator it = shared->databases[db].find(table_name);
+	StoragePtr res = it->second;
+	shared->databases[db].erase(it);
+	return res;
 }
 
 
