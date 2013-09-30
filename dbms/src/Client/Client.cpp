@@ -188,7 +188,7 @@ private:
 			("учше")("йгше")("дщпщге")
 			("exit;")("quit;")("logout;")
 			("учше;")("йгше;")("дщпщге;")
-			("q")("й");
+			("q")("й")("\\q")("\\Q");
 
 		const char * home_path_cstr = getenv("HOME");
 		if (!home_path_cstr)
