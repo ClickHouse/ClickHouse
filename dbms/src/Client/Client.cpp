@@ -64,10 +64,15 @@ class InterruptListener
 {
 private:
 	bool active;
+	sigset_t sig_set;
 
 public:
 	InterruptListener() : active(false)
 	{
+		if (sigemptyset(&sig_set)
+			|| sigaddset(&sig_set, SIGINT))
+			throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+		
 		block();
 	}
 
@@ -82,11 +87,6 @@ public:
 			return false;
 		
 		timespec timeout = { 0, 0 };
-		sigset_t sig_set;
-
-		if (sigemptyset(&sig_set)
-			|| sigaddset(&sig_set, SIGINT))
-			throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 		
 		if (-1 == sigtimedwait(&sig_set, NULL, &timeout))
 		{
@@ -103,12 +103,6 @@ public:
 	{
 		if (!active)
 		{
-			sigset_t sig_set;
-
-			if (sigemptyset(&sig_set)
-				|| sigaddset(&sig_set, SIGINT))
-				throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
-
 			if (pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
 				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
@@ -121,12 +115,6 @@ public:
 	{
 		if (active)
 		{
-			sigset_t sig_set;
-
-			if (sigemptyset(&sig_set)
-				|| sigaddset(&sig_set, SIGINT))
-				throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
-
 			if (pthread_sigmask(SIG_UNBLOCK, &sig_set, NULL))
 				throwFromErrno("Cannot unblock signal.", ErrorCodes::CANNOT_UNBLOCK_SIGNAL);
 
