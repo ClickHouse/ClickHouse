@@ -4,6 +4,7 @@
 
 #include <Yandex/logger_useful.h>
 
+#include <DB/Core/Row.h>
 #include <DB/Core/SortDescription.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -82,6 +83,25 @@ protected:
 	
 	typedef std::priority_queue<SortCursorWithCollation> QueueWithCollation;
 	QueueWithCollation queue_with_collation;
+
+
+	/// Эти методы используются в Collapsing/Summing SortedBlockInputStream-ах.
+
+	/// Сохранить строчку, на которую указывает cursor в row.
+	template<class TSortCursor>
+	void setRow(Row & row, TSortCursor & cursor)
+	{
+		for (size_t i = 0; i < num_columns; ++i)
+			cursor->all_columns[i]->get(cursor->pos, row[i]);
+	}
+
+	/// Сохранить первичный ключ, на который указывает cursor в row.
+	template<class TSortCursor>
+	void setPrimaryKey(Row & row, TSortCursor & cursor)
+	{
+		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
+			cursor->sort_columns[i]->get(cursor->pos, row[i]);
+	}
 
 private:
 	

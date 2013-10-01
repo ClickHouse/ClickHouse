@@ -2,7 +2,6 @@
 
 #include <Yandex/logger_useful.h>
 
-#include <DB/Core/Row.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 
 
@@ -77,22 +76,6 @@ private:
 	 */
 	template<class TSortCursor>
 	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
-
-	/// Сохранить строчку, на которую указывает cursor в row.
-	template<class TSortCursor>
-	void setRow(Row & row, TSortCursor & cursor)
-	{
-		for (size_t i = 0; i < num_columns; ++i)
-			cursor->all_columns[i]->get(cursor->pos, row[i]);
-	}
-
-	/// Сохранить первичный ключ, на который указывает cursor в row.
-	template<class TSortCursor>
-	void setPrimaryKey(Row & row, TSortCursor & cursor)
-	{
-		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
-			cursor->sort_columns[i]->get(cursor->pos, row[i]);
-	}
 
 	/// Вставить в результат строки для текущего идентификатора "визита".
 	void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows);

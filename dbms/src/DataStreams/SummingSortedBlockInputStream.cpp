@@ -80,8 +80,11 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 		if (next_key != current_key)
 		{
 			/// Запишем данные для предыдущей группы.
-			++merged_rows;
-			insertCurrentRow(merged_columns);
+			if (!current_key[0].isNull())
+			{
+				++merged_rows;
+				insertCurrentRow(merged_columns);
+			}
 
 			current_key = next_key;
 			next_key.resize(description.size());
@@ -105,7 +108,7 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 		}
 
 		if (merged_rows >= max_block_size)
-			return;;
+			return;
 	}
 
 	/// Запишем данные для последней группы.
