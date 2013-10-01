@@ -26,6 +26,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
+#include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
@@ -911,8 +912,8 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 			break;
 
 		case Summing:
-		/*	TODO merged_stream =
-			break;*/
+			merged_stream = new SummingSortedBlockInputStream(src_streams, sort_descr, DEFAULT_MERGE_BLOCK_SIZE);
+			break;
 
 		default:
 			throw Exception("Unknown mode of operation for StorageMergeTree: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
