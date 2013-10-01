@@ -474,8 +474,8 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	if (dynamic_cast<ASTSubquery *>(&*arg))
 	{
 		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
-		InterpreterSelectQuery interpreter(arg->children[0], context, QueryProcessingStage::Complete, subquery_depth + 1);
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
+		InterpreterSelectQuery interpreter(arg->children[0], context, QueryProcessingStage::Complete, subquery_depth + 1);
 		ast_set->set = new Set(settings.limits);
 		ast_set->set->create(interpreter.execute());
 		arg = ast_set;
