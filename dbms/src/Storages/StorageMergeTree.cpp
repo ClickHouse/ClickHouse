@@ -513,6 +513,21 @@ String StorageMergeTree::getPartName(DayNum_t left_date, DayNum_t right_date, UI
 }
 
 
+void StorageMergeTree::parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part)
+{
+	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+	
+	part.left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
+	part.right_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
+	part.left = parse<UInt64>(file_name.substr(matches[3].offset, matches[3].length));
+	part.right = parse<UInt64>(file_name.substr(matches[4].offset, matches[4].length));
+	part.level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
+	
+	part.left_month = date_lut.toFirstDayNumOfMonth(part.left_date);
+	part.right_month = date_lut.toFirstDayNumOfMonth(part.right_date);
+}
+
+
 void StorageMergeTree::loadDataParts()
 {
 	LOG_DEBUG(log, "Loading data parts");
@@ -520,56 +535,66 @@ void StorageMergeTree::loadDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 		
-	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 	data_parts.clear();
 
+	Strings part_file_names;
+	Strings old_file_names;
 	Poco::DirectoryIterator end;
-	Poco::RegularExpression::MatchVec matches;
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
 	{
-		std::string file_name = it.name();
-
+		String file_name = it.name();
+		
 		/// Удаляем временные директории старше суток.
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
 		{
 			Poco::File tmp_dir(full_path + file_name);
-
+			
 			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
 			{
 				LOG_WARNING(log, "Removing temporary directory " << full_path << file_name);
 				Poco::File(full_path + file_name).remove(true);
 			}
-
+			
 			continue;
 		}
-
+		
+		if (0 == file_name.compare(0, strlen("old_"), "old_"))
+			old_file_names.push_back(file_name);
+		else
+			part_file_names.push_back(file_name);
+	}
+	
+	Poco::RegularExpression::MatchVec matches;
+	while (!part_file_names.empty())
+	{
+		String file_name = part_file_names.back();
+		part_file_names.pop_back();
+		
 		if (!isPartDirectory(file_name, matches))
 			continue;
 
-		/// Удалить битые куски, которые могут образовываться после грубого перезапуска сервера.
-		if (removeIfBroken(full_path + file_name))
+		/// Для битых кусков, которые могут образовываться после грубого перезапуска сервера, восстановить куски, из которых они сделаны.
+		if (isBrokenPart(full_path + file_name))
+		{
+			Strings new_parts = tryRestorePart(full_path, file_name, old_file_names);
+			part_file_names.insert(part_file_names.begin(), new_parts.begin(), new_parts.end());
 			continue;
-			
+		}
+		
 		DataPartPtr part = new DataPart(*this);
-		part->left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
-		part->right_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
-		part->left = parse<UInt64>(file_name.substr(matches[3].offset, matches[3].length));
-		part->right = parse<UInt64>(file_name.substr(matches[4].offset, matches[4].length));
-		part->level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
+		parsePartName(file_name, matches, *part);
+		
 		part->name = file_name;
 
 		/// Размер - в количестве засечек.
 		part->size = Poco::File(full_path + file_name + "/" + escapeForFileName(columns->front().first) + ".mrk").getSize()
 			/ MERGE_TREE_MARK_SIZE;
 			
-		part->modification_time = it->getLastModified().epochTime();
-
-		part->left_month = date_lut.toFirstDayNumOfMonth(part->left_date);
-		part->right_month = date_lut.toFirstDayNumOfMonth(part->right_date);
+		part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
 
 		data_parts.insert(part);
 	}
-
+	
 	all_data_parts = data_parts;
 
 	/** Удаляем из набора актуальных кусков куски, которые содержатся в другом куске (которые были склеены),
@@ -636,13 +661,25 @@ void StorageMergeTree::clearOldParts()
 		LOG_TRACE(log, (*it)->name << ": ref_count = " << ref_count);
 		if (ref_count == 1)		/// После этого ref_count не может увеличиться.
 		{
-			LOG_DEBUG(log, "Removing part " << (*it)->name);
+			LOG_DEBUG(log, "'Removing' part " << (*it)->name << " (prepending old_ to its name)");
 			
-			(*it)->remove();
+			(*it)->renameToOld();
 			all_data_parts.erase(it++);
 		}
 		else
 			++it;
+	}
+	
+	/// Удалим старые old_ куски.
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+	{
+		if (0 != it.name().compare(0, strlen("old_"), "old_"))
+			continue;
+		if (it->isDirectory() && it->getLastModified().epochTime() + settings.old_parts_lifetime < time(0))
+		{
+			it->remove(true);
+		}
 	}
 }
 
@@ -1033,7 +1070,7 @@ bool StorageMergeTree::isPartDirectory(const String & dir_name, Poco::RegularExp
 }
 
 
-bool StorageMergeTree::removeIfBroken(const String & path)
+bool StorageMergeTree::isBrokenPart(const String & path)
 {
 	/// Проверяем, что первичный ключ непуст.
 	
@@ -1041,8 +1078,7 @@ bool StorageMergeTree::removeIfBroken(const String & path)
 
 	if (!index_file.exists() || index_file.getSize() == 0)
 	{
-		LOG_ERROR(log, "Part " << path << " is broken: primary key is empty. Removing.");
-		Poco::File(path).remove(true);
+		LOG_ERROR(log, "Part " << path << " is broken: primary key is empty.");
 
 		return true;
 	}
@@ -1056,7 +1092,7 @@ bool StorageMergeTree::removeIfBroken(const String & path)
 
 		/// при добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
 		if (!marks_file.exists())
-			return false;
+			continue;
 
 		if (marks_size == -1)
 		{
@@ -1064,8 +1100,7 @@ bool StorageMergeTree::removeIfBroken(const String & path)
 
 			if (0 == marks_size)
 			{
-				LOG_ERROR(log, "Part " << path << " is broken: " << marks_file.path() << " is empty. Removing.");
-				Poco::File(path).remove(true);
+				LOG_ERROR(log, "Part " << path << " is broken: " << marks_file.path() << " is empty.");
 
 				return true;
 			}
@@ -1074,8 +1109,7 @@ bool StorageMergeTree::removeIfBroken(const String & path)
 		{
 			if (static_cast<ssize_t>(marks_file.getSize()) != marks_size)
 			{
-				LOG_ERROR(log, "Part " << path << " is broken: marks have different sizes. Removing.");
-				Poco::File(path).remove(true);
+				LOG_ERROR(log, "Part " << path << " is broken: marks have different sizes.");
 
 				return true;
 			}
@@ -1083,6 +1117,52 @@ bool StorageMergeTree::removeIfBroken(const String & path)
 	}
 
 	return false;
+}
+
+Strings StorageMergeTree::tryRestorePart(const String & path, const String & file_name, Strings & old_parts)
+{
+	LOG_ERROR(log, "Restoring all old_ parts covered by " << file_name);
+	
+	Poco::RegularExpression::MatchVec matches;
+	Strings restored_parts;
+	
+	isPartDirectory(file_name, matches);
+	DataPart broken_part(*this);
+	parsePartName(file_name, matches, broken_part);
+	
+	for (int i = static_cast<int>(old_parts.size()) - 1; i >= 0; --i)
+	{
+		DataPart old_part(*this);
+		String name = old_parts[i].substr(strlen("old_"));
+		if (!isPartDirectory(name, matches))
+		{
+			LOG_ERROR(log, "Strange file name: " << path + old_parts[i] << "; ignoring");
+			old_parts.erase(old_parts.begin() + i);
+			continue;
+		}
+		parsePartName(name, matches, old_part);
+		if (broken_part.contains(old_part))
+		{
+			/// Восстанавливаем все содержащиеся куски. Если некоторые из них содержатся в других, их удалит loadDataParts.
+			LOG_ERROR(log, "Restoring part " << path + old_parts[i]);
+			Poco::File(path + old_parts[i]).renameTo(path + name);
+			old_parts.erase(old_parts.begin() + i);
+			restored_parts.push_back(name);
+		}
+	}
+	
+	if (restored_parts.size() >= 2)
+	{
+		LOG_ERROR(log, "Removing broken part " << path + file_name << " because at least 2 old_ parts were restored in its place");
+		Poco::File(path + file_name).remove(true);
+	}
+	else
+	{
+		LOG_ERROR(log, "Not removing broken part " << path + file_name
+			<< " because less than 2 old_ parts were restored in its place. You need to resolve this manually");
+	}
+	
+	return restored_parts;
 }
 
 }

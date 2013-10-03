@@ -76,6 +76,9 @@ struct StorageMergeTreeSettings
 	  */
 	size_t max_rows_to_use_cache;
 	
+	/// Через сколько секунд удалять old_куски.
+	time_t old_parts_lifetime;
+	
 	StorageMergeTreeSettings() :
 		max_size_ratio_to_merge_parts(5),
 		max_parts_to_merge_at_once(10),
@@ -84,7 +87,8 @@ struct StorageMergeTreeSettings
 		min_rows_for_concurrent_read(20 * 8192),
 		min_rows_for_seek(5 * 8192),
 		coarse_index_granularity(8),
-		max_rows_to_use_cache(1024 * 1024) {}
+		max_rows_to_use_cache(1024 * 1024),
+		old_parts_lifetime(5 * 60) {}
 };
 
 /// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
@@ -256,6 +260,16 @@ private:
 			Poco::File(from).renameTo(to);
 			Poco::File(to).remove(true);
 		}
+		
+		void renameToOld() const
+		{
+			String from = storage.full_path + name + "/";
+			String to = storage.full_path + "old_" + name + "/";
+			
+			Poco::File f(from);
+			f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
+			f.renameTo(to);
+		}
 
 		bool operator< (const DataPart & rhs) const
 		{
@@ -346,7 +360,7 @@ private:
 	
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
-
+	
 	/// Удалить неактуальные куски.
 	void clearOldParts();
 
@@ -369,8 +383,15 @@ private:
 	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
 	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
 
-	/// Если директория с куском содержит битые данные, то удаляем её и возвращаем true.
-	bool removeIfBroken(const String & path);
+	/// Кладет в DataPart данные из имени кусочка.
+	void parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part);
+	
+	/// Определить, не битые ли данные в директории. Проверяет индекс и засечеки, но не сами данные.
+	bool isBrokenPart(const String & path);
+	
+	/// Найти самые большие old_куски, из которых получен этот кусок.
+	/// Переименовать их, убрав префикс old_ и вернуть их имена.
+	Strings tryRestorePart(const String & path, const String & file_name, Strings & old_parts);
 };
 
 }
