@@ -75,7 +75,7 @@ public:
 	void writeSuffix()
 	{
 		/// Заканчиваем запись.
-		index_stream->next();
+		index_stream->sync();
 		index_stream = NULL;
 
 		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
@@ -119,8 +119,8 @@ private:
 		void finalize()
 		{
 			compressed.next();
-			plain.next();
-			marks.next();
+			plain.sync();
+			marks.sync();
 		}
 	};
 	

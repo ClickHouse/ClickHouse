@@ -37,6 +37,17 @@ public:
 		if (0 != close(fd) && !uncaught_exception)
 			throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 	}
+	
+	/** fsync() transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file
+	  * referred to by the file descriptor fd to the disk device (or other permanent storage device)
+	  * so that all changed information can be retrieved even after the system crashed or was rebooted.
+	  * This includes writing through or flushing a disk cache if present. The call blocks until the device
+	  * reports that the transfer has completed. It also flushes metadata information associated with the file (see stat(2)).
+	  *    - man fsync */
+	void sync()
+	{
+		fsync(fd);
+	}
 
 	virtual std::string getFileName()
 	{
