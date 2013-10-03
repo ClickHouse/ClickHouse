@@ -31,8 +31,8 @@ ls $path
 echo 'Stopping server'
 sudo /etc/init.d/clickhouse-server-metrika-yandex stop || exit 7
 
-echo 'Truncating in half each piece with level>1'
-pieces=`ls $path | grep -v '_0$' | grep -v 'increment.txt'` || exit 8
+echo 'Truncating in half each non-old_ piece with level>1'
+pieces=`ls $path | grep -Pv '(^tmp_|^old_|_0$)' | grep -v 'increment.txt'` || exit 8
 for piece in $pieces
 do
   mrkfile="$path/$piece"/x.mrk
@@ -50,10 +50,16 @@ do
   sleep 2
 done
 
+echo 'Files:'
+ls $path
+
 echo 'Selecting data'
 echo "SELECT * FROM mergetest.a WHERE x > '4000000'" | clickhouse-client > temp_data2 || exit 12
 
-if diff -q temp_data1 temp_data2
+sort temp_data1 > temp_data1s
+sort temp_data2 > temp_data2s
+
+if diff -q temp_data1s temp_data2s
 then
   echo 'Everything is fine, nothing is broken'
 else
