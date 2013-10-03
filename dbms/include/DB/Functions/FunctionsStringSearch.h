@@ -326,7 +326,7 @@ struct ExtractImpl
 					   const std::string & pattern,
 					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
-		res_data.reserve(data.size()  / 5);
+		res_data.reserve(data.size() / 5);
 		res_offsets.resize(offsets.size());
 		
 		const OptimizedRegularExpression & regexp = Regexps::get(pattern);
@@ -489,7 +489,10 @@ public:
 			ColumnString::Offsets_t res_offsets;
 			Impl::vector(vdata, offsets, col_needle->getData(), res_vdata, res_offsets);
 			
-			std::string res = std::string(*res_vdata.begin(), *res_vdata.end() - 1);
+			std::string res;
+
+			if (!res_offsets.empty())
+				res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
 			
 			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
 			block.getByPosition(result).column = col_res;
