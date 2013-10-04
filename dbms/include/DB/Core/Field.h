@@ -662,6 +662,13 @@ template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
 template <> struct NearestFieldType<Array> 		{ typedef Array 	Type; };
 template <> struct NearestFieldType<bool> 		{ typedef UInt64 	Type; };
 
+
+template <typename T>
+typename NearestFieldType<T>::Type nearestFieldType(const T & x)
+{
+	return typename NearestFieldType<T>::Type(x);
+}
+
 }
 
 
