@@ -108,24 +108,9 @@ namespace NumberTraits
 	template <typename A, typename B> struct ResultOfSubtraction
 	{
 		typedef typename Construct<
-			typename boost::mpl::if_<
-				typename boost::mpl::and_<
-					typename boost::mpl::not_<typename Traits<A>::Sign>,
-					typename boost::mpl::not_<typename Traits<A>::Floatness>,
-					typename boost::mpl::not_<typename Traits<B>::Floatness>,
-					typename boost::mpl::greater<typename Traits<A>::Bits, typename Traits<B>::Bits> >,
-				Unsigned,
-				Signed>::type,
+			Signed,
 			typename boost::mpl::or_<typename Traits<A>::Floatness, typename Traits<B>::Floatness>::type,
-			typename boost::mpl::if_<
-				typename boost::mpl::and_<
-					typename boost::mpl::not_<typename Traits<A>::Sign>,
-					typename boost::mpl::not_<typename Traits<B>::Sign>,
-					typename boost::mpl::not_<typename Traits<A>::Floatness>,
-					typename boost::mpl::not_<typename Traits<B>::Floatness>,
-					typename boost::mpl::greater<typename Traits<A>::Bits, typename Traits<B>::Bits> >,
-				typename Traits<A>::Bits,
-				typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type>::type>::Type Type;
+			typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type>::Type Type;
 	};
 
 	/** При делении всегда получается число с плавающей запятой.
@@ -163,7 +148,10 @@ namespace NumberTraits
 		typedef typename Construct<
 			Signed,
 			typename Traits<A>::Floatness,
-			typename Traits<A>::Bits>::Type Type;
+			typename boost::mpl::if_<
+				typename Traits<A>::Sign,
+				typename Traits<A>::Bits,
+				typename Next<typename Traits<A>::Bits>::Type>::type>::Type Type;
 	};
 
 	/** При побитовых операциях получается целое число, битность которого равна максимальной из битностей аргументов.
