@@ -23,6 +23,8 @@ public:
 
 	bool isNumeric() const { return true; }
 		
+	bool behavesAsNumber() const { return true; }
+		
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
 		writeText(get<typename NearestFieldType<FieldType>::Type>(field), ostr);

@@ -8,6 +8,8 @@
 #include <boost/mpl/not.hpp>
 #include <boost/mpl/greater.hpp>
 #include <boost/mpl/min_max.hpp>
+#include <boost/mpl/equal_to.hpp>
+#include <boost/mpl/comparison.hpp>
 
 #include <DB/Core/Types.h>
 
@@ -31,13 +33,19 @@ namespace NumberTraits
 	typedef boost::mpl::int_<16> 	Bits16;
 	typedef boost::mpl::int_<32> 	Bits32;
 	typedef boost::mpl::int_<64> 	Bits64;
+	typedef boost::mpl::int_<1024> BitsTooMany;
+	
+	struct Error {};
 
 	template <typename T> struct Next;
 
-	template <> struct Next<Bits8>	{ typedef Bits16 Type; };
+	template <> struct Next<Bits8>		{ typedef Bits16 Type; };
 	template <> struct Next<Bits16>	{ typedef Bits32 Type; };
 	template <> struct Next<Bits32>	{ typedef Bits64 Type; };
 	template <> struct Next<Bits64>	{ typedef Bits64 Type; };
+	
+	template <typename T> struct ExactNext { typedef typename Next<T>::Type Type; };
+	template <> struct ExactNext<Bits64>	{ typedef BitsTooMany Type; };
 
 	template <typename T> struct Traits;
 
@@ -49,12 +57,12 @@ namespace NumberTraits
 	template <> struct Traits<Int16> 	{ typedef Signed Sign;		typedef Integer Floatness;	typedef Bits16 Bits; };
 	template <> struct Traits<Int32> 	{ typedef Signed Sign;		typedef Integer Floatness;	typedef Bits32 Bits; };
 	template <> struct Traits<Int64> 	{ typedef Signed Sign;		typedef Integer Floatness;	typedef Bits64 Bits; };
-	template <> struct Traits<Float32> 	{ typedef Signed Sign;		typedef Floating Floatness;	typedef Bits32 Bits; };
-	template <> struct Traits<Float64> 	{ typedef Signed Sign;		typedef Floating Floatness;	typedef Bits64 Bits; };
+	template <> struct Traits<Float32>	{ typedef Signed Sign;		typedef Floating Floatness;	typedef Bits32 Bits; };
+	template <> struct Traits<Float64>	{ typedef Signed Sign;		typedef Floating Floatness;	typedef Bits64 Bits; };
 
 	template <typename Sign, typename Floatness, typename Bits> struct Construct;
 
-	template <> struct Construct<Unsigned, Integer, Bits8> 		{ typedef UInt8 	Type; };
+	template <> struct Construct<Unsigned, Integer, Bits8> 	{ typedef UInt8 	Type; };
 	template <> struct Construct<Unsigned, Integer, Bits16> 	{ typedef UInt16 	Type; };
 	template <> struct Construct<Unsigned, Integer, Bits32> 	{ typedef UInt32 	Type; };
 	template <> struct Construct<Unsigned, Integer, Bits64> 	{ typedef UInt64 	Type; };
@@ -67,9 +75,21 @@ namespace NumberTraits
 	template <> struct Construct<Signed, Integer, Bits32> 		{ typedef Int32 	Type; };
 	template <> struct Construct<Signed, Integer, Bits64> 		{ typedef Int64 	Type; };
 	template <> struct Construct<Signed, Floating, Bits8> 		{ typedef Float32 	Type; };
-	template <> struct Construct<Signed, Floating, Bits16> 		{ typedef Float32 	Type; };
-	template <> struct Construct<Signed, Floating, Bits32> 		{ typedef Float32 	Type; };
-	template <> struct Construct<Signed, Floating, Bits64> 		{ typedef Float64 	Type; };
+	template <> struct Construct<Signed, Floating, Bits16>		{ typedef Float32 	Type; };
+	template <> struct Construct<Signed, Floating, Bits32>		{ typedef Float32 	Type; };
+	template <> struct Construct<Signed, Floating, Bits64>		{ typedef Float64 	Type; };
+	template <typename Sign, typename Floatness> struct Construct<Sign, Floatness, BitsTooMany> { typedef Error Type; };
+				
+	template <typename T>
+	bool isErrorType()
+	{
+		return false;
+	}
+	template <>
+	bool isErrorType<Error>()
+	{
+		return true;
+	}
 
 	/** Результат сложения или умножения вычисляется по следующим правилам:
 	  * - если один из аргументов с плавающей запятой, то результат - с плавающей запятой, иначе - целый;
@@ -170,6 +190,64 @@ namespace NumberTraits
 			typename Traits<A>::Sign,
 			Integer,
 			typename Traits<A>::Bits>::Type Type;
+	};
+	
+	/** Приведение типов для функции if:
+	  * 1)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
+	  * 2)   Int<x>,    Int<y> ->   Int<max(x,y)>
+	  * 3) Float<x>,  Float<y> -> Float<max(x, y)>
+	  * 4)  UInt<x>,    Int<y> ->   Int<max(x*2, y)>
+	  * 5) Float<x>, [U]Int<y> -> Float<max(x, y*2)>
+	  * 6)  UInt64 ,    Int<x> -> Error
+	  * 7) Float<x>, [U]Int64  -> Error
+	  */
+	template <typename A, typename B>
+	struct ResultOfIf
+	{
+		typedef 
+			/// 3) и 5)
+			typename boost::mpl::if_<
+				typename boost::mpl::or_<
+					typename Traits<A>::Floatness,
+					typename Traits<B>::Floatness>::type,
+				typename Construct<
+					Signed,
+					Floating,
+					typename boost::mpl::max< /// Этот максимум нужен только потому что if_ всегда вычисляет все аргументы.
+						typename boost::mpl::max<
+							typename boost::mpl::if_<
+								typename Traits<A>::Floatness,
+								typename Traits<A>::Bits,
+								typename ExactNext<typename Traits<A>::Bits>::Type>::type,
+							typename boost::mpl::if_<
+								typename Traits<B>::Floatness,
+								typename Traits<B>::Bits,
+								typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type,
+						Bits32>::type>::Type,
+			/// 1) и 2)
+			typename boost::mpl::if_<
+				typename boost::mpl::equal_to<
+					typename Traits<A>::Sign,
+					typename Traits<B>::Sign>::type,
+				typename boost::mpl::if_<
+					typename boost::mpl::less<
+						typename Traits<A>::Bits,
+						typename Traits<B>::Bits>::type,
+					B,
+					A>::type,
+			/// 4)
+			typename Construct<
+				Signed,
+				Integer,
+				typename boost::mpl::max<
+					typename boost::mpl::if_<
+						typename Traits<A>::Sign,
+						typename Traits<A>::Bits,
+						typename ExactNext<typename Traits<A>::Bits>::Type>::type,
+					typename boost::mpl::if_<
+						typename Traits<B>::Sign,
+						typename Traits<B>::Bits,
+						typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type>::Type>::type>::type Type;
 	};
 	
 	/** Перед применением оператора % и побитовых операций, операнды приводятся к целым числам. */

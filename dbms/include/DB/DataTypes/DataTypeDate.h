@@ -14,6 +14,8 @@ class DataTypeDate : public IDataTypeNumberFixed<UInt16, ColumnUInt16>
 {
 public:
 	DataTypeDate() {}
+	
+	bool behavesAsNumber() const { return false; }
 
 	std::string getName() const { return "Date"; }
 	DataTypePtr clone() const { return new DataTypeDate; }

@@ -14,6 +14,8 @@ class DataTypeDateTime : public IDataTypeNumberFixed<UInt32, ColumnUInt32>
 {
 public:
 	DataTypeDateTime() {}
+	
+	bool behavesAsNumber() const { return false; }
 
 	std::string getName() const { return "DateTime"; }
 	DataTypePtr clone() const { return new DataTypeDateTime; }

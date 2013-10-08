@@ -26,6 +26,10 @@ public:
 
 	/// Является ли тип числовым.
 	virtual bool isNumeric() const { return false; }
+	
+	/// Если тип числовой, уместны ли с ним все арифметические операции и приведение типов.
+	/// true для чисел, false для даты и даты-с-временем.
+	virtual bool behavesAsNumber() const { return false; }
 
 	/// Клонировать
 	virtual SharedPtr<IDataType> clone() const = 0;
