@@ -62,6 +62,16 @@ inline void writeStringBinary(const std::string & s, DB::WriteBuffer & buf)
 }
 
 
+template <typename T>
+void writeVectorBinary(const std::vector<T> & v, DB::WriteBuffer & buf)
+{
+	writeVarUInt(v.size(), buf);
+
+	for (typename std::vector<T>::const_iterator it = v.begin(); it != v.end(); ++it)
+		writeBinary(*it, buf);
+}
+
+
 inline void writeBoolText(bool x, WriteBuffer & buf)
 {
 	writeChar(x ? '1' : '0', buf);

@@ -87,6 +87,21 @@ inline void readStringBinary(std::string & s, DB::ReadBuffer & buf, size_t MAX_S
 }
 
 
+template <typename T>
+void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SIZE = DEFAULT_MAX_STRING_SIZE)
+{
+	size_t size = 0;
+	DB::readVarUInt(size, buf);
+
+	if (size > MAX_VECTOR_SIZE)
+		throw Poco::Exception("Too large vector size.");
+
+	v.resize(size);
+	for (size_t i = 0; i < size; ++i)
+		readBinary(v[i], buf);
+}
+
+
 inline void readChar(char & x, ReadBuffer & buf)
 {
 	if (!buf.eof())
