@@ -74,10 +74,10 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
 }
 
 
-inline void readStringBinary(std::string & s, DB::ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
+inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
 	size_t size = 0;
-	DB::readVarUInt(size, buf);
+	readVarUInt(size, buf);
 
 	if (size > MAX_STRING_SIZE)
 		throw Poco::Exception("Too large string size.");
@@ -91,7 +91,7 @@ template <typename T>
 void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
 	size_t size = 0;
-	DB::readVarUInt(size, buf);
+	readVarUInt(size, buf);
 
 	if (size > MAX_VECTOR_SIZE)
 		throw Poco::Exception("Too large vector size.");

@@ -55,7 +55,7 @@ inline void writeFloatBinary(const T & x, WriteBuffer & buf)
 }
 
 
-inline void writeStringBinary(const std::string & s, DB::WriteBuffer & buf)
+inline void writeStringBinary(const std::string & s, WriteBuffer & buf)
 {
 	writeVarUInt(s.size(), buf);
 	buf.write(s.data(), s.size());
@@ -63,7 +63,7 @@ inline void writeStringBinary(const std::string & s, DB::WriteBuffer & buf)
 
 
 template <typename T>
-void writeVectorBinary(const std::vector<T> & v, DB::WriteBuffer & buf)
+void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
 {
 	writeVarUInt(v.size(), buf);
 
