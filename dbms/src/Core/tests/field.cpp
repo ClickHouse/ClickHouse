@@ -27,14 +27,14 @@ int main(int argc, char ** argv)
 	field2 = field;
 	std::cerr << DB::apply_visitor(to_string, field2) << std::endl;
 
-	DB::Field::Array array;
+	DB::Array array;
 	array.push_back(DB::UInt64(123));
 	array.push_back(DB::Int64(-123));
 	array.push_back(DB::String("Hello"));
 	field = array;
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
 
-	DB::get<DB::Field::Array &>(field).push_back(field);
+	DB::get<DB::Array &>(field).push_back(field);
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
 
 	std::cerr << (field < field2) << std::endl;
@@ -48,7 +48,7 @@ int main(int argc, char ** argv)
 		Stopwatch watch;
 
 		{
-			DB::Field::Array array(n);
+			DB::Array array(n);
 
 			{
 				Stopwatch watch;
@@ -85,8 +85,8 @@ int main(int argc, char ** argv)
 		watch.stop();
 
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "Destroyed " << n << " fields (" << n * sizeof(DB::Field::Array::value_type) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-			<< n / watch.elapsedSeconds() << " elem/sec. (" << n * sizeof(DB::Field::Array::value_type) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
+			<< "Destroyed " << n << " fields (" << n * sizeof(DB::Array::value_type) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+			<< n / watch.elapsedSeconds() << " elem/sec. (" << n * sizeof(DB::Array::value_type) / watch.elapsedSeconds() / 1000000 << " MB/s.)"
 			<< std::endl;
 	}
 	catch (const DB::Exception & e)
