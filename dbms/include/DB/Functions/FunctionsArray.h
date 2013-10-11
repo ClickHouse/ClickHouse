@@ -8,6 +8,8 @@
 
 #include <DB/Functions/IFunction.h>
 
+#include <tr1/unordered_map>
+
 
 namespace DB
 {
@@ -18,6 +20,9 @@ namespace DB
   * arrayElement(arr, i) - получить элемент массива.
   * has(arr, x) - есть ли в массиве элемент x.
   * indexOf(arr, x) - возвращает индекс элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
+  * arrayEnumerateUniq(arr) - возаращает массив,  параллельный данному, где для каждого элемента указано,
+  * 						  какой он по счету среди элементов с таким значением.
+  * 						  Например: arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]
   */
 
 class FunctionArray : public IFunction
@@ -230,7 +235,7 @@ public:
 		if (index == 0)
 			throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 		index -= 1;
-		
+
 		if (!(	executeNumber<UInt8>	(block, arguments, result, index)
 			||	executeNumber<UInt16>	(block, arguments, result, index)
 			||	executeNumber<UInt32>	(block, arguments, result, index)
@@ -477,6 +482,135 @@ public:
 			||	executeNumber<Float64>	(block, arguments, result, value)
 			||	executeConst			(block, arguments, result, value)
 			||	executeString			(block, arguments, result, value)))
+		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+class FunctionArrayEnumerateUniq : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "arrayEnumerateUniq";
+	}
+
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
+		if (!array_type)
+			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeArray(new DataTypeUInt32);
+	}
+
+	template <typename T>
+	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		if (!array)
+			return false;
+		const ColumnVector<T> * nested = dynamic_cast<const ColumnVector<T> *>(&*array->getDataPtr());
+		if (!nested)
+			return false;
+		const ColumnArray::Offsets_t & offsets = array->getOffsets();
+		const typename ColumnVector<T>::Container_t & values = nested->getData();
+
+		ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
+		ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
+		block.getByPosition(result).column = res_array;
+
+		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
+		res_values.resize(values.size());
+		size_t prev_off = 0;
+		std::tr1::unordered_map<T, UInt32> indices;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			indices.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+			{
+				res_values[j] = ++indices[values[j]];
+			}
+			prev_off = off;
+		}
+		return true;
+	}
+
+	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		if (!array)
+			return false;
+		const ColumnString * nested = dynamic_cast<const ColumnString *>(&*array->getDataPtr());
+		if (!nested)
+			return false;
+		const ColumnArray::Offsets_t & offsets = array->getOffsets();
+
+		ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
+		ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
+		block.getByPosition(result).column = res_array;
+
+		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
+		res_values.resize(nested->size());
+		size_t prev_off = 0;
+		std::tr1::unordered_map<StringRef, UInt32> indices;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			indices.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+			{
+				res_values[j] = ++indices[nested->getDataAt(j)];
+			}
+			prev_off = off;
+		}
+		return true;
+	}
+
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnConstArray * array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
+		if (!array)
+			return false;
+		const Array & values = array->getData();
+
+		Array res_values(values.size());
+		std::tr1::unordered_map<Field, UInt32> indices;
+		for (size_t i = 0; i < values.size(); ++i)
+		{
+			res_values[i] = static_cast<UInt64>(++indices[values[i]]);
+		}
+
+		ColumnConstArray * res_array = new ColumnConstArray(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+		block.getByPosition(result).column = res_array;
+
+		return true;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (!(	executeNumber<UInt8>	(block, arguments, result)
+			||	executeNumber<UInt16>	(block, arguments, result)
+			||	executeNumber<UInt32>	(block, arguments, result)
+			||	executeNumber<UInt64>	(block, arguments, result)
+			||	executeNumber<Int8>		(block, arguments, result)
+			||	executeNumber<Int16>	(block, arguments, result)
+			||	executeNumber<Int32>	(block, arguments, result)
+			||	executeNumber<Int64>	(block, arguments, result)
+			||	executeNumber<Float32>	(block, arguments, result)
+			||	executeNumber<Float64>	(block, arguments, result)
+			||	executeConst			(block, arguments, result)
+			||	executeString			(block, arguments, result)))
 		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);

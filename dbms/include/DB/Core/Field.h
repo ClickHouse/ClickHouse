@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <tr1/type_traits>
+#include <tr1/functional>
 
 #include <boost/static_assert.hpp>
 
@@ -15,6 +16,31 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/WriteBufferFromString.h>
+
+
+namespace DB
+{
+	class Field;
+	typedef std::vector<Field> Array; /// Значение типа "массив"
+}
+
+namespace std
+{
+	namespace tr1
+	{
+		template <>
+		struct hash<DB::Field>
+		{
+			inline size_t operator()(const DB::Field & x) const;
+		};
+
+		template <>
+		struct hash<DB::Array>
+		{
+			inline size_t operator()(const DB::Array & x) const;
+		};
+	}
+}
 
 
 namespace DB
@@ -261,8 +287,23 @@ public:
 		return !(*this == rhs);
 	}
 
+	size_t hash() const
+	{
+		size_t h;
+		switch (which)
+		{
+			case Types::Null:		h = 0; break;
+			case Types::UInt64:		h = std::tr1::hash<UInt64>()(get<UInt64>()); break;
+			case Types::Int64:		h = std::tr1::hash<Int64>()(get<Int64>()); break;
+			case Types::Float64:	h = std::tr1::hash<Float64>()(get<Float64>()); break;
+			case Types::String:		h = std::tr1::hash<String>()(get<String>()); break;
+			case Types::Array: 		h = std::tr1::hash<Array>()(get<Array>()); break;
 
-	typedef std::vector<Field> Array;
+			default:
+				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
+		}
+		return h ^ std::tr1::hash<int>()(which);
+	}
 
 private:
 	/// Хватает с запасом
@@ -356,7 +397,7 @@ template <> struct Field::TypeToEnum<UInt64> 							{ static const Types::Which 
 template <> struct Field::TypeToEnum<Int64> 							{ static const Types::Which value = Types::Int64; };
 template <> struct Field::TypeToEnum<Float64> 							{ static const Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String> 							{ static const Types::Which value = Types::String; };
-template <> struct Field::TypeToEnum<Field::Array> 						{ static const Types::Which value = Types::Array; };
+template <> struct Field::TypeToEnum<Array> 							{ static const Types::Which value = Types::Array; };
 
 template <> struct Field::EnumToType<Field::Types::Null> 				{ typedef Null 						Type; };
 template <> struct Field::EnumToType<Field::Types::UInt64> 				{ typedef UInt64 					Type; };
@@ -412,7 +453,7 @@ typename Visitor::ResultType apply_visitor_impl(Visitor & visitor, F & field)
 		case Field::Types::Int64: 				return visitor(field.template get<Int64>());
 		case Field::Types::Float64: 			return visitor(field.template get<Float64>());
 		case Field::Types::String: 				return visitor(field.template get<String>());
-		case Field::Types::Array: 				return visitor(field.template get<Field::Array>());
+		case Field::Types::Array: 				return visitor(field.template get<Array>());
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -458,7 +499,7 @@ typename Visitor::ResultType apply_binary_visitor_impl2(Visitor & visitor, F1 & 
 		case Field::Types::Int64: 				return visitor(field1, field2.template get<Int64>());
 		case Field::Types::Float64: 			return visitor(field1, field2.template get<Float64>());
 		case Field::Types::String: 				return visitor(field1, field2.template get<String>());
-		case Field::Types::Array: 				return visitor(field1, field2.template get<Field::Array>());
+		case Field::Types::Array: 				return visitor(field1, field2.template get<Array>());
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -475,7 +516,7 @@ typename Visitor::ResultType apply_binary_visitor_impl1(Visitor & visitor, F1 & 
 		case Field::Types::Int64: 				return apply_binary_visitor_impl2(visitor, field1.template get<Int64>(), 	field2);
 		case Field::Types::Float64: 			return apply_binary_visitor_impl2(visitor, field1.template get<Float64>(), 	field2);
 		case Field::Types::String: 				return apply_binary_visitor_impl2(visitor, field1.template get<String>(), 	field2);
-		case Field::Types::Array: 				return apply_binary_visitor_impl2(visitor, field1.template get<Field::Array>(), field2);
+		case Field::Types::Array: 				return apply_binary_visitor_impl2(visitor, field1.template get<Array>(), field2);
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -530,8 +571,6 @@ typename Visitor::ResultType apply_visitor(const Visitor & visitor, const Field 
 	return apply_binary_visitor_impl1(visitor, field1, field2);
 }
 
-
-typedef std::vector<Field> Array;			/// Значение типа "массив"
 
 template <> struct TypeName<Array> { static std::string get() { return "Array"; } };
 
@@ -812,6 +851,29 @@ namespace DB
 	}
 	
 	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+}
+
+
+namespace std
+{
+	namespace tr1
+	{
+		inline size_t hash<DB::Field>::operator()(const DB::Field & x) const
+		{
+			return x.hash();
+		}
+
+		/// Осторожно, это может оказаться отстойной хеш-функцией!
+		inline size_t hash<DB::Array>::operator()(const DB::Array & x) const
+		{
+			size_t h = 0;
+			for (size_t i = 0; i < x.size(); ++i)
+			{
+				h = h * 17 + x[i].hash();
+			}
+			return h;
+		}
+	}
 }
 
 
