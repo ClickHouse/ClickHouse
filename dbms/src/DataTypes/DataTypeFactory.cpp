@@ -114,9 +114,12 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			{
 				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
 				StringRange type_range = name_and_type_pair.type->range;
+				DataTypePtr type = get(String(type_range.first, type_range.second - type_range.first));
+				if (dynamic_cast<const DataTypeNested*>(&*type))
+					throw Exception("Nested inside Nested is not allowed", ErrorCodes::NESTED_TYPE_TOO_DEEP);
 				columns->push_back(NameAndTypePair(
 					name_and_type_pair.name,
-					get(String(type_range.first, type_range.second - type_range.first))));
+					type));
 			}
 			
 			return new DataTypeNested(columns);
