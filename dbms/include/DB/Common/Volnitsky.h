@@ -68,7 +68,7 @@ public:
 				cell_num = (cell_num + 1) % hash_size; /// Поиск следующей свободной ячейки.
 
 			hash[cell_num] = i + 1;
-        }
+		}
 	}
 
 	/// Если не найдено - возвращается конец haystack.
@@ -89,7 +89,7 @@ public:
 
 		/// Будем "прикладывать" needle к haystack и сравнивать n-грам из конца needle.
 		const char * pos = haystack + needle_size - sizeof(ngram_t);
-        for (; pos <= haystack_end - needle_size; pos += step)
+		for (; pos <= haystack_end - needle_size; pos += step)
 		{
 			/// Смотрим все ячейки хэш-таблицы, которые могут соответствовать n-граму из haystack.
 			for (size_t cell_num = *reinterpret_cast<const ngram_t *>(pos) % hash_size; hash[cell_num]; cell_num = (cell_num + 1) % hash_size)
@@ -103,10 +103,10 @@ public:
 				return res;
 				next_hash_cell:;
 			}
-        }
+		}
 
-        /// Оставшийся хвостик.
-        return std::search(pos - step + 1, haystack_end, needle, needle_end);
+		/// Оставшийся хвостик.
+		return std::search(pos - step + 1, haystack_end, needle, needle_end);
 	}
 
 	const unsigned char * search(const unsigned char * haystack, size_t haystack_size) const
