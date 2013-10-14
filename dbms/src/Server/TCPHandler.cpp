@@ -3,6 +3,7 @@
 #include <boost/bind.hpp>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Ext/ScopedTry.h>
 
 #include <Yandex/Revision.h>
 
@@ -584,7 +585,11 @@ void TCPHandler::sendEndOfStream()
 
 void TCPHandler::sendProgress(size_t rows, size_t bytes)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
+	/// Не отправляем прогресс, если сейчас отправляются данные.
+	Poco::ScopedTry<Poco::FastMutex> lock;
+
+	if (!lock.lock(&send_mutex))
+		return;
 
 	state.rows_processed += rows;
 	state.bytes_processed += bytes;
