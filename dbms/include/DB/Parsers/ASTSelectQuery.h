@@ -17,7 +17,7 @@ public:
 	ASTPtr select_expression_list;
 	ASTPtr database;
 	ASTPtr table;	/// Идентификатор или подзапрос (рекурсивно ASTSelectQuery)
-	ASTPtr array_join_identifier;
+	ASTPtr array_join_expression_list;
 	bool final;
 	ASTPtr sample_size;
 	ASTPtr where_expression;
@@ -42,7 +42,7 @@ public:
 		if (select_expression_list) { res->select_expression_list 	= select_expression_list->clone(); 	res->children.push_back(res->select_expression_list); }
 		if (database) 				{ res->database 				= database->clone(); 				res->children.push_back(res->database); }
 		if (table) 					{ res->table 					= table->clone(); 					res->children.push_back(res->table); }
-		if (array_join_identifier) 	{ res->array_join_identifier	= array_join_identifier->clone(); 	res->children.push_back(res->array_join_identifier); }
+		if (array_join_expression_list) 	{ res->array_join_expression_list	= array_join_expression_list->clone(); 	res->children.push_back(res->array_join_expression_list); }
 		if (sample_size) 			{ res->sample_size				= sample_size->clone(); 			res->children.push_back(res->sample_size); }
 		if (where_expression)		{ res->where_expression 		= where_expression->clone(); 		res->children.push_back(res->where_expression); }
 		if (group_expression_list) 	{ res->group_expression_list 	= group_expression_list->clone(); 	res->children.push_back(res->group_expression_list); }

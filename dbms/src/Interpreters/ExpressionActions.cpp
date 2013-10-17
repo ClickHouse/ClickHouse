@@ -26,11 +26,6 @@ Names ExpressionActions::Action::getNeededColumns() const
 	return res;
 }
 
-bool ExpressionActions::Action::isArrayJoinedColumnName(const String & name) const
-{
-	return array_joined_columns.count(name) != 0;
-}
-
 ExpressionActions::Action ExpressionActions::Action::applyFunction(FunctionPtr function_,
 																	const std::vector<std::string> & argument_names_,
 																	std::string result_name_)
@@ -138,48 +133,14 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 	}
 	else if (type == ARRAY_JOIN)
 	{
-		if (sample_block.has(result_name))
-			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-		if (!sample_block.has(source_name))
-			throw Exception("Unknown identifier: '" + source_name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-		
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*sample_block.getByName(source_name).type);
-		if (!array_type)
-			throw Exception("arrayJoin requires array argument", ErrorCodes::TYPE_MISMATCH);
-		result_type = array_type->getNestedType();
-		
-		sample_block.erase(source_name);
-		sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
-	}
-	else if (type == MULTIPLE_ARRAY_JOIN)
-	{
-		bool has_arrays_to_join = false;
-			
-		size_t columns = sample_block.columns();
-		for (size_t i = 0; i < columns; ++i)
+		for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 		{
-			const ColumnWithNameAndType & current = sample_block.getByPosition(i);
+			ColumnWithNameAndType & current = sample_block.getByName(*it);
 			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*current.type);
-			
-			if (isArrayJoinedColumnName(current.name))
-			{
-				if (!array_type)
-					throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
-				
-				has_arrays_to_join = true;
-				
-				ColumnWithNameAndType result;
-				result.column = NULL;
-				result.type = array_type->getNestedType();
-				result.name = current.name;
-				
-				sample_block.erase(i);
-				sample_block.insert(i, result);
-			}
+			if (!array_type)
+				throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+			current.type = array_type->getNestedType();
 		}
-		
-		if (!has_arrays_to_join)
-			throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 	}
 	else if (type == ADD_COLUMN)
 	{
@@ -199,11 +160,11 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 
 void ExpressionActions::Action::execute(Block & block) const
 {
-	if (type == REMOVE_COLUMN || type == COPY_COLUMN || type == ARRAY_JOIN)
+	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
 		if (!block.has(source_name))
 			throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 	
-	if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION || type == ARRAY_JOIN)
+	if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION)
 		if (block.has(result_name))
 			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 		
@@ -238,60 +199,41 @@ void ExpressionActions::Action::execute(Block & block) const
 		}
 		
 		case ARRAY_JOIN:
-		case MULTIPLE_ARRAY_JOIN:
 		{
-			ColumnPtr any_array_ptr = NULL;
-			
-			size_t columns = block.columns();
-			for (size_t i = 0; i < columns; ++i)
-			{
-				const ColumnWithNameAndType & current = block.getByPosition(i);
-				
-				if (current.name == source_name || isArrayJoinedColumnName(current.name))
-				{
-					if (!dynamic_cast<const DataTypeArray *>(&*current.type))
-						throw Exception("arrayJoin of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
-					
-					ColumnPtr array_ptr = current.column;
-					if (array_ptr->isConst())
-						array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
-					
-					if (any_array_ptr.isNull())
-						any_array_ptr = array_ptr;
-					else
-					{
-						const ColumnArray & array = dynamic_cast<const ColumnArray &>(*array_ptr);
-						if (!array.hasEqualOffsets(dynamic_cast<const ColumnArray &>(*any_array_ptr)))
-							throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-					}
-				}
-			}
-			
-			if (any_array_ptr.isNull())
+			if (array_joined_columns.empty())
 				throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
-			
+			ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
+			if (any_array_ptr->isConst())
+				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
 			const ColumnArray * any_array = dynamic_cast<const ColumnArray *>(&*any_array_ptr);
-			
+			if (!any_array)
+				throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
+
+			size_t columns = block.columns();
 			for (size_t i = 0; i < columns; ++i)
 			{
 				ColumnWithNameAndType & current = block.getByPosition(i);
 				
-				if (current.name == source_name || isArrayJoinedColumnName(current.name))
+				if (array_joined_columns.count(current.name))
 				{
+					if (!dynamic_cast<const DataTypeArray *>(&*current.type))
+						throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
+					
 					ColumnPtr array_ptr = current.column;
 					if (array_ptr->isConst())
 						array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
 					
-					ColumnWithNameAndType result;
-					result.column = dynamic_cast<const ColumnArray &>(*array_ptr).getDataPtr();
-					result.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
-					result.name = type == MULTIPLE_ARRAY_JOIN ? current.name : result_name;
-					
-					block.erase(i);
-					block.insert(i, result);
+					const ColumnArray & array = dynamic_cast<const ColumnArray &>(*array_ptr);
+					if (!array.hasEqualOffsets(dynamic_cast<const ColumnArray &>(*any_array_ptr)))
+						throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+
+					current.column = dynamic_cast<const ColumnArray &>(*array_ptr).getDataPtr();
+					current.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
 				}
 				else
+				{
 					current.column = current.column->replicate(any_array->getOffsets());
+				}
 			}
 
 			break;
@@ -358,18 +300,13 @@ std::string ExpressionActions::Action::toString() const
 			ss << " )";
 			break;
 		case ARRAY_JOIN:
-			ss << result_name << "(" << result_type->getName() << ")" << "= " << "arrayJoin" << " ( " << source_name << " )";
-			break;
-		case MULTIPLE_ARRAY_JOIN:
-			ss << "ARRAY JOIN " << nested_table_name << (nested_table_name != nested_table_alias ? " AS " + nested_table_alias : "");
-			ss << "{";
-			for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			ss << "ARRAY JOIN ";
+			for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 			{
 				if (it != array_joined_columns.begin())
 					ss << ", ";
 				ss << *it;
 			}
-			ss << "}";
 			break;
 		case PROJECT:
 			ss << "{";
@@ -532,15 +469,31 @@ void ExpressionActions::finalize(const Names & output_columns)
 	{
 		Action & action = actions[i];
 		Names in = action.getNeededColumns();
-		std::string out = action.result_name;
-		
+
 		if (action.type == Action::PROJECT)
 		{
 			needed_columns = NameSet(in.begin(), in.end());
 			unmodified_columns.clear();
 		}
+		else if (action.type == Action::ARRAY_JOIN)
+		{
+			/// Не будем ARRAY JOIN-ить столбцы, которые дальше не используются.
+			/// Обычно такие столбцы не используются и до ARRAY JOIN, и поэтому выбрасываются дальше в этой функции.
+			/// Не будем убирать все столбцы, чтобы не потерять количество строк.
+			NameSet::iterator it = action.array_joined_columns.begin();
+			while (it != action.array_joined_columns.end() && action.array_joined_columns.size() > 1)
+			{
+				NameSet::iterator jt = it;
+				++it;
+				if (!needed_columns.count(*jt))
+				{
+					action.array_joined_columns.erase(jt);
+				}
+			}
+		}
 		else
 		{
+			std::string out = action.result_name;
 			if (!out.empty())
 			{
 				/// Если результат не используется и нет побочных эффектов, выбросим действие.
@@ -605,9 +558,9 @@ std::string ExpressionActions::getID() const
 	{
 		if (i)
 			ss << ", ";
-		if (actions[i].type == Action::APPLY_FUNCTION || actions[i].type == Action::ARRAY_JOIN)
+		if (actions[i].type == Action::APPLY_FUNCTION)
 			ss << actions[i].result_name;
-		if (actions[i].type == Action::MULTIPLE_ARRAY_JOIN)
+		if (actions[i].type == Action::ARRAY_JOIN)
 		{
 			ss << "{";
 			for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
@@ -681,7 +634,7 @@ void ExpressionActions::optimizeArrayJoin()
 		bool depends_on_array_join = false;
 		Names needed;
 		
-		if (actions[i].type == Action::ARRAY_JOIN || actions[i].type == Action::MULTIPLE_ARRAY_JOIN)
+		if (actions[i].type == Action::ARRAY_JOIN)
 		{
 			depends_on_array_join = true;
 			needed = actions[i].getNeededColumns();

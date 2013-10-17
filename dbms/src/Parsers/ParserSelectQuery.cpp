@@ -106,25 +106,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			return false;
 	}
 	
-	/// ARRAY JOIN array|Nested_table [AS alias]
+	/// ARRAY JOIN expr list
 	if (s_array.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
-		
+
 		if (!s_join.ignore(pos, end, expected))
 			return false;
-		
+
 		ws.ignore(pos, end);
-		
-		ParserWithOptionalAlias ident(new ParserCompoundIdentifier());
-		if (!ident.parse(pos, end, select_query->array_join_identifier, expected))
+
+		if (!exp_list.parse(pos, end, select_query->array_join_expression_list, expected))
 			return false;
-		
-		dynamic_cast<ASTIdentifier &>(*select_query->array_join_identifier).kind = ASTIdentifier::ArrayJoin;
-		
+
 		ws.ignore(pos, end);
 	}
-	
+
 	/// FINAL
 	if (s_final.ignore(pos, end, expected))
 	{
@@ -248,8 +245,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		select_query->children.push_back(select_query->database);
 	if (select_query->table)
 		select_query->children.push_back(select_query->table);
-	if (select_query->array_join_identifier)
-		select_query->children.push_back(select_query->array_join_identifier);
+	if (select_query->array_join_expression_list)
+		select_query->children.push_back(select_query->array_join_expression_list);
 	if (select_query->sample_size)
 		select_query->children.push_back(select_query->sample_size);
 	if (select_query->where_expression)

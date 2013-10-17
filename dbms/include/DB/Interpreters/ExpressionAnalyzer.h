@@ -94,9 +94,11 @@ private:
 	
 	/// Исходные столбцы.
 	NamesAndTypesList columns;
-	/// Столбцы после агрегации. Если нет агрегации, совпадает с columns.
+	/// Столбцы после ARRAY JOIN. Если нет ARRAY JOIN, совпадает с columns.
+	NamesAndTypesList columns_after_array_join;
+	/// Столбцы после агрегации. Если нет агрегации, совпадает с columns_after_array_join.
 	NamesAndTypesList aggregated_columns;
-	
+
 	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
 	const StoragePtr storage;
 	/// Имя поля Sign в таблице. Непусто, если нужно осуществлять sign-rewrite
@@ -113,7 +115,7 @@ private:
 	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 	
 	/// Столбцы, которые должны быть преобразованы из-за секции ARRAY JOIN
-	NameSet array_joined_columns;
+	NameSet columns_for_array_join;
 	
 	/** Для getActionsImpl.
 	  * Стек из ExpressionActions, соответствующих вложенным лямбда-выражениям.
@@ -223,6 +225,7 @@ private:
 	
 	/// Проверяет является ли данный столбец результатом ARRAY JOIN
 	bool isArrayJoinedColumnName(const String & name);
+
 	/// Возвращает исходное имя столбца до применения к нему ARRAY JOIN
 	String getOriginalNestedName(const String & name);
 
@@ -230,7 +233,7 @@ private:
 	
 	/** Создать словарь алиасов.
 	  */
-	void createAliasesDict(ASTPtr & ast);
+	void createAliasesDict(ASTPtr & ast, int ignore_levels = 0);
 		
 	/** Для узлов-звёздочек - раскрыть их в список всех столбцов.
 	  * Для узлов-литералов - подставить алиасы.
@@ -255,7 +258,7 @@ private:
 	/// Добавить агрегатные функции в aggregate_descriptions.
 	/// Установить has_aggregation=true, если есть хоть одна агрегатная функция.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
-	
+
 	void getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names);
 	
 	/// Получить таблицу, из которой идет запрос

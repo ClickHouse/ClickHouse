@@ -36,9 +36,8 @@ public:
 			ADD_COLUMN,
 			REMOVE_COLUMN,
 			COPY_COLUMN,
-			ARRAY_JOIN, /// Заменяет столбец с массивом на столбец с элементами. Если этот массив упоминается где-то еще, будет ошибка.
+			ARRAY_JOIN, /// Заменяет указанные столбцы с массивами на столбцы с элементами. Размножает значения в остальных столбцах по количеству элементов в массивах. Массивы должны быть параллельными (иметь одинаковые длины).
 			PROJECT, /// Переупорядочить и переименовать столбцы, удалить лишние. Допускаются одинаковые имена столбцов в результате.
-			MULTIPLE_ARRAY_JOIN, /// Заменяет столбцы из вложенной таблицы (или один столбец-массив) на столбцы с элементами.
 		};
 		
 		Type type;
@@ -47,10 +46,8 @@ public:
 		std::string result_name;
 		DataTypePtr result_type;
 		
-		/// Для MULTIPLE_ARRAY_JOIN
-		std::string nested_table_name;
-		std::string nested_table_alias;
-		NameSet array_joined_columns; /// Имена столбцов без префикса 'NestedTableName.'
+		/// Для ARRAY_JOIN
+		NameSet array_joined_columns;
 		
 		/// Для ADD_COLUMN.
 		ColumnPtr added_column;
@@ -111,23 +108,12 @@ public:
 			return a;
 		}
 		
-		static Action arrayJoin(const std::string & source_name, const std::string & result_name)
+		static Action arrayJoin(const NameSet & array_joined_columns)
 		{
+			if (array_joined_columns.empty())
+				throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 			Action a;
 			a.type = ARRAY_JOIN;
-			a.source_name = source_name;
-			a.result_name = result_name;
-			return a;
-		}
-		
-		static Action multipleArrayJoin(const std::string & nested_table_name,
-										const std::string & nested_table_alias,
-										const NameSet & array_joined_columns)
-		{
-			Action a;
-			a.type = MULTIPLE_ARRAY_JOIN;
-			a.nested_table_name = nested_table_name;
-			a.nested_table_alias = nested_table_alias;
 			a.array_joined_columns = array_joined_columns;
 			return a;
 		}
@@ -140,9 +126,6 @@ public:
 		
 	private:
 		friend class ExpressionActions;
-		
-		/// Проверяет является ли данный столбец результатом ARRAY JOIN
-		bool isArrayJoinedColumnName(const String & name) const;
 		
 		std::vector<Action> getPrerequisites(Block & sample_block);
 		void prepare(Block & sample_block);
