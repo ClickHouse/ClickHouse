@@ -49,6 +49,26 @@ static std::string * getAlias(ASTPtr & ast)
 	}
 }
 
+static void setAlias(ASTPtr & ast, const std::string & alias)
+{
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		node->alias = alias;
+	}
+	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		node->alias = alias;
+	}
+	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
+	{
+		node->alias = alias;
+	}
+	else
+	{
+		throw Exception("Can't set alias of " + ast->getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+	}
+}
+
 
 void ExpressionAnalyzer::init()
 {
@@ -387,7 +407,7 @@ void ExpressionAnalyzer::normalizeTree()
 
 /// finished_asts - уже обработанные вершины (и на что они заменены)
 /// current_asts - вершины в текущем стеке вызовов этого метода
-/// current_alias - алиас, повешенный на предка ast (самого глебокого из предков с алиасами)
+/// current_alias - алиас, повешенный на предка ast (самого глубокого из предков с алиасами)
 /// in_sign_rewritten - находимся ли мы в поддереве, полученном в результате sign rewrite
 void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, bool in_sign_rewritten)
 {
@@ -409,6 +429,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	if (!in_sign_rewritten && !sign_column_name.empty())
 		in_sign_rewritten = considerSignRewrite(ast);
 
+	bool replaced = false;
+
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
@@ -421,6 +443,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			ASTIdentifier * ast_id = new ASTIdentifier(node->range, std::string(node->range.first, node->range.second));
 			ast = ast_id;
 			current_asts.insert(ast);
+			replaced = true;
 		}
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
@@ -431,10 +454,21 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			Aliases::const_iterator jt = aliases.find(node->name);
 			if (jt != aliases.end() && current_alias != node->name)
 			{
-				/// Заменим его на соответствующий узел дерева
+				/// Заменим его на соответствующий узел дерева.
 				if (current_asts.count(jt->second))
 					throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
-				ast = jt->second;
+				if (my_alias && !my_alias->empty() && *my_alias != jt->second->getAlias())
+				{
+					/// В конструкции вроде "a AS b", где a - алиас, нужно перевесить алиас b на результат подстановки алиаса a.
+					ast = jt->second->clone();
+					setAlias(ast, *my_alias);
+				}
+				else
+				{
+					ast = jt->second;
+				}
+
+				replaced = true;
 			}
 			else
 			{
@@ -459,6 +493,16 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 				asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
 			}
 		}
+	}
+
+	/// Если заменили корень поддерева вызовемся для нового корня снова - на случай, если алиас заменился на алиас.
+	if (replaced)
+	{
+		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias, in_sign_rewritten);
+		current_asts.erase(initial_ast);
+		current_asts.erase(ast);
+		finished_asts[initial_ast] = ast;
+		return;
 	}
 
 	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
@@ -959,7 +1003,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 			throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
 		if (known_aliases.count(nested_table_alias) || aliases.count(nested_table_alias))
-			throw Exception("Duplicate alias " + nested_table_alias, ErrorCodes::MULTIPLE_ALIASES_FOR_EXPRESSION);
+			throw Exception("Duplicate alias " + nested_table_alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 		if (name_to_alias.count(nested_table_name))
 			throw Exception("Duplicate ARRAY JOIN on column " + nested_table_name, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 		known_aliases.insert(nested_table_alias);
