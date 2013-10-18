@@ -38,14 +38,8 @@ public:
 	  */
 	StringPtr query_string;
 
-	/** Идентификатор части выражения. Используется при интерпретации, чтобы вычислять не всё выражение сразу,
-	  *  а по частям (например, сначала WHERE, потом фильтрация, потом всё остальное).
-	  */
-	unsigned part_id;
-	
-
-	IAST() : range(NULL, NULL), part_id(0) {}
-	IAST(StringRange range_) : range(range_), part_id(0) {}
+	IAST() : range(NULL, NULL) {}
+	IAST(StringRange range_) : range(range_) {}
 	virtual ~IAST() {}
 
 	/** Получить каноническое имя столбца, если элемент является столбцом */
@@ -86,7 +80,7 @@ public:
 	void dumpTree(std::ostream & ostr, size_t indent = 0) const
 	{
 		String indent_str(indent, '-');
-		ostr << indent_str << getID() << ", " << this << ", part_id = " << part_id << std::endl;
+		ostr << indent_str << getID() << ", " << this << std::endl;
 		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
 			(*it)->dumpTree(ostr, indent + 1);
 	}
