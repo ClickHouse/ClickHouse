@@ -662,6 +662,35 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 		getArrayJoinedColumnsImpl(select_query->where_expression);
 		getArrayJoinedColumnsImpl(select_query->having_expression);
 		getArrayJoinedColumnsImpl(select_query->order_expression_list);
+
+		/// Если результат ARRAY JOIN не используется, придется все равно по-ARRAY-JOIN-ить какой-нибудь столбец,
+		/// чтобы получить правильное количество строк.
+		if (columns_for_array_join.empty())
+		{
+			ASTPtr expr = select_query->array_join_expression_list->children[0];
+			String source_name = expr->getColumnName();
+			String result_name = expr->getAlias();
+			/// Это массив.
+			if (!dynamic_cast<ASTIdentifier *>(&*expr) || findColumn(source_name, columns) != columns.end())
+			{
+				columns_for_array_join.insert(result_name);
+			}
+			else /// Это вложенная таблица.
+			{
+				bool found = false;
+				for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+				{
+					String table_name = DataTypeNested::extractNestedTableName(it->first);
+					String column_name = DataTypeNested::extractNestedColumnName(it->first);
+					if (table_name == source_name)
+					{
+						columns_for_array_join.insert(DataTypeNested::concatenateNestedName(result_name, column_name));
+						found = true;
+						break;
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -990,9 +1019,8 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypes
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 {
 	ASTs & asts = select_query->array_join_expression_list->children;
-	typedef std::map<String, String> NameToAlias;
-	NameToAlias name_to_alias;
-	NameSet known_aliases;
+	typedef std::map<String, String> AliasToName;
+	AliasToName alias_to_name;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		ASTPtr ast = asts[i];
@@ -1002,31 +1030,33 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 		if (nested_table_alias == nested_table_name && !dynamic_cast<ASTIdentifier *>(&*ast))
 			throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
-		if (known_aliases.count(nested_table_alias) || aliases.count(nested_table_alias))
+		if (alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
 			throw Exception("Duplicate alias " + nested_table_alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
-		if (name_to_alias.count(nested_table_name))
-			throw Exception("Duplicate ARRAY JOIN on column " + nested_table_name, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
-		known_aliases.insert(nested_table_alias);
-		name_to_alias[nested_table_name] = nested_table_alias;
+		alias_to_name[nested_table_alias] = nested_table_name;
 	}
 
-	NamesAndTypesList input_columns = actions.getSampleBlock().getColumnsList();
-	for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+	for (NamesSet::iterator it = columns_for_array_join.begin(); it != columns_for_array_join.end(); ++it)
 	{
-		const String & name = it->first;
+		const String & result_name = *it;
 
-		String nested_table = DataTypeNested::extractNestedTableName(name);
-		String nested_column = DataTypeNested::extractNestedColumnName(name);
+		String result_table = DataTypeNested::extractNestedTableName(result_name);
+		String result_column = DataTypeNested::extractNestedColumnName(result_name);
 
-		String array_joined_name;
-		if (name_to_alias.count(name))
-			array_joined_name = name_to_alias[name];
-		else if (name_to_alias.count(nested_table))
-			array_joined_name = DataTypeNested::concatenateNestedName(name_to_alias[nested_table], nested_column);
+		String source_name;
+		if (alias_to_name.count(result_name))
+		{
+			source_name = alias_to_name[result_name];
+		}
+		else if (alias_to_name.count(result_table))
+		{
+			source_name = DataTypeNested::concatenateNestedName(alias_to_name[result_table], result_column);
+		}
 		else
-			continue;
+		{
+			throw Exception("Unexpected result of ARRAY JOIN", ErrorCodes::LOGICAL_ERROR);
+		}
 
-		actions.add(ExpressionActions::Action::copyColumn(name, array_joined_name));
+		actions.add(ExpressionActions::Action::copyColumn(source_name, result_name));
 	}
 
 	actions.add(ExpressionActions::Action::arrayJoin(columns_for_array_join));
