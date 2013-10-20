@@ -39,7 +39,7 @@ protected:
 		}
 		
 		if (bytes_read < 0)
-			throw Exception("Cannot read from socket", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+			throw Exception("Cannot read from socket (" + socket.address().toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 
 		if (bytes_read)
 			working_buffer.resize(bytes_read);

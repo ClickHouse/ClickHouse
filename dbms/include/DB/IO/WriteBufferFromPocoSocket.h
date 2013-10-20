@@ -45,7 +45,7 @@ protected:
 			}
 			
 			if (res < 0)
-				throw Exception("Cannot write to socket", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+				throw Exception("Cannot write to socket (" + socket.address().toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
 			bytes_written += res;
 		}
 	}
