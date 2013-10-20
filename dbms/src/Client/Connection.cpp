@@ -3,6 +3,8 @@
 #include <Yandex/Revision.h>
 
 #include <DB/Core/Defines.h>
+#include <DB/Core/Exception.h>
+#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
@@ -49,15 +51,15 @@ void Connection::connect()
 	{
 		disconnect();
 
-		/// Добавляем в сообщение адрес сервера. Жаль, что более точный тип исключения теряется.
-		throw Poco::Net::NetException(e.displayText(), "(" + getServerAddress() + ")", e.code());
+		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
+		throw Exception(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::NETWORK_ERROR);
 	}
 	catch (Poco::TimeoutException & e)
 	{
 		disconnect();
 
-		/// Добавляем в сообщение адрес сервера. Жаль, что более точный тип исключения теряется.
-		throw Poco::TimeoutException(e.displayText(), "(" + getServerAddress() + ")", e.code());
+		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
+		throw Exception(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::SOCKET_TIMEOUT);
 	}
 }
 

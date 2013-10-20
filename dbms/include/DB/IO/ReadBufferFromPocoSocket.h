@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Net/Socket.h>
+#include <Poco/Net/NetException.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -21,7 +22,22 @@ protected:
 	
 	bool nextImpl()
 	{
-		ssize_t bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
+		ssize_t bytes_read = 0;
+		
+		/// Добавляем в эксепшены более подробную информацию.
+		try
+		{
+			bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
+		}
+		catch (Poco::Net::NetException & e)
+		{
+			throw Exception(e.displayText(), " while reading from socket (" + socket.address().toString() + ")", ErrorCodes::NETWORK_ERROR);
+		}
+		catch (Poco::TimeoutException & e)
+		{
+			throw Exception("Timeout exceeded while reading from socket (" + socket.address().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+		}
+		
 		if (bytes_read < 0)
 			throw Exception("Cannot read from socket", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 

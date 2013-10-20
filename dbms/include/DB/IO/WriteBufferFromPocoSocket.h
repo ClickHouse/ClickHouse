@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Net/Socket.h>
+#include <Poco/Net/NetException.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -27,7 +28,22 @@ protected:
 		size_t bytes_written = 0;
 		while (bytes_written != offset())
 		{
-			ssize_t res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
+			ssize_t res = 0;
+
+			/// Добавляем в эксепшены более подробную информацию.
+			try
+			{
+				res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
+			}
+			catch (Poco::Net::NetException & e)
+			{
+				throw Exception(e.displayText() + " while writing to socket (" + socket.address().toString() + ")", ErrorCodes::NETWORK_ERROR);
+			}
+			catch (Poco::TimeoutException & e)
+			{
+				throw Exception("Timeout exceeded while writing to socket (" + socket.address().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+			}
+			
 			if (res < 0)
 				throw Exception("Cannot write to socket", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
 			bytes_written += res;
