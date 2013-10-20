@@ -12,6 +12,8 @@
 
 #include <DB/Columns/ColumnArray.h>
 
+#include <stats/IntHash.h>
+
 
 namespace DB
 {
@@ -136,6 +138,13 @@ namespace detail
 		/// Число значений для каждого значения от small_threshold до big_threshold, округлённого до big_precision.
 		UInt64 count_big[BIG_SIZE];
 
+		/// Получить значение квантиля по индексу в массиве count_big.
+		static inline UInt16 indexInBigToValue(size_t i)
+		{
+			return (i * BIG_PRECISION) + SMALL_THRESHOLD
+				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// Небольшая рандомизация, чтобы не было заметно, что все значения чётные.
+		}
+
 	public:
 		QuantileTimingLarge()
 		{
@@ -209,7 +218,7 @@ namespace detail
 			}
 
 			if (i < BIG_SIZE)
-				return (i * BIG_PRECISION) + SMALL_THRESHOLD;
+				return indexInBigToValue(i);
 
 			return BIG_THRESHOLD;
 		}
@@ -258,7 +267,7 @@ namespace detail
 
 				if (i < BIG_SIZE)
 				{
-					*result = (i * BIG_PRECISION) + SMALL_THRESHOLD;
+					*result = indexInBigToValue(i);
 
 					++level;
 					++result;
