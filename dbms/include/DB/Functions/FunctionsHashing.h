@@ -58,9 +58,7 @@ struct SipHash64Impl
 {
 	static UInt64 apply(const char * begin, size_t size)
 	{
-		SipHash hash;
-		hash.update(begin, size);
-		return hash.get64();
+		return sipHash64(begin, size);
 	}
 };
 

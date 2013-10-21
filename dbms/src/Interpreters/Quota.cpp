@@ -214,11 +214,7 @@ QuotaForIntervals & Quota::get(const String & quota_key, const Poco::Net::IPAddr
 	UInt64 quota_key_hashed = 0;
 
 	if (!quota_key_or_ip.empty())
-	{
-		SipHash hash;
-		hash.update(quota_key_or_ip.data(), quota_key_or_ip.size());
-		quota_key_hashed = hash.get64();
-	}
+		quota_key_hashed = sipHash64(quota_key_or_ip);
 
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 

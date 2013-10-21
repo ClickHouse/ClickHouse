@@ -156,3 +156,18 @@ public:
 
 #undef ROTL
 #undef SIPROUND
+
+
+inline uint64_t sipHash64(const char * data, size_t size)
+{
+	SipHash hash;
+	hash.update(data, size);
+	return hash.get64();
+}
+
+#include <string>
+
+inline uint64_t sipHash64(const std::string & s)
+{
+	return sipHash64(s.data(), s.size());
+}
