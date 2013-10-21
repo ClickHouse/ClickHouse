@@ -181,6 +181,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "has")							return new FunctionHas;
 	else if (name == "indexOf")						return new FunctionIndexOf;
 	else if (name == "countEqual")					return new FunctionCountEqual;
+	else if (name == "arrayEnumerate")				return new FunctionArrayEnumerate;
 	else if (name == "arrayEnumerateUniq")			return new FunctionArrayEnumerateUniq;
 	
 	else if (name == "arrayMap")					return new FunctionArrayMap;

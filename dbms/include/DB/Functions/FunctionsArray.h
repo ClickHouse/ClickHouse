@@ -20,6 +20,7 @@ namespace DB
   * arrayElement(arr, i) - получить элемент массива.
   * has(arr, x) - есть ли в массиве элемент x.
   * indexOf(arr, x) - возвращает индекс элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
+  * arrayEnumerate(arr) - возаращает массив [1,2,3,..., length(arr)]
   * arrayEnumerateUniq(arr) - возаращает массив,  параллельный данному, где для каждого элемента указано,
   * 						  какой он по счету среди элементов с таким значением.
   * 						  Например: arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]
@@ -485,6 +486,76 @@ public:
 		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+class FunctionArrayEnumerate : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "arrayEnumerate";
+	}
+
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
+		if (!array_type)
+			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeArray(new DataTypeUInt32);
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column))
+		{
+			const ColumnArray::Offsets_t & offsets = array->getOffsets();
+
+			ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
+			ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
+			block.getByPosition(result).column = res_array;
+
+			ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
+			res_values.resize(array->getData().size());
+			size_t prev_off = 0;
+			for (size_t i = 0; i < offsets.size(); ++i)
+			{
+				size_t off = offsets[i];
+				for (size_t j = prev_off; j < off; ++j)
+				{
+					res_values[j] = j - prev_off + 1;
+				}
+				prev_off = off;
+			}
+		}
+		else if (const ColumnConstArray * array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column))
+		{
+			const Array & values = array->getData();
+
+			Array res_values(values.size());
+			for (size_t i = 0; i < values.size(); ++i)
+			{
+				res_values[i] = i + 1;
+			}
+
+			ColumnConstArray * res_array = new ColumnConstArray(array->size(), res_values, new DataTypeArray(new DataTypeUInt32));
+			block.getByPosition(result).column = res_array;
+		}
+		else
+		{
+		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+		}
 	}
 };
 
