@@ -5,6 +5,7 @@
 
 #include <Poco/ByteOrder.h>
 
+#include <DB/Common/SipHash.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -23,6 +24,9 @@ namespace DB
   *
   * Половинка MD5:
   * halfMD5: 	String -> UInt64
+  *
+  * Более быстрая криптографическая хэш-функция:
+  * sipHash64:  String -> UInt64
   *
   * Быстрая некриптографическая хэш функция для строк:
   * cityHash64: String -> UInt64
@@ -47,6 +51,16 @@ struct HalfMD5Impl
 		MD5_Final(buf.char_data, &ctx);
 
 		return Poco::ByteOrder::flipBytes(buf.uint64_data);		/// Совместимость с существующим кодом.
+	}
+};
+
+struct SipHash64Impl
+{
+	static UInt64 apply(const char * begin, size_t size)
+	{
+		SipHash hash;
+		hash.update(begin, size);
+		return hash.get64();
 	}
 };
 
@@ -205,10 +219,12 @@ public:
 
 
 struct NameHalfMD5 			{ static const char * get() { return "halfMD5"; } };
+struct NameSipHash64		{ static const char * get() { return "sipHash64"; } };
 struct NameCityHash64 		{ static const char * get() { return "cityHash64"; } };
 struct NameIntHash32 		{ static const char * get() { return "intHash32"; } };
 
 typedef FunctionStringHash64<HalfMD5Impl,		NameHalfMD5> 		FunctionHalfMD5;
+typedef FunctionStringHash64<SipHash64Impl,		NameSipHash64> 		FunctionSipHash64;
 typedef FunctionStringHash64<CityHash64Impl,	NameCityHash64> 	FunctionCityHash64;
 typedef FunctionIntHash<IntHash32Impl,			NameIntHash32> 		FunctionIntHash32;
 

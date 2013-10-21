@@ -133,6 +133,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "extractAll")					return new FunctionExtractAll;
 
 	else if (name == "halfMD5")						return new FunctionHalfMD5;
+	else if (name == "sipHash64")					return new FunctionSipHash64;
 	else if (name == "cityHash64")					return new FunctionCityHash64;
 	else if (name == "intHash32")					return new FunctionIntHash32;
 	
