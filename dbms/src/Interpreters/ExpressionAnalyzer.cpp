@@ -78,17 +78,15 @@ void ExpressionAnalyzer::init()
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
 
-	removeUnusedColumns();
-
 	getArrayJoinedColumns();
+
+	removeUnusedColumns();
 
 	/// Найдем агрегатные функции.
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
 		has_aggregation = true;
 
 	ExpressionActions temp_actions(columns, settings);
-
-	columns_after_array_join = columns;
 
 	if (select_query && select_query->array_join_expression_list)
 	{
@@ -102,12 +100,15 @@ void ExpressionAnalyzer::init()
 		addMultipleArrayJoinAction(temp_actions);
 
 		const Block & temp_sample = temp_actions.getSampleBlock();
-		for (size_t i = 0; i < temp_sample.columns(); ++i)
+		for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
 		{
-			const ColumnWithNameAndType & col = temp_sample.getByPosition(i);
-			if (isArrayJoinedColumnName(col.name))
-				columns_after_array_join.push_back(NameAndTypePair(col.name, col.type));
+			columns_after_array_join.push_back(NameAndTypePair(it->first, temp_sample.getByName(it->first).type));
 		}
+	}
+	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+	{
+		if (!array_join_result_to_source.count(it->first))
+			columns_after_array_join.push_back(*it);
 	}
 	getAggregatesImpl(ast, temp_actions);
 
@@ -159,57 +160,8 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 }
 
 
-bool ExpressionAnalyzer::isArrayJoinedColumnName(const String & name)
-{
-	if (select_query && select_query->array_join_expression_list)
-	{
-		ASTs & expressions = select_query->array_join_expression_list->children;
-		int count = 0;
-		String table_name = DataTypeNested::extractNestedTableName(name);
-		for (size_t i = 0; i < expressions.size(); ++i)
-		{
-			String alias = expressions[i]->getAlias();
-			if (name == alias || table_name == alias)
-				++count;
-		}
-		if (count > 1)
-			throw Exception("Ambiguous identifier from ARRAY JOIN: " + name, ErrorCodes::AMBIGUOUS_IDENTIFIER);
-		return count == 1;
-	}
-	return false;
-}
-
-
-
-String ExpressionAnalyzer::getOriginalNestedName(const String & name)
-{
-	if (select_query && select_query->array_join_expression_list)
-	{
-		ASTs & expressions = select_query->array_join_expression_list->children;
-		String table_name = DataTypeNested::extractNestedTableName(name);
-		for (size_t i = 0; i < expressions.size(); ++i)
-		{
-			String expression_name = expressions[i]->getColumnName();
-			String alias = expressions[i]->getAlias();
-			bool is_identifier = !!dynamic_cast<ASTIdentifier *>(&*expressions[i]);
-			if (name == alias)
-			{
-				if (is_identifier)
-					return expression_name;
-				else
-					return "";
-			}
-			else if (table_name == alias)
-			{
-				String nested_column = DataTypeNested::extractNestedColumnName(name);
-				return DataTypeNested::concatenateNestedName(expression_name, nested_column);
-			}
-		}
-	}
-	return name;
-}
-
-
+/// ignore_levels - алиасы в скольки верхних уровнях поддерева нужно игнорировать.
+/// Например, при ignore_levels=1 ast не может быть занесен в словарь, но его дети могут.
 void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 {
 	ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast);
@@ -218,7 +170,8 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 	{
 		int new_ignore_levels = std::max(0, ignore_levels - 1);
-		/// Алиасы верхнего уровня в секции ARRAY JOIN имеют особый смысл, их добавлять не будем.
+		/// Алиасы верхнего уровня в секции ARRAY JOIN имеют особый смысл, их добавлять не будем
+		///  (пропустим сам expression list и его детей).
 		if (select && *it == select->array_join_expression_list)
 			new_ignore_levels = 2;
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
@@ -657,15 +610,33 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 {
 	if (select_query && select_query->array_join_expression_list)
 	{
-		getArrayJoinedColumnsImpl(select_query->group_expression_list);
-		getArrayJoinedColumnsImpl(select_query->select_expression_list);
-		getArrayJoinedColumnsImpl(select_query->where_expression);
-		getArrayJoinedColumnsImpl(select_query->having_expression);
-		getArrayJoinedColumnsImpl(select_query->order_expression_list);
+		ASTs & array_join_asts = select_query->array_join_expression_list->children;
+		for (size_t i = 0; i < array_join_asts .size(); ++i)
+		{
+			ASTPtr ast = array_join_asts [i];
+
+			String nested_table_name = ast->getColumnName();
+			String nested_table_alias = ast->getAlias();
+			if (nested_table_alias == nested_table_name && !dynamic_cast<ASTIdentifier *>(&*ast))
+				throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
+
+			if (array_join_alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
+				throw Exception("Duplicate alias " + nested_table_alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+			array_join_alias_to_name[nested_table_alias] = nested_table_name;
+		}
+
+		ASTs & query_asts = select_query->children;
+		for (size_t i = 0; i < query_asts.size(); ++i)
+		{
+			ASTPtr ast = query_asts[i];
+			if (select_query && ast == select_query->array_join_expression_list)
+				continue;
+			getArrayJoinedColumnsImpl(ast);
+		}
 
 		/// Если результат ARRAY JOIN не используется, придется все равно по-ARRAY-JOIN-ить какой-нибудь столбец,
 		/// чтобы получить правильное количество строк.
-		if (columns_for_array_join.empty())
+		if (array_join_result_to_source.empty())
 		{
 			ASTPtr expr = select_query->array_join_expression_list->children[0];
 			String source_name = expr->getColumnName();
@@ -673,7 +644,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 			/// Это массив.
 			if (!dynamic_cast<ASTIdentifier *>(&*expr) || findColumn(source_name, columns) != columns.end())
 			{
-				columns_for_array_join.insert(result_name);
+				array_join_result_to_source[result_name] = source_name;
 			}
 			else /// Это вложенная таблица.
 			{
@@ -684,11 +655,14 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 					String column_name = DataTypeNested::extractNestedColumnName(it->first);
 					if (table_name == source_name)
 					{
-						columns_for_array_join.insert(DataTypeNested::concatenateNestedName(result_name, column_name));
+						array_join_result_to_source[DataTypeNested::concatenateNestedName(result_name, column_name)]
+							= it->first;
 						found = true;
 						break;
 					}
 				}
+				if (!found)
+					throw Exception("No columns in nested table " + source_name, ErrorCodes::EMPTY_NESTED_TABLE);
 			}
 		}
 	}
@@ -697,13 +671,20 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 
 void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 {
-	if (!ast)
-		return;
-
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
-		if (node->kind == ASTIdentifier::Column && isArrayJoinedColumnName(node->name))
-			columns_for_array_join.insert(node->name);
+		if (node->kind == ASTIdentifier::Column)
+		{
+			String table_name = DataTypeNested::extractNestedTableName(node->name);
+			if (array_join_alias_to_name.count(node->name))
+				array_join_result_to_source[node->name] = array_join_alias_to_name[node->name];
+			else if (array_join_alias_to_name.count(table_name))
+			{
+				String nested_column = DataTypeNested::extractNestedColumnName(node->name);
+				array_join_result_to_source[node->name]
+					= DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
+			}
+		}
 	}
 	else
 	{
@@ -1018,48 +999,15 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypes
 
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 {
-	ASTs & asts = select_query->array_join_expression_list->children;
-	typedef std::map<String, String> AliasToName;
-	AliasToName alias_to_name;
-	for (size_t i = 0; i < asts.size(); ++i)
+	NameSet result_columns;
+	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
 	{
-		ASTPtr ast = asts[i];
-
-		String nested_table_name = ast->getColumnName();
-		String nested_table_alias = ast->getAlias();
-		if (nested_table_alias == nested_table_name && !dynamic_cast<ASTIdentifier *>(&*ast))
-			throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
-
-		if (alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
-			throw Exception("Duplicate alias " + nested_table_alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
-		alias_to_name[nested_table_alias] = nested_table_name;
+		if (it->first != it->second)
+			actions.add(ExpressionActions::Action::copyColumn(it->second, it->first));
+		result_columns.insert(it->first);
 	}
 
-	for (NamesSet::iterator it = columns_for_array_join.begin(); it != columns_for_array_join.end(); ++it)
-	{
-		const String & result_name = *it;
-
-		String result_table = DataTypeNested::extractNestedTableName(result_name);
-		String result_column = DataTypeNested::extractNestedColumnName(result_name);
-
-		String source_name;
-		if (alias_to_name.count(result_name))
-		{
-			source_name = alias_to_name[result_name];
-		}
-		else if (alias_to_name.count(result_table))
-		{
-			source_name = DataTypeNested::concatenateNestedName(alias_to_name[result_table], result_column);
-		}
-		else
-		{
-			throw Exception("Unexpected result of ARRAY JOIN", ErrorCodes::LOGICAL_ERROR);
-		}
-
-		actions.add(ExpressionActions::Action::copyColumn(source_name, result_name));
-	}
-
-	actions.add(ExpressionActions::Action::arrayJoin(columns_for_array_join));
+	actions.add(ExpressionActions::Action::arrayJoin(result_columns));
 }
 
 
@@ -1076,7 +1024,9 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
 	getRootActionsImpl(select_query->array_join_expression_list, false, false, *step.actions);
 
 	addMultipleArrayJoinAction(*step.actions);
-	step.required_output.insert(step.required_output.end(), columns_for_array_join.begin(), columns_for_array_join.end());
+
+	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
+		step.required_output.push_back(it->first);
 
 	return true;
 }
@@ -1322,18 +1272,33 @@ void ExpressionAnalyzer::removeUnusedColumns()
 {
 	NamesSet required;
 	NamesSet ignored;
+
 	if (select_query && select_query->array_join_expression_list)
 	{
 		ASTs & expressions = select_query->array_join_expression_list->children;
 		for (size_t i = 0; i < expressions.size(); ++i)
 		{
 			/// Игнорируем идентификаторы верхнего уровня из секции ARRAY JOIN.
-			/// Они будут добавлены там, где они используются.
+			/// Их потом добавим отдельно.
 			if (dynamic_cast<ASTIdentifier *>(&*expressions[i]))
 				ignored.insert(expressions[i]->getColumnName());
+
+			ignored.insert(expressions[i]->getAlias());
 		}
 	}
+
 	getRequiredColumnsImpl(ast, required, ignored);
+
+	NameSet array_join_sources;
+	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
+	{
+		array_join_sources.insert(it->second);
+	}
+	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+	{
+		if (array_join_sources.count(it->first))
+			required.insert(it->first);
+	}
 
 	/// Нужно прочитать хоть один столбец, чтобы узнать количество строк.
 	if (required.empty())
@@ -1373,18 +1338,11 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 {
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
-		if (node->kind == ASTIdentifier::Column && !ignored_names.count(node->name))
+		if (node->kind == ASTIdentifier::Column
+			&& !ignored_names.count(node->name)
+			&& !ignored_names.count(DataTypeNested::extractNestedTableName(node->name)))
 		{
-			if (isArrayJoinedColumnName(node->name))
-			{
-				String original = getOriginalNestedName(node->name);
-				if (!original.empty())
-					required_columns.insert(original);
-			}
-			else
-			{
-				required_columns.insert(node->name);
-			}
+			required_columns.insert(node->name);
 		}
 		return;
 	}

@@ -43,7 +43,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 		: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
 	
 	if (context.getColumns().empty())
-		throw Exception("There is no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
+		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 	
 	query_analyzer = new ExpressionAnalyzer(query_ptr, context, subquery_depth);
 }

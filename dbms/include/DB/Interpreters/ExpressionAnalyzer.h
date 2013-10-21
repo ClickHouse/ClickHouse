@@ -114,8 +114,13 @@ private:
 	typedef std::set<const IAST *> SetOfASTs;
 	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 	
-	/// Столбцы, которые должны быть преобразованы из-за секции ARRAY JOIN
-	NameSet columns_for_array_join;
+	/// Какой столбец нужно по-ARRAY-JOIN-ить, чтобы получить указанный.
+	/// Например, для SELECT s.v ... ARRAY JOIN a AS s сюда попадет "s.v"->"a.v".
+	NameToNameMap array_join_result_to_source;
+
+	/// Для секции ARRAY JOIN отображение из алиаса в полное столбца
+	/// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b"->"array(1,2)".
+	NameToNameMap array_join_alias_to_name;
 	
 	/** Для getActionsImpl.
 	  * Стек из ExpressionActions, соответствующих вложенным лямбда-выражениям.
@@ -223,12 +228,6 @@ private:
 	NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
 	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 	
-	/// Проверяет является ли данный столбец результатом ARRAY JOIN
-	bool isArrayJoinedColumnName(const String & name);
-
-	/// Возвращает исходное имя столбца до применения к нему ARRAY JOIN
-	String getOriginalNestedName(const String & name);
-
 	void removeUnusedColumns();
 	
 	/** Создать словарь алиасов.

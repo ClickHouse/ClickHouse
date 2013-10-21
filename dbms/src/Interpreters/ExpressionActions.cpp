@@ -225,7 +225,7 @@ void ExpressionActions::Action::execute(Block & block) const
 					
 					const ColumnArray & array = dynamic_cast<const ColumnArray &>(*array_ptr);
 					if (!array.hasEqualOffsets(dynamic_cast<const ColumnArray &>(*any_array_ptr)))
-						throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+						throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
 					current.column = dynamic_cast<const ColumnArray &>(*array_ptr).getDataPtr();
 					current.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
