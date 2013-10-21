@@ -29,6 +29,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	ASTPtr format;
 	ASTPtr query_ptr;
 
+	bool describe_query = false;
+
 	ws.ignore(pos, end);
 	
 	if (s_exists.ignore(pos, end, expected))
@@ -38,6 +40,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	else if (s_describe.ignore(pos, end, expected) || s_desc.ignore(pos, end, expected))
 	{
 		query_ptr = new ASTDescribeQuery;
+		describe_query = true;
 	}
 	else if (s_show.ignore(pos, end, expected))
 	{
@@ -60,7 +63,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, St
 	ws.ignore(pos, end);
 
 	if (!s_table.ignore(pos, end, expected))
-		return false;
+		/// для запроса DESC/DESCRIBE слово table опционально, чтобы было больше похоже на mysql
+		if (!describe_query)
+			return false;
 
 	ws.ignore(pos, end);
 
