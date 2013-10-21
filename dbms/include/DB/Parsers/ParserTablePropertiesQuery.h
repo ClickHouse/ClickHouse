@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Запрос (EXISTS TABLE | SHOW CREATE TABLE | (DESCRIBE | DESC) TABLE) [db.]name [FORMAT format]
+/** Запрос (EXISTS | SHOW CREATE | (DESCRIBE | DESC) ) [TABLE] [db.]name [FORMAT format]
   */
 class ParserTablePropertiesQuery : public IParserBase
 {
