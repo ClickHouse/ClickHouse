@@ -36,42 +36,88 @@ private:
 	Logger * log;
 
 
+	void handleException() const
+	{
+		try
+		{
+			throw;
+		}
+		catch (const Poco::Exception & e)
+		{
+			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually. " << e.displayText());
+			return;
+		}
+		catch (...)
+		{
+			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually.");
+			return;
+		}
+	}
+
+
 	/// Обновляет справочники.
 	void reloadImpl()
 	{
 		/** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
 		  * Если старых корректных справочников нет, то при использовании функций, которые от них зависят,
 		  *  будет кидаться исключение.
+		  * Производится попытка загрузить каждый справочник по-отдельности.
 		  */
+
+		LOG_INFO(log, "Loading dictionaries.");
+
+		bool was_exception = false;
+
 		try
 		{
-			LOG_INFO(log, "Loading dictionaries.");
-
 			MultiVersion<TechDataHierarchy>::Version new_tech_data_hierarchy = new TechDataHierarchy;
-			MultiVersion<RegionsHierarchy>::Version new_regions_hierarchy = new RegionsHierarchy;
-			new_regions_hierarchy->reload();
-			MultiVersion<CategoriesHierarchy>::Version new_categories_hierarchy = new CategoriesHierarchy;
-			new_categories_hierarchy->reload();
-			MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
-			new_regions_names->reload();
-			
 			tech_data_hierarchy.set(new_tech_data_hierarchy);
-			regions_hierarchy.set(new_regions_hierarchy);
-			categories_hierarchy.set(new_categories_hierarchy);
-			regions_names.set(new_regions_names);
-		}
-		catch (const Poco::Exception & e)
-		{
-			LOG_ERROR(log, "Cannot load dictionaries! You must resolve this manually. " << e.displayText());
-			return;
 		}
 		catch (...)
 		{
-			LOG_ERROR(log, "Cannot load dictionaries! You must resolve this manually.");
-			return;
+			handleException();
+			was_exception = true;
 		}
 
-		LOG_INFO(log, "Loaded dictionaries.");
+		try
+		{
+			MultiVersion<RegionsHierarchy>::Version new_regions_hierarchy = new RegionsHierarchy;
+			new_regions_hierarchy->reload();
+			regions_hierarchy.set(new_regions_hierarchy);
+
+		}
+		catch (...)
+		{
+			handleException();
+			was_exception = true;
+		}
+
+		try
+		{
+			MultiVersion<CategoriesHierarchy>::Version new_categories_hierarchy = new CategoriesHierarchy;
+			new_categories_hierarchy->reload();
+			categories_hierarchy.set(new_categories_hierarchy);
+		}
+		catch (...)
+		{
+			handleException();
+			was_exception = true;
+		}
+
+		try
+		{
+			MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
+			new_regions_names->reload();
+			regions_names.set(new_regions_names);
+		}
+		catch (...)
+		{
+			handleException();
+			was_exception = true;
+		}
+
+		if (!was_exception)
+			LOG_INFO(log, "Loaded dictionaries.");
 	}
 
 	/// Обновляет каждые reload_period секунд.
