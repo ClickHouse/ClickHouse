@@ -104,7 +104,7 @@ StorageChunks::StorageChunks(
 		{
 			if (context.isTableExist(database_name, it->first))
 			{
-				LOG_ERROR(log, "Chunk " << it->first << " exists in more than one Chunks tables.");
+				LOG_WARNING(log, "Chunk " << it->first << " exists in more than one Chunks tables.");
 				context.detachTable(database_name, it->first);
 			}
 
