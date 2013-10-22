@@ -222,7 +222,7 @@ private:
 	Increment increment;
 
 	Logger * log;
-	bool shutdown_called;
+	volatile bool shutdown_called;
 
 	/// Регулярное выражение соответсвующее названию директории с кусочками
 	Poco::RegularExpression file_name_regexp;

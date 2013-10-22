@@ -706,10 +706,14 @@ void StorageMergeTree::mergeThread(bool while_can)
 	try
 	{
 		std::vector<DataPartPtr> parts;
-		while (selectPartsToMerge(parts, false) ||
-			   selectPartsToMerge(parts, true))
+		while (!shutdown_called
+			&& (selectPartsToMerge(parts, false)
+				|| selectPartsToMerge(parts, true)))
 		{
 			mergeParts(parts);
+
+			if (shutdown_called)
+				break;
 
 			/// Удаляем старые куски.
 			parts.clear();
@@ -959,7 +963,21 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(*this,
 		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
 
-	copyData(*merged_stream, *to);
+	merged_stream->readPrefix();
+	to->writePrefix();
+
+	Block block;
+	while (!shutdown_called && (block = merged_stream->read()))
+		to->write(block);
+
+	if (shutdown_called)
+	{
+		LOG_INFO(log, "Shutdown requested while merging parts.");
+		return;
+	}
+
+	merged_stream->readSuffix();
+	to->writeSuffix();
 
 	new_data_part->size = to->marksCount();
 	new_data_part->modification_time = time(0);
