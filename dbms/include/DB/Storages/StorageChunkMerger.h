@@ -60,7 +60,7 @@ private:
 	Poco::Event cancel_merge_thread;
 	
 	Logger * log;
-	bool shutdown_called;
+	volatile bool shutdown_called;
 	
 	StorageChunkMerger(
 		const std::string & this_database_,

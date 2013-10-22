@@ -192,7 +192,7 @@ void StorageChunkMerger::mergeThread()
 		}
 		
 		unsigned sleep_ammount = error ? SLEEP_AFTER_ERROR : (merged ? SLEEP_AFTER_MERGE : SLEEP_NO_WORK);
-		if (cancel_merge_thread.tryWait(1000 * sleep_ammount))
+		if (shutdown_called || cancel_merge_thread.tryWait(1000 * sleep_ammount))
 			break;
 	}
 }
@@ -208,7 +208,7 @@ static std::string makeName(const std::string & prefix, const std::string & firs
 bool StorageChunkMerger::maybeMergeSomething()
 {
 	Storages chunks = selectChunksToMerge();
-	if (chunks.empty())
+	if (chunks.empty() || shutdown_called)
 		return false;
 	return mergeChunks(chunks);
 }
@@ -402,7 +402,22 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			
 			BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
 			
-			copyData(*input, *output);
+			input->readPrefix();
+			output->writePrefix();
+
+			Block block;
+			while (!shutdown_called && (block = input->read()))
+				output->write(block);
+
+			if (shutdown_called)
+			{
+				LOG_INFO(log, "Shutdown requested while merging chunks.");
+				new_storage.removeReference();	/// После этого временные данные удалятся.
+				return false;
+			}
+
+			input->readSuffix();
+			output->writeSuffix();
 		}
 		
 		/// Атомарно подменим исходные таблицы ссылками на новую.
@@ -449,6 +464,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			currently_written_groups.erase(new_table_full_name);
 		}
 
+		/// Сейчас на new_storage ссылаются таблицы типа ChunkRef. Удалим лишнюю ссылку, которая была при создании.
 		new_storage.removeReference();
 
 		LOG_TRACE(log, "Merged chunks.");
