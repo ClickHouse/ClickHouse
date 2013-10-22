@@ -538,9 +538,9 @@ private:
 				<< ", expected " << (parse_res ? "end of query" : expected) << "."
 				<< std::endl << std::endl;
 
-			std::cerr << message.str();
-
-			if (!is_interactive)
+			if (is_interactive)
+				std::cerr << message.str();
+			else
 				throw Exception(message.str(), ErrorCodes::SYNTAX_ERROR);
 
 			return false;
