@@ -39,7 +39,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 	const User & user_props = shared->users.get(name, password, address);
 	setSetting("profile", user_props.profile);
-	setQuota(user_props.quota, quota_key.empty() ? name : quota_key, address);
+	setQuota(user_props.quota, quota_key, address);
 
 	user = name;
 }
