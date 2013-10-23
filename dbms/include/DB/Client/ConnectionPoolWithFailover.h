@@ -47,22 +47,19 @@ public:
 			for (size_t i = 0, size = nested_pools.size(); i < size; ++i)
 			{
 				std::stringstream fail_message;
-				
+
 				try
 				{
 					Entry res = nested_pools[i].pool->get();
 					res->forceConnected();
 					return res;
 				}
-			    catch (Poco::Net::NetException & e)
+			    catch (const DB::Exception & e)
 				{
-					fail_message << "Poco::Net::NetException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-						<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-				}
-				catch (Poco::TimeoutException & e)
-				{
-					fail_message << "Poco::TimeoutException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-						<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+					if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT)
+						throw;
+
+					fail_message << "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
 				}
 
 				LOG_WARNING(log, "Connection failed at try №"
