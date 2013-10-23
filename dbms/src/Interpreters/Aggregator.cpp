@@ -213,8 +213,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			}
 
 			/// Оптимизация в случае единственной агрегатной функции count.
-			AggregateFunctionCount * agg_count = dynamic_cast<AggregateFunctionCount *>(aggregate_functions[0]);
-			if (aggregates_size == 1 && agg_count)
+			AggregateFunctionCount * agg_count = aggregates_size == 1
+				? dynamic_cast<AggregateFunctionCount *>(aggregate_functions[0])
+				: NULL;
+
+			if (agg_count)
 				agg_count->addDelta(res, rows);
 			else
 			{
