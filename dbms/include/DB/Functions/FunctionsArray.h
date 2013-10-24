@@ -7,6 +7,9 @@
 #include <DB/Columns/ColumnString.h>
 
 #include <DB/Functions/IFunction.h>
+#include <DB/Interpreters/HashMap.h>
+#include <DB/Interpreters/ClearableHashMap.h>
+#include <DB/Interpreters/AggregationCommon.h>
 
 #include <tr1/unordered_map>
 
@@ -583,6 +586,42 @@ public:
 		return new DataTypeArray(new DataTypeUInt32);
 	}
 
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (!(	executeNumber<UInt8>	(block, arguments, result)
+			||	executeNumber<UInt16>	(block, arguments, result)
+			||	executeNumber<UInt32>	(block, arguments, result)
+			||	executeNumber<UInt64>	(block, arguments, result)
+			||	executeNumber<Int8>		(block, arguments, result)
+			||	executeNumber<Int16>	(block, arguments, result)
+			||	executeNumber<Int32>	(block, arguments, result)
+			||	executeNumber<Int64>	(block, arguments, result)
+			||	executeNumber<Float32>	(block, arguments, result)
+			||	executeNumber<Float64>	(block, arguments, result)
+			||	executeConst			(block, arguments, result)
+			||	executeString			(block, arguments, result)))
+		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+private:
+	struct table_growth_traits
+	{
+		/// Изначально выделить кусок памяти для 2K элементов.
+		static const int INITIAL_SIZE_DEGREE  = 9;
+
+		/** Степень роста хэш таблицы, пока не превышен порог размера. (В 4 раза.)
+		*/
+		static const int FAST_GROWTH_DEGREE = 2;
+
+		/** Порог размера, после которого степень роста уменьшается (до роста в 2 раза) - 8 миллионов элементов.
+		* После этого порога, максимально возможный оверхед по памяти будет всего лишь в 4, а не в 8 раз.
+		*/
+		static const int GROWTH_CHANGE_THRESHOLD = 23;
+	};
+
 	template <typename T>
 	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -602,7 +641,9 @@ public:
 		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
 		res_values.resize(values.size());
 		size_t prev_off = 0;
-		std::tr1::unordered_map<T, UInt32> indices;
+
+		typedef ClearableHashMap<T, UInt32, default_hash<T>, table_growth_traits> ValuesToIndices;
+		ValuesToIndices indices;
 		for (size_t i = 0; i < offsets.size(); ++i)
 		{
 			indices.clear();
@@ -633,7 +674,8 @@ public:
 		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
 		res_values.resize(nested->size());
 		size_t prev_off = 0;
-		std::tr1::unordered_map<StringRef, UInt32> indices;
+		typedef ClearableHashMap<StringRef, UInt32, std::tr1::hash<StringRef>, table_growth_traits> ValuesToIndices;
+		ValuesToIndices indices;
 		for (size_t i = 0; i < offsets.size(); ++i)
 		{
 			indices.clear();
@@ -655,7 +697,7 @@ public:
 		const Array & values = array->getData();
 
 		Array res_values(values.size());
-		std::tr1::unordered_map<Field, UInt32> indices;
+		std::map<Field, UInt32> indices;
 		for (size_t i = 0; i < values.size(); ++i)
 		{
 			res_values[i] = static_cast<UInt64>(++indices[values[i]]);
@@ -665,26 +707,6 @@ public:
 		block.getByPosition(result).column = res_array;
 
 		return true;
-	}
-
-	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
-	{
-		if (!(	executeNumber<UInt8>	(block, arguments, result)
-			||	executeNumber<UInt16>	(block, arguments, result)
-			||	executeNumber<UInt32>	(block, arguments, result)
-			||	executeNumber<UInt64>	(block, arguments, result)
-			||	executeNumber<Int8>		(block, arguments, result)
-			||	executeNumber<Int16>	(block, arguments, result)
-			||	executeNumber<Int32>	(block, arguments, result)
-			||	executeNumber<Int64>	(block, arguments, result)
-			||	executeNumber<Float32>	(block, arguments, result)
-			||	executeNumber<Float64>	(block, arguments, result)
-			||	executeConst			(block, arguments, result)
-			||	executeString			(block, arguments, result)))
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 

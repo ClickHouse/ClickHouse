@@ -5,7 +5,7 @@
 #include <malloc.h>
 #include <math.h>
 
-#include <map>	/// pair
+#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -50,13 +50,40 @@ namespace DB
   */
 template <typename T> struct default_hash;
 
-template <> struct default_hash<UInt64>
+template <typename T>
+inline size_t default_hash_64(T key)
 {
-	size_t operator() (UInt64 key) const
+	union
 	{
-		return intHash32<0>(key);
-	}
+		T in;
+		UInt64 out;
+	} u;
+	u.out = 0;
+	u.in = key;
+	return intHash32<0>(u.out);
+}
+
+#define DEFAULT_HASH_64(T) \
+template <> struct default_hash<T>\
+{\
+	size_t operator() (T key) const\
+	{\
+		return default_hash_64<T>(key);\
+	}\
 };
+
+DEFAULT_HASH_64(UInt8)
+DEFAULT_HASH_64(UInt16)
+DEFAULT_HASH_64(UInt32)
+DEFAULT_HASH_64(UInt64)
+DEFAULT_HASH_64(Int8)
+DEFAULT_HASH_64(Int16)
+DEFAULT_HASH_64(Int32)
+DEFAULT_HASH_64(Int64)
+DEFAULT_HASH_64(Float32)
+DEFAULT_HASH_64(Float64)
+
+#undef DEFAULT_HASH_64
 
 
 /** Способ проверить, что ключ нулевой,
@@ -216,7 +243,7 @@ public:
 
 		if (NULL == buf)
 			throwFromErrno("HashMap: Cannot calloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-		
+
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 		collisions = 0;
 #endif
@@ -525,6 +552,44 @@ public:
 	bool empty() const
 	{
 	    return 0 == m_size;
+	}
+
+	Mapped & operator[](Key x)
+	{
+		if (ZeroTraits::check(x))
+		{
+			if (!has_zero)
+			{
+				++m_size;
+				has_zero = true;
+			}
+			return zero_value()->first;
+		}
+
+		size_t place_value = place(hash(x));
+		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
+		{
+			++place_value;
+			place_value &= mask();
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
+		}
+
+		if (!ZeroTraits::check(buf[place_value].first))
+			return buf[place_value].second;
+
+		new(&buf[place_value].first) Key(x);
+		new(&buf[place_value].second) Value();
+		++m_size;
+
+		if (unlikely(m_size > max_fill()))
+		{
+			resize();
+			return (*this)[x];
+		}
+
+		return buf[place_value].second;
 	}
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
