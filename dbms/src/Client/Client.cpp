@@ -503,7 +503,7 @@ private:
 			? query.substr(0, parsed_insert_query.data - query.data())
 			: query;
 
-		if ((is_interactive && !parsed_insert_query.data) || (!is_interactive && std_in.eof()))
+		if ((is_interactive && !parsed_insert_query.data) || (stdin_is_not_tty && std_in.eof()))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
 		connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete);
@@ -570,7 +570,7 @@ private:
 			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data, 0);
 			sendDataFrom(data_in, sample);
 		}
-		else if (!is_interactive && !std_in.eof())
+		else if (!is_interactive)
 		{
 			/// Отправляем данные из stdin.
 			sendDataFrom(std_in, sample);
