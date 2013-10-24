@@ -85,11 +85,11 @@ PoolWithFailover::Entry PoolWithFailover::Get()
 						full_pool = &replica;
 					}
 
-					app.logger().error("Connection to " + replica.pool->getDescription() + " failed: " + e.displayText());
+					app.logger().warning("Connection to " + replica.pool->getDescription() + " failed: " + e.displayText());
 					continue;
 				}
 
-				app.logger().error("Connection to " + replica.pool->getDescription() + " failed.");
+				app.logger().warning("Connection to " + replica.pool->getDescription() + " failed.");
 			}
 		}
 
