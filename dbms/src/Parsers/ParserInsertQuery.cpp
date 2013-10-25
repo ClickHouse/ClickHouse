@@ -66,9 +66,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	/// Есть ли список столбцов
 	if (s_lparen.ignore(pos, end, expected)
 		&& (!columns_p.parse(pos, end, columns, expected)
-			|| !ws.ignore(pos, end)
+			|| (!ws.ignore(pos, end) && ws.ignore(pos, end))
 			|| !s_rparen.ignore(pos, end, expected)))
+	{
 		return false;
+	}
 
 	ws.ignore(pos, end);
 

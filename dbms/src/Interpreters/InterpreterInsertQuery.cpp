@@ -1,5 +1,6 @@
 #include <DB/IO/ConcatReadBuffer.h>
 
+#include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -9,7 +10,6 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
-
 
 namespace DB
 {
@@ -29,22 +29,49 @@ StoragePtr InterpreterInsertQuery::getTable()
 	return context.getTable(query.database, query.table);
 }
 
-
 Block InterpreterInsertQuery::getSampleBlock()
 {
-	return getTable()->getSampleBlock();
-}
+	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
+	Block dbSample = getTable()->getSampleBlock();
 
+	/// Если в запросе не указана информация о столбцах
+	if (!query.columns)
+		return dbSample;
+
+
+	/// Строим мап из имени столбца в его тип
+	const NamesAndTypesList & names_and_types = dbSample.getColumnsList();
+	std::map<std::string, DataTypePtr> nameToType(names_and_types.begin(), names_and_types.end());
+
+	/// Формируем блок, основываясь на именах столбцов из запроса
+	Block res;
+	for (ASTs::iterator it = query.columns->children.begin(); it != query.columns->children.end(); it ++)
+	{
+		std::string currentName = (*it)->getColumnName();
+
+		/// В таблице нет столбца с таким именем
+		if (nameToType.count(currentName) == 0)
+			throw Exception("No such column in table: " + currentName, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
+		ColumnWithNameAndType col;
+		col.name = currentName;
+		col.type = nameToType[col.name];
+		col.column = col.type->createColumn();
+		res.insert(col);
+	}
+	
+	return res;
+}
 
 void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 {
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
 	
-	/// TODO - если указаны не все столбцы, то дополнить поток недостающими столбцами со значениями по-умолчанию.
-
 	BlockInputStreamPtr in;
-	BlockOutputStreamPtr out = table->write(query_ptr);
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
+	*required_columns = table->getSampleBlock().getColumnsList();
+	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
@@ -52,6 +79,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		String format = query.format;
 		if (format.empty())
 			format = "Values";
+
 
 		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
 
@@ -80,6 +108,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		InterpreterSelectQuery interpreter_select(query.select, context);
 		in = interpreter_select.execute();
 		in = new MaterializingBlockInputStream(in);
+
 		copyData(*in, *out);
 	}
 }
@@ -90,8 +119,9 @@ BlockOutputStreamPtr InterpreterInsertQuery::execute()
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
 
-	/// TODO - если указаны не все столбцы, то дополнить поток недостающими столбцами со значениями по-умолчанию.
-	BlockOutputStreamPtr out = table->write(query_ptr);
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
+	*required_columns = table->getSampleBlock().getColumnsList();
+	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT или INSERT SELECT?
 	if (!query.select)
