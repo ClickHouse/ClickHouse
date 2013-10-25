@@ -99,6 +99,13 @@ StorageMergeTree::StorageMergeTree(
 	merge_threads = new boost::threadpool::pool(settings.merging_threads);
 	
 	loadDataParts();
+
+	UInt64 max_part_id = 0;
+	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
+	{
+		max_part_id = std::max(max_part_id, (*it)->right);
+	}
+	increment.fixIfBroken(max_part_id);
 }
 
 StoragePtr StorageMergeTree::create(

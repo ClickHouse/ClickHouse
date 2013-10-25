@@ -103,7 +103,7 @@ private:
 		
 		size_t rows = block.rows();
 		size_t columns = block.columns();
-		UInt64 part_id = storage.increment.get(true);
+		UInt64 part_id = storage.increment.get(false);
 		
 		String part_name = storage.getPartName(
 			DayNum_t(min_date), DayNum_t(max_date),
