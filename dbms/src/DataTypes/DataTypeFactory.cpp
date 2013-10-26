@@ -11,6 +11,7 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
@@ -123,6 +124,29 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			}
 			
 			return new DataTypeNested(columns);
+		}
+
+		if (base_name == "Tuple")
+		{
+			ParserExpressionList columns_p;
+			ASTPtr columns_ast;
+			String expected;
+			IParser::Pos pos = parameters.data();
+			IParser::Pos end = pos + parameters.size();
+
+			if (!(columns_p.parse(pos, end, columns_ast, expected) && pos == end))
+				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
+
+			DataTypes elems;
+
+			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*columns_ast);
+			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
+			{
+				StringRange range = (*it)->range;
+				elems.push_back(get(String(range.first, range.second - range.first)));
+			}
+
+			return new DataTypeTuple(elems);
 		}
 		
 		throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);

@@ -51,62 +51,6 @@ namespace DB
   */
 
 
-template <typename T>
-static void numWidthVector(const std::vector<T> & a, std::vector<UInt64> & c)
-{
-	size_t size = a.size();
-	for (size_t i = 0; i < size; ++i)
-		if (a[i] >= 0)
-			c[i] = a[i] ? 1 + log10(a[i]) : 1;
-		else if (std::tr1::is_signed<T>::value && a[i] == std::numeric_limits<T>::min())
-			c[i] = 2 + log10(std::numeric_limits<T>::max());
-		else
-			c[i] = 2 + log10(-a[i]);
-}
-
-template <typename T>
-static void numWidthConstant(T a, UInt64 & c)
-{
-	if (a >= 0)
-		c = a ? 1 + log10(a) : 1;
-	else if (std::tr1::is_signed<T>::value && a == std::numeric_limits<T>::min())
-		c = 2 + log10(std::numeric_limits<T>::max());
-	else
-		c = 2 + log10(-a);
-}
-
-inline UInt64 floatWidth(double x)
-{
-	/// Не быстро.
-	unsigned size = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION + 10;
-	char tmp[size];	/// знаки, +0.0e+123\0
-	int res = std::snprintf(tmp, size, "%.*g", WRITE_HELPERS_DEFAULT_FLOAT_PRECISION, x);
-
-	if (res >= static_cast<int>(size) || res <= 0)
-		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-	
-	return res;
-}
-
-template <typename T>
-static void floatWidthVector(const std::vector<T> & a, std::vector<UInt64> & c)
-{
-	size_t size = a.size();
-	for (size_t i = 0; i < size; ++i)
-		c[i] = floatWidth(a[i]);
-}
-
-template <typename T>
-static void floatWidthConstant(T a, UInt64 & c)
-{
-	c = floatWidth(a);
-}
-
-template <> inline void numWidthVector<Float64>(const std::vector<Float64> & a, std::vector<UInt64> & c) { floatWidthVector(a, c); }
-template <> inline void numWidthVector<Float32>(const std::vector<Float32> & a, std::vector<UInt64> & c) { floatWidthVector(a, c); }
-template <> inline void numWidthConstant<Float64>(Float64 a, UInt64 & c) { floatWidthConstant(a, c); }
-template <> inline void numWidthConstant<Float32>(Float32 a, UInt64 & c) { floatWidthConstant(a, c); }
-
 static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
 {
 	UInt64 res = 0;
@@ -120,26 +64,7 @@ static inline UInt64 stringWidth(const UInt8 * pos, const UInt8 * end)
 	return res;
 }
 
-static inline void stringWidthVector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
-{
-	size_t size = offsets.size();
-
-	size_t prev_offset = 0;
-	for (size_t i = 0; i < size; ++i)
-	{
-		res[i] = stringWidth(&data[prev_offset], &data[offsets[i] - 1]);
-		prev_offset = offsets[i];
-	}
-}
-
-static inline void stringWidthFixedVector(const ColumnString::Chars_t & data, size_t n, std::vector<UInt64> & res)
-{
-	size_t size = data.size() / n;
-	for (size_t i = 0; i < size; ++i)
-		res[i] = stringWidth(&data[i * n], &data[(i + 1) * n]);
-}
-
-inline void stringWidthConstant(const String & data, UInt64 & res)
+static inline void stringWidthConstant(const String & data, UInt64 & res)
 {
 	res = stringWidth(reinterpret_cast<const UInt8 *>(data.data()), reinterpret_cast<const UInt8 *>(data.data()) + data.size());
 }
@@ -147,35 +72,6 @@ inline void stringWidthConstant(const String & data, UInt64 & res)
 
 class FunctionVisibleWidth : public IFunction
 {
-private:
-	template <typename T>
-	bool executeConstNumber(Block & block, const ColumnPtr & column, size_t result)
-	{
-		if (const ColumnConst<T> * col = dynamic_cast<const ColumnConst<T> *>(&*column))
-		{
-			UInt64 res = 0;
-			numWidthConstant(col->getData(), res);
-			block.getByPosition(result).column = new ColumnConstUInt64(column->size(), res);
-			return true;
-		}
-		else
-			return false;
-	}
-
-	template <typename T>
-	bool executeNumber(Block & block, const ColumnPtr & column, size_t result)
-	{
-		if (const ColumnVector<T> * col = dynamic_cast<const ColumnVector<T> *>(&*column))
-		{
-			ColumnUInt64 * res = new ColumnUInt64(column->size());
-			numWidthVector(col->getData(), res->getData());
-			block.getByPosition(result).column = res;
-			return true;
-		}
-		else
-			return false;
-	}
-	
 public:
 	/// Получить имя функции.
 	String getName() const
@@ -195,128 +91,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
-	{
-		const ColumnPtr column = block.getByPosition(arguments[0]).column;
-		const DataTypePtr type = block.getByPosition(arguments[0]).type;
-		size_t rows = column->size();
-
-		if (dynamic_cast<const DataTypeDate *>(&*type))
-		{
-			block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00"));
-		}
-		else if (dynamic_cast<const DataTypeDateTime *>(&*type))
-		{
-			block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00 00:00:00"));
-		}
-		else if (executeConstNumber<UInt8>(block, column, result)
-			|| executeConstNumber<UInt16>(block, column, result)
-			|| executeConstNumber<UInt32>(block, column, result)
-			|| executeConstNumber<UInt64>(block, column, result)
-			|| executeConstNumber<Int8>(block, column, result)
-			|| executeConstNumber<Int16>(block, column, result)
-			|| executeConstNumber<Int32>(block, column, result)
-			|| executeConstNumber<Int64>(block, column, result)
-			|| executeConstNumber<Float32>(block, column, result)	/// TODO: правильная работа с float
-			|| executeConstNumber<Float64>(block, column, result)
-			|| executeNumber<UInt8>(block, column, result)
-			|| executeNumber<UInt16>(block, column, result)
-			|| executeNumber<UInt32>(block, column, result)
-			|| executeNumber<UInt64>(block, column, result)
-			|| executeNumber<Int8>(block, column, result)
-			|| executeNumber<Int16>(block, column, result)
-			|| executeNumber<Int32>(block, column, result)
-			|| executeNumber<Int64>(block, column, result)
-			|| executeNumber<Float32>(block, column, result)
-			|| executeNumber<Float64>(block, column, result))
-		{
-		}
-		else if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
-		{
-			ColumnUInt64 * res = new ColumnUInt64(rows);
-			stringWidthVector(col->getChars(), col->getOffsets(), res->getData());
-			block.getByPosition(result).column = res;
-		}
-		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
-		{
-			ColumnUInt64 * res = new ColumnUInt64(rows);
-			stringWidthFixedVector(col->getChars(), col->getN(), res->getData());
-			block.getByPosition(result).column = res;
-		}
-		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
-		{
-			UInt64 res = 0;
-			stringWidthConstant(col->getData(), res);
-			block.getByPosition(result).column = new ColumnConstUInt64(rows, res);
-		}
-		else if (const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*column))
-		{
-			/// Вычисляем видимую ширину для значений массива.
-			Block nested_block;
-			ColumnWithNameAndType nested_values;
-			nested_values.type = dynamic_cast<const DataTypeArray &>(*type).getNestedType();
-			nested_values.column = col->getDataPtr();
-			nested_block.insert(nested_values);
-
-			ColumnWithNameAndType nested_result;
-			nested_result.type = new DataTypeUInt64;
-			nested_block.insert(nested_result);
-
-			ColumnNumbers nested_argument_numbers(1, 0);
-			execute(nested_block, nested_argument_numbers, 1);
-
-			/// Теперь суммируем и кладём в результат.
-			ColumnUInt64 * res = new ColumnUInt64(rows);
-			ColumnUInt64::Container_t & vec = res->getData();
-
-			size_t additional_symbols = 0;	/// Кавычки.
-			if (dynamic_cast<const DataTypeDate *>(&*nested_values.type)
-				|| dynamic_cast<const DataTypeDateTime *>(&*nested_values.type)
-				|| dynamic_cast<const DataTypeString *>(&*nested_values.type)
-				|| dynamic_cast<const DataTypeFixedString *>(&*nested_values.type))
-				additional_symbols = 2;
-
-			if (ColumnUInt64 * nested_result_column = dynamic_cast<ColumnUInt64 *>(&*nested_block.getByPosition(1).column))
-			{
-				ColumnUInt64::Container_t & nested_res = nested_result_column->getData();
-
-				size_t j = 0;
-				for (size_t i = 0; i < rows; ++i)
-				{
-					/** Если пустой массив - то два символа: [];
-					  * если непустой - то сначала один символ [, и по одному лишнему символу на значение: , или ].
-					  */
-					vec[i] = j == col->getOffsets()[i] ? 2 : 1;
-						
-					for (; j < col->getOffsets()[i]; ++j)
-						vec[i] += 1 + additional_symbols + nested_res[j];
-				}
-			}
-			else if (ColumnConstUInt64 * nested_result_column = dynamic_cast<ColumnConstUInt64 *>(&*nested_block.getByPosition(1).column))
-			{
-				size_t nested_length = nested_result_column->getData() + additional_symbols + 1;
-				for (size_t i = 0; i < rows; ++i)
-					vec[i] = 1 + std::max(static_cast<size_t>(1),
-						(i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length);
-			}
-
-			block.getByPosition(result).column = res;
-		}
-		else if (const ColumnConstArray * col = dynamic_cast<const ColumnConstArray *>(&*column))
-		{
-			String s;
-			{
-				WriteBufferFromString wb(s);
-				type->serializeTextEscaped(col->getData(), wb);
-			}
-
-			block.getByPosition(result).column = new ColumnConstUInt64(rows, s.size());
-		}
-		else
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-				+ " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
-	}
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result);
 };
 
 

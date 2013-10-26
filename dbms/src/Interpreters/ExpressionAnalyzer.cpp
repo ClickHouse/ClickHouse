@@ -14,7 +14,6 @@
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeExpression.h>
 #include <DB/DataTypes/DataTypeNested.h>
-#include <DB/Functions/FunctionsMiscellaneous.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnExpression.h>
 

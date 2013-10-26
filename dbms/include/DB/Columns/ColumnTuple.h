@@ -224,6 +224,7 @@ public:
 
 
 	const Block & getData() const { return data; }
+	Block & getData() { return data; }
 };
 
 

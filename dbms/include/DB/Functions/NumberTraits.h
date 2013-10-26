@@ -81,12 +81,12 @@ namespace NumberTraits
 	template <typename Sign, typename Floatness> struct Construct<Sign, Floatness, BitsTooMany> { typedef Error Type; };
 				
 	template <typename T>
-	bool isErrorType()
+	inline bool isErrorType()
 	{
 		return false;
 	}
 	template <>
-	bool isErrorType<Error>()
+	inline bool isErrorType<Error>()
 	{
 		return true;
 	}

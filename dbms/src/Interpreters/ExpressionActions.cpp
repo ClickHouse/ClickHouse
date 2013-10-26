@@ -1,7 +1,9 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Columns/ColumnsNumber.h>
-#include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Functions/IFunction.h>
 #include <set>
 
 namespace DB
