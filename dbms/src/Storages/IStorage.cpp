@@ -168,7 +168,7 @@ void IStorage::alter_columns(const ASTAlterQuery::Parameters & params, NamesAndT
 			NamesAndTypesList::reverse_iterator reverse_insert_it = std::find_if(columns->rbegin(), columns->rend(),  boost::bind(namesEqual, column_name, _1) );
 
 			if (reverse_insert_it == columns->rend())
-				throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
 			else
 			{
 				/// base возвращает итератор уже смещенный на один элемент вправо
@@ -206,7 +206,7 @@ void IStorage::alter_columns(const ASTAlterQuery::Parameters & params, NamesAndT
 			if (column_it == columns->end())
 			{
 				if (is_first)
-					throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+					throw Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
 			}
 			else
 				columns->erase(column_it);

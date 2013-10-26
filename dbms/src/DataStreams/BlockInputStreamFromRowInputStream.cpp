@@ -48,9 +48,10 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 				res.getByPosition(i).column->insert(row[i]);
 		}
 	}
-	catch (const DB::Exception & e)
+	catch (Exception & e)
 	{
-		throw DB::Exception(e.message() + " (at row " + toString(total_rows + 1) + ")", e, e.code());
+		e.addMessage("(at row " + toString(total_rows + 1) + ")");
+		throw;
 	}
 	
 	res.optimizeNestedArraysOffsets();

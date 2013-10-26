@@ -43,7 +43,7 @@ void TCPHandler::runImpl()
 	{
 		receiveHello();
 	}
-	catch (const DB::Exception & e)	/// Типично при неправильном имени пользователя, пароле, адресе.
+	catch (const Exception & e)	/// Типично при неправильном имени пользователя, пароле, адресе.
 	{
 		try
 		{
@@ -61,7 +61,7 @@ void TCPHandler::runImpl()
 		if (!connection_context.isDatabaseExist(default_database))
 		{
 			Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
+			LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
 				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 			sendException(e);
 			return;
@@ -90,7 +90,7 @@ void TCPHandler::runImpl()
 		/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
 		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета и клиент ещё не разорвал соединение.
 		  */
-		SharedPtr<DB::Exception> exception;
+		SharedPtr<Exception> exception;
 		
 		try
 		{
@@ -118,9 +118,9 @@ void TCPHandler::runImpl()
 
 			state.reset();
 		}
-		catch (const DB::Exception & e)
+		catch (const Exception & e)
 		{
-			LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
+			LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 			exception = e.clone();
 
@@ -621,9 +621,9 @@ void TCPHandler::run()
 
 		LOG_INFO(log, "Done processing connection.");
 	}
-	catch (DB::Exception & e)
+	catch (Exception & e)
 	{
-		LOG_ERROR(log, "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText()
+		LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
 			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 	}
 	catch (Poco::Exception & e)

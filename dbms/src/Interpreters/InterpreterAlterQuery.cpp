@@ -69,7 +69,7 @@ void InterpreterAlterQuery::execute()
 
 			/// Проверяем, что колонка еще не существует
 			if (std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, name_type.name, _1)) != columns_copy.end())
-				throw DB::Exception("Wrong column name. Column already exists", DB::ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception("Wrong column name. Column already exists", DB::ErrorCodes::ILLEGAL_COLUMN);
 
 			/// Проверяем опциональный аргумент AFTER
 			ASTs::iterator insert_it = columns_copy.end();
@@ -78,7 +78,7 @@ void InterpreterAlterQuery::execute()
 				const ASTIdentifier & col_after = dynamic_cast<const ASTIdentifier &>(*params.column);
 				insert_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, col_after.name, _1)) ;
 				if (insert_it == columns_copy.end())
-					throw DB::Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
+					throw Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
 			}
 			columns_copy.insert(insert_it, params.name_type);
 		}
@@ -88,11 +88,11 @@ void InterpreterAlterQuery::execute()
 
 			/// Проверяем, что поле не является ключевым
 			if (identifier_names.find(drop_column.name) != identifier_names.end())
-				throw DB::Exception("Cannot drop key column", DB::ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception("Cannot drop key column", DB::ErrorCodes::ILLEGAL_COLUMN);
 
 			ASTs::iterator drop_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, drop_column.name, _1));
 			if (drop_it == columns_copy.end())
-				throw DB::Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception("Wrong column name. Cannot find column to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
 			else
 				columns_copy.erase(drop_it);
 		}

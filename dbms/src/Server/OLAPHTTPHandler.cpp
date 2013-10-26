@@ -103,7 +103,7 @@ namespace DB
 			processQuery(request, response);
 			LOG_INFO(log, "Done processing query");
 		}
-		catch (DB::Exception & e)
+		catch (Exception & e)
 		{
 			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 			std::stringstream s;

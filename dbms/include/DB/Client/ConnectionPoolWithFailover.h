@@ -54,12 +54,12 @@ public:
 					res->forceConnected();
 					return res;
 				}
-			    catch (const DB::Exception & e)
+			    catch (const Exception & e)
 				{
 					if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT)
 						throw;
 
-					fail_message << "DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+					fail_message << "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
 				}
 
 				LOG_WARNING(log, "Connection failed at try №"
@@ -71,7 +71,7 @@ public:
 			}
 		}
 
-		throw DB::Exception("All connection tries failed. Log: \n\n" + fail_messages.str() + "\n",
+		throw Exception("All connection tries failed. Log: \n\n" + fail_messages.str() + "\n",
 			ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 	}
 

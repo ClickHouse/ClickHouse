@@ -28,6 +28,9 @@ public:
 	Exception * clone() const;
 	void rethrow() const;
 
+	/// Дописать к существующему сообщению что-нибудь ещё.
+	void addMessage(const std::string & arg);
+
 	const StackTrace & getStackTrace() const { return trace; }
 
 private:

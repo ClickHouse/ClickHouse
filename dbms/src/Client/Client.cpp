@@ -213,7 +213,7 @@ private:
 		{
 			return mainImpl(args);
 		}
-		catch (const DB::Exception & e)
+		catch (const Exception & e)
 		{
 			std::string text = e.displayText();
 			
@@ -399,7 +399,7 @@ private:
 					if (!process(query))
 						break;
 				}
-				catch (const DB::Exception & e)
+				catch (const Exception & e)
 				{
 					std::cerr << std::endl
 						<< "Exception on client:" << std::endl

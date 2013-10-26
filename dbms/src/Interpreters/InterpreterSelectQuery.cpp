@@ -471,6 +471,8 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
+	/// TODO: Оптимизация для случая, когда есть LIMIT, но нет HAVING и ORDER BY.
+
 	bool separate_totals = to_stage > QueryProcessingStage::WithMergeableState;
 	
 	/// Если источников несколько, то выполняем параллельную агрегацию

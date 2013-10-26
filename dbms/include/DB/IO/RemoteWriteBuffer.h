@@ -126,7 +126,7 @@ public:
 		{
 			impl->next();
 		}
-		catch (const DB::Exception & e)
+		catch (const Exception & e)
 		{
 			if (e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
 				checkStatus();	/// Меняем сообщение об ошибке на более ясное.

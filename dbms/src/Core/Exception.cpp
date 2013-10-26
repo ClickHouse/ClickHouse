@@ -44,6 +44,11 @@ void Exception::rethrow() const
 	throw *this;
 }
 
+void Exception::addMessage(const std::string & arg)
+{
+	extendedMessage(arg);
+}
+
 
 void throwFromErrno(const std::string & s, int code, int e)
 {

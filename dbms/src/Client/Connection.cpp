@@ -268,47 +268,58 @@ bool Connection::poll(size_t timeout_microseconds)
 Connection::Packet Connection::receivePacket()
 {
 	//LOG_TRACE(log, "Receiving packet (" << getServerAddress() << ")");
-	
-	Packet res;
-	readVarUInt(res.type, *in);
 
-	switch (res.type)
+	try
 	{
-		case Protocol::Server::Data:
-			res.block = receiveData();
-			return res;
+		Packet res;
+		readVarUInt(res.type, *in);
 
-		case Protocol::Server::Exception:
-			res.exception = receiveException();
-			return res;
+		switch (res.type)
+		{
+			case Protocol::Server::Data:
+				res.block = receiveData();
+				return res;
 
-		case Protocol::Server::Progress:
-			res.progress = receiveProgress();
-			return res;
-			
-		case Protocol::Server::ProfileInfo:
-			res.profile_info = receiveProfileInfo();
-			return res;
+			case Protocol::Server::Exception:
+				res.exception = receiveException();
+				return res;
 
-		case Protocol::Server::Totals:
-			/// Блок с тотальными значениями передаётся так же, как обычный блок данных. Разница только в идентификаторе пакета.
-			res.block = receiveData();
-			return res;
+			case Protocol::Server::Progress:
+				res.progress = receiveProgress();
+				return res;
 
-		case Protocol::Server::Extremes:
-			/// Аналогично.
-			res.block = receiveData();
-			return res;
+			case Protocol::Server::ProfileInfo:
+				res.profile_info = receiveProfileInfo();
+				return res;
 
-		case Protocol::Server::EndOfStream:
-			return res;
+			case Protocol::Server::Totals:
+				/// Блок с тотальными значениями передаётся так же, как обычный блок данных. Разница только в идентификаторе пакета.
+				res.block = receiveData();
+				return res;
 
-		default:
-			/// Закроем соединение, чтобы не было рассинхронизации.
-			disconnect();
-			throw Exception("Unknown packet "
-				+ toString(res.type)
-				+ " from server " + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+			case Protocol::Server::Extremes:
+				/// Аналогично.
+				res.block = receiveData();
+				return res;
+
+			case Protocol::Server::EndOfStream:
+				return res;
+
+			default:
+				/// Закроем соединение, чтобы не было рассинхронизации.
+				disconnect();
+				throw Exception("Unknown packet "
+					+ toString(res.type)
+					+ " from server " + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+		}
+	}
+	catch (Exception & e)
+	{
+		/// Дописываем в текст исключения адрес сервера, если надо.
+		if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+			e.addMessage("while receiving packet from " + getServerAddress());
+
+		throw;
 	}
 }
 

@@ -172,9 +172,9 @@ void StorageChunkMerger::mergeThread()
 			merged = maybeMergeSomething();
 			error = false;
 		}
-		catch (const DB::Exception & e)
+		catch (const Exception & e)
 		{
-			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: DB::Exception. Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
+			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 		}
 		catch (const Poco::Exception & e)
@@ -351,7 +351,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			
 			/// Распарсенный запрос должен заканчиваться на конец входных данных.
 			if (!parse_res || pos != end)
-				throw DB::Exception("Syntax error while parsing create query made by ChunkMerger."
+				throw Exception("Syntax error while parsing create query made by ChunkMerger."
 					" The query is \"" + create_query + "\"."
 					+ " Failed at position " + toString(pos - begin) + ": "
 					+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))

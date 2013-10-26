@@ -49,7 +49,7 @@ void StorageChunkRef::dropImpl()
 	{
 		getSource().removeReference();
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		if (e.code() != ErrorCodes::UNKNOWN_TABLE)
 			throw;

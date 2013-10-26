@@ -125,7 +125,7 @@ void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
 		{
 			++buf.position();
 			if (buf.eof())
-				throw DB::Exception("Cannot parse escape sequence", DB::ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+				throw Exception("Cannot parse escape sequence", DB::ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 			s += DB::parseEscapeSequence(*buf.position());
 			++buf.position();
 		}
