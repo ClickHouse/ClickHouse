@@ -59,7 +59,7 @@ void Query::executeImpl()
 {
 	std::string query_string = query_buf.str();
 	if (mysql_real_query(conn->getDriver(), query_string.data(), query_string.size()))
-		throw BadQuery(mysql_error(conn->getDriver()), mysql_errno(conn->getDriver()));
+		throw BadQuery(errorMessage(conn->getDriver()), mysql_errno(conn->getDriver()));
 }
 
 UseQueryResult Query::use()

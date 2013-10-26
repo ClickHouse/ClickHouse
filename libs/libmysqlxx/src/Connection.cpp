@@ -48,30 +48,30 @@ void Connection::connect(const char* db,
 	LibrarySingleton::instance();
 
 	if (!mysql_init(&driver))
-		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	/// Установим таймауты
 	if (mysql_options(&driver, MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<const char *>(&timeout)))
-		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	if (mysql_options(&driver, MYSQL_OPT_READ_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
-		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	if (mysql_options(&driver, MYSQL_OPT_WRITE_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
-		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	/** Включаем возможность использовать запрос LOAD DATA LOCAL INFILE с серверами,
 	  *  которые были скомпилированы без опции --enable-local-infile.
 	  */
 	if (mysql_options(&driver, MYSQL_OPT_LOCAL_INFILE, NULL))
-		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	if (!mysql_real_connect(&driver, server, user, password, db, port, NULL, driver.client_flag))
-		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	/// Установим кодировки по-умолчанию - UTF-8.
 	if (mysql_set_character_set(&driver, "UTF8"))
-		throw ConnectionFailed(mysql_error(&driver), mysql_errno(&driver));
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	is_connected = true;
 }
