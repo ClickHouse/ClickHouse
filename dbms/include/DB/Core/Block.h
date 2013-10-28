@@ -50,6 +50,8 @@ public:
 	void erase(size_t position);
 	/// удалить столбец с заданным именем
 	void erase(const String & name);
+	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
+	void addDefaults(NamesAndTypesListPtr required_columns);
 
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;

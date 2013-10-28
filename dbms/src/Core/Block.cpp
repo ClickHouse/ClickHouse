@@ -19,6 +19,21 @@ Block::Block(const Block & other)
 }
 
 
+void Block::addDefaults(NamesAndTypesListPtr required_columns) {
+	for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
+	{
+		if (!this->has(it->first))
+		{
+			ColumnWithNameAndType col;
+			col.name = it->first;
+			col.type = it->second;
+			col.column = dynamic_cast<IColumnConst &>(*it->second->createConstColumn(
+				this->rows(), it->second->getDefault())).convertToFullColumn();
+			this->insert(col);
+		}
+	}
+}
+
 Block & Block::operator= (const Block & other)
 {
 	data = other.data;

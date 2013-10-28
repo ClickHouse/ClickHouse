@@ -28,19 +28,7 @@ public:
 
 	void write(const Block & block) {
 		Block res = block;
-		for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
-		{
-			if (!res.has(it->first))
-			{
-				ColumnWithNameAndType col;
-				col.name = it->first;
-				col.type = it->second;
-				col.column = dynamic_cast<IColumnConst &>(*it->second->createConstColumn(
-					res.rows(), it->second->getDefault())).convertToFullColumn();
-				res.insert(col);
-			}
-		}
-		output->write(res);
+		res.addDefaults(required_columns);
 	}
 
 private:

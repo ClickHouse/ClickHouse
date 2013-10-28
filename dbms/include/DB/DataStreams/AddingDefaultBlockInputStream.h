@@ -45,20 +45,7 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
-
-		for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
-		{
-			if (!res.has(it->first))
-			{
-				ColumnWithNameAndType col;
-				col.name = it->first;
-				col.type = it->second;
-				col.column = dynamic_cast<IColumnConst &>(*it->second->createConstColumn(
-					res.rows(), it->second->getDefault())).convertToFullColumn();
-				res.insert(col);
-			}
-		}
-
+		res.addDefaults(required_columns);
 		return res;
 	}
 
