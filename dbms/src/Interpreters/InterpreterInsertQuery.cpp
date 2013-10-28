@@ -32,16 +32,11 @@ StoragePtr InterpreterInsertQuery::getTable()
 Block InterpreterInsertQuery::getSampleBlock()
 {
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
-	Block dbSample = getTable()->getSampleBlock();
+	Block db_sample = getTable()->getSampleBlock();
 
 	/// Если в запросе не указана информация о столбцах
 	if (!query.columns)
-		return dbSample;
-
-
-	/// Строим мап из имени столбца в его тип
-	const NamesAndTypesList & names_and_types = dbSample.getColumnsList();
-	std::map<std::string, DataTypePtr> nameToType(names_and_types.begin(), names_and_types.end());
+		return db_sample;
 
 	/// Формируем блок, основываясь на именах столбцов из запроса
 	Block res;
@@ -50,12 +45,12 @@ Block InterpreterInsertQuery::getSampleBlock()
 		std::string currentName = (*it)->getColumnName();
 
 		/// В таблице нет столбца с таким именем
-		if (nameToType.count(currentName) == 0)
+		if (!db_sample.has(currentName))
 			throw Exception("No such column in table: " + currentName, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
 		ColumnWithNameAndType col;
 		col.name = currentName;
-		col.type = nameToType[col.name];
+		col.type = db_sample.getByName(col.name).type;
 		col.column = col.type->createColumn();
 		res.insert(col);
 	}
@@ -69,8 +64,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	StoragePtr table = getTable();
 	
 	BlockInputStreamPtr in;
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
-	*required_columns = table->getSampleBlock().getColumnsList();
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList (table->getSampleBlock().getColumnsList());
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
@@ -119,8 +113,7 @@ BlockOutputStreamPtr InterpreterInsertQuery::execute()
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
 
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
-	*required_columns = table->getSampleBlock().getColumnsList();
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT или INSERT SELECT?
