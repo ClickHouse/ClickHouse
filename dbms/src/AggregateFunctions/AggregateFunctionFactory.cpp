@@ -278,10 +278,9 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 	else if (recursion_level == 0 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
 	{
 		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), DataTypes(1, argument_types[0]), 1);
+		DataTypes nested_dt = argument_types;
+		nested_dt.pop_back();
+		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), nested_dt);
 		return new AggregateFunctionIf(nested);
 	}
 	else

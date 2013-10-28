@@ -19,6 +19,7 @@ class AggregateFunctionIf : public IAggregateFunction
 private:
 	AggregateFunctionPtr nested_func_owner;
 	IAggregateFunction * nested_func;
+	int num_agruments;
 public:
 	AggregateFunctionIf(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
 	
@@ -34,15 +35,15 @@ public:
 
 	void setArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 2)
-			throw Exception("Aggregate function " + getName() + " requires exactly two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		if (!dynamic_cast<const DataTypeUInt8 *>(&*arguments[1]))
-			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument for aggregate function " + getName() + ". Must be UInt8.",
+		num_agruments = arguments.size();
+
+		if (!dynamic_cast<const DataTypeUInt8 *>(&*arguments[num_agruments - 1]))
+			throw Exception("Illegal type " + arguments[num_agruments - 1]->getName() + " of second argument for aggregate function " + getName() + ". Must be UInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		DataTypes nested_arguments;
-		nested_arguments.push_back(arguments[0]);
+		for (int i = 0; i < num_agruments - 1; i ++)
+			nested_arguments.push_back(arguments[i]);
 		nested_func->setArguments(nested_arguments);
 	}
 
@@ -73,7 +74,7 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		if (static_cast<const ColumnUInt8 &>(*columns[1]).getData()[row_num])
+		if (static_cast<const ColumnUInt8 &>(*columns[num_agruments - 1]).getData()[row_num])
 			nested_func->add(place, columns, row_num);
 	}
 
