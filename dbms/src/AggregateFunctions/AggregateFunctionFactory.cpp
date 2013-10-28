@@ -4,7 +4,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionAny.h>
 #include <DB/AggregateFunctions/AggregateFunctionAnyLast.h>
 #include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
-#include <DB/AggregateFunctions/AggregateFunctionsAgrMinMax.h>
+#include <DB/AggregateFunctions/AggregateFunctionsArgMinMax.h>
 #include <DB/AggregateFunctions/AggregateFunctionUniq.h>
 #include <DB/AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionGroupUniqArray.h>
@@ -78,10 +78,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		return new AggregateFunctionMin;
 	else if (name == "max")
 		return new AggregateFunctionMax;
-	else if (name == "agrMin")
-		return new AggregateFunctionAgrMin;
-	else if (name == "agrMax")
-		return new AggregateFunctionAgrMax;
+	else if (name == "argMin")
+		return new AggregateFunctionArgMin;
+	else if (name == "argMax")
+		return new AggregateFunctionArgMax;
 	else if (name == "groupArray")
 		return new AggregateFunctionGroupArray;
 	else if (name == "groupUniqArray")
@@ -306,8 +306,8 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 		"anyLast",
 		"min",
 		"max",
-		"agrMin",
-		"agrMax",
+		"argMin",
+		"argMax",
 		"sum",
 		"avg",
 		"uniq",

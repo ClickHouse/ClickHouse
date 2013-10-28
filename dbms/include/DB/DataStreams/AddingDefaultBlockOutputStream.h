@@ -48,4 +48,5 @@ private:
 	NamesAndTypesListPtr required_columns;
 };
 
+
 }

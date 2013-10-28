@@ -9,41 +9,39 @@
 namespace DB
 {
 
-struct AggregateFunctionAgrMinTraits
+
+struct AggregateFunctionArgMinTraits
 {
 	static bool better(const Field & lhs, const Field & rhs) { return lhs < rhs; }
-	static String name() { return "agrMin"; }
+	static String name() { return "argMin"; }
 };
 
-struct AggregateFunctionAgrMaxTraits
+struct AggregateFunctionArgMaxTraits
 {
 	static bool better(const Field & lhs, const Field & rhs) { return lhs > rhs; }
-	static String name() { return "agrMax"; }
+	static String name() { return "argMax"; }
 };
 
-
-struct AggregateFunctionsAgrMinMaxData
+struct AggregateFunctionsArgMinMaxData
 {
 	Field value;
 	Field result;
 };
 
-
 /// Возвращает первое попавшееся значение arg для минимального/максимального value
 template <typename Traits>
-class AggregateFunctionsAgrMinMax : public IAggregateFunctionHelper<AggregateFunctionsAgrMinMaxData>
+class AggregateFunctionsArgMinMax : public IAggregateFunctionHelper<AggregateFunctionsArgMinMaxData>
 {
 private:
-	DataTypePtr typeRes;
-	DataTypePtr typeVal;
+	DataTypePtr type_res;
+	DataTypePtr type_val;
 
 public:
-
 	String getName() const { return Traits::name(); }
 
 	DataTypePtr getReturnType() const
 	{
-		return typeRes;
+		return type_res;
 	}
 
 	void setArguments(const DataTypes & arguments)
@@ -51,8 +49,8 @@ public:
 		if (arguments.size() != 2)
 			throw Exception("Aggregate function " + getName() + " requires exactly two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		typeRes = arguments[0];
-		typeVal = arguments[1];
+		type_res = arguments[0];
+		type_val = arguments[1];
 	}
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
@@ -64,7 +62,8 @@ public:
 
 		if (!d.value.isNull())
 		{
-			if (Traits::better(value, d.value)) {
+			if (Traits::better(value, d.value))
+			{
 				d.value = value;
 				d.result = result;
 			}
@@ -74,7 +73,6 @@ public:
 		}
 	}
 
-
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
 		Data & d = data(place);
@@ -82,7 +80,8 @@ public:
 
 		if (!d.value.isNull())
 		{
-			if (Traits::better(d_rhs.value, d.value)){
+			if (Traits::better(d_rhs.value, d.value))
+			{
 				d.value = d_rhs.value;
 				d.result = d_rhs.result;
 			}
@@ -92,11 +91,10 @@ public:
 		}
 	}
 
-
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		typeVal->serializeBinary(data(place).value, buf);
-		typeRes->serializeBinary(data(place).result, buf);
+		type_val->serializeBinary(data(place).value, buf);
+		type_res->serializeBinary(data(place).result, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
@@ -106,15 +104,16 @@ public:
 		if (!d.value.isNull())
 		{
 			Field value_, result_;
-			typeRes->deserializeBinary(result_, buf);
-			typeVal->deserializeBinary(value_, buf);
-			if (Traits::better(value_, d.value)) {
+			type_res->deserializeBinary(result_, buf);
+			type_val->deserializeBinary(value_, buf);
+			if (Traits::better(value_, d.value))
+			{
 				d.value = value_;
 				d.result = result_;
 			}
 		} else {
-			typeRes->deserializeBinary(d.result, buf);
-			typeVal->deserializeBinary(d.value, buf);
+			type_res->deserializeBinary(d.result, buf);
+			type_val->deserializeBinary(d.value, buf);
 		}
 	}
 
@@ -127,8 +126,8 @@ public:
 	}
 };
 
+typedef AggregateFunctionsArgMinMax<AggregateFunctionArgMinTraits> AggregateFunctionArgMin;
+typedef AggregateFunctionsArgMinMax<AggregateFunctionArgMaxTraits> AggregateFunctionArgMax;
 
-typedef AggregateFunctionsAgrMinMax<AggregateFunctionAgrMinTraits> AggregateFunctionAgrMin;
-typedef AggregateFunctionsAgrMinMax<AggregateFunctionAgrMaxTraits> AggregateFunctionAgrMax;
 
 }
