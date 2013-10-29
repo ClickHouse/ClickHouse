@@ -121,6 +121,13 @@ public:
 			incrementRefCount();
 		}
 
+		std::string getDescription() const
+		{
+			if (pool)
+				return pool->getDescription();
+			else
+				return "pool is null";
+		}
 		friend class Pool;
 
 	private:
@@ -182,6 +189,7 @@ public:
 		}
 	};
 
+
 	/**
 	 * @param config_name			Имя параметра в конфигурационном файле
 	 * @param default_connections_	Количество подключений по-умолчанию
@@ -190,8 +198,7 @@ public:
 	Pool(const std::string & config_name,
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
 		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-		 const std::string & user_default = "", const std::string & password_default = "",
-		 const std::string & db_default = "", int port_default = 0)
+		 const char * parent_config_name_ = NULL)
 		: default_connections(default_connections_), max_connections(max_connections_),
 		initialized(false), was_successful(false)
 	{
@@ -199,19 +206,24 @@ public:
 
 		server 		= cfg.getString(config_name + ".host");
 
-		db 			= cfg.getString(config_name + ".db", db_default);
-		if (!user_default.empty())
-			user 		= cfg.getString(config_name + ".user", user_default);
+		if (parent_config_name_)
+		{
+			const std::string parent_config_name(parent_config_name_);
+			db 		= cfg.getString(config_name + ".db", cfg.getString(parent_config_name + ".db", ""));
+			user 	= cfg.has(config_name + ".user") ?
+					cfg.getString(config_name + ".user") : cfg.getString(parent_config_name + ".user");
+			password = cfg.has(config_name + ".password") ?
+					cfg.getString(config_name + ".password") : cfg.getString(parent_config_name + ".password");
+			port = cfg.has(config_name + ".port") ? cfg.getInt(config_name + ".port") :
+					cfg.getInt(parent_config_name + ".port");
+		}
 		else
-			user 		= cfg.getString(config_name + ".user");
-		if (!password_default.empty())
-			password	= cfg.getString(config_name + ".password", password_default);
-		else
-			password	= cfg.getString(config_name + ".password");
-		if (port_default)
-			port		= cfg.getInt(config_name + ".port", port_default);
-		else
-			port		= cfg.getInt(config_name + ".port");
+		{
+			db 		= cfg.getString(config_name + ".db", "");
+			user 	= cfg.getString(config_name + ".user");
+			password =  cfg.getString(config_name + ".password");
+			port = cfg.getInt(config_name + ".port");
+		}
 
 		connect_timeout = cfg.getInt(config_name + ".connect_timeout",
 				cfg.getInt("mysql_connect_timeout",

@@ -11,20 +11,6 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, unsigned def
 	
 	if (cfg.has(config_name + ".replica"))
 	{
-		int port_g = 0;
-		std::string user_g;
-		std::string password_g;
-		std::string db_g;
-		
-		if (cfg.has(config_name + ".user"))
-			user_g = cfg.getString(config_name + ".user");
-		if (cfg.has(config_name + ".password"))
-			password_g = cfg.getString(config_name + ".password");
-		if (cfg.has(config_name + ".db"))
-			db_g= cfg.getString(config_name + ".db");
-		if (cfg.has(config_name + ".port"))
-			port_g = cfg.getInt(config_name + ".port");
-		
 		Poco::Util::AbstractConfiguration::Keys replica_keys;
 		cfg.keys(config_name, replica_keys);
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = replica_keys.begin(); it != replica_keys.end(); ++it)
@@ -34,7 +20,7 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, unsigned def
 				if (it->size() < std::string("replica").size() || it->substr(0, std::string("replica").size()) != "replica")
 					throw Poco::Exception("Unknown element in config: " + *it + ", expected replica");
 				std::string replica_name = config_name + "." + *it;
-				Replica replica(new Pool(replica_name, default_connections, max_connections, user_g, password_g, db_g, port_g),
+				Replica replica(new Pool(replica_name, default_connections, max_connections, config_name.c_str()),
 								cfg.getInt(replica_name + ".priority", 0));
 				replicas_by_priority[replica.priority].push_back(replica);
 			}
