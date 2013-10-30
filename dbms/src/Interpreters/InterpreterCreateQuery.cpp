@@ -76,6 +76,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 	StoragePtr res;
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
+	String storage_name;
 
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
@@ -93,7 +94,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		if (!create.as_table.empty())
 			context.assertTableExists(as_database_name, as_table_name);
 
-		if (create.select)
+		if (create.select && !create.attach)
 			interpreter_select = new InterpreterSelectQuery(create.select, context);
 
 		NamesAndTypesListPtr columns = new NamesAndTypesList;
@@ -153,15 +154,13 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 		/// Выбор нужного движка таблицы
 
-		String storage_name;
 		if (create.storage)
 			storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
 		else if (!create.as_table.empty())
 		{
 			storage_name = context.getTable(as_database_name, as_table_name)->getName();
 			create.storage = dynamic_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
-		}
-		else
+		} else
 			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
 		res = context.getStorageFactory().get(
@@ -191,7 +190,9 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				attach.as_database.clear();
 				attach.as_table.clear();
 				attach.if_not_exists = false;
-				attach.select = NULL;
+				/// Для engine VIEW необходимо сохранить сам селект запрос, для остальных - наоборот
+				if (storage_name != "VIEW")
+					attach.select = NULL;
 
 				Poco::FileOutputStream metadata_file(metadata_path);
 				formatAST(attach, metadata_file, 0, false);
@@ -203,7 +204,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	}
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
-	if (create.select)
+	if (create.select && storage_name != "VIEW")
 	{
 		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
 		copyData(*from, *res->write(query_ptr));

@@ -179,6 +179,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_exists("EXISTS", true, true);
 	ParserString s_as("AS", true, true);
 	ParserString s_select("SELECT", true, true);
+	ParserString s_view("VIEW", true, true);
+	ParserString s_materialized("MATERIALIZED", true, true);
 	ParserEngine engine_p;
 	ParserIdentifier name_p;
 	ParserNameTypePairList columns_p;
@@ -187,11 +189,14 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ASTPtr table;
 	ASTPtr columns;
 	ASTPtr storage;
+	ASTPtr inner_storage;
 	ASTPtr as_database;
 	ASTPtr as_table;
 	ASTPtr select;
 	bool attach = false;
 	bool if_not_exists = false;
+	bool materialized = false;
+	bool view = false;
 
 	ws.ignore(pos, end);
 
@@ -220,11 +225,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		if (!name_p.parse(pos, end, database, expected))
 			return false;
 	}
-	else
+	else if (s_table.ignore(pos, end, expected))
 	{
-		if (!s_table.ignore(pos, end, expected))
-			return false;
-
 		ws.ignore(pos, end);
 
 		if (s_if.ignore(pos, end, expected)
@@ -266,6 +268,20 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 
 			if (!engine_p.parse(pos, end, storage, expected))
 				return false;
+
+			/// Для engine VIEW необходимо так же считать запрос AS SELECT
+			if (dynamic_cast<ASTFunction &>(*storage).name == "VIEW")
+			{
+				if (!s_as.ignore(pos, end, expected))
+					return false;
+				ws.ignore(pos, end);
+				Pos before_select = pos;
+				if (!s_select.ignore(pos, end, expected))
+					return false;
+				pos = before_select;
+				ParserSelectQuery select_p;
+				select_p.parse(pos, end, select, expected);
+			}
 		}
 		else
 		{
@@ -307,6 +323,55 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 				engine_p.parse(pos, end, storage, expected);
 			}
 		}
+	} else {
+		/// VIEW or MATERIALIZED VIEW
+		Pos before = pos;
+		if (s_materialized.ignore(pos, end, expected))
+		{
+			materialized = true;
+			pos = before;
+			ParserIdentifierWithOptionalParameters storage_p;
+			storage_p.parse(pos, end, storage, expected);
+			ws.ignore(pos, end, expected);
+			if (!s_view.ignore(pos, end, expected))
+				return false;
+		} else {
+			if (!s_view.ignore(pos, end, expected))
+				return false;
+			view = true;
+			pos = before;
+			ParserIdentifierWithOptionalParameters storage_p;
+			storage_p.parse(pos, end, storage, expected);
+		}
+		ws.ignore(pos, end);
+
+		if (!name_p.parse(pos, end, table, expected))
+			return false;
+
+		ws.ignore(pos, end);
+
+		if (s_dot.ignore(pos, end, expected))
+		{
+			database = table;
+			if (!name_p.parse(pos, end, table, expected))
+				return false;
+
+			ws.ignore(pos, end);
+		}
+
+		/// Опционально - может быть указана внутренняя ENGINE для MATERIALIZED VIEW
+		engine_p.parse(pos, end, inner_storage, expected);
+
+		/// AS SELECT ...
+		if (!s_as.ignore(pos, end, expected))
+			return false;
+		ws.ignore(pos, end);
+		Pos before_select = pos;
+		if (!s_select.ignore(pos, end, expected))
+			return false;
+		pos = before_select;
+		ParserSelectQuery select_p;
+		select_p.parse(pos, end, select, expected);
 	}
 
 	ws.ignore(pos, end);
@@ -320,6 +385,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
 	if (table)
 		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+	if (inner_storage)
+		query->inner_storage = inner_storage;
+
 	query->columns = columns;
 	query->storage = storage;
 	if (as_database)

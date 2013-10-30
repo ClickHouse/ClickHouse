@@ -19,6 +19,7 @@ public:
 	String table;
 	ASTPtr columns;
 	ASTPtr storage;
+	ASTPtr inner_storage;	/// Внутренний engine для запроса CREATE MATERIALIZED VIEW
 	String as_database;
 	String as_table;
 	ASTPtr select;
