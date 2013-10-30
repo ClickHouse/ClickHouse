@@ -19,7 +19,8 @@ Block::Block(const Block & other)
 }
 
 
-void Block::addDefaults(NamesAndTypesListPtr required_columns) {
+void Block::addDefaults(NamesAndTypesListPtr required_columns)
+{
 	for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
 	{
 		if (!this->has(it->first))
