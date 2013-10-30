@@ -14,7 +14,8 @@ namespace DB
   *  и не более одиной строки со значением столбца sign_column = 1 ("положительной строки").
   * То есть - производит схлопывание записей из лога изменений.
   *
-  * Если количество положительных и отрицательных строк совпадает - то пишет первую отрицательную и последнюю положительную строку.
+  * Если количество положительных и отрицательных строк совпадает, и последняя строка положительная - то пишет первую отрицательную и последнюю положительную строку.
+  * Если количество положительных и отрицательных строк совпадает, и последняя строка отрицательная - то ничего не пишет.
   * Если положительных на 1 больше, чем отрицательных - то пишет только последнюю положительную строку.
   * Если отрицательных на 1 больше, чем положительных - то пишет только первую отрицательную строку.
   * Иначе - логическая ошибка.
@@ -27,7 +28,7 @@ public:
 		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
 		sign_column(sign_column_), sign_column_number(0),
 		log(&Logger::get("CollapsingSortedBlockInputStream")),
-		count_positive(0), count_negative(0), count_incorrect_data(0)
+		count_positive(0), count_negative(0), count_incorrect_data(0), blocks_written(0)
 	{
 	}
 
@@ -65,11 +66,15 @@ private:
 	
 	Row first_negative;		/// Первая отрицательная строка для текущего первичного ключа.
 	Row last_positive;		/// Последняя положительная строка для текущего первичного ключа.
+	Row last_negative;		/// Последняя отрицательная. Сорраняется только если ни одной строки в ответ еще не выписано.
 
 	size_t count_positive;	/// Количество положительных строк для текущего первичного ключа.
 	size_t count_negative;	/// Количество отрицательных строк для текущего первичного ключа.
+	bool last_is_positive;  /// true, если последняя строка для текущего первичного ключа положительная.
 
 	size_t count_incorrect_data;	/// Чтобы не писать в лог слишком много сообщений об ошибке.
+
+	size_t blocks_written;
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
@@ -78,7 +83,7 @@ private:
 	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
 	/// Вставить в результат строки для текущего идентификатора "визита".
-	void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows);
+	void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream = false);
 
 	void reportIncorrectData();
 };

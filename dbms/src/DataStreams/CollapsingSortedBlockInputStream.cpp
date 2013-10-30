@@ -32,10 +32,25 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 }
 
 
-void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows)
+void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream)
 {
 	if (count_positive != 0 || count_negative != 0)
 	{
+		if (count_positive == count_negative && !last_is_positive)
+		{
+			/// Если все строки во входных потоках схлопнулись, мы все равно хотим выдать хоть один блок в результат.
+			if (last_in_stream && merged_rows == 0 && !blocks_written)
+			{
+				++merged_rows;
+				for (size_t i = 0; i < num_columns; ++i)
+					merged_columns[i]->insert(last_positive[i]);
+				++merged_rows;
+				for (size_t i = 0; i < num_columns; ++i)
+					merged_columns[i]->insert(last_negative[i]);
+			}
+			return;
+		}
+
 		if (count_positive <= count_negative)
 		{
 			++merged_rows;
@@ -79,6 +94,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
 	if (first_negative.empty())
 	{
 		first_negative.resize(num_columns);
+		last_negative.resize(num_columns);
 		last_positive.resize(num_columns);
 		current_key.resize(description.size());
 		next_key.resize(description.size());
@@ -123,6 +139,7 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 		if (sign == 1)
 		{
 			++count_positive;
+			last_is_positive = true;
 
 			setRow(last_positive, current);
 		}
@@ -130,8 +147,11 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 		{
 			if (!count_negative)
 				setRow(first_negative, current);
+			if (!blocks_written && !merged_rows)
+				setRow(last_negative, current);
 			
 			++count_negative;
+			last_is_positive = false;
 		}
 		else
 			throw Exception("Incorrect data: Sign = " + toString(sign) + " (must be 1 or -1).",
@@ -149,11 +169,14 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 		}
 
 		if (merged_rows >= max_block_size)
-			return;;
+		{
+			++blocks_written;
+			return;
+		}
 	}
 
 	/// Запишем данные для последнего визита.
-	insertRows(merged_columns, merged_rows);
+	insertRows(merged_columns, merged_rows, true);
 
 	children.clear();
 }
