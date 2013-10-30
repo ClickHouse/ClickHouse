@@ -195,8 +195,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ASTPtr select;
 	bool attach = false;
 	bool if_not_exists = false;
-	bool materialized = false;
-	bool view = false;
 
 	ws.ignore(pos, end);
 
@@ -328,7 +326,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		Pos before = pos;
 		if (s_materialized.ignore(pos, end, expected))
 		{
-			materialized = true;
 			pos = before;
 			ParserIdentifierWithOptionalParameters storage_p;
 			storage_p.parse(pos, end, storage, expected);
@@ -338,7 +335,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		} else {
 			if (!s_view.ignore(pos, end, expected))
 				return false;
-			view = true;
 			pos = before;
 			ParserIdentifierWithOptionalParameters storage_p;
 			storage_p.parse(pos, end, storage, expected);
