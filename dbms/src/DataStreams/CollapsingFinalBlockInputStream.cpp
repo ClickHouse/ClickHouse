@@ -52,7 +52,7 @@ void CollapsingFinalBlockInputStream::commitCurrent()
 {
 	if (count_positive || count_negative)
 	{
-		if (count_positive >= count_negative)
+		if (count_positive >= count_negative && last_is_positive)
 		{
 			last_positive.addToFilter();
 		}
@@ -106,10 +106,12 @@ Block CollapsingFinalBlockInputStream::readImpl()
 				if (sign == 1)
 				{
 					last_positive = current;
+					last_is_positive = true;
 					++count_positive;
 				}
 				else if (sign == -1)
 				{
+					last_is_positive = false;
 					++count_negative;
 				}
 				else
