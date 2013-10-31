@@ -26,9 +26,11 @@ public:
 
 	String getName() const { return "AddingDefaultBlockOutputStream"; }
 
-	void write(const Block & block) {
+	void write(const Block & block)
+	{
 		Block res = block;
 		res.addDefaults(required_columns);
+		output->write(res);
 	}
 
 private:
