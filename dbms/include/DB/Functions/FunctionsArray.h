@@ -127,6 +127,7 @@ struct ArrayElementStringImpl
 			{
 				/// Вставим пустую строку.
 				result_data.resize(current_result_offset + 1);
+				result_data[current_result_offset] = 0;
 				current_result_offset += 1;
 				result_offsets[i] = current_result_offset;
 			}

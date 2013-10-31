@@ -368,8 +368,8 @@ public:
 
 					res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
 					memcpy(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
-					/// Нулевой байт после токена и так инициализирован std::vector-ом.
-					
+					res_strings_chars[current_dst_strings_offset + token_size] = 0;
+
 					current_dst_strings_offset += token_size + 1;
 					res_strings_offsets.push_back(current_dst_strings_offset);
 					++j;
