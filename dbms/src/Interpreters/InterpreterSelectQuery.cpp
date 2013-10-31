@@ -354,7 +354,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		if (table->getName() == "VIEW")
 			query.table = dynamic_cast<StorageView *> (table.get())->getInnerQuery();
 	}
-	if (dynamic_cast<ASTSelectQuery *>(&*query.table))
+	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
 		interpreter_subquery = new InterpreterSelectQuery(query.table, context, QueryProcessingStage::Complete, subquery_depth + 1);
 
 	if (query.sample_size && (!table || !table->supportsSampling()))
