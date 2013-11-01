@@ -123,7 +123,8 @@ struct SortCursor
 	{
 		for (size_t i = 0; i < impl->sort_columns_size; ++i)
 		{
-			int res = impl->desc[i].direction * impl->sort_columns[i]->compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]));
+			int direction = impl->desc[i].direction;
+			int res = direction * impl->sort_columns[i]->compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]), direction);
 			if (res > 0)
 				return true;
 			if (res < 0)
@@ -148,6 +149,7 @@ struct SortCursorWithCollation
 	{
 		for (size_t i = 0; i < impl->sort_columns_size; ++i)
 		{
+			int direction = impl->desc[i].direction;
 			int res;
 			if (impl->need_collation[i])
 			{
@@ -155,9 +157,9 @@ struct SortCursorWithCollation
 				res = column_string.compareAtWithCollation(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
 			}
 			else
-				res = impl->sort_columns[i]->compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]));
+				res = impl->sort_columns[i]->compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]), direction);
 			
-			res *= impl->desc[i].direction;
+			res *= direction;
 			if (res > 0)
 				return true;
 			if (res < 0)

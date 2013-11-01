@@ -98,10 +98,10 @@ public:
 		return new ColumnConst<T>(limit, data, data_type);
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
 	{
 		const ColumnConst<T> & rhs = static_cast<const ColumnConst<T> &>(rhs_);
-		return data < rhs.data
+		return data < rhs.data	/// TODO: правильное сравнение NaN-ов в константных столбцах.
 			? -1
 			: (data == rhs.data
 				? 0

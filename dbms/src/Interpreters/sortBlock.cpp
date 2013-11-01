@@ -23,7 +23,7 @@ struct PartialSortingLess
 	{
 		for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
 		{
-			int res = it->second.direction * it->first->compareAt(a, b, *it->first);
+			int res = it->second.direction * it->first->compareAt(a, b, *it->first, it->second.direction);
 			if (res < 0)
 				return true;
 			else if (res > 0)
@@ -50,7 +50,7 @@ struct PartialSortingLessWithCollation
 				res = column_string.compareAtWithCollation(a, b, *it->first, *it->second.collator);
 			}
 			else
-				res = it->first->compareAt(a, b, *it->first);
+				res = it->first->compareAt(a, b, *it->first, it->second.direction);
 			
 			res *= it->second.direction;
 			if (res < 0)

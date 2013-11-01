@@ -184,7 +184,8 @@ private:
 		{
 			for (size_t i = 0; i < block->sort_columns.size(); ++i)
 			{
-				int res = block->desc[i].direction * block->sort_columns[i]->compareAt(pos, rhs.pos, *(rhs.block->sort_columns[i]));
+				int direction = block->desc[i].direction;
+				int res = direction * block->sort_columns[i]->compareAt(pos, rhs.pos, *(rhs.block->sort_columns[i]), direction);
 				if (res > 0)
 					return true;
 				if (res < 0)
@@ -201,7 +202,7 @@ private:
 			
 			for (size_t i = 0; i < block->sort_columns.size(); ++i)
 			{
-				int res = block->desc[i].direction * block->sort_columns[i]->compareAt(pos, rhs.pos, *(rhs.block->sort_columns[i]));
+				int res = block->desc[i].direction * block->sort_columns[i]->compareAt(pos, rhs.pos, *(rhs.block->sort_columns[i]), 1);
 				if (res != 0)
 					return false;
 			}

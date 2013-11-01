@@ -219,7 +219,7 @@ public:
 		return res;
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
 	{
 		const ColumnArray & rhs = static_cast<const ColumnArray &>(rhs_);
 
@@ -228,7 +228,7 @@ public:
 		size_t rhs_size = rhs.sizeAt(m);
 		size_t min_size = std::min(lhs_size, rhs_size);
 		for (size_t i = 0; i < min_size; ++i)
-			if (int res = data->compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data))
+			if (int res = data->compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data, nan_direction_hint))
 				return res;
 
 		return lhs_size < rhs_size

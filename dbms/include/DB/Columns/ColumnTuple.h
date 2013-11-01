@@ -140,11 +140,11 @@ public:
 		return new ColumnTuple(res_block);
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 	{
 		size_t size = columns.size();
 		for (size_t i = 0; i < size; ++i)
-			if (int res = columns[i]->compareAt(n, m, *static_cast<const ColumnTuple &>(rhs).columns[i]))
+			if (int res = columns[i]->compareAt(n, m, *static_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
 				return res;
 		
 		return 0;
@@ -165,7 +165,7 @@ public:
 		{
 			for (ConstColumnPlainPtrs::const_iterator it = plain_columns.begin(); it != plain_columns.end(); ++it)
 			{
-				int res = (*it)->compareAt(a, b, **it);
+				int res = (*it)->compareAt(a, b, **it, positive ? 1 : -1);
 				if (res < 0)
 					return positive;
 				else if (res > 0)

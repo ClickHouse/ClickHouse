@@ -106,7 +106,7 @@ public:
 		chars.resize(chars.size() + n);
 	}
 
-	int compareAt(size_t p1, size_t p2, const IColumn & rhs_) const
+	int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const
 	{
 		const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
 		return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);

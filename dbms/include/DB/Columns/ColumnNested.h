@@ -245,7 +245,7 @@ public:
 		return res;
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
 	{
 		throw Exception("Method compareAt is not supported for ColumnNested.", ErrorCodes::NOT_IMPLEMENTED);
 	}

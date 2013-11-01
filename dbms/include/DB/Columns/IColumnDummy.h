@@ -22,7 +22,7 @@ public:
 	size_t size() const { return s; }
 	void insertDefault() { ++s; }
 	size_t byteSize() const { return 0; }
-	int compareAt(size_t n, size_t m, const IColumn & rhs_) const { return 0; }
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const { return 0; }
 	
 	Field operator[](size_t n) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	void get(size_t n, Field & res) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };

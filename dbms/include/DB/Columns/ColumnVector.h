@@ -12,6 +12,65 @@ namespace DB
 {
 
 
+/** Штука для сравнения чисел.
+  * Целые числа сравниваются как обычно.
+  * Числа с плавающей запятой сравниваются так, что NaN-ы всегда оказываются в конце
+  *  (если этого не делать, то сортировка не работала бы вообще).
+  */
+template <typename T>
+struct CompareHelper
+{
+	static bool less(T a, T b) { return a < b; }
+	static bool greater(T a, T b) { return a > b; }
+
+	/** Сравнивает два числа. Выдаёт число меньше нуля, равное нулю, или больше нуля, если a < b, a == b, a > b, соответственно.
+	  * Если одно из значений является NaN, то:
+	  * - если nan_direction_hint == -1 - NaN считаются меньше всех чисел;
+	  * - если nan_direction_hint == 1 - NaN считаются больше всех чисел;
+	  * По-сути: nan_direction_hint == -1 говорит, что сравнение идёт для сортировки по убыванию.
+	  */
+	static int compare(T a, T b, int nan_direction_hint) { return a - b; }
+};
+
+template <typename T>
+struct FloatCompareHelper
+{
+	static bool less(T a, T b)
+	{
+		if (unlikely(isnan(b)))
+			return !isnan(a);
+		return a < b;
+	}
+
+	static bool greater(T a, T b)
+	{
+		if (unlikely(isnan(b)))
+			return !isnan(a);
+		return a > b;
+	}
+
+	static int compare(T a, T b, int nan_direction_hint)
+	{
+		bool isnan_a = isnan(a);
+		bool isnan_b = isnan(b);
+		if (unlikely(isnan_a || isnan_b))
+		{
+			if (isnan_a && isnan_b)
+				return 0;
+
+			return isnan_a
+				? nan_direction_hint
+				: -nan_direction_hint;
+		}
+
+		return (T(0) < (a - b)) - ((a - b) < T(0));
+	}
+};
+
+template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {};
+template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
+
+
 /** Шаблон столбцов, которые используют для хранения std::vector.
   */
 template <typename T>
@@ -61,28 +120,23 @@ public:
 		return data.size() * sizeof(data[0]);
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
 	{
-		const Self & rhs = static_cast<const Self &>(rhs_);
-		return data[n] < rhs.data[m]
-			? -1
-			: (data[n] == rhs.data[m]
-				? 0
-				: 1);
+		return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
 	}
 
 	struct less
 	{
 		const Self & parent;
 		less(const Self & parent_) : parent(parent_) {}
-		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] < parent.data[rhs]; }
+		bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs]); }
 	};
 
 	struct greater
 	{
 		const Self & parent;
 		greater(const Self & parent_) : parent(parent_) {}
-		bool operator()(size_t lhs, size_t rhs) const { return parent.data[lhs] > parent.data[rhs]; }
+		bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs]); }
 	};
 
 	Permutation getPermutation(bool reverse, size_t limit) const
