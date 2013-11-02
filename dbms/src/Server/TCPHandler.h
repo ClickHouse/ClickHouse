@@ -46,9 +46,9 @@ struct QueryState
 	bool sent_all_data;
 
 	/// Для вывода прогресса - разница после предыдущей отправки прогресса.
-	size_t rows_processed;
-	size_t bytes_processed;
-	
+	volatile size_t rows_processed;
+	volatile size_t bytes_processed;
+
 
 	QueryState() : query_id(0), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable),
 		is_cancelled(false), sent_all_data(false), rows_processed(0), bytes_processed(0) {}
@@ -89,9 +89,6 @@ private:
 	SharedPtr<ReadBufferFromPocoSocket> in;
 	SharedPtr<WriteBufferFromPocoSocket> out;
 
-	/// Для сериализации пакетов "данные" и "прогресс" (пакет типа "прогресс" может отправляться из другого потока).
-	Poco::FastMutex send_mutex;
-
 	/// Время после последней проверки остановки запроса и отправки прогресса.
 	Stopwatch after_check_cancelled;
 	Stopwatch after_send_progress;
@@ -118,7 +115,7 @@ private:
 	void sendHello();
 	void sendData(Block & block);	/// Записать в сеть блок.
 	void sendException(const Exception & e);
-	void sendProgress(size_t rows, size_t bytes);
+	void sendProgress();
 	void sendEndOfStream();
 	void sendProfileInfo();
 	void sendTotals();
@@ -129,6 +126,9 @@ private:
 	void initBlockOutput();
 
 	bool isQueryCancelled();
+
+	/// Эта функция вызывается из разных потоков.
+	void updateProgress(size_t rows, size_t bytes);
 
 	/// Вывести информацию о скорости выполнения SELECT запроса.
 	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in);

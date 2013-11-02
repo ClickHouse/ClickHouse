@@ -72,7 +72,7 @@ void TCPHandler::runImpl()
 	
 	sendHello();
 
-	connection_context.setProgressCallback(boost::bind(&TCPHandler::sendProgress, this, _1, _2));
+	connection_context.setProgressCallback(boost::bind(&TCPHandler::updateProgress, this, _1, _2));
 
 	while (1)
 	{
@@ -233,13 +233,21 @@ void TCPHandler::processOrdinaryQuery()
 			{
 				if (isQueryCancelled())
 				{
+					/// Получен пакет с просьбой прекратить выполнение запроса.
 					async_in.cancel();
 					break;
 				}
 				else if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
 				{
+					/// Есть следующий блок результата.
 					block = async_in.read();
 					break;
+				}
+				else if (state.rows_processed && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+				{
+					/// Прошло некоторое время, пока нет следующего блока результата, но есть прогресс.
+					after_send_progress.restart();
+					sendProgress();
 				}
 			}
 
@@ -271,8 +279,6 @@ void TCPHandler::sendProfileInfo()
 	if (client_revision < DBMS_MIN_REVISION_WITH_PROFILING_PACKET)
 		return;
 
-	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
-	
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
 		writeVarUInt(Protocol::Server::ProfileInfo, *out);
@@ -286,8 +292,6 @@ void TCPHandler::sendTotals()
 {
 	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
 		return;
-
-	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
 	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
 	{
@@ -311,8 +315,6 @@ void TCPHandler::sendExtremes()
 {
 	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
 		return;
-
-	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
@@ -557,8 +559,6 @@ bool TCPHandler::isQueryCancelled()
 
 void TCPHandler::sendData(Block & block)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
-	
 	initBlockOutput();
 
 	writeVarUInt(Protocol::Server::Data, *out);
@@ -571,8 +571,6 @@ void TCPHandler::sendData(Block & block)
 
 void TCPHandler::sendException(const Exception & e)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
-	
 	writeVarUInt(Protocol::Server::Exception, *out);
 	writeException(e, *out);
 	out->next();
@@ -581,41 +579,28 @@ void TCPHandler::sendException(const Exception & e)
 
 void TCPHandler::sendEndOfStream()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
-
 	state.sent_all_data = true;
 	writeVarUInt(Protocol::Server::EndOfStream, *out);
 	out->next();
 }
 
 
-void TCPHandler::sendProgress(size_t rows, size_t bytes)
+void TCPHandler::updateProgress(size_t rows, size_t bytes)
 {
-	/// Не отправляем прогресс, если сейчас отправляются данные.
-	Poco::ScopedTry<Poco::FastMutex> lock;
+	__sync_fetch_and_add(&state.rows_processed, rows);
+	__sync_fetch_and_add(&state.bytes_processed, bytes);
+}
 
-	if (!lock.lock(&send_mutex))
-		return;
 
-	state.rows_processed += rows;
-	state.bytes_processed += bytes;
-
-	/// Не будем отправлять прогресс после того, как отправлены все данные.
-	if (state.sent_all_data)
-		return;
-
-	if (after_send_progress.elapsed() / 1000 < query_context.getSettingsRef().interactive_delay)
-		return;
-
-	after_send_progress.restart();
+void TCPHandler::sendProgress()
+{
+	size_t rows_processed = __sync_fetch_and_and(&state.rows_processed, 0);
+	size_t bytes_processed = __sync_fetch_and_and(&state.bytes_processed, 0);
 
 	writeVarUInt(Protocol::Server::Progress, *out);
-	Progress progress(state.rows_processed, state.bytes_processed);
+	Progress progress(rows_processed, bytes_processed);
 	progress.write(*out);
 	out->next();
-
-	state.rows_processed = 0;
-	state.bytes_processed = 0;
 }
 
 
