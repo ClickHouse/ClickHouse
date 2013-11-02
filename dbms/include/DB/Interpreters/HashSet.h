@@ -134,8 +134,9 @@ public:
 
 	~HashSet()
 	{
-		for (iterator it = begin(); it != end(); ++it)
-			it->~Key();
+		if (!__has_trivial_destructor(Key))
+			for (iterator it = begin(); it != end(); ++it)
+				it->~Key();
 
 		free(reinterpret_cast<void *>(buf));
 	}

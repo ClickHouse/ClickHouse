@@ -251,8 +251,9 @@ public:
 
 	~HashMap()
 	{
-		for (iterator it = begin(); it != end(); ++it)
-			it->~Value();
+		if (!__has_trivial_destructor(Key) || !__has_trivial_destructor(Mapped))
+			for (iterator it = begin(); it != end(); ++it)
+				it->~Value();
 
 		free(reinterpret_cast<void *>(buf));
 	}
