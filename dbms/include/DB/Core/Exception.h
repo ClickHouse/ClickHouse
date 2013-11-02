@@ -45,4 +45,14 @@ typedef std::vector<ExceptionPtr> Exceptions;
 
 void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
 
+
+/** Для использования в блоке catch (...).
+  * Преобразует Exception, Poco::Exception, std::exception или неизвестный exception в ExceptionPtr.
+  */
+ExceptionPtr cloneCurrentException();
+
+
+void rethrowFirstException(Exceptions & exceptions);
+
+
 }

@@ -105,21 +105,9 @@ protected:
 		{
 			block = children.back()->read();
 		}
-		catch (const Exception & e)
-		{
-			exception = e.clone();
-		}
-		catch (const Poco::Exception & e)
-		{
-			exception = e.clone();
-		}
-		catch (const std::exception & e)
-		{
-			exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
-		}
 		catch (...)
 		{
-			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+			exception = cloneCurrentException();
 		}
 
 		ready.set();

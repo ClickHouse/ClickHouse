@@ -56,4 +56,38 @@ void throwFromErrno(const std::string & s, int code, int e)
 	throw Exception(s + ", errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code);
 }
 
+
+ExceptionPtr cloneCurrentException()
+{
+	try
+	{
+		throw;
+	}
+	catch (const Exception & e)
+	{
+		return e.clone();
+	}
+	catch (const Poco::Exception & e)
+	{
+		return e.clone();
+	}
+	catch (const std::exception & e)
+	{
+		return new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+	}
+	catch (...)
+	{
+		return new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+	}
+}
+
+
+void rethrowFirstException(Exceptions & exceptions)
+{
+	for (size_t i = 0, size = exceptions.size(); i < size; ++i)
+		if (exceptions[i])
+			exceptions[i]->rethrow();
+}
+
+
 }

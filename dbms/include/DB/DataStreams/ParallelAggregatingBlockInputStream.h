@@ -82,9 +82,7 @@ protected:
 		}
 		pool.wait();
 
-		for (size_t i = 0, size = exceptions.size(); i < size; ++i)
-			if (exceptions[i])
-				exceptions[i]->rethrow();
+		rethrowFirstException(exceptions);
 
 		if (isCancelled())
 			return Block();
@@ -107,21 +105,9 @@ private:
 		{
 			aggregator->execute(input, data);
 		}
-		catch (const Exception & e)
-		{
-			exception = e.clone();
-		}
-		catch (const Poco::Exception & e)
-		{
-			exception = e.clone();
-		}
-		catch (const std::exception & e)
-		{
-			exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
-		}
 		catch (...)
 		{
-			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+			exception = cloneCurrentException();
 		}
 	}
 };
