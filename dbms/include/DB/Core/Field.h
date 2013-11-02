@@ -20,31 +20,10 @@
 
 namespace DB
 {
-	class Field;
-	typedef std::vector<Field> Array; /// Значение типа "массив"
-}
 
-namespace std
-{
-	namespace tr1
-	{
-		template <>
-		struct hash<DB::Field>
-		{
-			inline size_t operator()(const DB::Field & x) const;
-		};
+class Field;
+typedef std::vector<Field> Array; /// Значение типа "массив"
 
-		template <>
-		struct hash<DB::Array>
-		{
-			inline size_t operator()(const DB::Array & x) const;
-		};
-	}
-}
-
-
-namespace DB
-{
 
 using Poco::SharedPtr;
 
@@ -285,24 +264,6 @@ public:
 	bool operator!= (const Field & rhs) const
 	{
 		return !(*this == rhs);
-	}
-
-	size_t hash() const
-	{
-		size_t h;
-		switch (which)
-		{
-			case Types::Null:		h = 0; break;
-			case Types::UInt64:		h = std::tr1::hash<UInt64>()(get<UInt64>()); break;
-			case Types::Int64:		h = std::tr1::hash<Int64>()(get<Int64>()); break;
-			case Types::Float64:	h = std::tr1::hash<Float64>()(get<Float64>()); break;
-			case Types::String:		h = std::tr1::hash<String>()(get<String>()); break;
-			case Types::Array: 		h = std::tr1::hash<Array>()(get<Array>()); break;
-
-			default:
-				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
-		}
-		return h ^ std::tr1::hash<int>()(which);
 	}
 
 private:
@@ -851,29 +812,6 @@ namespace DB
 	}
 	
 	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
-}
-
-
-namespace std
-{
-	namespace tr1
-	{
-		inline size_t hash<DB::Field>::operator()(const DB::Field & x) const
-		{
-			return x.hash();
-		}
-
-		/// Осторожно, это может оказаться отстойной хеш-функцией!
-		inline size_t hash<DB::Array>::operator()(const DB::Array & x) const
-		{
-			size_t h = 0;
-			for (size_t i = 0; i < x.size(); ++i)
-			{
-				h = h * 17 + x[i].hash();
-			}
-			return h;
-		}
-	}
 }
 
 
