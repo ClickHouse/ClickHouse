@@ -26,7 +26,7 @@ protected:
 			return;
 
 		size_t bytes_written = 0;
-		while (bytes_written != offset())
+		while (bytes_written < offset())
 		{
 			ssize_t res = 0;
 

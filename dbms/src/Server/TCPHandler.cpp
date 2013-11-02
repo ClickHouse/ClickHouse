@@ -270,6 +270,8 @@ void TCPHandler::sendProfileInfo()
 {
 	if (client_revision < DBMS_MIN_REVISION_WITH_PROFILING_PACKET)
 		return;
+
+	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 	
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
@@ -284,6 +286,8 @@ void TCPHandler::sendTotals()
 {
 	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
 		return;
+
+	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
 	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
 	{
@@ -307,6 +311,8 @@ void TCPHandler::sendExtremes()
 {
 	if (client_revision < DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES)
 		return;
+
+	Poco::ScopedLock<Poco::FastMutex> lock(send_mutex);
 
 	if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
 	{
