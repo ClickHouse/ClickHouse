@@ -313,15 +313,19 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
 	{
-		IProfilingBlockInputStream::LocalLimits limits;
-		limits.max_rows_to_read = settings.limits.max_result_rows;
-		limits.max_bytes_to_read = settings.limits.max_result_bytes;
-		limits.read_overflow_mode = settings.limits.result_overflow_mode;
-
-		stream->setLimits(limits);
-		stream->setQuota(context.getQuota(), IProfilingBlockInputStream::QUOTA_RESULT);
-
 		stream->setProgressCallback(context.getProgressCallback());
+		
+		/// Ограничения действуют только на конечный результат.
+		if (to_stage == QueryProcessingStage::Complete)
+		{
+			IProfilingBlockInputStream::LocalLimits limits;
+			limits.max_rows_to_read = settings.limits.max_result_rows;
+			limits.max_bytes_to_read = settings.limits.max_result_bytes;
+			limits.read_overflow_mode = settings.limits.result_overflow_mode;
+
+			stream->setLimits(limits);
+			stream->setQuota(context.getQuota(), IProfilingBlockInputStream::QUOTA_RESULT);
+		}
 	}
 
 	return streams[0];
