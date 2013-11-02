@@ -24,7 +24,6 @@ namespace DB
   * Плохо работает при размере хэш-таблиц больше 2^32 элементов.
   *
   * TODO:
-  * - поддержка работы в режиме, когда ключей нет (всё агрегируется в одну строку);
   * - поддержка max_rows_to_group_by;
   * - поддержка with_totals;
   * - проверить работу при распределённой обработке запроса;
@@ -91,9 +90,9 @@ private:
 	StringRefHash hash_func_string;
 
 
-	void calculateHashesThread(Block & block, size_t begin, size_t end);
-	void aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no);
-	void convertToBlockThread(AggregatedDataVariants & data_variant, Block & block);
+	void calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception);
+	void aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception);
+	void convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, ExceptionPtr & exception);
 };
 
 
