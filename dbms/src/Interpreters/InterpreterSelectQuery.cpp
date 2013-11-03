@@ -481,7 +481,21 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
-	/// TODO: Оптимизация для случая, когда есть LIMIT, но нет HAVING и ORDER BY.
+	/** Оптимизация для случая, когда есть LIMIT, но нет HAVING и ORDER BY.
+	  * Будем агрегировать по первым попавшимся limit_length + limit_offset ключам.
+	  * NOTE: после этого перестаёт точно работать rows_before_limit_at_least (это нормально).
+	  * NOTE: возможно, неправильно работает, если после GROUP BY делается arrayJoin.
+	  */
+	size_t limit_length = 0;
+	size_t limit_offset = 0;
+	getLimitLengthAndOffset(query, limit_length, limit_offset);
+
+	if (query.limit_length && !query.having_expression && !query.order_expression_list
+		&& (!settings.limits.max_rows_to_group_by || limit_length + limit_offset < settings.limits.max_rows_to_group_by))
+	{
+		settings.limits.max_rows_to_group_by = limit_length + limit_offset;
+		settings.limits.group_by_overflow_mode = Limits::ANY;
+	}
 
 	bool separate_totals = to_stage > QueryProcessingStage::WithMergeableState;
 	
