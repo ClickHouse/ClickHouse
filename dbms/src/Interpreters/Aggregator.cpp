@@ -18,7 +18,7 @@ namespace DB
 
 AggregatedDataVariants::~AggregatedDataVariants()
 {
-	if (aggregator)
+	if (aggregator && !aggregator->all_aggregates_has_trivial_destructor)
 		aggregator->destroyAggregateStates(*this);
 }
 
@@ -39,11 +39,15 @@ void Aggregator::initialize(Block & block)
 	/// Инициализируем размеры состояний и смещения для агрегатных функций.
 	offsets_of_aggregate_states.resize(aggregates_size);
 	total_size_of_aggregate_states = 0;
+	all_aggregates_has_trivial_destructor = true;
 
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
 		offsets_of_aggregate_states[i] = total_size_of_aggregate_states;
 		total_size_of_aggregate_states += aggregates[i].function->sizeOfData();
+
+		if (!aggregates[i].function->hasTrivialDestructor())
+			all_aggregates_has_trivial_destructor = false;
 	}
 
 	/** Всё остальное - только если передан непустой block.

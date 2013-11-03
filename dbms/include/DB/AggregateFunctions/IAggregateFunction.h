@@ -60,6 +60,9 @@ public:
 	/// Уничтожить данные для агрегации.
 	virtual void destroy(AggregateDataPtr place) const = 0;
 
+	/// Уничтожать данные не обязательно.
+	virtual bool hasTrivialDestructor() const = 0;
+
 	/// Получить sizeof структуры с данными.
 	virtual size_t sizeOfData() const = 0;
 
@@ -103,6 +106,11 @@ public:
 	void destroy(AggregateDataPtr place) const
 	{
 		data(place).~Data();
+	}
+
+	bool hasTrivialDestructor() const
+	{
+		return __has_trivial_destructor(Data);
 	}
 
 	size_t sizeOfData() const

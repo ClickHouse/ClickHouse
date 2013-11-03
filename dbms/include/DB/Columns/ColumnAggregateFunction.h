@@ -45,10 +45,11 @@ public:
 		arenas.push_back(arena_);
 	}
 
-    ~ColumnAggregateFunction()
+	~ColumnAggregateFunction()
 	{
-		for (size_t i = 0, s = data.size(); i < s; ++i)
-			func->destroy(data[i]);
+		if (!func->hasTrivialDestructor())
+			for (size_t i = 0, s = data.size(); i < s; ++i)
+				func->destroy(data[i]);
 	}
 	
  	std::string getName() const { return "ColumnAggregateFunction"; }

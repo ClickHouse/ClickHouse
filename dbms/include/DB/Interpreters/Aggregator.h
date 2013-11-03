@@ -158,7 +158,7 @@ public:
 	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool with_totals_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
 		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
-		with_totals(with_totals_), total_size_of_aggregate_states(0), initialized(false),
+		with_totals(with_totals_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -170,7 +170,7 @@ public:
 	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool with_totals_,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
-		with_totals(with_totals_), total_size_of_aggregate_states(0), initialized(false),
+		with_totals(with_totals_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -220,6 +220,7 @@ protected:
 
 	Sizes offsets_of_aggregate_states;	/// Смещение до n-ой агрегатной функции в строке из агрегатных функций.
 	size_t total_size_of_aggregate_states;	/// Суммарный размер строки из агрегатных функций.
+	bool all_aggregates_has_trivial_destructor;
 
 	/// Для инициализации от первого блока при конкуррентном использовании.
 	bool initialized;

@@ -62,6 +62,11 @@ public:
 		nested_func->destroy(place);
 	}
 
+	bool hasTrivialDestructor() const
+	{
+		return nested_func->hasTrivialDestructor();
+	}
+
 	size_t sizeOfData() const
 	{
 		return nested_func->sizeOfData();
