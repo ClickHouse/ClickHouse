@@ -259,6 +259,7 @@ void TCPHandler::processOrdinaryQuery()
 				sendTotals();
 				sendExtremes();
 				sendProfileInfo();
+				sendProgress();
 			}
 			
 			sendData(block);			

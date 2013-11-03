@@ -478,9 +478,15 @@ private:
 			processOrdinaryQuery();
 
 		if (is_interactive)
+		{
 			std::cout << std::endl
-				<< processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec."
-				<< std::endl << std::endl;
+				<< processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
+
+			if (rows_read_on_server)
+				writeFinalProgress();
+
+			std::cout << std::endl;
+		}
 
 		return true;
 	}
@@ -713,41 +719,39 @@ private:
 	{
 		if (written_progress_chars)
 		{
-			if (written_first_block)
-				for (size_t i = 0; i < written_progress_chars; ++i)
-					std::cerr << "\b \b";
-			else
-				std::cerr << "\n\n";
+			for (size_t i = 0; i < written_progress_chars; ++i)
+				std::cerr << "\b \b";
 
 			written_progress_chars = 0;
 		}
 
-		written_first_block = true;
+		if (!block)
+			return;
 
-		if (block)
+		processed_rows += block.rows();
+		if (!block_std_out)
 		{
-			processed_rows += block.rows();
-			if (!block_std_out)
-			{
-				String current_format = format;
+			String current_format = format;
 
-				/// Формат может быть указан в запросе.
-				if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
-					if (query_with_output->format)
-						if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*query_with_output->format))
-							current_format = id->name;
-				
-				block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
-				block_std_out->writePrefix();
-			}
-			
-			/// Загаловочный блок с нулем строк использовался для инициализации block_std_out,
-			/// выводить его не нужно
-			if (block.rows() != 0)
-				block_std_out->write(block);
-			
-			std_out.next();
+			/// Формат может быть указан в запросе.
+			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
+				if (query_with_output->format)
+					if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*query_with_output->format))
+						current_format = id->name;
+
+			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
+			block_std_out->writePrefix();
 		}
+
+		/// Загаловочный блок с нулем строк использовался для инициализации block_std_out,
+		/// выводить его не нужно
+		if (block.rows() != 0)
+		{
+			block_std_out->write(block);
+			written_first_block = true;
+		}
+
+		std_out.next();
 	}
 
 
@@ -767,6 +771,12 @@ private:
 		rows_read_on_server += progress.rows;
 		bytes_read_on_server += progress.bytes;
 
+		writeProgress();
+	}
+
+
+	void writeProgress()
+	{
 		static size_t increment = 0;
 		static const char * indicators[8] =
 		{
@@ -801,6 +811,22 @@ private:
 			std::cerr << message.rdbuf();
 			++increment;
 		}
+	}
+
+
+	void writeFinalProgress()
+	{
+		std::cout << "Processed " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB";
+
+		size_t elapsed_ns = watch.elapsed();
+		if (elapsed_ns)
+			std::cout << " ("
+				<< rows_read_on_server * 1000000000.0 / elapsed_ns << " rows/s., "
+				<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
+		else
+			std::cout << ". ";
+
+		std::cout << std::endl;
 	}
 
 
