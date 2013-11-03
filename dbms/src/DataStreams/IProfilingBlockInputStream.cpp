@@ -220,7 +220,7 @@ Block IProfilingBlockInputStream::read()
 		cancel();
 	}
 
-	progress(res);
+	progress(res.rows(), res.bytes());
 
 	return res;
 }
@@ -317,15 +317,6 @@ bool IProfilingBlockInputStream::checkLimits()
 		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	if (limits.min_execution_speed
-		&& info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.timeout_before_checking_execution_speed.totalMicroseconds()) * 1000
-		&& info.rows / info.total_stopwatch.elapsedSeconds() < limits.min_execution_speed)
-	{
-		throw Exception("Query is executing too slow: " + toString(info.rows / info.total_stopwatch.elapsedSeconds())
-			+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
-			ErrorCodes::TOO_SLOW);
-	}
-
 	return true;
 }
 
@@ -338,7 +329,7 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 	switch (quota_mode)
 	{
 		case QUOTA_READ:
-			quota->checkAndAddReadRowsBytes(current_time, block.rows(), block.bytes());
+			/// Проверяется в методе progress.
 			break;
 
 		case QUOTA_RESULT:
@@ -354,10 +345,56 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 }
 
 
-void IProfilingBlockInputStream::progress(Block & block)
+void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 {
-	if (children.empty() && progress_callback)
-		progress_callback(block.rows(), block.bytes());
+	/// Данные для прогресса берутся из листовых источников.
+	if (children.empty())
+	{
+		if (progress_callback)
+			progress_callback(rows, bytes);
+
+		if (process_list_elem)
+		{
+			process_list_elem->update(rows, bytes);
+
+			/// Общее количество данных, обработанных во всех листовых источниках, возможно, на удалённых серверах.
+			
+			size_t total_rows = process_list_elem->rows_processed;
+			size_t total_bytes = process_list_elem->bytes_processed;
+			double total_elapsed = info.total_stopwatch.elapsedSeconds();
+
+			/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
+			  * NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
+			  */
+
+			if ((limits.max_rows_to_read && total_rows > limits.max_rows_to_read)
+				|| (limits.max_bytes_to_read && total_bytes > limits.max_bytes_to_read))
+			{
+				if (limits.read_overflow_mode == Limits::THROW)
+					throw Exception("Limit for rows to read exceeded: read " + toString(total_rows)
+						+ " rows, maximum: " + toString(limits.max_rows_to_read),
+						ErrorCodes::TOO_MUCH_ROWS);
+				else if (limits.read_overflow_mode == Limits::BREAK)
+					cancel();
+				else
+					throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+			}
+
+			if (limits.min_execution_speed
+				&& total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0
+				&& total_rows / total_elapsed < limits.min_execution_speed)
+			{
+				throw Exception("Query is executing too slow: " + toString(total_rows / total_elapsed)
+					+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
+					ErrorCodes::TOO_SLOW);
+			}
+
+			if (quota != NULL && quota_mode == QUOTA_READ)
+			{
+				quota->checkAndAddReadRowsBytes(time(0), rows, bytes);
+			}
+		}
+	}
 }
 	
 
@@ -385,6 +422,16 @@ void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
 	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
 			child->setProgressCallback(callback);
+}
+
+
+void IProfilingBlockInputStream::setProcessListElement(ProcessList::Element * elem)
+{
+	process_list_elem = elem;
+
+	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			child->setProcessListElement(elem);
 }
 
 

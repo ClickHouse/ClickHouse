@@ -42,6 +42,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 	setQuota(user_props.quota, quota_key, name, address);
 
 	user = name;
+	ip_address = address;
 }
 
 
@@ -388,6 +389,18 @@ void Context::setProgressCallback(ProgressCallback callback)
 ProgressCallback Context::getProgressCallback() const
 {
 	return progress_callback;
+}
+
+
+void Context::setProcessListElement(ProcessList::Element * elem)
+{
+	/// Устанавливается на сессию или на запрос. В сессии одновременно обрабатывается только один запрос. Поэтому блокировка не нужна.
+	process_list_elem = elem;
+}
+
+ProcessList::Element * Context::getProcessListElement()
+{
+	return process_list_elem;
 }
 
 

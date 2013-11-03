@@ -61,7 +61,7 @@ public:
 	/** Отменяем умолчальное уведомление о прогрессе,
 	  * так как колбэк прогресса вызывается самостоятельно.
 	  */
-	void progress(Block & block) {}
+	void progress(size_t rows, size_t bytes) {}
 
 
 	void cancel()
@@ -119,8 +119,13 @@ protected:
 					return Block();
 
 				case Protocol::Server::Progress:
-					if (progress_callback)
-						progress_callback(packet.progress.rows, packet.progress.bytes);
+					/** Используем прогресс с удалённого сервера.
+					  * В том числе, запишем его в ProcessList,
+					  *  и будем использовать его для проверки
+					  *  ограничений (например, минимальная скорость выполнения запроса)
+					  *  и квот (например, на количество строчек для чтения).
+					  */
+					progressImpl(packet.progress.rows, packet.progress.bytes);
 
 					if (!was_cancelled && !finished && isCancelled())
 						cancel();

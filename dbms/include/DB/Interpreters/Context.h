@@ -122,11 +122,13 @@ private:
 	Shared shared;
 
 	String user;						/// Текущий пользователь.
+	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
 	QuotaForIntervals * quota;			/// Текущая квота.
 	String current_database;			/// Текущая БД.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;					/// Настройки выполнения запроса.
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
+	ProcessList::Element * process_list_elem;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
 
 	String default_format;				/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
 										/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
@@ -135,13 +137,15 @@ private:
 	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
 public:
-	Context() : shared(new ContextShared), quota(NULL), session_context(NULL), global_context(NULL) {}
+	Context() : shared(new ContextShared), quota(NULL), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
 
 	String getPath() const;
 	void setPath(const String & path);
 
 	void initUsersFromConfig();
 	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key);
+	String getUser() const { return user; }
+	Poco::Net::IPAddress getIPAddress() const { return ip_address; }
 
 	void initQuotasFromConfig();
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
@@ -216,6 +220,14 @@ public:
 	/// Используется в InterpreterSelectQuery, чтобы передать его в IProfilingBlockInputStream.
 	ProgressCallback getProgressCallback() const;
 
+	/** Устанавливается в executeQuery и InterpreterSelectQuery. Затем используется в IProfilingBlockInputStream,
+	  *  чтобы обновлять и контролировать информацию об общем количестве потраченных на запрос ресурсов.
+	  */
+	void setProcessListElement(ProcessList::Element * elem);
+	/// Может вернуть NULL, если запрос не был вставлен в ProcessList.
+	ProcessList::Element * getProcessListElement();
+
+	/// Список всех запросов.
 	ProcessList & getProcessList()											{ return shared->process_list; }
 	const ProcessList & getProcessList() const								{ return shared->process_list; }
 

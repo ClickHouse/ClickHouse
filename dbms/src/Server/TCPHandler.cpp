@@ -237,17 +237,21 @@ void TCPHandler::processOrdinaryQuery()
 					async_in.cancel();
 					break;
 				}
-				else if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
+				else
 				{
-					/// Есть следующий блок результата.
-					block = async_in.read();
-					break;
-				}
-				else if (state.rows_processed && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
-				{
-					/// Прошло некоторое время, пока нет следующего блока результата, но есть прогресс.
-					after_send_progress.restart();
-					sendProgress();
+					if (state.rows_processed && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+					{
+						/// Прошло некоторое время и есть прогресс.
+						after_send_progress.restart();
+						sendProgress();
+					}
+				
+					if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
+					{
+						/// Есть следующий блок результата.
+						block = async_in.read();
+						break;
+					}
 				}
 			}
 

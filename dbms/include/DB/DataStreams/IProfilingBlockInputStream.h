@@ -8,6 +8,7 @@
 
 #include <DB/Interpreters/Limits.h>
 #include <DB/Interpreters/Quota.h>
+#include <DB/Interpreters/ProcessList.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -78,7 +79,8 @@ class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
 	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr())
-		: IBlockInputStream(owned_storage_), is_cancelled(false), enabled_extremes(false), quota(NULL), quota_mode(QUOTA_READ), prev_elapsed(0) {}
+		: IBlockInputStream(owned_storage_), is_cancelled(false), process_list_elem(NULL),
+		enabled_extremes(false), quota(NULL), quota_mode(QUOTA_READ), prev_elapsed(0) {}
 	
 	Block read();
 
@@ -100,7 +102,7 @@ public:
 
 
 	/** Установить колбэк прогресса выполнения.
-	  * Колбэк пробрасывается во все источники.
+	  * Колбэк пробрасывается во все дочерние источники.
 	  * По-умолчанию, он вызывается для листовых источников, после каждого блока.
 	  * (Но это может быть переопределено в методе progress())
 	  * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
@@ -108,7 +110,24 @@ public:
 	  */
 	void setProgressCallback(ProgressCallback callback);
 
-	virtual void progress(Block & block);
+
+	/** В этом методе:
+	  * - вызывается колбэк прогресса;
+	  * - обновляется статус выполнения запроса в ProcessList-е;
+	  * - проверяются ограничения и квоты, которые должны быть проверены не в рамках одного источника,
+	  *   а над общим количеством потраченных ресурсов во всех источниках сразу (информация в ProcessList-е).
+	  */
+	virtual void progress(size_t rows, size_t bytes) { progressImpl(rows, bytes); }
+	void progressImpl(size_t rows, size_t bytes);
+
+
+	/** Установить указатель на элемент списка процессов.
+	  * Пробрасывается во все дочерние источники.
+	  * В него будет записываться общая информация о потраченных на запрос ресурсах.
+	  * На основе этой информации будет проверяться квота, и некоторые ограничения.
+	  * Также эта информация будет доступна в запросе SHOW PROCESSLIST.
+	  */
+	void setProcessListElement(ProcessList::Element * elem);
 
 
 	/** Попросить прервать получение данных как можно скорее.
@@ -175,6 +194,7 @@ protected:
 	BlockStreamProfileInfo info;
 	volatile bool is_cancelled;
 	ProgressCallback progress_callback;
+	ProcessList::Element * process_list_elem;
 
 	bool enabled_extremes;
 
@@ -200,6 +220,10 @@ protected:
 	virtual void readSuffixImpl() {}
 
 	void updateExtremes(Block & block);
+
+	/** Проверить ограничения и квоты.
+	  * Но только те, что могут быть проверены в рамках каждого отдельного источника.
+	  */
 	bool checkLimits();
 	void checkQuota(Block & block);
 };

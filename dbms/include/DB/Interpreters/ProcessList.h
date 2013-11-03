@@ -4,6 +4,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
 #include <Poco/Condition.h>
+#include <Poco/Net/IPAddress.h>
 #include <statdaemons/Stopwatch.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Exception.h>
@@ -22,13 +23,27 @@ class ProcessList
 {
 	friend class Entry;
 public:
-	/// Запрос и таймер его выполнения.
+	/// Запрос и данные о его выполнении.
 	struct Element
 	{
-		std::string query;
+		String query;
+		String user;
+		Poco::Net::IPAddress ip_address;
+		
 		Stopwatch watch;
 
-		Element(const std::string & query_) : query(query_) {}
+		volatile size_t rows_processed;
+		volatile size_t bytes_processed;
+		
+
+		Element(const String & query_, const String & user_, const Poco::Net::IPAddress & ip_address_)
+			: query(query_), user(user_), ip_address(ip_address_), rows_processed(0), bytes_processed(0) {}
+
+		void update(size_t rows, size_t bytes) volatile
+		{
+			__sync_add_and_fetch(&rows_processed, rows);
+			__sync_add_and_fetch(&bytes_processed, bytes);
+		}
 	};
 
 	/// list, чтобы итераторы не инвалидировались. NOTE: можно заменить на cyclic buffer, но почти незачем.
@@ -59,6 +74,9 @@ private:
 			--parent.cur_size;
 			parent.have_space.signal();
 		}
+
+		Element & get() { return *it; }
+		const Element & get() const { return *it; }
 	};
 
 public:
@@ -70,7 +88,8 @@ public:
 	  * Если выполняющихся запросов сейчас слишком много - ждать не более указанного времени.
 	  * Если времени не хватило - кинуть исключение.
 	  */
-	EntryPtr insert(const std::string & query_, size_t max_wait_milliseconds = DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS)
+	EntryPtr insert(const String & query_, const String & user_, const Poco::Net::IPAddress & ip_address_,
+		size_t max_wait_milliseconds = DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS)
 	{
 		EntryPtr res;
 
@@ -81,7 +100,7 @@ public:
 				throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
 			++cur_size;
-			res = new Entry(*this, cont.insert(cont.end(), Element(query_)));
+			res = new Entry(*this, cont.insert(cont.end(), Element(query_, user_, ip_address_)));
 		}
 
 		return res;

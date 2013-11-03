@@ -77,7 +77,11 @@ void executeQuery(
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
 	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
-		process_list_entry = context.getProcessList().insert(query, context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+	{
+		process_list_entry = context.getProcessList().insert(
+			query, context.getUser(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+		context.setProcessListElement(&process_list_entry->get());
+	}
 
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
@@ -142,7 +146,11 @@ BlockIO executeQuery(
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
 	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
-		process_list_entry = context.getProcessList().insert(query, context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+	{
+		process_list_entry = context.getProcessList().insert(
+			query, context.getUser(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+		context.setProcessListElement(&process_list_entry->get());
+	}
 
 	try
 	{

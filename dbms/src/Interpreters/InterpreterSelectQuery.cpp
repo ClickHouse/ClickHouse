@@ -314,6 +314,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
 	{
 		stream->setProgressCallback(context.getProgressCallback());
+		stream->setProcessListElement(context.getProcessListElement());
 		
 		/// Ограничения действуют только на конечный результат.
 		if (to_stage == QueryProcessingStage::Complete)
@@ -422,11 +423,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (streams.size() > settings.max_threads)
 		streams = narrowBlockInputStreams(streams, settings.max_threads);
 
-	/** Установка ограничений и квоты на чтение данных.
-	  * Они устанавливаются на самые "глубокие" чтения.
-	  * То есть, не должны устанавливаться для чтений из удалённых серверов и подзапросов.
+	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
+	  * Такие ограничения проверяются на сервере-инициаторе запроса, а не на удалённых серверах.
+	  * Потому что сервер-инициатор имеет суммарные данные о выполнении запроса на всех серверах.
 	  */
-	if (table && !table->isRemote())
+	if (table && to_stage == QueryProcessingStage::Complete)
 	{
 		IProfilingBlockInputStream::LocalLimits limits;
 		limits.max_rows_to_read = settings.limits.max_rows_to_read;
