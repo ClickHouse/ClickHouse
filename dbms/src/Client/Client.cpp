@@ -485,7 +485,7 @@ private:
 			if (rows_read_on_server)
 				writeFinalProgress();
 
-			std::cout << std::endl;
+			std::cout << std::endl << std::endl;
 		}
 
 		return true;
@@ -825,8 +825,6 @@ private:
 				<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 		else
 			std::cout << ". ";
-
-		std::cout << std::endl;
 	}
 
 
