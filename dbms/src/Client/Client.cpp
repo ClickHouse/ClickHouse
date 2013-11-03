@@ -482,7 +482,7 @@ private:
 			std::cout << std::endl
 				<< processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
 
-			if (rows_read_on_server)
+			if (rows_read_on_server >= 1000)
 				writeFinalProgress();
 
 			std::cout << std::endl << std::endl;
