@@ -45,6 +45,8 @@ struct Settings
 	bool extremes;
 	/// Использовать ли кэш разжатых блоков.
 	bool use_uncompressed_cache;
+	/// Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации.
+	bool use_splitting_aggregator;
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
@@ -64,7 +66,7 @@ struct Settings
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
 		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
-		sign_rewrite(false), extremes(false), use_uncompressed_cache(true)
+		sign_rewrite(false), extremes(false), use_uncompressed_cache(true), use_splitting_aggregator(false)
 	{
 	}
 

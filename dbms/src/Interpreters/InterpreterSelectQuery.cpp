@@ -502,20 +502,15 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals,
-			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
-		streams.resize(1);
-
-	/*	if (key_names.empty())
-			stream = maybeAsynchronous(
-				new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals,
-					settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
+		if (!settings.use_splitting_aggregator || key_names.empty())
+			stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals,
+				settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 		else
 			stream = maybeAsynchronous(
 				new SplittingAggregatingBlockInputStream(
 					new UnionBlockInputStream(streams, settings.max_threads), key_names, aggregates, settings.max_threads), settings.asynchronous);
 
-		streams.resize(1);*/
+		streams.resize(1);
 	}
 	else
 		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, query.group_by_with_totals, separate_totals,
