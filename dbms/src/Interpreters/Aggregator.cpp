@@ -448,7 +448,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 }
 
 
-Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals)
+Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals, bool final)
 {
 	Block res = sample.cloneEmpty();
 	size_t rows = data_variants.size();
@@ -468,6 +468,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	
 	ColumnPlainPtrs key_columns(keys_size);
 	AggregateColumns aggregate_columns(aggregates_size);
+	ColumnPlainPtrs final_aggregate_columns(aggregates_size);
 
 	for (size_t i = 0; i < keys_size; ++i)
 	{
@@ -477,14 +478,26 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
-		/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
-		ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
+		if (!final)
+		{
+			/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
+			ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
 
-		for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
-			column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
+			for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
+				column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
 
-		aggregate_columns[i] = &column_aggregate_func.getData();
-		aggregate_columns[i]->resize(rows);
+			aggregate_columns[i] = &column_aggregate_func.getData();
+			aggregate_columns[i]->resize(rows);
+		}
+		else
+		{
+			ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
+			column.type = aggregate_functions[i]->getReturnType();
+			column.column = column.type->createColumn();
+			column.column->reserve(rows);
+
+			final_aggregate_columns[i] = column.column;
+		}
 	}
 
 	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
@@ -512,8 +525,12 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 		}
 		else
 		{
-			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+			if (!final)
+				for (size_t i = 0; i < aggregates_size; ++i)
+					(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+			else
+				for (size_t i = 0; i < aggregates_size; ++i)
+					aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
 
 			if (with_totals)
 				for (size_t i = 0; i < keys_size; ++i)
@@ -528,12 +545,26 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 		IColumn & first_column = *key_columns[0];
 
 		size_t j = with_totals && !separate_totals ? 1 : 0;
-		for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-		{
-			first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
 
-			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
+		if (!final)
+		{
+			for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
+			}
+		}
+		else
+		{
+			for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					aggregate_functions[i]->insertResultInto(it->second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+			}
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
@@ -542,12 +573,26 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 		IColumn & first_column = *key_columns[0];
 
 		size_t j = with_totals && !separate_totals ? 1 : 0;
-		for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-		{
-			first_column.insertData(it->first.data, it->first.size);
 
-			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
+		if (!final)
+		{
+			for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				first_column.insertData(it->first.data, it->first.size);
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
+			}
+		}
+		else
+		{
+			for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				first_column.insertData(it->first.data, it->first.size);
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					aggregate_functions[i]->insertResultInto(it->second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+			}
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEYS_128)
@@ -555,18 +600,38 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 		AggregatedDataWithKeys128 & data = data_variants.keys128;
 
 		size_t j = with_totals && !separate_totals ? 1 : 0;
-		for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-		{
-			size_t offset = 0;
-			for (size_t i = 0; i < keys_size; ++i)
-			{
-				size_t size = data_variants.key_sizes[i];
-				key_columns[i]->insertData(reinterpret_cast<const char *>(&it->first) + offset, size);
-				offset += size;
-			}
 
-			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
+		if (!final)
+		{
+			for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				size_t offset = 0;
+				for (size_t i = 0; i < keys_size; ++i)
+				{
+					size_t size = data_variants.key_sizes[i];
+					key_columns[i]->insertData(reinterpret_cast<const char *>(&it->first) + offset, size);
+					offset += size;
+				}
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
+			}
+		}
+		else
+		{
+			for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				size_t offset = 0;
+				for (size_t i = 0; i < keys_size; ++i)
+				{
+					size_t size = data_variants.key_sizes[i];
+					key_columns[i]->insertData(reinterpret_cast<const char *>(&it->first) + offset, size);
+					offset += size;
+				}
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					aggregate_functions[i]->insertResultInto(it->second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+			}
 		}
 	}
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
@@ -574,20 +639,38 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 		AggregatedDataHashed & data = data_variants.hashed;
 
 		size_t j = with_totals && !separate_totals ? 1 : 0;
-		for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-		{
-			for (size_t i = 0; i < keys_size; ++i)
-				key_columns[i]->insertDataWithTerminatingZero(it->second.first[i].data, it->second.first[i].size);
 
-			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = it->second.second + offsets_of_aggregate_states[i];
+		if (!final)
+		{
+			for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				for (size_t i = 0; i < keys_size; ++i)
+					key_columns[i]->insertDataWithTerminatingZero(it->second.first[i].data, it->second.first[i].size);
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					(*aggregate_columns[i])[j] = it->second.second + offsets_of_aggregate_states[i];
+			}
+		}
+		else
+		{
+			for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+			{
+				for (size_t i = 0; i < keys_size; ++i)
+					key_columns[i]->insertDataWithTerminatingZero(it->second.first[i].data, it->second.first[i].size);
+
+				for (size_t i = 0; i < aggregates_size; ++i)
+					aggregate_functions[i]->insertResultInto(it->second.second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+			}
 		}
 	}
 	else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
-	/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе
-	data_variants.aggregator = NULL;
+	if (!final)
+	{
+		/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе. Теперь состояниями владеют ColumnAggregateFunction.
+		data_variants.aggregator = NULL;
+	}
 
 	/// Изменяем размер столбцов-констант в блоке.
 	size_t columns = res.columns();
@@ -978,7 +1061,7 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	if (result.size() == 0)
 		return;
 
-	LOG_TRACE(log, "Destroying aggregate states because query execution was cancelled");
+	LOG_TRACE(log, "Destroying aggregate states");
 
 	/// В какой структуре данных агрегированы данные?
 	if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)

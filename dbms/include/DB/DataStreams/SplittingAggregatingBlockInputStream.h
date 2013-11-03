@@ -14,8 +14,8 @@ class SplittingAggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	SplittingAggregatingBlockInputStream(
-		BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_, size_t threads_)
-		: started(false), aggregator(new SplittingAggregator(keys_, aggregates_, threads_)), current_result(results.end())
+		BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_, size_t threads_, bool final_)
+		: started(false), final(final_), aggregator(new SplittingAggregator(keys_, aggregates_, threads_)), current_result(results.end())
 	{
 		children.push_back(input_);
 	}
@@ -25,8 +25,8 @@ public:
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
 	SplittingAggregatingBlockInputStream(
-		BlockInputStreamPtr input_, const Names & key_names, const AggregateDescriptions & aggregates, size_t threads_)
-		: started(false), aggregator(new SplittingAggregator(key_names, aggregates, threads_)), current_result(results.end())
+		BlockInputStreamPtr input_, const Names & key_names, const AggregateDescriptions & aggregates, size_t threads_, bool final_)
+		: started(false), final(final_), aggregator(new SplittingAggregator(key_names, aggregates, threads_)), current_result(results.end())
 	{
 		children.push_back(input_);
 	}
@@ -53,7 +53,7 @@ protected:
 			if (isCancelled())
 				return Block();
 
-			aggregator->convertToBlocks(data, results);
+			aggregator->convertToBlocks(data, results, final);
 			current_result = results.begin();
 		}
 
@@ -67,6 +67,7 @@ protected:
 	}
 
 	bool started;
+	bool final;
 	SharedPtr<SplittingAggregator> aggregator;
 	Blocks results;
 	Blocks::iterator current_result;

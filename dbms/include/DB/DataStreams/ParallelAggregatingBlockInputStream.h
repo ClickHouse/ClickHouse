@@ -21,10 +21,10 @@ class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
-		bool with_totals_, bool separate_totals_, unsigned max_threads_ = 1,
+		bool with_totals_, bool separate_totals_, bool final_, unsigned max_threads_ = 1,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
 		: aggregator(new Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_)),
-		has_been_read(false), separate_totals(separate_totals_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
+		has_been_read(false), separate_totals(separate_totals_), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
@@ -34,9 +34,9 @@ public:
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const Names & key_names, const AggregateDescriptions & aggregates,
-		bool with_totals_, bool separate_totals_, unsigned max_threads_ = 1,
+		bool with_totals_, bool separate_totals_, bool final_, unsigned max_threads_ = 1,
 		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
-		: has_been_read(false), separate_totals(separate_totals_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
+		: has_been_read(false), separate_totals(separate_totals_), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 		
@@ -88,13 +88,14 @@ protected:
 			return Block();
 
 		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
-		return aggregator->convertToBlock(*res, separate_totals, totals);
+		return aggregator->convertToBlock(*res, separate_totals, totals, final);
 	}
 
 private:
 	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;
 	bool separate_totals;
+	bool final;
 	size_t max_threads;
 	boost::threadpool::pool pool;
 

@@ -15,7 +15,6 @@
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
-#include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
@@ -94,8 +93,7 @@ int main(int argc, char ** argv)
 		}
 
 		DB::BlockInputStreamPtr stream = new DB::OneBlockInputStream(block);
-		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions, false, false, 0, DB::Limits::THROW);
-		stream = new DB::FinalizingAggregatedBlockInputStream(stream, aggregate_descriptions);
+		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions, false, false, true, 0, DB::Limits::THROW);
 
 		DB::WriteBufferFromOStream ob(std::cout);
 		DB::RowOutputStreamPtr row_out = new DB::TabSeparatedRowOutputStream(ob, sample);

@@ -52,7 +52,7 @@ public:
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, ManyAggregatedDataVariants & results);
 
-	void convertToBlocks(ManyAggregatedDataVariants & data_variants, Blocks & blocks);
+	void convertToBlocks(ManyAggregatedDataVariants & data_variants, Blocks & blocks, bool final);
 
 	String getID() const { return Aggregator::getID(); }
 
@@ -92,7 +92,7 @@ private:
 
 	void calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception);
 	void aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception);
-	void convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, ExceptionPtr & exception);
+	void convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, bool final, ExceptionPtr & exception);
 };
 
 

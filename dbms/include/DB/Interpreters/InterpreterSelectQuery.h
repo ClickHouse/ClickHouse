@@ -53,9 +53,8 @@ private:
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
 
 	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression, bool final);
 	void executeMergeAggregated(	BlockInputStreams & streams);
-	void executeFinalizeAggregates(BlockInputStreams & streams);
 	void executeHaving(				BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeOuterExpression(	BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeOrder(				BlockInputStreams & streams);

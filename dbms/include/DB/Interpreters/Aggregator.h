@@ -185,8 +185,12 @@ public:
 	/** Преобразовать структуру данных агрегации в блок.
 	  * Если with_totals = true и serarate_totals = true, то тотальные значения кладутся в totals.
 	  * Если with_totals = true и serarate_totals = false, то тотальные значения кладутся в первую строчку возвращаемого блока.
+	  *
+	  * Если final = false, то в качестве столбцов-агрегатов создаются ColumnAggregateFunction с состоянием вычислений,
+	  *  которые могут быть затем объединены с другими состояниями (для распределённой обработки запроса).
+	  * Если final = true, то в качестве столбцов-агрегатов создаются столбцы с готовыми значениями.
 	  */
-	Block convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals);
+	Block convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals, bool final);
 
 	/** Объединить несколько структур данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
 	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить, пока не будет вызвана функция convertToBlock.

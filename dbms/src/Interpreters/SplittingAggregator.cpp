@@ -138,7 +138,7 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 }
 
 
-void SplittingAggregator::convertToBlocks(ManyAggregatedDataVariants & data_variants, Blocks & blocks)
+void SplittingAggregator::convertToBlocks(ManyAggregatedDataVariants & data_variants, Blocks & blocks, bool final)
 {
 	if (data_variants.empty())
 		return;
@@ -152,6 +152,7 @@ void SplittingAggregator::convertToBlocks(ManyAggregatedDataVariants & data_vari
 		pool.schedule(boost::bind(&SplittingAggregator::convertToBlockThread, this,
 			boost::ref(*data_variants[thread_no]),
 			boost::ref(blocks[thread_no]),
+			final,
 			boost::ref(exceptions[thread_no])));
 
 	pool.wait();
@@ -364,12 +365,12 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 }
 
 
-void SplittingAggregator::convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, ExceptionPtr & exception)
+void SplittingAggregator::convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, bool final, ExceptionPtr & exception)
 {
 	try
 	{
 		Block totals;
-		block = convertToBlock(data_variant, false, totals);
+		block = convertToBlock(data_variant, false, totals, final);
 	}
 	catch (...)
 	{

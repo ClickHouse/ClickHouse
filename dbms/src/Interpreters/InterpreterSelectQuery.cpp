@@ -4,7 +4,6 @@
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
-#include <DB/DataStreams/FinalizingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
@@ -241,9 +240,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 				executeWhere(streams, before_where);
 			
 			if (need_aggregate)
-				executeAggregation(streams, before_aggregation);
+				executeAggregation(streams, before_aggregation, to_stage > QueryProcessingStage::WithMergeableState);
 
-			/** Оптимизация - при распределённой обработке запроса, на удалённом сервере,
+			/** Оптимизация - при распределённой обработке запроса,
 			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
 			  *  то выполним предварительный LIMIT на удалёном сервере.
 			  */
@@ -263,8 +262,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 				/// Если нужно объединить агрегированные результаты с нескольких серверов
 				if (from_stage == QueryProcessingStage::WithMergeableState)
 					executeMergeAggregated(streams);
-				
-				executeFinalizeAggregates(streams);
 			}
 			
 			if (has_having)
@@ -466,7 +463,7 @@ void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, Expressio
 }
 
 
-void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionActionsPtr expression, bool final)
 {
 	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
@@ -503,30 +500,18 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	if (streams.size() > 1)
 	{
 		if (!settings.use_splitting_aggregator || key_names.empty())
-			stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals,
+			stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals, final,
 				settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 		else
 			stream = maybeAsynchronous(
 				new SplittingAggregatingBlockInputStream(
-					new UnionBlockInputStream(streams, settings.max_threads), key_names, aggregates, settings.max_threads), settings.asynchronous);
+					new UnionBlockInputStream(streams, settings.max_threads), key_names, aggregates, settings.max_threads, final), settings.asynchronous);
 
 		streams.resize(1);
 	}
 	else
-		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, query.group_by_with_totals, separate_totals,
+		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, query.group_by_with_totals, separate_totals, final,
 			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
-}
-
-
-void InterpreterSelectQuery::executeFinalizeAggregates(BlockInputStreams & streams)
-{
-	Names key_names;
-	AggregateDescriptions aggregates;
-	query_analyzer->getAggregateInfo(key_names, aggregates);
-	
-	/// Финализируем агрегатные функции - заменяем их состояния вычислений на готовые значения
-	BlockInputStreamPtr & stream = streams[0];
-	stream = maybeAsynchronous(new FinalizingAggregatedBlockInputStream(stream, aggregates), settings.asynchronous);
 }
 
 
