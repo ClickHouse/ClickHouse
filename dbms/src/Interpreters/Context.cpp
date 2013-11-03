@@ -39,7 +39,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 	const User & user_props = shared->users.get(name, password, address);
 	setSetting("profile", user_props.profile);
-	setQuota(user_props.quota, quota_key, address);
+	setQuota(user_props.quota, quota_key, name, address);
 
 	user = name;
 }
@@ -52,10 +52,10 @@ void Context::initQuotasFromConfig()
 }
 
 
-void Context::setQuota(const String & name, const String & quota_key, const Poco::Net::IPAddress & address)
+void Context::setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	quota = &shared->quotas.get(name, quota_key, address);
+	quota = &shared->quotas.get(name, quota_key, user_name, address);
 }
 
 

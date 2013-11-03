@@ -205,16 +205,23 @@ void Quota::initFromConfig(const String & config_elem, const String & name_)
 	max.initFromConfig(config_elem);
 }
 
-QuotaForIntervals & Quota::get(const String & quota_key, const Poco::Net::IPAddress & ip)
+QuotaForIntervals & Quota::get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip)
 {
 	if (!quota_key.empty() && (!is_keyed || keyed_by_ip))
 		throw Exception("Quota " + name + " doesn't allow client supplied keys.", ErrorCodes::QUOTA_DOESNT_ALLOW_KEYS);
 
-	String quota_key_or_ip = keyed_by_ip ? ip.toString() : quota_key;
-	UInt64 quota_key_hashed = 0;
+	/** Квота считается отдельно:
+	  * - для каждого IP-адреса, если keyed_by_ip;
+	  * - иначе для каждого quota_key, если он есть;
+	  * - иначе для каждого пользователя.
+	  */
 
-	if (!quota_key_or_ip.empty())
-		quota_key_hashed = sipHash64(quota_key_or_ip);
+	UInt64 quota_key_hashed = sipHash64(
+		keyed_by_ip
+			? ip.toString()
+			: (!quota_key.empty()
+				? quota_key
+				: user_name));
 
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
@@ -243,13 +250,13 @@ void Quotas::initFromConfig()
 	}
 }
 
-QuotaForIntervals & Quotas::get(const String & name, const String & quota_key, const Poco::Net::IPAddress & ip)
+QuotaForIntervals & Quotas::get(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip)
 {
 	Container::iterator it = cont.find(name);
 	if (cont.end() == it)
 		throw Exception("Unknown quota " + name, ErrorCodes::UNKNOWN_QUOTA);
 
-	return it->second->get(quota_key, ip);
+	return it->second->get(quota_key, user_name, ip);
 }
 
 }

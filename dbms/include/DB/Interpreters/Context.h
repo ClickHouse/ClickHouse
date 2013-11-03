@@ -144,7 +144,7 @@ public:
 	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key);
 
 	void initQuotasFromConfig();
-	void setQuota(const String & name, const String & quota_key, const Poco::Net::IPAddress & address);
+	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();
 
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.

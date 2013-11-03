@@ -145,7 +145,7 @@ struct Quota
 	Quota() : max(this), is_keyed(false), keyed_by_ip(false) {}
 
 	void initFromConfig(const String & config_elem, const String & name_);
-	QuotaForIntervals & get(const String & quota_key, const Poco::Net::IPAddress & ip);
+	QuotaForIntervals & get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
 
@@ -158,7 +158,7 @@ private:
 
 public:
 	void initFromConfig();
-	QuotaForIntervals & get(const String & name, const String & quota_key, const Poco::Net::IPAddress & ip);
+	QuotaForIntervals & get(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
 }
