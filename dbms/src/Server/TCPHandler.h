@@ -131,7 +131,7 @@ private:
 	void updateProgress(size_t rows, size_t bytes);
 
 	/// Вывести информацию о скорости выполнения SELECT запроса.
-	void logProfileInfo(Stopwatch & watch);
+	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in);
 };
 
 
