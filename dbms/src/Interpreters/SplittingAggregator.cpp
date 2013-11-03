@@ -140,6 +140,9 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 void SplittingAggregator::convertToBlocks(ManyAggregatedDataVariants & data_variants, Blocks & blocks)
 {
+	if (data_variants.empty())
+		return;
+
 	blocks.resize(data_variants.size());
 	Exceptions exceptions(threads);
 
