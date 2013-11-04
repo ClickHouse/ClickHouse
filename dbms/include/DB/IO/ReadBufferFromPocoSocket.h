@@ -31,15 +31,15 @@ protected:
 		}
 		catch (Poco::Net::NetException & e)
 		{
-			throw Exception(e.displayText(), " while reading from socket (" + socket.address().toString() + ")", ErrorCodes::NETWORK_ERROR);
+			throw Exception(e.displayText(), " while reading from socket (" + socket.peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
 		}
 		catch (Poco::TimeoutException & e)
 		{
-			throw Exception("Timeout exceeded while reading from socket (" + socket.address().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+			throw Exception("Timeout exceeded while reading from socket (" + socket.peerAddress().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
 		}
 		
 		if (bytes_read < 0)
-			throw Exception("Cannot read from socket (" + socket.address().toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+			throw Exception("Cannot read from socket (" + socket.peerAddress().toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 
 		if (bytes_read)
 			working_buffer.resize(bytes_read);

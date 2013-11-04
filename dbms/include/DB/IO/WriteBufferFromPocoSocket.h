@@ -37,15 +37,15 @@ protected:
 			}
 			catch (Poco::Net::NetException & e)
 			{
-				throw Exception(e.displayText() + " while writing to socket (" + socket.address().toString() + ")", ErrorCodes::NETWORK_ERROR);
+				throw Exception(e.displayText() + " while writing to socket (" + socket.peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
 			}
 			catch (Poco::TimeoutException & e)
 			{
-				throw Exception("Timeout exceeded while writing to socket (" + socket.address().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+				throw Exception("Timeout exceeded while writing to socket (" + socket.peerAddress().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
 			}
 			
 			if (res < 0)
-				throw Exception("Cannot write to socket (" + socket.address().toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+				throw Exception("Cannot write to socket (" + socket.peerAddress().toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
 			bytes_written += res;
 		}
 	}
