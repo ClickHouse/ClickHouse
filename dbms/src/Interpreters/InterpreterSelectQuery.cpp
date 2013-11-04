@@ -500,12 +500,15 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	if (streams.size() > 1)
 	{
 		if (!settings.use_splitting_aggregator || key_names.empty())
-			stream = maybeAsynchronous(new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals, final,
+			stream = maybeAsynchronous(
+				new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals, final,
 				settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 		else
 			stream = maybeAsynchronous(
 				new SplittingAggregatingBlockInputStream(
-					new UnionBlockInputStream(streams, settings.max_threads), key_names, aggregates, settings.max_threads, final), settings.asynchronous);
+					new UnionBlockInputStream(streams, settings.max_threads),
+					key_names, aggregates, settings.max_threads, query.group_by_with_totals, separate_totals, final,
+					settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 
 		streams.resize(1);
 	}

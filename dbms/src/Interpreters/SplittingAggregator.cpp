@@ -127,6 +127,11 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 		rethrowFirstException(exceptions);
 
 		LOG_TRACE(log, "Parallel aggregated in " << std::fixed << std::setprecision(2) << watch.elapsedSeconds() << " sec.");
+
+		/// Проверка ограничений
+
+		if (max_rows_to_group_by && size_of_all_results > max_rows_to_group_by && group_by_overflow_mode == Limits::BREAK)
+			break;
 	}
 
 /*	double elapsed_seconds = watch.elapsedSeconds();
@@ -238,6 +243,14 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 	{
 		result.aggregator = this;
 
+		/** Используется, если есть ограничение на максимальное количество строк при агрегации,
+		  *  и если group_by_overflow_mode == ANY.
+		  * В этом случае, новые ключи не добавляются в набор, а производится агрегация только по
+		  *  ключам, которые уже успели попасть в набор.
+		  */
+		bool no_more_keys = max_rows_to_group_by && size_of_all_results > max_rows_to_group_by;
+		size_t old_result_size = result.size();
+
 		if (method == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res = result.key64;
@@ -253,7 +266,15 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 				AggregatedDataWithUInt64Key::iterator it;
 				bool inserted;
 
-				res.emplace(key, it, inserted);
+				if (!no_more_keys)
+					res.emplace(key, it, inserted);
+				else
+				{
+					inserted = false;
+					it = res.find(key);
+					if (res.end() == it)
+						continue;
+				}
 
 				if (inserted)
 				{
@@ -281,8 +302,17 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 				bool inserted;
 
 				StringRef ref = string_refs[i];
-				res.emplace(ref, it, inserted, hashes64[i]);
 
+				if (!no_more_keys)
+					res.emplace(ref, it, inserted, hashes64[i]);
+				else
+				{
+					inserted = false;
+					it = res.find(ref);
+					if (res.end() == it)
+						continue;
+				}
+				
 				if (inserted)
 				{
 					it->first.data = result.string_pool.insert(ref.data, ref.size);
@@ -310,7 +340,15 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 				bool inserted;
 				UInt128 key128 = keys128[i];
 
-				res.emplace(key128, it, inserted);
+				if (!no_more_keys)
+					res.emplace(key128, it, inserted);
+				else
+				{
+					inserted = false;
+					it = res.find(key128);
+					if (res.end() == it)
+						continue;
+				}
 
 				if (inserted)
 				{
@@ -339,7 +377,15 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 				bool inserted;
 				UInt128 key128 = hashes128[i];
 
-				res.emplace(key128, it, inserted);
+				if (!no_more_keys)
+					res.emplace(key128, it, inserted);
+				else
+				{
+					inserted = false;
+					it = res.find(key128);
+					if (res.end() == it)
+						continue;
+				}
 
 				if (inserted)
 				{
@@ -357,6 +403,14 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 		}
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+		/// Проверка ограничений.
+		size_t current_size_of_all_results = __sync_add_and_fetch(&size_of_all_results, result.size() - old_result_size);
+
+		if (max_rows_to_group_by && current_size_of_all_results > max_rows_to_group_by && group_by_overflow_mode == Limits::THROW)
+			throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(current_size_of_all_results)
+				+ " rows, maximum: " + toString(max_rows_to_group_by),
+				ErrorCodes::TOO_MUCH_ROWS);
 	}
 	catch (...)
 	{

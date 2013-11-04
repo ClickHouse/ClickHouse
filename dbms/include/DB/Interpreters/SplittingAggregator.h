@@ -24,7 +24,6 @@ namespace DB
   * Плохо работает при размере хэш-таблиц больше 2^32 элементов.
   *
   * TODO:
-  * - поддержка max_rows_to_group_by;
   * - поддержка with_totals;
   * - проверить работу при распределённой обработке запроса;
   * - починить rows_before_limit_at_least;
@@ -34,17 +33,19 @@ namespace DB
 class SplittingAggregator : private Aggregator
 {
 public:
-	SplittingAggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, size_t threads_)
-		: Aggregator(keys_, aggregates_, false), threads(threads_), pool(threads),
+	SplittingAggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, size_t threads_,
+		bool with_totals_, size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		: Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_), threads(threads_), pool(threads),
 		log(&Logger::get("SplittingAggregator")), method(AggregatedDataVariants::EMPTY),
-		key_columns(keys_size), aggregate_columns(aggregates_size), rows(0), src_rows(0), src_bytes(0)
+		key_columns(keys_size), aggregate_columns(aggregates_size), rows(0), src_rows(0), src_bytes(0), size_of_all_results(0)
 	{
 	}
 
-	SplittingAggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, size_t threads_)
-		: Aggregator(key_names_, aggregates_, false), threads(threads_), pool(threads),
+	SplittingAggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, size_t threads_,
+		bool with_totals_, size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		: Aggregator(key_names_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_), threads(threads_), pool(threads),
 		log(&Logger::get("SplittingAggregator")), method(AggregatedDataVariants::EMPTY),
-		key_columns(keys_size), aggregate_columns(aggregates_size), rows(0), src_rows(0), src_bytes(0)
+		key_columns(keys_size), aggregate_columns(aggregates_size), rows(0), src_rows(0), src_bytes(0), size_of_all_results(0)
 	{
 	}
 
@@ -88,6 +89,8 @@ private:
 	UInt128Hash hash_func_128;
 	StringRefHash hash_func_string;
 
+	/// Для более точного контроля max_rows_to_group_by.
+	size_t size_of_all_results;
 
 	void calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception);
 	void aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception);
