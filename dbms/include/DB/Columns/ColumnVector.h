@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include <boost/type_traits/make_signed.hpp>
+
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -29,7 +31,10 @@ struct CompareHelper
 	  * - если nan_direction_hint == 1 - NaN считаются больше всех чисел;
 	  * По-сути: nan_direction_hint == -1 говорит, что сравнение идёт для сортировки по убыванию.
 	  */
-	static int compare(T a, T b, int nan_direction_hint) { return a - b; }
+	static int compare(T a, T b, int nan_direction_hint)
+	{
+		return a > b ? 1 : (a < b ? -1 : 0);
+	}
 };
 
 template <typename T>
