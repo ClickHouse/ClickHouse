@@ -15,6 +15,8 @@ class ASTCreateQuery : public IAST
 public:
 	bool attach;	/// Запрос ATTACH TABLE, а не CREATE TABLE.
 	bool if_not_exists;
+	bool is_view;
+	bool is_materialized_view;
 	String database;
 	String table;
 	ASTPtr columns;

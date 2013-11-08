@@ -16,8 +16,10 @@ namespace DB
 class InterpreterSelectQuery
 {
 public:
-	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-		size_t subquery_depth_ = 0);
+	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = 0);
+
+	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names,
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = 0);
 
 	/// Выполнить запрос, получить поток блоков для чтения
 	BlockInputStreamPtr execute();
@@ -39,6 +41,8 @@ private:
 	
 	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
 	  */
+	void init(BlockInputStreamPtr input);
+
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 	
 	StoragePtr getTable();
@@ -72,6 +76,7 @@ private:
 	QueryProcessingStage::Enum to_stage;
 	size_t subquery_depth;
 	ExpressionAnalyzerPtr query_analyzer;
+	BlockInputStreams streams;
 
 	Logger * log;
 };

@@ -2,7 +2,8 @@
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTQueryWithOutput.h>
-
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -33,6 +34,30 @@ public:
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "SelectQuery"; };
+
+	void rewriteExpressionList(const Names & column_names)
+	{
+		ASTPtr result = new ASTExpressionList;
+		ASTs asts = select_expression_list->children;
+		for (size_t i = 0; i < column_names.size(); ++i)
+		{
+			bool done = 0;
+			for (size_t j = 0; j < asts.size(); ++j)
+			{
+				if (asts[j]->getAlias() == column_names[i])
+				{
+					result->children.push_back(asts[j]->clone());
+					done = 1;
+				}
+			}
+			if (!done)
+				throw Exception("Logical error while rewriting expressioin list for select query"
+					" Could not find alias: " + column_names[i],
+					DB::ErrorCodes::UNKNOWN_IDENTIFIER);
+
+		}
+		select_expression_list.swap(result);
+	}
 
 	ASTPtr clone() const
 	{

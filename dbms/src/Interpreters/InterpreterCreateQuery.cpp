@@ -22,6 +22,8 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 
 
+
+
 namespace DB
 {
 
@@ -160,6 +162,18 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		{
 			storage_name = context.getTable(as_database_name, as_table_name)->getName();
 			create.storage = dynamic_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
+		} else if (create.is_view)
+		{
+			storage_name = "View";
+			ASTFunction * func = new ASTFunction();
+			func->name = storage_name;
+			create.storage = func;
+		} else if (create.is_materialized_view)
+		{
+			storage_name = "MaterializedView";
+			ASTFunction * func = new ASTFunction();
+			func->name = storage_name;
+			create.storage = func;
 		} else
 			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
@@ -191,7 +205,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				attach.as_table.clear();
 				attach.if_not_exists = false;
 				/// Для engine VIEW необходимо сохранить сам селект запрос, для остальных - наоборот
-				if (storage_name != "VIEW")
+				if (storage_name != "View" && storage_name != "MaterializedView")
 					attach.select = NULL;
 
 				Poco::FileOutputStream metadata_file(metadata_path);
@@ -204,7 +218,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	}
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
-	if (create.select && storage_name != "VIEW")
+	if (create.select && storage_name != "View" && !create.attach)
 	{
 		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
 		copyData(*from, *res->write(query_ptr));

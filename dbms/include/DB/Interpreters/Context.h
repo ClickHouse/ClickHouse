@@ -37,6 +37,12 @@ typedef std::map<String, Tables> Databases;
 /// имя БД -> dropper
 typedef std::map<String, DatabaseDropperPtr> DatabaseDroppers;
 
+/// (имя базы данных, имя таблицы)
+typedef std::pair<String, String> DatabaseAndTableName;
+
+/// таблица -> множество таблиц-вьюшек, которые селектят из нее
+typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
+
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
@@ -73,7 +79,8 @@ struct ContextShared
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
-		
+	ViewDependencies view_dependencies;						/// Текущие зависимости
+
 	ContextShared() : log(&Logger::get("Context")), after_destroy(log) {};
 
 	~ContextShared()
@@ -136,6 +143,8 @@ private:
 	Context * session_context;			/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
 	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
+
+
 public:
 	Context() : shared(new ContextShared), quota(NULL), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
 
@@ -150,6 +159,10 @@ public:
 	void initQuotasFromConfig();
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();
+
+	void addDependency(DatabaseAndTableName from, DatabaseAndTableName where);
+	void removeDependency(DatabaseAndTableName from, DatabaseAndTableName where);
+	std::vector<DatabaseAndTableName> getDependencies(DatabaseAndTableName from) const;
 
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
 	bool isTableExist(const String & database_name, const String & table_name) const;

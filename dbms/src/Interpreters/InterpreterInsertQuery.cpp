@@ -2,6 +2,7 @@
 
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
+#include <DB/DataStreams/PushingToViewsOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -18,6 +19,7 @@ namespace DB
 InterpreterInsertQuery::InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_)
 	: query_ptr(query_ptr_), context(context_)
 {
+	
 }
 
 
@@ -65,7 +67,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	
 	BlockInputStreamPtr in;
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList (table->getSampleBlock().getColumnsList());
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
+	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
@@ -114,7 +116,8 @@ BlockOutputStreamPtr InterpreterInsertQuery::execute()
 	StoragePtr table = getTable();
 
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
+//	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
+	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT или INSERT SELECT?
 	if (!query.select)

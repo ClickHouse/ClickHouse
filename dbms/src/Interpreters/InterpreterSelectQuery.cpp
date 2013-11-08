@@ -27,27 +27,43 @@
 namespace DB
 {
 
-
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
-	size_t subquery_depth_)
-	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	log(&Logger::get("InterpreterSelectQuery"))
+void InterpreterSelectQuery::init(BlockInputStreamPtr input_)
 {
 	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
 		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
-	
+
 	context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
 		? getTable()->getColumnsList()
 		: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
-	
+
 	if (context.getColumns().empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
-	
+
 	query_analyzer = new ExpressionAnalyzer(query_ptr, context, subquery_depth);
+
+	if (input_)
+		streams.push_back(input_);
 }
 
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
+	size_t subquery_depth_, BlockInputStreamPtr input_)
+	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
+	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	log(&Logger::get("InterpreterSelectQuery"))
+{
+	init(input_);
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names_,
+		QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
+	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
+	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	log(&Logger::get("InterpreterSelectQuery"))
+{
+	init(input_);
+	query.rewriteExpressionList(required_column_names_);
+}
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
@@ -135,7 +151,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	  *  параллельный GROUP BY склеит потоки в один,
 	  *  затем выполним остальные операции с одним получившимся потоком.
 	  */
-	BlockInputStreams streams;
 
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
@@ -342,22 +357,23 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 	}
 }
 
-
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInputStreams & streams)
 {
+	if (!streams.empty())
+		return QueryProcessingStage::FetchColumns;
+
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr table;
 	/// Интерпретатор подзапроса, если подзапрос
 	SharedPtr<InterpreterSelectQuery> interpreter_subquery;
 
+	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
+	Names required_columns = query_analyzer->getRequiredColumns();
+
 	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-	{
 		table = getTable();
-		if (table->getName() == "VIEW")
-			query.table = dynamic_cast<StorageView *> (table.get())->getInnerQuery();
-	}
 	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context, QueryProcessingStage::Complete, subquery_depth + 1);
+		interpreter_subquery = new InterpreterSelectQuery(query.table, context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 
 	if (query.sample_size && (!table || !table->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -380,9 +396,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (table && table->isRemote())
 		settings.max_threads = settings.max_distributed_connections;
 	
-	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
-	Names required_columns = query_analyzer->getRequiredColumns();
-
 	/// Ограничение на количество столбцов для чтения.
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
 		throw Exception("Limit for number of columns to read exceeded. "

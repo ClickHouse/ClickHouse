@@ -254,22 +254,6 @@ static ASTPtr newIdentifier(const std::string & name, ASTIdentifier::Kind kind)
 	return res;
 }
 
-static std::string formatColumnsForCreateQuery(NamesAndTypesList & columns)
-{
-	std::string res;
-	res += "(";
-	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
-	{
-		if (it != columns.begin())
-			res += ", ";
-		res += it->first;
-		res += " ";
-		res += it->second->getName();
-	}
-	res += ")";
-	return res;
-}
-
 bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 {
 	typedef std::map<std::string, DataTypePtr> ColumnsMap;

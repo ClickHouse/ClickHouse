@@ -16,7 +16,7 @@ using Poco::SharedPtr;
 class OneBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	OneBlockInputStream(Block & block_) : block(block_), has_been_read(false) {}
+	OneBlockInputStream(const Block & block_) : block(block_), has_been_read(false) {}
 
 	String getName() const { return "OneBlockInputStream"; }
 

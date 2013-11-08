@@ -2,6 +2,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 
 namespace DB
@@ -10,20 +11,35 @@ namespace DB
 class StorageView : public IStorage {
 
 public:
-	static StoragePtr create(const std::string & name_, const ASTSelectQuery & inner_query_, NamesAndTypesListPtr columns_, const Context & context_);
+	static StoragePtr create(const String & table_name_, const String & database_name_,
+		Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_);
 
-	std::string getName() const { return "VIEW"; }
-	std::string getTableName() const { return name; }
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	DB::ASTPtr getInnerQuery() { return inner_query.clone(); };
+	virtual std::string getName() const { return "View"; }
+	virtual std::string getTableName() const { return table_name; }
+	virtual const NamesAndTypesList & getColumnsList() const { return *columns; }
+	virtual DB::ASTPtr getInnerQuery() { return inner_query.clone(); };
 
-private:
-	String name;
+	virtual BlockInputStreams read(
+		const Names & column_names,
+		ASTPtr query,
+		const Settings & settings,
+		QueryProcessingStage::Enum & processed_stage,
+		size_t max_block_size = DEFAULT_BLOCK_SIZE,
+		unsigned threads = 1);
+
+	virtual void dropImpl();
+
+protected:
+	String select_database_name;
+	String select_table_name;
+	String table_name;
+	String database_name;
 	ASTSelectQuery inner_query;
+	Context & context;
 	NamesAndTypesListPtr columns;
-	const Context & context;
 
-	StorageView(const std::string & name_, const ASTSelectQuery & inner_query_, NamesAndTypesListPtr columns_, const Context & context_): name(name_), inner_query(inner_query_), columns(columns_), context(context_) { }
+	StorageView(const String & table_name_, const String & database_name_,
+		Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_);
 };
 
 }

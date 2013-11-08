@@ -195,6 +195,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ASTPtr select;
 	bool attach = false;
 	bool if_not_exists = false;
+	bool is_view = false;
+	bool is_materialized_view = false;
 
 	ws.ignore(pos, end);
 
@@ -268,7 +270,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 				return false;
 
 			/// Для engine VIEW необходимо так же считать запрос AS SELECT
-			if (dynamic_cast<ASTFunction &>(*storage).name == "VIEW")
+			if (dynamic_cast<ASTFunction &>(*storage).name == "View" || dynamic_cast<ASTFunction &>(*storage).name == "MaterializedView")
 			{
 				if (!s_as.ignore(pos, end, expected))
 					return false;
@@ -323,27 +325,17 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		}
 	} else {
 		/// VIEW or MATERIALIZED VIEW
-		Pos before = pos;
 		if (s_materialized.ignore(pos, end, expected))
-		{
-			pos = before;
-			ParserIdentifierWithOptionalParameters storage_p;
-			storage_p.parse(pos, end, storage, expected);
-			ws.ignore(pos, end, expected);
-			if (!s_view.ignore(pos, end, expected))
-				return false;
-		} else {
-			if (!s_view.ignore(pos, end, expected))
-				return false;
-			pos = before;
-			ParserIdentifierWithOptionalParameters storage_p;
-			storage_p.parse(pos, end, storage, expected);
-		}
-		ws.ignore(pos, end);
+			is_materialized_view = true;
+		else
+			is_view = true;
 
+		ws.ignore(pos, end, expected);
+		if (!s_view.ignore(pos, end, expected))
+			return false;
+		ws.ignore(pos, end);
 		if (!name_p.parse(pos, end, table, expected))
 			return false;
-
 		ws.ignore(pos, end);
 
 		if (s_dot.ignore(pos, end, expected))
@@ -377,6 +369,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 
 	query->attach = attach;
 	query->if_not_exists = if_not_exists;
+	query->is_view = is_view;
+	query->is_materialized_view = is_materialized_view;
+	
 	if (database)
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
 	if (table)

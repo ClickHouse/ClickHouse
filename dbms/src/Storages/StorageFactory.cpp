@@ -17,6 +17,7 @@
 #include <DB/Storages/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageView.h>
+#include <DB/Storages/StorageMaterializedView.h>
 #include <DB/Storages/StorageChunks.h>
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Storages/StorageChunkMerger.h>
@@ -51,10 +52,14 @@ StoragePtr StorageFactory::get(
 	else if (name == "ChunkRef")
 	{
 		throw Exception("Table with storage ChunkRef must not be created manually.", ErrorCodes::TABLE_MUST_NOT_BE_CREATED_MANUALLY);
-	} else if (name == "VIEW")
+	}
+	else if (name == "View")
 	{
-		ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query);
-		return StorageView::create(table_name, dynamic_cast<ASTSelectQuery &>(*(create.select)), columns, context);
+		return StorageView::create(table_name, database_name, context, query, columns);
+	}
+	else if (name == "MaterializedView")
+	{
+		return StorageMaterializedView::create(table_name, database_name, context, query, columns, attach);
 	}
 	else if (name == "ChunkMerger")
 	{
