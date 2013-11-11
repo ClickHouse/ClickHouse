@@ -249,7 +249,7 @@ struct Regexps
 
 		KnownRegexps::const_iterator it = known_regexps.find(pattern);
 		if (known_regexps.end() == it)
- 			it = known_regexps.insert(std::make_pair(pattern, OptimizedRegularExpression(likePatternToRegexp(pattern), OptimizedRegularExpression::RE_CASELESS))).first;
+ 			it = known_regexps.insert(std::make_pair(pattern, OptimizedRegularExpression(likePatternToRegexp(pattern)))).first;
 
 		return it->second;
 	}
