@@ -204,13 +204,13 @@ protected:
 			{
 				readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
 			}
-			catch (const Exception & e)
+			catch (Exception & e)
 			{
 				/// Более хорошая диагностика.
 				if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH || e.code() == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED)
-					throw Exception(e.message() + " (while reading column " + *it + " from part " + path + ")", e.code());
-				else
-					throw;
+					e.addMessage("(while reading column " + *it + " from part " + path + ")");
+
+				throw;
 			}
 			
 			if (column.column->size())
@@ -226,13 +226,13 @@ protected:
 			{
 				rows_left_in_current_range -= res.rows();
 			}
-			catch (const Exception & e)
+			catch (Exception & e)
 			{
 				/// Более хорошая диагностика.
 				if (e.code() == ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH)
-					throw Exception(e.message() + " (while reading from part " + path + ")", e.code());
-				else
-					throw;
+					e.addMessage("(while reading from part " + path + ")");
+
+				throw;
 			}
 			
 			/// Заполним столбцы, для которых нет файлов, значениями по-умолчанию.
