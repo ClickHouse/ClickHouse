@@ -80,7 +80,7 @@ class IProfilingBlockInputStream : public IBlockInputStream
 public:
 	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr())
 		: IBlockInputStream(owned_storage_), is_cancelled(false), process_list_elem(NULL),
-		enabled_extremes(false), quota(NULL), quota_mode(QUOTA_READ), prev_elapsed(0) {}
+		enabled_extremes(false), quota(NULL), prev_elapsed(0) {}
 	
 	Block read();
 
@@ -143,9 +143,24 @@ public:
 		return is_cancelled;
 	}
 
+	/** Какие ограничения (и квоты) проверяются.
+	  * Если LIMITS_CURRENT - ограничения проверяются на количество данных, прочитанных только в этом stream-е.
+	  * - используется для реализации ограничений на объём результата выполнения запроса.
+	  * Если LIMITS_TOTAL, то ещё дополнительно делается проверка в колбэке прогресса,
+	  *  по суммарным данным по всем листовым stream-ам, в том числе, с удалённых серверов.
+	  * - используется для реализации ограничений на общий объём прочитанных (исходных) данных.
+	  */
+	enum LimitsMode
+	{
+		LIMITS_CURRENT,
+		LIMITS_TOTAL,
+	};
+
 	/// Используется подмножество ограничений из Limits.
 	struct LocalLimits
 	{
+		LimitsMode mode;
+		
 		size_t max_rows_to_read;
 		size_t max_bytes_to_read;
 		Limits::OverflowMode read_overflow_mode;
@@ -159,7 +174,8 @@ public:
 		Poco::Timespan timeout_before_checking_execution_speed;
 
 		LocalLimits()
-			: max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(Limits::THROW),
+			: mode(LIMITS_CURRENT),
+			max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(Limits::THROW),
 			max_execution_time(0), timeout_overflow_mode(Limits::THROW),
 			min_execution_speed(0), timeout_before_checking_execution_speed(0)
 		{
@@ -172,19 +188,12 @@ public:
 		limits = limits_;
 	}
 
-
-	/// Какая квота используется - на объём исходных данных или на объём результата.
-	enum QuotaMode
-	{
-		QUOTA_READ,
-		QUOTA_RESULT,
-	};
-
-	/// Установить квоту.
-	void setQuota(QuotaForIntervals & quota_, QuotaMode quota_mode_)
+	/** Установить квоту. Если устанавливается квота на объём исходных данных,
+	  * то следует ещё установить mode = LIMITS_TOTAL в LocalLimits с помощью setLimits.
+	  */
+	void setQuota(QuotaForIntervals & quota_)
 	{
 		quota = &quota_;
-		quota_mode = quota_mode_;
 	}
 
 	/// Включить рассчёт минимумов и максимумов по столбцам результата.
@@ -210,7 +219,6 @@ protected:
 	LocalLimits limits;
 
 	QuotaForIntervals * quota;	/// Если NULL - квота не используется.
-	QuotaMode quota_mode;
 	double prev_elapsed;
 
 	/// Наследники должны реализовать эту функцию.

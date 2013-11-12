@@ -332,12 +332,13 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		if (to_stage == QueryProcessingStage::Complete)
 		{
 			IProfilingBlockInputStream::LocalLimits limits;
+			limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
 			limits.max_rows_to_read = settings.limits.max_result_rows;
 			limits.max_bytes_to_read = settings.limits.max_result_bytes;
 			limits.read_overflow_mode = settings.limits.result_overflow_mode;
 
 			stream->setLimits(limits);
-			stream->setQuota(context.getQuota(), IProfilingBlockInputStream::QUOTA_RESULT);
+			stream->setQuota(context.getQuota());
 		}
 	}
 
@@ -440,6 +441,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (table && to_stage == QueryProcessingStage::Complete)
 	{
 		IProfilingBlockInputStream::LocalLimits limits;
+		limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
 		limits.max_rows_to_read = settings.limits.max_rows_to_read;
 		limits.max_bytes_to_read = settings.limits.max_bytes_to_read;
 		limits.read_overflow_mode = settings.limits.read_overflow_mode;
@@ -455,7 +457,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&**it))
 			{
 				stream->setLimits(limits);
-				stream->setQuota(quota, IProfilingBlockInputStream::QUOTA_READ);
+				stream->setQuota(quota);
 			}
 		}
 	}
@@ -600,6 +602,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 
 		/// Ограничения на сортировку
 		IProfilingBlockInputStream::LocalLimits limits;
+		limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
 		limits.max_rows_to_read = settings.limits.max_rows_to_sort;
 		limits.max_bytes_to_read = settings.limits.max_bytes_to_sort;
 		limits.read_overflow_mode = settings.limits.sort_overflow_mode;

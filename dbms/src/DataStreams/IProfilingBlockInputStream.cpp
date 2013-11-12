@@ -326,19 +326,19 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 	time_t current_time = time(0);
 	double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
-	switch (quota_mode)
+	switch (limits.mode)
 	{
-		case QUOTA_READ:
+		case LIMITS_TOTAL:
 			/// Проверяется в методе progress.
 			break;
 
-		case QUOTA_RESULT:
+		case LIMITS_CURRENT:
 			quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
 			quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
 			break;
 
 		default:
-			throw Exception("Logical error: unknown quota mode.", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Logical error: unknown limits mode.", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	prev_elapsed = total_elapsed;
@@ -367,8 +367,9 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 			  * NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
 			  */
 
-			if ((limits.max_rows_to_read && total_rows > limits.max_rows_to_read)
-				|| (limits.max_bytes_to_read && total_bytes > limits.max_bytes_to_read))
+			if (limits.mode == LIMITS_TOTAL
+				&& ((limits.max_rows_to_read && total_rows > limits.max_rows_to_read)
+					|| (limits.max_bytes_to_read && total_bytes > limits.max_bytes_to_read)))
 			{
 				if (limits.read_overflow_mode == Limits::THROW)
 					throw Exception("Limit for rows to read exceeded: read " + toString(total_rows)
@@ -389,7 +390,7 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 					ErrorCodes::TOO_SLOW);
 			}
 
-			if (quota != NULL && quota_mode == QUOTA_READ)
+			if (quota != NULL && limits.mode == LIMITS_TOTAL)
 			{
 				quota->checkAndAddReadRowsBytes(time(0), rows, bytes);
 			}
