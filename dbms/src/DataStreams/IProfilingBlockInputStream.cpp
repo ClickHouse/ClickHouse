@@ -293,7 +293,9 @@ bool IProfilingBlockInputStream::checkLimits()
 		|| (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read))
 	{
 		if (limits.read_overflow_mode == Limits::THROW)
-			throw Exception("Limit for rows to read exceeded: read " + toString(info.rows)
+			throw Exception(std::string("Limit for ")
+				+ (limits.mode == LIMITS_CURRENT ? "result rows" : "rows to read")
+				+ " exceeded: read " + toString(info.rows)
 				+ " rows, maximum: " + toString(limits.max_rows_to_read),
 				ErrorCodes::TOO_MUCH_ROWS);
 
