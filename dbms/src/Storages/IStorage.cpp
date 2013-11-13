@@ -144,27 +144,24 @@ void IStorage::check(const Block & block, bool need_all) const
 }
 
 
-/// одинаковыми считаются имена, если они совпадают целиком или nameWithoutDot совпадает с частью имени до точки
-bool namesEqual(const String & nameWithoutDot, const DB::NameAndTypePair & name_type)
+/// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
+bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
 {
-	String nameWithDot = nameWithoutDot + ".";
-	return (nameWithDot == name_type.first.substr(0, nameWithoutDot.length() + 1) || nameWithoutDot == name_type.first);
+	String name_with_dot = name_without_dot + ".";
+	return (name_with_dot == name_type.first.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.first);
 }
 
-void IStorage::alter_columns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context) const
+void IStorage::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context) const
 {
 	if (params.type == ASTAlterQuery::ADD)
 	{
-		/// TODO: нужны ли блокировки
-		//Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		//Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-
 		NamesAndTypesList::iterator insert_it = columns->end();
 		if (params.column)
 		{
 			String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
 
-			/// Пытаемся найти первую с конца колонку с именем column_name или column_name.*
+			/// Пытаемся найти первую с конца колонку с именем column_name или с именем, начинающимся с column_name и ".".
+			/// Например "fruits.bananas"
 			NamesAndTypesList::reverse_iterator reverse_insert_it = std::find_if(columns->rbegin(), columns->rend(),  boost::bind(namesEqual, column_name, _1) );
 
 			if (reverse_insert_it == columns->rend())
@@ -191,10 +188,6 @@ void IStorage::alter_columns(const ASTAlterQuery::Parameters & params, NamesAndT
 	else if (params.type == ASTAlterQuery::DROP)
 	{
 		String column_name = dynamic_cast<const ASTIdentifier &>(*(params.column)).name;
-		
-		/// TODO: нужны ли блокировки
-		///Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		///Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 	
 		/// Удаляем колонки из листа columns
 		bool is_first = true;

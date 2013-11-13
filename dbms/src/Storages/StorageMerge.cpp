@@ -90,7 +90,7 @@ void StorageMerge::getSelectedTables(StorageVector & selected_tables)
 
 void StorageMerge::alter(const ASTAlterQuery::Parameters & params)
 {
-	alter_columns(params, columns, context);
+	alterColumns(params, columns, context);
 }
 }
 

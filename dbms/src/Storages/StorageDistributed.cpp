@@ -127,6 +127,6 @@ BlockInputStreams StorageDistributed::read(
 
 void StorageDistributed::alter(const ASTAlterQuery::Parameters &params)
 {
-	alter_columns(params, columns, context);
+	alterColumns(params, columns, context);
 }
 }

@@ -195,7 +195,7 @@ protected:
 	IStorage() : drop_on_destroy(false) {}
 	
 	/// реализация alter, модифицирующая список столбцов.
-	void alter_columns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context) const;
+	void alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context) const;
 private:
 	boost::weak_ptr<StoragePtr::Wrapper> this_ptr;
 };

@@ -1078,7 +1078,7 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-		alter_columns(params, columns, context);
+		alterColumns(params, columns, context);
 	}
 	if (params.type == ASTAlterQuery::DROP)
 	{
