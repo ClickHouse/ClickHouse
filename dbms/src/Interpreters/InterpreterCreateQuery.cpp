@@ -22,8 +22,6 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 
 
-
-
 namespace DB
 {
 
@@ -79,6 +77,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	StoragePtr res;
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
 	String storage_name;
+	NamesAndTypesListPtr columns = new NamesAndTypesList;
 
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
@@ -98,8 +97,6 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 		if (create.select && !create.attach)
 			interpreter_select = new InterpreterSelectQuery(create.select, context);
-
-		NamesAndTypesListPtr columns = new NamesAndTypesList;
 
 		/// Получаем список столбцов
 		if (create.columns)
@@ -137,16 +134,17 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				ASTPtr name_and_type_pair_ptr = new ASTNameTypePair;
 				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
 				name_and_type_pair.name = it->first;
-				String type_name = it->second->getName().data();
+				String * type_name = new String(it->second->getName());//.data();
 
 				ParserIdentifierWithOptionalParameters storage_p;
 				String expected;
-				const char * pos = type_name.data();
-				const char * end = pos + type_name.size();
-				
+				const char * pos = type_name->data();
+				const char * end = pos + type_name->size();
+
 				if (!storage_p.parse(pos, end, name_and_type_pair.type, expected))
 					throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
 
+				name_and_type_pair.type->query_string = type_name;
 				columns_list.children.push_back(name_and_type_pair_ptr);
 			}
 
@@ -155,7 +153,6 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		}
 
 		/// Выбор нужного движка таблицы
-
 		if (create.storage)
 			storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
 		else if (!create.as_table.empty())
@@ -181,7 +178,6 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			storage_name, data_path, table_name, database_name, context.getGlobalContext(), query_ptr, columns, create.attach);
 
 		/// Проверка наличия метаданных таблицы на диске и создание метаданных
-
 		if (!assume_metadata_exists)
 		{
 			if (Poco::File(metadata_path).exists())
@@ -218,7 +214,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	}
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
-	if (create.select && storage_name != "View" && !create.attach)
+	if (create.select && storage_name != "View" && storage_name != "MaterializedView")
 	{
 		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
 		copyData(*from, *res->write(query_ptr));

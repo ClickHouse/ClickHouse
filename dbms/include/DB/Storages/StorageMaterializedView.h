@@ -15,7 +15,7 @@ public:
 		Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_, bool attach_);
 
 	std::string getName() const { return "MaterializedView"; }
-	std::string getInnerTableName() const { return table_name + "_inner"; }
+	std::string getInnerTableName() const { return  ".inner." + table_name; }
 
 	BlockOutputStreamPtr write(ASTPtr query);
 	void dropImpl();
@@ -32,7 +32,6 @@ public:
 
 private:
 	StoragePtr data;
-	String inner_storage_name;
 
 	StorageMaterializedView(const String & table_name_, const String & database_name_,
 		Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_,	bool attach_);

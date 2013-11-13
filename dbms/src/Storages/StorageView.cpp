@@ -22,21 +22,35 @@ StorageView::StorageView(const String & table_name_, const String & database_nam
 	table_name(table_name_), database_name(database_name_), context(context_), columns(columns_)
 {
 	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_);
-	inner_query = dynamic_cast<ASTSelectQuery &>(*(create.select));
+	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*create.select);
+
+	/// Если во внутреннем запросе не указана база данных, получить ее из контекста и записать в запрос.
+	if (!select.database)
+	{
+		ASTIdentifier * id = new ASTIdentifier();
+		id->name = context.getCurrentDatabase();
+		id->kind = ASTIdentifier::Database;
+		select.database = id;
+		select.children.push_back(select.database);
+	}
+
+	inner_query = select;
 
 	if (inner_query.database)
-		select_database_name = dynamic_cast<ASTIdentifier &>(*inner_query.database).name;
+		select_database_name = dynamic_cast<const ASTIdentifier &>(*inner_query.database).name;
 	else
-		select_database_name = context.getCurrentDatabase();
+		throw Exception("Logical error while creating StorageView."
+			" Could not retrieve database name from select query.",
+			DB::ErrorCodes::LOGICAL_ERROR);
 
 	if (inner_query.table)
-		select_table_name = dynamic_cast<ASTIdentifier &>(*inner_query.table).name;
+		select_table_name = dynamic_cast<const ASTIdentifier &>(*inner_query.table).name;
 	else
 		throw Exception("Logical error while creating StorageView."
 			" Could not retrieve table name from select query.",
 			DB::ErrorCodes::LOGICAL_ERROR);
 
-	context.addDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
+	context.getGlobalContext().addDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
 }
 
 BlockInputStreams StorageView::read(
@@ -56,7 +70,7 @@ BlockInputStreams StorageView::read(
 
 
 void StorageView::dropImpl() {
-	context.removeDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
+	context.getGlobalContext().removeDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
 }
 
 

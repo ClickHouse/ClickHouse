@@ -66,26 +66,26 @@ QuotaForIntervals & Context::getQuota()
 	return *quota;
 }
 
-void Context::addDependency(DatabaseAndTableName from, DatabaseAndTableName where)
+void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	shared->view_dependencies[from].insert(where);
 }
 
-void Context::removeDependency(DatabaseAndTableName from, DatabaseAndTableName where)
+void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	shared->view_dependencies[from].erase(where);
 }
 
-std::vector<DatabaseAndTableName> Context::getDependencies(DatabaseAndTableName from) const
+Dependencies Context::getDependencies(const DatabaseAndTableName & from) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	ViewDependencies::const_iterator iter = shared->view_dependencies.find(from);
 	if (iter == shared->view_dependencies.end())
-		return std::vector<DatabaseAndTableName>();
+		return Dependencies();
 	const std::set<DatabaseAndTableName> &buf = iter->second;
-	std::vector<DatabaseAndTableName> res(buf.begin(), buf.end());
+	Dependencies res(buf.begin(), buf.end());
 	return res;
 }
 

@@ -35,10 +35,13 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "SelectQuery"; };
 
-	void rewriteExpressionList(const Names & column_names)
+
+	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
+	void rewriteSelectExpressionList(const Names & column_names)
 	{
 		ASTPtr result = new ASTExpressionList;
 		ASTs asts = select_expression_list->children;
+
 		for (size_t i = 0; i < column_names.size(); ++i)
 		{
 			bool done = 0;
@@ -51,7 +54,7 @@ public:
 				}
 			}
 			if (!done)
-				throw Exception("Logical error while rewriting expressioin list for select query"
+				throw Exception("Error while rewriting expressioin list for select query."
 					" Could not find alias: " + column_names[i],
 					DB::ErrorCodes::UNKNOWN_IDENTIFIER);
 

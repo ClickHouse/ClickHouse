@@ -26,8 +26,8 @@ public:
 	String as_table;
 	ASTPtr select;
 
-	ASTCreateQuery() {}
-	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false), if_not_exists(false) {}
+	ASTCreateQuery() : attach(false), if_not_exists(false), is_view(false), is_materialized_view(false) {}
+	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false), if_not_exists(false), is_view(false), is_materialized_view(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
@@ -40,6 +40,7 @@ public:
 		if (columns) 	{ res->columns = columns->clone(); 	res->children.push_back(res->columns); }
 		if (storage) 	{ res->storage = storage->clone(); 	res->children.push_back(res->storage); }
 		if (select) 	{ res->select = select->clone(); 	res->children.push_back(res->select); }
+		if (inner_storage) 	{ res->inner_storage = inner_storage->clone(); 	res->children.push_back(res->inner_storage); }
 
 		return res;
 	}

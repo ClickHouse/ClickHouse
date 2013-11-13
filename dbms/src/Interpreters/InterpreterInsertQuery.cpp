@@ -2,7 +2,7 @@
 
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
-#include <DB/DataStreams/PushingToViewsOutputStream.h>
+#include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -67,7 +67,10 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	
 	BlockInputStreamPtr in;
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList (table->getSampleBlock().getColumnsList());
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsOutputStream(query.database, query.table, context, query_ptr), required_columns);
+	///Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
+	table->write(query_ptr);
+	///Создаем кортеж из нескольких стримов, в которые будем писать данные.
+	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
@@ -75,7 +78,6 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		String format = query.format;
 		if (format.empty())
 			format = "Values";
-
 
 		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
 
@@ -116,8 +118,11 @@ BlockOutputStreamPtr InterpreterInsertQuery::execute()
 	StoragePtr table = getTable();
 
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
-//	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(table->write(query_ptr), required_columns);
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsOutputStream(query.database, query.table, context, query_ptr), required_columns);
+
+	///Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
+	table->write(query_ptr);
+	///Создаем кортеж из нескольких стримов, в которые будем писать данные.
+	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT или INSERT SELECT?
 	if (!query.select)

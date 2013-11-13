@@ -16,10 +16,10 @@ namespace DB
 class InterpreterSelectQuery
 {
 public:
-	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = 0);
+	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = NULL);
 
 	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names,
-		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = 0);
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = NULL);
 
 	/// Выполнить запрос, получить поток блоков для чтения
 	BlockInputStreamPtr execute();
@@ -39,10 +39,10 @@ public:
 private:
 	typedef Poco::SharedPtr<ExpressionAnalyzer> ExpressionAnalyzerPtr;
 	
-	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
-	  */
 	void init(BlockInputStreamPtr input);
 
+	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
+	  */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 	
 	StoragePtr getTable();

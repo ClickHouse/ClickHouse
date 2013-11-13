@@ -42,6 +42,7 @@ typedef std::pair<String, String> DatabaseAndTableName;
 
 /// таблица -> множество таблиц-вьюшек, которые селектят из нее
 typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
+typedef std::vector<DatabaseAndTableName> Dependencies;
 
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
@@ -160,9 +161,9 @@ public:
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();
 
-	void addDependency(DatabaseAndTableName from, DatabaseAndTableName where);
-	void removeDependency(DatabaseAndTableName from, DatabaseAndTableName where);
-	std::vector<DatabaseAndTableName> getDependencies(DatabaseAndTableName from) const;
+	void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+	void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+	Dependencies getDependencies(const DatabaseAndTableName & from) const;
 
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
 	bool isTableExist(const String & database_name, const String & table_name) const;

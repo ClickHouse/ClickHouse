@@ -62,7 +62,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_);
-	query.rewriteExpressionList(required_column_names_);
+	query.rewriteSelectExpressionList(required_column_names_);
 }
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)

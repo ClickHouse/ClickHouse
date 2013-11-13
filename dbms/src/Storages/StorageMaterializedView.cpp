@@ -1,5 +1,6 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 
@@ -8,58 +9,57 @@
 #include <DB/Storages/StorageFactory.h>
 
 #include <DB/Interpreters/InterpreterCreateQuery.h>
+#include <DB/Interpreters/InterpreterDropQuery.h>
 
 namespace DB
 {
 
 StoragePtr StorageMaterializedView::create(const String & table_name_, const String & database_name_,
-	Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_, bool attach_)
+	Context & context_, ASTPtr & query_, NamesAndTypesListPtr columns_, bool attach_)
 {
 	return (new StorageMaterializedView(table_name_, database_name_, context_, query_, columns_, attach_))->thisPtr();
 }
 
 StorageMaterializedView::StorageMaterializedView(const String & table_name_, const String & database_name_,
-	Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_,	bool attach_):
+	Context & context_, ASTPtr & query_, NamesAndTypesListPtr columns_,	bool attach_):
 	StorageView(table_name_, database_name_, context_, query_, columns_)
 {
 	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_);
 
-	/// Если не указан в запросе тип хранилища попробовать извлечь его из запроса Select
-	if (!create.inner_storage)
-		inner_storage_name = context.getTable(select_database_name, select_table_name)->getName();
-	else
-		inner_storage_name = dynamic_cast<ASTFunction &>(*(create.inner_storage)).name;
-
-	/// Составим запрос для создания внутреннего хранилища.
-	ASTPtr ast_create_query;
+	/// Если запрос ATTACH, то к этому моменту внутренняя таблица уже должна быть подключена.
 	if (attach_)
 	{
-		ast_create_query = context.getCreateQuery(database_name_, getInnerTableName());
+		if (!context.isTableExist(database_name, getInnerTableName()))
+			throw Exception("Inner table is not attached yet."
+				" Materialized view: " + database_name + "." + table_name + "."
+				" Inner table: " + database_name + "." + getInnerTableName() + ".",
+				DB::ErrorCodes::LOGICAL_ERROR);
+		data = context.getTable(database_name, getInnerTableName());
 	}
 	else
 	{
-		String formatted_columns = formatColumnsForCreateQuery(*columns);
-		String create_query = "CREATE TABLE " + database_name_ + "." + getInnerTableName() + " " + formatted_columns + " ENGINE = " + inner_storage_name;
-		/// Распарсим запрос.
-		const char * begin = create_query.data();
-		const char * end = begin + create_query.size();
-		const char * pos = begin;
-		ParserCreateQuery parser;
-		String expected;
-		bool parse_res = parser.parse(pos, end, ast_create_query, expected);
-		/// Распарсенный запрос должен заканчиваться на конец входных данных.
-		if (!parse_res || pos != end)
-			throw Exception("Syntax error while parsing create query made by StorageMaterializedView."
-				" The query is \"" + create_query + "\"."
-				+ " Failed at position " + toString(pos - begin) + ": "
-				+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-				+ ", expected " + (parse_res ? "end of query" : expected) + ".",
-				DB::ErrorCodes::LOGICAL_ERROR);
-	}
+		/// Составим запрос для создания внутреннего хранилища.
+		ASTCreateQuery * manual_create_query = new ASTCreateQuery();
+		manual_create_query->database = database_name;
+		manual_create_query->table = getInnerTableName();
+		manual_create_query->columns = create.columns;
+		ASTPtr ast_create_query = manual_create_query;
 
-	/// Выполним запрос.
-	InterpreterCreateQuery create_interpreter(ast_create_query, context_);
-	data = create_interpreter.execute();
+		/// Если не указан в запросе тип хранилища попробовать извлечь его из запроса Select.
+		if (!create.inner_storage)
+		{
+			/// TODO так же попытаться извлечь params для создания хранилища
+			ASTFunction * func = new ASTFunction();
+			func->name = context.getTable(select_database_name, select_table_name)->getName();
+			manual_create_query->storage = func;
+		}
+		else
+			manual_create_query->storage = create.inner_storage;
+
+		/// Выполним запрос.
+		InterpreterCreateQuery create_interpreter(ast_create_query, context);
+		data = create_interpreter.execute();
+	}
 }
 
 BlockInputStreams StorageMaterializedView::read(
@@ -79,8 +79,15 @@ BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query)
 }
 
 void StorageMaterializedView::dropImpl() {
-	context.removeDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
-	data->dropImpl();
+	context.getGlobalContext().removeDependency(DatabaseAndTableName(select_database_name, select_table_name), 	DatabaseAndTableName(database_name, table_name));
+
+	/// Состваляем и выполняем запрос drop для внутреннего хранилища.
+	ASTDropQuery *drop_query = new ASTDropQuery;
+	drop_query->database = database_name;
+	drop_query->table = getInnerTableName();
+	ASTPtr ast_drop_query = drop_query;
+	InterpreterDropQuery drop_interpreter(ast_drop_query, context);
+	drop_interpreter.execute();
 }
 
 bool StorageMaterializedView::optimize() {

@@ -393,6 +393,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		query->children.push_back(storage);
 	if (select)
 		query->children.push_back(select);
+	if (inner_storage)
+		query->children.push_back(inner_storage);
 
 	return true;
 }
