@@ -134,7 +134,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				ASTPtr name_and_type_pair_ptr = new ASTNameTypePair;
 				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
 				name_and_type_pair.name = it->first;
-				String * type_name = new String(it->second->getName());//.data();
+				StringPtr type_name = new String(it->second->getName());
 
 				ParserIdentifierWithOptionalParameters storage_p;
 				String expected;

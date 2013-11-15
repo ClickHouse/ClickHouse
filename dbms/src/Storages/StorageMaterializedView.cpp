@@ -1,15 +1,11 @@
-#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-
-#include <DB/Storages/StorageChunkMerger.h>
-#include <DB/Storages/StorageMaterializedView.h>
-#include <DB/Storages/StorageFactory.h>
 
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
+
+#include <DB/Storages/StorageMaterializedView.h>
+
 
 namespace DB
 {

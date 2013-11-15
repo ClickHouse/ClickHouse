@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DB/Storages/IStorage.h>
-#include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Storages/StorageView.h>
 
 
@@ -28,7 +26,6 @@ public:
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
-
 
 private:
 	StoragePtr data;

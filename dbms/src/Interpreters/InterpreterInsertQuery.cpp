@@ -42,7 +42,7 @@ Block InterpreterInsertQuery::getSampleBlock()
 
 	/// Формируем блок, основываясь на именах столбцов из запроса
 	Block res;
-	for (ASTs::iterator it = query.columns->children.begin(); it != query.columns->children.end(); it ++)
+	for (ASTs::iterator it = query.columns->children.begin(); it != query.columns->children.end(); ++ it)
 	{
 		std::string currentName = (*it)->getColumnName();
 
@@ -67,9 +67,9 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	
 	BlockInputStreamPtr in;
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList (table->getSampleBlock().getColumnsList());
-	///Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
+	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	table->write(query_ptr);
-	///Создаем кортеж из нескольких стримов, в которые будем писать данные.
+	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
@@ -119,9 +119,9 @@ BlockOutputStreamPtr InterpreterInsertQuery::execute()
 
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
 
-	///Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
+	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	table->write(query_ptr);
-	///Создаем кортеж из нескольких стримов, в которые будем писать данные.
+	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT или INSERT SELECT?

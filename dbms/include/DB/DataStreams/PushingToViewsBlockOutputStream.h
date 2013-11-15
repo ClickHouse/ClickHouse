@@ -1,10 +1,10 @@
 #pragma once
 
-#include <DB/Storages/StorageView.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Storages/StorageView.h>
 
 
 namespace DB

@@ -1,11 +1,10 @@
+#include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 
 #include <DB/Storages/StorageView.h>
-#include <DB/Storages/StorageFactory.h>
 
-#include <DB/Interpreters/InterpreterSelectQuery.h>
 
 namespace DB
 {
@@ -27,10 +26,7 @@ StorageView::StorageView(const String & table_name_, const String & database_nam
 	/// Если во внутреннем запросе не указана база данных, получить ее из контекста и записать в запрос.
 	if (!select.database)
 	{
-		ASTIdentifier * id = new ASTIdentifier();
-		id->name = context.getCurrentDatabase();
-		id->kind = ASTIdentifier::Database;
-		select.database = id;
+		select.database = new ASTIdentifier(StringRange(), context.getCurrentDatabase(), ASTIdentifier::Database);
 		select.children.push_back(select.database);
 	}
 

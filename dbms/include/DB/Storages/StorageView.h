@@ -1,8 +1,7 @@
 #pragma once
 
-#include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Storages/IStorage.h>
 
 
 namespace DB
