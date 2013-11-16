@@ -44,7 +44,7 @@ int main(int argc, const char ** argv)
 		len = std::min(len, size - pos);
 		off_t seek_res = in.seek(len, SEEK_CUR);
 		pos += len;
-		if (seek_res != pos)
+		if (seek_res != static_cast<off_t>(pos))
 		{
 			std::cerr << "Unexpected seek return value: " << seek_res << "; expeted " << pos << ", seeking by " << len << std::endl;
 			return 1;
@@ -55,9 +55,9 @@ int main(int argc, const char ** argv)
 		pos += len;
 		bytes_read += len;
 	}
-	volatile int dont_optimize = checksum;
-
 	watch.stop();
+
+	std::cout << checksum << std::endl;	/// don't optimize
 
 	std::cout << "Read " << bytes_read << " out of " << size << " bytes in "
 		<< std::setprecision(4) << watch.elapsedSeconds() << " seconds ("
