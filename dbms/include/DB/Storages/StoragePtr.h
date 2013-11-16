@@ -38,7 +38,7 @@ public:
 	StoragePtr() {}
 	StoragePtr(const StoragePtr & p) : ptr(p.ptr) {}
 	
-	StoragePtr& operator = (const StoragePtr & p)
+	StoragePtr& operator= (const StoragePtr & p)
 	{
 		ptr = p.ptr;
 		return *this;
@@ -46,40 +46,40 @@ public:
 	
 	IStorage* get() const
 	{
-		if (!ptr)
+		if (ptr == NULL)
 			return NULL;
 		else
 			return ptr->storage.get();
 	}
 	
-	bool operator == (const IStorage * p) const
+	bool operator== (const IStorage * p) const
 	{
 		return get() == p;
 	}
 	
-	IStorage* operator -> () const
+	IStorage* operator-> () const
 	{
 		return get();
 	}
 
-	IStorage& operator * () const
+	IStorage& operator* () const
 	{
 		return *get();
 	}
 
-	operator IStorage* () const
+	operator IStorage*() const
 	{
 		return get();
 	}
 	
-	operator bool () const
+	operator bool() const
 	{
-		return ptr;
+		return bool(ptr);
 	}
 	
-	bool operator ! () const
+	bool operator! () const
 	{
-		return !ptr;
+		return !bool(ptr);
 	}
 };
 
