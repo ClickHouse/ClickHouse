@@ -5,6 +5,7 @@
 #include <DB/Core/Names.h>
 #include <DB/Core/ColumnWithNameAndType.h>
 #include <DB/Core/Block.h>
+#include <DB/Core/ColumnNumbers.h>
 #include <set>
 
 
@@ -15,7 +16,9 @@ class IFunction;
 typedef Poco::SharedPtr<IFunction> FunctionPtr;
 	
 typedef std::pair<std::string, std::string> NameWithAlias;
+typedef std::pair<size_t, std::string> PositionWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
+typedef std::vector<PositionWithAlias> PositionsWithAliases;
 typedef std::set<String> NameSet;
 typedef std::map<String, String> NameToNameMap;
 
@@ -27,7 +30,7 @@ public:
 	struct Action
 	{
 	private:
-		Action() {}
+		Action() : source_position(0), result_position(0) {}
 		
 	public:
 		enum Type
@@ -43,11 +46,14 @@ public:
 		Type type;
 		
 		std::string source_name;
+		size_t source_position;
 		std::string result_name;
+		size_t result_position;
 		DataTypePtr result_type;
 		
 		/// Для ARRAY_JOIN
 		NameSet array_joined_columns;
+		ColumnNumbers array_joined_columns_positions;
 		
 		/// Для ADD_COLUMN.
 		ColumnPtr added_column;
@@ -55,10 +61,13 @@ public:
 		/// Для APPLY_FUNCTION.
 		mutable FunctionPtr function; /// mutable - чтобы можно было делать execute.
 		Names argument_names;
+		ColumnNumbers argument_positions;
 		Names prerequisite_names;
+		ColumnNumbers prerequisite_positions;
 		
 		/// Для PROJECT.
 		NamesWithAliases projection;
+		PositionsWithAliases projection_positions;
 		
 		/// Если result_name_ == "", в качестве имени используется "имя_функци(аргументы через запятую)".
 		static Action applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
