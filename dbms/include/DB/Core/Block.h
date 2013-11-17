@@ -38,7 +38,9 @@ public:
 	
 	/// нужны, чтобы правильно скопировались индексы
 	Block(const Block & other);
+//	Block(Block && other) noexcept; TODO: включить, когда для сборки будет использоваться C++11.
 	Block & operator= (const Block & other);
+//	Block & operator= (Block && other) noexcept;
 
 	/// вставить столбец в заданную позицию
 	void insert(size_t position, const ColumnWithNameAndType & elem);
@@ -98,6 +100,10 @@ public:
 	void optimizeNestedArraysOffsets();
 	/** Тоже самое, только без замены смещений. */
 	void checkNestedArraysOffsets() const;
+
+	void clear();
+	void swap(Block & other);
+	Block & ref() { return *this; }		/// Используется, чтобы сделать swap с rvalue. Вместо Block tmp = f(); block.swap(tmp); можно написать block.swap(f.ref());
 };
 
 typedef std::vector<Block> Blocks;

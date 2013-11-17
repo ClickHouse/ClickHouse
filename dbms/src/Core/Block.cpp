@@ -18,6 +18,11 @@ Block::Block(const Block & other)
 	*this = other;
 }
 
+/*Block::Block(Block && other) noexcept
+{
+	*this = other;
+}*/
+
 
 void Block::addDefaults(NamesAndTypesListPtr required_columns)
 {
@@ -51,6 +56,15 @@ Block & Block::operator= (const Block & other)
 	return *this;
 }
 
+/*Block & Block::operator= (Block && other) noexcept
+{
+	data = std::move(other.data);
+	index_by_position = std::move(other.index_by_position);
+	index_by_name = std::move(other.index_by_name);
+
+	return *this;
+}*/
+
 
 void Block::rebuildIndexByPosition()
 {
@@ -74,16 +88,21 @@ void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 	}
 		
 	Container_t::iterator it = data.insert(index_by_position[position], elem);
-	rebuildIndexByPosition();
-	index_by_name[elem.name] = it; 
+	index_by_name[elem.name] = it;
+
+	index_by_position.resize(index_by_position.size() + 1);
+	for (size_t i = index_by_position.size() - 1; i > position; --i)
+		index_by_position[i] = index_by_position[i - 1];
+
+	index_by_position[position] = it;
 }
 
 
 void Block::insert(const ColumnWithNameAndType & elem)
 {
 	Container_t::iterator it = data.insert(data.end(), elem);
-	rebuildIndexByPosition();
 	index_by_name[elem.name] = it;
+	index_by_position.push_back(it);
 }
 
 
@@ -103,7 +122,11 @@ void Block::erase(size_t position)
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
 	data.erase(it);
-	rebuildIndexByPosition();
+
+	for (size_t i = position, size = index_by_position.size() - 1; i < size; ++i)
+		index_by_position[i] = index_by_position[i + 1];
+
+	index_by_position.resize(index_by_position.size() - 1);
 }
 
 
@@ -116,8 +139,13 @@ void Block::erase(const String & name)
 	
 	Container_t::iterator it = index_it->second;
 	index_by_name.erase(index_it);
+	size_t position = std::distance(data.begin(), it);
 	data.erase(it);
-	rebuildIndexByPosition();
+	
+	for (size_t i = position, size = index_by_position.size() - 1; i < size; ++i)
+		index_by_position[i] = index_by_position[i + 1];
+
+	index_by_position.resize(index_by_position.size() - 1);
 }
 
 
@@ -343,6 +371,21 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 	}
 
 	return true;
+}
+
+
+void Block::clear()
+{
+	data.clear();
+	index_by_name.clear();
+	index_by_position.clear();
+}
+
+void Block::swap(Block & other)
+{
+	data.swap(other.data);
+	index_by_name.swap(other.index_by_name);
+	index_by_position.swap(other.index_by_position);
 }
 
 }

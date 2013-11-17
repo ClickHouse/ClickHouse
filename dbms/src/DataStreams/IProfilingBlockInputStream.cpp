@@ -170,11 +170,13 @@ Block IProfilingBlockInputStream::read()
 		info.started = true;
 	}
 
+	Block res;
+
 	if (is_cancelled)
-		return Block();
+		return res;
 
 	info.work_stopwatch.start();
-	Block res = readImpl();
+	res.swap(readImpl().ref());		/// Трюк, чтобы работало RVO.
 	info.work_stopwatch.stop();
 
 /*	if (res)
@@ -204,7 +206,10 @@ Block IProfilingBlockInputStream::read()
 			updateExtremes(res);
 
 		if (!checkLimits())
-			return Block();
+		{
+			res.clear();
+			return res;
+		}
 
 		if (quota != NULL)
 			checkQuota(res);

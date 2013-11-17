@@ -255,7 +255,7 @@ void ExpressionActions::Action::execute(Block & block) const
 				new_block.insert(column);
 			}
 			
-			block = new_block;
+			block.swap(new_block);
 			
 			break;
 		}

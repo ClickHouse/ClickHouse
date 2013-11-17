@@ -22,12 +22,14 @@ FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, const
 
 Block FilterBlockInputStream::readImpl()
 {
+	Block res;
+	
 	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
 	while (1)
 	{
-		Block res = children.back()->read();
+		res.swap(children.back()->read().ref());	/// Трюк, чтобы работало RVO.
 		if (!res)
-			return Block();
+			return res;
 
 		/// Найдём настоящую позицию столбца с фильтром в блоке.
 		if (filter_column == -1)
@@ -42,9 +44,10 @@ Block FilterBlockInputStream::readImpl()
 		ColumnConstUInt8 * column_const = dynamic_cast<ColumnConstUInt8 *>(&*column);
 		if (column_const)
 		{
-			return column_const->getData()
-				? res
-				: Block();
+			if (!column_const->getData())
+				res.clear();
+
+			return res;
 		}
 
 		ColumnUInt8 * column_vec = dynamic_cast<ColumnUInt8 *>(&*column);
