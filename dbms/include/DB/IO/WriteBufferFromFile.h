@@ -35,6 +35,7 @@ public:
 		}
 		catch (...)
 		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 
 		close(fd);

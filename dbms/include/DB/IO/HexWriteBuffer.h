@@ -43,6 +43,7 @@ public:
 		}
 		catch (...)
 		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 	}
 };

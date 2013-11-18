@@ -1,6 +1,8 @@
 #include <errno.h>
 #include <string.h>
 
+#include <Yandex/logger_useful.h>
+
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/Core/Exception.h>
@@ -78,6 +80,49 @@ ExceptionPtr cloneCurrentException()
 	catch (...)
 	{
 		return new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+	}
+}
+
+
+void tryLogCurrentException(const char * log_name)
+{
+	try
+	{
+		throw;
+	}
+	catch (const Exception & e)
+	{
+		try
+		{
+			LOG_ERROR(&Logger::get(log_name), "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
+				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
+		}
+		catch (...) {}
+	}
+	catch (const Poco::Exception & e)
+	{
+		try
+		{
+			LOG_ERROR(&Logger::get(log_name), "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
+		}
+		catch (...) {}
+	}
+	catch (const std::exception & e)
+	{
+		try
+		{
+			LOG_ERROR(&Logger::get(log_name), "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
+		}
+		catch (...) {}
+	}
+	catch (...)
+	{
+		try
+		{
+			LOG_ERROR(&Logger::get(log_name), "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
+		}
+		catch (...) {}
 	}
 }
 

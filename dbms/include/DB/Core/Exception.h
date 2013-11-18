@@ -51,6 +51,11 @@ void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
   */
 ExceptionPtr cloneCurrentException();
 
+/** Попробовать записать исключение в лог (и забыть про него).
+  * Можно использовать в деструкторах в блоке catch (...).
+  */
+void tryLogCurrentException(const char * log_name);
+
 
 void rethrowFirstException(Exceptions & exceptions);
 

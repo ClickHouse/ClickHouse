@@ -126,6 +126,7 @@ public:
 		}
 		catch (...)
 		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 
 		delete qlz_state;
