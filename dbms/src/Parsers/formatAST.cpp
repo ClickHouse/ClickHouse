@@ -381,10 +381,11 @@ void formatAST(const ASTExpressionList 		& ast, std::ostream & s, size_t indent,
 static void writeAlias(const String & name, std::ostream & s, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
-	{
-		WriteBufferFromOStream wb(s, 32);
-		writeProbablyBackQuotedString(name, wb);
-	}
+	
+	WriteBufferFromOStream wb(s, 32);
+	writeProbablyBackQuotedString(name, wb);
+	wb.next();
+	
 	s << (hilite ? hilite_none : "");
 }
 
@@ -415,10 +416,11 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_identifier : "");
-	{
-		WriteBufferFromOStream wb(s, 32);
-		writeProbablyBackQuotedString(ast.name, wb);
-	}
+
+	WriteBufferFromOStream wb(s, 32);
+	writeProbablyBackQuotedString(ast.name, wb);
+	wb.next();
+
 	s << (hilite ? hilite_none : "");
 
 	if (!ast.alias.empty())
