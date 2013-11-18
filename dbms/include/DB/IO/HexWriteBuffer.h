@@ -37,8 +37,13 @@ public:
 
     ~HexWriteBuffer()
 	{
-		if (!std::uncaught_exception())
+		try
+		{
 			nextImpl();
+		}
+		catch (...)
+		{
+		}
 	}
 };
 

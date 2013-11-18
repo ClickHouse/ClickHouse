@@ -120,8 +120,13 @@ public:
 
 	~CompressedWriteBuffer()
 	{
-		if (!std::uncaught_exception())
+		try
+		{
 			next();
+		}
+		catch (...)
+		{
+		}
 
 		delete qlz_state;
 	}

@@ -59,8 +59,13 @@ public:
 
     ~WriteBufferFromFileDescriptor()
 	{
-		if (!std::uncaught_exception())
+		try
+		{
 			next();
+		}
+		catch (...)
+		{
+		}
 	}
 
 	int getFD()

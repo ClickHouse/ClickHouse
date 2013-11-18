@@ -56,8 +56,13 @@ public:
 
     ~WriteBufferFromPocoSocket()
 	{
-		if (!std::uncaught_exception())
+		try
+		{
 			next();
+		}
+		catch (...)
+		{
+		}
 	}
 };
 

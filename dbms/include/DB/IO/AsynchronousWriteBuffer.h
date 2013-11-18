@@ -63,16 +63,17 @@ public:
 
 	~AsynchronousWriteBuffer()
 	{
-		if (std::uncaught_exception())
-			return;
+		try
+		{
+			if (started)
+				pool.wait();
 
-		if (started)
-			pool.wait();
-		if (exception)
-			exception->rethrow();
-
-		swapBuffers();
-		out.next();
+			swapBuffers();
+			out.next();
+		}
+		catch (...)
+		{
+		}
 	}
 
 	ExceptionPtr exception;

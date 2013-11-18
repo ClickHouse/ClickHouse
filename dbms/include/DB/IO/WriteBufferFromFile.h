@@ -29,13 +29,15 @@ public:
 
 	~WriteBufferFromFile()
 	{
-		bool uncaught_exception = std::uncaught_exception();
-
-		if (!uncaught_exception)
+		try
+		{
 			next();
+		}
+		catch (...)
+		{
+		}
 
-		if (0 != close(fd) && !uncaught_exception)
-			throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+		close(fd);
 	}
 	
 	/** fsync() transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file

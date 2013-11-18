@@ -15,19 +15,15 @@ public:
 	{
 		if (drop_on_destroy)
 		{
-			if (std::uncaught_exception())
+			try
 			{
-				try
-				{
+				if (std::uncaught_exception())
 					LOG_ERROR(&Logger::get("DatabaseDropper"), "Didn't remove database data directory because of uncaught exception.");
-				}
-				catch(...)
-				{
-				}
+				else
+					Poco::File(data_path).remove(false);
 			}
-			else
+			catch(...)
 			{
-				Poco::File(data_path).remove(false);
 			}
 		}
 	}
