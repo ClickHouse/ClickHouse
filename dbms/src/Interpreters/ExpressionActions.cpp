@@ -83,9 +83,6 @@ ExpressionActions::Actions ExpressionActions::Action::getPrerequisites(Block & s
 	
 void ExpressionActions::Action::prepare(Block & sample_block)
 {
-	if (!source_name.empty())
-		source_position = sample_block.getPositionByName(source_name);
-
 	if (type == APPLY_FUNCTION)
 	{
 		if (sample_block.has(result_name))
@@ -93,20 +90,20 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		
 		bool all_const = true;
 		
-		argument_positions.resize(argument_names.size());
+		ColumnNumbers arguments(argument_names.size());
 		for (size_t i = 0; i < argument_names.size(); ++i)
 		{
-			argument_positions[i] = sample_block.getPositionByName(argument_names[i]);
-			ColumnPtr col = sample_block.getByPosition(argument_positions[i]).column;
+			arguments[i] = sample_block.getPositionByName(argument_names[i]);
+			ColumnPtr col = sample_block.getByPosition(arguments[i]).column;
 			if (!col || !col->isConst())
 				all_const = false;
 		}
 		
-		prerequisite_positions.resize(prerequisite_names.size());
+		ColumnNumbers prerequisites(prerequisite_names.size());
 		for (size_t i = 0; i < prerequisite_names.size(); ++i)
 		{
-			prerequisite_positions[i] = sample_block.getPositionByName(prerequisite_names[i]);
-			ColumnPtr col = sample_block.getByPosition(prerequisite_positions[i]).column;
+			prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
+			ColumnPtr col = sample_block.getByPosition(prerequisites[i]).column;
 			if (!col || !col->isConst())
 				all_const = false;
 		}
@@ -122,7 +119,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			sample_block.insert(new_column);
 			
 			size_t result_position = sample_block.getPositionByName(result_name);
-			function->execute(sample_block, argument_positions, prerequisite_positions, result_position);
+			function->execute(sample_block, arguments, prerequisites, result_position);
 			
 			/// Если получилась не константа, на всякий случай будем считать результат неизвестным.
 			ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
@@ -134,18 +131,13 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 		else
 		{
 			sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
-			result_position = sample_block.columns() - 1;
 		}
 	}
 	else if (type == ARRAY_JOIN)
 	{
-		array_joined_columns_positions.resize(array_joined_columns.size());
-
-		size_t i = 0;
-		for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it, ++i)
+		for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 		{
-			array_joined_columns_positions[i] = sample_block.getPositionByName(*it);
-			ColumnWithNameAndType & current = sample_block.getByPosition(array_joined_columns_positions[i]);
+			ColumnWithNameAndType & current = sample_block.getByName(*it);
 			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*current.type);
 			if (!array_type)
 				throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
@@ -158,15 +150,6 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 		
 		sample_block.insert(ColumnWithNameAndType(added_column, result_type, result_name));
-		result_position = sample_block.columns() - 1;
-	}
-	else if (type == PROJECT)
-	{
-		projection_positions.resize(projection.size());
-		for (size_t i = 0; i < projection.size(); ++i)
-			projection_positions[i] = std::make_pair(sample_block.getPositionByName(projection[i].first), projection[i].second);
-
-		execute(sample_block);
 	}
 	else
 	{
@@ -179,16 +162,40 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 
 void ExpressionActions::Action::execute(Block & block) const
 {
+	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
+		if (!block.has(source_name))
+			throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+	
+	if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION)
+		if (block.has(result_name))
+			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+		
 	switch (type)
 	{
 		case APPLY_FUNCTION:
 		{
+			ColumnNumbers arguments(argument_names.size());
+			for (size_t i = 0; i < argument_names.size(); ++i)
+			{
+				if (!block.has(argument_names[i]))
+					throw Exception("Not found column: '" + argument_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+				arguments[i] = block.getPositionByName(argument_names[i]);
+			}
+			
+			ColumnNumbers prerequisites(prerequisite_names.size());
+			for (size_t i = 0; i < prerequisite_names.size(); ++i)
+			{
+				if (!block.has(prerequisite_names[i]))
+					throw Exception("Not found column: '" + prerequisite_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+				prerequisites[i] = block.getPositionByName(prerequisite_names[i]);
+			}
+			
 			ColumnWithNameAndType new_column;
 			new_column.name = result_name;
 			new_column.type = result_type;
 			block.insert(new_column);
 			
-			function->execute(block, argument_positions, prerequisite_positions, result_position);
+			function->execute(block, arguments, prerequisites, block.getPositionByName(result_name));
 			
 			break;
 		}
@@ -197,12 +204,12 @@ void ExpressionActions::Action::execute(Block & block) const
 		{
 			if (array_joined_columns.empty())
 				throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
-			ColumnPtr any_array_ptr = block.getByPosition(array_joined_columns_positions[0]).column;
+			ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
 			if (any_array_ptr->isConst())
 				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
 			const ColumnArray * any_array = dynamic_cast<const ColumnArray *>(&*any_array_ptr);
 			if (!any_array)
-				throw Exception("ARRAY JOIN of not array: " + array_joined_columns_positions[0], ErrorCodes::TYPE_MISMATCH);
+				throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
 
 			size_t columns = block.columns();
 			for (size_t i = 0; i < columns; ++i)
@@ -238,10 +245,11 @@ void ExpressionActions::Action::execute(Block & block) const
 		{
 			Block new_block;
 			
-			for (size_t i = 0; i < projection_positions.size(); ++i)
+			for (size_t i = 0; i < projection.size(); ++i)
 			{
-				ColumnWithNameAndType column = block.getByPosition(projection_positions[i].first);
-				const std::string & alias = projection_positions[i].second;
+				const std::string & name = projection[i].first;
+				const std::string & alias = projection[i].second;
+				ColumnWithNameAndType column = block.getByName(name);
 				if (alias != "")
 					column.name = alias;
 				new_block.insert(column);
@@ -261,7 +269,7 @@ void ExpressionActions::Action::execute(Block & block) const
 			break;
 			
 		case COPY_COLUMN:
-			block.insert(ColumnWithNameAndType(block.getByPosition(source_position).column, result_type, result_name));
+			block.insert(ColumnWithNameAndType(block.getByName(source_name).column, result_type, result_name));
 			break;
 			
 		default:
@@ -398,9 +406,7 @@ void ExpressionActions::addImpl(Action action, NameSet & current_names, Names & 
 
 void ExpressionActions::prependProjectInput()
 {
-	Action action = Action::project(getRequiredColumns());
-	action.prepare(sample_block);
-	actions.insert(actions.begin(), action);
+	actions.insert(actions.begin(), Action::project(getRequiredColumns()));
 }
 
 void ExpressionActions::execute(Block & block) const
