@@ -82,9 +82,10 @@ public:
 
 	~RemoteBlockInputStream()
 	{
-		/** В случае эксепшена, закрываем соединение, чтобы оно не осталось висеть в рассихронизированном состоянии.
+		/** Если прервались в середине цикла общения с сервером, то закрываем соединение,
+		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
 		  */
-		if (std::uncaught_exception())
+		if (!finished)
 			connection.disconnect();
 	}
 
@@ -161,8 +162,6 @@ protected:
 		if (!sent_query || finished || got_exception_from_server)
 			return;
 
-		finished = true;
-
 		/** Если ещё прочитали не все данные, но они больше не нужны.
 		 * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT).
 		 */
@@ -202,6 +201,8 @@ protected:
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
+
+		finished = true;
 	}
 
 private:
