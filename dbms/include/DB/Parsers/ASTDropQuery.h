@@ -17,7 +17,7 @@ public:
 	String database;
 	String table;
 
-	ASTDropQuery() {}
+	ASTDropQuery() : detach(false), if_exists(false) {}
 	ASTDropQuery(StringRange range_) : IAST(range_), detach(false), if_exists(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
