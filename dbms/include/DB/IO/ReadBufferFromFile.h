@@ -20,15 +20,14 @@ public:
 		: ReadBufferFromFileDescriptor(-1, buf_size, existing_memory), file_name(file_name_)
 	{
 		fd = open(file_name.c_str(), O_RDONLY);
-		
+
 		if (-1 == fd)
 			throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
-    virtual ~ReadBufferFromFile()
+	virtual ~ReadBufferFromFile()
 	{
-		if (0 != close(fd))
-			throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+		close(fd);
 	}
 
 	virtual std::string getFileName()

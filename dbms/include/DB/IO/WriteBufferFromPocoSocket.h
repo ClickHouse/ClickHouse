@@ -19,6 +19,13 @@ class WriteBufferFromPocoSocket : public BufferWithOwnMemory<WriteBuffer>
 {
 protected:
 	Poco::Net::Socket & socket;
+
+	/** Для сообщений об ошибках. Нужно получать этот адрес заранее, так как,
+	  *  например, если соединение разорвано, то адрес уже будет получить нельзя
+	  *  (getpeername вернёт ошибку).
+	  */
+	Poco::Net::SocketAddress peer_address;
+	
 	
 	void nextImpl()
 	{
@@ -37,22 +44,24 @@ protected:
 			}
 			catch (Poco::Net::NetException & e)
 			{
-				throw Exception(e.displayText() + " while writing to socket (" + socket.peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+				throw Exception(e.displayText() + " while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 			}
 			catch (Poco::TimeoutException & e)
 			{
-				throw Exception("Timeout exceeded while writing to socket (" + socket.peerAddress().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+				throw Exception("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
 			}
 			
 			if (res < 0)
-				throw Exception("Cannot write to socket (" + socket.peerAddress().toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+				throw Exception("Cannot write to socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
 			bytes_written += res;
 		}
 	}
 
 public:
 	WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(buf_size), socket(socket_) {}
+		: BufferWithOwnMemory<WriteBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress())
+	{
+	}
 
     ~WriteBufferFromPocoSocket()
 	{

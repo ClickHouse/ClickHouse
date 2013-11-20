@@ -19,6 +19,13 @@ class ReadBufferFromPocoSocket : public BufferWithOwnMemory<ReadBuffer>
 {
 protected:
 	Poco::Net::Socket & socket;
+
+	/** Для сообщений об ошибках. Нужно получать этот адрес заранее, так как,
+	  *  например, если соединение разорвано, то адрес уже будет получить нельзя
+	  *  (getpeername вернёт ошибку).
+	  */
+	Poco::Net::SocketAddress peer_address;
+
 	
 	bool nextImpl()
 	{
@@ -31,15 +38,15 @@ protected:
 		}
 		catch (Poco::Net::NetException & e)
 		{
-			throw Exception(e.displayText(), " while reading from socket (" + socket.peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+			throw Exception(e.displayText(), " while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 		}
 		catch (Poco::TimeoutException & e)
 		{
-			throw Exception("Timeout exceeded while reading from socket (" + socket.peerAddress().toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+			throw Exception("Timeout exceeded while reading from socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
 		}
 		
 		if (bytes_read < 0)
-			throw Exception("Cannot read from socket (" + socket.peerAddress().toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+			throw Exception("Cannot read from socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 
 		if (bytes_read)
 			working_buffer.resize(bytes_read);
@@ -51,7 +58,9 @@ protected:
 
 public:
 	ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<ReadBuffer>(buf_size), socket(socket_) {}
+		: BufferWithOwnMemory<ReadBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress())
+	{
+	}
 
 	bool poll(size_t timeout_microseconds)
 	{
