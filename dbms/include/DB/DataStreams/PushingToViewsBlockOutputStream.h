@@ -3,6 +3,7 @@
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Storages/StorageView.h>
 
@@ -29,9 +30,6 @@ public:
 			children.push_back(new PushingToViewsBlockOutputStream(dependencies[i].first, dependencies[i].second, context, ASTPtr()));
 			queries.push_back(dynamic_cast<StorageView &>(*context.getTable(dependencies[i].first, dependencies[i].second)).getInnerQuery());
 		}
-
-		if (storage->getName() != "View")
-			output = storage->write(query_ptr);
 	}
 
 	String getName() const { return "PushingToViewsBlockOutputStream"; }
@@ -42,17 +40,17 @@ public:
 		{
 			BlockInputStreamPtr from = new OneBlockInputStream(block);
 			InterpreterSelectQuery select(queries[i], context, QueryProcessingStage::Complete, 0, from);
-			BlockInputStreamPtr data = select.execute();
+			BlockInputStreamPtr data = new MaterializingBlockInputStream(select.execute());
 			copyData(*data, *children[i]);
 		}
 
-		if (output)
-			output->write(block);
+		Block buf(block);
+		if (storage->getName() != "View")
+			storage->write(query_ptr)->write(buf);
 	}
 
 private:
 	StoragePtr storage;
-	BlockOutputStreamPtr output;
 	String database;
 	String table;
 	Context context;

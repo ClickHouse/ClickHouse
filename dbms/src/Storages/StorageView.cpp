@@ -26,7 +26,7 @@ StorageView::StorageView(const String & table_name_, const String & database_nam
 	/// Если во внутреннем запросе не указана база данных, получить ее из контекста и записать в запрос.
 	if (!select.database)
 	{
-		select.database = new ASTIdentifier(StringRange(), context.getCurrentDatabase(), ASTIdentifier::Database);
+		select.database = new ASTIdentifier(StringRange(), database_name_, ASTIdentifier::Database);
 		select.children.push_back(select.database);
 	}
 
