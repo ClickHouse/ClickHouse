@@ -135,7 +135,7 @@ protected:
 	Block readImpl()
 	{
 		OutputData res;
-		if (all_read)
+		if (all_read || finish)
 			return res.block;
 
 		/// Запускаем потоки, если это ещё не было сделано.
