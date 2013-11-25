@@ -76,6 +76,12 @@ public:
 		return false;
 	}
 
+	size_t size()
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(mutex);
+		return queue.size();
+	}
+
 	void clear()
 	{
 		while (fill_count.tryWait(0))

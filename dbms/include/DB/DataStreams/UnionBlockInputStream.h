@@ -37,7 +37,7 @@ class UnionBlockInputStream : public IProfilingBlockInputStream
 public:
 	UnionBlockInputStream(BlockInputStreams inputs_, unsigned max_threads_ = 1)
 		: max_threads(std::min(inputs_.size(), static_cast<size_t>(max_threads_))),
-		output_queue(max_threads), exhausted_inputs(0), finish(false), all_read(false), finalized(false),
+		output_queue(max_threads), exhausted_inputs(0), finish(false), all_read(false),
 		log(&Logger::get("UnionBlockInputStream"))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
@@ -76,7 +76,13 @@ public:
 	{
 		try
 		{
-			readSuffixImpl();
+			if (!all_read)
+				cancel();
+			if (!is_cancelled)
+			{
+				for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
+					it->thread->join();
+			}
 		}
 		catch (...)
 		{
@@ -92,6 +98,7 @@ public:
 		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
 			return;
 
+		finish = true;
 		for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 		{
 			if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
@@ -106,6 +113,22 @@ public:
 				}
 			}
 		}
+
+		LOG_TRACE(log, "Waiting for threads to finish");
+
+		/// Вынем всё, что есть в очереди готовых данных.
+		OutputData res;
+		while (output_queue.tryPop(res))
+			;
+
+		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
+		  * PS. Может быть, для переменной finish нужен барьер?
+		  */
+
+		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
+			it->thread->join();
+
+		LOG_TRACE(log, "Waited for threads to finish");
 	}
 
 protected:
@@ -141,29 +164,8 @@ protected:
 
 	void readSuffixImpl()
 	{
-		if (finalized)
-			return;
-
-		finalized = true;
-
-		LOG_TRACE(log, "Waiting for threads to finish");
-
-		finish = true;
-		cancel();
-
-		/// Вынем всё, что есть в очереди готовых данных.
-		OutputData res;
-		while (output_queue.tryPop(res))
-			;
-
-		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
-		  * PS. Может быть, для переменной finish нужен барьер?
-		  */
-
-		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-			it->thread->join();
-
-		LOG_TRACE(log, "Waited for threads to finish");
+		if (!all_read && !is_cancelled)
+			throw Exception("readSuffixImpl called before all data is read", ErrorCodes::LOGICAL_ERROR);
 	}
 
 private:
@@ -262,14 +264,20 @@ private:
 						/// Если все источники иссякли.
 						if (parent.exhausted_inputs == parent.children.size())
 						{
-							/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
-							parent.output_queue.push(OutputData());
 							parent.finish = true;
-
 							break;
 						}
 					}
 				}
+			}
+			if (parent.finish)
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
+
+				/// Не будем оставлять очередь пустой на случай, если readImpl ее ждет.
+				if (parent.output_queue.size() == 0)
+					/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
+					parent.output_queue.push(OutputData());
 			}
 		}
 
@@ -312,9 +320,6 @@ private:
 	/// Завершить работу потоков (раньше, чем иссякнут источники).
 	volatile bool finish;
 	bool all_read;
-
-	/// Была вызвана функция readSuffixImpl.
-	bool finalized;
 
 	Logger * log;
 };
