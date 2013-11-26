@@ -53,15 +53,16 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 {
 	ColumnFixedString::Chars_t & data = dynamic_cast<ColumnFixedString &>(column).getChars();
 
+	size_t initial_size = data.size();
 	size_t max_bytes = limit * n;
-	data.resize(max_bytes);
-	size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[0]), max_bytes);
+	data.resize(initial_size + max_bytes);
+	size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
 
 	if (read_bytes % n != 0)
 		throw Exception("Cannot read all data of type FixedString",
 			ErrorCodes::CANNOT_READ_ALL_DATA);
 
-	data.resize(read_bytes);
+	data.resize(initial_size + read_bytes);
 }
 
 

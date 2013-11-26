@@ -76,10 +76,10 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	ColumnString::Chars_t & data = column_string.getChars();
 	ColumnString::Offsets_t & offsets = column_string.getOffsets();
 
-	data.reserve(limit * DBMS_APPROX_STRING_SIZE);
-	offsets.reserve(limit);
+	data.reserve(data.size() + limit * DBMS_APPROX_STRING_SIZE);
+	offsets.reserve(offsets.size() + limit);
 
-	size_t offset = 0;
+	size_t offset = data.size();
 	for (size_t i = 0; i < limit; ++i)
 	{
 		if (istr.eof())
@@ -91,8 +91,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 		offset += size + 1;
 		offsets.push_back(offset);
 
-		if (data.size() < offset)
-			data.resize(offset);
+		data.resize(offset);
 		
 		istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), sizeof(ColumnUInt8::value_type) * size);
 		data[offset - 1] = 0;

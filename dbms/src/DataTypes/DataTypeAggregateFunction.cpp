@@ -46,7 +46,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 	Arena * arena = new Arena;
 	real_column.set(function);
 	real_column.addArena(arena);
-	vec.reserve(limit);
+	vec.reserve(vec.size() + limit);
 
 	size_t size_of_state = function->sizeOfData();
 

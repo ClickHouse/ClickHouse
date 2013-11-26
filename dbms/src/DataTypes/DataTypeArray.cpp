@@ -74,12 +74,16 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_
 {
 	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+	IColumn & nested_column = column_array.getData();
 
 	/// Должно быть считано согласнованное с offsets количество значений.
-	size_t nested_limit = offsets.empty() ? 0 : offsets.back();
-	nested->deserializeBinary(column_array.getData(), istr, nested_limit);
+	size_t last_offset = (offsets.empty() ? 0 : offsets.back());
+	if (last_offset < nested_column.size())
+		throw Exception("Nested column longer than last offset", ErrorCodes::LOGICAL_ERROR);
+	size_t nested_limit = last_offset - nested_column.size();
+	nested->deserializeBinary(nested_column, istr, nested_limit);
 
-	if (column_array.getData().size() != nested_limit)
+	if (column_array.getData().size() != last_offset)
 		throw Exception("Cannot read all array values", ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
@@ -112,11 +116,12 @@ void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size
 {
 	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
-	offsets.resize(limit);
+	size_t initial_size = offsets.size();
+	offsets.resize(initial_size + limit);
 
-	size_t i = 0;
-	ColumnArray::Offset_t current_offset = 0;
-	while (i < limit && !istr.eof())
+	size_t i = initial_size;
+	ColumnArray::Offset_t current_offset = initial_size ? offsets[initial_size - 1] : 0;
+	while (i < initial_size + limit && !istr.eof())
 	{
 		ColumnArray::Offset_t current_size = 0;
 		readIntBinary(current_size, istr);

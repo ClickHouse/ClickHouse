@@ -133,13 +133,16 @@ void DataTypeNested::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
 
 	/// Должно быть считано согласованное с offsets количество значений.
-	size_t nested_limit = offsets.empty() ? 0 : offsets.back();
-	
+	size_t last_offset = (offsets.empty() ? 0 : offsets.back());
+	if (last_offset < column_nested.size())
+		throw Exception("Nested column longer than last offset", ErrorCodes::LOGICAL_ERROR);
+	size_t nested_limit = (offsets.empty() ? 0 : offsets.back()) - column_nested.size();
+
 	NamesAndTypesList::const_iterator it = nested->begin();
 	for (size_t i = 0; i < nested->size(); ++i, ++it)
 	{
 		it->second->deserializeBinary(*column_nested.getData()[i], istr, nested_limit);
-		if (column_nested.getData()[i]->size() != nested_limit)
+		if (column_nested.getData()[i]->size() != last_offset)
 			throw Exception("Cannot read all nested column values", ErrorCodes::CANNOT_READ_ALL_DATA);
 	}
 }
@@ -173,11 +176,12 @@ void DataTypeNested::deserializeOffsets(IColumn & column, ReadBuffer & istr, siz
 {
 	ColumnNested & column_nested = dynamic_cast<ColumnNested &>(column);
 	ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
-	offsets.resize(limit);
+	size_t initial_size = offsets.size();
+	offsets.resize(initial_size + limit);
 
-	size_t i = 0;
-	ColumnNested::Offset_t current_offset = 0;
-	while (i < limit && !istr.eof())
+	size_t i = initial_size;
+	ColumnNested::Offset_t current_offset = initial_size ? offsets[initial_size - 1] : 0;
+	while (i < initial_size + limit && !istr.eof())
 	{
 		ColumnNested::Offset_t current_size = 0;
 		readIntBinary(current_size, istr);

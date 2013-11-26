@@ -50,7 +50,7 @@ public:
 	  */
 	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const = 0;
 	
-	/** Считать не более limit значений. */
+	/** Считать не более limit значений и дописать их в конец столбца. */
 	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const = 0;
 
 	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
