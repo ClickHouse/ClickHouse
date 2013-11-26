@@ -20,8 +20,9 @@ class CachedCompressedReadBuffer : public ReadBuffer
 {
 private:
 	const std::string path;
-	size_t cur_offset; /// Смещение в сжатом файле.
-	UncompressedCache & cache;
+	size_t cur_begin_offset; /// Смещение в сжатом файле, соответствующее working_buffer.begin().
+	size_t cur_end_offset; /// Смещение в сжатом файле, соответствующее working_buffer.end().
+	UncompressedCache * cache;
 	size_t buf_size;
 
 	/// SharedPtr - для ленивой инициализации (только в случае кэш-промаха).
@@ -31,16 +32,23 @@ private:
 	/// Кусок данных из кэша, или кусок считанных данных, который мы положим в кэш.
 	UncompressedCache::CellPtr owned_cell;
 
-	/// Нужно ли делать seek - при кэш-промахе после кэш-попадания.
-	bool need_seek;
-
 
 	bool nextImpl()
 	{
 		/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
 
-		UInt128 key = cache.hash(path, cur_offset);
-		owned_cell = cache.get(key);
+		cur_begin_offset = cur_end_offset;
+		UInt128 key = {0, 0};
+
+		if (cache)
+		{
+			key = cache->hash(path, cur_begin_offset);
+			owned_cell = cache->get(key);
+		}
+		else
+		{
+			owned_cell = NULL;
+		}
 
 		if (!owned_cell)
 		{
@@ -50,12 +58,8 @@ private:
 				in = new ReadBufferFromFile(path, buf_size);
 				compressed_in = new CompressedReadBuffer(*in);
 			}
-			
-			if (need_seek)
-			{
-				in->seek(cur_offset);
-				need_seek = false;
-			}
+
+			in->seek(cur_begin_offset);
 
 			owned_cell = new UncompressedCache::Cell;
 			owned_cell->key = key;
@@ -68,11 +72,8 @@ private:
 			owned_cell->compressed_size = in->count() - old_count;
 
 			/// Положим данные в кэш.
-			cache.set(owned_cell);
-		}
-		else
-		{
-			need_seek = true;
+			if (cache)
+				cache->set(owned_cell);
 		}
 
 		if (owned_cell->data.m_size == 0)
@@ -82,14 +83,31 @@ private:
 		working_buffer = Buffer(owned_cell->data.m_data, owned_cell->data.m_data + owned_cell->data.m_size);
 		pos = working_buffer.begin();
 
-		cur_offset += owned_cell->compressed_size;
+		cur_end_offset += owned_cell->compressed_size;
 		return true;
 	}
 
 public:
-	CachedCompressedReadBuffer(const std::string & path_, size_t offset_, UncompressedCache & cache_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-		: ReadBuffer(NULL, 0), path(path_), cur_offset(offset_), cache(cache_), buf_size(buf_size_), need_seek(cur_offset != 0)
+	CachedCompressedReadBuffer(const std::string & path_, UncompressedCache * cache_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		: ReadBuffer(NULL, 0), path(path_), cur_begin_offset(0), cur_end_offset(0), cache(cache_), buf_size(buf_size_)
 	{
+	}
+
+	void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
+	{
+		if (offset_in_compressed_file == cur_begin_offset && offset_in_decompressed_block < working_buffer.size())
+		{
+			pos = working_buffer.begin() + offset_in_decompressed_block;
+		}
+		else
+		{
+			cur_end_offset = offset_in_compressed_file;
+			pos = working_buffer.end();
+			next();
+			if (offset_in_decompressed_block > working_buffer.size())
+				throw Exception("Seek position is beyond the decompressed block", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			pos += offset_in_decompressed_block;
+		}
 	}
 };
 

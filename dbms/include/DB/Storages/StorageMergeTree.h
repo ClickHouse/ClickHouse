@@ -106,6 +106,7 @@ typedef std::vector<MarkRange> MarkRanges;
 
 class StorageMergeTree : public IStorage
 {
+friend class MergeTreeReader;
 friend class MergeTreeBlockInputStream;
 friend class MergeTreeBlockOutputStream;
 friend class MergedBlockOutputStream;
