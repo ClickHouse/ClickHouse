@@ -24,7 +24,7 @@ int main(int argc, char ** argv)
 
 		{
 			Stopwatch watch;
-			CachedCompressedReadBuffer in(path, 0, &cache);
+			CachedCompressedReadBuffer in(path, &cache, 0);
 			WriteBufferFromFile out("/dev/null");
 			copyData(in, out);
 
@@ -36,7 +36,7 @@ int main(int argc, char ** argv)
 
 		{
 			Stopwatch watch;
-			CachedCompressedReadBuffer in(path, 0, &cache);
+			CachedCompressedReadBuffer in(path, &cache, 0);
 			WriteBufferFromFile out("/dev/null");
 			copyData(in, out);
 
