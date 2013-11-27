@@ -131,7 +131,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 			if (limit)
 				std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less);
 			else
-				std::sort(perm.begin(), perm.end(), less);
+				std::stable_sort(perm.begin(), perm.end(), less);
 		}
 
 		size_t columns = block.columns();
