@@ -59,7 +59,7 @@ void executeQuery(
 
 	bool parse_res = parser.parse(pos, end, ast, expected);
 
-	if (pos == begin)
+	if (pos == begin && (end == begin || *pos == ';'))
 		throw Exception("Empty query", ErrorCodes::EMPTY_QUERY);
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
@@ -122,7 +122,7 @@ BlockIO executeQuery(
 
 	bool parse_res = parser.parse(pos, end, ast, expected);
 
-	if (pos == begin)
+	if (pos == begin && (end == begin || *pos == ';'))
 		throw Exception("Empty query", ErrorCodes::EMPTY_QUERY);
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
