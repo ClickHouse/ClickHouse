@@ -21,6 +21,7 @@ public:
 	ASTPtr array_join_expression_list;
 	bool final;
 	ASTPtr sample_size;
+	ASTPtr prewhere_expression;
 	ASTPtr where_expression;
 	ASTPtr group_expression_list;
 	bool group_by_with_totals;
@@ -72,6 +73,7 @@ public:
 		if (table) 					{ res->table 					= table->clone(); 					res->children.push_back(res->table); }
 		if (array_join_expression_list) 	{ res->array_join_expression_list	= array_join_expression_list->clone(); 	res->children.push_back(res->array_join_expression_list); }
 		if (sample_size) 			{ res->sample_size				= sample_size->clone(); 			res->children.push_back(res->sample_size); }
+		if (prewhere_expression)		{ res->prewhere_expression 		= prewhere_expression->clone(); 		res->children.push_back(res->prewhere_expression); }
 		if (where_expression)		{ res->where_expression 		= where_expression->clone(); 		res->children.push_back(res->where_expression); }
 		if (group_expression_list) 	{ res->group_expression_list 	= group_expression_list->clone(); 	res->children.push_back(res->group_expression_list); }
 		if (having_expression) 		{ res->having_expression 		= having_expression->clone(); 		res->children.push_back(res->having_expression); }

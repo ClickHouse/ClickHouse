@@ -33,6 +33,16 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	if (select.where_expression)
 	{
 		traverseAST(select.where_expression, block_with_constants);
+
+		if (select.prewhere_expression)
+		{
+			traverseAST(select.prewhere_expression, block_with_constants);
+			rpn.push_back(RPNElement(RPNElement::FUNCTION_AND));
+		}
+	}
+	else if (select.prewhere_expression)
+	{
+		traverseAST(select.prewhere_expression, block_with_constants);
 	}
 	else
 	{

@@ -382,6 +382,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (query.final && (!table || !table->supportsFinal()))
 		throw Exception("Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 	
+	if (query.prewhere_expression && (!table || !table->supportsPrewhere()))
+		throw Exception("Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+
 	/** При распределённой обработке запроса, в потоках почти не делается вычислений,
 	  *  а делается ожидание и получение данных с удалённых серверов.
 	  * Если у нас 20 удалённых серверов, а max_threads = 8, то было бы не очень хорошо

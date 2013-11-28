@@ -24,6 +24,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_from("FROM", true, true);
 	ParserString s_array("ARRAY", true, true);
 	ParserString s_join("JOIN", true, true);
+	ParserString s_prewhere("PREWHERE", true, true);
 	ParserString s_where("WHERE", true, true);
 	ParserString s_final("FINAL", true, true);
 	ParserString s_sample("SAMPLE", true, true);
@@ -143,6 +144,17 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ws.ignore(pos, end);
 	}
 	
+	/// PREWHERE expr
+	if (s_prewhere.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+
+		if (!exp_elem.parse(pos, end, select_query->prewhere_expression, expected))
+			return false;
+
+		ws.ignore(pos, end);
+	}
+
 	/// WHERE expr
 	if (s_where.ignore(pos, end, expected))
 	{

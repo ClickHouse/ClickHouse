@@ -252,6 +252,16 @@ BlockInputStreams StorageMergeTree::read(
 
 	LOG_DEBUG(log, "Key condition: " << key_condition.toString());
 	LOG_DEBUG(log, "Date condition: " << date_condition.toString());
+
+	/// PREWHERE
+	ExpressionActionsPtr prewhere_actions;
+	String prewhere_column;
+	if (select.prewhere_expression)
+	{
+		ExpressionAnalyzer analyzer(select.prewhere_expression, context, *columns);
+		prewhere_actions = analyzer.getActions(false);
+		prewhere_column = select.prewhere_expression->getColumnName();
+	}
 	
 	RangesInDataParts parts_with_ranges;
 	
@@ -292,11 +302,25 @@ BlockInputStreams StorageMergeTree::read(
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 		
-		res = spreadMarkRangesAmongThreadsFinal(parts_with_ranges, threads, column_names_to_read, max_block_size, settings.use_uncompressed_cache);
+		res = spreadMarkRangesAmongThreadsFinal(
+			parts_with_ranges,
+			threads,
+			column_names_to_read,
+			max_block_size,
+			settings.use_uncompressed_cache,
+			prewhere_actions,
+			prewhere_column);
 	}
 	else
 	{
-		res = spreadMarkRangesAmongThreads(parts_with_ranges, threads, column_names_to_read, max_block_size, settings.use_uncompressed_cache);
+		res = spreadMarkRangesAmongThreads(
+			parts_with_ranges,
+			threads,
+			column_names_to_read,
+			max_block_size,
+			settings.use_uncompressed_cache,
+			prewhere_actions,
+			prewhere_column);
 	}
 	
 	if (select.sample_size)
@@ -316,7 +340,13 @@ BlockInputStreams StorageMergeTree::read(
 
 /// Примерно поровну распределить засечки между потоками.
 BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
-	RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size, bool use_uncompressed_cache)
+	RangesInDataParts parts,
+	size_t threads,
+	const Names & column_names,
+	size_t max_block_size,
+	bool use_uncompressed_cache,
+	ExpressionActionsPtr prewhere_actions,
+	const String & prewhere_column)
 {
 	/// На всякий случай перемешаем куски.
 	std::random_shuffle(parts.begin(), parts.end());
@@ -376,7 +406,8 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
 					
 					streams.push_back(new MergeTreeBlockInputStream(
 						full_path + part.data_part->name + '/', max_block_size, column_names, *this,
-						part.data_part, part.ranges, thisPtr(), use_uncompressed_cache));
+						part.data_part, part.ranges, thisPtr(), use_uncompressed_cache,
+						prewhere_actions, prewhere_column));
 					need_marks -= marks_in_part;
 					parts.pop_back();
 					sum_marks_in_parts.pop_back();
@@ -405,7 +436,8 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
 				
 				streams.push_back(new MergeTreeBlockInputStream(
 					full_path + part.data_part->name + '/', max_block_size, column_names, *this,
-					part.data_part, ranges_to_get_from_part, thisPtr(), use_uncompressed_cache));
+					part.data_part, ranges_to_get_from_part, thisPtr(), use_uncompressed_cache,
+					prewhere_actions, prewhere_column));
 			}
 			
 			if (streams.size() == 1)
@@ -424,7 +456,13 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
 
 /// Распределить засечки между потоками и сделать, чтобы в ответе (почти) все данные были сколлапсированы (модификатор FINAL).
 BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(
-	RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size, bool use_uncompressed_cache)
+	RangesInDataParts parts,
+	size_t threads,
+	const Names & column_names,
+	size_t max_block_size,
+	bool use_uncompressed_cache,
+	ExpressionActionsPtr prewhere_actions,
+	const String & prewhere_column)
 {
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
@@ -446,7 +484,8 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(
 		
 		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
 			full_path + part.data_part->name + '/', max_block_size, column_names, *this,
-			part.data_part, part.ranges, thisPtr(), use_uncompressed_cache);
+			part.data_part, part.ranges, thisPtr(), use_uncompressed_cache,
+			prewhere_actions, prewhere_column);
 		
 		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
 	}
@@ -941,7 +980,8 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			full_path + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, *this, parts[i], ranges, StoragePtr(), false), primary_expr));
+			full_path + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, *this, parts[i], ranges,
+			StoragePtr(), false, NULL, 0), primary_expr));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.

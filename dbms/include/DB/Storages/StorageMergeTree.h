@@ -158,6 +158,7 @@ public:
 	std::string getSignColumnName() const { return sign_column; }
 	bool supportsSampling() const { return !!sampling_expression; }
 	bool supportsFinal() const { return !sign_column.empty(); }
+	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
@@ -342,19 +343,33 @@ private:
 	Poco::FastMutex data_parts_mutex;
 
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-				  const Context & context_,
-				  ASTPtr & primary_expr_ast_,
-				  const String & date_column_name_,
-				  const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
-				  size_t index_granularity_,
-				  Mode mode_ = Ordinary,
-				  const String & sign_column_ = "",
-				  const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
+					const Context & context_,
+					ASTPtr & primary_expr_ast_,
+					const String & date_column_name_,
+					const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
+					size_t index_granularity_,
+					Mode mode_ = Ordinary,
+					const String & sign_column_ = "",
+					const StorageMergeTreeSettings & settings_ = StorageMergeTreeSettings());
 	
 	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
-	BlockInputStreams spreadMarkRangesAmongThreads(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size, bool use_uncompressed_cache);
-	BlockInputStreams spreadMarkRangesAmongThreadsFinal(RangesInDataParts parts, size_t threads, const Names & column_names, size_t max_block_size, bool use_uncompressed_cache);
+	BlockInputStreams spreadMarkRangesAmongThreads(
+		RangesInDataParts parts,
+		size_t threads,
+		const Names & column_names,
+		size_t max_block_size,
+		bool use_uncompressed_cache,
+		ExpressionActionsPtr prewhere_actions,
+		const String & prewhere_column);
+	BlockInputStreams spreadMarkRangesAmongThreadsFinal(
+		RangesInDataParts parts,
+		size_t threads,
+		const Names & column_names,
+		size_t max_block_size,
+		bool use_uncompressed_cache,
+		ExpressionActionsPtr prewhere_actions,
+		const String & prewhere_column);
 	
 	/// Создать выражение "Sign == 1".
 	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);

@@ -19,7 +19,8 @@ public:
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
 		size_t block_size_, const Names & column_names_,
 		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
-		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_)
+		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_,
+		ExpressionActionsPtr prewhere_actions, String prewhere_column)
 		: IProfilingBlockInputStream(owned_storage),
 		path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
@@ -190,6 +191,8 @@ private:
 									  /// В порядке убывания номеров, чтобы можно было выбрасывать из конца.
 	bool use_uncompressed_cache;
 	Poco::SharedPtr<MergeTreeReader> reader;
+	ExpressionActionsPtr prewhere_actions;
+	String prewhere_column;
 };
 
 }
