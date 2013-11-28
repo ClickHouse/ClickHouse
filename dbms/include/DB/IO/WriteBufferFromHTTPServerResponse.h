@@ -47,6 +47,9 @@ public:
 
 	~WriteBufferFromHTTPServerResponse()
 	{
+		if (!offset())
+			return;
+
 		try
 		{
 			if (!ostr)
