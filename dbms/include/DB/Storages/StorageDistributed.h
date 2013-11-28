@@ -105,6 +105,8 @@ private:
 		const Settings & settings,
 		const Context & context_,
 		const String & sign_column_name_ = "");
+
+	bool checkLocalReplics(const Address & address);
 	
 	String name;
 	NamesAndTypesListPtr columns;
@@ -116,6 +118,10 @@ private:
 	const Context & context;
 	/// Соединения с удалёнными серверами.
 	ConnectionPools pools;
+
+	/// количество реплик clickhouse сервера, расположенных локально
+	/// к локальным репликам обращаемся напрямую
+	size_t local_replics_num;
 };
 
 }
