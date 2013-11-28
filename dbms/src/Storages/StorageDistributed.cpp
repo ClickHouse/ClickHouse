@@ -67,11 +67,13 @@ StorageDistributed::StorageDistributed(
 		ConnectionPools replicas;
 		replicas.reserve(it->size());
 
+		bool has_local_replics = false;
 		for (Addresses::const_iterator jt = it->begin(); jt != it->end(); ++jt)
 		{
 			if (checkLocalReplics(*jt))
 			{
-				++local_replics_num;
+				has_local_replics = true;
+				break;
 			}
 			else
 			{
@@ -82,7 +84,10 @@ StorageDistributed::StorageDistributed(
 			}
 		}
 
-		pools.push_back(new ConnectionPoolWithFailover(replicas, settings.connections_with_failover_max_tries));
+		if (has_local_replics)
+			++local_replics_num;
+		else
+			pools.push_back(new ConnectionPoolWithFailover(replicas, settings.connections_with_failover_max_tries));
 	}
 }
 
@@ -147,7 +152,7 @@ BlockInputStreams StorageDistributed::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	processed_stage = pools.size() == 1
+	processed_stage = (pools.size() + local_replics_num) == 1
 		? QueryProcessingStage::Complete
 		: QueryProcessingStage::WithMergeableState;
 
@@ -172,6 +177,8 @@ BlockInputStreams StorageDistributed::read(
 
 
 	/// добавляем запросы к локальному clickhouse
+	DB::Context new_context = context;
+	new_context.setSettings(new_settings);
 	{
 		DB::Context new_context = context;
 		new_context.setSettings(new_settings);
