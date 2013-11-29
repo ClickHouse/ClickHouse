@@ -166,6 +166,11 @@ protected:
 	{
 		if (!all_read && !is_cancelled)
 			throw Exception("readSuffixImpl called before all data is read", ErrorCodes::LOGICAL_ERROR);
+
+		/// Может быть, в очереди есть ещё эксепшен.
+		OutputData res;
+		while (output_queue.tryPop(res) && res.exception)
+			res.exception->rethrow();
 	}
 
 private:
@@ -205,9 +210,6 @@ private:
 
 			if (exception)
 			{
-				/// Попросим остальные потоки побыстрее прекратить работу.
-				parent.finish = true;
-
 				try
 				{
 					parent.cancel();
