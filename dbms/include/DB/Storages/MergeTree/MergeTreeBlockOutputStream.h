@@ -122,7 +122,7 @@ private:
 		LOG_TRACE(storage.log, "Sorting by primary key.");
 		
 		/// Сортируем.
-		sortBlock(block, storage.sort_descr);
+		stableSortBlock(block, storage.sort_descr);
 		
 		/// Наконец-то можно писать данные на диск.
 		LOG_TRACE(storage.log, "Writing index.");
