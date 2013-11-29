@@ -234,7 +234,7 @@ bool makeMerge(int cur_time) {
 	if (mergeScheduled == 0) return 0;
 	mergeScheduled --;
 	std::vector<DataPtr> e;
-	if (!selectPartsToMerge(e)) return 0;
+	if (!selectPartsToMerge(e)) return 1;
 	int curId = uniqId ++;
 	size_t size = 0;
 	for (size_t i = 0; i < e.size(); ++i)
@@ -298,17 +298,14 @@ void process(pair<int, pair<int, int> > ev)
 int main()
 {
 	srand(rdtsc());
-	for (int i = 0; i < 10000; ++i)
+	int delay = 15;
+	for (int i = 0; i < 60*60*30/delay; ++i)
 	{
-		int delay = 30;
 		if (rand() & 7)
-			events.insert(make_pair(i * delay, make_pair(1, genRand(65000, 75000))));
+			events.insert(make_pair(i * delay, make_pair(1, genRand(75000, 85000))));
 		else {
-			events.insert(make_pair(-4 + i * delay, make_pair(1, genRand(1000, 20000))));
-			events.insert(make_pair(-2 + i * delay, make_pair(1, genRand(1000, 20000))));
-			events.insert(make_pair(0 + i * delay, make_pair(1, genRand(20000, 30000))));
-			events.insert(make_pair(+2 + i * delay, make_pair(1, genRand(1000, 20000))));
-			events.insert(make_pair(+4 + i * delay, make_pair(1, genRand(1000, 20000))));
+			events.insert(make_pair(-4 + i * delay, make_pair(1, genRand(10000, 30000))));
+			events.insert(make_pair(+4 + i * delay, make_pair(1, genRand(10000, 30000))));
 		}
 	}
 
