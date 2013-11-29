@@ -78,11 +78,8 @@ public:
 		{
 			if (!all_read)
 				cancel();
-			if (!is_cancelled)
-			{
-				for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-					it->thread->join();
-			}
+
+			finalize();
 		}
 		catch (...)
 		{
@@ -113,7 +110,12 @@ public:
 				}
 			}
 		}
+	}
 
+
+protected:
+	void finalize()
+	{
 		LOG_TRACE(log, "Waiting for threads to finish");
 
 		/// Вынем всё, что есть в очереди готовых данных.
@@ -128,10 +130,11 @@ public:
 		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			it->thread->join();
 
+		threads_data.clear();
+
 		LOG_TRACE(log, "Waited for threads to finish");
 	}
 
-protected:
 	Block readImpl()
 	{
 		OutputData res;
