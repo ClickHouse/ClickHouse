@@ -135,7 +135,7 @@ protected:
 	Block readImpl()
 	{
 		OutputData res;
-		if (all_read || finish)
+		if (all_read)
 			return res.block;
 
 		/// Запускаем потоки, если это ещё не было сделано.
@@ -270,14 +270,13 @@ private:
 					}
 				}
 			}
+
 			if (parent.finish)
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
 
-				/// Не будем оставлять очередь пустой на случай, если readImpl ее ждет.
-				if (parent.output_queue.size() == 0)
-					/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
-					parent.output_queue.push(OutputData());
+				/// Отдаём в основной поток пустой блок, что означает, что данных больше нет.
+				parent.output_queue.push(OutputData());
 			}
 		}
 
