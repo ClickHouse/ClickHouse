@@ -7,10 +7,13 @@ namespace DB
 
 void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_columns)
 {
+	if (current_row_is_zero)
+		return;
+
 	for (size_t i = 0; i < num_columns; ++i)
 		merged_columns[i]->insert(current_row[i]);
 }
-	
+
 
 Block SummingSortedBlockInputStream::readImpl()
 {
@@ -64,6 +67,7 @@ Block SummingSortedBlockInputStream::readImpl()
 	return merged_block;
 }
 
+
 template<class TSortCursor>
 void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {	
@@ -90,10 +94,11 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			next_key.resize(description.size());
 
 			setRow(current_row, current);
+			current_row_is_zero = false;
 		}
 		else
 		{
-			addRow(current_row, current);
+			current_row_is_zero = !addRow(current_row, current);
 		}
 
 		if (!current->isLast())

@@ -13,13 +13,14 @@ namespace DB
 /** Соединяет несколько сортированных потоков в один.
   * При этом, для каждой группы идущих подряд одинаковых значений первичного ключа (столбцов, по которым сортируются данные),
   *  схлопывает их в одну строку, суммируя все числовые столбцы кроме первичного ключа.
+  * Если во всех числовых столбцах кроме первичного ключа получился ноль, то удаляет строчку.
   */
 class SummingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
 	SummingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
 		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-		log(&Logger::get("SummingSortedBlockInputStream"))
+		log(&Logger::get("SummingSortedBlockInputStream")), current_row_is_zero(false)
 	{
 	}
 
@@ -56,6 +57,7 @@ private:
 	Row next_key;			/// Первичный ключ следующей строки.
 	
 	Row current_row;
+	bool current_row_is_zero;	/// Текущая строчка просуммировалась в ноль, и её следует удалить.
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
@@ -67,32 +69,41 @@ private:
 	void insertCurrentRow(ColumnPlainPtrs & merged_columns);
 
 
-	/** Реализует операцию += */
-	class FieldVisitorSum : public StaticVisitor<>
+	/** Реализует операцию +=.
+	  * Возвращает false, если результат получился нулевым.
+	  */
+	class FieldVisitorSum : public StaticVisitor<bool>
 	{
 	private:
 		const Field & rhs;
 	public:
 		FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
 
-		void operator() (UInt64 	& x) const { x += get<UInt64>(rhs); }
-		void operator() (Int64 		& x) const { x += get<Int64>(rhs); }
-		void operator() (Float64 	& x) const { x += get<Float64>(rhs); }
+		bool operator() (UInt64 	& x) const { x += get<UInt64>(rhs); return x != 0; }
+		bool operator() (Int64 		& x) const { x += get<Int64>(rhs); return x != 0; }
+		bool operator() (Float64 	& x) const { x += get<Float64>(rhs); return x != 0; }
 
-		void operator() (Null 		& x) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
-		void operator() (String 	& x) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
-		void operator() (Array 		& x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
+		bool operator() (Null 		& x) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
+		bool operator() (String 	& x) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
+		bool operator() (Array 		& x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
 	};
 
-	/// Прибавить строчку под курсором к row.
+	/** Прибавить строчку под курсором к row.
+	  * Возвращает false, если результат получился нулевым.
+	  */
 	template<class TSortCursor>
-	void addRow(Row & row, TSortCursor & cursor)
+	bool addRow(Row & row, TSortCursor & cursor)
 	{
+		bool res = false;	/// Есть ли хотя бы одно ненулевое число.
+		
 		for (size_t i = 0, size = column_numbers_to_sum.size(); i < size; ++i)
 		{
 			size_t j = column_numbers_to_sum[i];
-			apply_visitor(FieldVisitorSum((*cursor->all_columns[j])[cursor->pos]), row[j]);
+			if (apply_visitor(FieldVisitorSum((*cursor->all_columns[j])[cursor->pos]), row[j]))
+				res = true;
 		}
+
+		return res;
 	}
 };
 
