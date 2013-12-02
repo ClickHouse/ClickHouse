@@ -981,7 +981,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
 			full_path + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, *this, parts[i], ranges,
-			StoragePtr(), false, NULL, 0), primary_expr));
+			StoragePtr(), false, NULL, ""), primary_expr));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
