@@ -56,9 +56,15 @@ struct StorageMergeTreeSettings
 	/// log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts).
 	size_t max_parts_to_merge_at_once;
 	
-	/// Куски настолько большого размера объединять нельзя вообще.
+	/// Куски настолько большого размера в основном потоке объединять нельзя вообще.
 	size_t max_rows_to_merge_parts;
 	
+	/// Куски настолько большого размера во втором потоке объединять нельзя вообще.
+	size_t max_rows_to_merge_parts_second;
+
+	/// Во столько раз ночью увеличиваем коэффициент.
+	size_t merge_parts_at_night_inc;
+
 	/// Сколько потоков использовать для объединения кусков.
 	size_t merging_threads;
 
@@ -83,6 +89,8 @@ struct StorageMergeTreeSettings
 		max_size_ratio_to_merge_parts(5),
 		max_parts_to_merge_at_once(10),
 		max_rows_to_merge_parts(100 * 1024 * 1024),
+		max_rows_to_merge_parts_second(1024 * 1024),
+		merge_parts_at_night_inc(10),
 		merging_threads(2),
 		min_rows_for_concurrent_read(20 * 8192),
 		min_rows_for_seek(5 * 8192),

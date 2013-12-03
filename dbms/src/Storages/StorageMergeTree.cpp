@@ -807,6 +807,11 @@ void StorageMergeTree::joinMergeThreads()
 /// Из всех таких выбираем отрезок с минимальным максимумом размера.
 /// Из всех таких выбираем отрезок с минимальным минимумом размера.
 /// Из всех таких выбираем отрезок с максимальной длиной.
+/// Дополнительно:
+/// 1) с 1:00 до 5:00 ограничение сверху на размер куска в основном потоке увеличивается в несколько раз
+/// 2) в зависимоти от возраста кусков меняется допустимая неравномерность при слиянии
+/// 3) Молодые куски крупного размера (примерно больше 1 Гб) можно сливать не меньше чем по три
+
 bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool merge_anything_for_old_months)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
@@ -823,11 +828,26 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 	
 	DayNum_t now_day = date_lut.toDayNum(time(0));
 	DayNum_t now_month = date_lut.toFirstDayNumOfMonth(now_day);
-		
+	int now_hour = date_lut.toHourInaccurate(time(0));
+
 	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
 	/// Нужно для определения максимальности по включению.
 	int max_count_from_left = 0;
-	
+
+	int cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts;
+
+	/// Если ночь, можем мерджить сильно большие куски
+	if (now_hour >= 1 && now_hour <= 5)
+		cur_max_rows_to_merge_parts *= settings.merge_parts_at_night_inc;
+
+	/// Если есть активный мердж крупных кусков, то ограничаемся мерджем только маленьких частей.
+	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
+		if ((*it)->currently_merging && (*it)->size * index_granularity > 25 * 1024 * 1024)
+		{
+			cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts_second;
+			break;
+		}
+
 	/// Левый конец отрезка.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 	{
@@ -837,7 +857,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 		
 		/// Кусок не занят и достаточно мал.
 		if (first_part->currently_merging ||
-			first_part->size * index_granularity > settings.max_rows_to_merge_parts)
+			first_part->size * index_granularity > cur_max_rows_to_merge_parts)
 			continue;
 		
 		/// Кусок в одном месяце.
@@ -864,6 +884,8 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 		/// Этот месяц кончился хотя бы день назад.
 		bool is_old_month = now_day - now_month >= 1 && now_month > month;
 		
+		time_t oldest_modification_time = first_part->modification_time;
+
 		/// Правый конец отрезка.
 		DataParts::iterator jt = it;
 		for (++jt; jt != data_parts.end() && cur_len < static_cast<int>(settings.max_parts_to_merge_at_once); ++jt)
@@ -872,7 +894,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 			
 			/// Кусок не занят, достаточно мал и в одном правильном месяце.
 			if (last_part->currently_merging ||
-				last_part->size * index_granularity > settings.max_rows_to_merge_parts ||
+				last_part->size * index_granularity > cur_max_rows_to_merge_parts ||
 				last_part->left_month != last_part->right_month ||
 				last_part->left_month != month)
 				break;
@@ -884,15 +906,26 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 				break;
 			}
 			
+			oldest_modification_time = std::min(oldest_modification_time, last_part->modification_time);
 			cur_max = std::max(cur_max, last_part->size);
 			cur_min = std::min(cur_min, last_part->size);
 			cur_sum += last_part->size;
 			++cur_len;
 			cur_id = last_part->right;
+
+			int min_len = 2;
+			int cur_age_in_sec = time(0) - oldest_modification_time;
+
+			/// Если куски примерно больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
+			if (cur_max * index_granularity * 150 > 1024*1024*1024 && cur_age_in_sec < 6*3600)
+				min_len = 3;
 			
+			/// Равен 0.5 если возраст порядка 0, равен 5.5 если возраст почти месяц.
+			double ratio_modifier = 0.5 + 5 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
+
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
-			if (cur_len >= 2 &&
-				(static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts ||
+			if (cur_len >= min_len &&
+				(static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts * ratio_modifier ||
 				(is_old_month && merge_anything_for_old_months))) /// За старый месяц объединяем что угодно, если разрешено.
 			{
 				cur_longest_max = cur_max;
