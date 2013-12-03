@@ -811,6 +811,7 @@ void StorageMergeTree::joinMergeThreads()
 /// 1) с 1:00 до 5:00 ограничение сверху на размер куска в основном потоке увеличивается в несколько раз
 /// 2) в зависимоти от возраста кусков меняется допустимая неравномерность при слиянии
 /// 3) Молодые куски крупного размера (примерно больше 1 Гб) можно сливать не меньше чем по три
+/// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки
 
 bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool merge_anything_for_old_months)
 {
@@ -906,7 +907,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 				break;
 			}
 			
-			oldest_modification_time = std::min(oldest_modification_time, last_part->modification_time);
+			oldest_modification_time = std::max(oldest_modification_time, last_part->modification_time);
 			cur_max = std::max(cur_max, last_part->size);
 			cur_min = std::min(cur_min, last_part->size);
 			cur_sum += last_part->size;
@@ -920,13 +921,13 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 			if (cur_max * index_granularity * 150 > 1024*1024*1024 && cur_age_in_sec < 6*3600)
 				min_len = 3;
 			
-			/// Равен 0.5 если возраст порядка 0, равен 5.5 если возраст почти месяц.
-			double ratio_modifier = 0.5 + 5 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
+			/// Равен 0.5 если возраст порядка 0, равен 5 если возраст около месяца.
+			double ratio_modifier = 0.5 + 9 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len &&
 				(static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts * ratio_modifier ||
-				(is_old_month && merge_anything_for_old_months))) /// За старый месяц объединяем что угодно, если разрешено.
+				(is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*15))) /// За старый месяц объединяем что угодно, если разрешено и если этому хотя бы 15 дней
 			{
 				cur_longest_max = cur_max;
 				cur_longest_min = cur_min;
