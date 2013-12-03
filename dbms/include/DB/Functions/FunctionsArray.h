@@ -57,7 +57,7 @@ public:
 		/// Все аргументы должны быть константами.
 		for (size_t i = 0, size = arguments.size(); i < size; ++i)
 			if (!block.getByPosition(arguments[i]).column->isConst())
-				throw Exception("Arguments for function array must be constant.", ErrorCodes::ILLEGAL_COLUMN);;
+				throw Exception("Arguments for function array must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
 		Array arr;
 		for (size_t i = 0, size = arguments.size(); i < size; ++i)
