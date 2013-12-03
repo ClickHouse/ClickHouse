@@ -92,6 +92,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "toDate")						return new FunctionToDate;
 	else if (name == "toDateTime")					return new FunctionToDateTime;
 	else if (name == "toString")					return new FunctionToString;
+	else if (name == "toFixedString")				return new FunctionToFixedString;
 
 	else if (name == "reinterpretAsUInt8")			return new FunctionReinterpretAsUInt8;
 	else if (name == "reinterpretAsUInt16")		return new FunctionReinterpretAsUInt16;
