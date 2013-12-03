@@ -926,7 +926,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 			double time_ratio_modifier = 0.5 + 9 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
 
 			/// Двоичный логарифм суммарного размера кусочков
-			double log_cur_sum = std::log(cur_sum) / std::log(2);
+			double log_cur_sum = std::log(cur_sum * index_granularity) / std::log(2);
 			/// Равен ~2 если куски маленькие, уменьшается до 0.5 с увеличением суммарного размера до 2^25.
 			double size_ratio_modifier = std::max(0.25, 2 - 3 * (log_cur_sum) / (25 + log_cur_sum));
 
