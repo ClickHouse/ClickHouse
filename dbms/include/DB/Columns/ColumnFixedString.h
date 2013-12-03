@@ -15,7 +15,6 @@ namespace DB
 class ColumnFixedString : public IColumn
 {
 public:
-	//typedef std::vector<UInt8> Chars_t;
 	typedef PODArray<UInt8> Chars_t;
 
 private:
@@ -78,7 +77,7 @@ public:
 			throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
 		
 		size_t old_size = chars.size();
-		chars.resize(old_size + n);
+		chars.resize_fill(old_size + n);
 		memcpy(&chars[old_size], s.data(), s.size());
 	}
 
@@ -103,7 +102,7 @@ public:
 
 	void insertDefault()
 	{
-		chars.resize(chars.size() + n);
+		chars.resize_fill(chars.size() + n);
 	}
 
 	int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const

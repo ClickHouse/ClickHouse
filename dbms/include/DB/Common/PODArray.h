@@ -208,6 +208,18 @@ public:
 		c_end = c_start + byte_size(n);
 	}
 
+	/// Как resize, но обнуляет новые элементы.
+	void resize_fill(size_t n)
+	{
+		size_t old_size = size();
+		if (n > old_size)
+		{
+			reserve(n);
+			memset(c_end, 0, n - old_size);
+		}
+		c_end = c_start + byte_size(n);
+	}
+
 	void clear()
 	{
 		c_end = c_start;

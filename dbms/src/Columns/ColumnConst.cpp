@@ -45,7 +45,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 		ColumnPtr res_ptr = res;
 		ColumnFixedString::Chars_t & vec = res->getChars();
 
-		vec.resize(n * s);
+		vec.resize_fill(n * s);
 		size_t offset = 0;
 
 		for (size_t i = 0; i < s; ++i)
