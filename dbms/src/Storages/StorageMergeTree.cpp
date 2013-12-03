@@ -812,6 +812,7 @@ void StorageMergeTree::joinMergeThreads()
 /// 2) в зависимоти от возраста кусков меняется допустимая неравномерность при слиянии
 /// 3) Молодые куски крупного размера (примерно больше 1 Гб) можно сливать не меньше чем по три
 /// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки
+/// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
 bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool merge_anything_for_old_months)
 {
@@ -835,7 +836,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 	/// Нужно для определения максимальности по включению.
 	int max_count_from_left = 0;
 
-	int cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts;
+	size_t cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts;
 
 	/// Если ночь, можем мерджить сильно большие куски
 	if (now_hour >= 1 && now_hour <= 5)
@@ -922,11 +923,19 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 				min_len = 3;
 			
 			/// Равен 0.5 если возраст порядка 0, равен 5 если возраст около месяца.
-			double ratio_modifier = 0.5 + 9 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
+			double time_ratio_modifier = 0.5 + 9 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
+
+			/// Двоичный логарифм суммарного размера кусочков
+			double log_cur_sum = std::log(cur_sum) / std::log(2);
+			/// Равен ~2 если куски маленькие, уменьшается до 0.5 с увеличением суммарного размера до 2^25.
+			double size_ratio_modifier = std::max(0.25, 2 - 3 * (log_cur_sum) / (25 + log_cur_sum));
+
+			/// Объединяем все в одну константу
+			double ratio = std::max(0.5, time_ratio_modifier * size_ratio_modifier * settings.max_size_ratio_to_merge_parts);
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len &&
-				(static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts * ratio_modifier ||
+				(static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio ||
 				(is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*15))) /// За старый месяц объединяем что угодно, если разрешено и если этому хотя бы 15 дней
 			{
 				cur_longest_max = cur_max;
