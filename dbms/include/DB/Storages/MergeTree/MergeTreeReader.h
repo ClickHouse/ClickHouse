@@ -244,13 +244,16 @@ private:
 			}
 
 			if (column.size())
+			{
+				ColumnArray & array = dynamic_cast<ColumnArray &>(column);
 				readData(
 					name,
 					*type_arr->getNestedType(),
-					dynamic_cast<ColumnArray &>(column).getData(),
+					array.getData(),
 					from_mark,
-					dynamic_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
+					array.getOffsets()[column.size() - 1] - array.getData().size(),
 					level + 1);
+			}
 		}
 		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 		{
@@ -273,7 +276,7 @@ private:
 						*it->second,
 						*column_nested.getData()[i],
 						from_mark,
-						column_nested.getOffsets()[column.size() - 1],
+						column_nested.getOffsets()[column.size() - 1] - column_nested.getData()[i]->size(),
 						level + 1);
 				}
 			}
