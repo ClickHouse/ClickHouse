@@ -19,7 +19,11 @@ private:
 	size_t n;
 	
 public:
-	DataTypeFixedString(size_t n_) : n(n_) {}
+	DataTypeFixedString(size_t n_) : n(n_)
+	{
+		if (n == 0)
+			throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+	}
 	
 	std::string getName() const
 	{

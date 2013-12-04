@@ -11,7 +11,6 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
-#include <Poco/NumberFormatter.h>
 
 
 namespace DB
@@ -350,7 +349,7 @@ public:
 		if (const ColumnConstString * column_const = dynamic_cast<const ColumnConstString *>(&*column))
 		{
 			if (column_const->getData().size() > n)
-				throw Exception("String too long for type FixedString(" + Poco::NumberFormatter::format(n) + ")",
+				throw Exception("String too long for type FixedString(" + toString(n) + ")",
 					ErrorCodes::TOO_LARGE_STRING_SIZE);
 			block.getByPosition(result).column = new ColumnConst<String>(column_const->size(), column_const->getData(), new DataTypeFixedString(n));
 		}
@@ -367,7 +366,7 @@ public:
 				size_t off = i ? in_offsets[i - 1] : 0;
 				size_t len = in_offsets[i] - off - 1;
 				if (len > n)
-					throw Exception("String too long for type FixedString(" + Poco::NumberFormatter::format(n) + ")",
+					throw Exception("String too long for type FixedString(" + toString(n) + ")",
 						ErrorCodes::TOO_LARGE_STRING_SIZE);
 				memcpy(&out_chars[i * n], &in_chars[off], len);
 			}
@@ -386,7 +385,10 @@ private:
 		const ColumnConst<T> * column_const = dynamic_cast<const ColumnConst<T> *>(&*column.column);
 		if (!column_const)
 			throw Exception("Unexpected type of column for FixedString length: " + column.column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-		out_size = static_cast<size_t>(column_const->getData());
+		T s = column_const->getData();
+		if (s <= 0)
+			throw Exception("FixedString length must be positive (unlike " + toString(s) + ")", ErrorCodes::ILLEGAL_COLUMN);
+		out_size = static_cast<size_t>(s);
 		return true;
 	}
 
