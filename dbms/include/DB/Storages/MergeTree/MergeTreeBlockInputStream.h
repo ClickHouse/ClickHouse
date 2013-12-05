@@ -234,8 +234,9 @@ protected:
 							UInt8 nonzero = 0;
 							if (mark != range.end)
 							{
-								for (size_t row = 0; row < index_granularity; ++row)
-									nonzero |= pre_filter[pre_filter_pos + row];
+								size_t limit = std::min(pre_filter.size(), pre_filter_pos + index_granularity);
+								for (size_t row = pre_filter_pos; row < limit; ++row)
+									nonzero |= pre_filter[row];
 							}
 							if (!nonzero)
 							{
@@ -283,7 +284,7 @@ protected:
 
 				reader->fillMissingColumns(res);
 			}
-			while (!remaining_mark_ranges.empty() && !res);
+			while (!remaining_mark_ranges.empty() && !res && !isCancelled());
 		}
 		else
 		{
