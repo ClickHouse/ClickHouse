@@ -328,7 +328,7 @@ public:
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		if (!arguments[1].column)
 			throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);

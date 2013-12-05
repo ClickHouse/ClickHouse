@@ -63,6 +63,7 @@ public:
 	std::string getSignColumnName() const { return sign_column_name; };
 	bool supportsSampling() const { return true; }
 	bool supportsFinal() const { return !sign_column_name.empty(); }
+	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
