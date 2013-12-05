@@ -91,6 +91,9 @@ public:
 	/** Получить список имён столбцов через запятую. */
 	std::string dumpNames() const;
 
+	/** Список имен, типов и длин столбцов. Предназначен для отладки. */
+	std::string dumpStructure() const;
+
 	/** Получить такой же блок, но пустой. */
 	Block cloneEmpty() const;
 	
