@@ -12,6 +12,12 @@
 namespace DB
 {
 
+template <class T>
+static T saturation(const T & v, const T & limit)
+{
+	return v > limit ? limit : v;
+}
+
 StorageDistributed::StorageDistributed(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
@@ -29,6 +35,7 @@ StorageDistributed::StorageDistributed(
 	context(context_),
 	local_replics_num(0)
 {
+
 	for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 	{
 		if (checkLocalReplics(*it))
@@ -40,7 +47,9 @@ StorageDistributed::StorageDistributed(
 			pools.push_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,
 				it->host_port.host().toString(), it->host_port.port(), "", it->user, it->password, data_type_factory, "server", Protocol::Compression::Enable,
-				settings.connect_timeout, settings.receive_timeout, settings.send_timeout));
+				saturation(settings.connect_timeout, settings.limits.max_execution_time),
+				saturation(settings.receive_timeout, settings.limits.max_execution_time),
+				saturation(settings.send_timeout, settings.limits.max_execution_time)));
 		}
 	}
 }
@@ -80,7 +89,9 @@ StorageDistributed::StorageDistributed(
 				replicas.push_back(new ConnectionPool(
 					settings.distributed_connections_pool_size,
 					jt->host_port.host().toString(), jt->host_port.port(), "", jt->user, jt->password, data_type_factory, "server", Protocol::Compression::Enable,
-					settings.connect_timeout_with_failover_ms, settings.receive_timeout, settings.send_timeout));
+					saturation(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
+					saturation(settings.receive_timeout, settings.limits.max_execution_time),
+					saturation(settings.send_timeout, settings.limits.max_execution_time)));
 			}
 		}
 
@@ -165,6 +176,7 @@ BlockInputStreams StorageDistributed::read(
 	/// Установим sign_rewrite = 0, чтобы второй раз не переписывать запрос
 	Settings new_settings = settings;
 	new_settings.sign_rewrite = false;
+	new_settings.queue_max_wait_ms = saturation(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
 
 	std::stringstream s;
 	formatAST(select, s, 0, false, true);
