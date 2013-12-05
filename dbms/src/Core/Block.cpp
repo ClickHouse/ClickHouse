@@ -270,6 +270,19 @@ std::string Block::dumpNames() const
 }
 
 
+std::string Block::dumpStructure() const
+{
+	std::stringstream res;
+	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	{
+		if (it != data.begin())
+			res << ", ";
+		res << it->name << ' ' << it->type->getName() << ' ' << it->column->getName() << ' ' << it->column->size();
+	}
+	return res.str();
+}
+
+
 Block Block::cloneEmpty() const
 {
 	Block res;
