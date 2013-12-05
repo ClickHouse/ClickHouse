@@ -12,10 +12,13 @@
 namespace DB
 {
 
-template <class T>
-static T saturation(const T & v, const T & limit)
+
+static Poco::Timespan saturation(const Poco::Timespan & v, const Poco::Timespan & limit)
 {
-	return v > limit ? limit : v;
+	if (limit.totalMicroseconds() == 0)
+		return v;
+	else
+		return v > limit ? limit : v;
 }
 
 StorageDistributed::StorageDistributed(
