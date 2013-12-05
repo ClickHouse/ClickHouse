@@ -466,6 +466,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
+		if (select->prewhere_expression)
+			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
 		if (select->where_expression)
 			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
 		if (select->having_expression)

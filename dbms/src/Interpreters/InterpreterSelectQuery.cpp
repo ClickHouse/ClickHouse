@@ -415,7 +415,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	  *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
 	  *  а также установим количество потоков в 1 и отменим асинхронное выполнение конвейера запроса.
 	  */
-	if (!query.distinct && !query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
+	if (!query.distinct && !query.prewhere_expression && !query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
 		&& query.limit_length && !query_analyzer->hasAggregation() && limit_length + limit_offset < settings.max_block_size)
 	{
 		settings.max_block_size = limit_length + limit_offset;

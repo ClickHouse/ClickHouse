@@ -35,6 +35,9 @@ public:
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
 			NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
+			/// Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
+			///  (от storage ожидают получить только столбцы таблицы).
+			remove_prewhere_column = !pre_name_set.count(prewhere_column);
 			Names post_column_names;
 			for (size_t i = 0; i < column_names.size(); ++i)
 			{
@@ -196,6 +199,8 @@ protected:
 				prewhere_actions->execute(res);
 
 				ColumnPtr column = res.getByName(prewhere_column).column;
+				if (remove_prewhere_column)
+					res.erase(prewhere_column);
 
 				/** Если фильтр - константа (например, написано PREWHERE 1),
 				*  то либо вернём пустой блок, либо вернём блок без изменений.
@@ -277,7 +282,8 @@ protected:
 					}
 
 					/// Заменим столбец со значением условия из PREWHERE на константу.
-					res.getByName(prewhere_column).column = new ColumnConstUInt8(rows, 1);
+					if (!remove_prewhere_column)
+						res.getByName(prewhere_column).column = new ColumnConstUInt8(rows, 1);
 				}
 				else
 					throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -333,6 +339,7 @@ private:
 	Poco::SharedPtr<MergeTreeReader> pre_reader;
 	ExpressionActionsPtr prewhere_actions;
 	String prewhere_column;
+	bool remove_prewhere_column;
 };
 
 }

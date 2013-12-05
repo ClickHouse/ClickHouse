@@ -129,6 +129,12 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		formatAST(*ast.sample_size, s, indent, hilite, one_line);
 	}
 
+	if (ast.prewhere_expression)
+	{
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "PREWHERE " << (hilite ? hilite_none : "");
+		formatAST(*ast.prewhere_expression, s, indent, hilite, one_line);
+	}
+
 	if (ast.where_expression)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "WHERE " << (hilite ? hilite_none : "");
