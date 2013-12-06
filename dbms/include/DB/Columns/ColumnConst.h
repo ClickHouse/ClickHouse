@@ -31,6 +31,7 @@ class ColumnConst : public IColumnConst
 {
 public:
 	typedef T Type;
+	typedef typename NearestFieldType<T>::Type FieldType;
 	
 	/// Для ColumnConst<Array> data_type_ должен быть ненулевым.
 	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
@@ -42,8 +43,8 @@ public:
 	size_t sizeOfField() const { return sizeof(T); }
 	ColumnPtr cloneResized(size_t s_) const { return new ColumnConst(s_, data); }
 	size_t size() const { return s; }
-	Field operator[](size_t n) const { return typename NearestFieldType<T>::Type(data); }
-	void get(size_t n, Field & res) const { res = typename NearestFieldType<T>::Type(data); }
+	Field operator[](size_t n) const { return FieldType(data); }
+	void get(size_t n, Field & res) const { res = FieldType(data); }
 
 	ColumnPtr cut(size_t start, size_t length) const
 	{
@@ -52,12 +53,23 @@ public:
 	
 	void insert(const Field & x)
 	{
-		throw Exception("Cannot insert element into constant column " + getName(), ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
+		if (x.get<FieldType>() != FieldType(data))
+			throw Exception("Cannot insert different element into constant column " + getName(),
+				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
+		++s;
 	}
 
 	void insertData(const char * pos, size_t length)
 	{
 		throw Exception("Cannot insert element into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	void insertFrom(const IColumn & src, size_t n)
+	{
+		if (data != static_cast<const ColumnConst<T> &>(src).data)
+			throw Exception("Cannot insert different element into constant column " + getName(),
+				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
+		++s;
 	}
 	
 	void insertDefault() { ++s; }
@@ -128,8 +140,8 @@ public:
 
 	void getExtremes(Field & min, Field & max) const
 	{
-		min = typename NearestFieldType<T>::Type(data);
-		max = typename NearestFieldType<T>::Type(data);
+		min = FieldType(data);
+		max = FieldType(data);
 	}
 
 private:
