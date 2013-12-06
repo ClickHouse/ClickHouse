@@ -275,7 +275,7 @@ protected:
 					for (size_t i = 0; i < res.columns(); ++i)
 					{
 						ColumnWithNameAndType & column = res.getByPosition(i);
-						if (column.name == prewhere_column)
+						if (column.name == prewhere_column && res.columns() > 1)
 							continue;
 						column.column = column.column->filter(column_name_set.count(column.name) ? post_filter : pre_filter);
 						rows = column.column->size();
