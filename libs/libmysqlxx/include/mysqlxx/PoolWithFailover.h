@@ -51,11 +51,11 @@ namespace mysqlxx
 	  * 	<user>metrica</user>
 	  * 	<password></password>
 	  * 	<db>Metrica</db>
-	  *	<replica>
+	  *		<replica>
 	  * 		<host>mtstat01c</host>
 	  * 		<priority>0</priority>
-	  * </replica>
-	  * <replica>
+	  * 	</replica>
+	  * 	<replica>
 	  * 		<host>mtstat01d</host>
 	  * 		<priority>1</priority>
 	  * 	</replica>
