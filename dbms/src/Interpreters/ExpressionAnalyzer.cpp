@@ -1282,7 +1282,15 @@ void ExpressionAnalyzer::removeUnusedColumns()
 			/// Игнорируем идентификаторы верхнего уровня из секции ARRAY JOIN.
 			/// Их потом добавим отдельно.
 			if (dynamic_cast<ASTIdentifier *>(&*expressions[i]))
+			{
 				ignored.insert(expressions[i]->getColumnName());
+			}
+			else
+			{
+				/// Для выражений в ARRAY JOIN ничего игнорировать не нужно.
+				NamesSet empty;
+				getRequiredColumnsImpl(expressions[i], required, empty);
+			}
 
 			ignored.insert(expressions[i]->getAlias());
 		}
@@ -1384,10 +1392,15 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 		}
 	}
 
+	ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast);
+
 	for (size_t i = 0; i < ast->children.size(); ++i)
 	{
 		ASTPtr child = ast->children[i];
-		if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child))
+		/// Не пойдем в секцию ARRAY JOIN, потому что там нужно смотреть на имена не-ARRAY-JOIN-енных столбцов.
+		/// Туда removeUnusedColumns отправит нас отдельно.
+		if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child) &&
+			!(select && child == select->array_join_expression_list))
 			getRequiredColumnsImpl(child, required_columns, ignored_names);
     }
 }
