@@ -1,4 +1,5 @@
 #include <Poco/File.h>
+#include <Poco/Net/NetworkInterface.h>
 
 #include <DB/Common/escapeForFileName.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -7,7 +8,7 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Interpreters/Context.h>
-
+#include <DB/Client/ConnectionPoolWithFailover.h>
 
 namespace DB
 {
@@ -441,6 +442,21 @@ UncompressedCachePtr Context::getUncompressedCache() const
 {
 	/// Исходим из допущения, что функция setUncompressedCache, если вызывалась, то раньше. Иначе поставьте mutex.
 	return shared->uncompressed_cache;
+}
+
+Cluster & Context::getCluster(const std::string & cluster_name)
+{
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		if (!clusters)
+			clusters = new Clusters(getSettingsRef(), getDataTypeFactory());
+	}
+
+	Clusters::iterator it = clusters->find(cluster_name);
+	if (it != clusters->end())
+		return it->second;
+	else
+		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
 }
 
 }

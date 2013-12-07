@@ -148,78 +148,8 @@ StoragePtr StorageFactory::get(
 		String remote_table 	= dynamic_cast<ASTIdentifier &>(*args[2]).name;
 		String sign_column_name	= args.size() == 4 ? dynamic_cast<ASTIdentifier &>(*args[3]).name : "";
 
-		/** В конфиге адреса либо находятся в узлах <node>:
-		  * <node>
-		  * 	<host>example01-01-1</host>
-		  * 	<port>9000</port>
-		  * 	<!-- <user>, <password>, если нужны -->
-		  * </node>
-		  * ...
-		  * либо в узлах <shard>, и внутри - <replica>
-		  * <shard>
-		  * 	<replica>
-		  * 		<host>example01-01-1</host>
-		  * 		<port>9000</port>
-		  * 		<!-- <user>, <password>, если нужны -->
-		  *		</replica>
-		  * </shard>
-		  */
-		StorageDistributed::Addresses addresses;
-		StorageDistributed::AddressesWithFailover addresses_with_failover;
-
-		Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-		Poco::Util::AbstractConfiguration::Keys config_keys;
-		config.keys("remote_servers." + config_name, config_keys);
-
-		String config_prefix = "remote_servers." + config_name + ".";
-			
-		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
-		{
-			if (0 == strncmp(it->c_str(), "node", strlen("node")))
-			{
-				addresses.push_back(StorageDistributed::Address(
-					Poco::Net::SocketAddress(
-						config.getString(config_prefix + *it + ".host"),
-						config.getInt(config_prefix + *it + ".port")),
-					config.getString(config_prefix + *it + ".user", "default"),
-					config.getString(config_prefix + *it + ".password", "")));
-			}
-			else if (0 == strncmp(it->c_str(), "shard", strlen("shard")))
-			{
-				Poco::Util::AbstractConfiguration::Keys replica_keys;
-				config.keys(config_prefix + *it, replica_keys);
-
-				addresses_with_failover.push_back(StorageDistributed::Addresses());
-				StorageDistributed::Addresses & replica_addresses = addresses_with_failover.back();
-				
-				for (Poco::Util::AbstractConfiguration::Keys::const_iterator jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
-				{
-					if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
-						replica_addresses.push_back(StorageDistributed::Address(
-							Poco::Net::SocketAddress(
-								config.getString(config_prefix + *it + "." + *jt + ".host"),
-								config.getInt(config_prefix + *it + "." + *jt + ".port")),
-							config.getString(config_prefix + *it + ".user", "default"),
-							config.getString(config_prefix + *it + ".password", "")));
-					else
-						throw Exception("Unknown element in config: " + *jt, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-				}
-			}
-			else
-				throw Exception("Unknown element in config: " + *it, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-		}
-
-		if (!addresses_with_failover.empty() && !addresses.empty())
-			throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-		
-		if (!addresses_with_failover.empty())
-			return StorageDistributed::create(table_name, columns, addresses_with_failover, remote_database, remote_table,
+		return StorageDistributed::create(table_name, columns, remote_database, remote_table, context.getCluster(config_name),
 										  context.getDataTypeFactory(), context.getSettings(), context, sign_column_name);
-		else if (!addresses.empty())
-			return StorageDistributed::create(table_name, columns, addresses, remote_database, remote_table,
-										  context.getDataTypeFactory(), context.getSettings(), context, sign_column_name);
-		else
-			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 	}
 	else if (name == "MergeTree" || name == "SummingMergeTree")
 	{

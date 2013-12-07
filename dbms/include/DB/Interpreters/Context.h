@@ -21,6 +21,8 @@
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/Dictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/Cluster.h>
+#include <DB/Client/ConnectionPool.h>
 
 
 namespace DB
@@ -116,7 +118,6 @@ struct ContextShared
 	}
 };
 
-
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Состоит из разделяемой части (всегда общей для всех сессий и запросов)
   *  и копируемой части (которая может быть своей для каждой сессии или запроса).
@@ -144,7 +145,7 @@ private:
 	Context * session_context;			/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
 	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
-
+	Poco::SharedPtr<Clusters> clusters;
 
 public:
 	Context() : shared(new ContextShared), quota(NULL), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
@@ -248,6 +249,8 @@ public:
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
 	void setUncompressedCache(size_t cache_size_in_cells);
 	UncompressedCachePtr getUncompressedCache() const;
+
+	Cluster & getCluster(const std::string & cluster_name);
 };
 
 
