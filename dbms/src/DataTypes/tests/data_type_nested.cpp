@@ -18,8 +18,8 @@
 #include <DB/DataTypes/DataTypeString.h>
 
 struct Nested {
-	std::vector<UInt8> uint8;
-	std::vector<UInt64> uint64;
+	DB::PODArray<UInt8> uint8;
+	DB::PODArray<UInt64> uint64;
 	std::vector<std::string> string;
 };
 
@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 		Poco::Stopwatch stopwatch;
 		
 		/// Nested(uint8 UInt8, uint64 UInt64, string String)
-		std::vector<Nested> nested(n);
+		Nested nested[n];
 		for (size_t i = 0; i < n; ++i)
 		{
 			for (size_t j = 0; j < sizes[i]; ++j)
@@ -122,8 +122,8 @@ int main(int argc, char ** argv)
 			DB::ColumnNested::Offsets_t & offsets = column->getOffsets();
 			
 			Nested res;
-			res.uint8 = dynamic_cast<DB::ColumnUInt8 &>(*data[0]).getData();
-			res.uint64 = dynamic_cast<DB::ColumnUInt64 &>(*data[1]).getData();
+			res.uint8.assign(dynamic_cast<DB::ColumnUInt8 &>(*data[0]).getData());
+			res.uint64.assign(dynamic_cast<DB::ColumnUInt64 &>(*data[1]).getData());
 			DB::ColumnString & res_string = dynamic_cast<DB::ColumnString &>(*data[2]);
 			
 			std::cout << "offsets: [";
