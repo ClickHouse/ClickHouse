@@ -119,9 +119,7 @@ protected:
 		LOG_TRACE(log, "Waiting for threads to finish");
 
 		/// Вынем всё, что есть в очереди готовых данных.
-		OutputData res;
-		while (output_queue.tryPop(res))
-			;
+		output_queue.clear();
 
 		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
 		  * PS. Может быть, для переменной finish нужен барьер?
@@ -260,6 +258,10 @@ private:
 					if (block)
 					{
 						parent.input_queue.push(input);
+
+						if (parent.finish)
+							break;
+
 						parent.output_queue.push(block);
 					}
 					else
@@ -328,7 +330,7 @@ private:
 	/// Завершить работу потоков (раньше, чем иссякнут источники).
 	volatile bool finish;
 	/// Положили ли в output_queue пустой блок.
-	bool pushed_end_of_output_queue;
+	volatile bool pushed_end_of_output_queue;
 	bool all_read;
 
 	Logger * log;
