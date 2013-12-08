@@ -272,10 +272,10 @@ public:
 		}
 	};
 
-	Permutation getPermutation(bool reverse, size_t limit) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
 		size_t s = offsets.size();
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
@@ -296,8 +296,6 @@ public:
 			else
 				std::sort(res.begin(), res.end(), less<true>(*this));
 		}
-
-		return res;
 	}
 
 	template <bool positive>
@@ -317,10 +315,10 @@ public:
 	};
 
 	/// Сортировка с учетом Collation
-	Permutation getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit) const
+	void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
 	{
 		size_t s = offsets.size();
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
@@ -341,8 +339,6 @@ public:
 			else
 				std::sort(res.begin(), res.end(), lessWithCollation<true>(*this, collator));
 		}
-
-		return res;
 	}
 
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const

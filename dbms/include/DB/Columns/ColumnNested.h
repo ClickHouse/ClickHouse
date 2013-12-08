@@ -250,7 +250,7 @@ public:
 		throw Exception("Method compareAt is not supported for ColumnNested.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	Permutation getPermutation(bool reverse, size_t limit) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
 		throw Exception("Method getPermutation is not supported for ColumnNested.", ErrorCodes::NOT_IMPLEMENTED);
 	}

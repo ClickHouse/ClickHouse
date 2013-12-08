@@ -22,7 +22,7 @@ template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
 private:
-	static std::vector<ResultType>& result_vector(Block & block, size_t result, size_t size)
+	static PODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
 	{
 		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 		block.getByPosition(result).column = col_res;
@@ -34,49 +34,49 @@ private:
 	}
 public:
 	static void vector_vector(
-		const std::vector<UInt8> & cond,
-		const std::vector<A> & a, const std::vector<B> & b,
+		const PODArray<UInt8> & cond,
+		const PODArray<A> & a, const PODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		std::vector<ResultType> & res = result_vector(block, result, size);
+		PODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
 	}
 
 	static void vector_constant(
-		const std::vector<UInt8> & cond,
-		const std::vector<A> & a, B b,
+		const PODArray<UInt8> & cond,
+		const PODArray<A> & a, B b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		std::vector<ResultType> & res = result_vector(block, result, size);
+		PODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
 	}
 
 	static void constant_vector(
-		const std::vector<UInt8> & cond,
-		A a, const std::vector<B> & b,
+		const PODArray<UInt8> & cond,
+		A a, const PODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		std::vector<ResultType> & res = result_vector(block, result, size);
+		PODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
 	}
 
 	static void constant_constant(
-		const std::vector<UInt8> & cond,
+		const PODArray<UInt8> & cond,
 		A a, B b,
 		Block & block,
 		size_t result)
 	{
 		size_t size = cond.size();
-		std::vector<ResultType> & res = result_vector(block, result, size);
+		PODArray<ResultType> & res = result_vector(block, result, size);
 		for (size_t i = 0; i < size; ++i)
 			res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
 	}
@@ -92,8 +92,8 @@ private:
 	}
 public:
 	static void vector_vector(
-		const std::vector<UInt8> & cond,
-		const std::vector<A> & a, const std::vector<B> & b,
+		const PODArray<UInt8> & cond,
+		const PODArray<A> & a, const PODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
@@ -101,8 +101,8 @@ public:
 	}
 	
 	static void vector_constant(
-		const std::vector<UInt8> & cond,
-		const std::vector<A> & a, B b,
+		const PODArray<UInt8> & cond,
+		const PODArray<A> & a, B b,
 		Block & block,
 		size_t result)
 	{
@@ -110,8 +110,8 @@ public:
 	}
 	
 	static void constant_vector(
-		const std::vector<UInt8> & cond,
-		A a, const std::vector<B> & b,
+		const PODArray<UInt8> & cond,
+		A a, const PODArray<B> & b,
 		Block & block,
 		size_t result)
 	{
@@ -119,7 +119,7 @@ public:
 	}
 	
 	static void constant_constant(
-		const std::vector<UInt8> & cond,
+		const PODArray<UInt8> & cond,
 		A a, B b,
 		Block & block,
 		size_t result)
@@ -132,7 +132,7 @@ public:
 struct StringIfImpl
 {
 	static void vector_vector(
-		const std::vector<UInt8> & cond,
+		const PODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -170,7 +170,7 @@ struct StringIfImpl
 	}
 
 	static void vector_constant(
-		const std::vector<UInt8> & cond,
+		const PODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const String & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -206,7 +206,7 @@ struct StringIfImpl
 	}
 
 	static void constant_vector(
-		const std::vector<UInt8> & cond,
+		const PODArray<UInt8> & cond,
 		const String & a,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
@@ -242,7 +242,7 @@ struct StringIfImpl
 	}
 
 	static void constant_constant(
-		const std::vector<UInt8> & cond,
+		const PODArray<UInt8> & cond,
 		const String & a, const String & b,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
 	{

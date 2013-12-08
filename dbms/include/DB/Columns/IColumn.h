@@ -2,6 +2,8 @@
 
 #include <Poco/SharedPtr.h>
 
+#include <DB/Common/PODArray.h>
+
 #include <DB/Core/Field.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -127,14 +129,14 @@ public:
 	/** Оставить только значения, соответствующие фильтру.
 	  * Используется для операции WHERE / HAVING.
 	  */
-	typedef std::vector<UInt8> Filter;
+	typedef PODArray<UInt8> Filter;
 	virtual SharedPtr<IColumn> filter(const Filter & filt) const = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
 	  * limit - если не равно 0 - положить в результат только первые limit значений.
 	  */
-	typedef std::vector<size_t> Permutation;
+	typedef PODArray<size_t> Permutation;
 	virtual SharedPtr<IColumn> permute(const Permutation & perm, size_t limit) const = 0;
 
 	/** Сравнить (*this)[n] и rhs[m].
@@ -157,13 +159,13 @@ public:
 	  * reverse - обратный порядок (по возрастанию). limit - если не равно 0 - для частичной сортировки только первых значений.
 	  * Независимо от порядка, NaN-ы располагаются в конце.
 	  */
-	virtual Permutation getPermutation(bool reverse, size_t limit) const = 0;
+	virtual void getPermutation(bool reverse, size_t limit, Permutation & res) const = 0;
 
 	/** Размножить все значения столько раз, сколько прописано в offsets.
 	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)
 	  */
 	typedef UInt64 Offset_t;
-	typedef std::vector<Offset_t> Offsets_t;
+	typedef PODArray<Offset_t> Offsets_t;
 	virtual SharedPtr<IColumn> replicate(const Offsets_t & offsets) const = 0;
 
 	/** Посчитать минимум и максимум по столбцу.

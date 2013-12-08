@@ -288,7 +288,7 @@ struct ExtractParamImpl
 	/// Предполагается, что res нужного размера и инициализирован нулями.
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		std::string needle,
-		std::vector<ResultType> & res)
+		PODArray<ResultType> & res)
 	{
 		/// Ищем параметр просто как подстроку вида "name":
 		needle = "\"" + needle + "\":";
@@ -307,15 +307,22 @@ struct ExtractParamImpl
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] < pos)
+			{
+				res[i] = 0;
 				++i;
+			}
 
 			/// Проверяем, что вхождение не переходит через границы строк.
 			if (pos + needle.size() < begin + offsets[i])
 				res[i] = ParamExtractor::extract(pos + needle.size(), begin + offsets[i]);
+			else
+				res[i] = 0;
 
 			pos = begin + offsets[i];
 			++i;
 		}
+
+		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
 	static void constant(const std::string & data, std::string needle, ResultType & res)

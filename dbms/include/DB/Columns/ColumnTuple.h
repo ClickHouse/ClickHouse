@@ -175,12 +175,12 @@ public:
 		}
 	};
 
-	Permutation getPermutation(bool reverse, size_t limit) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
 		size_t rows = size();
-		Permutation perm(rows);
+		res.resize(rows);
 		for (size_t i = 0; i < rows; ++i)
-			perm[i] = i;
+			res[i] = i;
 
 		if (limit > rows)
 			limit = 0;
@@ -188,19 +188,17 @@ public:
 		if (limit)
 		{
 			if (reverse)
-				std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), Less<false>(columns));
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<false>(columns));
 			else
-				std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), Less<true>(columns));
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<true>(columns));
 		}
 		else
 		{
 			if (reverse)
-				std::sort(perm.begin(), perm.end(), Less<false>(columns));
+				std::sort(res.begin(), res.end(), Less<false>(columns));
 			else
-				std::sort(perm.begin(), perm.end(), Less<true>(columns));
+				std::sort(res.begin(), res.end(), Less<true>(columns));
 		}
-
-		return perm;
 	}
 
 	void reserve(size_t n)

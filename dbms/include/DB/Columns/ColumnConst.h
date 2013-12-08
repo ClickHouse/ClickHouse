@@ -120,12 +120,11 @@ public:
 				: 1);
 	}
 
-	Permutation getPermutation(bool reverse, size_t limit) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
-		return res;
 	}
 
 	StringRef getDataAt(size_t n) const;

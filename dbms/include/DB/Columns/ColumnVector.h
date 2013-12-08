@@ -2,8 +2,6 @@
 
 #include <string.h>
 
-#include <boost/type_traits/make_signed.hpp>
-
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -85,7 +83,7 @@ private:
 	typedef ColumnVectorBase<T> Self;
 public:
 	typedef T value_type;
-	typedef std::vector<value_type> Container_t;
+	typedef PODArray<value_type> Container_t;
 
 	ColumnVectorBase() {}
 	ColumnVectorBase(size_t n) : data(n) {}
@@ -144,10 +142,10 @@ public:
 		bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs]); }
 	};
 
-	Permutation getPermutation(bool reverse, size_t limit) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
 		size_t s = data.size();
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
@@ -168,8 +166,6 @@ public:
 			else
 				std::sort(res.begin(), res.end(), less(*this));
 		}
-		
-		return res;
 	}
 
 	void reserve(size_t n)

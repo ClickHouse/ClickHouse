@@ -58,12 +58,11 @@ public:
 		return cloneDummy(limit ? std::min(s, limit) : s);
 	}
 	
-	Permutation getPermutation(bool reverse, size_t limit) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
-		return res;
 	}
 	
 	ColumnPtr replicate(const Offsets_t & offsets) const

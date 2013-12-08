@@ -302,8 +302,8 @@ template <typename DurationType>
 struct TimeSlotsImpl
 {
 	static void vector_vector(
-		const std::vector<UInt32> & starts, const std::vector<DurationType> & durations,
-		std::vector<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+		const PODArray<UInt32> & starts, const PODArray<DurationType> & durations,
+		PODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = starts.size();
 
@@ -324,8 +324,8 @@ struct TimeSlotsImpl
 	}
 
 	static void vector_constant(
-		const std::vector<UInt32> & starts, DurationType duration,
-		std::vector<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+		const PODArray<UInt32> & starts, DurationType duration,
+		PODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = starts.size();
 
@@ -346,8 +346,8 @@ struct TimeSlotsImpl
 	}
 
 	static void constant_vector(
-		UInt32 start, const std::vector<DurationType> & durations,
-		std::vector<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+		UInt32 start, const PODArray<DurationType> & durations,
+		PODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = durations.size();
 

@@ -18,21 +18,21 @@ struct BinaryOperationImpl
 {
 	typedef typename Op::ResultType ResultType;
 
-	static void vector_vector(const std::vector<A> & a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = Op::apply(a[i], b[i]);
 	}
 
-	static void vector_constant(const std::vector<A> & a, B b, std::vector<ResultType> & c)
+	static void vector_constant(const PODArray<A> & a, B b, PODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
 			c[i] = Op::apply(a[i], b);
 	}
 
-	static void constant_vector(A a, const std::vector<B> & b, std::vector<ResultType> & c)
+	static void constant_vector(A a, const PODArray<B> & b, PODArray<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
@@ -50,7 +50,7 @@ struct UnaryOperationImpl
 {
 	typedef typename Op::ResultType ResultType;
 
-	static void vector(const std::vector<A> & a, std::vector<ResultType> & c)
+	static void vector(const PODArray<A> & a, PODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)

@@ -46,7 +46,7 @@ template <bool negative = false>
 struct EmptyImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		std::vector<UInt8> & res)
+		PODArray<UInt8> & res)
 	{
 		size_t size = offsets.size();
 		ColumnString::Offset_t prev_offset = 1;
@@ -64,7 +64,7 @@ struct EmptyImpl
 	}
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		std::vector<UInt8> & res)
+		PODArray<UInt8> & res)
 	{
 	}
 
@@ -73,7 +73,7 @@ struct EmptyImpl
 		res = negative ^ (data.empty());
 	}
 
-	static void array(const ColumnString::Offsets_t & offsets, std::vector<UInt8> & res)
+	static void array(const ColumnString::Offsets_t & offsets, PODArray<UInt8> & res)
 	{
 		size_t size = offsets.size();
 		ColumnString::Offset_t prev_offset = 0;
@@ -96,7 +96,7 @@ struct EmptyImpl
 struct LengthImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 		size_t size = offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -112,7 +112,7 @@ struct LengthImpl
 	}
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 	}
 
@@ -121,7 +121,7 @@ struct LengthImpl
 		res = data.size();
 	}
 
-	static void array(const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
+	static void array(const ColumnString::Offsets_t & offsets, PODArray<UInt64> & res)
 	{
 		size_t size = offsets.size();
 		for (size_t i = 0; i < size; ++i)
@@ -144,7 +144,7 @@ struct LengthImpl
 struct LengthUTF8Impl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 		size_t size = offsets.size();
 
@@ -165,7 +165,7 @@ struct LengthUTF8Impl
 	}
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 		size_t size = data.size() / n;
 
@@ -186,7 +186,7 @@ struct LengthUTF8Impl
 				++res;
 	}
 
-	static void array(const ColumnString::Offsets_t & offsets, std::vector<UInt64> & res)
+	static void array(const ColumnString::Offsets_t & offsets, PODArray<UInt64> & res)
 	{
 		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -207,7 +207,7 @@ struct LowerUpperImpl
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets = offsets;
+		res_offsets.assign(offsets);
 		array(&*data.begin(), &*data.end(), &*res_data.begin());
 	}
 
@@ -246,7 +246,7 @@ struct LowerUpperUTF8Impl
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets = offsets;
+		res_offsets.assign(offsets);
 		array(&*data.begin(), &*data.end(), &*res_data.begin());
 	}
 
@@ -295,7 +295,7 @@ struct ReverseImpl
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets = offsets;
+		res_offsets.assign(offsets);
 		size_t size = offsets.size();
 
 		ColumnString::Offset_t prev_offset = 0;
@@ -338,7 +338,7 @@ struct ReverseUTF8Impl
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
-		res_offsets = offsets;
+		res_offsets.assign(offsets);
 		size_t size = offsets.size();
 
 		ColumnString::Offset_t prev_offset = 0;
@@ -477,7 +477,7 @@ struct ConcatImpl
 	{
 		size_t size = a_offsets.size();
 		c_data.resize(a_data.size() + b.size() * size);
-		c_offsets = a_offsets;
+		c_offsets.assign(a_offsets);
 
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += b.size() * (i + 1);
@@ -575,7 +575,7 @@ struct ConcatImpl
 	{
 		size_t size = b_offsets.size();
 		c_data.resize(b_data.size() + a.size() * size);
-		c_offsets = b_offsets;
+		c_offsets.assign(b_offsets);
 
 		for (size_t i = 0; i < size; ++i)
 			c_offsets[i] += a.size() * (i + 1);

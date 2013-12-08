@@ -45,7 +45,7 @@ struct PositionImpl
 	/// Предполагается, что res нужного размера и инициализирован нулями.
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
@@ -61,15 +61,22 @@ struct PositionImpl
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] < pos)
+			{
+				res[i] = 0;
 				++i;
+			}
 
 			/// Проверяем, что вхождение не переходит через границы строк.
 			if (pos + needle.size() < begin + offsets[i])
 				res[i] = (i != 0) ? pos - begin - offsets[i - 1] + 1 : (pos - begin + 1);
+			else
+				res[i] = 0;
 
 			pos = begin + offsets[i];
 			++i;
 		}
+
+		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
 	static void constant(const std::string & data, const std::string & needle, UInt64 & res)
@@ -89,7 +96,7 @@ struct PositionUTF8Impl
 	
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
-		std::vector<UInt64> & res)
+		PODArray<UInt64> & res)
 	{
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
@@ -105,7 +112,10 @@ struct PositionUTF8Impl
 		{
 			/// Определим, к какому индексу оно относится.
 			while (begin + offsets[i] < pos)
+			{
+				res[i] = 0;
 				++i;
+			}
 
 			/// Проверяем, что вхождение не переходит через границы строк.
 			if (pos + needle.size() < begin + offsets[i])
@@ -116,10 +126,14 @@ struct PositionUTF8Impl
 					if (*c <= 0x7F || *c >= 0xC0)
 						++res[i];
 			}
+			else
+				res[i] = 0;
 
 			pos = begin + offsets[i];
 			++i;
 		}
+
+		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
 	static void constant(const std::string & data, const std::string & needle, UInt64 & res)
@@ -268,16 +282,12 @@ struct MatchImpl
 
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & pattern,
-		std::vector<UInt8> & res)
+		PODArray<UInt8> & res)
 	{
 		String strstr_pattern;
 		/// Простой случай, когда выражение LIKE сводится к поиску подстроки в строке
 		if (like && likePatternIsStrstr(pattern, strstr_pattern))
 		{
-			/// Если отрицание - то заполним вектор единицами (вместо имеющихся там нулей)
-			if (revert)
-				memset(&res[0], 1, offsets.size());
-			
 			const UInt8 * begin = &data[0];
 			const UInt8 * pos = begin;
 			const UInt8 * end = pos + data.size();
@@ -292,15 +302,22 @@ struct MatchImpl
 			{
 				/// Определим, к какому индексу оно относится.
 				while (begin + offsets[i] < pos)
+				{
+					res[i] = revert;
 					++i;
+				}
 
 				/// Проверяем, что вхождение не переходит через границы строк.
 				if (pos + strstr_pattern.size() < begin + offsets[i])
 					res[i] = !revert;
+				else
+					res[i] = revert;
 
 				pos = begin + offsets[i];
 				++i;
 			}
+
+			memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
 		}
 		else
 		{

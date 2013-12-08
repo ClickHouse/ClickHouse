@@ -81,10 +81,10 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 		if (needCollation(column, description[0]))
 		{
 			const ColumnString & column_string = dynamic_cast<const ColumnString &>(*column);
-			perm = column_string.getPermutationWithCollation(*description[0].collator, reverse, limit);
+			column_string.getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
 		}
 		else
-			perm = column->getPermutation(reverse, limit);
+			column->getPermutation(reverse, limit, perm);
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)

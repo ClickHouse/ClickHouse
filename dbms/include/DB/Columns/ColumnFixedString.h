@@ -123,10 +123,10 @@ public:
 		}
 	};
 
-	Permutation getPermutation(bool reverse, size_t limit) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
 		size_t s = size();
-		Permutation res(s);
+		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
@@ -147,8 +147,6 @@ public:
 			else
 				std::sort(res.begin(), res.end(), less<true>(*this));
 		}
-
-		return res;
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const
