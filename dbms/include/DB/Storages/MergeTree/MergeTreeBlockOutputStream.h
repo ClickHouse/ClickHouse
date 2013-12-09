@@ -104,10 +104,11 @@ private:
 		size_t rows = block.rows();
 		size_t columns = block.columns();
 		UInt64 part_id = storage.increment.get(false);
+		size_t part_size = (rows + storage.index_granularity - 1) / storage.index_granularity;
 		
 		String part_name = storage.getPartName(
 			DayNum_t(min_date), DayNum_t(max_date),
-												part_id, part_id, 0);
+			part_id, part_id, 0);
 		
 		String part_tmp_path = storage.full_path + "tmp_" + part_name + "/";
 		String part_res_path = storage.full_path + part_name + "/";
@@ -128,6 +129,9 @@ private:
 		LOG_TRACE(storage.log, "Writing index.");
 		
 		/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
+		StorageMergeTree::DataPart::Index index_vec;
+		index_vec.reserve(part_size * storage.sort_descr.size());
+		
 		{
 			WriteBufferFromFile index(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, flags);
 			
@@ -141,8 +145,13 @@ private:
 					: &block.getByPosition(storage.sort_descr[i].column_number));
 				
 			for (size_t i = 0; i < rows; i += storage.index_granularity)
+			{
 				for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
-					(*it)->type->serializeBinary((*(*it)->column)[i], index);
+				{
+					index_vec.push_back((*(*it)->column)[i]);
+					(*it)->type->serializeBinary(index_vec.back(), index);
+				}
+			}
 
 			index.next();
 		}
@@ -175,10 +184,11 @@ private:
 			new_data_part->right = part_id;
 			new_data_part->level = 0;
 			new_data_part->name = part_name;
-			new_data_part->size = (rows + storage.index_granularity - 1) / storage.index_granularity;
+			new_data_part->size = part_size;
 			new_data_part->modification_time = time(0);
 			new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 			new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
+			new_data_part->index.swap(index_vec);
 			
 			storage.data_parts.insert(new_data_part);
 			storage.all_data_parts.insert(new_data_part);

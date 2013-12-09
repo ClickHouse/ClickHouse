@@ -158,11 +158,11 @@ public:
 	
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
-	bool mayBeTrueInRange(const Row & left_pk, const Row & right_pk);
+	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk);
 	
 	/// Выполнимо ли условие в полубесконечном (не ограниченном справа) диапазоне ключей.
 	/// left_pk должен содержать все поля из sort_descr в соответствующем порядке.
-	bool mayBeTrueAfter(const Row & left_pk);
+	bool mayBeTrueAfter(const Field * left_pk);
 	
 	bool alwaysTrue()
 	{
@@ -230,7 +230,7 @@ private:
 	typedef std::vector<RPNElement> RPN;
 	typedef std::map<String, size_t> ColumnIndices;
 	
-	bool mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bool right_bounded);
+	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded);
 	
 	void traverseAST(ASTPtr & node, Block & block_with_constants);
 	bool atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out);

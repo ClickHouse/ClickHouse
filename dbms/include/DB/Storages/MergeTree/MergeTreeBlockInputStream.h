@@ -73,12 +73,15 @@ public:
 	}
 	
 	/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
-	static MarkRanges markRangesFromPkRange(const String & path,
-											size_t marks_count,
-											StorageMergeTree & storage,
-											PKCondition & key_condition)
+	static MarkRanges markRangesFromPkRange(
+		const StorageMergeTree::DataPart::Index & index,
+		StorageMergeTree & storage,
+		PKCondition & key_condition)
 	{
 		MarkRanges res;
+
+		size_t key_size = storage.sort_descr.size();
+		size_t marks_count = index.size() / key_size;
 		
 		/// Если индекс не используется.
 		if (key_condition.alwaysTrue())
@@ -87,31 +90,11 @@ public:
 		}
 		else
 		{
-			/// Читаем индекс.
-			typedef AutoArray<Row> Index;
-			size_t key_size = storage.sort_descr.size();
-			Index index(marks_count);
-			for (size_t i = 0; i < marks_count; ++i)
-				index[i].resize(key_size);
-			
-			{
-				String index_path = path + "primary.idx";
-				ReadBufferFromFile index_file(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
-				
-				for (size_t i = 0; i < marks_count; ++i)
-				{
-					for (size_t j = 0; j < key_size; ++j)
-						storage.primary_key_sample.getByPosition(j).type->deserializeBinary(index[i][j], index_file);
-				}
-				
-				if (!index_file.eof())
-					throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
-			}
-			
-			/// В стеке всегда будут находиться непересекающиеся подозрительные отрезки, самый левый наверху (back).
-			/// На каждом шаге берем левый отрезок и проверяем, подходит ли он.
-			/// Если подходит, разбиваем его на более мелкие и кладем их в стек. Если нет - выбрасываем его.
-			/// Если отрезок уже длиной в одну засечку, добавляем его в ответ и выбрасываем.
+			/** В стеке всегда будут находиться непересекающиеся подозрительные отрезки, самый левый наверху (back).
+			  * На каждом шаге берем левый отрезок и проверяем, подходит ли он.
+			  * Если подходит, разбиваем его на более мелкие и кладем их в стек. Если нет - выбрасываем его.
+			  * Если отрезок уже длиной в одну засечку, добавляем его в ответ и выбрасываем.
+			  */
 			std::vector<MarkRange> ranges_stack;
 			ranges_stack.push_back(MarkRange(0, marks_count));
 			while (!ranges_stack.empty())
@@ -121,9 +104,9 @@ public:
 				
 				bool may_be_true;
 				if (range.end == marks_count)
-					may_be_true = key_condition.mayBeTrueAfter(index[range.begin]);
+					may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size]);
 				else
-					may_be_true = key_condition.mayBeTrueInRange(index[range.begin], index[range.end]);
+					may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size]);
 				
 				if (!may_be_true)
 					continue;
@@ -132,23 +115,19 @@ public:
 				{
 					/// Увидели полезный промежуток между соседними засечками. Либо добавим его к последнему диапазону, либо начнем новый диапазон.
 					if (res.empty() || range.begin - res.back().end > storage.min_marks_for_seek)
-					{
 						res.push_back(range);
-					}
 					else
-					{
 						res.back().end = range.end;
-					}
 				}
 				else
 				{
 					/// Разбиваем отрезок и кладем результат в стек справа налево.
 					size_t step = (range.end - range.begin - 1) / storage.settings.coarse_index_granularity + 1;
 					size_t end;
+					
 					for (end = range.end; end > range.begin + step; end -= step)
-					{
 						ranges_stack.push_back(MarkRange(end - step, end));
-					}
+
 					ranges_stack.push_back(MarkRange(range.begin, end));
 				}
 			}

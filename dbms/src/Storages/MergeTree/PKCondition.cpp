@@ -241,7 +241,7 @@ struct BoolMask
 	}
 };
 
-bool PKCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bool right_bounded)
+bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded)
 {
 	/// Найдем диапазоны элементов ключа.
 	std::vector<Range> key_ranges(sort_descr.size(), Range());
@@ -311,14 +311,14 @@ bool PKCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk, bo
 	return rpn_stack[0].can_be_true;
 }
 
-bool PKCondition::mayBeTrueInRange(const Row & left_pk, const Row & right_pk)
+bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk)
 {
 	return mayBeTrueInRange(left_pk, right_pk, true);
 }
 
-bool PKCondition::mayBeTrueAfter(const Row & left_pk)
+bool PKCondition::mayBeTrueAfter(const Field * left_pk)
 {
-	return mayBeTrueInRange(left_pk, Row(), false);
+	return mayBeTrueInRange(left_pk, NULL, false);
 }
 
 }

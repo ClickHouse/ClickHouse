@@ -166,10 +166,15 @@ BlockInputStreams StorageMergeTree::read(
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition.
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		
+
 		for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-			if (date_condition.mayBeTrueInRange(Row(1, static_cast<UInt64>((*it)->left_date)),Row(1, static_cast<UInt64>((*it)->right_date))))
+		{
+			Field left = static_cast<UInt64>((*it)->left_date);
+			Field right = static_cast<UInt64>((*it)->right_date);
+
+			if (date_condition.mayBeTrueInRange(&left, &right))
 				parts.push_back(*it);
+		}
 	}
 	
 	/// Семплирование.
@@ -196,10 +201,8 @@ BlockInputStreams StorageMergeTree::read(
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				DataPartPtr & part = parts[i];
-				MarkRanges ranges = MergeTreeBlockInputStream::markRangesFromPkRange(full_path + part->name + '/',
-																					part->size,
-																					*this,
-																					key_condition);
+				MarkRanges ranges = MergeTreeBlockInputStream::markRangesFromPkRange(part->index, *this, key_condition);
+				
 				for (size_t j = 0; j < ranges.size(); ++j)
 					total_count += ranges[j].end - ranges[j].begin;
 			}
@@ -272,10 +275,8 @@ BlockInputStreams StorageMergeTree::read(
 	{
 		DataPartPtr & part = parts[i];
 		RangesInDataPart ranges(part);
-		ranges.ranges = MergeTreeBlockInputStream::markRangesFromPkRange(full_path + part->name + '/',
-		                                                                 part->size,
-												                          *this,
-		                                                                 key_condition);
+		ranges.ranges = MergeTreeBlockInputStream::markRangesFromPkRange(part->index, *this, key_condition);
+		
 		if (!ranges.ranges.empty())
 		{
 			parts_with_ranges.push_back(ranges);
@@ -637,6 +638,17 @@ void StorageMergeTree::loadDataParts()
 			/ MERGE_TREE_MARK_SIZE;
 			
 		part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
+
+		try
+		{
+			part->loadIndex();
+		}
+		catch (...)
+		{
+			/// Не будем вставлять в набор кусок с битым индексом. Пропустим кусок и позволим серверу запуститься.
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+			continue;
+		}
 
 		data_parts.insert(part);
 	}
@@ -1070,6 +1082,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 
 	new_data_part->size = to->marksCount();
 	new_data_part->modification_time = time(0);
+	new_data_part->loadIndex();	/// NOTE Только что записанный индекс заново считывается с диска. Можно было бы формировать его сразу при записи.
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
