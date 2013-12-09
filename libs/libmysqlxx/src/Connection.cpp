@@ -73,6 +73,11 @@ void Connection::connect(const char* db,
 	if (mysql_set_character_set(&driver, "UTF8"))
 		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
+	/// Установим автоматический реконнект
+	my_bool reconnect = true;
+	if (mysql_options(&driver, MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
+		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
+
 	is_connected = true;
 }
 
