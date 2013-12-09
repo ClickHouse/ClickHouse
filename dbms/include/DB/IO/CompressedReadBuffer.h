@@ -22,7 +22,10 @@ class CompressedReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 private:
 	ReadBuffer & in;
 
-	PODArray<char> compressed_buffer;
+	/// Если в буфере in помещается целый сжатый блок - используем его. Иначе - копируем данные по кусочкам в own_compressed_buffer.
+	PODArray<char> own_compressed_buffer;
+	char * compressed_buffer;
+	
 	qlz_state_decompress * qlz_state;
 
 	/** Указатель на кусок памяти, куда будут разжиматься блоки.
@@ -41,19 +44,30 @@ private:
 		uint128 checksum;
 		in.readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
-		in.readStrict(&compressed_buffer[0], QUICKLZ_HEADER_SIZE);
+		in.readStrict(&own_compressed_buffer[0], QUICKLZ_HEADER_SIZE);
 
-		size_t size_compressed = qlz_size_compressed(&compressed_buffer[0]);
+		size_t size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
 		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-		size_decompressed = qlz_size_decompressed(&compressed_buffer[0]);
+		size_decompressed = qlz_size_decompressed(&own_compressed_buffer[0]);
 
-		compressed_buffer.resize(size_compressed);
-		in.readStrict(&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed - QUICKLZ_HEADER_SIZE);
+		/// Находится ли сжатый блок целиком в буфере in?
+		if (in.offset() >= QUICKLZ_HEADER_SIZE && in.position() + size_compressed - QUICKLZ_HEADER_SIZE <= in.buffer().end())
+		{
+			in.position() -= QUICKLZ_HEADER_SIZE;
+			compressed_buffer = in.position();
+			in.position() += size_compressed;
+		}
+		else
+		{
+			own_compressed_buffer.resize(size_compressed);
+			compressed_buffer = &own_compressed_buffer[0];
+			in.readStrict(&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed - QUICKLZ_HEADER_SIZE);
+		}
 
 		if (checksum != CityHash128(&compressed_buffer[0], size_compressed))
-			throw Exception("Checksum doesnt match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+			throw Exception("Checksum doesn't match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
 		return true;
 	}
@@ -92,7 +106,8 @@ public:
 	CompressedReadBuffer(ReadBuffer & in_)
 		: BufferWithOwnMemory<ReadBuffer>(0),
 		in(in_),
-		compressed_buffer(QUICKLZ_HEADER_SIZE),
+		own_compressed_buffer(QUICKLZ_HEADER_SIZE),
+		compressed_buffer(NULL),
 		qlz_state(NULL),
 		maybe_own_memory(&memory)
 	{
