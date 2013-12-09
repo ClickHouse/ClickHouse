@@ -9,7 +9,6 @@
 
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
-#define MARKS_FILE_BUFFER_SIZE 8192
 
 
 namespace DB
@@ -144,7 +143,7 @@ private:
 		std::string path_prefix;
 
 		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache)
-			: marks_buffer(new ReadBufferFromFile(path_prefix + ".mrk", MARKS_FILE_BUFFER_SIZE)),
+			: marks_buffer(new ReadBufferFromFile(path_prefix + ".mrk", MERGE_TREE_MARK_SIZE)),
 			data_buffer(new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache)),
 			path_prefix(path_prefix) {}
 
