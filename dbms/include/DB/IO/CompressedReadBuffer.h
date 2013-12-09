@@ -6,6 +6,7 @@
 #include <quicklz/quicklz_level1.h>
 #include <lz4/lz4.h>
 
+#include <DB/Common/PODArray.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadBuffer.h>
@@ -21,7 +22,7 @@ class CompressedReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 private:
 	ReadBuffer & in;
 
-	std::vector<char> compressed_buffer;
+	PODArray<char> compressed_buffer;
 	qlz_state_decompress * qlz_state;
 
 	/** Указатель на кусок памяти, куда будут разжиматься блоки.

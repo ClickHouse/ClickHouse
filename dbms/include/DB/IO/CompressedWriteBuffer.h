@@ -8,6 +8,7 @@
 #include <quicklz/quicklz_level1.h>
 #include <lz4/lz4.h>
 
+#include <DB/Common/PODArray.h>
 #include <DB/Core/Types.h>
 
 #include <DB/IO/WriteBuffer.h>
@@ -24,7 +25,7 @@ private:
 	WriteBuffer & out;
 	CompressionMethod::Enum method;
 
-	std::vector<char> compressed_buffer;
+	PODArray<char> compressed_buffer;
 	qlz_state_compress * qlz_state;
 
 	void nextImpl()
