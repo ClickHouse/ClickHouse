@@ -44,7 +44,7 @@ private:
 		* 		<host>example01-01-1</host>
 		* 		<port>9000</port>
 		* 		<!-- <user>, <password>, если нужны -->
-		*		</replica>
+		*	</replica>
 		* </shard>
 		*/
 		Poco::Net::SocketAddress host_port;

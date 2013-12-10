@@ -58,7 +58,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			for (Poco::Util::AbstractConfiguration::Keys::const_iterator jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
 			{
 				if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
-					replica_addresses.push_back(Address(config_prefix + *it));
+					replica_addresses.push_back(Address(config_prefix + *it + "." + *jt));
 				else
 					throw Exception("Unknown element in config: " + *jt, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 			}
