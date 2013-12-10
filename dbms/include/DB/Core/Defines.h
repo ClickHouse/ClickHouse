@@ -25,6 +25,7 @@
 #define DEFAULT_INTERACTIVE_DELAY								100000
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 			1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 	3
+#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	300 /// каждый период уменьшаем счетчик ошибок в 2 раза
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 						5000	/// Максимальное время ожидания в очереди запросов.
 
 /// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.

@@ -140,6 +140,10 @@ public:
 		}
 	}
 
+	const std::string & getHost() const
+	{
+		return host;
+	}
 private:
 	/** Максимально возможное количество соедиений. */
 	unsigned max_connections;

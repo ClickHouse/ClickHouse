@@ -99,7 +99,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				if (has_local_replics)
 					++local_nodes_num;
 				else
-					pools.push_back(new ConnectionPoolWithFailover(replicas, settings.connections_with_failover_max_tries));
+					pools.push_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
 			}
 		}
 		else if (addresses.size())
