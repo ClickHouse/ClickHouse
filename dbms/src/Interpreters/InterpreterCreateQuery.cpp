@@ -214,7 +214,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	}
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
-	if (create.select && storage_name != "View" && storage_name != "MaterializedView")
+	if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
 	{
 		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
 		copyData(*from, *res->write(query_ptr));

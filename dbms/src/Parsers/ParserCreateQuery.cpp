@@ -181,6 +181,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_select("SELECT", true, true);
 	ParserString s_view("VIEW", true, true);
 	ParserString s_materialized("MATERIALIZED", true, true);
+	ParserString s_populate("POPULATE", true, true);
 	ParserEngine engine_p;
 	ParserIdentifier name_p;
 	ParserNameTypePairList columns_p;
@@ -197,6 +198,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	bool if_not_exists = false;
 	bool is_view = false;
 	bool is_materialized_view = false;
+	bool is_populate = false;
 
 	ws.ignore(pos, end);
 
@@ -350,6 +352,13 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		/// Опционально - может быть указана внутренняя ENGINE для MATERIALIZED VIEW
 		engine_p.parse(pos, end, inner_storage, expected);
 
+		ws.ignore(pos, end);
+
+		if (s_populate.ignore(pos, end, expected))
+			is_populate = true;
+
+		ws.ignore(pos, end);
+
 		/// AS SELECT ...
 		if (!s_as.ignore(pos, end, expected))
 			return false;
@@ -371,6 +380,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	query->if_not_exists = if_not_exists;
 	query->is_view = is_view;
 	query->is_materialized_view = is_materialized_view;
+	query->is_populate = is_populate;
 	
 	if (database)
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
