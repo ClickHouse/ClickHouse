@@ -444,19 +444,24 @@ UncompressedCachePtr Context::getUncompressedCache() const
 	return shared->uncompressed_cache;
 }
 
+void Context::initClusters()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	if (!shared->clusters)
+	{
+		shared->clusters = new Clusters(settings, shared->data_type_factory);
+	}
+}
+
 Cluster & Context::getCluster(const std::string & cluster_name)
 {
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-		if (!clusters)
-			clusters = new Clusters(getSettingsRef(), getDataTypeFactory());
-	}
+	if (!shared->clusters)
+		throw Poco::Exception("Clusters have not been initialized yet.");
 
-	Clusters::iterator it = clusters->find(cluster_name);
-	if (it != clusters->end())
+	Clusters::iterator it = shared->clusters->find(cluster_name);
+	if (it != shared->clusters->end())
 		return it->second;
 	else
 		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
 }
-
 }

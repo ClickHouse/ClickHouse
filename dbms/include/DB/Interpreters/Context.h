@@ -84,6 +84,11 @@ struct ContextShared
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 
+	/// Кластеры для distributed таблиц
+	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
+	Poco::SharedPtr<Clusters> clusters;
+
+
 	ContextShared() : log(&Logger::get("Context")), after_destroy(log) {};
 
 	~ContextShared()
@@ -144,8 +149,6 @@ private:
 	
 	Context * session_context;			/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
 	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
-
-	Poco::SharedPtr<Clusters> clusters;
 
 public:
 	Context() : shared(new ContextShared), quota(NULL), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
@@ -250,6 +253,7 @@ public:
 	void setUncompressedCache(size_t cache_size_in_cells);
 	UncompressedCachePtr getUncompressedCache() const;
 
+	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);
 };
 

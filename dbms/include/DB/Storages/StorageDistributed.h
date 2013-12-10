@@ -24,10 +24,10 @@ public:
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
-		Cluster & cluster_,
+		const String & cluster_name,
 		const DataTypeFactory & data_type_factory_,
 		const Settings & settings,
-		const Context & context_,
+		Context & context_,
 		const String & sign_column_name_ = "");
 
 	std::string getName() const { return "Distributed"; }

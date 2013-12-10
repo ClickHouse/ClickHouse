@@ -36,13 +36,14 @@ StoragePtr StorageDistributed::create(
 	NamesAndTypesListPtr columns_,
 	const String & remote_database_,
 	const String & remote_table_,
-	Cluster & cluster_,
+	const String & cluster_name,
 	const DataTypeFactory & data_type_factory_,
 	const Settings & settings,
-	const Context & context_,
+	Context & context_,
 	const String & sign_column_name_)
 {
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, cluster_, data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
+	context_.initClusters();
+	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
 }
 
 BlockInputStreams StorageDistributed::read(
