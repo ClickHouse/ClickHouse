@@ -34,6 +34,7 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "use_uncompressed_cache") use_uncompressed_cache = safeGet<UInt64>(value);
 	else if (name == "use_splitting_aggregator") use_splitting_aggregator = safeGet<UInt64>(value);
 	else if (name == "profile") 			setProfile(get<const String &>(value));
+	else if (name == "load_balancing")		load_balancing		= safeGet<UInt64>(value);
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 }
@@ -57,7 +58,8 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		|| name == "sign_rewrite"
 		|| name == "extremes"
 		|| name == "use_uncompressed_cache"
-		|| name == "use_splitting_aggregator")
+		|| name == "use_splitting_aggregator"
+		|| name == "load_balancing")
 	{
 		UInt64 value = 0;
 		readVarUInt(value, buf);
@@ -92,7 +94,8 @@ void Settings::set(const String & name, const String & value)
 		|| name == "sign_rewrite"
 		|| name == "extremes"
 		|| name == "use_uncompressed_cache"
-		|| name == "use_splitting_aggregator")
+		|| name == "use_splitting_aggregator"
+		|| name == "load_balancing")
 	{
 		set(name, parse<UInt64>(value));
 	}
@@ -154,6 +157,7 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("extremes", buf);								writeVarUInt(extremes, buf);
 	writeStringBinary("use_uncompressed_cache", buf);				writeVarUInt(use_uncompressed_cache, buf);
 	writeStringBinary("use_splitting_aggregator", buf);				writeVarUInt(use_splitting_aggregator, buf);
+	writeStringBinary("load_balancing", buf);						writeVarUInt(load_balancing, buf);
 
 	limits.serialize(buf);
 

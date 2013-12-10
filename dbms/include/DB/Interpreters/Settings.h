@@ -48,6 +48,16 @@ struct Settings
 	/// Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации.
 	bool use_splitting_aggregator;
 
+	enum LoadBalancing
+	{
+		/// среди реплик с минимальным количеством ошибок выбирается случайная
+		RANDOM = 1,
+		/// среди реплик с минимальным количеством ошибок выбирается реплика
+		/// с минимальным количеством отличающихся символов в имени реплики и имени локального хоста
+		NEAREST_HOSTNAME = 2
+	};
+	size_t load_balancing;
+
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
 
@@ -66,7 +76,8 @@ struct Settings
 		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
 		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
-		sign_rewrite(false), extremes(false), use_uncompressed_cache(true), use_splitting_aggregator(false)
+		sign_rewrite(false), extremes(false), use_uncompressed_cache(true), use_splitting_aggregator(false),
+		load_balancing(NEAREST_HOSTNAME)
 	{
 	}
 
