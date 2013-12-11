@@ -76,7 +76,7 @@ BlockInputStreams StorageDistributed::read(
 	BlockInputStreams res;
 
 	for (ConnectionPools::iterator it = cluster.pools.begin(); it != cluster.pools.end(); ++it)
-		res.push_back(new RemoteBlockInputStream((*it)->get(), modified_query, &new_settings, processed_stage));
+		res.push_back(new RemoteBlockInputStream((*it)->get(&new_settings), modified_query, &new_settings, processed_stage));
 
 
 	/// добавляем запросы к локальному clickhouse

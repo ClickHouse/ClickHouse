@@ -87,7 +87,7 @@ class IConnectionPool : private boost::noncopyable
 {
 public:
 	typedef detail::ConnectionPoolEntry Entry;
-	virtual Entry get() = 0;
+	virtual Entry get(Settings * settings = NULL) = 0;
 	virtual ~IConnectionPool() {}
 };
 
@@ -122,7 +122,7 @@ public:
 
 
 	/** Выделяет соединение для работы. */
-	Entry get()
+	Entry get(Settings * settings = NULL)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
