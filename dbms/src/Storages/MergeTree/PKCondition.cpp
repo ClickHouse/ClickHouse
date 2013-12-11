@@ -162,13 +162,13 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		else if (func->name == "equals")
 			out.range = Range(value);
 		else if (func->name == "less")
-			out.range = Range::RightBounded(value, false);
+			out.range = Range::createRightBounded(value, false);
 		else if (func->name == "greater")
-			out.range = Range::LeftBounded(value, false);
+			out.range = Range::createLeftBounded(value, false);
 		else if (func->name == "lessOrEquals")
-			out.range = Range::RightBounded(value, true);
+			out.range = Range::createRightBounded(value, true);
 		else if (func->name == "greaterOrEquals")
-			out.range = Range::LeftBounded(value, true);
+			out.range = Range::createLeftBounded(value, true);
 		else
 			return false;
 		
@@ -263,7 +263,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 	}
 	else
 	{
-		key_ranges[0] = Range::LeftBounded(left_pk[0], true);
+		key_ranges[0] = Range::createLeftBounded(left_pk[0], true);
 	}
 
 	std::vector<BoolMask> rpn_stack;
@@ -276,9 +276,10 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE || element.function == RPNElement::FUNCTION_IN_RANGE)
 		{
-			Range & key_range = key_ranges[element.key_column];
+			const Range & key_range = key_ranges[element.key_column];
 			bool intersects = element.range.intersectsRange(key_range);
 			bool contains = element.range.containsRange(key_range);
+
 			rpn_stack.push_back(BoolMask(intersects, !contains));
 			if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
 				rpn_stack.back() = !rpn_stack.back();

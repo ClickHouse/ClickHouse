@@ -188,9 +188,11 @@ BlockInputStreams StorageMergeTree::read(
 	if (select.sample_size)
 	{
 		double size = apply_visitor(FieldVisitorConvertToNumber<double>(),
-										   dynamic_cast<ASTLiteral&>(*select.sample_size).value);
+			dynamic_cast<ASTLiteral&>(*select.sample_size).value);
+
 		if (size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
 		if (size > 1)
 		{
 			size_t requested_count = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), dynamic_cast<ASTLiteral&>(*select.sample_size).value);
@@ -230,7 +232,7 @@ BlockInputStreams StorageMergeTree::read(
 		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
 		sampling_column_value_limit = static_cast<UInt64>(size * sampling_column_max);
 		if (!key_condition.addCondition(sampling_expression->getColumnName(),
-			Range::RightBounded(sampling_column_value_limit, true)))
+			Range::createRightBounded(sampling_column_value_limit, true)))
 			throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
 		/// Выражение для фильтрации: sampling_expression <= sampling_column_value_limit

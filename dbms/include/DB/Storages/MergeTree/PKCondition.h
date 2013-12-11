@@ -35,7 +35,7 @@ struct Range
 	Range(const Field & left_, bool left_included_, const Field & right_, bool right_included_)
 		: left(left_), right(right_), left_bounded(true), right_bounded(true), left_included(left_included_), right_included(right_included_) {}
 	
-	static Range RightBounded(const Field & right_point, bool right_included)
+	static Range createRightBounded(const Field & right_point, bool right_included)
 	{
 		Range r;
 		r.right = right_point;
@@ -44,10 +44,10 @@ struct Range
 		return r;
 	}
 	
-	static Range LeftBounded(const Field & left_point, bool left_included)
+	static Range createLeftBounded(const Field & left_point, bool left_included)
 	{
 		Range r;
-		r.left= left_point;
+		r.left = left_point;
 		r.left_bounded = true;
 		r.left_included = left_included;
 		return r;
@@ -70,68 +70,72 @@ struct Range
 	}
 	
 	/// x входит в range
-	bool contains(const Field & x)
+	bool contains(const Field & x) const
 	{
 		return !leftThan(x) && !rightThan(x);
 	}
 	
 	/// x находится левее
-	bool rightThan(const Field & x)
+	bool rightThan(const Field & x) const
 	{
 		return (left_bounded
-		? !((x > left) || (left_included && x == left))
-		: false);
+			? !((x > left) || (left_included && x == left))
+			: false);
 	}
 	
 	/// x находится правее
-	bool leftThan(const Field & x)
+	bool leftThan(const Field & x) const
 	{
 		return (right_bounded
-		? !((x < right) || (right_included && x == right))
-		: false);
+			? !((x < right) || (right_included && x == right))
+			: false);
 	}
 	
-	bool intersectsRange(const Range & r)
+	bool intersectsRange(const Range & r) const
 	{
 		/// r левее меня.
-		if (r.right_bounded &&
-			left_bounded &&
-			((r.right < left) ||
-			((!left_included || !r.right_included) &&
-			 r.right == left)))
+		if (r.right_bounded
+			&& left_bounded
+			&& ((r.right < left)
+				|| ((!left_included || !r.right_included)
+					&& r.right == left)))
 			return false;
+
 		/// r правее меня.
-		if (r.left_bounded &&
-			right_bounded &&
-			((r.left > right) ||
-			((!right_included || !r.left_included) &&
-			r.left == right)))
+		if (r.left_bounded
+			&& right_bounded
+			&& ((r.left > right)							/// ...} {...
+				|| ((!right_included || !r.left_included)	/// ...)[...  или ...](...
+					&& r.left == right)))
 			return false;
+
 		return true;
 	}
 	
-	bool containsRange(const Range & r)
+	bool containsRange(const Range & r) const
 	{
 		/// r начинается левее меня.
-		if (left_bounded &&
-			(!r.left_bounded ||
-			(r.left < left) ||
-			(r.left_included &&
-			!left_included &&
-			r.left == left)))
+		if (left_bounded
+			&& (!r.left_bounded
+				|| (r.left < left)
+				|| (r.left_included
+					&& !left_included
+					&& r.left == left)))
 			return false;
+
 		/// r заканчивается правее меня.
-		if (right_bounded &&
-			(!r.right_bounded ||
-			(r.right > right) ||
-			(r.right_included &&
-			!right_included &&
-			r.right == right)))
+		if (right_bounded
+			&& (!r.right_bounded
+				|| (r.right > right)
+				|| (r.right_included
+					&& !right_included
+					&& r.right == right)))
 			return false;
+
 		return true;
 	}
 	
-	String toString()
+	String toString() const
 	{
 		std::stringstream str;
 		

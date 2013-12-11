@@ -107,7 +107,7 @@ public:
 					may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size]);
 				else
 					may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size]);
-				
+
 				if (!may_be_true)
 					continue;
 				
