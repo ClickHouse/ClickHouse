@@ -88,6 +88,7 @@ private:
 	}
 
 public:
+	/// Если cache_ == NULL, работает без кеша - как CompressedReadBuffer.
 	CachedCompressedReadBuffer(const std::string & path_, UncompressedCache * cache_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
 		: ReadBuffer(NULL, 0), path(path_), cur_begin_offset(0), cur_end_offset(0), cache(cache_), buf_size(buf_size_)
 	{
