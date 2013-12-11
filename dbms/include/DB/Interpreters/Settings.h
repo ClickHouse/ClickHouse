@@ -15,10 +15,10 @@ namespace LoadBalancing
 	enum LoadBalancing
 	{
 		/// среди реплик с минимальным количеством ошибок выбирается случайная
-		RANDOM = 1,
+		RANDOM = 0,
 		/// среди реплик с минимальным количеством ошибок выбирается реплика
 		/// с минимальным количеством отличающихся символов в имени реплики и имени локального хоста
-		NEAREST_HOSTNAME = 2
+		NEAREST_HOSTNAME
 	};
 }
 
@@ -60,7 +60,7 @@ struct Settings
 	/// Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации.
 	bool use_splitting_aggregator;
 
-	size_t load_balancing;
+	LoadBalancing::LoadBalancing load_balancing;
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
@@ -104,6 +104,9 @@ struct Settings
 
 	/// Записать все настройки в буфер.
 	void serialize(WriteBuffer & buf) const;
+
+private:
+	std::string toString(const LoadBalancing::LoadBalancing & load_balancing) const;
 };
 
 

@@ -12,6 +12,14 @@
 namespace DB
 {
 
+static LoadBalancing::LoadBalancing getLoadBalancing(const String & s)
+{
+	if (s == "random") 	return LoadBalancing::RANDOM;
+	if (s == "nearest_hostname") 	return LoadBalancing::NEAREST_HOSTNAME;
+
+	throw Exception("Unknown load balancing mode: '" + s + "', must be one of 'random', 'nearest_hostname'", ErrorCodes::UNKNOWN_LOAD_BALANCING);
+}
+
 void Settings::set(const String & name, const Field & value)
 {
 		 if (name == "max_block_size")		max_block_size 		= safeGet<UInt64>(value);
@@ -34,7 +42,7 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "use_uncompressed_cache") use_uncompressed_cache = safeGet<UInt64>(value);
 	else if (name == "use_splitting_aggregator") use_splitting_aggregator = safeGet<UInt64>(value);
 	else if (name == "profile") 			setProfile(get<const String &>(value));
-	else if (name == "load_balancing")		load_balancing		= safeGet<UInt64>(value);
+	else if (name == "load_balancing")		load_balancing		= getLoadBalancing(safeGet<const String &>(value));
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 }
@@ -58,8 +66,7 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		|| name == "sign_rewrite"
 		|| name == "extremes"
 		|| name == "use_uncompressed_cache"
-		|| name == "use_splitting_aggregator"
-		|| name == "load_balancing")
+		|| name == "use_splitting_aggregator")
 	{
 		UInt64 value = 0;
 		readVarUInt(value, buf);
@@ -70,6 +77,12 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		String value;
 		readBinary(value, buf);
 		setProfile(value);
+	}
+	else if (name == "load_balancing")
+	{
+		String value;
+		readBinary(value, buf);
+		set(name, value);
 	}
 	else if (!limits.trySet(name, buf))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
@@ -94,10 +107,13 @@ void Settings::set(const String & name, const String & value)
 		|| name == "sign_rewrite"
 		|| name == "extremes"
 		|| name == "use_uncompressed_cache"
-		|| name == "use_splitting_aggregator"
-		|| name == "load_balancing")
+		|| name == "use_splitting_aggregator")
 	{
 		set(name, parse<UInt64>(value));
+	}
+	else if (name == "load_balancing")
+	{
+		set(name, Field(value));
 	}
 	else if (name == "profile")
 	{
@@ -157,7 +173,7 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("extremes", buf);								writeVarUInt(extremes, buf);
 	writeStringBinary("use_uncompressed_cache", buf);				writeVarUInt(use_uncompressed_cache, buf);
 	writeStringBinary("use_splitting_aggregator", buf);				writeVarUInt(use_splitting_aggregator, buf);
-	writeStringBinary("load_balancing", buf);						writeVarUInt(load_balancing, buf);
+	writeStringBinary("load_balancing", buf);						writeStringBinary(toString(load_balancing), buf);
 
 	limits.serialize(buf);
 
@@ -165,4 +181,11 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("", buf);
 }
 
+std::string Settings::toString(const LoadBalancing::LoadBalancing & load_balancing) const
+{
+	const char * strings[] =  {"random", "nearest_hostname"};
+	if (load_balancing < LoadBalancing::RANDOM || load_balancing > LoadBalancing::NEAREST_HOSTNAME)
+		throw Poco::Exception("Unknown load balancing mode", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
+	return strings[load_balancing];
+}
 }
