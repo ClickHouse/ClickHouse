@@ -375,7 +375,7 @@ private:
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				parts[i]->currently_merging = true;
-				self->currently_merging_info.instance().addPart(parts[i]);
+				CurrentlyMergingInfo::instance().addPart(parts[i]);
 			}
 		}
 		~CurrentlyMergingPartsTagger ()
@@ -384,7 +384,7 @@ private:
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				parts[i]->currently_merging = false;
-				self->currently_merging_info.instance().removePart(parts[i]);
+				CurrentlyMergingInfo::instance().removePart(parts[i]);
 			}
 		}
 	private:
@@ -395,10 +395,11 @@ private:
 	class CurrentlyMergingInfo : public Singleton<CurrentlyMergingInfo>
 	{
 	    friend class Singleton<CurrentlyMergingInfo>;
-	public:
+	protected:
 		CurrentlyMergingInfo() {
 			total_size = 0;
 		};
+	public:
 		void addPart(DataPartPtr a)
 		{
 			total_size += a->getSizeInBytes();
@@ -411,8 +412,6 @@ private:
 
 		size_t total_size;
 	};
-
-	CurrentlyMergingInfo currently_merging_info;
 
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
 

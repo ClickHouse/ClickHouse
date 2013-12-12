@@ -849,7 +849,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 	struct statfs fs;
 	statfs(full_path.c_str(), &fs);
 	size_t total_free_bytes = fs.f_bfree * fs.f_bsize;
-	size_t maybe_used_bytes = currently_merging_info.instance().total_size;
+	size_t maybe_used_bytes = CurrentlyMergingInfo::instance().total_size;
 
 	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
 	/// Нужно для определения максимальности по включению.
