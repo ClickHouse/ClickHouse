@@ -266,7 +266,7 @@ private:
 		
 		/// NOTE можно загружать засечки тоже в оперативку
 
-		size_t getSize()
+		size_t getSizeInBytes() const
 		{
 			String from = storage.full_path + name + "/";
 			return Poco::File(from).getSize();
@@ -401,12 +401,12 @@ private:
 		};
 		void addPart(DataPartPtr a)
 		{
-			total_size += a->getSize();
+			total_size += a->getSizeInBytes();
 		}
 
 		void removePart(DataPartPtr a)
 		{
-			total_size -= a->getSize();
+			total_size -= a->getSizeInBytes();
 		}
 
 		size_t total_size;

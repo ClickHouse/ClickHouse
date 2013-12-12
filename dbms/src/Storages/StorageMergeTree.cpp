@@ -1,5 +1,6 @@
 #include <boost/bind.hpp>
 #include <numeric>
+#include <sys/vfs.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Ext/ScopedTry.h>
@@ -845,6 +846,10 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 	DayNum_t now_day = date_lut.toDayNum(time(0));
 	DayNum_t now_month = date_lut.toFirstDayNumOfMonth(now_day);
 	int now_hour = date_lut.toHourInaccurate(time(0));
+	struct statfs fs;
+	statfs(full_path.c_str(), &fs);
+	size_t total_free_bytes = fs.f_bfree * fs.f_bsize;
+	size_t maybe_used_bytes = currently_merging_info.instance().total_size;
 
 	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
 	/// Нужно для определения максимальности по включению.
@@ -892,6 +897,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 		size_t cur_max = first_part->size;
 		size_t cur_min = first_part->size;
 		size_t cur_sum = first_part->size;
+		size_t cur_total_size = first_part->getSizeInBytes();
 		int cur_len = 1;
 		
 		DayNum_t month = first_part->left_month;
@@ -926,6 +932,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 			cur_max = std::max(cur_max, last_part->size);
 			cur_min = std::min(cur_min, last_part->size);
 			cur_sum += last_part->size;
+			cur_total_size += last_part->getSizeInBytes();
 			++cur_len;
 			cur_id = last_part->right;
 
@@ -949,6 +956,7 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len &&
+				total_free_bytes > (maybe_used_bytes + cur_total_size) * 1.5 && /// Достаточно свободной памяти, чтобы покрыть все активные мерджи и новый с запасом по памяти в 50%
 				(static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio ||
 				(is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*15))) /// За старый месяц объединяем что угодно, если разрешено и если этому хотя бы 15 дней
 			{
