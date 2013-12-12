@@ -266,6 +266,12 @@ private:
 		
 		/// NOTE можно загружать засечки тоже в оперативку
 
+		size_t getSize()
+		{
+			String from = storage.full_path + name + "/";
+			return Poco::File(from).getSize();
+		}
+
 		void remove() const
 		{
 			String from = storage.full_path + name + "/";
@@ -357,7 +363,57 @@ private:
 		{
 		}
 	};
-	
+
+	/// Пока существует, помечает части как currently_merging и пересчитывает общий объем сливаемых данных.
+	/// Вероятно, что части будут помечены заранее.
+	class CurrentlyMergingPartsTagger
+	{
+	public:
+		CurrentlyMergingPartsTagger (const std::vector<DataPartPtr> & parts_, StorageMergeTree *self_) : parts(parts), self(self_)
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(self->data_parts_mutex);
+			for (size_t i = 0; i < parts.size(); ++i)
+			{
+				parts[i]->currently_merging = true;
+				self->currently_merging_info.instance().addPart(parts[i]);
+			}
+		}
+		~CurrentlyMergingPartsTagger ()
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(self->data_parts_mutex);
+			for (size_t i = 0; i < parts.size(); ++i)
+			{
+				parts[i]->currently_merging = false;
+				self->currently_merging_info.instance().removePart(parts[i]);
+			}
+		}
+	private:
+		std::vector<DataPartPtr> parts;
+		SharedPtr<StorageMergeTree> self;
+	};
+
+	class CurrentlyMergingInfo : public Singleton<CurrentlyMergingInfo>
+	{
+	    friend class Singleton<CurrentlyMergingInfo>;
+	public:
+		CurrentlyMergingInfo() {
+			total_size = 0;
+		};
+		void addPart(DataPartPtr a)
+		{
+			total_size += a->getSize();
+		}
+
+		void removePart(DataPartPtr a)
+		{
+			total_size -= a->getSize();
+		}
+
+		size_t total_size;
+	};
+
+	CurrentlyMergingInfo currently_merging_info;
+
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).

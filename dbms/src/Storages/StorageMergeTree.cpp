@@ -1004,6 +1004,10 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
+	/// К этому моменту части уже должны быть помечены как currently_merging
+	/// Необходимо для того, чтобы при вызове деструктора части пометились как не currently_merging
+	CurrentlyMergingPartsTagger marker(parts, this);
+
 	Names all_column_names;
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 		all_column_names.push_back(it->first);
