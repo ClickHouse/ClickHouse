@@ -13,11 +13,120 @@
 
 namespace DB
 {
-	
+
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
+/** Более точное сравнение.
+  * Отличается от Field::operator< и Field::operator== тем, что сравнивает значения разных числовых типов между собой.
+  * Правила сравнения - такие же, что и в FunctionsComparison.
+  * В том числе, сравнение знаковых и беззнаковых оставляем UB.
+  */
+class FieldVisitorAccurateEquals : public StaticVisitor<bool>
+{
+public:
+    bool operator() (const Null & l, const Null & r)        const { return true; }
+    bool operator() (const Null & l, const UInt64 & r)      const { return false; }
+    bool operator() (const Null & l, const Int64 & r)       const { return false; }
+    bool operator() (const Null & l, const Float64 & r)     const { return false; }
+    bool operator() (const Null & l, const String & r)      const { return false; }
+    bool operator() (const Null & l, const Array & r)       const { return false; }
+
+    bool operator() (const UInt64 & l, const Null & r)      const { return false; }
+    bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
+    bool operator() (const UInt64 & l, const Int64 & r)     const { return l == r; }
+    bool operator() (const UInt64 & l, const Float64 & r)   const { return l == r; }
+    bool operator() (const UInt64 & l, const String & r)    const { return false; }
+    bool operator() (const UInt64 & l, const Array & r)     const { return false; }
+
+    bool operator() (const Int64 & l, const Null & r)       const { return false; }
+    bool operator() (const Int64 & l, const UInt64 & r)     const { return l == r; }
+    bool operator() (const Int64 & l, const Int64 & r)      const { return l == r; }
+    bool operator() (const Int64 & l, const Float64 & r)    const { return l == r; }
+    bool operator() (const Int64 & l, const String & r)     const { return false; }
+    bool operator() (const Int64 & l, const Array & r)      const { return false; }
+
+    bool operator() (const Float64 & l, const Null & r)     const { return false; }
+    bool operator() (const Float64 & l, const UInt64 & r)   const { return l == r; }
+    bool operator() (const Float64 & l, const Int64 & r)    const { return l == r; }
+    bool operator() (const Float64 & l, const Float64 & r)  const { return l == r; }
+    bool operator() (const Float64 & l, const String & r)   const { return false; }
+    bool operator() (const Float64 & l, const Array & r)    const { return false; }
+
+    bool operator() (const String & l, const Null & r)      const { return false; }
+    bool operator() (const String & l, const UInt64 & r)    const { return false; }
+    bool operator() (const String & l, const Int64 & r)     const { return false; }
+    bool operator() (const String & l, const Float64 & r)   const { return false; }
+    bool operator() (const String & l, const String & r)    const { return l == r; }
+    bool operator() (const String & l, const Array & r)     const { return false; }
+
+    bool operator() (const Array & l, const Null & r)       const { return false; }
+    bool operator() (const Array & l, const UInt64 & r)     const { return false; }
+    bool operator() (const Array & l, const Int64 & r)      const { return false; }
+    bool operator() (const Array & l, const Float64 & r)    const { return false; }
+    bool operator() (const Array & l, const String & r)     const { return false; }
+    bool operator() (const Array & l, const Array & r)      const { return l == r; }
+};
+
+class FieldVisitorAccurateLess : public StaticVisitor<bool>
+{
+public:
+    bool operator() (const Null & l, const Null & r)        const { return false; }
+    bool operator() (const Null & l, const UInt64 & r)      const { return true; }
+    bool operator() (const Null & l, const Int64 & r)       const { return true; }
+    bool operator() (const Null & l, const Float64 & r)     const { return true; }
+    bool operator() (const Null & l, const String & r)      const { return true; }
+    bool operator() (const Null & l, const Array & r)       const { return true; }
+
+    bool operator() (const UInt64 & l, const Null & r)      const { return false; }
+    bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
+    bool operator() (const UInt64 & l, const Int64 & r)     const { return l < r; }
+    bool operator() (const UInt64 & l, const Float64 & r)   const { return l < r; }
+    bool operator() (const UInt64 & l, const String & r)    const { return true; }
+    bool operator() (const UInt64 & l, const Array & r)     const { return true; }
+
+    bool operator() (const Int64 & l, const Null & r)       const { return false; }
+    bool operator() (const Int64 & l, const UInt64 & r)     const { return l < r; }
+    bool operator() (const Int64 & l, const Int64 & r)      const { return l < r; }
+    bool operator() (const Int64 & l, const Float64 & r)    const { return l < r; }
+    bool operator() (const Int64 & l, const String & r)     const { return true; }
+    bool operator() (const Int64 & l, const Array & r)      const { return true; }
+
+    bool operator() (const Float64 & l, const Null & r)     const { return false; }
+    bool operator() (const Float64 & l, const UInt64 & r)   const { return l < r; }
+    bool operator() (const Float64 & l, const Int64 & r)    const { return l < r; }
+    bool operator() (const Float64 & l, const Float64 & r)  const { return l < r; }
+    bool operator() (const Float64 & l, const String & r)   const { return true; }
+    bool operator() (const Float64 & l, const Array & r)    const { return true; }
+
+    bool operator() (const String & l, const Null & r)      const { return false; }
+    bool operator() (const String & l, const UInt64 & r)    const { return false; }
+    bool operator() (const String & l, const Int64 & r)     const { return false; }
+    bool operator() (const String & l, const Float64 & r)   const { return false; }
+    bool operator() (const String & l, const String & r)    const { return l < r; }
+    bool operator() (const String & l, const Array & r)     const { return true; }
+
+    bool operator() (const Array & l, const Null & r)       const { return false; }
+    bool operator() (const Array & l, const UInt64 & r)     const { return false; }
+    bool operator() (const Array & l, const Int64 & r)      const { return false; }
+    bool operator() (const Array & l, const Float64 & r)    const { return false; }
+    bool operator() (const Array & l, const String & r)     const { return false; }
+    bool operator() (const Array & l, const Array & r)      const { return l < r; }
+};
+
+#pragma GCC diagnostic pop
+
+
 /** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
-	*/
+  */
 struct Range
 {
+private:
+	static bool equals(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateEquals(), lhs, rhs); }
+	static bool less(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateLess(), lhs, rhs); }
+	
+public:
 	Field left;				/// левая граница, если есть
 	Field right;			/// правая граница, если есть
 	bool left_bounded;		/// ограничен ли слева
@@ -79,7 +188,7 @@ struct Range
 	bool rightThan(const Field & x) const
 	{
 		return (left_bounded
-			? !((x > left) || (left_included && x == left))
+			? !(less(left, x) || (left_included && equals(x, left)))
 			: false);
 	}
 	
@@ -87,7 +196,7 @@ struct Range
 	bool leftThan(const Field & x) const
 	{
 		return (right_bounded
-			? !((x < right) || (right_included && x == right))
+			? !(less(x, right) || (right_included && equals(x, right)))
 			: false);
 	}
 	
@@ -96,17 +205,17 @@ struct Range
 		/// r левее меня.
 		if (r.right_bounded
 			&& left_bounded
-			&& ((r.right < left)
+			&& (less(r.right, left)
 				|| ((!left_included || !r.right_included)
-					&& r.right == left)))
+					&& equals(r.right, left))))
 			return false;
 
 		/// r правее меня.
 		if (r.left_bounded
 			&& right_bounded
-			&& ((r.left > right)							/// ...} {...
+			&& (less(right, r.left)							/// ...} {...
 				|| ((!right_included || !r.left_included)	/// ...)[...  или ...](...
-					&& r.left == right)))
+					&& equals(r.left, right))))
 			return false;
 
 		return true;
@@ -117,19 +226,19 @@ struct Range
 		/// r начинается левее меня.
 		if (left_bounded
 			&& (!r.left_bounded
-				|| (r.left < left)
+				|| less(r.left, left)
 				|| (r.left_included
 					&& !left_included
-					&& r.left == left)))
+					&& equals(r.left, left))))
 			return false;
 
 		/// r заканчивается правее меня.
 		if (right_bounded
 			&& (!r.right_bounded
-				|| (r.right > right)
+				|| less(right, r.right)
 				|| (r.right_included
 					&& !right_included
-					&& r.right == right)))
+					&& equals(r.right, right))))
 			return false;
 
 		return true;
