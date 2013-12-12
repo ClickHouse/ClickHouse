@@ -541,6 +541,37 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 }
 
 
+const Marks & StorageLog::getMarksWithRealRowCount() const
+{
+	const String & column_name = columns->front().first;
+	const IDataType & column_type = *columns->front().second;
+	String file_name;
+
+	/** Засечки достаём из первого столбца.
+	  * Если это - массив, то берём засечки, соответствующие размерам, а не внутренностям массивов.
+	  */
+
+	if (dynamic_cast<const DataTypeArray *>(&column_type))
+	{
+		file_name = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
+	}
+	else if (dynamic_cast<const DataTypeNested *>(&column_type))
+	{
+		file_name = column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
+	}
+	else
+	{
+		file_name = column_name;
+	}
+
+	Files_t::const_iterator it = files.find(file_name);
+	if (files.end() == it)
+		throw Exception("Cannot find file " + file_name, ErrorCodes::LOGICAL_ERROR);
+
+	return it->second.marks;
+}
+
+
 BlockInputStreams StorageLog::read(
 	size_t from_mark,
 	size_t to_mark,
@@ -575,7 +606,7 @@ BlockInputStreams StorageLog::read(
 	}
 	else
 	{
-		const Marks & marks = files.begin()->second.marks;
+		const Marks & marks = getMarksWithRealRowCount();
 		size_t marks_size = marks.size();
 
 		if (to_mark == std::numeric_limits<size_t>::max())
