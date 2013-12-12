@@ -8,10 +8,12 @@ struct DataPart
 	int time; ///левая граница куска
 	size_t size; /// количество строк в куске
 	int currently_merging; /// 0 если не мерджится, иначе номер "потока"
+	int modification_time;
 
-	DataPart () : time(0), size(0), currently_merging(0) {};
-	DataPart (int time, size_t val) : time(time), size(val), currently_merging(0) {};
-	DataPart (int time, size_t val, int currently_merging) : time(time), size(val), currently_merging(currently_merging) {};
+	DataPart () : time(0), size(0), currently_merging(0), modification_time(0) {};
+	DataPart (int time, size_t val) : time(time), size(val), currently_merging(0), modification_time(time) {};
+	DataPart (int time, size_t val, int currently_merging) : time(time), size(val), currently_merging(currently_merging), modification_time(time) {};
+	DataPart (int time, size_t val, int currently_merging, int modification_time) : time(time), size(val), currently_merging(currently_merging), modification_time(modification_time) {};
 };
 
 bool operator < (const DataPart &a, const DataPart &b)
@@ -33,12 +35,12 @@ DataParts copy(const DataParts &a)
 	return res;
 }
 
-const int RowsPerSec = 55000;
+const int RowsPerSec = 100000;
 
 StorageMergeTreeSettings settings;
 
 
-int index_granularity = 1;
+size_t index_granularity = 1;
 
 /// Time, Type, Value
 multiset<pair<int, pair<int, int> > > events;
@@ -55,22 +57,22 @@ DataParts maxCount, maxMerging, maxThreads;
 int maxCountMoment, maxMergingMoment, maxThreadsMoment, maxScheduledThreadsMoment;
 int maxScheduledThreads;
 
+double averageNumberOfParts = 0.0;
+
 int mergeScheduled = 0;
+
+int cur_time = 0;
+
 
 int genRand(int l, int r)
 {
 	return l + rand() % (r - l + 1);
 }
 
-/// Используется дли инициализации рандсида
-long long rdtsc()
-{
-	asm("rdtsc");
-}
-
-/// Скопировано с минимальной потерей логики
 bool selectPartsToMerge(std::vector<DataPtr> & parts)
 {
+//	LOG_DEBUG(log, "Selecting parts to merge");
+
 	size_t min_max = -1U;
 	size_t min_min = -1U;
 	int max_len = 0;
@@ -81,13 +83,16 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 	/// Нужно для определения максимальности по включению.
 	int max_count_from_left = 0;
 
+	size_t cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts;
 
-	/// NOTE
-	/// Сейчас всегда true, поскольку в настоящем mergeTree этой эвристики нет
-	bool is_anything_merging = true;
+	/// Если ночь, можем мерджить сильно большие куски
+//	if (now_hour >= 1 && now_hour <= 5)
+//		cur_max_rows_to_merge_parts *= settings.merge_parts_at_night_inc;
+
+	/// Если есть активный мердж крупных кусков, то ограничаемся мерджем только маленьких частей.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-		if ((*it)->currently_merging)
-			is_anything_merging = true;
+		if ((*it)->currently_merging && (*it)->size * index_granularity > 25 * 1024 * 1024)
+			cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts_second;
 
 	/// Левый конец отрезка.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
@@ -97,8 +102,8 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 		max_count_from_left = std::max(0, max_count_from_left - 1);
 
 		/// Кусок не занят и достаточно мал.
-		if (first_part->currently_merging || (is_anything_merging &&
-			first_part->size * index_granularity > settings.max_rows_to_merge_parts))
+		if (first_part->currently_merging ||
+			first_part->size * index_granularity > cur_max_rows_to_merge_parts)
 			continue;
 
 		/// Самый длинный валидный отрезок, начинающийся здесь.
@@ -112,6 +117,8 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 		size_t cur_sum = first_part->size;
 		int cur_len = 1;
 
+		int oldest_modification_time = first_part->modification_time;
+
 		/// Правый конец отрезка.
 		DataParts::iterator jt = it;
 		for (++jt; jt != data_parts.end() && cur_len < static_cast<int>(settings.max_parts_to_merge_at_once); ++jt)
@@ -119,18 +126,37 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 			const DataPtr & last_part = *jt;
 
 			/// Кусок не занят, достаточно мал и в одном правильном месяце.
-			if (last_part->currently_merging || (is_anything_merging &&
-				last_part->size * index_granularity > settings.max_rows_to_merge_parts))
+			if (last_part->currently_merging ||
+				last_part->size * index_granularity > cur_max_rows_to_merge_parts)
 				break;
 
+			oldest_modification_time = std::max(oldest_modification_time, last_part->modification_time);
 			cur_max = std::max(cur_max, last_part->size);
 			cur_min = std::min(cur_min, last_part->size);
 			cur_sum += last_part->size;
 			++cur_len;
 
+			int min_len = 2;
+			int cur_age_in_sec = cur_time - oldest_modification_time;
+
+			/// Если куски примерно больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
+			if (cur_max * index_granularity * 150 > 1024*1024*1024 && cur_age_in_sec < 6*3600)
+				min_len = 3;
+
+			/// Равен 0.5 если возраст порядка 0, равен 5 если возраст около месяца.
+			double time_ratio_modifier = 0.5 + 9 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
+
+			/// Двоичный логарифм суммарного размера кусочков
+			double log_cur_sum = std::log(cur_sum) / std::log(2);
+			/// Равен ~2 если куски маленькие, уменьшается до 0.5 с увеличением суммарного размера до 2^25.
+			double size_ratio_modifier = std::max(0.5, 2 - 3 * (log_cur_sum) / (25 + log_cur_sum));
+
+			/// Объединяем все в одну константу, но не меньшую единицы
+			double ratio = std::max(1., time_ratio_modifier * size_ratio_modifier * settings.max_size_ratio_to_merge_parts);
+
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
-			if (cur_len >= 2 &&
-				(static_cast<double>(cur_max) / (cur_sum - cur_max) < settings.max_size_ratio_to_merge_parts))
+			if (cur_len >= min_len &&
+				(static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio))
 			{
 				cur_longest_max = cur_max;
 				cur_longest_min = cur_min;
@@ -167,27 +193,22 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 			parts.back()->currently_merging = true;
 			++it;
 		}
-
-//		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->time << " to " << parts.back()->time);
-	}
-	else
-	{
-//		LOG_DEBUG(log, "No parts to merge");
 	}
 
 	return found;
 }
 
-int getMergeSize(const DataParts &a)
+
+size_t getMergeSize(const DataParts &a)
 {
-	int res = 0;
+	size_t res = 0;
 	for (DataParts::iterator it = a.begin(); it != a.end(); ++it)
 		if ((*it)->currently_merging)
 			res += (*it)->size;
 	return res;
 }
 
-int getThreads(const DataParts &a)
+size_t getThreads(const DataParts &a)
 {
 	set<int> res;
 	for (DataParts::iterator it = a.begin(); it != a.end(); ++it)
@@ -285,7 +306,7 @@ void process(pair<int, pair<int, int> > ev)
 			} else
 				it ++;
 		}
-		data_parts.insert(new DataPart(st, size));
+		data_parts.insert(new DataPart(st, size, 0, cur_time));
 	} else if (type == 3) /// do merge
 	{
 		merge(cur_time, val);
@@ -297,26 +318,29 @@ void process(pair<int, pair<int, int> > ev)
 
 int main()
 {
-	srand(rdtsc());
-	int delay = 15;
-	for (int i = 0; i < 60*60*30/delay; ++i)
+	srand(time(0));
+	int delay = 12;
+	int total_time = 60*60*30;
+	for (int i = 0; i < total_time/delay; ++i)
 	{
+		int cur_time = genRand(0, total_time);
 		if (rand() & 7)
-			events.insert(make_pair(i * delay, make_pair(1, genRand(75000, 85000))));
+			events.insert(make_pair(cur_time, make_pair(1, genRand(70000, 80000))));
 		else {
-			events.insert(make_pair(-4 + i * delay, make_pair(1, genRand(10000, 30000))));
-			events.insert(make_pair(+4 + i * delay, make_pair(1, genRand(10000, 30000))));
+			events.insert(make_pair(cur_time, make_pair(1, genRand(10000, 30000))));
 		}
 	}
 
 	int iter = 0;
-	int cur_time = 0;
 	maxCount = data_parts;
 	puts("________________________________________________________________________________________________________");
-	puts("A couple of moments from the process log:");
+	puts("Couple moments from the process log:");
 	while (events.size() > 0)
 	{
+		int last_time = cur_time;
 		cur_time = events.begin()->first;
+		averageNumberOfParts += 1.0 * (cur_time - last_time) * data_parts.size();
+		if (cur_time > total_time) break;
 		updateStat(cur_time);
 		iter ++;
 		if (iter % 3000 == 0)
@@ -328,22 +352,26 @@ int main()
 		process(*events.begin());
 		events.erase(*events.begin());
 	}
+	total_time = cur_time;
+	averageNumberOfParts /= cur_time;
 	puts("________________________________________________________________________________________________________");
 	puts("During whole process: ");
 	printf("Max number of alive parts was at %d second with %d parts\n", maxCountMoment, (int) maxCount.size());
 	writeParts(maxCount);
-	printf("Max total size of merging parts was at %d second with %d rows in merge\n", maxMergingMoment, getMergeSize(maxMerging));
+	printf("Max total size of merging parts was at %d second with %d rows in merge\n", maxMergingMoment, (int)getMergeSize(maxMerging));
 	writeParts(maxMerging);
-	printf("Max number of running threads was at %d second with %d threads\n", maxThreadsMoment, getThreads(maxThreads));
+	printf("Max number of running threads was at %d second with %d threads\n", maxThreadsMoment, (int)getThreads(maxThreads));
 	writeParts(maxThreads);
 	printf("Max number of scheduled threads was at %d second with %d threads\n", maxScheduledThreadsMoment, maxScheduledThreads);
 	printf("Total merge time %lld sec\n", totalMergeTime);
-	printf("Total time %d sec\n", cur_time);
+	printf("Total time %d sec\n", total_time);
 	printf("Total parts size %lld\n", totalSize);
 	printf("Total merged Rows / total rows %0.5lf \n", 1.0 * totalMergeTime * RowsPerSec / totalSize);
+	printf("Average number of data parts is %0.5lf\n", averageNumberOfParts);
 	puts("________________________________________________________________________________________________________");
 	puts("Result configuration:\n");
 	writeParts(data_parts);
+
 
 	return 0;
 }
