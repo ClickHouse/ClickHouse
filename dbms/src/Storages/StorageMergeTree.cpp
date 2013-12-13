@@ -1,6 +1,6 @@
 #include <boost/bind.hpp>
 #include <numeric>
-#include <sys/vfs.h>
+#include <sys/statvfs.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Ext/ScopedTry.h>
@@ -56,6 +56,8 @@
 
 namespace DB
 {
+
+size_t StorageMergeTree::total_size_of_currently_merging_parts = 0;
 
 StorageMergeTree::StorageMergeTree(
 	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
@@ -846,10 +848,17 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 	DayNum_t now_day = date_lut.toDayNum(time(0));
 	DayNum_t now_month = date_lut.toFirstDayNumOfMonth(now_day);
 	int now_hour = date_lut.toHourInaccurate(time(0));
-	struct statfs fs;
-	statfs(full_path.c_str(), &fs);
-	size_t total_free_bytes = fs.f_bfree * fs.f_bsize;
-	size_t maybe_used_bytes = CurrentlyMergingInfo::instance().total_size;
+
+	size_t maybe_used_bytes = total_size_of_currently_merging_parts;
+	size_t total_free_bytes = 0;
+	struct statvfs fs;
+
+	/// Смотрим количество свободного места в файловой системе
+	if (statvfs(full_path.c_str(), &fs))
+	{
+		LOG_WARNING(log, "Could not calculate available disk space. statvfs in selectPartsToMerge returned non-zero value");
+	} else
+		total_free_bytes = fs.f_bfree * fs.f_bsize;
 
 	/// Сколько кусков, начиная с текущего, можно включить в валидный отрезок, начинающийся левее текущего куска.
 	/// Нужно для определения максимальности по включению.
@@ -863,17 +872,19 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 
 	/// Если есть активный мердж крупных кусков, то ограничаемся мерджем только маленьких частей.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
+	{
 		if ((*it)->currently_merging && (*it)->size * index_granularity > 25 * 1024 * 1024)
 		{
 			cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts_second;
 			break;
 		}
+	}
 
 	/// Левый конец отрезка.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 	{
 		const DataPartPtr & first_part = *it;
-		
+
 		max_count_from_left = std::max(0, max_count_from_left - 1);
 		
 		/// Кусок не занят и достаточно мал.
@@ -956,13 +967,17 @@ bool StorageMergeTree::selectPartsToMerge(std::vector<DataPartPtr> & parts, bool
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len &&
-				total_free_bytes > (maybe_used_bytes + cur_total_size) * 1.5 && /// Достаточно свободной памяти, чтобы покрыть все активные мерджи и новый с запасом по памяти в 50%
 				(static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio ||
 				(is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*15))) /// За старый месяц объединяем что угодно, если разрешено и если этому хотя бы 15 дней
 			{
-				cur_longest_max = cur_max;
-				cur_longest_min = cur_min;
-				cur_longest_len = cur_len;
+				/// Достаточно места на диске, чтобы покрыть уже активные и новый мерджи с запасом в 50%
+				if (total_free_bytes > (maybe_used_bytes + cur_total_size) * 1.5)
+				{
+					cur_longest_max = cur_max;
+					cur_longest_min = cur_min;
+					cur_longest_len = cur_len;
+				} else
+					LOG_DEBUG(log, "Won't merge parts from " << first_part->name << " to " << last_part->name << " because not enough free space: " << total_free_bytes << " free, " << maybe_used_bytes << " already involved in merge," << cur_total_size << " required now (+50% on overhead)");
 			}
 		}
 		
@@ -1014,7 +1029,7 @@ void StorageMergeTree::mergeParts(std::vector<DataPartPtr> parts)
 
 	/// К этому моменту части уже должны быть помечены как currently_merging
 	/// Необходимо для того, чтобы при вызове деструктора части пометились как не currently_merging
-	CurrentlyMergingPartsTagger marker(parts, this);
+	CurrentlyMergingPartsTagger marker(parts, data_parts_mutex);
 
 	Names all_column_names;
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)

@@ -240,7 +240,7 @@ private:
 	/// Описание куска с данными.
 	struct DataPart
 	{
-		DataPart(StorageMergeTree & storage_) : storage(storage_), currently_merging(false) {}
+ 		DataPart(StorageMergeTree & storage_) : storage(storage_), size_in_bytes(0), currently_merging(false) {}
 
 		StorageMergeTree & storage;
 		DayNum_t left_date;
@@ -252,24 +252,42 @@ private:
 
 		std::string name;
 		size_t size;	/// в количестве засечек.
+		size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано
 		time_t modification_time;
 
 		DayNum_t left_month;
 		DayNum_t right_month;
-		
+
 		/// Смотреть и изменять это поле следует под залоченным data_parts_mutex.
 		bool currently_merging;
 
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
 		Index index;
-		
+
 		/// NOTE можно загружать засечки тоже в оперативку
+
+		/// Вычисляем сумарный размер всей директории со всеми файлами
+		static size_t calcTotalSize(const String &from)
+		{
+			Poco::File cur(from);
+			if (cur.isFile())
+				return cur.getSize();
+			std::vector<std::string> files;
+			cur.list(files);
+			size_t res = 0;
+			for (size_t i = 0; i < files.size(); ++i)
+				res += calcTotalSize(from + files[i]);
+			return res;
+		}
 
 		size_t getSizeInBytes() const
 		{
-			String from = storage.full_path + name + "/";
-			return Poco::File(from).getSize();
+			size_t res = size_in_bytes;
+			/// Если еще не посчитан результат
+			if (res == 0)
+				res = calcTotalSize(storage.full_path + name + "/");
+			return res;
 		}
 
 		void remove() const
@@ -344,6 +362,8 @@ private:
 
 			if (!index_file.eof())
 				throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+
+			size_in_bytes = calcTotalSize(storage.full_path + name + "/");
 		}
 	};
 
@@ -369,49 +389,32 @@ private:
 	class CurrentlyMergingPartsTagger
 	{
 	public:
-		CurrentlyMergingPartsTagger (const std::vector<DataPartPtr> & parts_, StorageMergeTree *self_) : parts(parts), self(self_)
+		CurrentlyMergingPartsTagger(const std::vector<DataPartPtr> & parts_, Poco::FastMutex &data_mutex_) : parts(parts_), data_mutex(data_mutex_)
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(self->data_parts_mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				parts[i]->currently_merging = true;
-				CurrentlyMergingInfo::instance().addPart(parts[i]);
+				StorageMergeTree::total_size_of_currently_merging_parts += parts[i]->getSizeInBytes();
 			}
 		}
-		~CurrentlyMergingPartsTagger ()
+		~CurrentlyMergingPartsTagger()
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(self->data_parts_mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				parts[i]->currently_merging = false;
-				CurrentlyMergingInfo::instance().removePart(parts[i]);
+				StorageMergeTree::total_size_of_currently_merging_parts -= parts[i]->getSizeInBytes();
 			}
 		}
 	private:
 		std::vector<DataPartPtr> parts;
-		SharedPtr<StorageMergeTree> self;
+		Poco::FastMutex &data_mutex;
 	};
 
-	class CurrentlyMergingInfo : public Singleton<CurrentlyMergingInfo>
-	{
-	    friend class Singleton<CurrentlyMergingInfo>;
-	protected:
-		CurrentlyMergingInfo() {
-			total_size = 0;
-		};
-	public:
-		void addPart(DataPartPtr a)
-		{
-			total_size += a->getSizeInBytes();
-		}
-
-		void removePart(DataPartPtr a)
-		{
-			total_size -= a->getSizeInBytes();
-		}
-
-		size_t total_size;
-	};
+	/// Сумарный размер currently_merging кусочков в байтах.
+	/// Нужно чтобы оценить количество места на диске, которое может понадобится для завершения этих мерджей.
+	static size_t total_size_of_currently_merging_parts;
 
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
