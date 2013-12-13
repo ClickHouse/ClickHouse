@@ -83,6 +83,51 @@ public:
 		working_buffer = internal_buffer;
 		return true;
 	}
+
+	/// Вернуть список имен файлов в директории.
+	static std::vector<std::string> listFiles(
+		const std::string & host,
+		int port,
+		const std::string & path,
+		size_t timeout_ = 0)
+	{
+		std::string encoded_path;
+		Poco::URI::encode(path, "&#", encoded_path);
+
+		std::stringstream uri;
+		uri << "http://" << host << ":" << port << "/?action=list&path=" << encoded_path;
+
+		Poco::Net::HTTPClientSession session;
+		session.setHost(host);
+		session.setPort(port);
+		session.setTimeout(Poco::Timespan(timeout_ || DEFAULT_REMOTE_READ_BUFFER_TIMEOUT, 0));
+
+		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri.str());
+		Poco::Net::HTTPResponse response;
+
+		LOG_TRACE((&Logger::get("RemoteReadBuffer")), "Sending request to " << uri.str());
+
+		session.sendRequest(request);
+		std::istream * istr = &session.receiveResponse(response);
+
+		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+
+		if (status != Poco::Net::HTTPResponse::HTTP_OK)
+		{
+			std::stringstream error_message;
+			error_message << "Received error from remote server " << uri.str() << ". HTTP status code: "
+				<< status << ", body: " << istr->rdbuf();
+
+			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+		}
+
+		std::vector<std::string> files;
+		std::string s;
+		while (getline(*istr, s, '\n') && !s.empty())
+			files.push_back(s);
+
+		return files;
+	}
 };
 
 }
