@@ -159,8 +159,12 @@ public:
 		/// Не слишком оптимально. Можно сделать специализацию для массивов известных типов.
 		Filter nested_filt(getOffsets().back());
 		for (size_t i = 0; i < size; ++i)
+		{
 			if (filt[i])
 				memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
+			else
+				memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
+		}
 
 		ColumnArray * res_ = new ColumnArray(data);
 		ColumnPtr res = res_;
