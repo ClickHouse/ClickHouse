@@ -281,15 +281,6 @@ private:
 			return res;
 		}
 
-		size_t getSizeInBytes() const
-		{
-			size_t res = size_in_bytes;
-			/// Если еще не посчитан результат
-			if (res == 0)
-				res = calcTotalSize(storage.full_path + name + "/");
-			return res;
-		}
-
 		void remove() const
 		{
 			String from = storage.full_path + name + "/";
@@ -347,7 +338,7 @@ private:
 				&& right >= rhs.right;
 		}
 
-		/// Загрузить индекс.
+		/// Загрузить индекс и вычислить размер.
 		void loadIndex()
 		{
 			size_t key_size = storage.sort_descr.size();
@@ -389,13 +380,17 @@ private:
 	class CurrentlyMergingPartsTagger
 	{
 	public:
+		std::vector<DataPartPtr> parts;
+		Poco::FastMutex &data_mutex;
+
 		CurrentlyMergingPartsTagger(const std::vector<DataPartPtr> & parts_, Poco::FastMutex &data_mutex_) : parts(parts_), data_mutex(data_mutex_)
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
+			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри selectPartsToMerge, где он уже залочен
+			/// Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				parts[i]->currently_merging = true;
-				StorageMergeTree::total_size_of_currently_merging_parts += parts[i]->getSizeInBytes();
+				StorageMergeTree::total_size_of_currently_merging_parts += parts[i]->size_in_bytes;
 			}
 		}
 		~CurrentlyMergingPartsTagger()
@@ -404,12 +399,9 @@ private:
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				parts[i]->currently_merging = false;
-				StorageMergeTree::total_size_of_currently_merging_parts -= parts[i]->getSizeInBytes();
+				StorageMergeTree::total_size_of_currently_merging_parts -= parts[i]->size_in_bytes;
 			}
 		}
-	private:
-		std::vector<DataPartPtr> parts;
-		Poco::FastMutex &data_mutex;
 	};
 
 	/// Сумарный размер currently_merging кусочков в байтах.
@@ -474,8 +466,8 @@ private:
 	void mergeThread(bool while_can);
 	/// Сразу помечает их как currently_merging.
 	/// Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
-	bool selectPartsToMerge(std::vector<DataPartPtr> & parts, bool merge_anything_for_old_months);
-	void mergeParts(std::vector<DataPartPtr> parts);
+	bool selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what, bool merge_anything_for_old_months);
+	void mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what);
 	
 	/// Дождаться, пока фоновые потоки закончат слияния.
 	void joinMergeThreads();
