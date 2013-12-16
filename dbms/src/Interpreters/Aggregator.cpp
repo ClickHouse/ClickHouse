@@ -119,7 +119,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumeric())
+	{
+		
 		return AggregatedDataVariants::KEY_64;
+	}
 
 	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
 	if (keys_fit_128_bits)
@@ -199,7 +202,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		/// Каким способом выполнять агрегацию?
 		if (result.empty())
 		{
-			result.type = chooseAggregationMethod(key_columns, key_sizes);
+			result.init(chooseAggregationMethod(key_columns, key_sizes));
 			result.keys_size = keys_size;
 			result.key_sizes = key_sizes;
 			LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
@@ -236,7 +239,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		
 		if (result.type == AggregatedDataVariants::KEY_64)
 		{
-			AggregatedDataWithUInt64Key & res = result.key64;
+			AggregatedDataWithUInt64Key & res = *result.key64;
 			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
@@ -273,7 +276,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		}
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
 		{
-			AggregatedDataWithStringKey & res = result.key_string;
+			AggregatedDataWithStringKey & res = *result.key_string;
 			const IColumn & column = *key_columns[0];
 
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
@@ -357,7 +360,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		}
 		else if (result.type == AggregatedDataVariants::KEYS_128)
 		{
-			AggregatedDataWithKeys128 & res = result.keys128;
+			AggregatedDataWithKeys128 & res = *result.keys128;
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -391,7 +394,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		}
 		else if (result.type == AggregatedDataVariants::HASHED)
 		{
-			AggregatedDataHashed & res = result.hashed;
+			AggregatedDataHashed & res = *result.hashed;
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -544,7 +547,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	
 	if (data_variants.type == AggregatedDataVariants::KEY_64)
 	{
-		AggregatedDataWithUInt64Key & data = data_variants.key64;
+		AggregatedDataWithUInt64Key & data = *data_variants.key64;
 
 		IColumn & first_column = *key_columns[0];
 
@@ -573,7 +576,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
 	{
-		AggregatedDataWithStringKey & data = data_variants.key_string;
+		AggregatedDataWithStringKey & data = *data_variants.key_string;
 		IColumn & first_column = *key_columns[0];
 
 		size_t j = with_totals && !separate_totals ? 1 : 0;
@@ -601,7 +604,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	}
 	else if (data_variants.type == AggregatedDataVariants::KEYS_128)
 	{
-		AggregatedDataWithKeys128 & data = data_variants.keys128;
+		AggregatedDataWithKeys128 & data = *data_variants.keys128;
 
 		size_t j = with_totals && !separate_totals ? 1 : 0;
 
@@ -640,7 +643,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	}
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
 	{
-		AggregatedDataHashed & data = data_variants.hashed;
+		AggregatedDataHashed & data = *data_variants.hashed;
 
 		size_t j = with_totals && !separate_totals ? 1 : 0;
 
@@ -740,8 +743,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		
 		if (res->type == AggregatedDataVariants::KEY_64)
 		{
-			AggregatedDataWithUInt64Key & res_data = res->key64;
-			AggregatedDataWithUInt64Key & current_data = current.key64;
+			AggregatedDataWithUInt64Key & res_data = *res->key64;
+			AggregatedDataWithUInt64Key & current_data = *current.key64;
 
 			for (AggregatedDataWithUInt64Key::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
@@ -763,8 +766,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		}
 		else if (res->type == AggregatedDataVariants::KEY_STRING)
 		{
-			AggregatedDataWithStringKey & res_data = res->key_string;
-			AggregatedDataWithStringKey & current_data = current.key_string;
+			AggregatedDataWithStringKey & res_data = *res->key_string;
+			AggregatedDataWithStringKey & current_data = *current.key_string;
 			
 			for (AggregatedDataWithStringKey::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
@@ -786,8 +789,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		}
 		else if (res->type == AggregatedDataVariants::KEYS_128)
 		{
-			AggregatedDataWithKeys128 & res_data = res->keys128;
-			AggregatedDataWithKeys128 & current_data = current.keys128;
+			AggregatedDataWithKeys128 & res_data = *res->keys128;
+			AggregatedDataWithKeys128 & current_data = *current.keys128;
 
 			for (AggregatedDataWithKeys128::iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
@@ -811,8 +814,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		}
 		else if (res->type == AggregatedDataVariants::HASHED)
 		{
-			AggregatedDataHashed & res_data = res->hashed;
-			AggregatedDataHashed & current_data = current.hashed;
+			AggregatedDataHashed & res_data = *res->hashed;
+			AggregatedDataHashed & current_data = *current.hashed;
 
 			for (AggregatedDataHashed::iterator it = current_data.begin(); it != current_data.end(); ++it)
 			{
@@ -889,9 +892,14 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 		/// Каким способом выполнять агрегацию?
 		Sizes key_sizes;
-		result.type = chooseAggregationMethod(key_columns, key_sizes);
-		result.keys_size = keys_size;
-		result.key_sizes = key_sizes;
+		AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
+		
+		if (result.empty())
+		{
+			result.init(method);
+			result.keys_size = keys_size;
+			result.key_sizes = key_sizes;
+		}
 
 		if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
 		{
@@ -911,7 +919,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 		if (result.type == AggregatedDataVariants::KEY_64)
 		{
-			AggregatedDataWithUInt64Key & res = result.key64;
+			AggregatedDataWithUInt64Key & res = *result.key64;
 			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
@@ -939,7 +947,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		}
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
 		{
-			AggregatedDataWithStringKey & res = result.key_string;
+			AggregatedDataWithStringKey & res = *result.key_string;
 			const IColumn & column = *key_columns[0];
 
 			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
@@ -1005,7 +1013,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		}
 		else if (result.type == AggregatedDataVariants::KEYS_128)
 		{
-			AggregatedDataWithKeys128 & res = result.keys128;
+			AggregatedDataWithKeys128 & res = *result.keys128;
 
 			/// Для всех строчек
 			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
@@ -1029,7 +1037,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		}
 		else if (result.type == AggregatedDataVariants::HASHED)
 		{
-			AggregatedDataHashed & res = result.hashed;
+			AggregatedDataHashed & res = *result.hashed;
 
 			/// Для всех строчек
 			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
@@ -1077,7 +1085,7 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	}
 	if (result.type == AggregatedDataVariants::KEY_64)
 	{
-		AggregatedDataWithUInt64Key & res_data = result.key64;
+		AggregatedDataWithUInt64Key & res_data = *result.key64;
 
 		for (AggregatedDataWithUInt64Key::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
 			for (size_t i = 0; i < aggregates_size; ++i)
@@ -1085,7 +1093,7 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	}
 	else if (result.type == AggregatedDataVariants::KEY_STRING)
 	{
-		AggregatedDataWithStringKey & res_data = result.key_string;
+		AggregatedDataWithStringKey & res_data = *result.key_string;
 
 		for (AggregatedDataWithStringKey::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
 			for (size_t i = 0; i < aggregates_size; ++i)
@@ -1093,7 +1101,7 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	}
 	else if (result.type == AggregatedDataVariants::HASHED)
 	{
-		AggregatedDataHashed & res_data = result.hashed;
+		AggregatedDataHashed & res_data = *result.hashed;
 
 		for (AggregatedDataHashed::iterator it = res_data.begin(); it != res_data.end(); ++it)
 			for (size_t i = 0; i < aggregates_size; ++i)

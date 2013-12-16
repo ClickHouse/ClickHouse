@@ -49,7 +49,7 @@ typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128Trivial
 class Aggregator;
 
 
-struct AggregatedDataVariants
+struct AggregatedDataVariants : private boost::noncopyable
 {
 	/** Работа с состояниями агрегатных функций в пуле устроена следующим (неудобным) образом:
 	  * - при агрегации, состояния создаются в пуле с помощью функции IAggregateFunction::create (внутри - placement new произвольной структуры);
@@ -79,22 +79,23 @@ struct AggregatedDataVariants
 	AggregatedDataWithoutKey without_key;
 
 	/// Специализация для случая, когда есть один числовой ключ.
-	AggregatedDataWithUInt64Key key64;
+	/// auto_ptr - для ленивой инициализации (так как иначе HashMap в конструкторе выделяет и зануляет слишком много памяти).
+	std::auto_ptr<AggregatedDataWithUInt64Key> key64;
 
 	/// Специализация для случая, когда есть один строковый ключ.
-	AggregatedDataWithStringKey key_string;
+	std::auto_ptr<AggregatedDataWithStringKey> key_string;
 	Arena string_pool;
 
 	size_t keys_size;	/// Количество ключей
 	Sizes key_sizes;	/// Размеры ключей, если ключи фиксированной длины
 
 	/// Специализация для случая, когда ключи фискированной длины помещаются в 128 бит.
-	AggregatedDataWithKeys128 keys128;
+	std::auto_ptr<AggregatedDataWithKeys128> keys128;
 
 	/** Агрегирует по 128 битному хэшу от ключа.
 	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 	  */ 
-	AggregatedDataHashed hashed;
+	std::auto_ptr<AggregatedDataHashed> hashed;
 	Arena keys_pool;
 	
 	enum Type
@@ -113,16 +114,34 @@ struct AggregatedDataVariants
 
 	~AggregatedDataVariants();
 
+	void init(Type type_)
+	{
+		type = type_;
+
+		switch (type)
+		{
+			case EMPTY:			break;
+			case WITHOUT_KEY:	break;
+			case KEY_64:		key64		.reset(new AggregatedDataWithUInt64Key); 	break;
+			case KEY_STRING:	key_string	.reset(new AggregatedDataWithStringKey); 	break;
+			case KEYS_128:		keys128		.reset(new AggregatedDataWithKeys128); 		break;
+			case HASHED:		hashed		.reset(new AggregatedDataHashed);	 		break;
+
+			default:
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		}
+	}
+
 	size_t size() const
 	{
 		switch (type)
 		{
 			case EMPTY:			return 0;
 			case WITHOUT_KEY:	return 1;
-			case KEY_64:		return key64.size() 		+ (without_key != NULL);
-			case KEY_STRING:	return key_string.size() 	+ (without_key != NULL);
-			case KEYS_128:		return keys128.size() 		+ (without_key != NULL);
-			case HASHED:		return hashed.size() 		+ (without_key != NULL);
+			case KEY_64:		return key64->size() 		+ (without_key != NULL);
+			case KEY_STRING:	return key_string->size() 	+ (without_key != NULL);
+			case KEYS_128:		return keys128->size() 		+ (without_key != NULL);
+			case HASHED:		return hashed->size() 		+ (without_key != NULL);
 
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);

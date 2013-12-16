@@ -83,7 +83,7 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 			for (size_t i = 0; i < threads; ++i)
 			{
 				results[i] = new AggregatedDataVariants;
-				results[i]->type = method;
+				results[i]->init(method);
 				results[i]->keys_size = keys_size;
 				results[i]->key_sizes = key_sizes;
 			}
@@ -253,7 +253,7 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 
 		if (method == AggregatedDataVariants::KEY_64)
 		{
-			AggregatedDataWithUInt64Key & res = result.key64;
+			AggregatedDataWithUInt64Key & res = *result.key64;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -291,7 +291,7 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 		}
 		else if (method == AggregatedDataVariants::KEY_STRING)
 		{
-			AggregatedDataWithStringKey & res = result.key_string;
+			AggregatedDataWithStringKey & res = *result.key_string;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -329,7 +329,7 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 		}
 		else if (method == AggregatedDataVariants::KEYS_128)
 		{
-			AggregatedDataWithKeys128 & res = result.keys128;
+			AggregatedDataWithKeys128 & res = *result.keys128;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -366,7 +366,7 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 		else if (method == AggregatedDataVariants::HASHED)
 		{
 			StringRefs key(keys_size);
-			AggregatedDataHashed & res = result.hashed;
+			AggregatedDataHashed & res = *result.hashed;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
