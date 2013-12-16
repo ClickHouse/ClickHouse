@@ -78,7 +78,8 @@ private:
 				throw Exception("Sign column must have type Int8", ErrorCodes::BAD_TYPE_OF_FIELD);
 			
 			rows = sign_column->size();
-			filter.resize(rows);
+			/// Заполняется целиком нулями. Потом выставляются единички в позициях строчек, которых нужно оставить.
+			filter.resize_fill(rows);
 		}
 		
 		Block block;
