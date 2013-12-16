@@ -203,7 +203,7 @@ public:
 
 		Permutation nested_perm(getOffsets().back());
 
-		ColumnArray * res_ = new ColumnArray(data);
+		ColumnArray * res_ = new ColumnArray(data->cloneEmpty());
 		ColumnPtr res = res_;
 
 		Offsets_t & res_offsets = res_->getOffsets();

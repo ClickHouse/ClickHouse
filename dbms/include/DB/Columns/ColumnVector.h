@@ -74,7 +74,7 @@ template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {
 template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
 
 
-/** Шаблон столбцов, которые используют для хранения std::vector.
+/** Шаблон столбцов, которые используют для хранения простой массив.
   */
 template <typename T>
 class ColumnVectorBase : public IColumn
