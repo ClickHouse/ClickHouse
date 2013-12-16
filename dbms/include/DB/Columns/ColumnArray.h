@@ -201,7 +201,7 @@ public:
 		if (limit == 0)
  			return new ColumnArray(data);
 
-		Permutation nested_perm(getOffsets()[limit - 1]);
+		Permutation nested_perm(getOffsets().back());
 
 		ColumnArray * res_ = new ColumnArray(data);
 		ColumnPtr res = res_;
