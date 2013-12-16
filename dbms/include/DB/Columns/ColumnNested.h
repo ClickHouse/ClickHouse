@@ -228,7 +228,11 @@ public:
 
 		Permutation nested_perm(getOffsets().back());
 
-		ColumnNested * res_ = new ColumnNested(data->cloneEmpty());
+		Columns cloned_columns(data.size());
+		for (size_t i = 0; i < data.size(); ++i)
+			cloned_columns[i] = data[i]->cloneEmpty();
+		
+		ColumnNested * res_ = new ColumnNested(cloned_columns);
 		ColumnPtr res = res_;
 
 		Offsets_t & res_offsets = res_->getOffsets();
