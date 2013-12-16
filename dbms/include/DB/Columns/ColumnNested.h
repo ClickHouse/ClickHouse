@@ -243,8 +243,9 @@ public:
 			res_offsets[i] = current_offset;
 		}
 
-		for (size_t i = 0; i < data.size(); ++i)
-			res_->data[i] = data[i]->permute(nested_perm, current_offset);
+		if (current_offset != 0)
+			for (size_t i = 0; i < data.size(); ++i)
+				res_->data[i] = data[i]->permute(nested_perm, current_offset);
 
 		return res;
 	}

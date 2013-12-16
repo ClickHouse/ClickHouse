@@ -218,7 +218,8 @@ public:
 			res_offsets[i] = current_offset;
 		}
 
-		res_->data = data->permute(nested_perm, current_offset);
+		if (current_offset != 0)
+			res_->data = data->permute(nested_perm, current_offset);
 
 		return res;
 	}
