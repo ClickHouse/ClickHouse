@@ -189,7 +189,7 @@ public:
 	  */
 	bool optimize()
 	{
-		merge(1, false);
+		merge(1, false, true);
 		return true;
 	}
 
@@ -460,13 +460,18 @@ private:
 	/// Удалить неактуальные куски.
 	void clearOldParts();
 
-	/// Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке. Если iterations=0, объединяет, пока это возможно.
-	void merge(size_t iterations = 1, bool async = true);
+	/** Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке. Если iterations = 0, объединяет, пока это возможно.
+	  * Если aggressive - выбрать куски не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
+	  */
+	void merge(size_t iterations = 1, bool async = true, bool aggressive = false);
+	
 	/// Если while_can, объединяет в цикле, пока можно; иначе выбирает и объединяет только одну пару кусков.
-	void mergeThread(bool while_can);
+	void mergeThread(bool while_can, bool aggressive);
+	
 	/// Сразу помечает их как currently_merging.
 	/// Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
-	bool selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what, bool merge_anything_for_old_months);
+	bool selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what, bool merge_anything_for_old_months, bool aggressive);
+
 	void mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what);
 	
 	/// Дождаться, пока фоновые потоки закончат слияния.

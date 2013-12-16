@@ -746,7 +746,7 @@ void StorageMergeTree::clearOldParts()
 }
 
 
-void StorageMergeTree::merge(size_t iterations, bool async)
+void StorageMergeTree::merge(size_t iterations, bool async, bool aggressive)
 {
 	bool while_can = false;
 	if (iterations == 0)
@@ -756,14 +756,14 @@ void StorageMergeTree::merge(size_t iterations, bool async)
 	}
 	
 	for (size_t i = 0; i < iterations; ++i)
-		merge_threads->schedule(boost::bind(&StorageMergeTree::mergeThread, this, while_can));
+		merge_threads->schedule(boost::bind(&StorageMergeTree::mergeThread, this, while_can, aggressive));
 	
 	if (!async)
 		joinMergeThreads();
 }
 
 
-void StorageMergeTree::mergeThread(bool while_can)
+void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 {
 	try
 	{
@@ -773,7 +773,7 @@ void StorageMergeTree::mergeThread(bool while_can)
 				/// К концу этого логического блока должен быть вызван деструктор, чтобы затем корректно определить удаленные куски
 				Poco::SharedPtr<CurrentlyMergingPartsTagger> what;
 
-				if (!selectPartsToMerge(what, false) && !selectPartsToMerge(what, true))
+				if (!selectPartsToMerge(what, false, aggressive) && !selectPartsToMerge(what, true, aggressive))
 					break;
 
 				mergeParts(what);
@@ -835,7 +835,7 @@ void StorageMergeTree::joinMergeThreads()
 /// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
-bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what, bool merge_anything_for_old_months)
+bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what, bool merge_anything_for_old_months, bool aggressive)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
 
@@ -890,9 +890,13 @@ bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsT
 
 		max_count_from_left = std::max(0, max_count_from_left - 1);
 		
-		/// Кусок не занят и достаточно мал.
-		if (first_part->currently_merging ||
-			first_part->size * index_granularity > cur_max_rows_to_merge_parts)
+		/// Кусок не занят.
+		if (first_part->currently_merging)
+			continue;
+
+		/// Кусок достаточно мал или слияние "агрессивное".
+		if (first_part->size * index_granularity > cur_max_rows_to_merge_parts
+			&& !aggressive)
 			continue;
 		
 		/// Кусок в одном месяце.
@@ -928,11 +932,15 @@ bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsT
 		{
 			const DataPartPtr & last_part = *jt;
 			
-			/// Кусок не занят, достаточно мал и в одном правильном месяце.
+			/// Кусок не занят и в одном правильном месяце.
 			if (last_part->currently_merging ||
-				last_part->size * index_granularity > cur_max_rows_to_merge_parts ||
 				last_part->left_month != last_part->right_month ||
 				last_part->left_month != month)
+				break;
+
+			/// Кусок достаточно мал или слияние "агрессивное".
+			if (last_part->size * index_granularity > cur_max_rows_to_merge_parts
+				&& !aggressive)
 				break;
 			
 			/// Кусок правее предыдущего.
@@ -969,9 +977,12 @@ bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsT
 			double ratio = std::max(0.5, time_ratio_modifier * size_ratio_modifier * settings.max_size_ratio_to_merge_parts);
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
-			if (cur_len >= min_len &&
-				(static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio ||
-				(is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*15))) /// За старый месяц объединяем что угодно, если разрешено и если этому хотя бы 15 дней
+			if (cur_len >= min_len
+				&& (static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio
+					/// За старый месяц объединяем что угодно, если разрешено и если этому хотя бы 15 дней
+					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*15)
+					/// Если слияние "агрессивное", то сливаем что угодно
+					|| aggressive))
 			{
 				/// Достаточно места на диске, чтобы покрыть уже активные и новый мерджи с запасом в 50%
 				if (total_free_bytes > (maybe_used_bytes + cur_total_size) * 1.5)
@@ -979,8 +990,12 @@ bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsT
 					cur_longest_max = cur_max;
 					cur_longest_min = cur_min;
 					cur_longest_len = cur_len;
-				} else
-					LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name << " because not enough free space: " << total_free_bytes << " free, " << maybe_used_bytes << " already involved in merge, " << cur_total_size << " required now (+50% on overhead)");
+				}
+				else
+					LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name
+						<< " because not enough free space: " << total_free_bytes << " free, "
+						<< maybe_used_bytes << " already involved in merge, "
+						<< cur_total_size << " required now (+50% on overhead)");
 			}
 		}
 		
@@ -989,9 +1004,9 @@ bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsT
 		{
 			max_count_from_left = cur_longest_len;
 			
-			if (!found ||
-				std::make_pair(std::make_pair(cur_longest_max, cur_longest_min), -cur_longest_len) <
-				std::make_pair(std::make_pair(min_max, min_min), -max_len))
+			if (!found
+				|| std::make_pair(std::make_pair(cur_longest_max, cur_longest_min), -cur_longest_len)
+					< std::make_pair(std::make_pair(min_max, min_min), -max_len))
 			{
 				found = true;
 				min_max = cur_longest_max;
