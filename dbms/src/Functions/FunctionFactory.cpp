@@ -46,7 +46,9 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "bitwiseOr")					return new FunctionBitwiseOr;
 	else if (name == "bitwiseXor")					return new FunctionBitwiseXor;
 	else if (name == "bitwiseNot")					return new FunctionBitwiseNot;
-	
+	else if (name == "bitwiseShiftLeft")			return new FunctionBitwiseShiftLeft;
+	else if (name == "bitwiseShiftRight")			return new FunctionBitwiseShiftRight;
+
 	else if (name == "equals")						return new FunctionEquals;
 	else if (name == "notEquals")					return new FunctionNotEquals;
 	else if (name == "less")						return new FunctionLess;
@@ -165,6 +167,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "cutURLParameter")			return new FunctionCutURLParameter;
 	else if (name == "URLHierarchy")				return new FunctionURLHierarchy;
 
+	else if (name == "hostName")					return new FunctionHostName;
 	else if (name == "visibleWidth")				return new FunctionVisibleWidth;
 	else if (name == "toTypeName")					return new FunctionToTypeName;
 	else if (name == "blockSize")					return new FunctionBlockSize;

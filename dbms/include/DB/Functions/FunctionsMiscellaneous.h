@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/Net/DNS.h>
+
 #include <math.h>
 
 #include <DB/IO/WriteBufferFromString.h>
@@ -69,6 +71,35 @@ static inline void stringWidthConstant(const String & data, UInt64 & res)
 	res = stringWidth(reinterpret_cast<const UInt8 *>(data.data()), reinterpret_cast<const UInt8 *>(data.data()) + data.size());
 }
 
+/// Получить имя хоста. (Оно - константа, вычисляется один раз за весь запрос.)
+class FunctionHostName : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "hostName";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 0)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeString;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstString(
+			block.rowsInFirstColumn(),
+			Poco::Net::DNS::hostName());
+	}
+};
 
 class FunctionVisibleWidth : public IFunction
 {
