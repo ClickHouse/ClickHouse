@@ -155,9 +155,9 @@ struct ModuloImpl
 };
 
 template<typename A, typename B>
-struct BitwiseAndImpl
+struct BitAndImpl
 {
-	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 	
 	static inline ResultType apply(A a, B b)
 	{
@@ -167,9 +167,9 @@ struct BitwiseAndImpl
 };
 
 template<typename A, typename B>
-struct BitwiseOrImpl
+struct BitOrImpl
 {
-	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 	
 	static inline ResultType apply(A a, B b)
 	{
@@ -179,9 +179,9 @@ struct BitwiseOrImpl
 };
 
 template<typename A, typename B>
-struct BitwiseXorImpl
+struct BitXorImpl
 {
-	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
 	static inline ResultType apply(A a, B b)
 	{
@@ -191,9 +191,9 @@ struct BitwiseXorImpl
 };
 
 template<typename A, typename B>
-struct BitwiseShiftLeftImpl
+struct BitShiftLeftImpl
 {
-	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
 	static inline ResultType apply(A a, B b)
 	{
@@ -203,9 +203,9 @@ struct BitwiseShiftLeftImpl
 };
 
 template<typename A, typename B>
-struct BitwiseShiftRightImpl
+struct BitShiftRightImpl
 {
-	typedef typename NumberTraits::ResultOfBitwise<A, B>::Type ResultType;
+	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
 	static inline ResultType apply(A a, B b)
 	{
@@ -226,9 +226,9 @@ struct NegateImpl
 };
 
 template<typename A>
-struct BitwiseNotImpl
+struct BitNotImpl
 {
-	typedef typename NumberTraits::ResultOfBitwiseNot<A>::Type ResultType;
+	typedef typename NumberTraits::ResultOfBitNot<A>::Type ResultType;
 
 	static inline ResultType apply(A a)
 	{
@@ -540,19 +540,19 @@ public:
 };
 
 
-struct NamePlus 				{ static const char * get() { return "plus"; } };
-struct NameMinus 				{ static const char * get() { return "minus"; } };
-struct NameMultiply 			{ static const char * get() { return "multiply"; } };
-struct NameDivideFloating		{ static const char * get() { return "divide"; } };
-struct NameDivideIntegral 		{ static const char * get() { return "intDiv"; } };
-struct NameModulo 				{ static const char * get() { return "modulo"; } };
-struct NameNegate 				{ static const char * get() { return "negate"; } };
-struct NameBitwiseAnd			{ static const char * get() { return "bitwiseAnd"; } };
-struct NameBitwiseOr			{ static const char * get() { return "bitwiseOr"; } };
-struct NameBitwiseXor			{ static const char * get() { return "bitwiseXor"; } };
-struct NameBitwiseNot			{ static const char * get() { return "bitwiseNot"; } };
-struct NameBitwiseShiftLeft		{ static const char * get() { return "bitwiseShiftLeft"; } };
-struct NameBitwiseShiftRight	{ static const char * get() { return "bitwiseShiftRight"; } };
+struct NamePlus 			{ static const char * get() { return "plus"; } };
+struct NameMinus 			{ static const char * get() { return "minus"; } };
+struct NameMultiply 		{ static const char * get() { return "multiply"; } };
+struct NameDivideFloating	{ static const char * get() { return "divide"; } };
+struct NameDivideIntegral 	{ static const char * get() { return "intDiv"; } };
+struct NameModulo 			{ static const char * get() { return "modulo"; } };
+struct NameNegate 			{ static const char * get() { return "negate"; } };
+struct NameBitAnd			{ static const char * get() { return "bitAnd"; } };
+struct NameBitOr			{ static const char * get() { return "bitOr"; } };
+struct NameBitXor			{ static const char * get() { return "bitXor"; } };
+struct NameBitNot			{ static const char * get() { return "bitNot"; } };
+struct NameBitShiftLeft		{ static const char * get() { return "bitShiftLeft"; } };
+struct NameBitShiftRight	{ static const char * get() { return "bitShiftRight"; } };
 
 typedef FunctionBinaryArithmetic<PlusImpl,				NamePlus> 				FunctionPlus;
 typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 				FunctionMinus;
@@ -561,12 +561,12 @@ typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 	Func
 typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> 	FunctionDivideIntegral;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 			FunctionModulo;
 typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 			FunctionNegate;
-typedef FunctionBinaryArithmetic<BitwiseAndImpl,		NameBitwiseAnd> 		FunctionBitwiseAnd;
-typedef FunctionBinaryArithmetic<BitwiseOrImpl,			NameBitwiseOr> 			FunctionBitwiseOr;
-typedef FunctionBinaryArithmetic<BitwiseXorImpl,		NameBitwiseXor> 		FunctionBitwiseXor;
-typedef FunctionUnaryArithmetic<BitwiseNotImpl,			NameBitwiseNot> 		FunctionBitwiseNot;
-typedef FunctionBinaryArithmetic<BitwiseShiftLeftImpl,	NameBitwiseShiftLeft> 	FunctionBitwiseShiftLeft;
-typedef FunctionBinaryArithmetic<BitwiseShiftRightImpl,	NameBitwiseShiftRight> 	FunctionBitwiseShiftRight;
+typedef FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 			FunctionBitAnd;
+typedef FunctionBinaryArithmetic<BitOrImpl,				NameBitOr> 				FunctionBitOr;
+typedef FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 			FunctionBitXor;
+typedef FunctionUnaryArithmetic<BitNotImpl,				NameBitNot> 			FunctionBitNot;
+typedef FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 		FunctionBitShiftLeft;
+typedef FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 		FunctionBitShiftRight;
 
 
 

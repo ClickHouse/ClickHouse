@@ -156,7 +156,7 @@ namespace NumberTraits
 
 	/** При побитовых операциях получается целое число, битность которого равна максимальной из битностей аргументов.
 	  */
-	template <typename A, typename B> struct ResultOfBitwise
+	template <typename A, typename B> struct ResultOfBit
 	{
 		typedef typename Construct<
 			typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
@@ -172,7 +172,7 @@ namespace NumberTraits
 					typename Traits<B>::Bits>::type>::type>::Type Type;
 	};
 
-	template <typename A> struct ResultOfBitwiseNot
+	template <typename A> struct ResultOfBitNot
 	{
 		typedef typename Construct<
 			typename Traits<A>::Sign,
