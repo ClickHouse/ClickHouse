@@ -53,7 +53,7 @@ public:
 	
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 	{
-		typename ColumnType::Container_t & x =  dynamic_cast<ColumnType &>(column).getData();
+		typename ColumnType::Container_t & x = dynamic_cast<ColumnType &>(column).getData();
 		size_t initial_size = x.size();
 		x.resize(initial_size + limit);
 		size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnType::value_type) * limit);
