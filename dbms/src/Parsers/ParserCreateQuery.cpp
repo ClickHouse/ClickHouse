@@ -266,13 +266,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			if (!s_rparen.ignore(pos, end, expected))
 				return false;
 
+
 			ws.ignore(pos, end);
 
 			if (!engine_p.parse(pos, end, storage, expected))
 				return false;
 
 			/// Для engine VIEW необходимо так же считать запрос AS SELECT
-			if (dynamic_cast<ASTFunction &>(*storage).name == "View" || dynamic_cast<ASTFunction &>(*storage).name == "MaterializedView")
+			if (storage && (dynamic_cast<ASTFunction &>(*storage).name == "View"
+						|| dynamic_cast<ASTFunction &>(*storage).name == "MaterializedView"))
 			{
 				if (!s_as.ignore(pos, end, expected))
 					return false;
