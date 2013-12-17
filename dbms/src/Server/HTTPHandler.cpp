@@ -58,7 +58,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	ConcatReadBuffer in(in_param, *in_post_maybe_compressed);
 
 	/// Если указано compress, то будем сжимать результат.
-	SharedPtr<WriteBuffer> out = new WriteBufferFromHTTPServerResponse(response);
+	SharedPtr<WriteBufferFromHTTPServerResponse> out = new WriteBufferFromHTTPServerResponse(response);
 	SharedPtr<WriteBuffer> out_maybe_compressed;
 
 	if (parse<bool>(params.get("compress", "0")))
@@ -142,6 +142,9 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	QuotaForIntervals & quota = context.getQuota();
 	if (!quota.empty())
 		LOG_INFO(log, "Quota:\n" << quota.toString());
+
+	/// Если не было эксепшена и данные ещё не отправлены - отправляются HTTP заголовки с кодом 200.
+	out->finalize();
 }
 
 

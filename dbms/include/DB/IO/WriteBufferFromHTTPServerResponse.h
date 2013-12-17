@@ -45,6 +45,16 @@ public:
 	WriteBufferFromHTTPServerResponse(Poco::Net::HTTPServerResponse & response_, size_t size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<WriteBuffer>(size), response(response_), ostr(NULL) {}
 
+	/** Если данные ещё не были отправлены - отправить хотя бы HTTP заголовки.
+	  * Используйте эту функцию после того, как данные, возможно, были отправлены,
+	  *  и не было ошибок (вы не планируете поменять код ответа).
+	  */
+	void finalize()
+	{
+		if (!ostr)
+			ostr = &response.send();
+	}
+
 	~WriteBufferFromHTTPServerResponse()
 	{
 		if (!offset())
@@ -52,9 +62,6 @@ public:
 
 		try
 		{
-			if (!ostr)
-				ostr = &response.send();
-			
 			next();
 		}
 		catch (...)
