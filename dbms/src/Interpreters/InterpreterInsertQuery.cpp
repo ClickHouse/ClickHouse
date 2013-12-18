@@ -48,7 +48,7 @@ Block InterpreterInsertQuery::getSampleBlock()
 
 		/// В таблице нет столбца с таким именем
 		if (!db_sample.has(currentName))
-			throw Exception("No such column in table: " + currentName, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+			throw Exception("No such column " + currentName + " in table " + query.table, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
 		ColumnWithNameAndType col;
 		col.name = currentName;
