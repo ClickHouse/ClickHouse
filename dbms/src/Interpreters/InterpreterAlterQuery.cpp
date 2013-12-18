@@ -23,10 +23,19 @@ InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & contex
 {
 }
 
-bool namesEqual(const String &name, const ASTPtr & name_type_)
+static bool namesEqual(const String &name, const ASTPtr & name_type_)
 {
 	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*name_type_);
 	return name_type.name == name;
+}
+
+/// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
+static bool namesEqualIgnoreAfterDot(const String & name_without_dot, const ASTPtr & name_type_)
+{
+	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*name_type_);
+
+	String name_with_dot = name_without_dot + ".";
+	return (name_without_dot == name_type.name || name_with_dot == name_type.name.substr(0, name_with_dot.length()));
 }
 
 void InterpreterAlterQuery::execute()
@@ -76,7 +85,7 @@ void InterpreterAlterQuery::execute()
 			if (params.column)
 			{
 				const ASTIdentifier & col_after = dynamic_cast<const ASTIdentifier &>(*params.column);
-				insert_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, col_after.name, _1)) ;
+				insert_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqualIgnoreAfterDot, col_after.name, _1)) ;
 				if (insert_it == columns_copy.end())
 					throw Exception("Wrong column name. Cannot find column to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
 			}
@@ -108,11 +117,12 @@ void InterpreterAlterQuery::execute()
 		
 		if (params.type == ASTAlterQuery::ADD)
 		{
+			/// Применяем опциональный аргумент AFTER
 			ASTs::iterator insert_it = columns.end();
 			if (params.column)
 			{
 				const ASTIdentifier & col_after = dynamic_cast<const ASTIdentifier &>(*params.column);
-				insert_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, col_after.name, _1)) ;
+				insert_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqualIgnoreAfterDot, col_after.name, _1)) ;
 				++insert_it; /// increase iterator because we want to insert after found element not before
 			}
 			columns.insert(insert_it, params.name_type);

@@ -145,7 +145,7 @@ void IStorage::check(const Block & block, bool need_all) const
 
 
 /// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
-bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
+static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
 {
 	String name_with_dot = name_without_dot + ".";
 	return (name_with_dot == name_type.first.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.first);
