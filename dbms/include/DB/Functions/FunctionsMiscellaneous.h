@@ -95,9 +95,9 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		block.getByPosition(result).column = new ColumnConstString(
+		block.getByPosition(result).column = ColumnConstString(
 			block.rowsInFirstColumn(),
-			Poco::Net::DNS::hostName());
+			Poco::Net::DNS::hostName()).convertToFullColumn();
 	}
 };
 
