@@ -109,6 +109,12 @@ struct ToStartOfMonthImpl
 	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfMonth(DayNum_t(d)); }
 };
 
+struct ToStartOfQuarterImpl
+{
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfQuarter(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfQuarter(DayNum_t(d)); }
+};
+
 struct ToStartOfYearImpl
 {
 	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toFirstDayNumOfYear(date_lut.toDayNum(t)); }
@@ -456,6 +462,7 @@ struct NameToMinute			{ static const char * get() { return "toMinute"; } };
 struct NameToSecond			{ static const char * get() { return "toSecond"; } };
 struct NameToMonday			{ static const char * get() { return "toMonday"; } };
 struct NameToStartOfMonth	{ static const char * get() { return "toStartOfMonth"; } };
+struct NameToStartOfQuarter	{ static const char * get() { return "toStartOfQuarter"; } };
 struct NameToStartOfYear	{ static const char * get() { return "toStartOfYear"; } };
 struct NameToStartOfMinute	{ static const char * get() { return "toStartOfMinute"; } };
 struct NameToStartOfHour	{ static const char * get() { return "toStartOfHour"; } };
@@ -470,6 +477,7 @@ typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMinuteImpl, 		NameToM
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToSecondImpl, 		NameToSecond> 		FunctionToSecond;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToMondayImpl, 		NameToMonday> 		FunctionToMonday;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfMonthImpl, NameToStartOfMonth> FunctionToStartOfMonth;
+typedef FunctionDateOrDateTimeToSomething<DataTypeDate,	ToStartOfQuarterImpl, 	NameToStartOfQuarter> 	FunctionToStartOfQuarter;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfYearImpl, 	NameToStartOfYear> 	FunctionToStartOfYear;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfMinuteImpl, NameToStartOfMinute> FunctionToStartOfMinute;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfHourImpl, 	NameToStartOfHour> 	FunctionToStartOfHour;

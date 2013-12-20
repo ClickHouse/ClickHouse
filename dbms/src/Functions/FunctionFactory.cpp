@@ -119,6 +119,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "toSecond")					return new FunctionToSecond;
 	else if (name == "toMonday")					return new FunctionToMonday;
 	else if (name == "toStartOfMonth")				return new FunctionToStartOfMonth;
+	else if (name == "toStartOfQuarter")			return new FunctionToStartOfQuarter;
 	else if (name == "toStartOfYear")				return new FunctionToStartOfYear;
 	else if (name == "toStartOfMinute")			return new FunctionToStartOfMinute;
 	else if (name == "toStartOfHour")				return new FunctionToStartOfHour;
