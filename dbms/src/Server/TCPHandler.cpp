@@ -110,7 +110,7 @@ void TCPHandler::runImpl()
 
 			/// Запрос требует приёма данных от клиента?
 			if (state.io.out)
-				processInsertQuery();
+				processInsertQuery(global_settings);
 			else
 				processOrdinaryQuery();
 
@@ -194,15 +194,26 @@ void TCPHandler::runImpl()
 }
 
 
-void TCPHandler::processInsertQuery()
+void TCPHandler::processInsertQuery(const Settings & global_settings)
 {
 	/// Отправляем клиенту блок - структура таблицы.
 	Block block = state.io.out_sample;
 	sendData(block);
 
 	state.io.out->writePrefix();
-	while (receivePacket())
-		;
+	while (1)
+	{
+		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
+		while (!in->poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
+			;
+
+		/// Если требуется завершить работу, или клиент отсоединился.
+		if (Daemon::instance().isCancelled() || in->eof())
+			return;
+
+		if (!receivePacket())
+			break;
+	}
 	state.io.out->writeSuffix();
 }
 

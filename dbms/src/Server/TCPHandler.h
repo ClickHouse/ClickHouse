@@ -107,7 +107,7 @@ private:
 	bool receiveData();
 
 	/// Обработать запрос INSERT
-	void processInsertQuery();
+	void processInsertQuery(const Settings & global_settings);
 
 	/// Обработать запрос, который не требует приёма блоков данных от клиента
 	void processOrdinaryQuery();
