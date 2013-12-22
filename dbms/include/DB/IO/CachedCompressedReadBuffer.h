@@ -33,6 +33,16 @@ private:
 	UncompressedCache::CellPtr owned_cell;
 
 
+	void initInput()
+	{
+		if (!compressed_in)
+		{
+			in = new ReadBufferFromFile(path, buf_size);
+			compressed_in = new CompressedReadBuffer(*in);
+		}
+	}
+
+
 	bool nextImpl()
 	{
 		/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
@@ -53,11 +63,7 @@ private:
 		if (!owned_cell)
 		{
 			/// Если нет - надо прочитать его из файла.
-			if (!compressed_in)
-			{
-				in = new ReadBufferFromFile(path, buf_size);
-				compressed_in = new CompressedReadBuffer(*in);
-			}
+			initInput();
 
 			in->seek(cur_begin_offset);
 
@@ -94,6 +100,7 @@ public:
 	{
 	}
 
+
 	void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 	{
 		if (offset_in_compressed_file == cur_begin_offset && offset_in_decompressed_block < working_buffer.size())
@@ -108,6 +115,22 @@ public:
 			if (offset_in_decompressed_block > working_buffer.size())
 				throw Exception("Seek position is beyond the decompressed block", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 			pos += offset_in_decompressed_block;
+		}
+	}
+
+
+	size_t readBig(char * to, size_t n)
+	{
+		/// Если кэш используется, то будем читать через него.
+		if (cache)
+		{
+			return read(to, n);
+		}
+		else
+		{
+			/// Иначе - такая же логика, как в CompressedReadBuffer.
+			initInput();
+			return compressed_in->readBig(to, n);
 		}
 	}
 };
