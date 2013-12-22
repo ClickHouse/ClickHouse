@@ -91,7 +91,8 @@ private:
 			in->seek(cur_begin_offset);
 
 			size_t old_count = in->count();
-			compressed_in->next();
+			if (!compressed_in->next())
+				return false;
 			cur_end_offset += in->count() - old_count;
 
 			internal_buffer = compressed_in->buffer();
