@@ -20,8 +20,8 @@ class CachedCompressedReadBuffer : public ReadBuffer
 {
 private:
 	const std::string path;
-	size_t cur_begin_offset; /// Смещение в сжатом файле, соответствующее working_buffer.begin().
-	size_t cur_end_offset; /// Смещение в сжатом файле, соответствующее working_buffer.end().
+	size_t cur_begin_offset; 	/// Смещение в сжатом файле, соответствующее working_buffer.begin().
+	size_t cur_end_offset; 		/// Смещение в сжатом файле, соответствующее working_buffer.end().
 	UncompressedCache * cache;
 	size_t buf_size;
 
@@ -45,51 +45,60 @@ private:
 
 	bool nextImpl()
 	{
-		/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
-
-		cur_begin_offset = cur_end_offset;
-		UInt128 key = {0, 0};
-
 		if (cache)
 		{
+			/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
+
+			cur_begin_offset = cur_end_offset;
+			UInt128 key = {0, 0};
+
 			key = cache->hash(path, cur_begin_offset);
 			owned_cell = cache->get(key);
+
+			if (!owned_cell)
+			{
+				/// Если нет - надо прочитать его из файла.
+				initInput();
+				in->seek(cur_begin_offset);
+
+				owned_cell = new UncompressedCache::Cell;
+				owned_cell->key = key;
+
+				/// Разжимать будем в кусок памяти, который будет в кэше.
+				compressed_in->setMemory(owned_cell->data);
+
+				size_t old_count = in->count();
+				compressed_in->next();
+				owned_cell->compressed_size = in->count() - old_count;
+
+				/// Положим данные в кэш.
+				cache->set(owned_cell);
+			}
+
+			if (owned_cell->data.m_size == 0)
+				return false;
+
+			internal_buffer = Buffer(owned_cell->data.m_data, owned_cell->data.m_data + owned_cell->data.m_size);
+			working_buffer = Buffer(owned_cell->data.m_data, owned_cell->data.m_data + owned_cell->data.m_size);
+			pos = working_buffer.begin();
+
+			cur_end_offset += owned_cell->compressed_size;
 		}
 		else
 		{
-			owned_cell = NULL;
-		}
-
-		if (!owned_cell)
-		{
-			/// Если нет - надо прочитать его из файла.
+			cur_begin_offset = cur_end_offset;
 			initInput();
-
 			in->seek(cur_begin_offset);
-
-			owned_cell = new UncompressedCache::Cell;
-			owned_cell->key = key;
-
-			/// Разжимать будем в кусок памяти, который будет в кэше.
-			compressed_in->setMemory(owned_cell->data);
 
 			size_t old_count = in->count();
 			compressed_in->next();
-			owned_cell->compressed_size = in->count() - old_count;
+			cur_end_offset += in->count() - old_count;
 
-			/// Положим данные в кэш.
-			if (cache)
-				cache->set(owned_cell);
+			internal_buffer = compressed_in->buffer();
+			working_buffer = compressed_in->buffer();
+			pos = compressed_in->position();
 		}
-
-		if (owned_cell->data.m_size == 0)
-			return false;
-
-		internal_buffer = Buffer(owned_cell->data.m_data, owned_cell->data.m_data + owned_cell->data.m_size);
-		working_buffer = Buffer(owned_cell->data.m_data, owned_cell->data.m_data + owned_cell->data.m_size);
-		pos = working_buffer.begin();
-
-		cur_end_offset += owned_cell->compressed_size;
+		
 		return true;
 	}
 
@@ -109,7 +118,9 @@ public:
 		}
 		else
 		{
+			/// Как будто только что дочитали до нужного места.
 			cur_end_offset = offset_in_compressed_file;
+			
 			pos = working_buffer.end();
 			next();
 			if (offset_in_decompressed_block > working_buffer.size())
@@ -129,8 +140,19 @@ public:
 		else
 		{
 			/// Иначе - такая же логика, как в CompressedReadBuffer.
+			cur_begin_offset = cur_end_offset;
 			initInput();
-			return compressed_in->readBig(to, n);
+			in->seek(cur_begin_offset);
+
+			size_t old_count = in->count();
+			size_t res = compressed_in->readBig(to, n);
+			cur_end_offset += in->count() - old_count;
+
+			internal_buffer = compressed_in->buffer();
+			working_buffer = compressed_in->buffer();
+			pos = compressed_in->position();
+
+			return res;
 		}
 	}
 };
