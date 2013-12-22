@@ -24,7 +24,7 @@ struct AggregateFunctionAvgData
 
 /// Считает арифметическое среднее значение чисел.
 template <typename T>
-class AggregateFunctionAvg : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type> >
+class AggregateFunctionAvg : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type>, AggregateFunctionAvg<T> >
 {
 public:
 	String getName() const { return "avg"; }

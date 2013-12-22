@@ -58,7 +58,7 @@ template <> size_t AggregateFunctionGroupUniqArrayData<Float64>::hash::operator(
 
 /// Складывает все значения в хэш-множество. Возвращает массив уникальных значений. Реализована для числовых типов.
 template <typename T>
-class AggregateFunctionGroupUniqArray : public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T> >
+class AggregateFunctionGroupUniqArray : public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T> >
 {
 private:
 	typedef AggregateFunctionGroupUniqArrayData<T> State;

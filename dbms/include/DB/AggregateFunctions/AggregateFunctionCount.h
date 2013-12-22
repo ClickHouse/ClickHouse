@@ -20,7 +20,7 @@ struct AggregateFunctionCountData
 
 
 /// Просто считает, сколько раз её вызвали
-class AggregateFunctionCount : public INullaryAggregateFunction<AggregateFunctionCountData>
+class AggregateFunctionCount : public INullaryAggregateFunction<AggregateFunctionCountData, AggregateFunctionCount>
 {
 public:
 	String getName() const { return "count"; }

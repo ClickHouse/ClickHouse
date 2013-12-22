@@ -17,7 +17,7 @@ struct AggregateFunctionAnyData
 
 
 /// Берёт первое попавшееся значение
-class AggregateFunctionAny : public IUnaryAggregateFunction<AggregateFunctionAnyData>
+class AggregateFunctionAny : public IUnaryAggregateFunction<AggregateFunctionAnyData, AggregateFunctionAny>
 {
 private:
 	DataTypePtr type;

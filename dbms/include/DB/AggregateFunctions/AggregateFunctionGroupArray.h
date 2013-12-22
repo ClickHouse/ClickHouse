@@ -20,7 +20,7 @@ struct AggregateFunctionGroupArrayData
 	
 
 /// Складывает все значения в массив. Реализовано неэффективно.
-class AggregateFunctionGroupArray : public IUnaryAggregateFunction<AggregateFunctionGroupArrayData>
+class AggregateFunctionGroupArray : public IUnaryAggregateFunction<AggregateFunctionGroupArrayData, AggregateFunctionGroupArray>
 {
 private:
 	DataTypePtr type;

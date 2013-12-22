@@ -31,9 +31,10 @@ struct AggregateFunctionsMinMaxData
 
 /// Берёт минимальное (или максимальное) значение. Если таких много - то первое попавшееся из них.
 template <typename Traits>
-class AggregateFunctionsMinMax : public IUnaryAggregateFunction<AggregateFunctionsMinMaxData>
+class AggregateFunctionsMinMax : public IUnaryAggregateFunction<AggregateFunctionsMinMaxData, AggregateFunctionsMinMax<Traits> >
 {
 private:
+	typedef typename IAggregateFunctionHelper<AggregateFunctionsMinMaxData>::Data Data;
 	DataTypePtr type;
 	
 public:
@@ -54,7 +55,7 @@ public:
 	{
 		Field value;
 		column.get(row_num, value);
-		Data & d = data(place);
+		Data & d = this->data(place);
 
 		if (!d.value.isNull())
 		{
@@ -67,8 +68,8 @@ public:
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		Data & d = data(place);
-		const Data & d_rhs = data(rhs);
+		Data & d = this->data(place);
+		const Data & d_rhs = this->data(rhs);
 		
 		if (!d.value.isNull())
 		{
@@ -81,12 +82,12 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type->serializeBinary(data(place).value, buf);
+		type->serializeBinary(this->data(place).value, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		Data & d = data(place);
+		Data & d = this->data(place);
 		
 		if (!d.value.isNull())
 		{
@@ -101,10 +102,10 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		if (unlikely(data(place).value.isNull()))
+		if (unlikely(this->data(place).value.isNull()))
 			to.insertDefault();
 		else
-			to.insert(data(place).value);
+			to.insert(this->data(place).value);
 	}
 };
 

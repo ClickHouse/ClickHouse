@@ -8,7 +8,7 @@ namespace DB
 
 /** Интерфейс для ноль-арных агрегатных функций. Это, например, агрегатная функция count.
   */
-template <typename T>
+template <typename T, typename Derived>
 class INullaryAggregateFunction : public IAggregateFunctionHelper<T>
 {
 public:
@@ -23,10 +23,12 @@ public:
 	/// Добавить значение.
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		addZero(place);
+		static_cast<const Derived &>(*this).addZero(place);
 	}
 
-	virtual void addZero(AggregateDataPtr place) const = 0;
+	/** Реализуйте это в классе-наследнике:
+	  * void addZero(AggregateDataPtr place) const;
+	  */
 };
 
 }
