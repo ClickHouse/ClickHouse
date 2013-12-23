@@ -95,12 +95,18 @@ private:
 				return false;
 			cur_end_offset += in->count() - old_count;
 
-			internal_buffer = compressed_in->buffer();
-			working_buffer = compressed_in->buffer();
-			pos = compressed_in->position();
+			syncWithCompressedInput();
 		}
 		
 		return true;
+	}
+
+
+	void syncWithCompressedInput()
+	{
+		internal_buffer = compressed_in->buffer();
+		working_buffer = compressed_in->buffer();
+		pos = compressed_in->position();
 	}
 
 public:
@@ -151,18 +157,16 @@ public:
 		}
 		else
 		{
-			/// Иначе - такая же логика, как в CompressedReadBuffer.
+			/// Иначе - вызываем метод CompressedReadBuffer. К сожалению, сложная обёртка.
 			cur_begin_offset = cur_end_offset;
 			initInput();
 			in->seek(cur_begin_offset);
 
 			size_t old_count = in->count();
+			compressed_in->position() = pos;
 			size_t res = compressed_in->readBig(to, n);
+			syncWithCompressedInput();
 			cur_end_offset += in->count() - old_count;
-
-			internal_buffer = compressed_in->buffer();
-			working_buffer = compressed_in->buffer();
-			pos = compressed_in->position();
 
 			return res;
 		}
