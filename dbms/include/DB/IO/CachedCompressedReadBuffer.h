@@ -121,12 +121,23 @@ public:
 		{
 			/// Как будто только что дочитали до нужного места.
 			cur_end_offset = offset_in_compressed_file;
-			
+
 			pos = working_buffer.end();
 			next();
+
 			if (offset_in_decompressed_block > working_buffer.size())
 				throw Exception("Seek position is beyond the decompressed block", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-			pos += offset_in_decompressed_block;
+
+			if (unlikely(offset_in_decompressed_block == working_buffer.size()))
+			{
+				/** Если убрать эту ветку, то будет неправильно работать функция readBig в CompressedReadBuffer
+				  * (курсор будет находиться в конце буфера, но данные не прочитаны)
+				  */
+				pos = working_buffer.end();
+				next();
+			}
+			else
+				pos += offset_in_decompressed_block;
 		}
 	}
 
