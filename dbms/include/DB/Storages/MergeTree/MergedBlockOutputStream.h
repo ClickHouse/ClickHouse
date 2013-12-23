@@ -207,6 +207,7 @@ private:
 					}
 					
 					type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
+					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 					prev_mark += limit;
 				}
 			}
@@ -235,6 +236,7 @@ private:
 				}
 				
 				type_nested->serializeOffsets(column, stream.compressed, prev_mark, limit);
+				stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 				prev_mark += limit;
 			}
 		}
@@ -260,6 +262,7 @@ private:
 				}
 				
 				type.serializeBinary(column, stream.compressed, prev_mark, limit);
+				stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 				prev_mark += limit;
 			}
 		}

@@ -227,6 +227,8 @@ private:
 					
 					type_arr->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
 					prev_mark += storage.index_granularity;
+
+					compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 				}
 
 				compressed.next();
@@ -251,6 +253,8 @@ private:
 				
 				type_nested->serializeOffsets(column, compressed, prev_mark, storage.index_granularity);
 				prev_mark += storage.index_granularity;
+
+				compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 			}
 
 			compressed.next();
@@ -271,6 +275,8 @@ private:
 				
 				type.serializeBinary(column, compressed, prev_mark, storage.index_granularity);
 				prev_mark += storage.index_granularity;
+
+				compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 			}
 
 			compressed.next();
