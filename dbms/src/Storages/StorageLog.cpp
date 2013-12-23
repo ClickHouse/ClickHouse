@@ -456,61 +456,6 @@ void StorageLog::loadMarks()
 			}
 		}
 	}
-	else
-	{
-		/// Сконвертируем засечки из старого формата (по файлу для каждого столбца) в новый (один файл для всех столбцов).
-		ssize_t size_of_marks_file = -1;
-		for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-		{
-			Poco::File marks_file(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getBaseName() + DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION);
-			if (marks_file.exists())
-			{
-				ssize_t size_of_current_marks_file = marks_file.getSize();
-
-				if (size_of_current_marks_file % sizeof(Mark) != 0)
-					throw Exception("Sizes of marks files are inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
-
-				if (-1 == size_of_marks_file)
-					size_of_marks_file = size_of_current_marks_file;
-				else if (size_of_marks_file != size_of_current_marks_file)
-					throw Exception("Sizes of marks files are inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
-
-				it->second.marks.reserve(marks_file.getSize() / sizeof(Mark));
-				ReadBufferFromFile marks_rb(marks_file.path(), 32768);
-				while (!marks_rb.eof())
-				{
-					Mark mark;
-					readIntBinary(mark.rows, marks_rb);
-					readIntBinary(mark.offset, marks_rb);
-					it->second.marks.push_back(mark);
-				}
-			}
-		}
-		
-		if (size_of_marks_file != -1)
-		{
-			/// Запишем засечки в новом формате.
-			WriteBufferFromFile marks_wb(marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY);
-			size_t marks_count = marksCount();
-			for (size_t mark_index = 0; mark_index < marks_count; ++mark_index)
-			{
-				for (size_t i = 0; i < files_by_index.size(); ++i)
-				{
-					Mark mark = files_by_index[i]->second.marks[mark_index];
-					writeIntBinary(mark.rows, marks_wb);
-					writeIntBinary(mark.offset, marks_wb);
-				}
-			}
-			
-			/// Удалим файлы с засечками.
-			for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-			{
-				Poco::File marks_file(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getBaseName() + DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION);
-				
-				marks_file.remove();
-			}
-		}
-	}
 
 	loaded_marks = true;
 }
