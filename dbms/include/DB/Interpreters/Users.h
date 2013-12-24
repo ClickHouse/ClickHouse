@@ -199,8 +199,21 @@ public:
 	bool contains(const Poco::Net::IPAddress & addr) const
 	{
 		for (size_t i = 0, size = patterns.size(); i < size; ++i)
-			if (patterns[i]->contains(addr))
-				return true;
+		{
+			/// если хост не резолвится, то пропустим его и попробуем другой
+			try
+			{
+				if (patterns[i]->contains(addr))
+					return true;
+			}
+			catch (const DB::Exception & e)
+			{
+				if (e.code() == ErrorCodes::DNS_ERROR)
+					continue;
+				else
+					throw;
+			}
+		}
 
 		return false;
 	}
