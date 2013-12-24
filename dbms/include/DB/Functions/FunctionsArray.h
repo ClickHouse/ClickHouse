@@ -576,14 +576,18 @@ public:
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 1)
+		if (arguments.size() == 0)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be at least 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
-		if (!array_type)
-			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		for (size_t i = 0; i < arguments.size(); ++i)
+		{
+			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[i]);
+			if (!array_type)
+				throw Exception("All arguments for function " + getName() + " must be arrays; argument " + toString(i + 1) + " isn't.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
 
 		return new DataTypeArray(new DataTypeUInt32);
 	}
@@ -591,27 +595,74 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (!(	executeNumber<UInt8>	(block, arguments, result)
-			||	executeNumber<UInt16>	(block, arguments, result)
-			||	executeNumber<UInt32>	(block, arguments, result)
-			||	executeNumber<UInt64>	(block, arguments, result)
-			||	executeNumber<Int8>		(block, arguments, result)
-			||	executeNumber<Int16>	(block, arguments, result)
-			||	executeNumber<Int32>	(block, arguments, result)
-			||	executeNumber<Int64>	(block, arguments, result)
-			||	executeNumber<Float32>	(block, arguments, result)
-			||	executeNumber<Float64>	(block, arguments, result)
-			||	executeConst			(block, arguments, result)
-			||	executeString			(block, arguments, result)))
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
+		if (arguments.size() == 1 && executeConst(block, arguments, result))
+			return;
+
+		Columns array_columns(arguments.size());
+		const ColumnArray::Offsets_t * offsets = NULL;
+		ConstColumnPlainPtrs data_columns(arguments.size());
+
+		for (size_t i = 0; i < arguments.size(); ++i)
+		{
+			ColumnPtr array_ptr = block.getByPosition(arguments[i]).column;
+			const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*array_ptr);
+			if (!array)
+			{
+				const ColumnConstArray * const_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[i]).column);
+				if (!const_array)
+					throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
+						+ " of " + toString(i + 1) + "-th argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
+				array_ptr = const_array->convertToFullColumn();
+				array = dynamic_cast<const ColumnArray *>(&*array_ptr);
+			}
+			array_columns[i] = array_ptr;
+			const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
+			if (!i)
+				offsets = &offsets_i;
+			else if (offsets_i != *offsets)
+				throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
+					ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+			data_columns[i] = &array->getData();
+		}
+
+		const ColumnArray * first_array = dynamic_cast<const ColumnArray *>(&*array_columns[0]);
+		ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
+		ColumnArray * res_array = new ColumnArray(res_nested, first_array->getOffsetsColumn());
+		block.getByPosition(result).column = res_array;
+
+		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
+		if (!offsets->empty())
+			res_values.resize(offsets->back());
+
+		if (arguments.size() == 1)
+		{
+			if (!(	executeNumber<UInt8>	(first_array, res_values)
+				||	executeNumber<UInt16>	(first_array, res_values)
+				||	executeNumber<UInt32>	(first_array, res_values)
+				||	executeNumber<UInt64>	(first_array, res_values)
+				||	executeNumber<Int8>		(first_array, res_values)
+				||	executeNumber<Int16>	(first_array, res_values)
+				||	executeNumber<Int32>	(first_array, res_values)
+				||	executeNumber<Int64>	(first_array, res_values)
+				||	executeNumber<Float32>	(first_array, res_values)
+				||	executeNumber<Float64>	(first_array, res_values)
+				||	executeString			(first_array, res_values)))
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
+		{
+			if (!execute128bit(*offsets, data_columns, res_values))
+				executeHashed(*offsets, data_columns, res_values);
+		}
 	}
 
 private:
 	struct table_growth_traits
 	{
-		/// Изначально выделить кусок памяти для 2K элементов.
+		/// Изначально выделить кусок памяти для 512 элементов.
 		static const int INITIAL_SIZE_DEGREE  = 9;
 
 		/** Степень роста хэш таблицы, пока не превышен порог размера. (В 4 раза.)
@@ -625,27 +676,17 @@ private:
 	};
 
 	template <typename T>
-	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
+	bool executeNumber(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
 	{
-		const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
-		if (!array)
-			return false;
 		const ColumnVector<T> * nested = dynamic_cast<const ColumnVector<T> *>(&*array->getDataPtr());
 		if (!nested)
 			return false;
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
 		const typename ColumnVector<T>::Container_t & values = nested->getData();
 
-		ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
-		ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
-		block.getByPosition(result).column = res_array;
-
-		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
-		res_values.resize(values.size());
-		size_t prev_off = 0;
-
 		typedef ClearableHashMap<T, UInt32, default_hash<T>, table_growth_traits> ValuesToIndices;
 		ValuesToIndices indices;
+		size_t prev_off = 0;
 		for (size_t i = 0; i < offsets.size(); ++i)
 		{
 			indices.clear();
@@ -659,22 +700,13 @@ private:
 		return true;
 	}
 
-	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
+	bool executeString(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
 	{
-		const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
-		if (!array)
-			return false;
 		const ColumnString * nested = dynamic_cast<const ColumnString *>(&*array->getDataPtr());
 		if (!nested)
 			return false;
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
-		ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
-		ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
-		block.getByPosition(result).column = res_array;
-
-		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
-		res_values.resize(nested->size());
 		size_t prev_off = 0;
 		typedef ClearableHashMap<StringRef, UInt32, std::tr1::hash<StringRef>, table_growth_traits> ValuesToIndices;
 		ValuesToIndices indices;
@@ -709,6 +741,64 @@ private:
 		block.getByPosition(result).column = res_array;
 
 		return true;
+	}
+
+	bool execute128bit(
+		const ColumnArray::Offsets_t & offsets,
+		const ConstColumnPlainPtrs & columns,
+		ColumnVector<UInt32>::Container_t & res_values)
+	{
+		size_t count = columns.size();
+		size_t keys_bytes = 0;
+		Sizes key_sizes(count);
+		for (size_t j = 0; j < count; ++j)
+		{
+			if (!columns[j]->isFixed())
+				return false;
+			key_sizes[j] = columns[j]->sizeOfField();
+			keys_bytes += key_sizes[j];
+		}
+		if (keys_bytes > 16)
+			return false;
+
+		typedef ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, table_growth_traits> ValuesToIndices;
+		ValuesToIndices indices;
+		size_t prev_off = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			indices.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+			{
+				res_values[j] = ++indices[pack128(j, count, columns, key_sizes)];
+			}
+			prev_off = off;
+		}
+
+		return true;
+	}
+
+	void executeHashed(
+		const ColumnArray::Offsets_t & offsets,
+		const ConstColumnPlainPtrs & columns,
+		ColumnVector<UInt32>::Container_t & res_values)
+	{
+		size_t count = columns.size();
+
+		typedef ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, table_growth_traits> ValuesToIndices;
+		ValuesToIndices indices;
+		StringRefs keys(count);
+		size_t prev_off = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			indices.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+			{
+				res_values[j] = ++indices[hash128(j, count, columns, keys)];
+			}
+			prev_off = off;
+		}
 	}
 };
 
