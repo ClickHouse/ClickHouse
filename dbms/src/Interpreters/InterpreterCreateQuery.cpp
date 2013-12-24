@@ -200,6 +200,8 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				attach.as_database.clear();
 				attach.as_table.clear();
 				attach.if_not_exists = false;
+				attach.is_populate = false;
+				
 				/// Для engine VIEW необходимо сохранить сам селект запрос, для остальных - наоборот
 				if (storage_name != "View" && storage_name != "MaterializedView")
 					attach.select = NULL;

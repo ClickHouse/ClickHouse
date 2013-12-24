@@ -351,6 +351,19 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 			ws.ignore(pos, end);
 		}
 
+		if (s_lparen.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+
+			if (!columns_p.parse(pos, end, columns, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!s_rparen.ignore(pos, end, expected))
+				return false;
+		}
+
 		/// Опционально - может быть указана внутренняя ENGINE для MATERIALIZED VIEW
 		engine_p.parse(pos, end, inner_storage, expected);
 

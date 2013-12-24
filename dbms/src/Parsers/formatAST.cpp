@@ -200,8 +200,16 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 		return;
 	}
 	
-	s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH TABLE " : "CREATE TABLE ") << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
+	{
+		std::string what = "TABLE";
+		if (ast.is_view)
+			what = "VIEW";
+		if (ast.is_materialized_view)
+			what = "MATERIALIZED VIEW";
+
+		s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH " : "CREATE ") << what << " " << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
+	}
 
 	if (!ast.as_table.empty())
 	{
@@ -216,10 +224,21 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 		s << (one_line ? ")" : "\n)");
 	}
 
-	if (ast.storage)
+	if (ast.storage && !ast.is_materialized_view && !ast.is_view)
 	{
 		s << (hilite ? hilite_keyword : "") << " ENGINE" << (hilite ? hilite_none : "") << " = ";
 		formatAST(*ast.storage, s, indent, hilite, one_line);
+	}
+
+	if (ast.inner_storage)
+	{
+		s << (hilite ? hilite_keyword : "") << " ENGINE" << (hilite ? hilite_none : "") << " = ";
+		formatAST(*ast.inner_storage, s, indent, hilite, one_line);
+	}
+
+	if (ast.is_populate)
+	{
+		s << (hilite ? hilite_keyword : "") << " POPULATE" << (hilite ? hilite_none : "");
 	}
 
 	if (ast.select)
