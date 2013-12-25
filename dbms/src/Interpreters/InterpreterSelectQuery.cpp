@@ -596,11 +596,15 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
 	}
 
-	/// Если есть LIMIT - можно делать частичную сортировку.
-	size_t limit_length = 0;
-	size_t limit_offset = 0;
-	getLimitLengthAndOffset(query, limit_length, limit_offset);
-	size_t limit = limit_length + limit_offset;
+	/// Если есть LIMIT и нет DISTINCT - можно делать частичную сортировку.
+	size_t limit = 0;
+	if (!query.distinct)
+	{
+		size_t limit_length = 0;
+		size_t limit_offset = 0;
+		getLimitLengthAndOffset(query, limit_length, limit_offset);
+		limit = limit_length + limit_offset;
+	}
 
 	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
