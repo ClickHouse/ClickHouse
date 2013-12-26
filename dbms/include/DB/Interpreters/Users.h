@@ -14,6 +14,8 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadHelpers.h>
 
+#include <Yandex/logger_useful.h>
+
 
 namespace DB
 {
@@ -208,8 +210,13 @@ public:
 			}
 			catch (const DB::Exception & e)
 			{
+				LOG_WARNING(&Poco::Util::Application::instance().logger(),
+					"Fail to check if pattern contains address " << addr.toString() << ". e.message = "<< e.message() <<
+					", e.code = " << e.code());
 				if (e.code() == ErrorCodes::DNS_ERROR)
+				{
 					continue;
+				}
 				else
 					throw;
 			}
