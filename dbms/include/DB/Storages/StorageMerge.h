@@ -4,7 +4,7 @@
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Storages/IStorage.h>
-
+#include <DB/Core/VirtualColumnsList.h>
 
 namespace DB
 {
@@ -30,6 +30,7 @@ public:
 	bool supportsSampling() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	NamesAndTypesList getFullColumnsList() const;
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -53,6 +54,7 @@ private:
 	String source_database;
 	OptimizedRegularExpression table_name_regexp;
 	const Context & context;
+	Poco::SharedPtr<VirtualColumnList> virtual_columns;
 	
 	StorageMerge(
 		const std::string & name_,

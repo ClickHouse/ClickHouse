@@ -15,6 +15,11 @@
 namespace DB
 {
 
+NamesAndTypesList IStorage::getFullColumnsList() const
+{
+	return getColumnsList();
+}
+
 
 const DataTypePtr IStorage::getDataTypeByName(const String & column_name) const
 {

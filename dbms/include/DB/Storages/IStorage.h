@@ -43,6 +43,11 @@ public:
 	  */
 	virtual const NamesAndTypesList & getColumnsList() const = 0;
 
+	/** Получить список имён и типов столбцов таблицы, включая виртуальные столбцы.
+	  * По умолчанию, возвращает getColumnsList().
+	  */
+	virtual NamesAndTypesList getFullColumnsList() const;
+
 	const DataTypePtr getDataTypeByName(const String & column_name) const;
 
 	/** То же самое, но в виде блока-образца.

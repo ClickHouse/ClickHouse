@@ -1,6 +1,8 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Storages/StorageMerge.h>
+#include <DB/DataTypes/DataTypeString.h>
 
+#include <DB/DataStreams/AddingVirtualColumnsBlockInputStream.h>
 
 namespace DB
 {
@@ -13,6 +15,10 @@ StorageMerge::StorageMerge(
 	const Context & context_)
 	: name(name_), columns(columns_), source_database(source_database_), table_name_regexp(table_name_regexp_), context(context_)
 {
+	/// Создаем виртуальные столбцы и инициализруем их
+	virtual_columns = new VirtualColumnList;
+	virtual_columns->addColumn(new VirtualColumn<String>("_table", *Extractors::nameExtractor, new DataTypeString));
+	virtual_columns->calculateNames(*columns);
 }
 
 StoragePtr StorageMerge::create(
@@ -25,6 +31,13 @@ StoragePtr StorageMerge::create(
 	return (new StorageMerge(name_, columns_, source_database_, table_name_regexp_, context_))->thisPtr();
 }
 
+NamesAndTypesList StorageMerge::getFullColumnsList() const
+{
+	NamesAndTypesList res = getColumnsList();
+	NamesAndTypesList virt = virtual_columns->getColumnsList();
+	res.splice(res.end(), virt);
+	return res;
+}
 
 BlockInputStreams StorageMerge::read(
 	const Names & column_names,
@@ -35,6 +48,10 @@ BlockInputStreams StorageMerge::read(
 	unsigned threads)
 {
 	BlockInputStreams res;
+
+	Names notvirt;
+	VirtualColumnList virt;
+	virtual_columns->splitNames(column_names, notvirt, virt);
 
 	typedef std::vector<StoragePtr> SelectedTables;
 	SelectedTables selected_tables;
@@ -57,7 +74,7 @@ BlockInputStreams StorageMerge::read(
 	for (SelectedTables::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 	{
 		BlockInputStreams source_streams = (*it)->read(
-			column_names,
+			notvirt,
 			query,
 			settings,
 			tmp_processed_stage,
@@ -65,7 +82,9 @@ BlockInputStreams StorageMerge::read(
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
 
 		for (BlockInputStreams::iterator jt = source_streams.begin(); jt != source_streams.end(); ++jt)
-			res.push_back(*jt);
+		{
+			res.push_back(new AddingVirtualColumnsBlockInputStream(*jt, virt, *it));
+		}
 
 		if (tmp_processed_stage < processed_stage)
 			processed_stage = tmp_processed_stage;
