@@ -1315,7 +1315,8 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!(	(arguments[0]->isNumeric() && arguments[1]->isNumeric())
+		if (!(	(	arguments[0]->isNumeric() && arguments[0]->behavesAsNumber()
+				&&	arguments[1]->isNumeric() && arguments[1]->behavesAsNumber())
 			||	(	(arguments[0]->getName() == "String" || arguments[0]->getName().substr(0, 11) == "FixedString")
 				&& 	(arguments[1]->getName() == "String" || arguments[1]->getName().substr(0, 11) == "FixedString"))
 			||	(arguments[0]->getName() == "Date" && arguments[1]->getName() == "Date")
