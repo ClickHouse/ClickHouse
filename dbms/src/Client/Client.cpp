@@ -151,7 +151,6 @@ private:
 
 	/// Чтение из stdin для batch режима
 	ReadBufferFromFileDescriptor std_in;
-	BlockInputStreamPtr block_std_in;
 
 	/// Вывод в консоль
 	WriteBufferFromFileDescriptor std_out;
@@ -451,7 +450,6 @@ private:
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
-		block_std_in = NULL;
 		block_std_out = NULL;
 
 		watch.restart();
@@ -595,7 +593,7 @@ private:
 			if (!insert->format.empty())
 				current_format = insert->format;
 
-		block_std_in = new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
+		BlockInputStreamPtr block_std_in = new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
 			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory()));
 		block_std_in->readPrefix();
 
@@ -844,9 +842,6 @@ private:
 
 	void onEndOfStream()
 	{
-		if (block_std_in)
-			block_std_in->readSuffix();
-
 		if (block_std_out)
 			block_std_out->writeSuffix();
 
