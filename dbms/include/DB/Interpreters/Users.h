@@ -210,9 +210,9 @@ public:
 			}
 			catch (const DB::Exception & e)
 			{
-				LOG_WARNING(&Poco::Util::Application::instance().logger(),
-					"Fail to check if pattern contains address " << addr.toString() << ". e.message = "<< e.message() <<
-					", e.code = " << e.code());
+				LOG_WARNING(&Logger("AddressPatterns"),
+					"Failed to check if pattern contains address " << addr.toString() << ". " << e.displayText() << ", code = " << e.code());
+
 				if (e.code() == ErrorCodes::DNS_ERROR)
 				{
 					continue;
