@@ -227,9 +227,8 @@ void TCPHandler::processOrdinaryQuery()
 		if (state.io.in_sample && client_revision >= DBMS_MIN_REVISION_WITH_HEADER_BLOCK)
 			sendData(state.io.in_sample);
 
-		state.io.in->readPrefix();
-		
 		AsynchronousBlockInputStream async_in(state.io.in);
+		async_in.readPrefix();
 
 		std::stringstream query_pipeline;
 		async_in.dumpTree(query_pipeline);
@@ -282,7 +281,7 @@ void TCPHandler::processOrdinaryQuery()
 				break;
 		}
 
-		state.io.in->readSuffix();
+		async_in.readSuffix();
 
 		watch.stop();
 		logProfileInfo(watch, *state.io.in);

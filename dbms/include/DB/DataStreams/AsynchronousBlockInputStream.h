@@ -34,6 +34,25 @@ public:
 		return res.str();
 	}
 
+	void readPrefix()
+	{
+		children.back()->readPrefix();
+		next();
+		started = true;
+	}
+
+	void readSuffix()
+	{
+		if (started)
+		{
+			pool.wait();
+			if (exception)
+				exception->rethrow();
+			children.back()->readSuffix();
+			started = false;
+		}
+	}
+
 
 	/** Ждать готовность данных не более заданного таймаута. Запустить получение данных, если нужно.
 	  * Если функция вернула true - данные готовы и можно делать read(); нельзя вызвать функцию сразу ещё раз.

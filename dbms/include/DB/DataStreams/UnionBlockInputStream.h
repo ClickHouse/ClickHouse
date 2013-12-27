@@ -116,6 +116,9 @@ public:
 protected:
 	void finalize()
 	{
+		if (threads_data.empty())
+			return;
+
 		LOG_TRACE(log, "Waiting for threads to finish");
 
 		/// Вынем всё, что есть в очереди готовых данных.
@@ -163,15 +166,20 @@ protected:
 		return res.block;
 	}
 
-	void readSuffixImpl()
+	void readSuffix()
 	{
 		if (!all_read && !is_cancelled)
-			throw Exception("readSuffixImpl called before all data is read", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
 
 		/// Может быть, в очереди есть ещё эксепшен.
 		OutputData res;
 		while (output_queue.tryPop(res) && res.exception)
 			res.exception->rethrow();
+
+		finalize();
+
+		for (size_t i = 0; i < children.size(); ++i)
+			children[i]->readSuffix();
 	}
 
 private:
