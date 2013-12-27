@@ -20,16 +20,20 @@ class ExpressionAnalyzer : private boost::noncopyable
 public:
 	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, size_t subquery_depth_ = 0)
 		: ast(ast_), context(context_), settings(context.getSettings()),
-		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(getTable())
+		subquery_depth(subquery_depth_), columns(context.getColumns()), real_columns(context.getColumns()), storage(getTable())
 	{
+		if (storage)
+			columns = storage->getFullColumnsList();
 		init();
 	}
 
 	/// columns - список известных столбцов (которых можно достать из таблицы).
 	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, const NamesAndTypesList & columns_, size_t subquery_depth_ = 0)
 		: ast(ast_), context(context_), settings(context.getSettings()),
-		subquery_depth(subquery_depth_), columns(columns_), storage(getTable())
+		subquery_depth(subquery_depth_), columns(columns_), real_columns(context.getColumns()), storage(getTable())
 	{
+		if (storage)
+			columns = storage->getFullColumnsList();
 		init();
 	}
 	
@@ -92,8 +96,10 @@ private:
 	/// Столбцы, которые упоминаются в выражении, но не были заданы в конструкторе.
 	NameSet unknown_required_columns;
 	
-	/// Исходные столбцы.
+	/// Исходные столбцы, все
 	NamesAndTypesList columns;
+	/// Исходные столбцы, только не виртуальные
+	NamesAndTypesList real_columns;
 	/// Столбцы после ARRAY JOIN. Если нет ARRAY JOIN, совпадает с columns.
 	NamesAndTypesList columns_after_array_join;
 	/// Столбцы после агрегации. Если нет агрегации, совпадает с columns_after_array_join.

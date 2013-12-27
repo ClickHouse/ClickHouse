@@ -439,7 +439,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			if (ASTAsterisk * asterisk = dynamic_cast<ASTAsterisk *>(&*asts[i]))
 			{
 				ASTs all_columns;
-				for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
+				for (NamesAndTypesList::const_iterator it = real_columns.begin(); it != real_columns.end(); ++it)
 					all_columns.push_back(new ASTIdentifier(asterisk->range, it->first));
 				asts.erase(asts.begin() + i);
 				asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());

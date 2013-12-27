@@ -34,7 +34,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_)
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
 	context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
-		? getTable()->getFullColumnsList()
+		? getTable()->getColumnsList()
 		: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
 
 	if (context.getColumns().empty())
