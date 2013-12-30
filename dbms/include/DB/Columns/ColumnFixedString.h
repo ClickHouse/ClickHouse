@@ -95,9 +95,12 @@ public:
 
 	void insertData(const char * pos, size_t length)
 	{
+		if (length > n)
+			throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+
 		size_t old_size = chars.size();
-		chars.resize(old_size + n);
-		memcpy(&chars[old_size], pos, n);
+		chars.resize_fill(old_size + n);
+		memcpy(&chars[old_size], pos, length);
 	}
 
 	void insertDefault()
