@@ -363,7 +363,7 @@ public:
 				throw Exception("Function " + getName() + " needs one array argument.",
 								ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 			
-			const ColumnExpression * column_expression = dynamic_cast<const ColumnExpression *>(&*arguments[0].column);
+			const ColumnExpression * column_expression = dynamic_cast<const ColumnExpression *>(arguments[0].column.get());
 			
 			if (!column_expression)
 				throw Exception("First argument for function " + getName() + " must be an expression.",
