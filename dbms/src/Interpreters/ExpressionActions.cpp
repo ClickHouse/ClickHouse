@@ -142,6 +142,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			if (!array_type)
 				throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 			current.type = array_type->getNestedType();
+			current.column = NULL;
 		}
 	}
 	else if (type == ADD_COLUMN)
