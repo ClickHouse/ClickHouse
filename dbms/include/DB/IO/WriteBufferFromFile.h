@@ -18,8 +18,9 @@ private:
 	std::string file_name;
 	
 public:
-	WriteBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1, mode_t mode = 0666)
-		: WriteBufferFromFileDescriptor(-1, buf_size), file_name(file_name_)
+	WriteBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1, mode_t mode = 0666,
+		char * existing_memory = NULL, size_t alignment = 0)
+		: WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(file_name_)
 	{
 		fd = open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
 		
