@@ -2,7 +2,6 @@
 
 #include <DB/IO/ReadBufferFromString.h>
 
-#include <DB/Storages/StorageSystemProcesses.h>
 #include <DB/Interpreters/executeQuery.h>
 
 #include <DB/Parsers/ASTQueryWithOutput.h>
