@@ -20,6 +20,8 @@ public:
 		char * existing_memory = NULL, size_t alignment = 0)
 		: ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(file_name_)
 	{
+		ProfileEvents::increment(ProfileEvents::FileOpen);
+
 		fd = open(file_name.c_str(), O_RDONLY);
 
 		if (-1 == fd)

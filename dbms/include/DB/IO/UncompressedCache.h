@@ -6,6 +6,7 @@
 #include <Poco/Mutex.h>
 
 #include <DB/Common/SipHash.h>
+#include <DB/Common/ProfileEvents.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/Interpreters/AggregationCommon.h>
 
@@ -68,11 +69,13 @@ public:
 
 		if (cell && cell->key == key)
 		{
+			ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
 			++hits;
 			return cell;
 		}
 		else
 		{
+			ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
 			++misses;
 			return NULL;
 		}

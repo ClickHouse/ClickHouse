@@ -4,6 +4,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <DB/Common/ProfileEvents.h>
+
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
 
@@ -22,6 +24,8 @@ public:
 		char * existing_memory = NULL, size_t alignment = 0)
 		: WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(file_name_)
 	{
+		ProfileEvents::increment(ProfileEvents::FileOpen);
+
 		fd = open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
 		
 		if (-1 == fd)

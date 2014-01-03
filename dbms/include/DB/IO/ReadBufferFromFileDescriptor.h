@@ -3,6 +3,8 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include <DB/Common/ProfileEvents.h>
+
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -27,6 +29,8 @@ protected:
 		size_t bytes_read = 0;
 		while (!bytes_read)
 		{
+			ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
+
 			ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 			if (!res)
 				break;
@@ -84,6 +88,8 @@ public:
 		}
 		else
 		{
+			ProfileEvents::increment(ProfileEvents::Seek);
+
 			pos = working_buffer.end();
 			off_t res = lseek(fd, new_pos, SEEK_SET);
 			if (-1 == res)

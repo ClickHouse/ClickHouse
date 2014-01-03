@@ -29,6 +29,8 @@ namespace DB
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input_)
 {
+	ProfileEvents::increment(ProfileEvents::SelectQuery);
+
 	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
 		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);

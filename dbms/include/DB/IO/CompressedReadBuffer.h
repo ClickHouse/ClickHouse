@@ -7,6 +7,7 @@
 #include <lz4/lz4.h>
 
 #include <DB/Common/PODArray.h>
+#include <DB/Common/ProfileEvents.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadBuffer.h>
@@ -50,6 +51,8 @@ private:
 		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
+		ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed + sizeof(checksum));
+
 		size_decompressed = qlz_size_decompressed(&own_compressed_buffer[0]);
 
 		/// Находится ли сжатый блок целиком в буфере in?
@@ -74,6 +77,9 @@ private:
 
 	void decompress(char * to, size_t size_decompressed)
 	{
+		ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
+		ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
+
 		/// Старший бит первого байта определяет использованный метод сжатия.
 		if ((compressed_buffer[0] & 0x80) == 0)
 		{

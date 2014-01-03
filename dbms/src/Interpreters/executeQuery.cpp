@@ -1,3 +1,5 @@
+#include <DB/Common/ProfileEvents.h>
+
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/DataStreams/BlockIO.h>
@@ -25,6 +27,8 @@ void executeQuery(
 	bool internal,
 	QueryProcessingStage::Enum stage)
 {
+	ProfileEvents::increment(ProfileEvents::Query);
+
 	ParserQuery parser;
 	ASTPtr ast;
 	std::string expected;
@@ -112,6 +116,8 @@ BlockIO executeQuery(
 	bool internal,
 	QueryProcessingStage::Enum stage)
 {
+	ProfileEvents::increment(ProfileEvents::Query);
+	
 	ParserQuery parser;
 	ASTPtr ast;
 	std::string expected;
