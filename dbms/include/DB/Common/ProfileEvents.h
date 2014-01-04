@@ -53,7 +53,7 @@ namespace ProfileEvents
 
 
 	/// Счётчики - сколько раз каждое из событий произошло.
-	extern size_t counters[Event::END];
+	extern size_t counters[END];
 
 
 	/// Увеличить счётчик события. Потокобезопасно.

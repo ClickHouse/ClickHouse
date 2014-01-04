@@ -3,5 +3,5 @@
 
 namespace ProfileEvents
 {
-	size_t counters[Event::END];	/// Глобальная переменная - инициализируется нулями.
+	size_t counters[END];	/// Глобальная переменная - инициализируется нулями.
 }
