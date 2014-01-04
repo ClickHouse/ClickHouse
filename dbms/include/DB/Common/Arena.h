@@ -5,6 +5,7 @@
 #include <vector>
 #include <Poco/SharedPtr.h>
 #include <Yandex/likely.h>
+#include <DB/Common/ProfileEvents.h>
 
 
 namespace DB
@@ -33,6 +34,9 @@ private:
 
 		Chunk(size_t size_, Chunk * prev_)
 		{
+			ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
+			ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
+
 			begin = allocate(size_);
 			pos = begin;
 			end = begin + size_;

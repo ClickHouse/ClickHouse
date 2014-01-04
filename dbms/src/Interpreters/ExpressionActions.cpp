@@ -1,3 +1,4 @@
+#include <DB/Common/ProfileEvents.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
@@ -5,6 +6,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Functions/IFunction.h>
 #include <set>
+
 
 namespace DB
 {
@@ -196,6 +198,7 @@ void ExpressionActions::Action::execute(Block & block) const
 			new_column.type = result_type;
 			block.insert(new_column);
 			
+			ProfileEvents::increment(ProfileEvents::FunctionExecute);
 			function->execute(block, arguments, prerequisites, block.getPositionByName(result_name));
 			
 			break;

@@ -2,6 +2,8 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <DB/Common/ProfileEvents.h>
+
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -66,6 +68,9 @@ private:
 			m_data = NULL;
 			return;
 		}
+
+		ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
+		ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
 
 		if (!alignment)
 		{

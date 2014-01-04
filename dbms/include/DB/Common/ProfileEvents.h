@@ -19,6 +19,11 @@
 	M(CompressedReadBufferBytes, 		"Read decompressed bytes") \
 	M(UncompressedCacheHits, 			"Uncompressed cache hits") \
 	M(UncompressedCacheMisses, 			"Uncompressed cache misses") \
+	M(IOBufferAllocs, 					"IO buffers allocations") \
+	M(IOBufferAllocBytes, 				"IO buffers allocated bytes") \
+	M(ArenaAllocChunks, 				"Arena allocated chunks") \
+	M(ArenaAllocBytes, 					"Arena allocated bytes") \
+	M(FunctionExecute, 					"Function executes") \
 	\
 	M(END, "")
 
