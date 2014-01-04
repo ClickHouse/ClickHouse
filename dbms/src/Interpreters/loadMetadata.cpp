@@ -112,7 +112,7 @@ void loadMetadata(Context & context)
 			{
 				static const size_t in_buf_size = 32768;
 				char in_buf[in_buf_size];
-				ReadBufferFromFile in(tables[j], 32768, in_buf);
+				ReadBufferFromFile in(tables[j], 32768, -1, in_buf);
 				WriteBufferFromString out(s);
 				copyData(in, out);
 			}
