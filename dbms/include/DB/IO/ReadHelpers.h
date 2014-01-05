@@ -516,6 +516,73 @@ inline void readDoubleQuoted(mysqlxx::DateTime & x, ReadBuffer & buf)
 }
 
 
+template <typename T>
+void readBinary(std::vector<T> & x, ReadBuffer & buf)
+{
+	size_t size = 0;
+	readVarUInt(size, buf);
+
+	if (size > DEFAULT_MAX_STRING_SIZE)
+		throw Poco::Exception("Too large vector size.");
+
+	x.resize(size);
+	for (size_t i = 0; i < size; ++i)
+		readBinary(x[i], buf);
+}
+
+template <typename T>
+void readQuoted(std::vector<T> & x, ReadBuffer & buf)
+{
+	bool first = true;
+	assertString("[", buf);
+	while (!buf.eof() && *buf.position() != ']')
+	{
+		if (!first)
+		{
+			if (*buf.position() == ',')
+				++buf.position();
+			else
+				throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+		}
+
+		first = false;
+
+		x.push_back(T());
+		readQuoted(x.back(), buf);
+	}
+	assertString("]", buf);
+}
+
+template <typename T>
+void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
+{
+	bool first = true;
+	assertString("[", buf);
+	while (!buf.eof() && *buf.position() != ']')
+	{
+		if (!first)
+		{
+			if (*buf.position() == ',')
+				++buf.position();
+			else
+				throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+		}
+
+		first = false;
+
+		x.push_back(T());
+		readDoubleQuoted(x.back(), buf);
+	}
+	assertString("]", buf);
+}
+
+template <typename T>
+void readText(std::vector<T> & x, ReadBuffer & buf)
+{
+	readQuoted(x, buf);
+}
+
+
 /// Пропустить пробельные символы.
 inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {

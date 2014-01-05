@@ -127,6 +127,13 @@ struct EscapeManipResult
 		return ostr ;
 	}
 
+
+	template <typename T>
+	std::ostream & operator<< (const std::vector<T> & value)
+	{
+		throw Poco::Exception(std::string(__PRETTY_FUNCTION__) + " is not implemented");
+	}
+
 private:
 
 	void writeEscapedData(const char * data, size_t length)
@@ -207,6 +214,12 @@ public:
 			*this << value.data;
 		}
 		return ostr ;
+	}
+
+	template <typename T>
+	std::ostream & operator<< (const std::vector<T> & value)
+	{
+		throw Poco::Exception(std::string(__PRETTY_FUNCTION__) + " is not implemented");
 	}
 
 private:
@@ -397,6 +410,12 @@ struct UnEscapeManipResult
 		value = DateTime(s);
 		return istr;
 	}
+
+	template <typename T>
+	std::istream & operator>> (std::vector<T> & value)
+	{
+		throw Poco::Exception(std::string(__PRETTY_FUNCTION__) + " is not implemented");
+	}
 };
 
 inline UnEscapeManipResult operator>> (std::istream & istr, unescape_enum manip)
@@ -455,6 +474,12 @@ public:
 			}
 		}
 		throw Poco::Exception("Cannot parse string: unexpected end of input.");
+	}
+
+	template <typename T>
+	std::istream & operator>> (std::vector<T> & value)
+	{
+		throw Poco::Exception(std::string(__PRETTY_FUNCTION__) + " is not implemented");
 	}
 
 private:

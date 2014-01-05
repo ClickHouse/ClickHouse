@@ -535,6 +535,49 @@ inline void writeDoubleQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
 }
 
 
+template <typename T>
+void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
+{
+	size_t size = x.size();
+	writeVarUInt(size, buf);
+	for (size_t i = 0; i < size; ++i)
+		writeBinary(x[i], buf);
+}
+
+template <typename T>
+void writeQuoted(const std::vector<T> & x, WriteBuffer & buf)
+{
+	writeChar('[', buf);
+	for (size_t i = 0, size = x.size(); i < size; ++i)
+	{
+		if (i != 0)
+			writeChar(',', buf);
+		writeQuoted(x[i], buf);
+	}
+	writeChar(']', buf);
+}
+
+template <typename T>
+void writeDoubleQuoted(const std::vector<T> & x, WriteBuffer & buf)
+{
+	writeChar('[', buf);
+	for (size_t i = 0, size = x.size(); i < size; ++i)
+	{
+		if (i != 0)
+			writeChar(',', buf);
+		writeDoubleQuoted(x[i], buf);
+	}
+	writeChar(']', buf);
+}
+
+template <typename T>
+void writeText(const std::vector<T> & x, WriteBuffer & buf)
+{
+	writeQuoted(x, buf);
+}
+
+
+
 /// Сериализация эксепшена (чтобы его можно было передать по сети)
 void writeException(const Exception & e, WriteBuffer & buf);
 
