@@ -27,7 +27,7 @@ Block FilterBlockInputStream::readImpl()
 	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
 	while (1)
 	{
-		res.swap(children.back()->read().ref());	/// Трюк, чтобы работало RVO.
+		res = children.back()->read();
 		if (!res)
 			return res;
 

@@ -176,7 +176,7 @@ Block IProfilingBlockInputStream::read()
 		return res;
 
 	info.work_stopwatch.start();
-	res.swap(readImpl().ref());		/// Трюк, чтобы работало RVO.
+	res = readImpl();
 	info.work_stopwatch.stop();
 
 /*	if (res)

@@ -18,11 +18,6 @@ Block::Block(const Block & other)
 	*this = other;
 }
 
-/*Block::Block(Block && other) noexcept
-{
-	*this = other;
-}*/
-
 
 void Block::addDefaults(NamesAndTypesListPtr required_columns)
 {
@@ -55,15 +50,6 @@ Block & Block::operator= (const Block & other)
 	
 	return *this;
 }
-
-/*Block & Block::operator= (Block && other) noexcept
-{
-	data = std::move(other.data);
-	index_by_position = std::move(other.index_by_position);
-	index_by_name = std::move(other.index_by_name);
-
-	return *this;
-}*/
 
 
 void Block::rebuildIndexByPosition()
