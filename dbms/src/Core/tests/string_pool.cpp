@@ -1,7 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <sparsehash/dense_hash_map>
 
 #include <statdaemons/Stopwatch.h>
@@ -32,8 +32,8 @@ int main(int argc, char ** argv)
 	size_t elems_show = 1;
 
 	typedef std::vector<std::string> Vec;
-	typedef std::tr1::unordered_map<std::string, int> Set;
-	typedef std::tr1::unordered_map<DB::StringRef, int, DB::StringRefHash> RefsSet;
+	typedef std::unordered_map<std::string, int> Set;
+	typedef std::unordered_map<DB::StringRef, int, DB::StringRefHash> RefsSet;
 	typedef google::dense_hash_map<std::string, int> DenseSet;
 	typedef google::dense_hash_map<DB::StringRef, int, DB::StringRefHash> RefsDenseSet;
 	typedef DB::HashMap<DB::StringRef, int, DB::StringRefHash, StringRefZeroTraits> RefsHashMap;
@@ -86,7 +86,7 @@ int main(int argc, char ** argv)
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
 			set[*it] = 0;
 
-		std::cerr << "Inserted into std::tr1::unordered_map in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -106,7 +106,7 @@ int main(int argc, char ** argv)
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
 			set[DB::StringRef(*it)] = 0;
 
-		std::cerr << "Inserted refs into std::tr1::unordered_map in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;
@@ -127,7 +127,7 @@ int main(int argc, char ** argv)
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
 			set[DB::StringRef(pool.insert(it->data(), it->size()), it->size())] = 0;
 
-		std::cerr << "Inserted into pool and refs into std::tr1::unordered_map in " << watch.elapsedSeconds() << " sec, "
+		std::cerr << "Inserted into pool and refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
 			<< vec.size() / watch.elapsedSeconds() << " rows/sec., "
 			<< in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
 			<< std::endl;

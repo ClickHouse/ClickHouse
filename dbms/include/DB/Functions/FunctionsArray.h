@@ -11,7 +11,7 @@
 #include <DB/Interpreters/ClearableHashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
 
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 
 namespace DB
@@ -708,7 +708,7 @@ private:
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
 		size_t prev_off = 0;
-		typedef ClearableHashMap<StringRef, UInt32, std::tr1::hash<StringRef>, table_growth_traits> ValuesToIndices;
+		typedef ClearableHashMap<StringRef, UInt32, std::hash<StringRef>, table_growth_traits> ValuesToIndices;
 		ValuesToIndices indices;
 		for (size_t i = 0; i < offsets.size(); ++i)
 		{

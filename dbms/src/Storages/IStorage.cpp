@@ -113,7 +113,7 @@ void IStorage::check(const Block & block, bool need_all) const
 	const NamesAndTypesList & available_columns = getColumnsList();
 	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
 	
-	typedef std::tr1::unordered_set<String> NameSet;
+	typedef std::unordered_set<String> NameSet;
 	NameSet names_in_block;
 	
 	for (size_t i = 0; i < block.columns(); ++i)

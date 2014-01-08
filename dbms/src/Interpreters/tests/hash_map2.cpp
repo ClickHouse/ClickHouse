@@ -2,7 +2,7 @@
 #include <iomanip>
 #include <vector>
 
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/sparse_hash_map>
@@ -71,13 +71,13 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		std::tr1::unordered_map<Key, Value, DB::default_hash<Key> > map;
+		std::unordered_map<Key, Value, DB::default_hash<Key> > map;
 		for (size_t i = 0; i < n; ++i)
 			++map[data[i]];
 		
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "std::tr1::unordered_map. Size: " << map.size()
+			<< "std::unordered_map. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;

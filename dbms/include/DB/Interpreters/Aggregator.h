@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include <Poco/Mutex.h>
 

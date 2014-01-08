@@ -122,7 +122,7 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 		throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
 	/// http://avva.livejournal.com/2548306.html
-	if (unlikely(std::tr1::is_signed<A>::value && std::tr1::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
+	if (unlikely(std::is_signed<A>::value && std::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
 		throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 

@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include <tr1/functional>
+#include <functional>
 
 
 namespace DB
@@ -73,15 +73,12 @@ namespace DB
 
 namespace std
 {
-	namespace tr1
+	template <>
+	struct hash<DB::StringRef>
 	{
-		template <>
-		struct hash<DB::StringRef>
+		size_t operator()(const DB::StringRef & x) const
 		{
-			size_t operator()(const DB::StringRef & x) const
-			{
-				return CityHash64(x.data, x.size);
-			}
-		};
-	}
+			return CityHash64(x.data, x.size);
+		}
+	};
 }

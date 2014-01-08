@@ -1,8 +1,8 @@
 #pragma once
 
 #include <vector>
-#include <tr1/type_traits>
-#include <tr1/functional>
+#include <type_traits>
+#include <functional>
 
 #include <boost/static_assert.hpp>
 
@@ -161,21 +161,21 @@ public:
 
 	template <typename T> T & get()
 	{
-		typedef typename std::tr1::remove_reference<T>::type TWithoutRef;
+		typedef typename std::remove_reference<T>::type TWithoutRef;
 		TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(storage);
 		return *ptr;
 	};
 
 	template <typename T> const T & get() const
 	{
-		typedef typename std::tr1::remove_reference<T>::type TWithoutRef;
+		typedef typename std::remove_reference<T>::type TWithoutRef;
 		const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(storage);
 		return *ptr;
 	};
 
 	template <typename T> T & safeGet()
 	{
-		const Types::Which requested = TypeToEnum<typename std::tr1::remove_cv<typename std::tr1::remove_reference<T>::type>::type>::value;
+		const Types::Which requested = TypeToEnum<typename std::remove_cv<typename std::remove_reference<T>::type>::type>::value;
 		if (which != requested)
 			throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
 		return get<T>();
@@ -183,7 +183,7 @@ public:
 
 	template <typename T> const T & safeGet() const
 	{
-		const Types::Which requested = TypeToEnum<typename std::tr1::remove_cv<typename std::tr1::remove_reference<T>::type>::type>::value;
+		const Types::Which requested = TypeToEnum<typename std::remove_cv<typename std::remove_reference<T>::type>::type>::value;
 		if (which != requested)
 			throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
 		return get<T>();

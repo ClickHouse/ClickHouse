@@ -34,7 +34,7 @@ namespace test
 		if (unlikely(buf.eof()))
 			DB::throwReadAfterEOF();
 
-		if (std::tr1::is_signed<T>::value && *buf.position() == '-')
+		if (std::is_signed<T>::value && *buf.position() == '-')
 		{
 			++buf.position();
 			negative = true;
@@ -58,7 +58,7 @@ namespace test
 				break;
 		}
 
-		if (std::tr1::is_signed<T>::value && negative)
+		if (std::is_signed<T>::value && negative)
 			x = -x;
 	}
 }

@@ -12,7 +12,7 @@
 #include <fstream>
 #include <iomanip>
 
-#include <tr1/unordered_set>
+#include <unordered_set>
 
 #include <boost/assign/list_inserter.hpp>
 
@@ -129,10 +129,12 @@ class Client : public Poco::Util::Application
 public:
 	Client() : is_interactive(true), stdin_is_not_tty(false), query_id(0),
 		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), processed_rows(0),
-		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0), written_first_block(false) {}
-	
+		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0), written_first_block(false)
+	{
+	}
+
 private:
-	typedef std::tr1::unordered_set<String> StringSet;
+	typedef std::unordered_set<String> StringSet;
 	StringSet exit_strings;
 
 	bool is_interactive;				/// Использовать readline интерфейс или batch режим.

@@ -4,7 +4,7 @@
 #include <limits>
 #include <algorithm>
 
-#include <tr1/type_traits>
+#include <type_traits>
 
 #include <Yandex/Common.h>
 #include <Yandex/DateLUT.h>
@@ -139,7 +139,7 @@ void readIntText(T & x, ReadBuffer & buf)
 			case '+':
 				break;
 			case '-':
-			    if (std::tr1::is_signed<T>::value)
+			    if (std::is_signed<T>::value)
 					negative = true;
 				else
 					return;
@@ -184,7 +184,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 	if (unlikely(buf.eof()))
 		throwReadAfterEOF();
 
-	if (std::tr1::is_signed<T>::value && *buf.position() == '-')
+	if (std::is_signed<T>::value && *buf.position() == '-')
 	{
 		++buf.position();
 		negative = true;
@@ -210,7 +210,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 			break;
 	}
 
-	if (std::tr1::is_signed<T>::value && negative)
+	if (std::is_signed<T>::value && negative)
 		x = -x;
 }
 
@@ -622,7 +622,7 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 			case '+':
 				break;
 			case '-':
-				if (std::tr1::is_signed<T>::value)
+				if (std::is_signed<T>::value)
 					negative = true;
 				else
 					return pos;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string.h>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include <Poco/Timespan.h>
 
@@ -129,7 +129,7 @@ public:
 /// Ключ квоты -> квоты за интервалы. Если квота не допускает ключей, то накопленные значения хранятся по ключу 0.
 struct Quota
 {
-	typedef std::tr1::unordered_map<UInt64, QuotaForIntervals> Container;
+	typedef std::unordered_map<UInt64, QuotaForIntervals> Container;
 
 	String name;
 
@@ -153,7 +153,7 @@ class Quotas
 {
 private:
 	/// Имя квоты -> квоты.
-	typedef std::tr1::unordered_map<String, SharedPtr<Quota> > Container;
+	typedef std::unordered_map<String, SharedPtr<Quota> > Container;
 	Container cont;
 
 public:

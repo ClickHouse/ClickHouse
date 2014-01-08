@@ -15,7 +15,7 @@ static void numWidthVector(const PODArray<T> & a, PODArray<UInt64> & c)
 	for (size_t i = 0; i < size; ++i)
 		if (a[i] >= 0)
 			c[i] = a[i] ? 1 + log10(a[i]) : 1;
-		else if (std::tr1::is_signed<T>::value && a[i] == std::numeric_limits<T>::min())
+		else if (std::is_signed<T>::value && a[i] == std::numeric_limits<T>::min())
 			c[i] = 2 + log10(std::numeric_limits<T>::max());
 		else
 			c[i] = 2 + log10(-a[i]);
@@ -26,7 +26,7 @@ static void numWidthConstant(T a, UInt64 & c)
 {
 	if (a >= 0)
 		c = a ? 1 + log10(a) : 1;
-	else if (std::tr1::is_signed<T>::value && a == std::numeric_limits<T>::min())
+	else if (std::is_signed<T>::value && a == std::numeric_limits<T>::min())
 		c = 2 + log10(std::numeric_limits<T>::max());
 	else
 		c = 2 + log10(-a);
