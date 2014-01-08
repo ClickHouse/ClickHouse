@@ -79,7 +79,12 @@ public:
 
 	StringRef getDataAt(size_t n) const
 	{
-		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		/** Работает для массивов чисел.
+		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам.
+		  */
+		StringRef begin = data->getDataAt(offsetAt(n));
+		StringRef end = data->getDataAt(offsetAt(n) + sizeAt(n));
+		return StringRef(begin.data, end.data - begin.data);
 	}
 
 	void insertData(const char * pos, size_t length)
