@@ -1158,6 +1158,8 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 {
 	joinMergeThreads();
 	
+	/// Кажется тут race condition - в этот момент мердж может запуститься снова.
+
 	std::string new_full_path = new_path_to_db + escapeForFileName(new_name) + '/';
 	
 	Poco::File(full_path).renameTo(new_full_path);
