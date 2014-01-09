@@ -19,6 +19,7 @@
 
 #include <Yandex/logger_useful.h>
 #include <statdaemons/daemon.h>
+#include <statdaemons/HTMLForm.h>
 
 #include <DB/Interpreters/Context.h>
 #include "OLAPQueryParser.h"
@@ -66,18 +67,6 @@ protected:
 	}
 
 	int main(const std::vector<std::string>& args);
-};
-
-
-/// Позволяет получать параметры URL даже если запрос POST.
-struct HTMLForm : public Poco::Net::HTMLForm
-{
-	HTMLForm(Poco::Net::HTTPRequest & request)
-	{
-		Poco::URI uri(request.getURI());
-		std::istringstream istr(uri.getRawQuery());
-		readUrl(istr);
-	}
 };
 
 
