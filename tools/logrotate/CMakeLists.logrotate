@@ -9,14 +9,14 @@
 # NB Тут _не_ используется add_custom_command. по аналогии с init.d скриптом - это делается только потому, что
 # если её использовать, то у cmake сносит крышу, и она начинает путать цели и файлы.
 
-macro (CREATE_LOGROTATE logrotatename daemonname)
-add_custom_target(${logrotatename}-logrotate.target ALL
-    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/logrotate/template > ${CMAKE_CURRENT_BINARY_DIR}/${logrotatename}.logrt
-    COMMAND chmod a+r ${CMAKE_CURRENT_BINARY_DIR}/${logrotatename}.logrt
-    COMMENT "Building ${logrotatename}.logrt"
+macro (CREATE_LOGROTATE daemonname)
+add_custom_target(${daemonname}-logrotate.target ALL
+    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/logrotate/template > ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}.logrt
+    COMMAND chmod a+r ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}.logrt
+    COMMENT "Building ${daemonname}.logrt"
 )
 INSTALL(
-    FILES ${CMAKE_CURRENT_BINARY_DIR}/${logrotatename}.logrt
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}.logrt
     DESTINATION /etc/logrotate.d
     PERMISSIONS OWNER_EXECUTE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
 )

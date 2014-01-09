@@ -16,15 +16,15 @@
 # Оба варианта накладывают странные ограничения, поэтому, учитывая, что само создание init.d файла весьма
 # недорого, было принято решение не использовать add_custom_command
 
-macro (CREATE_INIT_SCRIPT initname daemonname)
-add_custom_target(${initname}.target ALL
-    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
-    COMMAND sed -i 's,[@]CRONFILE[@],${initname}-metrika-yandex,g' ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
-    COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
-    COMMENT "Building ${initname}"
+macro (CREATE_INIT_SCRIPT daemonname)
+add_custom_target(${daemonname}.target ALL
+    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
+    COMMAND sed -i 's,[@]CRONFILE[@],${daemonname}-metrika-yandex,g' ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
+    COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
+    COMMENT "Building ${daemonname}"
 )
 INSTALL(
-    FILES ${CMAKE_CURRENT_BINARY_DIR}/${initname}-metrika-yandex
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
     DESTINATION /etc/init.d
     PERMISSIONS OWNER_EXECUTE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
 )
