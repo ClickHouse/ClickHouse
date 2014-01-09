@@ -17,7 +17,7 @@
 # недорого, было принято решение не использовать add_custom_command
 
 macro (CREATE_INIT_SCRIPT daemonname)
-add_custom_target(${daemonname}.target ALL
+add_custom_target(${daemonname}-init.target ALL
     COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
     COMMAND sed -i 's,[@]CRONFILE[@],${daemonname}-metrika-yandex,g' ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
     COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
