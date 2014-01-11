@@ -89,7 +89,7 @@ private:
 			qlz_decompress(&compressed_buffer[0], to, qlz_state);
 		}
 		else
-			LZ4_uncompress(&compressed_buffer[QUICKLZ_HEADER_SIZE], to, size_decompressed);
+			LZ4_decompress_fast(&compressed_buffer[QUICKLZ_HEADER_SIZE], to, size_decompressed);
 	}
 
 	bool nextImpl()
