@@ -703,7 +703,28 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		&& actions_stack.getSampleBlock().has(ast->getColumnName()))
 		return;
 
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	{
+		std::string name = node->getColumnName();
+		if (!only_consts && !actions_stack.getSampleBlock().has(name))
+		{
+			/// Запрошенного столбца нет в блоке.
+			/// Если такой столбец есть до агрегации, значит пользователь наверно забыл окружить его агрегатной функцией или добавить в GROUP BY.
+
+			bool found = false;
+			for (NamesAndTypesList::const_iterator it = columns_after_array_join.begin();
+					it != columns_after_array_join.end(); ++it)
+				if (it->first == name)
+					found = true;
+
+			if (found)
+				throw Exception("Column " + name + " is not under aggregate function and not in GROUP BY.",
+								ErrorCodes::NOT_AN_AGGREGATE);
+			else
+				throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+		}
+	}
+	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		if (node->kind == ASTFunction::LAMBDA_EXPRESSION)
 			throw Exception("Unexpected expression", ErrorCodes::UNEXPECTED_EXPRESSION);
