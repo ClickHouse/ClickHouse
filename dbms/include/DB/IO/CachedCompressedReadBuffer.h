@@ -145,7 +145,7 @@ public:
 				pos += offset_in_decompressed_block;
 		}
 	}
-
+/*
 	size_t readBig(char * to, size_t n)
 	{
 		/// Если кэш используется, то будем читать через него.
@@ -165,7 +165,7 @@ public:
 
 			return res;
 		}
-	}
+	}*/
 };
 
 }
