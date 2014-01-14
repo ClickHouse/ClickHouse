@@ -26,7 +26,8 @@ private:
 	/// Если в буфере in помещается целый сжатый блок - используем его. Иначе - копируем данные по кусочкам в own_compressed_buffer.
 	PODArray<char> own_compressed_buffer;
 	char * compressed_buffer;
-	
+	size_t size_compressed;
+
 	qlz_state_decompress * qlz_state;
 
 	/** Указатель на кусок памяти, куда будут разжиматься блоки.
@@ -45,9 +46,10 @@ private:
 		uint128 checksum;
 		in.readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
+		own_compressed_buffer.resize(QUICKLZ_HEADER_SIZE);
 		in.readStrict(&own_compressed_buffer[0], QUICKLZ_HEADER_SIZE);
 
-		size_t size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
+		size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
 		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
@@ -178,6 +180,12 @@ public:
 		}
 
 		return bytes_read;
+	}
+
+	/// Для CachedCompressedReadBuffer.
+	size_t getCurrentBlockCompressedSize() const
+	{
+		return size_compressed;
 	}
 };
 

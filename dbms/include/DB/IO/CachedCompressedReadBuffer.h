@@ -86,14 +86,11 @@ private:
 		}
 		else
 		{
-			cur_begin_offset = cur_end_offset;
 			initInput();
-			in->seek(cur_begin_offset);
+			in->seek(cur_end_offset);
 
-			size_t old_count = in->count();
 			if (!compressed_in->next())
 				return false;
-			cur_end_offset += in->count() - old_count;
 
 			syncWithCompressedInput();
 		}
@@ -107,6 +104,8 @@ private:
 		internal_buffer = compressed_in->buffer();
 		working_buffer = compressed_in->buffer();
 		pos = compressed_in->position();
+		cur_end_offset = in->getPositionInFile();
+		cur_begin_offset = cur_end_offset - compressed_in->getCurrentBlockCompressedSize();
 	}
 
 public:
@@ -147,7 +146,6 @@ public:
 		}
 	}
 
-/*
 	size_t readBig(char * to, size_t n)
 	{
 		/// Если кэш используется, то будем читать через него.
@@ -158,19 +156,16 @@ public:
 		else
 		{
 			/// Иначе - вызываем метод CompressedReadBuffer. К сожалению, сложная обёртка.
-			cur_begin_offset = cur_end_offset;
 			initInput();
-			in->seek(cur_begin_offset);
+			in->seek(cur_end_offset);
 
-			size_t old_count = in->count();
 			compressed_in->position() = pos;
 			size_t res = compressed_in->readBig(to, n);
 			syncWithCompressedInput();
-			cur_end_offset += in->count() - old_count;
 
 			return res;
 		}
-	}*/
+	}
 };
 
 }

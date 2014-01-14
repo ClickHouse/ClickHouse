@@ -98,6 +98,11 @@ public:
 			return res;
 		}
 	}
+
+	size_t getPositionInFile()
+	{
+		return pos_in_file - (working_buffer.end() - pos);
+	}
 };
 
 }
