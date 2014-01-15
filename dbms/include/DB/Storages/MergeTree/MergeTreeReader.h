@@ -221,8 +221,9 @@ private:
 			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-			streams.insert(std::make_pair(size_name, new Stream(
-				path + escaped_size_name, uncompressed_cache)));
+			if (!streams.count(size_name))
+				streams.insert(std::make_pair(size_name, new Stream(
+					path + escaped_size_name, uncompressed_cache)));
 
 			addStream(name, *type_arr->getNestedType(), level + 1);
 		}
@@ -231,16 +232,14 @@ private:
 			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-			streams.insert(std::make_pair(size_name, new Stream(
-				path + escaped_size_name, uncompressed_cache)));
+			streams[size_name] = new Stream(path + escaped_size_name, uncompressed_cache);
 
 			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 				addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 		}
 		else
-			streams.insert(std::make_pair(name, new Stream(
-				path + escaped_column_name, uncompressed_cache)));
+			streams[name] = new Stream(path + escaped_column_name, uncompressed_cache);
 	}
 
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,

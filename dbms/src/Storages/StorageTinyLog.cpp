@@ -102,21 +102,22 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+		if (!streams.count(size_name))
+			streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+		streams[size_name] = new Stream(storage.files[size_name].data_file.path());
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
-		streams.insert(std::make_pair(name, new Stream(storage.files[name].data_file.path())));
+		streams[name] = new Stream(storage.files[name].data_file.path());
 }
 
 
@@ -185,21 +186,22 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+		if (streams.count(size_name))
+			streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
 		
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+		streams[size_name] = new Stream(storage.files[size_name].data_file.path());
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
-		streams.insert(std::make_pair(name, new Stream(storage.files[name].data_file.path())));
+		streams[name] = new Stream(storage.files[name].data_file.path());
 }
 
 
