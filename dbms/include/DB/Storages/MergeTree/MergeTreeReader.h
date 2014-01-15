@@ -6,6 +6,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/IO/CachedCompressedReadBuffer.h>
+#include <DB/IO/CompressedReadBufferFromFile.h>
 
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
@@ -139,13 +140,26 @@ private:
 	struct Stream
 	{
 		Poco::SharedPtr<ReadBufferFromFile> marks_buffer;
-		Poco::SharedPtr<CachedCompressedReadBuffer> data_buffer;
+		ReadBuffer * data_buffer;
+		Poco::SharedPtr<CachedCompressedReadBuffer> cached_buffer;
+		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 
 		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache)
 			: marks_buffer(new ReadBufferFromFile(path_prefix + ".mrk", MERGE_TREE_MARK_SIZE)),
-			data_buffer(new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache)),
-			path_prefix(path_prefix) {}
+			path_prefix(path_prefix)
+		{
+			if (uncompressed_cache)
+			{
+				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache);
+				data_buffer = &*cached_buffer;
+			}
+			else
+			{
+				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin");
+				data_buffer = &*non_cached_buffer;
+			}
+		}
 
 		void seekToMark(size_t index)
 		{
@@ -163,7 +177,10 @@ private:
 
 			try
 			{
-				data_buffer->seek(offset_in_compressed_file, offset_in_decompressed_block);
+				if (cached_buffer)
+					cached_buffer->seek(offset_in_compressed_file, offset_in_decompressed_block);
+				if (non_cached_buffer)
+					non_cached_buffer->seek(offset_in_compressed_file, offset_in_decompressed_block);
 			}
 			catch (const Exception & e)
 			{
