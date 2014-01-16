@@ -30,7 +30,9 @@ public:
 	std::string getTableName() const { return name; }
 	
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	
+	NameAndTypePair getColumn(const String &column_name) const;
+	bool hasColumn(const String &column_name) const;
+
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
@@ -62,6 +64,8 @@ private:
 	Logger * log;
 	volatile bool shutdown_called;
 	
+	String _table_column_name;
+
 	StorageChunkMerger(
 		const std::string & this_database_,
 		const std::string & name_,

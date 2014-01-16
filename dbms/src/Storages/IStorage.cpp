@@ -15,6 +15,37 @@
 namespace DB
 {
 
+bool IStorage::hasRealColumn(const String &column_name) const
+{
+	const NamesAndTypesList & real_columns = getColumnsList();
+	for (auto & it : real_columns)
+		if (it.first == column_name)
+			return true;
+	return false;
+}
+
+
+NameAndTypePair IStorage::getRealColumn(const String &column_name) const
+{
+	const NamesAndTypesList & real_columns = getColumnsList();
+	for (auto & it : real_columns)
+		if (it.first == column_name)
+			return it;
+	throw Exception("There is no column " + column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+}
+
+
+bool IStorage::hasColumn(const String &column_name) const
+{
+	return hasRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+}
+
+
+NameAndTypePair IStorage::getColumn(const String &column_name) const
+{
+	return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+}
+
 
 const DataTypePtr IStorage::getDataTypeByName(const String & column_name) const
 {

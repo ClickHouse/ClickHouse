@@ -15,6 +15,7 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
+#include <DB/Common/VirtualColumnUnitls.h>
 
 
 namespace DB
@@ -39,6 +40,18 @@ StoragePtr StorageChunkMerger::create(
 	return (new StorageChunkMerger(this_database_, name_, columns_, source_database_, table_name_regexp_, destination_name_prefix_, chunks_to_merge_, context_))->thisPtr();
 }
 
+NameAndTypePair StorageChunkMerger::getColumn(const String &column_name) const
+{
+	if (column_name == _table_column_name) return std::make_pair(_table_column_name, new DataTypeString);
+	return getRealColumn(column_name);
+}
+
+bool StorageChunkMerger::hasColumn(const String &column_name) const
+{
+	if (column_name == _table_column_name) return true;
+	return hasRealColumn(column_name);
+}
+
 BlockInputStreams StorageChunkMerger::read(
 	const Names & column_names,
 	ASTPtr query,
@@ -49,7 +62,14 @@ BlockInputStreams StorageChunkMerger::read(
 {
 	/// Будем читать из таблиц Chunks, на которые есть хоть одна ChunkRef, подходящая под регэксп, и из прочих таблиц, подходящих под регэксп.
 	Storages selected_tables;
-	
+
+	Names virt_column_names, real_column_names;
+	for (auto & it : column_names)
+		if (it != _table_column_name)
+			real_column_names.push_back(it);
+		else
+			virt_column_names.push_back(it);
+
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 		
@@ -96,7 +116,7 @@ BlockInputStreams StorageChunkMerger::read(
 			}
 		}
 	}
-	
+
 	BlockInputStreams res;
 	
 	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
@@ -106,13 +126,23 @@ BlockInputStreams StorageChunkMerger::read(
 	for (Storages::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 	{
 		BlockInputStreams source_streams = (*it)->read(
-			column_names,
+			real_column_names,
 			query,
 			settings,
 			tmp_processed_stage,
 			max_block_size,
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
 		
+
+		for (auto & virtual_column : virt_column_names)
+		{
+			if (virtual_column == _table_column_name)
+			{
+				for (auto & stream : source_streams)
+					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, (*it)->getTableName(), _table_column_name);
+			}
+		}
+
 		for (BlockInputStreams::iterator jt = source_streams.begin(); jt != source_streams.end(); ++jt)
 			res.push_back(*jt);
 		
@@ -143,6 +173,7 @@ StorageChunkMerger::StorageChunkMerger(
 	log(&Logger::get("StorageChunkMerger")), shutdown_called(false)
 {
 	merge_thread = boost::thread(&StorageChunkMerger::mergeThread, this);
+	_table_column_name = "_table" + chooseSuffix(getColumnsList(), "_table");
 }
 
 void StorageChunkMerger::shutdown()

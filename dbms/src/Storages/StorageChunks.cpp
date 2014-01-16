@@ -5,6 +5,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
+#include <DB/Common/VirtualColumnUnitls.h>
 
 
 namespace DB
@@ -44,6 +45,13 @@ BlockInputStreams StorageChunks::readFromChunk(
 	size_t max_block_size,
 	unsigned threads)
 {
+	Names virt_column_names, real_column_names;
+	for (auto & it : column_names)
+		if (it != _table_column_name)
+			real_column_names.push_back(it);
+		else
+			virt_column_names.push_back(it);
+
 	size_t mark1;
 	size_t mark2;
 	
@@ -56,8 +64,19 @@ BlockInputStreams StorageChunks::readFromChunk(
 		mark1 = chunk_num_to_marks[index];
 		mark2 = index + 1 == chunk_num_to_marks.size() ? marksCount() : chunk_num_to_marks[index + 1];
 	}
-	
-	return read(mark1, mark2, column_names, query, settings, processed_stage, max_block_size, threads);
+
+	BlockInputStreams res = read(mark1, mark2, real_column_names, query, settings, processed_stage, max_block_size, threads);
+
+	for (auto & virtual_column : virt_column_names)
+	{
+		if (virtual_column == _table_column_name)
+		{
+			for (auto & stream : res)
+				stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, chunk_name, _table_column_name);
+		}
+	}
+
+	return res;
 }
 	
 BlockOutputStreamPtr StorageChunks::writeToNewChunk(
@@ -111,6 +130,20 @@ StorageChunks::StorageChunks(
 			context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
 		}
 	}
+
+	_table_column_name = "_table" + chooseSuffix(getColumnsList(), "_table");
+}
+
+NameAndTypePair StorageChunks::getColumn(const String &column_name) const
+{
+	if (column_name == _table_column_name) return std::make_pair(_table_column_name, new DataTypeString);
+	return getRealColumn(column_name);
+}
+
+bool StorageChunks::hasColumn(const String &column_name) const
+{
+	if (column_name == _table_column_name) return true;
+	return hasRealColumn(column_name);
 }
 	
 void StorageChunks::loadIndex()

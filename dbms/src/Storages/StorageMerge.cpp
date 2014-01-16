@@ -1,6 +1,6 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Storages/StorageMerge.h>
-
+#include <DB/Common/VirtualColumnUnitls.h>
 
 namespace DB
 {
@@ -13,6 +13,7 @@ StorageMerge::StorageMerge(
 	const Context & context_)
 	: name(name_), columns(columns_), source_database(source_database_), table_name_regexp(table_name_regexp_), context(context_)
 {
+	_table_column_name = "_table" + chooseSuffix(getColumnsList(), "_table");
 }
 
 StoragePtr StorageMerge::create(
@@ -25,6 +26,17 @@ StoragePtr StorageMerge::create(
 	return (new StorageMerge(name_, columns_, source_database_, table_name_regexp_, context_))->thisPtr();
 }
 
+NameAndTypePair StorageMerge::getColumn(const String &column_name) const
+{
+	if (column_name == _table_column_name) return std::make_pair(_table_column_name, new DataTypeString);
+	return getRealColumn(column_name);
+}
+
+bool StorageMerge::hasColumn(const String &column_name) const
+{
+	if (column_name == _table_column_name) return true;
+	return hasRealColumn(column_name);
+}
 
 BlockInputStreams StorageMerge::read(
 	const Names & column_names,
@@ -35,6 +47,14 @@ BlockInputStreams StorageMerge::read(
 	unsigned threads)
 {
 	BlockInputStreams res;
+
+	Names virt_column_names, real_column_names;
+	for (auto & it : column_names)
+		if (it != _table_column_name)
+			real_column_names.push_back(it);
+		else
+			virt_column_names.push_back(it);
+
 
 	typedef std::vector<StoragePtr> SelectedTables;
 	SelectedTables selected_tables;
@@ -57,12 +77,21 @@ BlockInputStreams StorageMerge::read(
 	for (SelectedTables::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 	{
 		BlockInputStreams source_streams = (*it)->read(
-			column_names,
+			real_column_names,
 			query,
 			settings,
 			tmp_processed_stage,
 			max_block_size,
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
+
+		for (auto & virtual_column : virt_column_names)
+		{
+			if (virtual_column == _table_column_name)
+			{
+				for (auto & stream : source_streams)
+					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, (*it)->getTableName(), _table_column_name);
+			}
+		}
 
 		for (BlockInputStreams::iterator jt = source_streams.begin(); jt != source_streams.end(); ++jt)
 			res.push_back(*jt);

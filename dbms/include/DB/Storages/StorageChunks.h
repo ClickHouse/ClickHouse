@@ -38,7 +38,10 @@ public:
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
-	
+
+	NameAndTypePair getColumn(const String &column_name) const;
+	bool hasColumn(const String &column_name) const;
+
 	BlockOutputStreamPtr writeToNewChunk(
 		const std::string & chunk_name);
 	
@@ -70,6 +73,8 @@ private:
 	
 	Logger * log;
 	
+	String _table_column_name;
+
 	StorageChunks(const std::string & path_,
 				const std::string & name_,
 				const std::string & database_name_,

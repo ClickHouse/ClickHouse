@@ -39,9 +39,25 @@ public:
 	/// Имя самой таблицы (например, hits)
 	virtual std::string getTableName() const = 0;
 
-	/** Получить список имён и типов столбцов таблицы.
+	/** Получить список имён и типов столбцов таблицы, только невиртуальные.
 	  */
 	virtual const NamesAndTypesList & getColumnsList() const = 0;
+
+	/** Получить описание реального (невиртуального) столбца по его имени.
+	  */
+	virtual NameAndTypePair getRealColumn(const String &column_name) const;
+
+	/** Присутствует ли реальный (невиртуальный) столбец с таким именем.
+	  */
+	virtual bool hasRealColumn(const String &column_name) const;
+
+	/** Получить описание любого столбца по его имени.
+	  */
+	virtual NameAndTypePair getColumn(const String &column_name) const;
+
+	/** Присутствует ли столбец с таким именем.
+	  */
+	virtual bool hasColumn(const String &column_name) const;
 
 	const DataTypePtr getDataTypeByName(const String & column_name) const;
 

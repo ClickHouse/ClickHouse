@@ -30,6 +30,8 @@ public:
 	bool supportsSampling() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	NameAndTypePair getColumn(const String &column_name) const;
+	bool hasColumn(const String &column_name) const;
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -53,6 +55,8 @@ private:
 	String source_database;
 	OptimizedRegularExpression table_name_regexp;
 	const Context & context;
+	
+	String _table_column_name;
 	
 	StorageMerge(
 		const std::string & name_,

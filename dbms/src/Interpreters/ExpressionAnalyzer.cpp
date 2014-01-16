@@ -1349,6 +1349,21 @@ void ExpressionAnalyzer::removeUnusedColumns()
 			columns.erase(it0);
 		}
 	}
+
+
+	/// Возможно, среди неизвестных столбцов есть виртуальные. Удаляем их из списка неизвестных и добавляем
+	/// в columns list, чтобы при дальнейшей обработке запроса они воспринимались как настоящие.
+	
+	for (NameSet::iterator it = unknown_required_columns.begin(); it != unknown_required_columns.end();)
+	{
+		NameSet::iterator it0 = it;
+		++it;
+		if (storage && storage->hasColumn(*it0))
+		{
+			unknown_required_columns.erase(it0);
+			columns.push_back(storage->getColumn(*it0));
+		}
+	}
 }
 
 Names ExpressionAnalyzer::getRequiredColumns()
