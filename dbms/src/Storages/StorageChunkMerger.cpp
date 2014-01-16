@@ -173,7 +173,7 @@ StorageChunkMerger::StorageChunkMerger(
 	log(&Logger::get("StorageChunkMerger")), shutdown_called(false)
 {
 	merge_thread = boost::thread(&StorageChunkMerger::mergeThread, this);
-	_table_column_name = "_table" + chooseSuffix(getColumnsList(), "_table");
+	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 }
 
 void StorageChunkMerger::shutdown()

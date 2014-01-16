@@ -131,7 +131,7 @@ StorageChunks::StorageChunks(
 		}
 	}
 
-	_table_column_name = "_table" + chooseSuffix(getColumnsList(), "_table");
+	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 }
 
 NameAndTypePair StorageChunks::getColumn(const String &column_name) const

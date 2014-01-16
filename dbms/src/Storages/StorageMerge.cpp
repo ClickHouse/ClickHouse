@@ -13,7 +13,7 @@ StorageMerge::StorageMerge(
 	const Context & context_)
 	: name(name_), columns(columns_), source_database(source_database_), table_name_regexp(table_name_regexp_), context(context_)
 {
-	_table_column_name = "_table" + chooseSuffix(getColumnsList(), "_table");
+	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 }
 
 StoragePtr StorageMerge::create(

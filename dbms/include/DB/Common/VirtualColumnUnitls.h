@@ -13,6 +13,8 @@
 namespace DB
 {
 
+class VirtualColumnUtils{
+public:
 static String chooseSuffix(const NamesAndTypesList &columns, const String &name)
 {
 	int id = 0;
@@ -102,5 +104,7 @@ static void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Fie
 	for (auto it : ast->children)
 		rewriteEntityInAst(it, column_name, value);
 }
+
+};
 
 }
