@@ -1350,19 +1350,16 @@ void ExpressionAnalyzer::removeUnusedColumns()
 		}
 	}
 
-
 	/// Возможно, среди неизвестных столбцов есть виртуальные. Удаляем их из списка неизвестных и добавляем
 	/// в columns list, чтобы при дальнейшей обработке запроса они воспринимались как настоящие.
-	
 	for (NameSet::iterator it = unknown_required_columns.begin(); it != unknown_required_columns.end();)
 	{
-		NameSet::iterator it0 = it;
-		++it;
-		if (storage && storage->hasColumn(*it0))
+		if (storage && storage->hasColumn(*it))
 		{
-			unknown_required_columns.erase(it0);
-			columns.push_back(storage->getColumn(*it0));
-		}
+			columns.push_back(storage->getColumn(*it));
+			unknown_required_columns.erase(it++);
+		} else
+			++it;
 	}
 }
 
@@ -1376,8 +1373,6 @@ Names ExpressionAnalyzer::getRequiredColumns()
 		res.push_back(it->first);
 	return res;
 }
-
-
 
 void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names)
 {

@@ -64,6 +64,7 @@ private:
 	Logger * log;
 	volatile bool shutdown_called;
 	
+	/// Название виртуального столбца, отвечающего за имя таблицы, из которой идет чтение.
 	String _table_column_name;
 
 	StorageChunkMerger(

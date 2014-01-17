@@ -17,6 +17,8 @@
 
 #include <DB/Storages/StorageLog.h>
 
+#include <DB/DataTypes/DataTypeString.h>
+
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION 	".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION	".mrk"
@@ -30,7 +32,7 @@ using Poco::SharedPtr;
 
 
 LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage, size_t mark_number_, size_t rows_limit_)
-	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(dynamic_cast<StorageLog &>(*owned_storage)), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0)
+	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(dynamic_cast<StorageLog &>(*owned_storage)), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0), current_mark(mark_number_)
 {
 }
 
@@ -48,11 +50,33 @@ Block LogBlockInputStream::readImpl()
 		Poco::ScopedReadRWLock lock(storage.rwlock);
 		
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			addStream(*it, *storage.getDataTypeByName(*it));
+			if (*it != storage._table_column_name) /// Для виртуального столбца не надо ничего открывать
+				addStream(*it, *storage.getDataTypeByName(*it));
 	}
+
+	bool has_virtual_column_table = false;
+	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+		if (*it == storage._table_column_name)
+			has_virtual_column_table = true;
 
 	/// Сколько строк читать для следующего блока.
 	size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
+	const Marks & marks = storage.getMarksWithRealRowCount();
+	std::pair<String, size_t> current_table;
+
+	/// Отдельно обрабатываем виртуальный столбец
+	if (has_virtual_column_table)
+	{
+		size_t current_row = rows_read;
+		if (mark_number > 0)
+			current_row += marks[mark_number-1].rows;
+		while (current_mark < marks.size() && marks[current_mark].rows <= current_row)
+			current_mark ++;
+
+		current_table = storage.getTableFromMark(current_mark);
+		current_table.second = std::min(current_table.second, marks.size() - 1);
+		max_rows_to_read = std::min(max_rows_to_read, marks[current_table.second].rows - current_row);
+	}
 
 	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 	typedef std::map<std::string, ColumnPtr> OffsetColumns;
@@ -60,6 +84,10 @@ Block LogBlockInputStream::readImpl()
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
+		/// Виртуальный столбец не надо считывать с жесткого диска
+		if (*it == storage._table_column_name)
+			continue;
+
 		ColumnWithNameAndType column;
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
@@ -85,6 +113,20 @@ Block LogBlockInputStream::readImpl()
 
 		if (column.column->size())
 			res.insert(column);
+	}
+
+	/// Отдельно обрабатываем виртуальный столбец
+	if (has_virtual_column_table)
+	{
+		size_t rows = max_rows_to_read;
+		if (res.columns() > 0)
+			rows = res.rows();
+		if (rows > 0)
+		{
+			ColumnPtr column_ptr = (new ColumnConst<String> (rows, current_table.first, new DataTypeString))->convertToFullColumn();
+			ColumnWithNameAndType column(column_ptr, new DataTypeString, storage._table_column_name);
+			res.insert(column);
+		}
 	}
 
 	if (res)
@@ -534,7 +576,18 @@ BlockInputStreams StorageLog::read(
 	if (!read_all_data_in_one_thread)
 		loadMarks();
 	
-	check(column_names);
+	bool has_virtual_column = false;
+	Names real_column_names;
+	for (const auto & column : column_names)
+		if (column != _table_column_name)
+			real_column_names.push_back(column);
+		else
+			has_virtual_column = true;
+
+	/// Если есть виртуальный столбец и нет остальных, то ничего проверять не надо
+	if (!(has_virtual_column && real_column_names.size() == 0))
+		check(real_column_names);
+
 	processed_stage = QueryProcessingStage::FetchColumns;
 
 	Poco::ScopedReadRWLock lock(rwlock);

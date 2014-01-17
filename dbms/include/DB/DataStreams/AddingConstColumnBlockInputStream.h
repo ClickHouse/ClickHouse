@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/** Добавляет в блок const column с заданным значением.
+/** Добавляет в блок материализованный const column с заданным значением.
   */
 template <typename ColumnType>
 class AddingConstColumnBlockInputStream : public IProfilingBlockInputStream
@@ -22,7 +22,6 @@ public:
 		String column_name_)
 		: data_type(data_type_), value(value_), column_name(column_name_)
 	{
-		std :: cerr << column_name << " " << value << std :: endl;
 		children.push_back(input_);
 	}
 
@@ -41,7 +40,7 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
-		ColumnPtr column_ptr = new ColumnConst<ColumnType> (res.rows(), value, data_type);
+		ColumnPtr column_ptr = (new ColumnConst<ColumnType> (res.rows(), value, data_type))->convertToFullColumn();
 		ColumnWithNameAndType column(column_ptr, data_type, column_name);
 
 		res.insert(column);

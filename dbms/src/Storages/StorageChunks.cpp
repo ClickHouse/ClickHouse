@@ -5,7 +5,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
-#include <DB/Common/VirtualColumnUnitls.h>
+#include <DB/Common/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -45,13 +45,6 @@ BlockInputStreams StorageChunks::readFromChunk(
 	size_t max_block_size,
 	unsigned threads)
 {
-	Names virt_column_names, real_column_names;
-	for (auto & it : column_names)
-		if (it != _table_column_name)
-			real_column_names.push_back(it);
-		else
-			virt_column_names.push_back(it);
-
 	size_t mark1;
 	size_t mark2;
 	
@@ -65,18 +58,7 @@ BlockInputStreams StorageChunks::readFromChunk(
 		mark2 = index + 1 == chunk_num_to_marks.size() ? marksCount() : chunk_num_to_marks[index + 1];
 	}
 
-	BlockInputStreams res = read(mark1, mark2, real_column_names, query, settings, processed_stage, max_block_size, threads);
-
-	for (auto & virtual_column : virt_column_names)
-	{
-		if (virtual_column == _table_column_name)
-		{
-			for (auto & stream : res)
-				stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, chunk_name, _table_column_name);
-		}
-	}
-
-	return res;
+	return read(mark1, mark2, column_names, query, settings, processed_stage, max_block_size, threads);
 }
 	
 BlockOutputStreamPtr StorageChunks::writeToNewChunk(
@@ -92,6 +74,7 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 		chunk_indices[chunk_name] = chunk_num_to_marks.size();
 		appendChunkToIndex(chunk_name, mark);
 		chunk_num_to_marks.push_back(mark);
+		chunk_names.push_back(chunk_name);
 	}
 	
 	return StorageLog::write(NULL);
@@ -145,6 +128,17 @@ bool StorageChunks::hasColumn(const String &column_name) const
 	if (column_name == _table_column_name) return true;
 	return hasRealColumn(column_name);
 }
+
+std::pair<String, size_t> StorageChunks::getTableFromMark(size_t mark) const
+{
+	/// Находим последний <= элемент в массие
+	size_t pos = std::upper_bound(chunk_num_to_marks.begin(), chunk_num_to_marks.end(), mark) - chunk_num_to_marks.begin() - 1;
+	/// Вычисляем номер засечки до которой будет длится текущая таблица
+	size_t last = std::numeric_limits<size_t>::max();
+	if (pos + 1 < chunk_num_to_marks.size())
+		last = chunk_num_to_marks[pos + 1] - 1;
+	return std::make_pair(chunk_names[pos], last);
+}
 	
 void StorageChunks::loadIndex()
 {
@@ -168,6 +162,7 @@ void StorageChunks::loadIndex()
 		
 		chunk_indices[name] = chunk_num_to_marks.size();
 		chunk_num_to_marks.push_back(mark);
+		chunk_names.push_back(name);
 	}
 }
 

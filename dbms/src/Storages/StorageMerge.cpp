@@ -1,6 +1,6 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Storages/StorageMerge.h>
-#include <DB/Common/VirtualColumnUnitls.h>
+#include <DB/Common/VirtualColumnUtils.h>
 
 namespace DB
 {

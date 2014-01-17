@@ -15,7 +15,7 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
-#include <DB/Common/VirtualColumnUnitls.h>
+#include <DB/Common/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -62,13 +62,6 @@ BlockInputStreams StorageChunkMerger::read(
 {
 	/// Будем читать из таблиц Chunks, на которые есть хоть одна ChunkRef, подходящая под регэксп, и из прочих таблиц, подходящих под регэксп.
 	Storages selected_tables;
-
-	Names virt_column_names, real_column_names;
-	for (auto & it : column_names)
-		if (it != _table_column_name)
-			real_column_names.push_back(it);
-		else
-			virt_column_names.push_back(it);
 
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
@@ -125,6 +118,18 @@ BlockInputStreams StorageChunkMerger::read(
 	
 	for (Storages::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 	{
+		/// Список виртуальных столбцов, которые мы заполним сейчас и список столбцов, которые передадим дальше
+		Names virt_column_names, real_column_names;
+		for (const auto & column : column_names)
+			if (column == _table_column_name && (*it)->getName() != "Chunks") /// таблица Chunks сама заполняет столбец _table
+				virt_column_names.push_back(column);
+			else
+				real_column_names.push_back(column);
+
+		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
+		if (real_column_names.size() == 0)
+			real_column_names.push_back((*it)->getColumnsList().begin()->first);
+
 		BlockInputStreams source_streams = (*it)->read(
 			real_column_names,
 			query,
@@ -132,14 +137,16 @@ BlockInputStreams StorageChunkMerger::read(
 			tmp_processed_stage,
 			max_block_size,
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
-		
 
-		for (auto & virtual_column : virt_column_names)
+		/// Добавляем в ответ вирутальные столбцы
+		for (const auto & virtual_column : virt_column_names)
 		{
 			if (virtual_column == _table_column_name)
 			{
 				for (auto & stream : source_streams)
+				{
 					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, (*it)->getTableName(), _table_column_name);
+				}
 			}
 		}
 

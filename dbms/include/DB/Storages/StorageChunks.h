@@ -57,24 +57,31 @@ public:
 	{
 		throw Exception("Table doesn't support renaming", ErrorCodes::NOT_IMPLEMENTED);
 	}
+
+protected:
+	/// Виртуальная функция из StorageLog
+	/// По номеру засечки получить имя таблицы, из которой идет чтение и номер последней засечки из этой таблицы.
+	std::pair<String, size_t> getTableFromMark(size_t mark) const;
+
 private:
 	/// Имя чанка - номер (в последовательности, как чанки записаны в таблице).
 	typedef std::map<String, size_t> ChunkIndices;
 	/// Номер чанка - засечка, с которой начинаются данные таблицы.
 	typedef std::vector<size_t> ChunkNumToMark;
-	
+	/// Номер чанка - имя чанка.
+	typedef std::vector<String> ChunkNumToChunkName;
+
 	String database_name;
 	
 	ChunkNumToMark chunk_num_to_marks;
 	ChunkIndices chunk_indices;
+	ChunkNumToChunkName chunk_names;
 	
 	CounterInFile reference_counter;
 	Context & context;
 	
 	Logger * log;
 	
-	String _table_column_name;
-
 	StorageChunks(const std::string & path_,
 				const std::string & name_,
 				const std::string & database_name_,
