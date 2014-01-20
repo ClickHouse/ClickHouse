@@ -186,7 +186,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		if (streams.count(size_name))
+		if (!streams.count(size_name))
 			streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
 		
 		addStream(name, *type_arr->getNestedType(), level + 1);
