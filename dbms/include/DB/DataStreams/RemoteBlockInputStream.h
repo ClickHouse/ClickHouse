@@ -3,6 +3,7 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Common/VirtualColumnUtils.h>
 
 #include <DB/Client/ConnectionPool.h>
 
@@ -16,8 +17,8 @@ class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
-		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: connection(connection_), query(query_), stage(stage_),
+						QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: connection(connection_), query(query_), _host_column(""), _port_column(""), stage(stage_),
 		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
@@ -33,9 +34,24 @@ public:
 	/// Захватывает владение соединением из пула.
 	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), stage(stage_),
-		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
-		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
+		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), _host_column(""),
+		_port_column(""), stage(stage_), sent_query(false), finished(false), was_cancelled(false),
+		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
+	{
+		if (settings_)
+		{
+			send_settings = true;
+			settings = *settings_;
+		}
+		else
+			send_settings = false;
+	}
+
+	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
+		const String & _host_column_, const String & _port_column_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), _host_column(_host_column_),
+		_port_column(_port_column_), stage(stage_), sent_query(false), finished(false), was_cancelled(false),
+		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
 		if (settings_)
 		{
@@ -90,6 +106,22 @@ public:
 	}
 
 protected:
+	void populateBlock(Block & res)
+	{
+		if (_host_column != "")
+		{
+			ColumnPtr column_ptr = ColumnConst<String> (res.rows(), connection.getHost(), new DataTypeString).convertToFullColumn();
+			ColumnWithNameAndType column(column_ptr, new DataTypeString, _host_column);
+			res.insert(column);
+		}
+		if (_port_column != "")
+		{
+			ColumnPtr column_ptr = ColumnConst<UInt16> (res.rows(), connection.getPort(), new DataTypeUInt16).convertToFullColumn();
+			ColumnWithNameAndType column(column_ptr, new DataTypeUInt16, _port_column);
+			res.insert(column);
+		}
+	}
+
 	Block readImpl()
 	{
 		if (!sent_query)
@@ -107,7 +139,10 @@ protected:
 				case Protocol::Server::Data:
 					/// Если блок не пуст и не является заголовочным блоком
 					if (packet.block && packet.block.rows() > 0)
+					{
+						populateBlock(packet.block);
 						return packet.block;
+					}
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
 				case Protocol::Server::Exception:
@@ -214,6 +249,10 @@ private:
 	const String query;
 	bool send_settings;
 	Settings settings;
+	/// Имя столбца, куда записать имя хоста. Пустая строка, если записывать не надо.
+	String _host_column;
+	/// Имя столбца, куда записать номер порта. Пустая строка, если записывать не надо.
+	String _port_column;
 	QueryProcessingStage::Enum stage;
 
 	/// Отправили запрос (это делается перед получением первого блока).

@@ -104,6 +104,16 @@ public:
 	  */
 	void disconnect();
 
+	const std::string & getHost() const
+	{
+		return host;
+	}
+
+	UInt16 getPort() const
+	{
+		return port;
+	}
+
 private:
 	String host;
 	UInt16 port;

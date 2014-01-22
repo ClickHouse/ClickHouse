@@ -49,7 +49,7 @@ BlockInputStreams StorageMerge::read(
 	BlockInputStreams res;
 
 	Names virt_column_names, real_column_names;
-	for (auto & it : column_names)
+	for (const auto & it : column_names)
 		if (it != _table_column_name)
 			real_column_names.push_back(it);
 		else

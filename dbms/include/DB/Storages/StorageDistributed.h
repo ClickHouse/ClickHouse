@@ -38,6 +38,8 @@ public:
 	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	NameAndTypePair getColumn(const String &column_name) const;
+	bool hasColumn(const String &column_name) const;
 
 	bool isRemote() const { return true; }
 
@@ -73,6 +75,9 @@ private:
 	String remote_table;
 	const DataTypeFactory & data_type_factory;
 	String sign_column_name;
+
+	String _host_column_name;
+	String _port_column_name;
 
 	const Context & context;
 	Cluster & cluster;

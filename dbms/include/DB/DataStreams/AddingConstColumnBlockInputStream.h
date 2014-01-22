@@ -42,7 +42,6 @@ protected:
 			return res;
 		ColumnPtr column_ptr = ColumnConst<ColumnType> (res.rows(), value, data_type).convertToFullColumn();
 		ColumnWithNameAndType column(column_ptr, data_type, column_name);
-
 		res.insert(column);
 		return res;
 	}

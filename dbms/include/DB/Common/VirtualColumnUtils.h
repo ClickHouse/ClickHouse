@@ -13,11 +13,11 @@
 namespace DB
 {
 
-class VirtualColumnUtils
+namespace VirtualColumnUtils
 {
-public:
+
 /// Вычислить минимальный числовый суффикс, который надо добавить к строке, чтобы она не присутствовала в множестве
-static String chooseSuffix(const NamesAndTypesList & columns, const String & name)
+inline String chooseSuffix(const NamesAndTypesList & columns, const String & name)
 {
 	int id = 0;
 	String current_suffix;
@@ -39,7 +39,7 @@ static String chooseSuffix(const NamesAndTypesList & columns, const String & nam
 
 /// Вычислить минимальный общий числовый суффикс, который надо добавить к каждой строке,
 /// чтобы ниодна не присутствовала в множестве.
-static String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<String> & names)
+inline String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<String> & names)
 {
 	int id = 0;
 	String current_suffix;
@@ -67,45 +67,19 @@ static String chooseSuffixForSet(const NamesAndTypesList & columns, const std::v
 	return current_suffix;
 }
 
-/// На данный момент не дописана и не используется.
-static void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field &value)
+/// Добавляет в селект запрос секцию select clumn_name as value
+/// Например select _port as 9000.
+inline void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
-	{
-		ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*ast);
-		ASTExpressionList & node = dynamic_cast<ASTExpressionList &>(*select.select_expression_list);
-		ASTs & asts = node.children;
-		ASTLiteral * cur = new ASTLiteral(StringRange(NULL, NULL), value);
-		cur->alias = column_name;
-		ASTPtr column_value = cur;
-		asts.insert(asts.begin(), column_value);
-		return;
-	}
-
-	if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
-	{
-		ASTs & asts = node->children;
-		for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
-		{
-			if (ASTIdentifier * child = dynamic_cast<ASTIdentifier *>(&*asts[i]))
-			{
-				if (child->kind == ASTIdentifier::Column && child->getColumnName() == column_name)
-				{
-					ASTLiteral * cur = new ASTLiteral(StringRange(NULL, NULL), value);
-					cur->alias = column_name;
-
-					ASTPtr column_value = cur;
-
-					asts.erase(asts.begin() + i);
-					asts.insert(asts.begin() + i, column_value);
-				}
-			}
-		}
-	}
-
-	for (auto it : ast->children)
-		rewriteEntityInAst(it, column_name, value);
+	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery & >(*ast);
+	ASTExpressionList & node = dynamic_cast<ASTExpressionList & >(*select.select_expression_list);
+	ASTs & asts = node.children;
+	ASTLiteral * cur = new ASTLiteral(StringRange(NULL, NULL), value);
+	cur->alias = column_name;
+	ASTPtr column_value = cur;
+	asts.insert(asts.begin(), column_value);
 }
 
-};
+}
 
 }
