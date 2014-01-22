@@ -40,7 +40,7 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
-		ColumnPtr column_ptr = (new ColumnConst<ColumnType> (res.rows(), value, data_type))->convertToFullColumn();
+		ColumnPtr column_ptr = ColumnConst<ColumnType> (res.rows(), value, data_type).convertToFullColumn();
 		ColumnWithNameAndType column(column_ptr, data_type, column_name);
 
 		res.insert(column);

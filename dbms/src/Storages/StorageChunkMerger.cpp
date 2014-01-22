@@ -128,7 +128,7 @@ BlockInputStreams StorageChunkMerger::read(
 
 		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 		if (real_column_names.size() == 0)
-			real_column_names.push_back((*it)->getColumnsList().begin()->first);
+			real_column_names.push_back(ExpressionActions::getSmallestColumn((*it)->getColumnsList()));
 
 		BlockInputStreams source_streams = (*it)->read(
 			real_column_names,

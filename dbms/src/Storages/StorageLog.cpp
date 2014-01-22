@@ -123,7 +123,7 @@ Block LogBlockInputStream::readImpl()
 			rows = res.rows();
 		if (rows > 0)
 		{
-			ColumnPtr column_ptr = (new ColumnConst<String> (rows, current_table.first, new DataTypeString))->convertToFullColumn();
+			ColumnPtr column_ptr = ColumnConst<String> (rows, current_table.first, new DataTypeString).convertToFullColumn();
 			ColumnWithNameAndType column(column_ptr, new DataTypeString, storage._table_column_name);
 			res.insert(column);
 		}

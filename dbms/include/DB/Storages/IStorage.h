@@ -45,19 +45,19 @@ public:
 
 	/** Получить описание реального (невиртуального) столбца по его имени.
 	  */
-	virtual NameAndTypePair getRealColumn(const String &column_name) const;
+	virtual NameAndTypePair getRealColumn(const String & column_name) const;
 
 	/** Присутствует ли реальный (невиртуальный) столбец с таким именем.
 	  */
-	virtual bool hasRealColumn(const String &column_name) const;
+	virtual bool hasRealColumn(const String & column_name) const;
 
 	/** Получить описание любого столбца по его имени.
 	  */
-	virtual NameAndTypePair getColumn(const String &column_name) const;
+	virtual NameAndTypePair getColumn(const String & column_name) const;
 
 	/** Присутствует ли столбец с таким именем.
 	  */
-	virtual bool hasColumn(const String &column_name) const;
+	virtual bool hasColumn(const String & column_name) const;
 
 	const DataTypePtr getDataTypeByName(const String & column_name) const;
 
