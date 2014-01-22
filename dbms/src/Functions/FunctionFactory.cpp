@@ -123,6 +123,13 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "toStartOfYear")				return new FunctionToStartOfYear;
 	else if (name == "toStartOfMinute")			return new FunctionToStartOfMinute;
 	else if (name == "toStartOfHour")				return new FunctionToStartOfHour;
+	else if (name == "toRelativeYearNum")			return new FunctionToRelativeYearNum;
+	else if (name == "toRelativeMonthNum")			return new FunctionToRelativeMonthNum;
+	else if (name == "toRelativeWeekNum")			return new FunctionToRelativeWeekNum;
+	else if (name == "toRelativeDayNum")			return new FunctionToRelativeDayNum;
+	else if (name == "toRelativeHourNum")			return new FunctionToRelativeHourNum;
+	else if (name == "toRelativeMinuteNum")			return new FunctionToRelativeMinuteNum;
+	else if (name == "toRelativeSecondNum")			return new FunctionToRelativeSecondNum;
 	else if (name == "toTime")						return new FunctionToTime;
 	else if (name == "now")							return new FunctionNow;
 	else if (name == "timeSlot")					return new FunctionTimeSlot;
@@ -206,6 +213,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "regionToCity")				return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchy());
 	else if (name == "regionToArea")				return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchy());
 	else if (name == "regionToCountry")			return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "regionToContinent")			return new FunctionRegionToContinent(context.getDictionaries().getRegionsHierarchy());
 	else if (name == "OSToRoot")					return new FunctionOSToRoot(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEToRoot")					return new FunctionSEToRoot(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryToRoot")				return new FunctionCategoryToRoot(context.getDictionaries().getCategoriesHierarchy());

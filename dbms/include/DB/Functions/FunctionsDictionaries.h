@@ -53,6 +53,11 @@ struct RegionToCountryImpl
 	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toCountry(x); }
 };
 
+struct RegionToContinentImpl
+{
+	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toContinent(x); }
+};
+
 struct OSToRootImpl
 {
 	static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToMostAncestor(x); }
@@ -380,6 +385,7 @@ public:
 struct NameRegionToCity 	{ static const char * get() { return "regionToCity"; } };
 struct NameRegionToArea 	{ static const char * get() { return "regionToArea"; } };
 struct NameRegionToCountry 	{ static const char * get() { return "regionToCountry"; } };
+struct NameRegionToContinent{ static const char * get() { return "regionToContient"; } };
 struct NameOSToRoot 		{ static const char * get() { return "OSToRoot"; } };
 struct NameSEToRoot 		{ static const char * get() { return "SEToRoot"; } };
 struct NameCategoryToRoot 	{ static const char * get() { return "categoryToRoot"; } };
@@ -399,6 +405,7 @@ struct NameCategoryHierarchy{ static const char * get() { return "categoryHierar
 typedef FunctionTransformWithDictionary<UInt32,	RegionToCityImpl,	RegionsHierarchy,	NameRegionToCity> 		FunctionRegionToCity;
 typedef FunctionTransformWithDictionary<UInt32,	RegionToAreaImpl,	RegionsHierarchy,	NameRegionToArea> 		FunctionRegionToArea;
 typedef FunctionTransformWithDictionary<UInt32,	RegionToCountryImpl,RegionsHierarchy,	NameRegionToCountry> 	FunctionRegionToCountry;
+typedef FunctionTransformWithDictionary<UInt32,	RegionToContinentImpl,	RegionsHierarchy,	NameRegionToContinent> 		FunctionRegionToContinent;
 typedef FunctionTransformWithDictionary<UInt8,		OSToRootImpl,		TechDataHierarchy,	NameOSToRoot> 			FunctionOSToRoot;
 typedef FunctionTransformWithDictionary<UInt8,		SEToRootImpl,		TechDataHierarchy,	NameSEToRoot>			FunctionSEToRoot;
 typedef FunctionTransformWithDictionary<UInt16,	CategoryToRootImpl,	CategoriesHierarchy,NameCategoryToRoot>	FunctionCategoryToRoot;

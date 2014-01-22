@@ -150,6 +150,58 @@ struct ToStartOfHourImpl
 	}
 };
 
+struct ToRelativeYearNumImpl
+{
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toYear(t); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toYear(DayNum_t(d)); }
+};
+
+struct ToRelativeMonthNumImpl
+{
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeMonthNum(t); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toRelativeMonthNum(DayNum_t(d)); }
+};
+
+struct ToRelativeWeekNumImpl
+{
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeWeekNum(t); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toRelativeWeekNum(DayNum_t(d)); }
+};
+
+struct ToRelativeDayNumImpl
+{
+	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeDayNum(t); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return date_lut.toRelativeDayNum(DayNum_t(d)); }
+};
+
+
+struct ToRelativeHourNumImpl
+{
+	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeHourNum(t); }
+	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
+	{
+		throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+};
+
+struct ToRelativeMinuteNumImpl
+{
+	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeMinuteNum(t); }
+	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
+	{
+		throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+};
+
+struct ToRelativeSecondNumImpl
+{
+	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeSecondNum(t); }
+	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
+	{
+		throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+};
+
 
 template <typename FromType, typename ToType, typename Transform, typename Name>
 struct DateTimeTransformImpl
@@ -467,6 +519,14 @@ struct NameToStartOfYear	{ static const char * get() { return "toStartOfYear"; }
 struct NameToStartOfMinute	{ static const char * get() { return "toStartOfMinute"; } };
 struct NameToStartOfHour	{ static const char * get() { return "toStartOfHour"; } };
 struct NameToTime 			{ static const char * get() { return "toTime"; } };
+struct NameToRelativeYearNum	{ static const char * get() { return "toRelativeYearNum"; } };
+struct NameToRelativeMonthNum	{ static const char * get() { return "toRelativeMonthNum"; } };
+struct NameToRelativeWeekNum	{ static const char * get() { return "toRelativeWeekNum"; } };
+struct NameToRelativeDayNum		{ static const char * get() { return "toRelativeDayNum"; } };
+struct NameToRelativeHourNum	{ static const char * get() { return "toRelativeHourNum"; } };
+struct NameToRelativeMinuteNum	{ static const char * get() { return "toRelativeMinuteNum"; } };
+struct NameToRelativeSecondNum	{ static const char * get() { return "toRelativeSecondNum"; } };
+
 
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToYearImpl, 		NameToYear> 		FunctionToYear;
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt8,	ToMonthImpl, 		NameToMonth> 		FunctionToMonth;
@@ -482,5 +542,15 @@ typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfYearImpl, 	Nam
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfMinuteImpl, NameToStartOfMinute> FunctionToStartOfMinute;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfHourImpl, 	NameToStartOfHour> 	FunctionToStartOfHour;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToTimeImpl, 		NameToTime> 		FunctionToTime;
+
+typedef FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToRelativeYearNumImpl, 		NameToRelativeYearNum> 		FunctionToRelativeYearNum;
+typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeMonthNumImpl, 	NameToRelativeMonthNum> 	FunctionToRelativeMonthNum;
+typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeWeekNumImpl, 		NameToRelativeWeekNum> 		FunctionToRelativeWeekNum;
+typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeDayNumImpl, 		NameToRelativeDayNum> 		FunctionToRelativeDayNum;
+
+typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeHourNumImpl, 		NameToRelativeHourNum> 		FunctionToRelativeHourNum;
+typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeMinuteNumImpl, 	NameToRelativeMinuteNum> 	FunctionToRelativeMinuteNum;
+typedef FunctionDateOrDateTimeToSomething<DataTypeUInt32,	ToRelativeSecondNumImpl, 	NameToRelativeSecondNum> 	FunctionToRelativeSecondNum;
+
 
 }
