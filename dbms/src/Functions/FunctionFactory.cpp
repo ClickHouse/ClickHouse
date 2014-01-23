@@ -77,6 +77,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "reverseUTF8")				return new FunctionReverseUTF8;
 	else if (name == "concat")						return new FunctionConcat;
 	else if (name == "substring")					return new FunctionSubstring;
+	else if (name == "replace")						return new FunctionReplace;
 	else if (name == "substringUTF8")				return new FunctionSubstringUTF8;
 	else if (name == "bitmaskToList")				return new FunctionBitmaskToList;
 	else if (name == "bitmaskToArray")				return new FunctionBitmaskToArray;
