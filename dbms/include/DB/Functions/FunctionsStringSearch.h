@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Poco/Mutex.h>
+#include <boost/concept_check.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
 
 #include <statdaemons/OptimizedRegularExpression.h>
 
@@ -381,6 +383,251 @@ struct ExtractImpl
 };
 
 
+/** Заменить все вхождения подстроки needle на строку replacement. needle и replacement - константы.
+  */
+template <bool replaceOne = false>
+struct ReplaceImpl
+{
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		const std::string & needle, const std::string & replacement,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+	{
+		const UInt8 * begin = &data[0];
+		const UInt8 * pos = begin;
+		const UInt8 * end = pos + data.size();
+
+		ColumnString::Offset_t res_offset = 0;
+		res_data.reserve(data.size());
+		size_t size = offsets.size();
+		res_offsets.resize(size);
+
+		/// Текущий индекс в массиве строк.
+		size_t i = 0;
+
+		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+
+		/// Искать будем следующее вхождение сразу во всех строках.
+		while (pos < end)
+		{
+			const UInt8 * match = searcher.search(pos, end - pos);
+
+			/// Копируем данные без изменения
+			res_data.resize(res_data.size() + (match - pos));
+			memcpy(&res_data[res_offset], pos, match - pos);
+
+			/// Определим, к какому индексу оно относится.
+			while (i < offsets.size() && begin + offsets[i] < match)
+			{
+				res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
+				++i;
+			}
+			res_offset += (match - pos);
+
+			/// Если дошли до конца, пора остановиться
+			if (i == offsets.size())
+				break;
+
+			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+			bool can_finish_current_string = false;
+
+			/// Проверяем, что вхождение не переходит через границы строк.
+			if (match + needle.size() < begin + offsets[i])
+			{
+				res_data.resize(res_data.size() + replacement.size());
+				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+				res_offset += replacement.size();
+				pos = match + needle.size();
+				if (replaceOne)
+					can_finish_current_string = true;
+			}
+			else
+				can_finish_current_string = true;
+
+			if (can_finish_current_string)
+			{
+				res_data.resize(res_data.size() + (begin + offsets[i] - match));
+				memcpy(&res_data[res_offset], match, (begin + offsets[i] - match));
+				res_offsets[i] = res_offset + (begin + offsets[i] - match);
+				pos = begin + offsets[i];
+			}
+		}
+	}
+
+	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
+		const std::string & needle, const std::string & replacement,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+	{
+		const UInt8 * begin = &data[0];
+		const UInt8 * pos = begin;
+		const UInt8 * end = pos + data.size();
+
+		ColumnString::Offset_t res_offset = 0;
+		size_t size = data.size() / n;
+		res_data.reserve(data.size());
+		res_offsets.resize(size);
+
+		/// Текущий индекс в массиве строк.
+		size_t i = 0;
+
+		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+
+		/// Искать будем следующее вхождение сразу во всех строках.
+		while (pos < end)
+		{
+			const UInt8 * match = searcher.search(pos, end - pos);
+
+			/// Копируем данные без изменения
+			res_data.resize(res_data.size() + (match - pos));
+			memcpy(&res_data[res_offset], pos, match - pos);
+
+			/// Определим, к какому индексу оно относится.
+			while (i < size && begin + n * (i + 1) < match)
+			{
+				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos);
+				++i;
+			}
+			res_offset += (match - pos);
+
+			/// Если дошли до конца, пора остановиться
+			if (i == size)
+				break;
+
+			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+			bool can_finish_current_string = false;
+
+			/// Проверяем, что вхождение не переходит через границы строк.
+			if (match + needle.size() < begin + n * (i + 1))
+			{
+				res_data.resize(res_data.size() + replacement.size());
+				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+				res_offset += replacement.size();
+				pos = match + needle.size();
+				if (replaceOne)
+					can_finish_current_string = true;
+			}
+			else
+				can_finish_current_string = true;
+
+			if (can_finish_current_string)
+			{
+				res_data.resize(res_data.size() + (begin + n * (i + 1) - match));
+				memcpy(&res_data[res_offset], match, (begin + n * (i + 1) - match));
+				res_offsets[i] = res_offset + (begin + n * (i + 1) - match);
+				pos = begin + n * (i + 1);
+			}
+		}
+	}
+
+	static void constant(const std::string & data, const std::string & needle, const std::string & replacement,
+		std::string & res_data)
+	{
+		res_data = "";
+		int replace_cnt = 0;
+		for (size_t i = 0; i < data.size(); ++i)
+		{
+			bool match = true;
+			if (i + needle.size() > data.size() || (replaceOne && replace_cnt > 0))
+				match = false;
+			for (size_t j = 0; match && j < needle.size(); ++j)
+				if (data[i + j] != needle[j])
+					match = false;
+			if (match)
+			{
+				replace_cnt ++;
+				res_data += replacement;
+				i = i + needle.size() - 1;
+			} else
+				res_data += data[i];
+		}
+	}
+};
+
+
+template <typename Impl, typename Name>
+class FunctionStringReplace : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return Name::get();
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 3)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 3.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeString;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr column_src = block.getByPosition(arguments[0]).column;
+		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+		const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
+
+		if (!column_needle->isConst() || !column_replacement->isConst())
+			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
+
+
+		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
+		const IColumn * c2 = &*block.getByPosition(arguments[2]).column;
+		const ColumnConstString * c1_const = dynamic_cast<const ColumnConstString *>(c1);
+		const ColumnConstString * c2_const = dynamic_cast<const ColumnConstString *>(c2);
+		String needle = c1_const->getData();
+		String replacement = c2_const->getData();
+
+		if (needle.size() == 0)
+			throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column_src))
+		{
+			ColumnString * col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+			Impl::vector(col->getChars(), col->getOffsets(),
+				needle, replacement,
+				col_res->getChars(), col_res->getOffsets());
+		}
+		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column_src))
+		{
+			ColumnString * col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+			Impl::vector_fixed(col->getChars(), col->getN(),
+				needle, replacement,
+				col_res->getChars(), col_res->getOffsets());
+		}
+		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column_src))
+		{
+			String res;
+			Impl::constant(col->getData(), needle, replacement, res);
+			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			block.getByPosition(result).column = col_res;
+		}
+		else
+		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
 template <typename Impl, typename Name>
 class FunctionsStringSearch : public IFunction
 {
@@ -528,6 +775,8 @@ struct NameMatch			{ static const char * get() { return "match"; } };
 struct NameLike				{ static const char * get() { return "like"; } };
 struct NameNotLike			{ static const char * get() { return "notLike"; } };
 struct NameExtract			{ static const char * get() { return "extract"; } };
+struct NameReplaceOne			{ static const char * get() { return "replaceOne"; } };
+struct NameReplaceAll			{ static const char * get() { return "replaceAll"; } };
 
 typedef FunctionsStringSearch<PositionImpl, 			NamePosition> 		FunctionPosition;
 typedef FunctionsStringSearch<PositionUTF8Impl, 		NamePositionUTF8> 	FunctionPositionUTF8;
@@ -535,5 +784,7 @@ typedef FunctionsStringSearch<MatchImpl<false>, 		NameMatch> 			FunctionMatch;
 typedef FunctionsStringSearch<MatchImpl<true>, 			NameLike> 			FunctionLike;
 typedef FunctionsStringSearch<MatchImpl<true, true>, 	NameNotLike> 		FunctionNotLike;
 typedef FunctionsStringSearchToString<ExtractImpl, 		NameExtract> 		FunctionExtract;
+typedef FunctionStringReplace<ReplaceImpl<true>,		NameReplaceOne>		FunctionReplaceOne;
+typedef FunctionStringReplace<ReplaceImpl<false>,		NameReplaceAll>		FunctionReplaceAll;
 
 }

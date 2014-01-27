@@ -171,7 +171,7 @@ struct ToRelativeWeekNumImpl
 struct ToRelativeDayNumImpl
 {
 	static inline UInt16 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toDayNum(t); }
-	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return DayNum_t(d); }
+	static inline UInt16 execute(UInt16 d, DateLUTSingleton & date_lut) { return static_cast<DayNum_t>(d); }
 };
 
 
@@ -180,7 +180,7 @@ struct ToRelativeHourNumImpl
 	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeHourNum(t); }
 	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
-		throw Exception("Illegal type Date of argument for function ToRelativeHourNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		throw Exception("Illegal type Date of argument for function toRelativeHourNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 
@@ -189,7 +189,7 @@ struct ToRelativeMinuteNumImpl
 	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return date_lut.toRelativeMinuteNum(t); }
 	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
-		throw Exception("Illegal type Date of argument for function ToRelativeMinuteNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		throw Exception("Illegal type Date of argument for function toRelativeMinuteNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 
@@ -198,7 +198,7 @@ struct ToRelativeSecondNumImpl
 	static inline UInt32 execute(UInt32 t, DateLUTSingleton & date_lut) { return t; }
 	static inline UInt32 execute(UInt16 d, DateLUTSingleton & date_lut)
 	{
-		throw Exception("Illegal type Date of argument for function ToRelativeSecondNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		throw Exception("Illegal type Date of argument for function toRelativeSecondNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 
