@@ -69,6 +69,9 @@ private:
 		const Context & context_,
 		const String & sign_column_name_ = "");
 	
+	/// Создает копию запроса, записавыет значения переменных host и port, меняет имена базы данных и таблицы.
+	ASTPtr remakeQuery(ASTPtr query, const String & host, size_t port);
+
 	String name;
 	NamesAndTypesListPtr columns;
 	String remote_database;
@@ -76,7 +79,9 @@ private:
 	const DataTypeFactory & data_type_factory;
 	String sign_column_name;
 
+	/// Имя виртуального столбца, куда записывается имя хоста (Например "_host").
 	String _host_column_name;
+	/// Имя виртуального столбца, куда записывается номер порта (Например "_port").
 	String _port_column_name;
 
 	const Context & context;

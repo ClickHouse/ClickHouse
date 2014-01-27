@@ -18,7 +18,7 @@ class RemoteBlockInputStream : public IProfilingBlockInputStream
 public:
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
 						QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: connection(connection_), query(query_), _host_column(""), _port_column(""), stage(stage_),
+		: connection(connection_), query(query_), stage(stage_),
 		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
 		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
@@ -34,8 +34,8 @@ public:
 	/// Захватывает владение соединением из пула.
 	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), _host_column(""),
-		_port_column(""), stage(stage_), sent_query(false), finished(false), was_cancelled(false),
+		: pool_entry(pool_entry_), connection(*pool_entry), query(query_),
+		stage(stage_), sent_query(false), finished(false), was_cancelled(false),
 		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
 		if (settings_)
@@ -110,13 +110,13 @@ protected:
 	{
 		if (_host_column != "")
 		{
-			ColumnPtr column_ptr = ColumnConst<String> (res.rows(), connection.getHost(), new DataTypeString).convertToFullColumn();
+			ColumnPtr column_ptr = ColumnConst<String>(res.rows(), connection.getHost(), new DataTypeString).convertToFullColumn();
 			ColumnWithNameAndType column(column_ptr, new DataTypeString, _host_column);
 			res.insert(column);
 		}
 		if (_port_column != "")
 		{
-			ColumnPtr column_ptr = ColumnConst<UInt16> (res.rows(), connection.getPort(), new DataTypeUInt16).convertToFullColumn();
+			ColumnPtr column_ptr = ColumnConst<UInt16>(res.rows(), connection.getPort(), new DataTypeUInt16).convertToFullColumn();
 			ColumnWithNameAndType column(column_ptr, new DataTypeUInt16, _port_column);
 			res.insert(column);
 		}
@@ -249,9 +249,9 @@ private:
 	const String query;
 	bool send_settings;
 	Settings settings;
-	/// Имя столбца, куда записать имя хоста. Пустая строка, если записывать не надо.
+	/// Имя столбца, куда записать имя хоста (Например "_host"). Пустая строка, если записывать не надо.
 	String _host_column;
-	/// Имя столбца, куда записать номер порта. Пустая строка, если записывать не надо.
+	/// Имя столбца, куда записать номер порта (Например "_port"). Пустая строка, если записывать не надо.
 	String _port_column;
 	QueryProcessingStage::Enum stage;
 
