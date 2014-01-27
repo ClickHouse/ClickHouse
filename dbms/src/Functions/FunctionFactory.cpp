@@ -79,6 +79,8 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "substring")					return new FunctionSubstring;
 	else if (name == "replaceOne")					return new FunctionReplaceOne;
 	else if (name == "replaceAll")					return new FunctionReplaceAll;
+	else if (name == "replaceRegexpOne")			return new FunctionReplaceRegexpOne;
+	else if (name == "replaceRegexpAll")			return new FunctionReplaceRegexpAll;
 	else if (name == "substringUTF8")				return new FunctionSubstringUTF8;
 	else if (name == "bitmaskToList")				return new FunctionBitmaskToList;
 	else if (name == "bitmaskToArray")				return new FunctionBitmaskToArray;

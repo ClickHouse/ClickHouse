@@ -36,6 +36,9 @@ namespace DB
   * replaceOne(haystack, pattern, replacement) - замена шаблона по заданным правилам, только первое вхождение.
   * replaceAll(haystack, pattern, replacement) - замена шаблона по заданным правилам, все вхождения.
   *
+  * replaceRegexpOne(haystack, pattern, replacement) - замена шаблона по заданному регекспу, только первое вхождение.
+  * replaceRegexpAll(haystack, pattern, replacement) - замена шаблона по заданному регекспу, все вхождения.
+  *
   * Внимание! На данный момент, аргументы needle, pattern, n, replacement обязаны быть константами.
   */
 
@@ -383,10 +386,192 @@ struct ExtractImpl
 };
 
 
+/** Заменить все вхождения регекспа needle на строку replacement. needle и replacement - константы.
+  */
+template <bool replaceOne = false>
+struct ReplaceRegexpImpl
+{
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		const std::string & needle, const std::string & replacement,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+	{
+		const UInt8 * begin = &data[0];
+		const UInt8 * pos = begin;
+		const UInt8 * end = pos + data.size();
+
+		ColumnString::Offset_t res_offset = 0;
+		res_data.reserve(data.size());
+		size_t size = offsets.size();
+		res_offsets.resize(size);
+
+		/// Текущий индекс в массиве строк.
+		size_t i = 0;
+
+		const OptimizedRegularExpression & regexp = Regexps::get(needle);
+
+		/// Искать будем следующее вхождение сразу во всех строках.
+		while (pos < end)
+		{
+			OptimizedRegularExpression::Match match;
+			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), match))
+			{
+				match.offset = end - pos;
+				match.length = 1;
+			}
+
+			/// Копируем данные без изменения
+			res_data.resize(res_data.size() + match.offset);
+			memcpy(&res_data[res_offset], pos, match.offset);
+
+			/// Определим, к какому индексу оно относится.
+			while (i < offsets.size() && begin + offsets[i] < pos + match.offset)
+			{
+				res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
+				++i;
+			}
+			res_offset += match.offset;
+
+			/// Если дошли до конца, пора остановиться
+			if (i == offsets.size())
+				break;
+
+			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+			bool can_finish_current_string = false;
+
+			/// Проверяем, что вхождение не переходит через границы строк.
+			if (pos + match.offset + match.length < begin + offsets[i])
+			{
+				res_data.resize(res_data.size() + replacement.size());
+				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+				res_offset += replacement.size();
+				pos = pos + match.offset + match.length;
+				if (replaceOne)
+					can_finish_current_string = true;
+			}
+			else
+			{
+				pos = pos + match.offset;
+				can_finish_current_string = true;
+			}
+
+			if (can_finish_current_string)
+			{
+				res_data.resize(res_data.size() + (begin + offsets[i] - pos));
+				memcpy(&res_data[res_offset], pos, (begin + offsets[i] - pos));
+				res_offset += (begin + offsets[i] - pos);
+				res_offsets[i] = res_offset;
+				pos = begin + offsets[i];
+			}
+		}
+	}
+
+	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
+		const std::string & needle, const std::string & replacement,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+	{
+		const UInt8 * begin = &data[0];
+		const UInt8 * pos = begin;
+		const UInt8 * end = pos + data.size();
+
+		ColumnString::Offset_t res_offset = 0;
+		size_t size = data.size() / n;
+		res_data.reserve(data.size());
+		res_offsets.resize(size);
+
+		/// Текущий индекс в массиве строк.
+		size_t i = 0;
+
+		const OptimizedRegularExpression & regexp = Regexps::get(needle);
+
+		/// Искать будем следующее вхождение сразу во всех строках.
+		while (pos < end)
+		{
+			OptimizedRegularExpression::Match match;
+			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), match))
+			{
+				match.offset = end - pos;
+				match.length = 1;
+			}
+
+			/// Копируем данные без изменения
+			res_data.resize(res_data.size() + match.offset);
+			memcpy(&res_data[res_offset], pos, match.offset);
+
+			/// Определим, к какому индексу оно относится.
+			while (i < size && begin + n * (i + 1) < pos + match.offset)
+			{
+				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos);
+				++i;
+			}
+			res_offset += match.offset;
+
+			/// Если дошли до конца, пора остановиться
+			if (i == size)
+				break;
+
+			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+			bool can_finish_current_string = false;
+
+			/// Проверяем, что вхождение не переходит через границы строк.
+			if (pos + match.offset + match.length < begin + n * (i + 1))
+			{
+				res_data.resize(res_data.size() + replacement.size());
+				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+				res_offset += replacement.size();
+				pos = pos + match.offset + match.length;
+				if (replaceOne)
+					can_finish_current_string = true;
+			}
+			else
+			{
+				pos = pos + match.offset;
+				can_finish_current_string = true;
+			}
+
+			if (can_finish_current_string)
+			{
+				res_data.resize(res_data.size() + (begin + n * (i + 1) - pos));
+				memcpy(&res_data[res_offset], pos, (begin + n * (i + 1) - pos));
+				res_offset += (begin + n * (i + 1) - pos);
+				res_offsets[i] = res_offset;
+				pos = begin + n * (i + 1);
+			}
+		}
+	}
+
+	static void constant(const std::string & data, const std::string & needle, const std::string & replacement,
+		std::string & res_data)
+	{
+		res_data = "";
+		size_t pos = 0;
+		const OptimizedRegularExpression & regexp = Regexps::get(needle);
+
+		while (pos < data.size())
+		{
+			OptimizedRegularExpression::Match match;
+			if (!regexp.match(data.substr(pos, data.size() - pos), match))
+			{
+				res_data += data.substr(pos);
+				break;
+			}
+			if (match.offset > 0)
+				res_data += data.substr(pos, match.offset);
+			res_data += replacement;
+			pos += match.offset + match.length;
+			if (replaceOne)
+			{
+				res_data += data.substr(pos);
+				break;
+			}
+		}
+	}
+};
+
+
 /** Заменить все вхождения подстроки needle на строку replacement. needle и replacement - константы.
   */
 template <bool replaceOne = false>
-struct ReplaceImpl
+struct ReplaceStringImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle, const std::string & replacement,
@@ -441,13 +626,17 @@ struct ReplaceImpl
 					can_finish_current_string = true;
 			}
 			else
+			{
+				pos = match;
 				can_finish_current_string = true;
+			}
 
 			if (can_finish_current_string)
 			{
-				res_data.resize(res_data.size() + (begin + offsets[i] - match));
-				memcpy(&res_data[res_offset], match, (begin + offsets[i] - match));
-				res_offsets[i] = res_offset + (begin + offsets[i] - match);
+				res_data.resize(res_data.size() + (begin + offsets[i] - pos));
+				memcpy(&res_data[res_offset], pos, (begin + offsets[i] - pos));
+				res_offset += (begin + offsets[i] - pos);
+				res_offsets[i] = res_offset;
 				pos = begin + offsets[i];
 			}
 		}
@@ -506,13 +695,17 @@ struct ReplaceImpl
 					can_finish_current_string = true;
 			}
 			else
+			{
+				pos = match;
 				can_finish_current_string = true;
+			}
 
 			if (can_finish_current_string)
 			{
-				res_data.resize(res_data.size() + (begin + n * (i + 1) - match));
-				memcpy(&res_data[res_offset], match, (begin + n * (i + 1) - match));
-				res_offsets[i] = res_offset + (begin + n * (i + 1) - match);
+				res_data.resize(res_data.size() + (begin + n * (i + 1) - pos));
+				memcpy(&res_data[res_offset], pos, (begin + n * (i + 1) - pos));
+				res_offset += (begin + n * (i + 1) - pos);
+				res_offsets[i] = res_offset;
 				pos = begin + n * (i + 1);
 			}
 		}
@@ -777,6 +970,8 @@ struct NameNotLike			{ static const char * get() { return "notLike"; } };
 struct NameExtract			{ static const char * get() { return "extract"; } };
 struct NameReplaceOne			{ static const char * get() { return "replaceOne"; } };
 struct NameReplaceAll			{ static const char * get() { return "replaceAll"; } };
+struct NameReplaceRegexpOne			{ static const char * get() { return "replaceRegexpOne"; } };
+struct NameReplaceRegexpAll			{ static const char * get() { return "replaceRegexpAll"; } };
 
 typedef FunctionsStringSearch<PositionImpl, 			NamePosition> 		FunctionPosition;
 typedef FunctionsStringSearch<PositionUTF8Impl, 		NamePositionUTF8> 	FunctionPositionUTF8;
@@ -784,7 +979,9 @@ typedef FunctionsStringSearch<MatchImpl<false>, 		NameMatch> 			FunctionMatch;
 typedef FunctionsStringSearch<MatchImpl<true>, 			NameLike> 			FunctionLike;
 typedef FunctionsStringSearch<MatchImpl<true, true>, 	NameNotLike> 		FunctionNotLike;
 typedef FunctionsStringSearchToString<ExtractImpl, 		NameExtract> 		FunctionExtract;
-typedef FunctionStringReplace<ReplaceImpl<true>,		NameReplaceOne>		FunctionReplaceOne;
-typedef FunctionStringReplace<ReplaceImpl<false>,		NameReplaceAll>		FunctionReplaceAll;
+typedef FunctionStringReplace<ReplaceStringImpl<true>,		NameReplaceOne>		FunctionReplaceOne;
+typedef FunctionStringReplace<ReplaceStringImpl<false>,		NameReplaceAll>		FunctionReplaceAll;
+typedef FunctionStringReplace<ReplaceRegexpImpl<true>,		NameReplaceRegexpOne>		FunctionReplaceRegexpOne;
+typedef FunctionStringReplace<ReplaceRegexpImpl<false>,		NameReplaceRegexpAll>		FunctionReplaceRegexpAll;
 
 }
