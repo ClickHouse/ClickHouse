@@ -327,7 +327,6 @@ struct MatchImpl
 		else
 		{
 			const OptimizedRegularExpression & regexp = like ? Regexps::getLike(pattern) : Regexps::get(pattern);
-
 			size_t size = offsets.size();
 			for (size_t i = 0; i < size; ++i)
 				res[i] = revert ^ regexp.match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1);
@@ -387,10 +386,39 @@ struct ExtractImpl
 
 
 /** Заменить все вхождения регекспа needle на строку replacement. needle и replacement - константы.
+  * Replacement может содержать подстановки, например '\2-\3-\1'
   */
+typedef std::vector< std::pair<int, std::string> > Instructions;
+
 template <bool replaceOne = false>
 struct ReplaceRegexpImpl
 {
+	static void split(const std::string & s, Instructions & instructions)
+	{
+		instructions.clear();
+		String now = "";
+		for (size_t i = 0; i < s.size(); ++i)
+		{
+			if (s[i] == '\\' && i + 1 < s.size() && isdigit(s[i+1]))
+			{
+				if (!now.empty())
+				{
+					instructions.push_back(std::make_pair(-1, now));
+					now = "";
+				}
+				instructions.push_back(std::make_pair(s[i+1] - '0', ""));
+				++i;
+				continue;
+			}
+			now += s[i];
+		}
+		if (!now.empty())
+		{
+			instructions.push_back(std::make_pair(-1, now));
+			now = "";
+		}
+	}
+
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle, const std::string & replacement,
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
@@ -409,15 +437,27 @@ struct ReplaceRegexpImpl
 
 		const OptimizedRegularExpression & regexp = Regexps::get(needle);
 
+		Instructions instructions;
+		int capture = regexp.getNumberOfSubpatterns();
+		OptimizedRegularExpression::MatchVec matches;
+		matches.reserve(capture + 1);
+		split(replacement, instructions);
+
+		for (const auto & it : instructions)
+			if (it.first > capture)
+				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
+				", But in regexp only " + toString(capture) + " subpatterns",
+					ErrorCodes::BAD_ARGUMENTS);
+
 		/// Искать будем следующее вхождение сразу во всех строках.
 		while (pos < end)
 		{
-			OptimizedRegularExpression::Match match;
-			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), match))
+			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), matches))
 			{
-				match.offset = end - pos;
-				match.length = 1;
+				matches[0].offset = end - pos;
+				matches[0].length = 1;
 			}
+			OptimizedRegularExpression::Match match = matches[0];
 
 			/// Копируем данные без изменения
 			res_data.resize(res_data.size() + match.offset);
@@ -441,9 +481,21 @@ struct ReplaceRegexpImpl
 			/// Проверяем, что вхождение не переходит через границы строк.
 			if (pos + match.offset + match.length < begin + offsets[i])
 			{
-				res_data.resize(res_data.size() + replacement.size());
-				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
-				res_offset += replacement.size();
+				for (const auto & it : instructions)
+				{
+					if (it.first >= 0)
+					{
+						res_data.resize(res_data.size() + matches[it.first].length);
+						memcpy(&res_data[res_offset], pos + matches[it.first].offset, matches[it.first].length);
+						res_offset += matches[it.first].length;
+					}
+					else
+					{
+						res_data.resize(res_data.size() + it.second.size());
+						memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+						res_offset += it.second.size();
+					}
+				}
 				pos = pos + match.offset + match.length;
 				if (replaceOne)
 					can_finish_current_string = true;
@@ -483,15 +535,27 @@ struct ReplaceRegexpImpl
 
 		const OptimizedRegularExpression & regexp = Regexps::get(needle);
 
+		Instructions instructions;
+		int capture = regexp.getNumberOfSubpatterns();
+		OptimizedRegularExpression::MatchVec matches;
+		matches.reserve(capture + 1);
+		split(replacement, instructions);
+
+		for (const auto & it : instructions)
+			if (it.first > capture)
+				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
+				", But in regexp only " + toString(capture) + " subpatterns",
+					ErrorCodes::BAD_ARGUMENTS);
+
 		/// Искать будем следующее вхождение сразу во всех строках.
 		while (pos < end)
 		{
-			OptimizedRegularExpression::Match match;
-			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), match))
+			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), matches))
 			{
-				match.offset = end - pos;
-				match.length = 1;
+				matches[0].offset = end - pos;
+				matches[0].length = 1;
 			}
+			OptimizedRegularExpression::Match match = matches[0];
 
 			/// Копируем данные без изменения
 			res_data.resize(res_data.size() + match.offset);
@@ -515,9 +579,21 @@ struct ReplaceRegexpImpl
 			/// Проверяем, что вхождение не переходит через границы строк.
 			if (pos + match.offset + match.length < begin + n * (i + 1))
 			{
-				res_data.resize(res_data.size() + replacement.size());
-				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
-				res_offset += replacement.size();
+				for (const auto & it : instructions)
+				{
+					if (it.first >= 0)
+					{
+						res_data.resize(res_data.size() + matches[it.first].length);
+						memcpy(&res_data[res_offset], pos + matches[it.first].offset, matches[it.first].length);
+						res_offset += matches[it.first].length;
+					}
+					else
+					{
+						res_data.resize(res_data.size() + it.second.size());
+						memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+						res_offset += it.second.size();
+					}
+				}
 				pos = pos + match.offset + match.length;
 				if (replaceOne)
 					can_finish_current_string = true;
@@ -546,17 +622,37 @@ struct ReplaceRegexpImpl
 		size_t pos = 0;
 		const OptimizedRegularExpression & regexp = Regexps::get(needle);
 
+		Instructions instructions;
+		int capture = regexp.getNumberOfSubpatterns();
+		OptimizedRegularExpression::MatchVec matches;
+		matches.reserve(capture + 1);
+		split(replacement, instructions);
+
+		for (const auto & it : instructions)
+			if (it.first > capture)
+				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
+				", But in regexp only " + toString(capture) + " subpatterns",
+					ErrorCodes::BAD_ARGUMENTS);
+
 		while (pos < data.size())
 		{
-			OptimizedRegularExpression::Match match;
-			if (!regexp.match(data.substr(pos, data.size() - pos), match))
+			if (!regexp.match(data.substr(pos), matches))
 			{
 				res_data += data.substr(pos);
 				break;
 			}
+			OptimizedRegularExpression::Match match = matches[0];
+
 			if (match.offset > 0)
 				res_data += data.substr(pos, match.offset);
-			res_data += replacement;
+
+			for (const auto & it : instructions)
+			{
+				if (it.first >= 0)
+					res_data += data.substr(matches[it.first].offset, matches[it.first].length);
+				else
+					res_data += it.second;
+			}
 			pos += match.offset + match.length;
 			if (replaceOne)
 			{
@@ -778,7 +874,6 @@ public:
 
 		if (!column_needle->isConst() || !column_replacement->isConst())
 			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
-
 
 		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
 		const IColumn * c2 = &*block.getByPosition(arguments[2]).column;
