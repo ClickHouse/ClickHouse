@@ -9,6 +9,6 @@ echo && (LC_ALL=C svn info ${PROJECT_SOURCE_DIR}/ 2>/dev/null || echo Revision 1
 
 echo -n "#define SVN_PATH " >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h
 SVN_PATH="$((LC_ALL=C svn info ./ 2>/dev/null || echo URL: unknown) | grep URL | cut -d " " -f 2 | sed "s/https:\/\/███████████.yandex-team.ru\/conv\///g")"
-echo '"SVN_PATH"' >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
+echo '"$SVN_PATH"' >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
 
 echo "#endif" >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h
