@@ -62,6 +62,9 @@ struct Settings
 
 	LoadBalancing::LoadBalancing load_balancing;
 
+	/// Сэмплирование по умолчанию
+	float default_sample;
+
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
 
@@ -81,7 +84,8 @@ struct Settings
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
 		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
 		sign_rewrite(false), extremes(false), use_uncompressed_cache(true), use_splitting_aggregator(false),
-		load_balancing(LoadBalancing::RANDOM)
+		load_balancing(LoadBalancing::RANDOM),
+		default_sample(DBMS_DEFAULT_SAMPLE)
 	{
 	}
 

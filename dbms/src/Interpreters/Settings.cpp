@@ -43,6 +43,11 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "use_splitting_aggregator") use_splitting_aggregator = safeGet<UInt64>(value);
 	else if (name == "profile") 			setProfile(get<const String &>(value));
 	else if (name == "load_balancing")		load_balancing		= getLoadBalancing(safeGet<const String &>(value));
+	else if (name == "default_sample")
+	{
+		std::stringstream s(safeGet<const String &>(value));
+		s >> default_sample;
+	}
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 }
@@ -78,7 +83,7 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		readBinary(value, buf);
 		setProfile(value);
 	}
-	else if (name == "load_balancing")
+	else if (name == "load_balancing" || name == "default_sample")
 	{
 		String value;
 		readBinary(value, buf);
@@ -111,7 +116,7 @@ void Settings::set(const String & name, const String & value)
 	{
 		set(name, parse<UInt64>(value));
 	}
-	else if (name == "load_balancing")
+	else if (name == "load_balancing" || name == "default_sample")
 	{
 		set(name, Field(value));
 	}
@@ -174,6 +179,7 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("use_uncompressed_cache", buf);				writeVarUInt(use_uncompressed_cache, buf);
 	writeStringBinary("use_splitting_aggregator", buf);				writeVarUInt(use_splitting_aggregator, buf);
 	writeStringBinary("load_balancing", buf);						writeStringBinary(toString(load_balancing), buf);
+	writeStringBinary("default_sample", buf);						writeStringBinary(DB::toString(default_sample), buf);
 
 	limits.serialize(buf);
 
