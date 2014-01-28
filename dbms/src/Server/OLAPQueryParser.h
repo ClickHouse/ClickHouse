@@ -81,6 +81,10 @@ struct QueryParseResult
 
 	/// Использовать таблицу для одного слоя, даже если указан CounterID = 0.
 	bool local;
+
+	/// сэмплинг - по какой доле данных выполнять запрос. принимает значения в диапазоне (0, 1]
+	/// если равно 1 - то отключен
+	float sample;
 	
 	Format format;
 	OverflowMode overflow_mode;

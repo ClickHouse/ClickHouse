@@ -7,6 +7,7 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Exception.h>
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -53,6 +54,8 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	
 	result.max_result_size = 0;
 	result.max_execution_time = 0;
+
+	result.sample = 1.0;
 	
 	result.query = parser.parse(&source);
 	
@@ -170,6 +173,12 @@ QueryParseResult QueryParser::parse(std::istream & s)
 			else if (settings_child_nodes->item(i)->nodeName() == "local")
 			{
 				result.local = true;
+			}
+			else if (settings_child_nodes->item(i)->nodeName() == "sample")
+			{
+				result.sample = DB::parse<Float32>(settings_child_nodes->item(i)->innerText());
+				if (result.sample <= 0 || result.sample > 1.)
+					throw Exception(std::string("Wrong sample = ") + DB::toString(result.sample) + ". Sampling must be in range (0, 1]");
 			}
 		}
 	}

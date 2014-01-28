@@ -26,7 +26,8 @@ private:
 	std::string convertAttributeNumeric(const std::string & attribute, unsigned parameter);
 	
 	/// <aggregates><aggregate> => SELECT x
-	std::string convertAggregateFunction(const std::string & attribute, unsigned parameter, const std::string & function);
+	std::string convertAggregateFunction(const std::string & attribute, unsigned parameter, const std::string & function,
+										 const QueryParseResult & query);
 	/// <where><condition><rhs> => SELECT ... where F(A, x)
 	std::string convertConstant(const std::string & attribute, const std::string & value);
 	/// <where><condition> => SELECT ... WHERE x

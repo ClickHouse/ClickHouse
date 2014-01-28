@@ -86,7 +86,7 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	for (size_t i = 0; i < query.aggregates.size(); ++i)
 	{
 		const QueryParseResult::Aggregate & aggregate = query.aggregates[i];
-		std::string s = convertAggregateFunction(aggregate.attribute, aggregate.parameter, aggregate.function);
+		std::string s = convertAggregateFunction(aggregate.attribute, aggregate.parameter, aggregate.function, query);
 		
 		if (query.key_attributes.size() + i > 0)
 			out_query += ", ";
@@ -147,6 +147,10 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	/// Ограничение на количество выводимых строк.
 	if (query.limit != 0)
 		out_query += " LIMIT " + toString(query.limit);
+
+	/// Добавляем сэмплирование.
+	if (query.sample != 1)
+		out_query += " SAMPLE " + toString(query.sample);
 }
 
 std::string QueryConverter::convertAttributeFormatted(const std::string & attribute, unsigned parameter)
@@ -180,10 +184,20 @@ static bool StartsWith(const std::string & str, const std::string & prefix)
 	return str.length() >= prefix.length() && str.substr(0, prefix.length()) == prefix;
 }
 
-std::string QueryConverter::convertAggregateFunction(const std::string & attribute, unsigned parameter, const std::string & name)
+std::string QueryConverter::convertAggregateFunction(const std::string & attribute, unsigned parameter, const std::string & name,
+													const QueryParseResult & query)
 {
+	bool float_value = false;
+
+	/// если включено сэмплирование, то надо умножить агрегатные функции на 1./sample
 	if (name == "count")
-		return "sum(Sign)";
+		if (query.sample != 1)
+		{
+			float_value = true;
+			return "sum(Sign)*" + toString(1./query.sample);
+		}
+		else
+			return "sum(Sign)";
 	
 	std::string numeric = convertAttributeNumeric(attribute, parameter);
 	
@@ -205,10 +219,22 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		return "uniqHLL12State(" + numeric + ")";
 	
 	if (name == "count_non_zero")
-		return "sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";
+		if (query.sample != 1)
+		{
+			float_value = true;
+			return "sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign)) * " + toString(1/query.sample);
+		}
+		else
+			return "sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";
 	if (name == "count_non_minus_one")
-		return "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign))";
-	
+		if (query.sample != 1)
+		{
+			float_value = true;
+			return "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign)) * " + toString(1/query.sample);
+		}
+		else
+			return "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign))";
+
 	bool trivial_format;
 	
 	std::string format;
@@ -224,12 +250,24 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	}
 
 	std::string s;
-	bool float_value = false;
 	
 	if (name == "sum")
-		s = "sum((" + numeric + ") * Sign)";
+		if (query.sample != 1)
+		{
+			s = "sum((" + numeric + ") * Sign) * " + toString(1/query.sample);
+			float_value = true;
+		}
+		else
+			s = "sum((" + numeric + ") * Sign)";
+
 	if (name == "sum_non_minus_one")
-		s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign)";
+		if (query.sample != 1)
+		{
+			s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign) * " + toString(1/query.sample);
+			float_value = true;
+		}
+		else
+			s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign)";
 	if (name == "avg")
 	{
 		s = "sum((" + numeric + ") * Sign) / sum(Sign)";
