@@ -96,6 +96,10 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	
 	/// Из какой таблицы.
 	out_query += " FROM " + getTableName(query.CounterID, query.local);
+
+	/// Добавляем сэмплирование.
+	if (query.sample != 1)
+		out_query += " SAMPLE " + toString(query.sample);
 	
 	/// Условия.
 	out_query += " WHERE ";
@@ -147,10 +151,6 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	/// Ограничение на количество выводимых строк.
 	if (query.limit != 0)
 		out_query += " LIMIT " + toString(query.limit);
-
-	/// Добавляем сэмплирование.
-	if (query.sample != 1)
-		out_query += " SAMPLE " + toString(query.sample);
 }
 
 std::string QueryConverter::convertAttributeFormatted(const std::string & attribute, unsigned parameter)
