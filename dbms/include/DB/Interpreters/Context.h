@@ -16,6 +16,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
+#include <DB/TableFunctions/TableFunctionFactory.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Quota.h>
@@ -27,6 +28,8 @@
 
 namespace DB
 {
+
+class TableFunctionFactory;
 
 using Poco::SharedPtr;
 
@@ -72,6 +75,7 @@ struct ContextShared
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
 	DatabaseDroppers database_droppers;						/// Reference counter'ы для ленивого удаления БД.
+	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	FunctionFactory function_factory;						/// Обычные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	DataTypeFactory data_type_factory;						/// Типы данных.
@@ -203,6 +207,7 @@ public:
 	/// Установить настройку по имени.
 	void setSetting(const String & name, const Field & value);
 	
+	const TableFunctionFactory & getTableFunctionFactory() const			{ return shared->table_function_factory; }
 	const FunctionFactory & getFunctionFactory() const						{ return shared->function_factory; }
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 	const DataTypeFactory & getDataTypeFactory() const						{ return shared->data_type_factory; }

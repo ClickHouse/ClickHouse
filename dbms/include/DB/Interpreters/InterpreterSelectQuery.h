@@ -5,7 +5,7 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/Parsers/ASTSelectQuery.h>
-
+#include <DB/TableFunctions/ITableFunction.h>
 
 namespace DB
 {
@@ -77,6 +77,7 @@ private:
 	size_t subquery_depth;
 	ExpressionAnalyzerPtr query_analyzer;
 	BlockInputStreams streams;
+	StoragePtr table_function_storage;
 
 	Logger * log;
 };

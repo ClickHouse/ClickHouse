@@ -199,7 +199,7 @@ StoragePtr ExpressionAnalyzer::getTable()
 {
 	if (const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*ast))
 	{
-		if (select->table && !dynamic_cast<const ASTSelectQuery *>(&*select->table))
+		if (select->table && !dynamic_cast<const ASTSelectQuery *>(&*select->table) && !dynamic_cast<const ASTFunction *>(&*select->table))
 		{
 			String database = select->database ?
 				dynamic_cast<const ASTIdentifier &>(*select->database).name :

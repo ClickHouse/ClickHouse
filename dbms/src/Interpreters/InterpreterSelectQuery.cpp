@@ -22,6 +22,8 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Storages/StorageView.h>
+#include <DB/TableFunctions/ITableFunction.h>
+#include <DB/TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
@@ -35,9 +37,21 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_)
 		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-	context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
-		? getTable()->getColumnsList()
-		: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
+	/// Если имееем дело с табличной функцией
+	if (query.table && dynamic_cast<ASTFunction *>(&*query.table))
+	{
+		/// Получить табличную функцию
+		TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<ASTFunction *>(&*query.table)->name, context);
+		/// Выполнить ее и запомнить результат
+		table_function_storage = table_function_ptr->execute(query.table, context);
+	}
+
+	if (table_function_storage)
+		context.setColumns(table_function_storage->getColumnsList());
+	else
+		context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
+			? getTable()->getColumnsList()
+			: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
 
 	if (context.getColumns().empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
@@ -378,7 +392,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
 
-	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
+	if (table_function_storage)
+		table = table_function_storage; /// Если в запросе была указана табличная функция, данные читаем из нее.
+	else if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
 		table = getTable();
 	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
 		interpreter_subquery = new InterpreterSelectQuery(query.table, context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);

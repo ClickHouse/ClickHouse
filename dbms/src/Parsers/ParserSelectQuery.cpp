@@ -5,6 +5,7 @@
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 
 
 namespace DB
@@ -70,6 +71,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ParserString s_rparen(")");
 		ParserString s_dot(".");
 		ParserIdentifier ident;
+		ParserIdentifierWithOptionalParameters table_function;
+		Pos before = pos;
 
 		if (s_lparen.ignore(pos, end, expected))
 		{
@@ -88,20 +91,30 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		}
 		else if (ident.parse(pos, end, select_query->table, expected))
 		{
-			ws.ignore(pos, end);
-		
-			if (s_dot.ignore(pos, end, expected))
+			/// Если сразу после identifier идет скобка, значит это должна быть табличная функция
+			if (s_lparen.ignore(pos, end, expected))
 			{
-				select_query->database = select_query->table;
-				if (!ident.parse(pos, end, select_query->table, expected))
+				pos = before;
+				if (!table_function.parse(pos, end, select_query->table, expected))
 					return false;
-
 				ws.ignore(pos, end);
 			}
+			else
+			{
+				ws.ignore(pos, end);
+				if (s_dot.ignore(pos, end, expected))
+				{
+					select_query->database = select_query->table;
+					if (!ident.parse(pos, end, select_query->table, expected))
+						return false;
 
-			if (select_query->database)
-				dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
-			dynamic_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
+					ws.ignore(pos, end);
+				}
+
+				if (select_query->database)
+					dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
+				dynamic_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
+			}
 		}
 		else
 			return false;
