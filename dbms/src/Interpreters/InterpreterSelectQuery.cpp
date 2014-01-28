@@ -25,6 +25,8 @@
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
+#include <DB/Core/Field.h>
+
 
 namespace DB
 {
@@ -398,6 +400,12 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		table = getTable();
 	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
 		interpreter_subquery = new InterpreterSelectQuery(query.table, context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+
+	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
+	/// если таблица не поддерживает сэмплинг получим исключение
+	/// поэтому запросы типа SHOW TABLES работать с включенном default_sample не будут
+	if (!query.sample_size && settings.default_sample != 1)
+		query.sample_size = new ASTLiteral(StringRange(NULL, NULL), Float64(settings.default_sample));
 
 	if (query.sample_size && (!table || !table->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);

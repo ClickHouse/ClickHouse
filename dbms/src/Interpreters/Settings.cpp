@@ -45,8 +45,16 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "load_balancing")		load_balancing		= getLoadBalancing(safeGet<const String &>(value));
 	else if (name == "default_sample")
 	{
-		std::stringstream s(safeGet<const String &>(value));
-		s >> default_sample;
+		if (value.getType() == Field::Types::UInt64)
+		{
+			default_sample = safeGet<UInt64>(value);
+		}
+		else if (value.getType() == Field::Types::Float64)
+		{
+			default_sample 	= safeGet<Float64>(value);
+		}
+		else
+			throw DB::Exception(std::string("Bad type of setting default_sample. Expected UInt64 or Float64, got ") + value.getTypeName(), ErrorCodes::TYPE_MISMATCH);
 	}
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
@@ -83,11 +91,17 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		readBinary(value, buf);
 		setProfile(value);
 	}
-	else if (name == "load_balancing" || name == "default_sample")
+	else if (name == "load_balancing")
 	{
 		String value;
 		readBinary(value, buf);
 		set(name, value);
+	}
+	else if (name == "default_sample")
+	{
+		String value;
+		readBinary(value, buf);
+		set(name, DB::parse<Float64>(value));
 	}
 	else if (!limits.trySet(name, buf))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
@@ -116,7 +130,11 @@ void Settings::set(const String & name, const String & value)
 	{
 		set(name, parse<UInt64>(value));
 	}
-	else if (name == "load_balancing" || name == "default_sample")
+	else if (name == "default_sample")
+	{
+		set(name, parse<Float64>(value));
+	}
+	else if (name == "load_balancing")
 	{
 		set(name, Field(value));
 	}

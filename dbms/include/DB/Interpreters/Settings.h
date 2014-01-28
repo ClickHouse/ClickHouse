@@ -62,7 +62,7 @@ struct Settings
 
 	LoadBalancing::LoadBalancing load_balancing;
 
-	/// Сэмплирование по умолчанию
+	/// Сэмплирование по умолчанию. Если равно 1, то отключено
 	float default_sample;
 
 	/// Всевозможные ограничения на выполнение запроса.
