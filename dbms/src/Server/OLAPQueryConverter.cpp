@@ -191,6 +191,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 
 	/// если включено сэмплирование, то надо умножить агрегатные функции на 1./sample
 	if (name == "count")
+	{
 		if (query.sample != 1)
 		{
 			float_value = true;
@@ -198,6 +199,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		}
 		else
 			return "sum(Sign)";
+	}
 	
 	std::string numeric = convertAttributeNumeric(attribute, parameter);
 	
@@ -219,6 +221,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		return "uniqHLL12State(" + numeric + ")";
 	
 	if (name == "count_non_zero")
+	{
 		if (query.sample != 1)
 		{
 			float_value = true;
@@ -226,7 +229,10 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		}
 		else
 			return "sum((" + numeric + ") == 0 ? toInt64(0) : toInt64(Sign))";
+	}
+
 	if (name == "count_non_minus_one")
+	{
 		if (query.sample != 1)
 		{
 			float_value = true;
@@ -234,6 +240,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		}
 		else
 			return "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(Sign))";
+	}
 
 	bool trivial_format;
 	
@@ -252,6 +259,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	std::string s;
 	
 	if (name == "sum")
+	{
 		if (query.sample != 1)
 		{
 			s = "sum((" + numeric + ") * Sign) * " + toString(1/query.sample);
@@ -259,8 +267,10 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		}
 		else
 			s = "sum((" + numeric + ") * Sign)";
+	}
 
 	if (name == "sum_non_minus_one")
+	{
 		if (query.sample != 1)
 		{
 			s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign) * " + toString(1/query.sample);
@@ -268,6 +278,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 		}
 		else
 			s = "sum((" + numeric + ") == -1 ? toInt64(0) : toInt64(" + numeric + ") * Sign)";
+	}
 	if (name == "avg")
 	{
 		s = "sum((" + numeric + ") * Sign) / sum(Sign)";
