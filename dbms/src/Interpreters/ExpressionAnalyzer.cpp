@@ -730,9 +730,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 			if (found)
 				throw Exception("Column " + name + " is not under aggregate function and not in GROUP BY.",
-								ErrorCodes::NOT_AN_AGGREGATE);
-			else
-				throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+					ErrorCodes::NOT_AN_AGGREGATE);
 		}
 	}
 	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
