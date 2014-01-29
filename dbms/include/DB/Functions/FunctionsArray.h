@@ -20,7 +20,8 @@ namespace DB
 /** Функции по работе с массивами:
   *
   * array(с1, с2, ...) - создать массив из констант.
-  * arrayElement(arr, i) - получить элемент массива.
+  * arrayElement(arr, i) - получить элемент массива по индексу.
+  *  Индекс начинается с 1. Также индекс может быть отрицательным - тогда он считается с конца массива.
   * has(arr, x) - есть ли в массиве элемент x.
   * indexOf(arr, x) - возвращает индекс элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
   * arrayEnumerate(arr) - возаращает массив [1,2,3,..., length(arr)]
@@ -68,12 +69,15 @@ public:
 };
 
 
-template <typename T>
+template <typename T, bool negative>
 struct ArrayElementNumImpl
 {
+	/** Если negative = false - передаётся индекс с начала массива, начиная с нуля.
+	  * Если negative = true - передаётся индекс с конца массива, начиная с нуля.
+	  */
 	static void vector(
 		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
-		const ColumnArray::Offset_t index,	/// Передаётся индекс начиная с нуля, а не с единицы.
+		const ColumnArray::Offset_t index,
 		PODArray<T> & result)
 	{
 		size_t size = offsets.size();
@@ -85,20 +89,21 @@ struct ArrayElementNumImpl
 			size_t array_size = offsets[i] - current_offset;
 
 			if (index < array_size)
-				result[i] = data[current_offset + index];
+				result[i] = !negative ? data[current_offset + index] : data[offsets[i] - index - 1];
 			else
 				result[i] = T();
-				
+
 			current_offset = offsets[i];
 		}
 	}
 };
 
+template <bool negative>
 struct ArrayElementStringImpl
 {
 	static void vector(
 		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
-		const ColumnArray::Offset_t index,	/// Передаётся индекс начиная с нуля, а не с единицы.
+		const ColumnArray::Offset_t index,
 		ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets)
 	{
 		size_t size = offsets.size();
@@ -113,11 +118,13 @@ struct ArrayElementStringImpl
 
 			if (index < array_size)
 			{
-				ColumnArray::Offset_t string_pos = current_offset == 0 && index == 0
-					? 0
-					: string_offsets[current_offset + index - 1];
+				size_t adjusted_index = !negative ? index : (array_size - index - 1);
 
-				ColumnArray::Offset_t string_size = string_offsets[current_offset + index] - string_pos;
+				ColumnArray::Offset_t string_pos = current_offset == 0 && adjusted_index == 0
+					? 0
+					: string_offsets[current_offset + adjusted_index - 1];
+
+				ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 				
 				result_data.resize(current_result_offset + string_size);
 				memcpy(&result_data[current_result_offset], &data[string_pos], string_size);
@@ -143,7 +150,7 @@ class FunctionArrayElement : public IFunction
 {
 private:
 	template <typename T>
-	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, UInt64 index)
+	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
 		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -158,12 +165,17 @@ private:
 		ColumnVector<T> * col_res = new ColumnVector<T>;
 		block.getByPosition(result).column = col_res;
 
-		ArrayElementNumImpl<T>::vector(col_nested->getData(), col_array->getOffsets(), index, col_res->getData());
+		if (index.getType() == Field::Types::UInt64)
+			ArrayElementNumImpl<T, false>::vector(col_nested->getData(), col_array->getOffsets(), safeGet<UInt64>(index) - 1, col_res->getData());
+		else if (index.getType() == Field::Types::Int64)
+			ArrayElementNumImpl<T, true>::vector(col_nested->getData(), col_array->getOffsets(), -safeGet<Int64>(index) - 1, col_res->getData());
+		else
+			throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
 		return true;
 	}
 
-	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, UInt64 index)
+	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
 		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -178,25 +190,47 @@ private:
 		ColumnString * col_res = new ColumnString;
 		block.getByPosition(result).column = col_res;
 
-		ArrayElementStringImpl::vector(
-			col_nested->getChars(),
-			col_array->getOffsets(),  
-			col_nested->getOffsets(),
-			index,
-			col_res->getChars(),
-			col_res->getOffsets());
+		if (index.getType() == Field::Types::UInt64)
+			ArrayElementStringImpl<false>::vector(
+				col_nested->getChars(),
+				col_array->getOffsets(),
+				col_nested->getOffsets(),
+				safeGet<UInt64>(index) - 1,
+				col_res->getChars(),
+				col_res->getOffsets());
+		else if (index.getType() == Field::Types::Int64)
+			ArrayElementStringImpl<true>::vector(
+				col_nested->getChars(),
+				col_array->getOffsets(),
+				col_nested->getOffsets(),
+				-safeGet<Int64>(index) - 1,
+				col_res->getChars(),
+				col_res->getOffsets());
+		else
+			throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
 		return true;
 	}
 
-	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, UInt64 index)
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
 		const ColumnConstArray * col_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
 
-		Field value = col_array->getData().at(index);
+		const DB::Array & array = col_array->getData();
+		size_t array_size = array.size();
+		size_t real_index = 0;
+
+		if (index.getType() == Field::Types::UInt64)
+			real_index = safeGet<UInt64>(index) - 1;
+		else if (index.getType() == Field::Types::Int64)
+			real_index = array_size + safeGet<Int64>(index);
+		else
+			throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
+
+		Field value = col_array->getData().at(real_index);
 
 		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
 			block.rowsInFirstColumn(),
@@ -224,8 +258,9 @@ public:
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!arguments[1]->isNumeric() || 0 != arguments[1]->getName().compare(0, 4, "UInt"))
-			throw Exception("Second argument for function " + getName() + " must have UInt type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		if (!arguments[1]->isNumeric()
+			|| (0 != arguments[1]->getName().compare(0, 4, "UInt") && 0 != arguments[1]->getName().compare(0, 3, "Int")))
+			throw Exception("Second argument for function " + getName() + " must have UInt or Int type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return array_type->getNestedType();
 	}
@@ -236,11 +271,10 @@ public:
 		if (!block.getByPosition(arguments[1]).column->isConst())
 			throw Exception("Second argument for function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-		UInt64 index = safeGet<UInt64>((*block.getByPosition(arguments[1]).column)[0]);
+		Field index = (*block.getByPosition(arguments[1]).column)[0];
 
-		if (index == 0)
+		if (index == UInt64(0))
 			throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
-		index -= 1;
 
 		if (!(	executeNumber<UInt8>	(block, arguments, result, index)
 			||	executeNumber<UInt16>	(block, arguments, result, index)
