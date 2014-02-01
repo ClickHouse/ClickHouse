@@ -24,11 +24,11 @@ struct AggregateFunctionArgMaxTraits
 
 struct AggregateFunctionsArgMinMaxData
 {
-	Field value;
-	Field result;
+	Field result;	// аргумент, при котором достигается минимальное/максимальное значение value.
+	Field value;	// значение, для которого считается минимум/максимум.
 };
 
-/// Возвращает первое попавшееся значение arg для минимального/максимального value
+/// Возвращает первое попавшееся значение arg для минимального/максимального value. Пример: argMax(arg, value).
 template <typename Traits>
 class AggregateFunctionsArgMinMax : public IAggregateFunctionHelper<AggregateFunctionsArgMinMaxData>
 {
@@ -55,7 +55,8 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		Field value, result;
+		Field result;
+		Field value;
 		columns[0]->get(row_num, result);
 		columns[1]->get(row_num, value);
 		Data & d = data(place);
@@ -64,12 +65,14 @@ public:
 		{
 			if (Traits::better(value, d.value))
 			{
-				d.value = value;
 				d.result = result;
+				d.value = value;
 			}
-		} else {
-			d.value = value;
+		}
+		else
+		{
 			d.result = result;
+			d.value = value;
 		}
 	}
 
@@ -82,19 +85,21 @@ public:
 		{
 			if (Traits::better(d_rhs.value, d.value))
 			{
-				d.value = d_rhs.value;
 				d.result = d_rhs.result;
+				d.value = d_rhs.value;
 			}
-		} else {
-			d.value = d_rhs.value;
+		}
+		else
+		{
 			d.result = d_rhs.result;
+			d.value = d_rhs.value;
 		}
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type_val->serializeBinary(data(place).value, buf);
 		type_res->serializeBinary(data(place).result, buf);
+		type_val->serializeBinary(data(place).value, buf);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
@@ -103,15 +108,20 @@ public:
 
 		if (!d.value.isNull())
 		{
-			Field value_, result_;
+			Field result_;
+			Field value_;
+
 			type_res->deserializeBinary(result_, buf);
 			type_val->deserializeBinary(value_, buf);
+
 			if (Traits::better(value_, d.value))
 			{
-				d.value = value_;
 				d.result = result_;
+				d.value = value_;
 			}
-		} else {
+		}
+		else
+		{
 			type_res->deserializeBinary(d.result, buf);
 			type_val->deserializeBinary(d.value, buf);
 		}
