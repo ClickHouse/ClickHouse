@@ -22,38 +22,22 @@ namespace DB
 template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
-	struct hash
-	{
-		size_t operator() (T key) const
-		{
-			return intHash32<0>(key);
-		}
-	};
-
 	struct GrowthTraits : public default_growth_traits
 	{
 		/// При создании, хэш-таблица должна быть небольшой.
 		static const int INITIAL_SIZE_DEGREE = 4;
 	};
 
-	/// NOTE: Можно сделать отдельную хэш-таблицу с оптимизацией для маленьких размеров.
-	typedef HashSet<T, hash, default_zero_traits<T>, GrowthTraits> Set;
+	typedef HashSet<
+		T,
+		default_hash<T>,
+		default_zero_traits<T>,
+		GrowthTraits,
+		HashTableAllocatorWithStackMemory<sizeof(T) * (1 <<  GrowthTraits::INITIAL_SIZE_DEGREE)>
+	> Set;
+
 	Set value;
 };
-
-template <> size_t AggregateFunctionGroupUniqArrayData<Float32>::hash::operator() (Float32 key) const
-{
-	UInt64 res = 0;
-	memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
-	return intHash32<0>(res);
-}
-
-template <> size_t AggregateFunctionGroupUniqArrayData<Float64>::hash::operator() (Float64 key) const
-{
-	UInt64 res = 0;
-	memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
-	return intHash32<0>(res);
-}
 
 
 /// Складывает все значения в хэш-множество. Возвращает массив уникальных значений. Реализована для числовых типов.
@@ -83,10 +67,7 @@ public:
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		typename State::Set & set = this->data(place).value;
-		const typename State::Set & rhs_set = this->data(rhs).value;
-		for (typename State::Set::const_iterator it = rhs_set.begin(); it != rhs_set.end(); ++it)
-			set.insert(*it);
+		this->data(place).value.merge(this->data(rhs).value);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
@@ -100,20 +81,7 @@ public:
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		size_t size = 0;
-		readVarUInt(size, buf);
-
-		if (size > AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE)
-			throw Exception("Too large hash set size for aggregate function groupUniqArray", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
-
-		typename State::Set & set = this->data(place).value;
-
-		for (size_t i = 0; i < size; ++i)
-		{
-			T tmp;
-			readIntBinary(tmp, buf);
-			set.insert(tmp);
-		}
+		this->data(place).value.readAndMerge(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const

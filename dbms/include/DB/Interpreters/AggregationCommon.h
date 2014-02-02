@@ -15,7 +15,7 @@ namespace DB
 {
 
 
-/// Для агрегации по SipHash.
+/// Для агрегации по SipHash или конкатенации нескольких полей.
 struct UInt128
 {
 	UInt64 first;
@@ -41,6 +41,9 @@ struct UInt128ZeroTraits
 	static inline bool check(UInt128 x) { return x.first == 0 && x.second == 0; }
 	static inline void set(UInt128 & x) { x.first = 0; x.second = 0; }
 };
+
+inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
 /// Немного быстрее стандартного

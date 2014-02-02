@@ -2,6 +2,12 @@
 
 #include <DB/Interpreters/HashMap.h>
 
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/VarInt.h>
+
 
 namespace DB
 {
@@ -25,7 +31,7 @@ private:
 	friend class iterator;
 	
 	typedef size_t HashValue;
-	typedef HashSet<Key, Hash, ZeroTraits, GrowthTraits> Self;
+	typedef HashSet<Key, Hash, ZeroTraits, GrowthTraits, Allocator> Self;
 	
 	size_t m_size;			/// Количество элементов
 	Key * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
@@ -46,8 +52,19 @@ private:
 	inline size_t place(HashValue x) const 		{ return x & mask(); }
 
 
-	/// Увеличить размер буфера в 2 ^ N раз
-	void resize()
+	void alloc()
+	{
+		buf = reinterpret_cast<Key *>(Allocator::alloc(buf_size_bytes()));
+	}
+
+	void free()
+	{
+		Allocator::free(buf, buf_size_bytes());
+	}
+
+
+	/// Увеличить размер буфера в 2 ^ N раз или до new_size_degree, если передан ненулевой аргумент.
+	void resize(size_t new_size_degree = 0)
 	{
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 		Stopwatch watch;
@@ -56,9 +73,12 @@ private:
 		size_t old_size = buf_size();
 		size_t old_size_bytes = buf_size_bytes();
 
-		size_degree += size_degree >= GrowthTraits::GROWTH_CHANGE_THRESHOLD
-			? 1
-			: GrowthTraits::FAST_GROWTH_DEGREE;
+		if (new_size_degree)
+			size_degree = new_size_degree;
+		else
+			size_degree += size_degree >= GrowthTraits::GROWTH_CHANGE_THRESHOLD
+				? 1
+				: GrowthTraits::FAST_GROWTH_DEGREE;
 
 		/// Расширим пространство.
 		buf = reinterpret_cast<Key *>(Allocator::realloc(buf, old_size_bytes, buf_size_bytes()));
@@ -120,7 +140,7 @@ public:
 		has_zero(false)
 	{
 		ZeroTraits::set(zero_value);
-		buf = reinterpret_cast<Key *>(Allocator::alloc(buf_size_bytes()));
+		alloc();
 	}
 
 	~HashSet()
@@ -129,7 +149,7 @@ public:
 			for (iterator it = begin(); it != end(); ++it)
 				it->~Key();
 
-		Allocator::free(buf, buf_size_bytes());
+		free();
 	}
 
 
@@ -317,6 +337,20 @@ public:
 	}
 
 
+	void merge(const Self & rhs)
+	{
+		if (!has_zero && rhs.has_zero)
+		{
+			has_zero = true;
+			++m_size;
+		}
+
+		for (size_t i = 0; i < rhs.buf_size(); ++i)
+			if (!ZeroTraits::check(rhs.buf[i]))
+				insert(rhs.buf[i]);
+	}
+
+
 	iterator find(Key x)
 	{
 		if (ZeroTraits::check(x))
@@ -352,6 +386,69 @@ public:
 		}
 
 		return !ZeroTraits::check(buf[place_value]) ? const_iterator(this, &buf[place_value]) : end();
+	}
+
+
+	void write(DB::WriteBuffer & wb) const
+	{
+		DB::writeVarUInt(m_size, wb);
+
+		if (has_zero)
+			DB::writeBinary(zero_value, wb);
+
+		for (size_t i = 0; i < buf_size(); ++i)
+			if (!ZeroTraits::check(buf[i]))
+				DB::writeBinary(buf[i], wb);
+	}
+
+	void read(DB::ReadBuffer & rb)
+	{
+		has_zero = false;
+		m_size = 0;
+
+		size_t new_size = 0;
+		DB::readVarUInt(new_size, rb);
+
+		free();
+
+		size_degree = new_size <= 1
+			 ? GrowthTraits::INITIAL_SIZE_DEGREE
+			 : std::max(GrowthTraits::INITIAL_SIZE_DEGREE, static_cast<int>(log2(new_size - 1)) + 2);
+
+		alloc();
+
+		for (size_t i = 0; i < new_size; ++i)
+		{
+			Key x;
+			DB::readBinary(x, rb);
+			insert(x);
+		}
+	}
+
+	void readAndMerge(DB::ReadBuffer & rb)
+	{
+		size_t new_size = 0;
+		DB::readVarUInt(new_size, rb);
+
+		size_t new_size_degree = new_size <= 1
+			 ? GrowthTraits::INITIAL_SIZE_DEGREE
+			 : std::max(GrowthTraits::INITIAL_SIZE_DEGREE, static_cast<int>(log2(new_size - 1)) + 2);
+
+		if (new_size_degree > size_degree)
+			resize(new_size_degree);
+
+		for (size_t i = 0; i < new_size; ++i)
+		{
+			Key x;
+			DB::readBinary(x, rb);
+			insert(x);
+		}
+	}
+
+	void writeText(DB::WriteBuffer & wb) const
+	{
+		/// Используется в шаблонном коде.
+		throw Exception("Method HashSet::writeText is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 	}
 	
 

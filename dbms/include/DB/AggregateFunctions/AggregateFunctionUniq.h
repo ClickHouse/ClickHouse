@@ -1,6 +1,7 @@
 #pragma once
 
 #include <city.h>
+#include <type_traits>
 
 #include <stats/UniquesHashSet.h>
 #include <statdaemons/HyperLogLogCounter.h>
@@ -11,6 +12,9 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+
+#include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Interpreters/HashSet.h>
 
 #include <DB/Columns/ColumnString.h>
 
@@ -55,6 +59,7 @@ struct AggregateFunctionUniqUniquesHashSetData
 	static String getName() { return "uniq"; }
 };
 
+
 struct AggregateFunctionUniqHLL12Data
 {
 	typedef HLL12 Set;
@@ -62,6 +67,108 @@ struct AggregateFunctionUniqHLL12Data
 	
 	static String getName() { return "uniqHLL12"; }
 };
+
+
+template <typename T>
+struct AggregateFunctionUniqExactData
+{
+	typedef T Key;
+
+	struct GrowthTraits : public default_growth_traits
+	{
+		/// При создании, хэш-таблица должна быть небольшой.
+		static const int INITIAL_SIZE_DEGREE = 64 / sizeof(Key);
+	};
+
+	typedef HashSet<
+		Key,
+		default_hash<Key>,
+		default_zero_traits<Key>,
+		GrowthTraits,
+		HashTableAllocatorWithStackMemory<64>
+	> Set;
+
+	Set set;
+
+	static String getName() { return "uniqExact"; }
+};
+
+/// Для строк будем класть в хэш-таблицу значения SipHash-а (128 бит).
+template <>
+struct AggregateFunctionUniqExactData<String>
+{
+	typedef UInt128 Key;
+
+	struct GrowthTraits : public default_growth_traits
+	{
+		/// При создании, хэш-таблица должна быть небольшой.
+		static const int INITIAL_SIZE_DEGREE = 64 / sizeof(Key);
+	};
+
+	typedef HashSet<
+		Key,
+		UInt128TrivialHash,
+		UInt128ZeroTraits,
+		GrowthTraits,
+		HashTableAllocatorWithStackMemory<64>
+	> Set;
+
+	Set set;
+
+	static String getName() { return "uniqExact"; }
+};
+
+
+namespace detail
+{
+	/** Структура для делегации работы по добавлению одного элемента в аггрегатные функции uniq.
+	  * Используется для частичной специализации для добавления строк.
+	  */
+	template<typename T, typename Data>
+	struct OneAdder
+	{
+		static void addOne(Data & data, const IColumn & column, size_t row_num)
+		{
+			data.set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
+		}
+	};
+
+	template<typename Data>
+	struct OneAdder<String, Data>
+	{
+		static void addOne(Data & data, const IColumn & column, size_t row_num)
+		{
+			/// Имейте ввиду, что вычисление приближённое.
+			StringRef value = column.getDataAt(row_num);
+			data.set.insert(CityHash64(value.data, value.size));
+		}
+	};
+
+	template<typename T>
+	struct OneAdder<T, AggregateFunctionUniqExactData<T> >
+	{
+		static void addOne(AggregateFunctionUniqExactData<T> & data, const IColumn & column, size_t row_num)
+		{
+			data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+		}
+	};
+
+	template<>
+	struct OneAdder<String, AggregateFunctionUniqExactData<String> >
+	{
+		static void addOne(AggregateFunctionUniqExactData<String> & data, const IColumn & column, size_t row_num)
+		{
+			StringRef value = column.getDataAt(row_num);
+
+			UInt128 key;
+			SipHash hash;
+			hash.update(value.data, value.size);
+			hash.get128(key.first, key.second);
+
+			data.set.insert(key);
+		}
+	};
+}
 
 
 /// Приближённо вычисляет количество различных значений.
@@ -84,7 +191,7 @@ public:
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		OneAdder<T, Data>::addOne(*this, place, column, row_num);
+		detail::OneAdder<T, Data>::addOne(this->data(place), column, row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
@@ -99,42 +206,13 @@ public:
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		typename Data::Set tmp_set;
-		tmp_set.read(buf);
-		this->data(place).set.merge(tmp_set);
+		this->data(place).set.readAndMerge(buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
 		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
 	}
-	
-private:
-	/// Структура для делегации работы по добавлению одного элемента
-	/// в аггрегатную функцию uniq. Используется для частичной специализации
-	/// для добавления строк.
-	template<typename T0, typename Data0>
-	struct OneAdder
-	{
-		static void addOne(const AggregateFunctionUniq<T0, Data0> & aggregate_function,
-						   AggregateDataPtr place, const IColumn & column, size_t row_num)
-		{
-			aggregate_function.data(place).set.insert(
-				AggregateFunctionUniqTraits<T0>::hash(static_cast<const ColumnVector<T0> &>(column).getData()[row_num]));
-		}
-	};
-	
-	template<typename Data0>
-	struct OneAdder<String, Data0>
-	{
-		static void addOne(const AggregateFunctionUniq<String, Data0> & aggregate_function,
-						   AggregateDataPtr place, const IColumn & column, size_t row_num)
-		{
-			/// Имейте ввиду, что вычисление приближённое.
-			StringRef value = column.getDataAt(row_num);
-			aggregate_function.data(place).set.insert(CityHash64(value.data, value.size));
-		}
-	};
 };
 
 

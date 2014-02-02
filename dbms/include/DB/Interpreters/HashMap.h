@@ -137,7 +137,7 @@ private:
 	
 	typedef std::pair<Key, Mapped> Value;	/// Без const Key для простоты.
 	typedef size_t HashValue;
-	typedef HashMap<Key, Mapped, Hash, ZeroTraits, GrowthTraits> Self;
+	typedef HashMap<Key, Mapped, Hash, ZeroTraits, GrowthTraits, Allocator> Self;
 	
 	size_t m_size;			/// Количество элементов
 	Value * buf;			/// Кусок памяти для всех элементов кроме элемента с ключём 0.
