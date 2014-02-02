@@ -112,7 +112,7 @@ private:
 			return;
 
 		/// Вычисление нового места, с учётом цепочки разрешения коллизий.
-		while (!ZeroTraits::check(buf[place_value]))
+		while (!ZeroTraits::check(buf[place_value]) && x != buf[place_value])
 		{
 			++place_value;
 			place_value &= mask();
@@ -120,6 +120,10 @@ private:
 			++collisions;
 #endif
 		}
+
+		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
+		if (x == buf[place_value])
+			return;
 
 		/// Копирование на новое место и зануление старого.
 		memcpy(&buf[place_value], &x, sizeof(x));

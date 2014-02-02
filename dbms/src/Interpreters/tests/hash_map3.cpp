@@ -1,4 +1,8 @@
-#pragma once
+#include <iostream>
+
+#define DBMS_HASH_MAP_DEBUG_RESIZES
+#define DBMS_HASH_MAP_COUNT_COLLISIONS
+
 
 #include <string.h>
 
@@ -35,7 +39,7 @@ namespace DB
   * - Key и Mapped - position independent типы (для перемещения значений которых достаточно сделать memcpy).
   *
   * Желательно, чтобы Key был числом, или маленьким агрегатом (типа UInt128).
-  * 
+  *
   * Сценарий работы:
   * - вставлять в хэш-таблицу значения;
   * - проитерироваться по имеющимся в ней значениям.
@@ -134,11 +138,11 @@ class HashMap : private boost::noncopyable, private Hash, private Allocator		///
 private:
 	friend class const_iterator;
 	friend class iterator;
-	
+
 	typedef std::pair<Key, Mapped> Value;	/// Без const Key для простоты.
 	typedef size_t HashValue;
 	typedef HashMap<Key, Mapped, Hash, ZeroTraits, GrowthTraits, Allocator> Self;
-	
+
 	size_t m_size;			/// Количество элементов
 	Value * buf;			/// Кусок памяти для всех элементов кроме элемента с ключём 0.
 	UInt8 size_degree;		/// Размер таблицы в виде степени двух
@@ -166,7 +170,7 @@ private:
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 		Stopwatch watch;
 #endif
-		
+
 		size_t old_size = buf_size();
 		size_t old_size_bytes = buf_size_bytes();
 
@@ -231,8 +235,8 @@ public:
 	typedef Key key_type;
 	typedef Mapped mapped_type;
 	typedef Value value_type;
-	
-	
+
+
 	HashMap() :
 		m_size(0),
 		size_degree(GrowthTraits::INITIAL_SIZE_DEGREE),
@@ -267,7 +271,7 @@ public:
 
 	public:
 		iterator() {}
-		
+
 		bool operator== (const iterator & rhs) const { return ptr == rhs.ptr; }
 		bool operator!= (const iterator & rhs) const { return ptr != rhs.ptr; }
 
@@ -287,7 +291,7 @@ public:
 		Value & operator* () const { return *ptr; }
 		Value * operator->() const { return ptr; }
 	};
-	
+
 
 	class const_iterator
 	{
@@ -349,208 +353,7 @@ public:
 
 	const_iterator end() const 		{ return const_iterator(this, buf + buf_size()); }
 	iterator end() 					{ return iterator(this, buf + buf_size()); }
-	
-	
-	/// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
-	std::pair<iterator, bool> insert(const Value & x)
-	{
-		if (ZeroTraits::check(x.first))
-		{
-			if (!has_zero)
-			{
-				++m_size;
-				has_zero = true;
-				zero_value()->second = x.second;
-				return std::make_pair(begin(), true);
-			}
-			return std::make_pair(begin(), false);
-		}
 
-		size_t place_value = place(hash(x.first));
-		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x.first)
-		{
-			++place_value;
-			place_value &= mask();
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-			++collisions;
-#endif
-		}
-
-		iterator res(this, &buf[place_value]);
-
-		if (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first == x.first)
-			return std::make_pair(res, false);
-
-		buf[place_value] = x;
-		++m_size;
-
-		if (unlikely(m_size > max_fill()))
-		{
-			resize();
-			return std::make_pair(find(x.first), true);
-		}
-
-		return std::make_pair(res, true);
-	}
-
-
-	/** Вставить ключ,
-	  * вернуть итератор на позицию, которую можно использовать для placement new значения,
-	  * а также флаг - был ли вставлен новый ключ.
-	  *
-	  * Вы обязаны сделать placement new значения, если был вставлен новый ключ,
-	  * так как при уничтожении хэш-таблицы для него будет вызываться деструктор!
-	  *
-	  * Пример использования:
-	  *
-	  * Map::iterator it;
-	  * bool inserted;
-	  * map.emplace(key, it, inserted);
-	  * if (inserted)
-	  * 	new(&it->second) Value(value);
-	  */
-	void emplace(Key x, iterator & it, bool & inserted)
-	{
-		if (ZeroTraits::check(x))
-		{
-			if (!has_zero)
-			{
-				++m_size;
-				has_zero = true;
-				inserted = true;
-			}
-			else
-				inserted = false;
-
-			it = begin();
-			return;
-		}
-
-		size_t place_value = place(hash(x));
-		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
-		{
-			++place_value;
-			place_value &= mask();
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-			++collisions;
-#endif
-		}
-
-		it = iterator(this, &buf[place_value]);
-
-		if (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first == x)
-		{
-			inserted = false;
-			return;
-		}
-
-		new(&buf[place_value].first) Key(x);
-		inserted = true;
-		++m_size;
-
-		if (unlikely(m_size > max_fill()))
-		{
-			resize();
-			it = find(x);
-		}
-	}
-
-
-	/// То же самое, но с заранее вычисленным значением хэш-функции.
-	void emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
-	{
-		if (ZeroTraits::check(x))
-		{
-			if (!has_zero)
-			{
-				++m_size;
-				has_zero = true;
-				inserted = true;
-			}
-			else
-				inserted = false;
-
-			it = begin();
-			return;
-		}
-
-		size_t place_value = place(hash_value);
-		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
-		{
-			++place_value;
-			place_value &= mask();
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-			++collisions;
-#endif
-		}
-
-		it = iterator(this, &buf[place_value]);
-
-		if (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first == x)
-		{
-			inserted = false;
-			return;
-		}
-
-		new(&buf[place_value].first) Key(x);
-		inserted = true;
-		++m_size;
-
-		if (unlikely(m_size > max_fill()))
-		{
-			resize();
-			it = find(x);
-		}
-	}
-
-
-	iterator find(Key x)
-	{
-		if (ZeroTraits::check(x))
-			return has_zero ? begin() : end();
-
-		size_t place_value = place(hash(x));
-		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
-		{
-			++place_value;
-			place_value &= mask();
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-			++collisions;
-#endif
-		}
-
-		return !ZeroTraits::check(buf[place_value].first) ? iterator(this, &buf[place_value]) : end();
-	}
-
-
-	const_iterator find(Key x) const
-	{
-		if (ZeroTraits::check(x))
-			return has_zero ? begin() : end();
-
-		size_t place_value = place(hash(x.first));
-		while (!ZeroTraits::check(buf[place_value].first) && buf[place_value].first != x)
-		{
-			++place_value;
-			place_value &= mask();
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-			++collisions;
-#endif
-		}
-
-		return !ZeroTraits::check(buf[place_value].first) ? const_iterator(this, &buf[place_value]) : end();
-	}
-	
-
-	size_t size() const
-	{
-	    return m_size;
-	}
-
-	bool empty() const
-	{
-	    return 0 == m_size;
-	}
 
 	Mapped & operator[](Key x)
 	{
@@ -596,7 +399,49 @@ public:
 		return collisions;
 	}
 #endif
+
+	void dump() const
+	{
+		for (size_t i = 0; i < buf_size(); ++i)
+			std::cerr << '[' << buf[i].first << ", " << buf[i].second << ']';
+		std::cerr << std::endl;
+	}
 };
 
 
+}
+
+
+struct TrivialHash
+{
+	size_t operator() (UInt64 x) const { return x; }
+};
+
+struct GrowthTraits : public DB::default_growth_traits
+{
+	static const int INITIAL_SIZE_DEGREE = 2;
+	static const int FAST_GROWTH_DEGREE = 1;
+};
+
+
+int main(int argc, char ** argv)
+{
+	typedef DB::HashMap<UInt64, UInt64, TrivialHash, DB::default_zero_traits<UInt64>, GrowthTraits> Map;
+
+	Map map;
+
+	map.dump();
+	map[1] = 1;
+	map.dump();
+	map[9] = 1;
+	map.dump();
+	std::cerr << "Collisions: " << map.getCollisions() << std::endl;
+	map[3] = 2;
+	map.dump();
+	std::cerr << "Collisions: " << map.getCollisions() << std::endl;
+
+	for (auto x : map)
+		std::cerr << x.first << " -> " << x.second << std::endl;
+
+	return 0;
 }
