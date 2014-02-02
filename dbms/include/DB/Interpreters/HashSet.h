@@ -15,9 +15,10 @@ template
 	typename Key,
 	typename Hash = default_hash<Key>,
 	typename ZeroTraits = default_zero_traits<Key>,
-	typename GrowthTraits = default_growth_traits
+	typename GrowthTraits = default_growth_traits,
+	typename Allocator = HashTableAllocator
 >
-class HashSet : private boost::noncopyable
+class HashSet : private boost::noncopyable, private Hash, private Allocator		/// empty base optimization
 {
 private:
 	friend class const_iterator;
@@ -27,17 +28,17 @@ private:
 	typedef HashSet<Key, Hash, ZeroTraits, GrowthTraits> Self;
 	
 	size_t m_size;			/// Количество элементов
+	Key * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
 	UInt8 size_degree;		/// Размер таблицы в виде степени двух
 	bool has_zero;			/// Хэш-таблица содержит элемент со значением ключа = 0.
-	Key zero_value;			/// Нулевое значение ключа. Чтобы было, куда поставить итератор. Не static, так как нулевое значение зависит от ZeroTraits.
-	Key * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
 
-	Hash hash;
+	static Key zero_value;	/// Нулевое значение ключа. Чтобы было, куда поставить итератор.
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 	mutable size_t collisions;
 #endif
 
+	inline size_t hash(const Key & x) const 	{ return Hash::operator()(x); }
 	inline size_t buf_size() const				{ return 1 << size_degree; }
 	inline size_t buf_size_bytes() const		{ return buf_size() * sizeof(Key); }
 	inline size_t max_fill() const				{ return 1 << (size_degree - 1); }
@@ -60,14 +61,8 @@ private:
 			: GrowthTraits::FAST_GROWTH_DEGREE;
 
 		/// Расширим пространство.
-		buf = reinterpret_cast<Key *>(realloc(reinterpret_cast<void *>(buf), buf_size_bytes()));
+		buf = reinterpret_cast<Key *>(Allocator::realloc(buf, old_size_bytes, buf_size_bytes()));
 
-		if (NULL == buf)
-			throwFromErrno("HashSet: Cannot realloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-		/// Очистим новый кусок памяти.
-		memset(buf + old_size, 0, buf_size_bytes() - old_size_bytes);
-		
 		/** Теперь некоторые элементы может потребоваться переместить на новое место.
 		  * Элемент может остаться на месте, или переместиться в новое место "справа",
 		  *  или переместиться левее по цепочке разрешения коллизий, из-за того, что элементы левее него были перемещены в новое место "справа".
@@ -125,11 +120,7 @@ public:
 		has_zero(false)
 	{
 		ZeroTraits::set(zero_value);
-		
-		buf = reinterpret_cast<Key *>(calloc(buf_size_bytes(), 1));
-
-		if (NULL == buf)
-			throwFromErrno("HashSet: Cannot calloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+		buf = reinterpret_cast<Key *>(Allocator::alloc(buf_size_bytes()));
 	}
 
 	~HashSet()
@@ -138,7 +129,7 @@ public:
 			for (iterator it = begin(); it != end(); ++it)
 				it->~Key();
 
-		free(reinterpret_cast<void *>(buf));
+		Allocator::free(buf, buf_size_bytes());
 	}
 
 
@@ -386,5 +377,17 @@ public:
 	}
 #endif
 };
+
+
+template
+<
+	typename Key,
+	typename Hash,
+	typename ZeroTraits,
+	typename GrowthTraits,
+	typename Allocator
+>
+Key HashSet<Key, Hash, ZeroTraits, GrowthTraits, Allocator>::zero_value{};
+
 
 }
