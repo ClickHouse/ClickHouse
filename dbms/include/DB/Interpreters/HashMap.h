@@ -206,7 +206,7 @@ private:
 			return;
 
 		/// Вычисление нового места, с учётом цепочки разрешения коллизий.
-		while (!ZeroTraits::check(buf[place_value].first) && x != buf[place_value])
+		while (!ZeroTraits::check(buf[place_value].first) && x.first != buf[place_value].first)
 		{
 			++place_value;
 			place_value &= mask();
@@ -216,7 +216,7 @@ private:
 		}
 
 		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
-		if (x == buf[place_value])
+		if (x.first == buf[place_value].first)
 			return;
 
 		/// Копирование на новое место и зануление старого.

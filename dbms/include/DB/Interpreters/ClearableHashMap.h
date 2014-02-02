@@ -34,9 +34,10 @@ template
 	typename Key,
 	typename Mapped,
 	typename Hash = default_hash<Key>,
-	typename GrowthTraits = default_growth_traits
+	typename GrowthTraits = default_growth_traits,
+	typename Allocator = HashTableAllocator
 >
-class ClearableHashMap : private boost::noncopyable
+class ClearableHashMap : private boost::noncopyable, private Hash, private Allocator		/// empty base optimization
 {
 private:
 	struct Value
@@ -47,17 +48,16 @@ private:
 	};
 	typedef size_t HashValue;
 
-	UInt32 version;
 	size_t m_size;			/// Количество элементов
-	UInt8 size_degree;		/// Размер таблицы в виде степени двух
 	Value * buf;			/// Кусок памяти для всех элементов кроме элемента с ключём 0.
-
-	Hash hash;
+	UInt32 version;
+	UInt8 size_degree;		/// Размер таблицы в виде степени двух
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 	mutable size_t collisions;
 #endif
 
+	inline size_t hash(const Key & x) const 	{ return Hash::operator()(x); }
 	inline size_t buf_size() const				{ return 1 << size_degree; }
 	inline size_t buf_size_bytes() const		{ return buf_size() * sizeof(Value); }
 	inline size_t max_fill() const				{ return 1 << (size_degree - 1); }
@@ -80,13 +80,7 @@ private:
 			: GrowthTraits::FAST_GROWTH_DEGREE;
 
 		/// Расширим пространство.
-		buf = reinterpret_cast<Value *>(realloc(reinterpret_cast<void *>(buf), buf_size_bytes()));
-
-		if (NULL == buf)
-			throwFromErrno("HashMap: Cannot realloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-		/// Очистим новый кусок памяти.
-		memset(buf + old_size, 0, buf_size_bytes() - old_size_bytes);
+		buf = reinterpret_cast<Value *>(Allocator::realloc(buf, old_size_bytes, buf_size_bytes()));
 
 		/** Теперь некоторые элементы может потребоваться переместить на новое место.
 		  * Элемент может остаться на месте, или переместиться в новое место "справа",
@@ -117,7 +111,7 @@ private:
 			return;
 
 		/// Вычисление нового места, с учётом цепочки разрешения коллизий.
-		while (buf[place_value].version == version && x != buf[place_value])
+		while (buf[place_value].version == version && x.key != buf[place_value].key)
 		{
 			++place_value;
 			place_value &= mask();
@@ -127,7 +121,7 @@ private:
 		}
 
 		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
-		if (x == buf[place_value])
+		if (x.key == buf[place_value].key)
 			return;
 
 		/// Копирование на новое место и зануление старого.
@@ -145,14 +139,11 @@ public:
 
 
 	ClearableHashMap() :
-		version(1),
 		m_size(0),
+		version(1),
 		size_degree(GrowthTraits::INITIAL_SIZE_DEGREE)
 	{
-		buf = reinterpret_cast<Value *>(calloc(buf_size_bytes(), 1));
-
-		if (NULL == buf)
-			throwFromErrno("HashMap: Cannot calloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+		buf = reinterpret_cast<Value *>(Allocator::alloc(buf_size_bytes()));
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 		collisions = 0;
@@ -161,7 +152,7 @@ public:
 
 	~ClearableHashMap()
 	{
-		free(reinterpret_cast<void *>(buf));
+		Allocator::free(buf, buf_size_bytes());
 	}
 
 
