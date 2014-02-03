@@ -21,7 +21,9 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
-#include <DB/Common/HashTableAllocator.h>
+#include <DB/IO/ReadHelpers.h>
+
+#include <DB/Core/StringRef.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 	#include <iostream>
@@ -128,12 +130,12 @@ template
 <
 	typename Key,
 	typename Mapped,
-	typename Hash = default_hash<Key>,
-	typename ZeroTraits = default_zero_traits<Key>,
-	typename GrowthTraits = default_growth_traits,
-	typename Allocator = HashTableAllocator
+	typename Hash,
+	typename ZeroTraits,
+	typename GrowthTraits,
+	typename Allocator
 >
-class HashMap : private boost::noncopyable, private Hash, private Allocator		/// empty base optimization
+class HashMap : private Allocator, private Hash		/// empty base optimization
 {
 private:
 	friend class const_iterator;
@@ -364,7 +366,7 @@ public:
 				++m_size;
 				has_zero = true;
 			}
-			return zero_value()->first;
+			return zero_value()->second;
 		}
 
 		size_t place_value = place(hash(x));
@@ -381,14 +383,24 @@ public:
 			return buf[place_value].second;
 
 		new(&buf[place_value].first) Key(x);
-		new(&buf[place_value].second) Value();
+		new(&buf[place_value].second) Mapped();
 		++m_size;
+
+	//	std::cerr << "m_size: " << m_size << ", " << "max_fill(): " << max_fill() << std::endl;
+	//	std::cerr << "m_size: " << m_size << std::endl;
+	//	std::cerr << "max_fill: " << max_fill() << std::endl;
+	//	std::cerr << "m_size > (1 << (size_degree - 1)): " << (m_size > (1 << (size_degree - 1))) << std::endl;
+	//	std::cerr << "!! buf: " << buf << std::endl;
 
 		if (unlikely(m_size > max_fill()))
 		{
+	//		std::cerr << "resize" << std::endl;
 			resize();
 			return (*this)[x];
 		}
+
+	//	std::cerr << "size_degree: " << (int)size_degree << std::endl;
+	//	std::cerr << "!! buf: " << buf << std::endl;
 
 		return buf[place_value].second;
 	}
@@ -402,9 +414,100 @@ public:
 
 	void dump() const
 	{
+	//	std::cerr << "buf: " << buf << std::endl;
 		for (size_t i = 0; i < buf_size(); ++i)
-			std::cerr << '[' << buf[i].first << ", " << buf[i].second << ']';
+		{
+			if (ZeroTraits::check(buf[i].first))
+				std::cerr << "[    ]";
+			else
+				std::cerr << '[' << buf[i].first.data << ", " << buf[i].second << ']';
+		}
 		std::cerr << std::endl;
+	}
+
+	size_t size() const
+	{
+	    return m_size;
+	}
+};
+
+
+class HashTableAllocator
+{
+public:
+	/// Выделить кусок памяти и заполнить его нулями.
+	void * alloc(size_t size)
+	{
+		void * buf = ::calloc(size, 1);
+		if (NULL == buf)
+			throwFromErrno("HashTableAllocator: Cannot calloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+		return buf;
+	}
+
+	/// Освободить память.
+	void free(void * buf, size_t size)
+	{
+		::free(buf);
+	}
+
+	/** Увеличить размер куска памяти.
+	  * Содержимое старого куска памяти переезжает в начало нового.
+	  * Оставшаяся часть заполняется нулями.
+	  * Положение куска памяти может измениться.
+	  */
+	void * realloc(void * buf, size_t old_size, size_t new_size)
+	{
+		buf = ::realloc(buf, new_size);
+		if (NULL == buf)
+			throwFromErrno("HashTableAllocator: Cannot realloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+		memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+		return buf;
+	}
+};
+
+
+template <size_t N>
+class HashTableAllocatorWithStackMemory : private HashTableAllocator
+{
+private:
+	char stack_memory[N]{};
+
+public:
+	void * alloc(size_t size)
+	{
+//		std::cerr << "alloc(): size: " << size << std::endl;
+		if (size <= N)
+			return &stack_memory[0];
+
+		return HashTableAllocator::alloc(size);
+	}
+
+	void free(void * buf, size_t size)
+	{
+		if (size > N)
+			HashTableAllocator::free(buf, size);
+	}
+
+	void * realloc(void * buf, size_t old_size, size_t new_size)
+	{
+//		std::cerr << "old_size: " << old_size << ", new_size: " << new_size << std::endl;
+
+		if (new_size <= N)
+			return buf;
+
+		if (old_size > N)
+			return HashTableAllocator::realloc(buf, old_size, new_size);
+
+		buf = ::malloc(new_size);
+		if (NULL == buf)
+			throwFromErrno("HashTableAllocator: Cannot malloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+		memcpy(buf, stack_memory, old_size);
+		memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+
+		return buf;
 	}
 };
 
@@ -415,6 +518,7 @@ public:
 struct TrivialHash
 {
 	size_t operator() (UInt64 x) const { return x; }
+	size_t operator() (DB::StringRef x) const { return DB::parse<UInt64>(x.data); }
 };
 
 struct GrowthTraits : public DB::default_growth_traits
@@ -426,22 +530,32 @@ struct GrowthTraits : public DB::default_growth_traits
 
 int main(int argc, char ** argv)
 {
-	typedef DB::HashMap<UInt64, UInt64, TrivialHash, DB::default_zero_traits<UInt64>, GrowthTraits> Map;
+	typedef DB::HashMap<
+		DB::StringRef,
+		UInt64,
+		TrivialHash,
+		DB::StringRefZeroTraits,
+		GrowthTraits,
+		DB::HashTableAllocatorWithStackMemory<4 * 24> > Map;
 
 	Map map;
 
 	map.dump();
-	map[1] = 1;
+	std::cerr << "size: " << map.size() << std::endl;
+	map[DB::StringRef("1", 1)] = 1;
 	map.dump();
-	map[9] = 1;
+	std::cerr << "size: " << map.size() << std::endl;
+	map[DB::StringRef("9", 1)] = 1;
 	map.dump();
+	std::cerr << "size: " << map.size() << std::endl;
 	std::cerr << "Collisions: " << map.getCollisions() << std::endl;
-	map[3] = 2;
+	map[DB::StringRef("3", 1)] = 2;
 	map.dump();
+	std::cerr << "size: " << map.size() << std::endl;
 	std::cerr << "Collisions: " << map.getCollisions() << std::endl;
 
 	for (auto x : map)
-		std::cerr << x.first << " -> " << x.second << std::endl;
+		std::cerr << x.first.toString() << " -> " << x.second << std::endl;
 
 	return 0;
 }
