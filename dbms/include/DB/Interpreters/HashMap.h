@@ -561,7 +561,7 @@ public:
 				++m_size;
 				has_zero = true;
 			}
-			return zero_value()->first;
+			return zero_value()->second;
 		}
 
 		size_t place_value = place(hash(x));
@@ -578,7 +578,7 @@ public:
 			return buf[place_value].second;
 
 		new(&buf[place_value].first) Key(x);
-		new(&buf[place_value].second) Value();
+		new(&buf[place_value].second) Mapped();
 		++m_size;
 
 		if (unlikely(m_size > max_fill()))
