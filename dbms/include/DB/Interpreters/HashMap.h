@@ -216,7 +216,7 @@ private:
 		}
 
 		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
-		if (x.first == buf[place_value].first)
+		if (!ZeroTraits::check(buf[place_value].first) && x.first == buf[place_value].first)
 			return;
 
 		/// Копирование на новое место и зануление старого.

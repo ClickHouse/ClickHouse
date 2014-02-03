@@ -121,7 +121,7 @@ private:
 		}
 
 		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
-		if (x.key == buf[place_value].key)
+		if (buf[place_value].version == version && x.key == buf[place_value].key)
 			return;
 
 		/// Копирование на новое место и зануление старого.
