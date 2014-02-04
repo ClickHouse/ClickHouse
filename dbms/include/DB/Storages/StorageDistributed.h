@@ -69,7 +69,7 @@ private:
 		const Context & context_,
 		const String & sign_column_name_ = "");
 	
-	/// Создает копию запроса, записавыет значения переменных host и port, меняет имена базы данных и таблицы.
+	/// Создает копию запроса, меняет имена базы данных и таблицы, записавыет значения переменных host и port, если они не пустые.
 	ASTPtr remakeQuery(ASTPtr query, const String & host, size_t port);
 
 	String name;

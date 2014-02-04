@@ -55,15 +55,21 @@ StoragePtr StorageDistributed::create(
 
 NameAndTypePair StorageDistributed::getColumn(const String &column_name) const
 {
-	if (column_name == _host_column_name) return std::make_pair(_host_column_name, new DataTypeString);
-	if (column_name == _port_column_name) return std::make_pair(_port_column_name, new DataTypeUInt16);
+	if (column_name == _host_column_name)
+		return std::make_pair(_host_column_name, new DataTypeString);
+	if (column_name == _port_column_name)
+		return std::make_pair(_port_column_name, new DataTypeUInt16);
+
 	return getRealColumn(column_name);
 }
 
 bool StorageDistributed::hasColumn(const String &column_name) const
 {
-	if (column_name == _host_column_name) return true;
-	if (column_name == _port_column_name) return true;
+	if (column_name == _host_column_name)
+		return true;
+	if (column_name == _port_column_name)
+		return true;
+
 	return hasRealColumn(column_name);
 }
 
@@ -72,9 +78,11 @@ ASTPtr StorageDistributed::remakeQuery(ASTPtr query, const String & host, size_t
 	/// Создаем копию запроса.
 	ASTPtr modified_query_ast = query->clone();
 
-	/// Добавляем в запрос значения хоста и порта
-	VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _host_column_name, host);
-	VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _port_column_name, port);
+	/// Добавляем в запрос значения хоста и порта, если требуется.
+	if (!host.empty())
+		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _host_column_name, host);
+	if (port != 0)
+		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _port_column_name, port);
 
 	/// Меняем имена таблицы и базы данных
 	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*modified_query_ast);
@@ -100,15 +108,6 @@ BlockInputStreams StorageDistributed::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	Names real_column_names, virt_column_names(2);
-	for (const auto & it : column_names)
-		if (it == _host_column_name)
-			virt_column_names[0] = _host_column_name;
-		else if (it == _port_column_name)
-			virt_column_names[1] = _port_column_name;
-		else
-			real_column_names.push_back(it);
-
 	processed_stage = (cluster.pools.size() + cluster.getLocalNodesNum()) == 1
 		? QueryProcessingStage::Complete
 		: QueryProcessingStage::WithMergeableState;
@@ -118,18 +117,46 @@ BlockInputStreams StorageDistributed::read(
 	new_settings.sign_rewrite = false;
 	new_settings.queue_max_wait_ms = Cluster::saturation(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
 
+	/** Запрошены ли виртуальные столбцы?
+	  * Если да - будем добавлять их в виде констант в запрос, предназначенный для выполнения на удалённом сервере,
+	  *  а также при получении результата с удалённого сервера.
+	  */
+	bool need_host_column = false;
+	bool need_port_column = false;
+
+	for (const auto & it : column_names)
+	{
+		if (it == _host_column_name)
+			need_host_column = true;
+		else if (it == _port_column_name)
+			need_port_column = true;
+	}
+
 	BlockInputStreams res;
 
 	for (ConnectionPools::iterator it = cluster.pools.begin(); it != cluster.pools.end(); ++it)
 	{
-		String modified_query = selectToString(remakeQuery(query, (*it)->get()->getHost(), (*it)->get()->getPort()));
-		res.push_back(new RemoteBlockInputStream((*it)->get(&new_settings), modified_query, &new_settings, virt_column_names[0], virt_column_names[1], processed_stage));
+		String modified_query = selectToString(remakeQuery(
+			query,
+			need_host_column ? (*it)->get()->getHost() : "",
+			need_port_column ? (*it)->get()->getPort() : 0));
+
+		res.push_back(new RemoteBlockInputStream(
+			(*it)->get(&new_settings),
+			modified_query,
+			&new_settings,
+			need_host_column ? _host_column_name : "",
+			need_port_column ? _port_column_name : "",
+			processed_stage));
 	}
 
 	/// Localhost and 9000 - временное решение, будет испрвлено в ближайшее время.
-	ASTPtr modified_query_ast = remakeQuery(query, "localhost", 9000);
+	ASTPtr modified_query_ast = remakeQuery(
+		query,
+		need_host_column ? "localhost" : "",
+		need_port_column ? 9000 : 0);
 
-	/// добавляем запросы к локальному clickhouse
+	/// добавляем запросы к локальному ClickHouse
 	DB::Context new_context = context;
 	new_context.setSettings(new_settings);
 	{
@@ -149,4 +176,5 @@ void StorageDistributed::alter(const ASTAlterQuery::Parameters &params)
 {
 	alterColumns(params, columns, context);
 }
+
 }
