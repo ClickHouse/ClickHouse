@@ -192,16 +192,14 @@ private:
 			("q")("й")("\\q")("\\Q");
 
 		const char * home_path_cstr = getenv("HOME");
-		if (!home_path_cstr)
-			throw Exception("Cannot get HOME environment variable");
-		else
+		if (home_path_cstr)
 			home_path = home_path_cstr;
 
 		if (config().has("config-file"))
 			loadConfiguration(config().getString("config-file"));
 		else if (Poco::File("./clickhouse-client.xml").exists())
 			loadConfiguration("./clickhouse-client.xml");
-		else if (Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
+		else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
 			loadConfiguration(home_path + "/.clickhouse-client/config.xml");
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
@@ -280,15 +278,22 @@ private:
 			rl_bind_key('\t', rl_insert);
 
 			/// Загружаем историю команд, если есть.
-			history_file = config().getString("history_file", home_path + "/.clickhouse-client-history");
-			if (Poco::File(history_file).exists())
+			if (config().has("history_file"))
+				history_file = config().getString("history_file");
+			else if (!home_path.empty())
+				history_file = home_path + "/.clickhouse-client-history";
+
+			if (!history_file.empty())
 			{
-				int res = read_history(history_file.c_str());
-				if (res)
-					throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+				if (Poco::File(history_file).exists())
+				{
+					int res = read_history(history_file.c_str());
+					if (res)
+						throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+				}
+				else	/// Создаём файл с историей.
+					Poco::File(history_file).createFile();
 			}
-			else	/// Создаём файл с историей.
-				Poco::File(history_file).createFile();
 
 			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
 			DateLUTSingleton::instance();
@@ -389,7 +394,7 @@ private:
 				{
 					add_history(query.c_str());
 
-					if (append_history(1, history_file.c_str()))
+					if (!history_file.empty() && append_history(1, history_file.c_str()))
 						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 
 					prev_query = query;
