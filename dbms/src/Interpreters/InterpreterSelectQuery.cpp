@@ -189,7 +189,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		bool has_where      = false;
 		bool need_aggregate = false;
 		bool has_having     = false;
-		bool has_order_by   = false;
+		bool has_order_by   = !query.order_expression_list.isNull();
 		
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
@@ -251,7 +251,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			}
 			
 			query_analyzer->appendSelect(chain);
-			has_order_by = query_analyzer->appendOrderBy(chain);
+			query_analyzer->appendOrderBy(chain);
 			before_order_and_select = chain.getLastActions();
 			chain.addStep();
 			
