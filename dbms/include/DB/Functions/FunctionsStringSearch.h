@@ -12,7 +12,8 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
-
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
 
 namespace DB
 {
@@ -388,29 +389,37 @@ struct ExtractImpl
 /** Заменить все вхождения регекспа needle на строку replacement. needle и replacement - константы.
   * Replacement может содержать подстановки, например '\2-\3-\1'
   */
-typedef std::vector< std::pair<int, std::string> > Instructions;
-
 template <bool replaceOne = false>
 struct ReplaceRegexpImpl
 {
+	/// Последовательность инструкций, описывает как получить конечную строку. Каждый элемент
+	/// либо подстановка, тогда первое число в паре ее id,
+	/// либо строка, которую необходимо вставить, записана второй в паре. (id = -1)
+	typedef std::vector< std::pair<int, std::string> > Instructions;
+
 	static void split(const std::string & s, Instructions & instructions)
 	{
 		instructions.clear();
 		String now = "";
 		for (size_t i = 0; i < s.size(); ++i)
 		{
-			if (s[i] == '\\' && i + 1 < s.size() && isdigit(s[i+1]))
+			if (s[i] == '\\' && i + 1 < s.size())
 			{
-				if (!now.empty())
+				if (isdigit(s[i+1])) /// Подстановка
 				{
-					instructions.push_back(std::make_pair(-1, now));
-					now = "";
+					if (!now.empty())
+					{
+						instructions.push_back(std::make_pair(-1, now));
+						now = "";
+					}
+					instructions.push_back(std::make_pair(s[i+1] - '0', ""));
 				}
-				instructions.push_back(std::make_pair(s[i+1] - '0', ""));
+				else
+					now += s[i+1]; /// Экранирование
 				++i;
-				continue;
 			}
-			now += s[i];
+			else
+				now += s[i]; /// Обычный символ
 		}
 		if (!now.empty())
 		{
@@ -423,97 +432,81 @@ struct ReplaceRegexpImpl
 		const std::string & needle, const std::string & replacement,
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
-		const UInt8 * begin = &data[0];
-		const UInt8 * pos = begin;
-		const UInt8 * end = pos + data.size();
-
 		ColumnString::Offset_t res_offset = 0;
 		res_data.reserve(data.size());
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		/// Текущий индекс в массиве строк.
-		size_t i = 0;
-
-		const OptimizedRegularExpression & regexp = Regexps::get(needle);
+		RE2 searcher(needle);
+		int capture = std::min(searcher.NumberOfCapturingGroups() + 1, 10);
+		re2::StringPiece matches[10];
 
 		Instructions instructions;
-		int capture = regexp.getNumberOfSubpatterns();
-		OptimizedRegularExpression::MatchVec matches;
-		matches.reserve(capture + 1);
 		split(replacement, instructions);
 
 		for (const auto & it : instructions)
 			if (it.first > capture)
 				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", But in regexp only " + toString(capture) + " subpatterns",
+				", but regexp has only " + toString(capture) + " subpatterns",
 					ErrorCodes::BAD_ARGUMENTS);
 
-		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end)
+		/// Искать вхождение сразу во всех сроках нельзя, будем двигаться вдоль каждой независимо
+		for (size_t id = 0; id < size; ++id)
 		{
-			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), matches))
+			int from = id > 0 ? offsets[id-1] : 0;
+			int start_pos = 0;
+			re2::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), offsets[id] - from - 1);
+
+			while (start_pos < input.length())
 			{
-				matches[0].offset = end - pos;
-				matches[0].length = 1;
-			}
-			OptimizedRegularExpression::Match match = matches[0];
+				/// Правда ли, что с этой строкой больше не надо выполнять преобразования
+				bool can_finish_current_string = false;
 
-			/// Копируем данные без изменения
-			res_data.resize(res_data.size() + match.offset);
-			memcpy(&res_data[res_offset], pos, match.offset);
-
-			/// Определим, к какому индексу оно относится.
-			while (i < offsets.size() && begin + offsets[i] < pos + match.offset)
-			{
-				res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
-				++i;
-			}
-			res_offset += match.offset;
-
-			/// Если дошли до конца, пора остановиться
-			if (i == offsets.size())
-				break;
-
-			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
-			bool can_finish_current_string = false;
-
-			/// Проверяем, что вхождение не переходит через границы строк.
-			if (pos + match.offset + match.length < begin + offsets[i])
-			{
-				for (const auto & it : instructions)
+				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 				{
-					if (it.first >= 0)
-					{
-						res_data.resize(res_data.size() + matches[it.first].length);
-						memcpy(&res_data[res_offset], pos + matches[it.first].offset, matches[it.first].length);
-						res_offset += matches[it.first].length;
-					}
-					else
-					{
-						res_data.resize(res_data.size() + it.second.size());
-						memcpy(&res_data[res_offset], it.second.data(), it.second.size());
-						res_offset += it.second.size();
-					}
-				}
-				pos = pos + match.offset + match.length;
-				if (replaceOne)
-					can_finish_current_string = true;
-			}
-			else
-			{
-				pos = pos + match.offset;
-				can_finish_current_string = true;
-			}
+					const re2::StringPiece & match = matches[0];
+					size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
-			if (can_finish_current_string)
-			{
-				res_data.resize(res_data.size() + (begin + offsets[i] - pos));
-				memcpy(&res_data[res_offset], pos, (begin + offsets[i] - pos));
-				res_offset += (begin + offsets[i] - pos);
-				res_offsets[i] = res_offset;
-				pos = begin + offsets[i];
+					/// Копируем данные без изменения
+					res_data.resize(res_data.size() + char_to_copy);
+					memcpy(&res_data[res_offset], input.data() + start_pos, char_to_copy);
+					res_offset += char_to_copy;
+					start_pos += char_to_copy + match.length();
+
+					/// Выполняем инструкции подстановки
+					for (const auto & it : instructions)
+					{
+						if (it.first >= 0)
+						{
+							res_data.resize(res_data.size() + matches[it.first].length());
+							memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
+							res_offset += matches[it.first].length();
+						}
+						else
+						{
+							res_data.resize(res_data.size() + it.second.size());
+							memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+							res_offset += it.second.size();
+						}
+					}
+					if (replaceOne)
+						can_finish_current_string = true;
+				} else
+					can_finish_current_string = true;
+
+				/// Если пора, копируем все символы до конца строки
+				if (can_finish_current_string)
+				{
+					res_data.resize(res_data.size() + input.length() - start_pos);
+					memcpy(&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
+					res_offset += input.length() - start_pos;
+					res_offsets[id] = res_offset;
+					start_pos = input.length();
+				}
 			}
+			res_data.resize(res_data.size() + 1);
+			res_data[res_offset++] = 0;
+			res_offsets[id] = res_offset;
 		}
 	}
 
@@ -521,143 +514,138 @@ struct ReplaceRegexpImpl
 		const std::string & needle, const std::string & replacement,
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
-		const UInt8 * begin = &data[0];
-		const UInt8 * pos = begin;
-		const UInt8 * end = pos + data.size();
-
 		ColumnString::Offset_t res_offset = 0;
 		size_t size = data.size() / n;
 		res_data.reserve(data.size());
 		res_offsets.resize(size);
 
-		/// Текущий индекс в массиве строк.
-		size_t i = 0;
-
-		const OptimizedRegularExpression & regexp = Regexps::get(needle);
+		RE2 searcher(needle);
+		int capture = std::min(searcher.NumberOfCapturingGroups() + 1, 10);
+		re2::StringPiece matches[10];
 
 		Instructions instructions;
-		int capture = regexp.getNumberOfSubpatterns();
-		OptimizedRegularExpression::MatchVec matches;
-		matches.reserve(capture + 1);
 		split(replacement, instructions);
 
 		for (const auto & it : instructions)
 			if (it.first > capture)
 				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", But in regexp only " + toString(capture) + " subpatterns",
+				", but regexp has only " + toString(capture) + " subpatterns",
 					ErrorCodes::BAD_ARGUMENTS);
 
-		/// Искать будем следующее вхождение сразу во всех строках.
-		while (pos < end)
+		/// Искать вхождение сразу во всех сроках нельзя, будем двигаться вдоль каждой независимо.
+		for (size_t id = 0; id < size; ++id)
 		{
-			if (!regexp.match(reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos), matches))
+			int from = id * n;
+			int start_pos = 0;
+			re2::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), (id + 1) * n - from);
+
+			while (start_pos < input.length())
 			{
-				matches[0].offset = end - pos;
-				matches[0].length = 1;
-			}
-			OptimizedRegularExpression::Match match = matches[0];
+				/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+				bool can_finish_current_string = false;
 
-			/// Копируем данные без изменения
-			res_data.resize(res_data.size() + match.offset);
-			memcpy(&res_data[res_offset], pos, match.offset);
-
-			/// Определим, к какому индексу оно относится.
-			while (i < size && begin + n * (i + 1) < pos + match.offset)
-			{
-				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos);
-				++i;
-			}
-			res_offset += match.offset;
-
-			/// Если дошли до конца, пора остановиться
-			if (i == size)
-				break;
-
-			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
-			bool can_finish_current_string = false;
-
-			/// Проверяем, что вхождение не переходит через границы строк.
-			if (pos + match.offset + match.length < begin + n * (i + 1))
-			{
-				for (const auto & it : instructions)
+				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 				{
-					if (it.first >= 0)
-					{
-						res_data.resize(res_data.size() + matches[it.first].length);
-						memcpy(&res_data[res_offset], pos + matches[it.first].offset, matches[it.first].length);
-						res_offset += matches[it.first].length;
-					}
-					else
-					{
-						res_data.resize(res_data.size() + it.second.size());
-						memcpy(&res_data[res_offset], it.second.data(), it.second.size());
-						res_offset += it.second.size();
-					}
-				}
-				pos = pos + match.offset + match.length;
-				if (replaceOne)
-					can_finish_current_string = true;
-			}
-			else
-			{
-				pos = pos + match.offset;
-				can_finish_current_string = true;
-			}
+					const re2::StringPiece & match = matches[0];
+					size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
-			if (can_finish_current_string)
-			{
-				res_data.resize(res_data.size() + (begin + n * (i + 1) - pos));
-				memcpy(&res_data[res_offset], pos, (begin + n * (i + 1) - pos));
-				res_offset += (begin + n * (i + 1) - pos);
-				res_offsets[i] = res_offset;
-				pos = begin + n * (i + 1);
+					/// Копируем данные без изменения
+					res_data.resize(res_data.size() + char_to_copy);
+					memcpy(&res_data[res_offset], input.data() + start_pos, char_to_copy);
+					res_offset += char_to_copy;
+					start_pos += char_to_copy + match.length();
+
+					/// Выполняем инструкции подстановки
+					for (const auto & it : instructions)
+					{
+						if (it.first >= 0)
+						{
+							res_data.resize(res_data.size() + matches[it.first].length());
+							memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
+							res_offset += matches[it.first].length();
+						}
+						else
+						{
+							res_data.resize(res_data.size() + it.second.size());
+							memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+							res_offset += it.second.size();
+						}
+					}
+					if (replaceOne)
+						can_finish_current_string = true;
+				} else
+					can_finish_current_string = true;
+
+				/// Если пора, копируем все символы до конца строки
+				if (can_finish_current_string)
+				{
+					res_data.resize(res_data.size() + input.length() - start_pos);
+					memcpy(&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
+					res_offset += input.length() - start_pos;
+					res_offsets[id] = res_offset;
+					start_pos = input.length();
+				}
 			}
+			res_data.resize(res_data.size() + 1);
+			res_data[res_offset++] = 0;
+			res_offsets[id] = res_offset;
+
 		}
 	}
 
 	static void constant(const std::string & data, const std::string & needle, const std::string & replacement,
 		std::string & res_data)
 	{
-		res_data = "";
-		size_t pos = 0;
-		const OptimizedRegularExpression & regexp = Regexps::get(needle);
+		RE2 searcher(needle);
+		int capture = std::min(searcher.NumberOfCapturingGroups() + 1, 10);
+		re2::StringPiece matches[10];
 
 		Instructions instructions;
-		int capture = regexp.getNumberOfSubpatterns();
-		OptimizedRegularExpression::MatchVec matches;
-		matches.reserve(capture + 1);
 		split(replacement, instructions);
 
 		for (const auto & it : instructions)
-			if (it.first > capture)
+			if (it.first >= capture)
 				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", But in regexp only " + toString(capture) + " subpatterns",
+				", but regexp has only " + toString(capture-1) + " subpatterns",
 					ErrorCodes::BAD_ARGUMENTS);
 
-		while (pos < data.size())
+		int start_pos = 0;
+		re2::StringPiece input(data);
+		res_data = "";
+
+		while (start_pos < input.length())
 		{
-			if (!regexp.match(data.substr(pos), matches))
-			{
-				res_data += data.substr(pos);
-				break;
-			}
-			OptimizedRegularExpression::Match match = matches[0];
+			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+			bool can_finish_current_string = false;
 
-			if (match.offset > 0)
-				res_data += data.substr(pos, match.offset);
+			if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
+			{
+				const re2::StringPiece & match = matches[0];
+				size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
-			for (const auto & it : instructions)
+				/// Копируем данные без изменения
+				res_data += data.substr(start_pos, char_to_copy);
+				start_pos += char_to_copy + match.length();
+
+				/// Выполняем инструкции подстановки
+				for (const auto & it : instructions)
+				{
+					if (it.first >= 0)
+						res_data += matches[it.first].ToString();
+					else
+						res_data += it.second;
+				}
+
+				if (replaceOne)
+					can_finish_current_string = true;
+			} else
+				can_finish_current_string = true;
+
+			/// Если пора, копируем все символы до конца строки
+			if (can_finish_current_string)
 			{
-				if (it.first >= 0)
-					res_data += data.substr(matches[it.first].offset, matches[it.first].length);
-				else
-					res_data += it.second;
-			}
-			pos += match.offset + match.length;
-			if (replaceOne)
-			{
-				res_data += data.substr(pos);
-				break;
+				res_data += data.substr(start_pos);
+				start_pos = input.length();
 			}
 		}
 	}
