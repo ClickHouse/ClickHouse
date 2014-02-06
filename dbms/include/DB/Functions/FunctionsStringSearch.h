@@ -445,9 +445,9 @@ struct ReplaceRegexpImpl
 		split(replacement, instructions);
 
 		for (const auto & it : instructions)
-			if (it.first > capture)
+			if (it.first >= capture)
 				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", but regexp has only " + toString(capture) + " subpatterns",
+				", but regexp has only " + toString(capture - 1) + " subpatterns",
 					ErrorCodes::BAD_ARGUMENTS);
 
 		/// Искать вхождение сразу во всех сроках нельзя, будем двигаться вдоль каждой независимо
@@ -527,9 +527,9 @@ struct ReplaceRegexpImpl
 		split(replacement, instructions);
 
 		for (const auto & it : instructions)
-			if (it.first > capture)
+			if (it.first >= capture)
 				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", but regexp has only " + toString(capture) + " subpatterns",
+				", but regexp has only " + toString(capture - 1) + " subpatterns",
 					ErrorCodes::BAD_ARGUMENTS);
 
 		/// Искать вхождение сразу во всех сроках нельзя, будем двигаться вдоль каждой независимо.
@@ -606,7 +606,7 @@ struct ReplaceRegexpImpl
 		for (const auto & it : instructions)
 			if (it.first >= capture)
 				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", but regexp has only " + toString(capture-1) + " subpatterns",
+				", but regexp has only " + toString(capture - 1) + " subpatterns",
 					ErrorCodes::BAD_ARGUMENTS);
 
 		int start_pos = 0;
