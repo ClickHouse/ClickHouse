@@ -5,7 +5,7 @@
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
+//#include <DB/Parsers/ParserCreateQuery.h>
 
 
 namespace DB
@@ -62,7 +62,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ws.ignore(pos, end);
 	}
 
-	/// FROM database.table или FROM table или FROM (subquery)
+	/// FROM database.table или FROM table или FROM (subquery) или FROM tableFunction
 	if (s_from.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
@@ -71,7 +71,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		ParserString s_rparen(")");
 		ParserString s_dot(".");
 		ParserIdentifier ident;
-		ParserIdentifierWithOptionalParameters table_function;
+		ParserFunction table_function;
 		Pos before = pos;
 
 		if (s_lparen.ignore(pos, end, expected))

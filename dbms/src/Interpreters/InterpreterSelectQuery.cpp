@@ -40,10 +40,10 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_)
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
 	/// Если имееем дело с табличной функцией
-	if (query.table && dynamic_cast<ASTFunction *>(&*query.table))
+	if (query.table && dynamic_cast<const ASTFunction *>(&*query.table))
 	{
 		/// Получить табличную функцию
-		TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<ASTFunction *>(&*query.table)->name, context);
+		TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<const ASTFunction *>(&*query.table)->name, context);
 		/// Выполнить ее и запомнить результат
 		table_function_storage = table_function_ptr->execute(query.table, context);
 	}

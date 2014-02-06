@@ -17,7 +17,7 @@ public:
 	bool distinct;
 	ASTPtr select_expression_list;
 	ASTPtr database;
-	ASTPtr table;	/// Идентификатор или подзапрос (рекурсивно ASTSelectQuery)
+	ASTPtr table;	/// Идентификатор, табличная функция или подзапрос (рекурсивно ASTSelectQuery)
 	ASTPtr array_join_expression_list;
 	bool final;
 	ASTPtr sample_size;

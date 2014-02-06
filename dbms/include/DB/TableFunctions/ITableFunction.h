@@ -27,13 +27,11 @@ public:
 	virtual std::string getName() const = 0;
 
 	/// Создать storage в соответствии с запросом
-	virtual StoragePtr execute(ASTPtr ast_function, Context & context)
-	{
-		throw Exception("execute is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
+	virtual StoragePtr execute(ASTPtr ast_function, Context & context) const = 0;
+
 protected:
 	/// Сгенерировать уникальное имя для временной таблицы.
-	String ChooseName () const {
+	std::string chooseName () const {
 		String result = "TemproraryTable" + getName() + "Id";
 		for (size_t i = 0; i < 10; ++i)
 		{

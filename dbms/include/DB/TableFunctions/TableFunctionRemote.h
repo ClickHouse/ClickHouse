@@ -18,7 +18,7 @@ class TableFunctionRemote: public ITableFunction
 public:
 	std::string getName() const { return "remote"; }
 
-	StoragePtr execute(ASTPtr ast_function, Context & context)
+	StoragePtr execute(ASTPtr ast_function, Context & context) const override
 	{
 		return StoragePtr();
 	}
