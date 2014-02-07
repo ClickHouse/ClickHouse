@@ -489,7 +489,7 @@ struct ReplaceRegexpImpl
 							res_offset += it.second.size();
 						}
 					}
-					if (replaceOne)
+					if (replaceOne || match.length() == 0)
 						can_finish_current_string = true;
 				} else
 					can_finish_current_string = true;
@@ -571,7 +571,7 @@ struct ReplaceRegexpImpl
 							res_offset += it.second.size();
 						}
 					}
-					if (replaceOne)
+					if (replaceOne || match.length() == 0)
 						can_finish_current_string = true;
 				} else
 					can_finish_current_string = true;
@@ -636,7 +636,7 @@ struct ReplaceRegexpImpl
 						res_data += it.second;
 				}
 
-				if (replaceOne)
+				if (replaceOne || match.length() == 0)
 					can_finish_current_string = true;
 			} else
 				can_finish_current_string = true;
