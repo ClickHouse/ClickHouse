@@ -6,10 +6,6 @@
 namespace DB
 {
 
-class Context;
-class ITableFunction;
-
-
 /** Позволяет получить табличную функцию по ее имени.
   */
 class TableFunctionFactory
