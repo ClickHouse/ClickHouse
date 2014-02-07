@@ -24,7 +24,7 @@ class TableFunctionMerge: public ITableFunction
 public:
  	std::string getName() const { return "merge"; }
 
-	StoragePtr execute(ASTPtr ast_function, Context & context) const override
+	StoragePtr execute(ASTPtr ast_function, Context & context)
 	{
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*ast_function).children;
 
@@ -47,7 +47,7 @@ public:
 		/// Нам необходимо его пометить как имя базы данных, посколку по умолчанию стоит значение column
 		dynamic_cast<ASTIdentifier &>(*args[0]).kind = ASTIdentifier::Database;
 
-		return StorageMerge::create(chooseName(), chooseColumns(source_database, table_name_regexp, context), source_database, table_name_regexp, context);
+		return StorageMerge::create(getName(), chooseColumns(source_database, table_name_regexp, context), source_database, table_name_regexp, context);
 	}
 
 private:

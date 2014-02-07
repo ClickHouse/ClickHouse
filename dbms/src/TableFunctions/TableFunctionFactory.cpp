@@ -14,7 +14,6 @@ TableFunctionPtr TableFunctionFactory::get(
 	const String & name,
 	const Context & context) const
 {
-	/// Немного неоптимально.
 		 if (name == "merge")						return new TableFunctionMerge;
 	else if (name == "remote")						return new TableFunctionRemote;
 	else

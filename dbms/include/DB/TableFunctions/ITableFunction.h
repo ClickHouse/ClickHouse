@@ -27,27 +27,7 @@ public:
 	virtual std::string getName() const = 0;
 
 	/// Создать storage в соответствии с запросом
-	virtual StoragePtr execute(ASTPtr ast_function, Context & context) const = 0;
-
-protected:
-	/// Сгенерировать уникальное имя для временной таблицы.
-	std::string chooseName () const {
-		String result = "TemproraryTable" + getName() + "Id";
-		for (size_t i = 0; i < 10; ++i)
-		{
-			int x = rand() % 62;
-			char now;
-			if (x < 10)
-				now = '0' + rand() % 10;
-			else if (x < 36)
-				now = 'a' + x - 10;
-			else
-				now = 'A' + x - 36;
-
-			result += now;
-		}
-		return result;
-	}
+	virtual StoragePtr execute(ASTPtr ast_function, Context & context) = 0;
 };
 
 typedef SharedPtr<ITableFunction> TableFunctionPtr;

@@ -30,6 +30,17 @@ public:
 		Context & context_,
 		const String & sign_column_name_ = "");
 
+	static StoragePtr create(
+		const std::string & name_,			/// Имя таблицы.
+		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const String & remote_database_,	/// БД на удалённых серверах.
+		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
+		Cluster & cluster_,
+		const DataTypeFactory & data_type_factory_,
+		const Settings & settings,
+		Context & context_,
+		const String & sign_column_name_ = "");
+
 	std::string getName() const { return "Distributed"; }
 	std::string getTableName() const { return name; }
 	std::string getSignColumnName() const { return sign_column_name; };

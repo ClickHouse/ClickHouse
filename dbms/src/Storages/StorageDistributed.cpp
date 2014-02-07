@@ -53,6 +53,21 @@ StoragePtr StorageDistributed::create(
 	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
 }
 
+
+StoragePtr StorageDistributed::create(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const String & remote_database_,
+	const String & remote_table_,
+	Cluster & cluster_,
+	const DataTypeFactory & data_type_factory_,
+	const Settings & settings,
+	Context & context_,
+	const String & sign_column_name_)
+{
+	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, cluster_, data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
+}
+
 NameAndTypePair StorageDistributed::getColumn(const String &column_name) const
 {
 	if (column_name == _host_column_name)

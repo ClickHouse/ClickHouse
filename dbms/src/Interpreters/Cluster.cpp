@@ -125,6 +125,34 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 }
 
+Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names):
+	local_nodes_num(0)
+{
+	for (size_t i = 0; i < names.size(); ++i)
+	{
+		Addresses current;
+		for (size_t j = 0; j < names[i].size(); ++j)
+			current.push_back(Address(Poco::Net::SocketAddress(names[i][j]), "default", ""));
+		addresses_with_failover.push_back(current);
+	}
+	for (AddressesWithFailover::const_iterator it = addresses_with_failover.begin(); it != addresses_with_failover.end(); ++it)
+	{
+		ConnectionPools replicas;
+		replicas.reserve(it->size());
+
+		for (Addresses::const_iterator jt = it->begin(); jt != it->end(); ++jt)
+		{
+			replicas.push_back(new ConnectionPool(
+				settings.distributed_connections_pool_size,
+				jt->host_port.host().toString(), jt->host_port.port(), "", jt->user, jt->password, data_type_factory, "server", Protocol::Compression::Enable,
+				saturation(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
+				saturation(settings.receive_timeout, settings.limits.max_execution_time),
+				saturation(settings.send_timeout, settings.limits.max_execution_time)));
+		}
+		pools.push_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
+	}
+}
+
 Poco::Timespan Cluster::saturation(const Poco::Timespan & v, const Poco::Timespan & limit)
 {
 	if (limit.totalMicroseconds() == 0)
