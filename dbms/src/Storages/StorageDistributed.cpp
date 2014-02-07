@@ -165,11 +165,12 @@ BlockInputStreams StorageDistributed::read(
 			processed_stage));
 	}
 
-	/// Localhost and 9000 - временное решение, будет испрвлено в ближайшее время.
+	/// Узнаем на каком порту слушает сервер
+	UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
 	ASTPtr modified_query_ast = remakeQuery(
 		query,
 		need_host_column ? "localhost" : "",
-		need_port_column ? 9000 : 0);
+		need_port_column ? clickhouse_port : 0);
 
 	/// добавляем запросы к локальному ClickHouse
 	DB::Context new_context = context;

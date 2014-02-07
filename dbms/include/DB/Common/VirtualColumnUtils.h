@@ -38,7 +38,7 @@ inline String chooseSuffix(const NamesAndTypesList & columns, const String & nam
 }
 
 /// Вычислить минимальный общий числовый суффикс, который надо добавить к каждой строке,
-/// чтобы ниодна не присутствовала в множестве.
+/// чтобы ни одна не присутствовала в множестве.
 inline String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<String> & names)
 {
 	int id = 0;
@@ -67,7 +67,7 @@ inline String chooseSuffixForSet(const NamesAndTypesList & columns, const std::v
 	return current_suffix;
 }
 
-/// Добавляет в селект запрос секцию select clumn_name as value
+/// Добавляет в селект запрос секцию select column_name as value
 /// Например select _port as 9000.
 inline void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
