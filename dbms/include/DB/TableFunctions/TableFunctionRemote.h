@@ -169,7 +169,7 @@ private:
 			if (description[i] == '{')
 			{
 				int cnt = 1;
-				int last_dot = -1;
+				int last_dot = -1; /// Самая правая пара точек, запоминаем индекс правой из двух
 				size_t m;
 				std::vector<String> buffer;
 				bool have_spliter = false;
