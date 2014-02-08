@@ -31,7 +31,7 @@
 namespace DB
 {
 
-void InterpreterSelectQuery::init(BlockInputStreamPtr input_)
+void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
 {
 	ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -50,6 +50,8 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_)
 
 	if (table_function_storage)
 		context.setColumns(table_function_storage->getColumnsList());
+	else if (!table_column_names.empty())
+		context.setColumns(table_column_names);
 	else
 		context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
 			? getTable()->getColumnsList()
@@ -80,6 +82,21 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_);
+
+	/** Оставляем в запросе в секции SELECT только нужные столбцы.
+	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
+	  */
+	if (!query.distinct)
+		query.rewriteSelectExpressionList(required_column_names_);
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names_,
+		const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
+	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
+	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	log(&Logger::get("InterpreterSelectQuery"))
+{
+	init(input_, table_column_names);
 
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
