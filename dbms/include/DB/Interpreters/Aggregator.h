@@ -38,7 +38,7 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
 /** Разные структуры данных, которые могут использоваться для агрегации
   * Для эффективности сами данные для агрегации кладутся в пул.
   * Владение данными (состояний агрегатных функций) и пулом
-  *  захватывается позднее - в функции ConvertToBlock, объектом ColumnAggregateFunction.
+  *  захватывается позднее - в функции convertToBlock, объектом ColumnAggregateFunction.
   */
 typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
