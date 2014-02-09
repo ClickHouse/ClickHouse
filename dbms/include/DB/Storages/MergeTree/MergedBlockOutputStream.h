@@ -84,12 +84,17 @@ public:
 		column_streams.clear();
 		
 		if (marks_count == 0)
-			throw Exception("Empty part", ErrorCodes::LOGICAL_ERROR);
+		{
+			/// Кусок пустой - все записи удалились.
+			Poco::File(part_tmp_path).remove(true);
+		}
+		else
+		{
+			/// Переименовываем кусок.
+			Poco::File(part_tmp_path).renameTo(part_res_path);
 
-		/// Переименовываем кусок.
-		Poco::File(part_tmp_path).renameTo(part_res_path);
-		
-		/// А добавление нового куска в набор (и удаление исходных кусков) сделает вызывающая сторона.
+			/// А добавление нового куска в набор (и удаление исходных кусков) сделает вызывающая сторона.
+		}
 	}
 	
 	/// Сколько засечек уже записано.

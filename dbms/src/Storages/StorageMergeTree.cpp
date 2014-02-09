@@ -1125,29 +1125,38 @@ void StorageMergeTree::mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> &
 	merged_stream->readSuffix();
 	to->writeSuffix();
 
+	/// В обычном режиме строчки не могут удалиться при мердже.
+	if (0 == to->marksCount() && mode == Ordinary)
+		throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
+
 	new_data_part->size = to->marksCount();
 	new_data_part->modification_time = time(0);
-	new_data_part->loadIndex();	/// NOTE Только что записанный индекс заново считывается с диска. Можно было бы формировать его сразу при записи.
+
+	if (0 != to->marksCount())
+		new_data_part->loadIndex();	/// NOTE Только что записанный индекс заново считывается с диска. Можно было бы формировать его сразу при записи.
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
-		/// Добавляем новый кусок в набор.
-		
+		/// Добавляем новый кусок в набор, если он не пустой.
+
 		for (size_t i = 0; i < parts.size(); ++i)
-		{
 			if (data_parts.end() == data_parts.find(parts[i]))
 				throw Exception("Logical error: cannot find data part " + parts[i]->name + " in list", ErrorCodes::LOGICAL_ERROR);
+
+		if (0 == to->marksCount())
+		{
+			LOG_INFO(log, "All rows have been deleted while merging from " << parts.front()->name << " to " << parts.back()->name);
+		}
+		else
+		{
+			data_parts.insert(new_data_part);
+			all_data_parts.insert(new_data_part);
 		}
 
-		data_parts.insert(new_data_part);
-		all_data_parts.insert(new_data_part);
-		
 		for (size_t i = 0; i < parts.size(); ++i)
-		{
 			data_parts.erase(data_parts.find(parts[i]));
-		}
 	}
 
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
