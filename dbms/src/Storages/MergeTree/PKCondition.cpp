@@ -10,7 +10,9 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 {
 	for (size_t i = 0; i < sort_descr.size(); ++i)
 	{
-		pk_columns[sort_descr[i].column_name] = i;
+		std::string name = sort_descr[i].column_name;
+		if (!pk_columns.count(name))
+			pk_columns[name] = i;
 	}
 	
 	/** Вычисление выражений, зависящих только от констант.
