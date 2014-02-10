@@ -1,4 +1,4 @@
-/var/log/@DAEMON@/@DAEMON@.log {
+/var/log/@DAEMON@/@DAEMON@*.log {
 	rotate 20
 	size 20M
 	compress
