@@ -137,6 +137,9 @@ public:
 	}
 	
 protected:
+	/// Будем вызывать progressImpl самостоятельно.
+	void progress(size_t rows, size_t bytes) {}
+
 	Block readImpl()
 	{
 		Block res;
@@ -172,6 +175,7 @@ protected:
 					if (range.begin == range.end)
 						remaining_mark_ranges.pop_back();
 				}
+				progressImpl(res.rows(), res.bytes());
 				pre_reader->fillMissingColumns(res);
 
 				/// Вычислим выражение в PREWHERE.
@@ -180,6 +184,8 @@ protected:
 				ColumnPtr column = res.getByName(prewhere_column).column;
 				if (remove_prewhere_column)
 					res.erase(prewhere_column);
+
+				size_t pre_bytes = res.bytes();
 
 				/** Если фильтр - константа (например, написано PREWHERE 1),
 				*  то либо вернём пустой блок, либо вернём блок без изменений.
@@ -197,6 +203,8 @@ protected:
 
 						reader->readRange(range.begin, range.end, res);
 					}
+
+					progressImpl(0, res.bytes() - pre_bytes);
 				}
 				else if (ColumnUInt8 * column_vec = dynamic_cast<ColumnUInt8 *>(&*column))
 				{
@@ -246,6 +254,8 @@ protected:
 						continue;
 					}
 
+					progressImpl(0, res.bytes() - pre_bytes);
+
 					post_filter.resize(post_filter_pos);
 
 					/// Отфильтруем столбцы, относящиеся к PREWHERE, используя pre_filter,
@@ -286,6 +296,8 @@ protected:
 				if (range.begin == range.end)
 					remaining_mark_ranges.pop_back();
 			}
+
+			progressImpl(res.rows(), res.bytes());
 
 			reader->fillMissingColumns(res);
 		}
