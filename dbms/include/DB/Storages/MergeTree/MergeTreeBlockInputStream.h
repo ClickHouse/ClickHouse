@@ -244,7 +244,8 @@ protected:
 								begin = mark + 1;
 								pre_filter_begin_pos = std::min(pre_filter_pos + index_granularity, pre_filter.size());
 							}
-							pre_filter_pos = std::min(pre_filter_pos + index_granularity, pre_filter.size());
+							if (mark < range.end)
+								pre_filter_pos = std::min(pre_filter_pos + index_granularity, pre_filter.size());
 						}
 					}
 
