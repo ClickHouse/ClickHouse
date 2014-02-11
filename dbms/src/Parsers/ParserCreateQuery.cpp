@@ -329,15 +329,22 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 		}
 	} else {
 		/// VIEW or MATERIALIZED VIEW
-		if (s_materialized.ignore(pos, end, expected))
+		if (s_materialized.ignore(pos, end, expected) && ws.ignore(pos, end, expected))
 			is_materialized_view = true;
 		else
 			is_view = true;
 
-		ws.ignore(pos, end, expected);
-		if (!s_view.ignore(pos, end, expected))
+		if (!s_view.ignore(pos, end, expected) || !ws.ignore(pos, end, expected))
 			return false;
-		ws.ignore(pos, end);
+
+		if (s_if.ignore(pos, end, expected)
+			&& ws.ignore(pos, end)
+			&& s_not.ignore(pos, end, expected)
+			&& ws.ignore(pos, end)
+			&& s_exists.ignore(pos, end, expected)
+			&& ws.ignore(pos, end))
+			if_not_exists = true;
+
 		if (!name_p.parse(pos, end, table, expected))
 			return false;
 		ws.ignore(pos, end);
