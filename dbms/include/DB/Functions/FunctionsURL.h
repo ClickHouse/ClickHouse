@@ -640,6 +640,100 @@ public:
 };
 
 
+class URLPathHierarchyImpl
+{
+private:
+	Pos begin;
+	Pos pos;
+	Pos end;
+	Pos start;
+
+public:
+	static String getName() { return "URLPathHierarchy"; }
+
+	static void checkArguments(const DataTypes & arguments)
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+			if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+				throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+	void init(Block & block, const ColumnNumbers & arguments) {}
+
+	/// Возвращает позицию аргумента, являющегося столбцом строк
+	size_t getStringsArgumentPosition()
+	{
+		return 0;
+	}
+
+	/// Вызывается для каждой следующей строки.
+	void set(Pos pos_, Pos end_)
+	{
+		begin = pos = pos_;
+		start = begin;
+		end = end_;
+	}
+
+	/// Получить следующий токен, если есть, или вернуть false.
+	bool get(Pos & token_begin, Pos & token_end)
+	{
+		/// Код из URLParser.
+
+		if (pos == end)
+			return false;
+
+		if (pos == begin)
+		{
+			/// Распарсим всё, что идёт до пути
+
+			/// Предположим, что протокол уже переведён в нижний регистр.
+			while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
+				++pos;
+
+			/** Будем вычислять иерархию только для URL-ов, в которых есть протокол, и после него идут два слеша.
+			 * (http, file - подходят, mailto, magnet - не подходят), и после двух слешей ещё хоть что-нибудь есть
+			 * Для остальных просто вернём пустой массив.
+			 */
+			if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+			{
+				pos = end;
+				return false;
+			}
+
+			/// Доменом для простоты будем считать всё, что после протокола и двух слешей, до следующего слеша или до ? или до #
+			while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
+				++pos;
+
+			start = pos;
+
+			if (pos != end)
+				++pos;
+		}
+
+		/// Идём до следующего / или ? или #, пропуская все те, что вначале.
+		while (pos < end && (*pos == '/' || *pos == '?' || *pos == '#'))
+			++pos;
+		if (pos == end)
+			return false;
+		while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
+			++pos;
+
+		if (pos != end)
+			++pos;
+
+		token_begin = start;
+		token_end = pos;
+
+		return true;
+	}
+};
+
+
 /** Выделить кусок строки, используя Extractor.
   */
 template <typename Extractor>
@@ -778,6 +872,7 @@ typedef FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter> 
 typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
 typedef FunctionTokens<ExtractURLParametersImpl> FunctionExtractURLParameters;
 typedef FunctionTokens<URLHierarchyImpl> FunctionURLHierarchy;
+typedef FunctionTokens<URLPathHierarchyImpl> FunctionURLPathHierarchy;
 typedef FunctionTokens<ExtractURLParameterNamesImpl> FunctionExtractURLParameterNames;
 
 }

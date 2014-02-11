@@ -178,6 +178,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "extractURLParameterNames")		return new FunctionExtractURLParameterNames;
 	else if (name == "cutURLParameter")			return new FunctionCutURLParameter;
 	else if (name == "URLHierarchy")				return new FunctionURLHierarchy;
+	else if (name == "URLPathHierarchy")				return new FunctionURLPathHierarchy;
 
 	else if (name == "hostName")					return new FunctionHostName;
 	else if (name == "visibleWidth")				return new FunctionVisibleWidth;
