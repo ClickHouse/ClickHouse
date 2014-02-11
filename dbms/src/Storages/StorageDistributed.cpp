@@ -1,6 +1,7 @@
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/DataStreams/RemoveColumnsBlockInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
 
@@ -9,6 +10,8 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <boost/bind.hpp>
+#include <DB/Columns/ColumnString.h>
+#include <DB/Core/Field.h>
 
 namespace DB
 {
@@ -123,9 +126,8 @@ BlockInputStreams StorageDistributed::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	processed_stage = (cluster.pools.size() + cluster.getLocalNodesNum()) == 1
-		? QueryProcessingStage::Complete
-		: QueryProcessingStage::WithMergeableState;
+	/// Узнаем на каком порту слушает сервер
+	UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
 
 	/// Установим sign_rewrite = 0, чтобы второй раз не переписывать запрос
 	Settings new_settings = settings;
@@ -138,7 +140,6 @@ BlockInputStreams StorageDistributed::read(
 	  */
 	bool need_host_column = false;
 	bool need_port_column = false;
-
 	for (const auto & it : column_names)
 	{
 		if (it == _host_column_name)
@@ -147,43 +148,121 @@ BlockInputStreams StorageDistributed::read(
 			need_port_column = true;
 	}
 
+	/** Есть ли виртуальные столбцы в секции селект?
+	  * Если нет - в случае вычисления запроса до стадии Complete, необходимо удалить их из блока.
+	  */
+	bool select_host_column = false;
+	bool select_port_column = false;
+	const ASTExpressionList & select_list = dynamic_cast<const ASTExpressionList & >(*(dynamic_cast<const ASTSelectQuery & >(*query)).select_expression_list);
+	for (const auto & it : select_list.children)
+	{
+		if (const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(&* it))
+		{
+			if (identifier->name == _host_column_name)
+				select_host_column = true;
+			else if (identifier->name == _port_column_name)
+				select_port_column = true;
+		}
+	}
+	Names columns_to_remove;
+	if (!select_host_column)
+		columns_to_remove.push_back(_host_column_name);
+	if (!select_port_column)
+		columns_to_remove.push_back(_port_column_name);
+
+	Block virtual_columns_block = getBlockWithVirtualColumns();
+	BlockInputStreamPtr virtual_columns =
+		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	std::set< std::pair<String, UInt16> > values =
+		VirtualColumnUtils::extractTwoValuesFromBlocks<String, UInt16>(virtual_columns, _host_column_name, _port_column_name);
+	bool all_inclusive = (values.size() == virtual_columns_block.rows());
+
+	size_t result_size = values.size();
+	if (values.find(std::make_pair("localhost", clickhouse_port)) != values.end())
+		result_size += cluster.getLocalNodesNum() - 1;
+
+	processed_stage = result_size == 1
+		? QueryProcessingStage::Complete
+		: QueryProcessingStage::WithMergeableState;
+
 	BlockInputStreams res;
 
 	for (ConnectionPools::iterator it = cluster.pools.begin(); it != cluster.pools.end(); ++it)
 	{
+		String current_host = (*it)->get()->getHost();
+		UInt16 current_port = (*it)->get()->getPort();
+
+		if (!all_inclusive && values.find(std::make_pair(current_host, current_port)) == values.end())
+			continue;
+
 		String modified_query = selectToString(remakeQuery(
 			query,
-			need_host_column ? (*it)->get()->getHost() : "",
-			need_port_column ? (*it)->get()->getPort() : 0));
+			need_host_column ? current_host : "",
+			need_port_column ? current_port : 0));
 
-		res.push_back(new RemoteBlockInputStream(
+		BlockInputStreamPtr temp = new RemoteBlockInputStream(
 			(*it)->get(&new_settings),
 			modified_query,
 			&new_settings,
 			need_host_column ? _host_column_name : "",
 			need_port_column ? _port_column_name : "",
-			processed_stage));
+			processed_stage);
+
+		if (processed_stage == QueryProcessingStage::WithMergeableState)
+			res.push_back(temp);
+		else
+			res.push_back(new RemoveColumnsBlockInputStream(temp, columns_to_remove));
 	}
 
-	/// Узнаем на каком порту слушает сервер
-	UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
-	ASTPtr modified_query_ast = remakeQuery(
-		query,
-		need_host_column ? "localhost" : "",
-		need_port_column ? clickhouse_port : 0);
-
-	/// добавляем запросы к локальному ClickHouse
-	DB::Context new_context = context;
-	new_context.setSettings(new_settings);
+	if (all_inclusive || values.find(std::make_pair("localhost", clickhouse_port)) != values.end())
 	{
+		ASTPtr modified_query_ast = remakeQuery(
+			query,
+			need_host_column ? "localhost" : "",
+			need_port_column ? clickhouse_port : 0);
+
+		/// добавляем запросы к локальному ClickHouse
 		DB::Context new_context = context;
 		new_context.setSettings(new_settings);
-		for(size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
-			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
-			res.push_back(interpreter.execute());
+			DB::Context new_context = context;
+			new_context.setSettings(new_settings);
+			for(size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
+			{
+				InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
+				if (processed_stage == QueryProcessingStage::WithMergeableState)
+					res.push_back(interpreter.execute());
+				else
+					res.push_back(new RemoveColumnsBlockInputStream(interpreter.execute(), columns_to_remove));
+			}
 		}
 	}
+	return res;
+}
+
+/// Построить блок состоящий только из возможных значений виртуальных столбцов
+Block StorageDistributed::getBlockWithVirtualColumns()
+{
+	Block res;
+	ColumnWithNameAndType _host(new ColumnString, new DataTypeString, _host_column_name);
+	ColumnWithNameAndType _port(new ColumnUInt16, new DataTypeUInt16, _port_column_name);
+
+	for (ConnectionPools::iterator it = cluster.pools.begin(); it != cluster.pools.end(); ++it)
+	{
+		_host.column->insert((*it)->get()->getHost());
+		_port.column->insert(static_cast<uint64>((*it)->get()->getPort()));
+	}
+
+	if (cluster.getLocalNodesNum() > 0)
+	{
+		/// Узнаем на каком порту слушает сервер
+		UInt64 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
+		String clockhouse_host = "localhost";
+		_host.column->insert(clockhouse_host);
+		_port.column->insert(clickhouse_port);
+	}
+	res.insert(_host);
+	res.insert(_port);
 
 	return res;
 }

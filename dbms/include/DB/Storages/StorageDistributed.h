@@ -68,6 +68,8 @@ public:
 	/// структура подтаблиц не проверяется
 	void alter(const ASTAlterQuery::Parameters &params);
 
+	Block getBlockWithVirtualColumns();
+
 private:
 	StorageDistributed(
 		const std::string & name_,

@@ -89,7 +89,7 @@ inline bool validFunction(ASTPtr expression, const std::vector<String> & columns
 		if (!validFunction(expression->children[i], columns))
 			return false;
 
-	if (ASTIdentifier * identifier = dynamic_cast<ASTIdentifier *>(&* expression))
+	if (const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(&* expression))
 	{
 		if (identifier->kind == ASTIdentifier::Kind::Column)
 		{
@@ -105,7 +105,7 @@ inline bool validFunction(ASTPtr expression, const std::vector<String> & columns
 /// Извлечь все подфункции главной конъюнкции, но зависящие только от заданных столбцов
 inline void extractFunctions(ASTPtr expression, const std::vector<String> & columns, std::vector<ASTPtr> & result)
 {
-	if (ASTFunction * function = dynamic_cast<ASTFunction *>(&* expression))
+	if (const ASTFunction * function = dynamic_cast<const ASTFunction *>(&* expression))
 	{
 		if (function->name == "and")
 		{
@@ -121,7 +121,7 @@ inline void extractFunctions(ASTPtr expression, const std::vector<String> & colu
 /// Построить конъюнкцию из заданных функций
 inline ASTPtr buildWhereExpression(const std::vector<ASTPtr> & functions)
 {
-	if (functions.size() == 0) return ASTPtr();
+	if (functions.size() == 0) return NULL;
 	ASTPtr result = functions[0];
 	for (size_t i = 1; i < functions.size(); ++i)
 	{
@@ -139,12 +139,10 @@ inline ASTPtr buildWhereExpression(const std::vector<ASTPtr> & functions)
 
 /// Получить поток блоков содержащий интересующие нас значения виртуальных столбцов
 /// На вход подается исходный запрос, блок с значениями виртуальных столбцов и контекст
-inline BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, Block input, const Context & context)
+inline BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, const Context & context)
 {
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery & >(*query);
-
+	const ASTSelectQuery & select = dynamic_cast<ASTSelectQuery & >(*query);
 	if (!select.where_expression) return new OneBlockInputStream(input);
-
 	ASTPtr new_query = new ASTSelectQuery();
 
 	/// Вычисляем имена виртуальных столбцов
@@ -157,7 +155,7 @@ inline BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, Block input, co
 		ASTSelectQuery & new_select = dynamic_cast<ASTSelectQuery & >(*new_query);
 
 		new_select.select_expression_list = new ASTExpressionList();
-		ASTExpressionList & select_list = dynamic_cast<ASTExpressionList & >(*new_select.select_expression_list);;
+		ASTExpressionList & select_list = dynamic_cast<ASTExpressionList & >(*new_select.select_expression_list);
 		for (size_t i = 0; i < columns.size(); ++i)
 			select_list.children.push_back(new ASTIdentifier(StringRange(NULL, NULL), columns[i]));
 
@@ -166,14 +164,17 @@ inline BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, Block input, co
 		new_select.where_expression = buildWhereExpression(functions);
 
 //		new_select.table = select.table->clone();
-
-		new_select.children.push_back(new_select.select_expression_list);
 //		new_select.children.push_back(new_select.table);
-		new_select.children.push_back(new_select.where_expression);
+
+		if (new_select.select_expression_list)
+			new_select.children.push_back(new_select.select_expression_list);
+		if (new_select.where_expression)
+			new_select.children.push_back(new_select.where_expression);
 	}
 
-	/// Возвращаем результат нового запроса на блоке виртуальных фукнций
-	InterpreterSelectQuery interpreter(new_query, context, columns, input.getColumnsList(), QueryProcessingStage::Complete, 0, new OneBlockInputStream(input));
+	/// Возвращаем результат выолнения нового запроса на блоке виртуальных фукнций
+	InterpreterSelectQuery interpreter(new_query, context , columns, input.getColumnsList(),
+									   QueryProcessingStage::Complete, 0, new OneBlockInputStream(input));
 	return interpreter.execute();
 }
 
@@ -197,7 +198,7 @@ inline std::set<T1> extractSingleValueFromBlocks(BlockInputStreamPtr input, cons
 /// Извлечь из входного потока множество пар значений в столбцах first_name и second_name
 template<typename T1, typename T2>
 inline std::set< std::pair<T1, T2> > extractTwoValuesFromBlocks(BlockInputStreamPtr input,
-															   const String & first_name, const String & second_name)
+															    const String & first_name, const String & second_name)
 {
 	std::set< std::pair<T1, T2> > res;
 	input->readPrefix();
