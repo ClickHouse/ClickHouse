@@ -125,14 +125,14 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 }
 
-Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names):
-	local_nodes_num(0)
+Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names,
+				 const String & username, const String & password): local_nodes_num(0)
 {
 	for (size_t i = 0; i < names.size(); ++i)
 	{
 		Addresses current;
 		for (size_t j = 0; j < names[i].size(); ++j)
-			current.push_back(Address(Poco::Net::SocketAddress(names[i][j]), "default", ""));
+			current.push_back(Address(Poco::Net::SocketAddress(names[i][j]), username, password));
 		addresses_with_failover.push_back(current);
 	}
 	for (AddressesWithFailover::const_iterator it = addresses_with_failover.begin(); it != addresses_with_failover.end(); ++it)

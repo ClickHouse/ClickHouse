@@ -19,7 +19,8 @@ public:
 	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const std::string & cluster_name);
 
 	/// Построить кластер по именам шардов и реплик, локальные обрабатываются так же как удаленные
-	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names);
+	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names,
+			const String & username, const String & password);
 
 	/// количество узлов clickhouse сервера, расположенных локально
 	/// к локальным узлам обращаемся напрямую

@@ -34,20 +34,24 @@ public:
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*ast_function).children;
 
 		if (args_func.size() != 1)
-			throw Exception("Storage Distributed requires 3 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
+			throw Exception("Storage Distributed requires 3 or 5 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table, "
+				"[username, password].",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		if (args.size() != 3)
-			throw Exception("Storage Distributed requires 3 parameters"
-				" - description of remote servers, name of remote database, name of remote table.",
+		if (args.size() != 3 && args.size() != 5)
+			throw Exception("Storage Distributed requires 3 or 5 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table, "
+				"[username, password].",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String descripton	 	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[0]).value);
 		String remote_database 	= dynamic_cast<ASTIdentifier &>(*args[1]).name;
 		String remote_table 	= dynamic_cast<ASTIdentifier &>(*args[2]).name;
+		String username = args.size() == 5 ? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[3]).value) : "default";
+		String password = args.size() == 5 ? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[4]).value) : "";
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на эти Identifier.
 		/// Нам необходимо их пометить как имя базы данных и таблицы посколку по умолчанию стоит значение column
@@ -59,7 +63,7 @@ public:
 		for (size_t i = 0; i < shards.size(); ++i)
 			names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|'));
 
-		cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names);
+		cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names, username, password);
 
 		return StorageDistributed::create(getName(), chooseColumns(*cluster, remote_database, remote_table, context), remote_database,
 										  remote_table, *cluster, context.getDataTypeFactory(), context.getSettings(), context);
