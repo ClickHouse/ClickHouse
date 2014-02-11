@@ -15,6 +15,7 @@ namespace DB
   */
 class StorageChunkMerger : public IStorage
 {
+typedef std::vector<StoragePtr> Storages;
 public:
 	static StoragePtr create(
 		const std::string & this_database_,/// Имя БД для этой таблицы.
@@ -42,12 +43,12 @@ public:
 		unsigned threads = 1);
 
 	void shutdown();
+
+	Block getBlockWithVirtualColumns(const Storages & selected_tables) const;
 	
 	~StorageChunkMerger();
 	
 private:
-	typedef std::vector<StoragePtr> Storages;
-	
 	String this_database;
 	String name;
 	NamesAndTypesListPtr columns;

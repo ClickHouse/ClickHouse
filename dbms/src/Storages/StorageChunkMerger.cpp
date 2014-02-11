@@ -115,9 +115,18 @@ BlockInputStreams StorageChunkMerger::read(
 	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
 	processed_stage = QueryProcessingStage::Complete;
 	QueryProcessingStage::Enum tmp_processed_stage = QueryProcessingStage::Complete;
+
+	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
+	BlockInputStreamPtr virtual_columns =
+		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
+	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 	
 	for (Storages::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 	{
+		if ((*it)->getName() != "Chunks" && !all_inclusive && values.find((*it)->getTableName()) == values.end())
+			continue;
+
 		/// Список виртуальных столбцов, которые мы заполним сейчас и список столбцов, которые передадим дальше
 		Names virt_column_names, real_column_names;
 		for (const auto & column : column_names)
@@ -162,6 +171,20 @@ BlockInputStreams StorageChunkMerger::read(
 	if (res.size() > threads)
 		res = narrowBlockInputStreams(res, threads);
 	
+	return res;
+}
+
+/// Построить блок состоящий только из возможных значений виртуальных столбцов
+Block StorageChunkMerger::getBlockWithVirtualColumns(const Storages & selected_tables) const
+{
+	Block res;
+	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+
+	for (Storages::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
+		if ((*it)->getName() != "Chunks")
+			_table.column->insert((*it)->getTableName());
+
+	res.insert(_table);
 	return res;
 }
 

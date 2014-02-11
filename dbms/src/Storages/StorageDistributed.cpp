@@ -10,7 +10,6 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <boost/bind.hpp>
-#include <DB/Columns/ColumnString.h>
 #include <DB/Core/Field.h>
 
 namespace DB

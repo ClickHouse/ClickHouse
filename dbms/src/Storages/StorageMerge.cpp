@@ -55,8 +55,6 @@ BlockInputStreams StorageMerge::read(
 		else
 			virt_column_names.push_back(it);
 
-
-	typedef std::vector<StoragePtr> SelectedTables;
 	SelectedTables selected_tables;
 
 	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
@@ -74,8 +72,21 @@ BlockInputStreams StorageMerge::read(
 		getSelectedTables(selected_tables);
 	}
 
+	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
+	BlockInputStreamPtr virtual_columns =
+		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
+	bool all_inclusive = (values.size() == virtual_columns_block.rows());
+
 	for (SelectedTables::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 	{
+		if (!all_inclusive && values.find((*it)->getTableName()) == values.end())
+			continue;
+
+		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
+		if (real_column_names.size() == 0)
+			real_column_names.push_back(ExpressionActions::getSmallestColumn((*it)->getColumnsList()));
+
 		BlockInputStreams source_streams = (*it)->read(
 			real_column_names,
 			query,
@@ -105,6 +116,19 @@ BlockInputStreams StorageMerge::read(
 	if (res.size() > threads)
 		res = narrowBlockInputStreams(res, threads);
 
+	return res;
+}
+
+/// Построить блок состоящий только из возможных значений виртуальных столбцов
+Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const
+{
+	Block res;
+	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+
+	for (SelectedTables::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
+		_table.column->insert((*it)->getTableName());
+
+	res.insert(_table);
 	return res;
 }
 

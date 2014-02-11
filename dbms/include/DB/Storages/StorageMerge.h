@@ -17,6 +17,8 @@ typedef Poco::SharedPtr<StorageMerge> StorageMergePtr;
   */
 class StorageMerge : public IStorage
 {
+typedef std::vector<StoragePtr> SelectedTables;
+
 public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
@@ -49,6 +51,8 @@ public:
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
 	void alter(const ASTAlterQuery::Parameters & params);
+
+	Block getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const;
 private:
 	String name;
 	NamesAndTypesListPtr columns;

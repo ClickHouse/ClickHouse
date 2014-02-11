@@ -17,6 +17,7 @@ namespace DB
   */
 class StorageChunks : public StorageLog
 {
+using StorageLog::read;
 public:
 	static StoragePtr create(const std::string & path_,
 							const std::string & name_,
@@ -30,6 +31,14 @@ public:
 	
 	std::string getName() const { return "Chunks"; }
 	
+	BlockInputStreams read(
+		const Names & column_names,
+		ASTPtr query,
+		const Settings & settings,
+		QueryProcessingStage::Enum & processed_stage,
+		size_t max_block_size = DEFAULT_BLOCK_SIZE,
+		unsigned threads = 1);
+
 	BlockInputStreams readFromChunk(
 		const std::string & chunk_name,
 		const Names & column_names,
@@ -58,11 +67,12 @@ public:
 		throw Exception("Table doesn't support renaming", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	Block getBlockWithVirtualColumns() const;
+
 protected:
 	/// Виртуальная функция из StorageLog
 	/// По номеру засечки получить имя таблицы, из которой идет чтение и номер последней засечки из этой таблицы.
 	std::pair<String, size_t> getTableFromMark(size_t mark) const;
-
 private:
 	/// Имя чанка - номер (в последовательности, как чанки записаны в таблице).
 	typedef std::map<String, size_t> ChunkIndices;

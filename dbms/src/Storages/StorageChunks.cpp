@@ -36,6 +36,45 @@ void StorageChunks::removeReference()
 		dropThis();
 }
 
+BlockInputStreams StorageChunks::read(
+	const Names & column_names,
+	ASTPtr query,
+	const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage,
+	size_t max_block_size,
+	unsigned threads)
+{
+	Block virtual_columns_block = getBlockWithVirtualColumns();
+	BlockInputStreamPtr virtual_columns =
+		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
+	bool all_inclusive = (values.size() == virtual_columns_block.rows());
+
+	if (all_inclusive)
+		return read(0, std::numeric_limits<size_t>::max(), column_names, query, settings, processed_stage, max_block_size, threads);
+
+	BlockInputStreams res;
+	for (const auto & it : values)
+	{
+		BlockInputStreams temp = readFromChunk(it, column_names, query, settings, processed_stage, max_block_size, threads);
+		res.insert(res.end(), temp.begin(), temp.end());
+	}
+	return res;
+}
+
+/// Построить блок состоящий только из возможных значений виртуальных столбцов
+Block StorageChunks::getBlockWithVirtualColumns() const
+{
+	Block res;
+	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+
+	for (const auto & it : chunk_names)
+		_table.column->insert(it);
+
+	res.insert(_table);
+	return res;
+}
+
 BlockInputStreams StorageChunks::readFromChunk(
 	const std::string & chunk_name,
 	const Names & column_names,

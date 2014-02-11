@@ -152,7 +152,7 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
-	BlockInputStreams read(
+	virtual BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
 		const Settings & settings,
