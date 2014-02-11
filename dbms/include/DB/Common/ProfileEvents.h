@@ -24,6 +24,8 @@
 	M(ArenaAllocChunks, 				"Arena allocated chunks") \
 	M(ArenaAllocBytes, 					"Arena allocated bytes") \
 	M(FunctionExecute, 					"Function executes") \
+	M(MarkCacheHits, 					"Mark cache hits") \
+	M(MarkCacheMisses, 					"Mark cache misses") \
 	\
 	M(END, "")
 

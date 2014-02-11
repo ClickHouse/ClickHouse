@@ -444,6 +444,21 @@ UncompressedCachePtr Context::getUncompressedCache() const
 	return shared->uncompressed_cache;
 }
 
+void Context::setMarkCache(size_t cache_size_in_bytes)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (shared->mark_cache)
+		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+	shared->mark_cache = new MarkCache(cache_size_in_bytes);
+}
+
+MarkCachePtr Context::getMarkCache() const
+{
+	return shared->mark_cache;
+}
+
 void Context::initClusters()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);

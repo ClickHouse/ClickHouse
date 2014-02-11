@@ -139,16 +139,16 @@ public:
 private:
 	struct Stream
 	{
-		Poco::SharedPtr<ReadBufferFromFile> marks_buffer;
+		MarkCache::MappedPtr marks;
 		ReadBuffer * data_buffer;
 		Poco::SharedPtr<CachedCompressedReadBuffer> cached_buffer;
 		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 
-		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache)
-			: marks_buffer(new ReadBufferFromFile(path_prefix + ".mrk", MERGE_TREE_MARK_SIZE)),
-			path_prefix(path_prefix)
+		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache)
+			: path_prefix(path_prefix)
 		{
+			loadMarks(mark_cache);
 			if (uncompressed_cache)
 			{
 				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache);
@@ -161,32 +161,53 @@ private:
 			}
 		}
 
+		void loadMarks(MarkCache * cache)
+		{
+			std::string path = path_prefix + ".mrk";
+
+			UInt128 key;
+			if (cache)
+			{
+				key = cache->hash(path);
+				marks = cache->get(key);
+				if (marks)
+					return;
+			}
+
+			marks.reset(new MarksInCompressedFile);
+
+			ReadBufferFromFile buffer(path);
+			while (!buffer.eof())
+			{
+				MarkInCompressedFile mark;
+				readIntBinary(mark.offset_in_compressed_file, buffer);
+				readIntBinary(mark.offset_in_decompressed_block, buffer);
+				marks->push_back(mark);
+			}
+
+			if (cache)
+				cache->set(key, marks);
+		}
+
 		void seekToMark(size_t index)
 		{
-			size_t offset_in_compressed_file = 0;
-			size_t offset_in_decompressed_block = 0;
-
-			if (index)
-			{
-				/// Прочитаем из файла с засечками смещение в файле с данными.
-				marks_buffer->seek(index * MERGE_TREE_MARK_SIZE);
-
-				readIntBinary(offset_in_compressed_file, *marks_buffer);
-				readIntBinary(offset_in_decompressed_block, *marks_buffer);
-			}
+			MarkInCompressedFile mark = (*marks)[index];
 
 			try
 			{
 				if (cached_buffer)
-					cached_buffer->seek(offset_in_compressed_file, offset_in_decompressed_block);
+					cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 				if (non_cached_buffer)
-					non_cached_buffer->seek(offset_in_compressed_file, offset_in_decompressed_block);
+					non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 			}
 			catch (const Exception & e)
 			{
 				/// Более хорошая диагностика.
 				if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
-					throw Exception(e.message() + " (while seeking to mark " + Poco::NumberFormatter::format(index) + " of column " + path_prefix + "; offsets are: " + Poco::NumberFormatter::format(offset_in_compressed_file) + " " + Poco::NumberFormatter::format(offset_in_decompressed_block) + ")", e.code());
+					throw Exception(e.message() + " (while seeking to mark " + Poco::NumberFormatter::format(index)
+						+ " of column " + path_prefix + "; offsets are: "
+						+ toString(mark.offset_in_compressed_file) + " "
+						+ toString(mark.offset_in_decompressed_block) + ")", e.code());
 				else
 					throw;
 			}
@@ -212,6 +233,7 @@ private:
 			return;
 
 		UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
+		MarkCache * mark_cache = storage.context.getMarkCache();
 
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
@@ -223,7 +245,7 @@ private:
 
 			if (!streams.count(size_name))
 				streams.insert(std::make_pair(size_name, new Stream(
-					path + escaped_size_name, uncompressed_cache)));
+					path + escaped_size_name, uncompressed_cache, mark_cache)));
 
 			addStream(name, *type_arr->getNestedType(), level + 1);
 		}
@@ -232,14 +254,14 @@ private:
 			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-			streams[size_name] = new Stream(path + escaped_size_name, uncompressed_cache);
+			streams[size_name] = new Stream(path + escaped_size_name, uncompressed_cache, mark_cache);
 
 			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 				addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 		}
 		else
-			streams[name] = new Stream(path + escaped_column_name, uncompressed_cache);
+			streams[name] = new Stream(path + escaped_column_name, uncompressed_cache, mark_cache);
 	}
 
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,

@@ -10,6 +10,7 @@
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/IO/UncompressedCache.h>
+#include <DB/Storages/MarkCache.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Functions/FunctionFactory.h>
@@ -85,6 +86,7 @@ struct ContextShared
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
+	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 
@@ -257,6 +259,10 @@ public:
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
 	void setUncompressedCache(size_t cache_size_in_cells);
 	UncompressedCachePtr getUncompressedCache() const;
+
+	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
+	void setMarkCache(size_t cache_size_in_bytes);
+	MarkCachePtr getMarkCache() const;
 
 	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);

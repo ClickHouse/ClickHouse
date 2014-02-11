@@ -113,6 +113,11 @@ int Server::main(const std::vector<std::string> & args)
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
+	/// Размер кэша засечек. Если нулевой - кэш отключён.
+	size_t mark_cache_size = config.getInt("mark_cache_size", 0);
+	if (mark_cache_size)
+		global_context->setMarkCache(mark_cache_size);
+
 	/// Загружаем настройки.
 	Settings & settings = global_context->getSettingsRef();
 	settings.setProfile(config.getString("default_profile", "default"));
