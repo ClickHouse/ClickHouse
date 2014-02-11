@@ -26,7 +26,7 @@ private:
 	size_t file_pos;
 
 	/// Кусок данных из кэша, или кусок считанных данных, который мы положим в кэш.
-	UncompressedCache::CellPtr owned_cell;
+	UncompressedCache::MappedPtr owned_cell;
 
 	void initInput()
 	{
@@ -41,9 +41,7 @@ private:
 	{
 		/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
 
-		UInt128 key = {0, 0};
-
-		key = cache->hash(path, file_pos);
+		UInt128 key = cache->hash(path, file_pos);
 		owned_cell = cache->get(key);
 
 		if (!owned_cell)
@@ -52,8 +50,7 @@ private:
 			initInput();
 			file_in->seek(file_pos);
 
-			owned_cell = new UncompressedCache::Cell;
-			owned_cell->key = key;
+			owned_cell.reset(new UncompressedCacheCell);
 
 			size_t size_decompressed;
 			owned_cell->compressed_size = readCompressedData(size_decompressed);
@@ -64,7 +61,7 @@ private:
 				decompress(owned_cell->data.m_data, size_decompressed);
 
 				/// Положим данные в кэш.
-				cache->set(owned_cell);
+				cache->set(key, owned_cell);
 			}
 		}
 

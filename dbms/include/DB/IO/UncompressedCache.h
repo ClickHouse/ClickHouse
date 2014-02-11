@@ -1,10 +1,6 @@
 #pragma once
 
-#include <vector>
-
-#include <Poco/SharedPtr.h>
-#include <Poco/Mutex.h>
-
+#include <DB/Common/LRUCache.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/IO/BufferWithOwnMemory.h>
@@ -15,38 +11,23 @@ namespace DB
 {
 
 
-/** Кэш разжатых блоков для CachedCompressedReadBuffer. thread-safe.
-  * NOTE Использовать LRU вместо простой кэш-таблицы.
-  */
-class UncompressedCache
+struct UncompressedCacheCell
 {
-public:
-	struct Cell
-	{
-		UInt128 key;
-		Memory data;
-		size_t compressed_size;
+	Memory data;
+	size_t compressed_size;
+};
 
-		Cell() { key.first = 0; key.second = 0; compressed_size = 0; }
-	};
 
-	/// В ячейках кэш-таблицы лежат SharedPtr-ы на разжатые блоки. Это нужно, чтобы можно было достать ячейку, захватив владение ею.
-	typedef Poco::SharedPtr<Cell> CellPtr;
-	typedef std::vector<CellPtr> Cells;
-
+/** Кэш разжатых блоков для CachedCompressedReadBuffer. thread-safe.
+  */
+class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash>
+{
 private:
-	size_t num_cells;
-	Cells cells;
-
-	mutable Poco::FastMutex mutex;
-	mutable size_t hits;
-	mutable size_t misses;
+	typedef LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash> Base;
 
 public:
-	UncompressedCache(size_t num_cells_)
-		: num_cells(num_cells_), cells(num_cells), hits(0), misses(0)
-	{
-	}
+	UncompressedCache(size_t max_size_in_cells)
+		: Base(max_size_in_cells) {}
 
 	/// Посчитать ключ от пути к файлу и смещения.
 	static UInt128 hash(const String & path_to_file, size_t offset)
@@ -61,41 +42,16 @@ public:
 		return key;
 	}
 
-	CellPtr get(UInt128 key) const
+	MappedPtr get(const Key & key)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		MappedPtr res = Base::get(key);
 
-		CellPtr cell = cells[key.first % num_cells];
-
-		if (cell && cell->key == key)
-		{
+		if (res)
 			ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
-			++hits;
-			return cell;
-		}
 		else
-		{
 			ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
-			++misses;
-			return NULL;
-		}
-	}
 
-	void set(const CellPtr & new_cell)
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
-		CellPtr & cell = cells[new_cell->key.first % num_cells];
-
-		if (!cell || cell->key != new_cell->key)
-			cell = new_cell;
-	}
-
-	void getStats(size_t & out_hits, size_t & out_misses) const volatile
-	{
-		/// Синхронизация не нужна.
-		out_hits = hits;
-		out_misses = misses;
+		return res;
 	}
 };
 
