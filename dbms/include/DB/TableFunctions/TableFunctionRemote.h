@@ -101,7 +101,6 @@ private:
 					type->get(i, data_type);
 					String column_name = column.get<String>();
 					String data_type_name = data_type.get<String>();
-					std::cerr << column_name << " " << data_type_name << std::endl;
 					res.push_back(std::make_pair(column_name, context.getDataTypeFactory().get(data_type_name)));
 				}
 			}
