@@ -84,9 +84,13 @@ private:
 			parent.cont.erase(it);
 			--parent.cur_size;
 			parent.have_space.signal();
-			UserToQueries::iterator quieries = parent.userToQueries.find(it->user);
-			QueryToElement::iterator element = quieries->second.find(it->query_id);
-			quieries->second.erase(element);
+			UserToQueries::iterator queries = parent.userToQueries.find(it->user);
+			if (queries != parent.userToQueries.end())
+			{
+				QueryToElement::iterator element = queries->second.find(it->query_id);
+				if (element != queries->second.end())
+					queries->second.erase(element);
+			}
 		}
 
 		Element & get() { return *it; }
@@ -113,18 +117,18 @@ public:
 			if (max_size && cur_size >= max_size && (!max_wait_milliseconds || !have_space.tryWait(mutex, max_wait_milliseconds)))
 				throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-			UserToQueries::iterator quieries = userToQueries.find(user_);
+			UserToQueries::iterator queries = userToQueries.find(user_);
 
-			if (quieries != userToQueries.end())
+			if (queries != userToQueries.end())
 			{
-				QueryToElement::iterator element = quieries->second.find(query_id_);
-				if (element != quieries->second.end())
+				QueryToElement::iterator element = queries->second.find(query_id_);
+				if (element != queries->second.end())
 				{
 					if (!replace_running_query)
 						throw Exception("Query with id = " + query_id_ + " is already running.",
 										ErrorCodes::QUERY_ID_ALREADY_RUNNING);
 					element->second->is_cancelled = true;
-					quieries->second.erase(element);
+					queries->second.erase(element);
 				}
 			}
 
