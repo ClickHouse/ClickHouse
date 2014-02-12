@@ -354,11 +354,25 @@ String Context::getCurrentDatabase() const
 }
 
 
+String Context::getCurrentQueryId() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return current_query_id;
+}
+
+
 void Context::setCurrentDatabase(const String & name)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	assertDatabaseExists(name);
 	current_database = name;
+}
+
+
+void Context::setCurrentQueryId(const String & query_id)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	current_query_id = query_id;
 }
 
 

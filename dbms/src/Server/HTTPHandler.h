@@ -22,7 +22,7 @@ private:
 
 	Logger * log;
 
- 	void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
+ 	void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, String query_id = "");
 };
 
 }

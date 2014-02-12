@@ -23,7 +23,7 @@ namespace DB
 struct QueryState
 {
 	/// Идентификатор запроса.
-	UInt64 query_id;
+	String query_id;
 
 	QueryProcessingStage::Enum stage;
 	Protocol::Compression::Enum compression;
@@ -50,7 +50,7 @@ struct QueryState
 	volatile size_t bytes_processed;
 
 
-	QueryState() : query_id(0), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable),
+	QueryState() : query_id(""), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable),
 		is_cancelled(false), sent_all_data(false), rows_processed(0), bytes_processed(0) {}
 	
 	void reset()
@@ -60,7 +60,7 @@ struct QueryState
 
 	bool empty()
 	{
-		return query_id == 0;
+		return query_id == "";
 	}
 };
 

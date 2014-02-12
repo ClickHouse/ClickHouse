@@ -500,7 +500,7 @@ private:
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, query_id, QueryProcessingStage::Complete);
+		connection->sendQuery(query, toString(query_id), QueryProcessingStage::Complete);
 		receiveResult();
 	}
 
@@ -517,7 +517,7 @@ private:
 		if ((is_interactive && !parsed_insert_query.data) || (stdin_is_not_tty && std_in.eof()))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete);
+		connection->sendQuery(query_without_data, toString(query_id), QueryProcessingStage::Complete);
 
 		/// Получим структуру таблицы
 		Block sample = receiveSampleBlock();

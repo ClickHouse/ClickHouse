@@ -18,6 +18,7 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_, const 
 	columns.push_back(NameAndTypePair("rows_read", 	new DataTypeUInt64));
 	columns.push_back(NameAndTypePair("bytes_read",	new DataTypeUInt64));
 	columns.push_back(NameAndTypePair("query", 		new DataTypeString));
+	columns.push_back(NameAndTypePair("query_id", 	new DataTypeString));
 }
 
 StoragePtr StorageSystemProcesses::create(const std::string & name_, const Context & context_)
@@ -71,6 +72,12 @@ BlockInputStreams StorageSystemProcesses::read(
 	col_query.column = new ColumnString;
 	block.insert(col_query);
 
+	ColumnWithNameAndType col_query_id;
+	col_query_id.name = "query_id";
+	col_query_id.type = new DataTypeString;
+	col_query_id.column = new ColumnString;
+	block.insert(col_query_id);
+
 	ProcessList::Containter list = context.getProcessList().get();
 	
 	for (ProcessList::Containter::const_iterator it = list.begin(); it != list.end(); ++it)
@@ -84,6 +91,7 @@ BlockInputStreams StorageSystemProcesses::read(
 		col_rows_read.column->insert(rows_read);
 		col_bytes_read.column->insert(bytes_read);
 		col_query.column->insert(it->query);
+		col_query_id.column->insert(it->query_id);
 	}
 	
 	return BlockInputStreams(1, new OneBlockInputStream(block));

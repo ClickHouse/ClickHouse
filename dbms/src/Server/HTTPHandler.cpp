@@ -27,7 +27,7 @@ namespace DB
 {
 
 
-void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, String query_id)
 {
 	LOG_TRACE(log, "Request URI: " << request.getURI());
 
@@ -84,6 +84,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	context.setGlobalContext(*server.global_context);
 
 	context.setUser(user, password, request.clientAddress().host(), quota_key);
+	context.setCurrentQueryId(query_id);
 
 	/// Настройки могут быть переопределены в запросе.
 	for (Poco::Net::NameValueCollection::ConstIterator it = params.begin(); it != params.end(); ++it)

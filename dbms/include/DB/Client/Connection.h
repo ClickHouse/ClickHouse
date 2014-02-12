@@ -51,7 +51,7 @@ public:
 		user(user_), password(password_),
 		client_name(client_name_), connected(false),
 		server_version_major(0), server_version_minor(0), server_revision(0),
-		query_id(0), compression(compression_), data_type_factory(data_type_factory_),
+		query_id(""), compression(compression_), data_type_factory(data_type_factory_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		log(&Logger::get("Connection (" + Poco::Net::SocketAddress(host, port).toString() + ")"))
 	{
@@ -82,8 +82,8 @@ public:
 	/// Адрес сервера - для сообщений в логе и в эксепшенах.
 	String getServerAddress() const;
 
-	/// query_id не должен быть равен 0.
-	void sendQuery(const String & query, UInt64 query_id_ = 1, UInt64 stage = QueryProcessingStage::Complete,
+	/// query_id не должен быть равен "".
+	void sendQuery(const String & query, String query_id_ = "1", UInt64 stage = QueryProcessingStage::Complete,
 		const Settings * settings = NULL);
 	
 	void sendCancel();
@@ -134,7 +134,7 @@ private:
 	SharedPtr<ReadBufferFromPocoSocket> in;
 	SharedPtr<WriteBufferFromPocoSocket> out;
 
-	UInt64 query_id;
+	String query_id;
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
 
 	const DataTypeFactory & data_type_factory;

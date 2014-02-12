@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <list>
 #include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
@@ -28,26 +29,35 @@ public:
 	{
 		String query;
 		String user;
+		String query_id;
 		Poco::Net::IPAddress ip_address;
 		
 		Stopwatch watch;
 
 		volatile size_t rows_processed;
 		volatile size_t bytes_processed;
+
+		bool is_cancelled;
 		
 
-		Element(const String & query_, const String & user_, const Poco::Net::IPAddress & ip_address_)
-			: query(query_), user(user_), ip_address(ip_address_), rows_processed(0), bytes_processed(0) {}
+		Element(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_)
+			: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), rows_processed(0), bytes_processed(0),
+			is_cancelled(false) {}
 
-		void update(size_t rows, size_t bytes) volatile
+		bool update(size_t rows, size_t bytes) volatile
 		{
 			__sync_add_and_fetch(&rows_processed, rows);
 			__sync_add_and_fetch(&bytes_processed, bytes);
+			return !is_cancelled;
 		}
 	};
 
 	/// list, чтобы итераторы не инвалидировались. NOTE: можно заменить на cyclic buffer, но почти незачем.
 	typedef std::list<Element> Containter;
+	/// Query_id -> Element *
+	typedef std::unordered_map<String, Element *> QueryToElement;
+	/// User -> Query_id -> Element *
+	typedef std::unordered_map<String, QueryToElement> UserToQueries;
 
 private:
 	mutable Poco::FastMutex mutex;
@@ -56,6 +66,7 @@ private:
 	Containter cont;
 	size_t cur_size;		/// В C++03 std::list::size не O(1).
 	size_t max_size;		/// Если 0 - не ограничено. Иначе, если пытаемся добавить больше - кидается исключение.
+	UserToQueries userToQueries;
 
 	/// Держит итератор на список, и удаляет элемент из списка в деструкторе.
 	class Entry
@@ -73,6 +84,9 @@ private:
 			parent.cont.erase(it);
 			--parent.cur_size;
 			parent.have_space.signal();
+			UserToQueries::iterator quieries = parent.userToQueries.find(it->user);
+			QueryToElement::iterator element = quieries->second.find(it->query_id);
+			quieries->second.erase(element);
 		}
 
 		Element & get() { return *it; }
@@ -88,8 +102,8 @@ public:
 	  * Если выполняющихся запросов сейчас слишком много - ждать не более указанного времени.
 	  * Если времени не хватило - кинуть исключение.
 	  */
-	EntryPtr insert(const String & query_, const String & user_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_wait_milliseconds = DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS)
+	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
+		size_t max_wait_milliseconds = DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS, bool replace_running_query = false)
 	{
 		EntryPtr res;
 
@@ -99,8 +113,26 @@ public:
 			if (max_size && cur_size >= max_size && (!max_wait_milliseconds || !have_space.tryWait(mutex, max_wait_milliseconds)))
 				throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
+			UserToQueries::iterator quieries = userToQueries.find(user_);
+
+			if (quieries != userToQueries.end())
+			{
+				QueryToElement::iterator element = quieries->second.find(query_id_);
+				if (element != quieries->second.end())
+				{
+					if (!replace_running_query)
+						throw Exception("Query with id = " + query_id_ + " is already running.",
+										ErrorCodes::QUERY_ID_ALREADY_RUNNING);
+					element->second->is_cancelled = true;
+					quieries->second.erase(element);
+				}
+			}
+
 			++cur_size;
-			res = new Entry(*this, cont.insert(cont.end(), Element(query_, user_, ip_address_)));
+
+			res = new Entry(*this, cont.insert(cont.end(), Element(query_, user_, query_id_, ip_address_)));
+
+			userToQueries[user_][query_id_] = &res->get();
 		}
 
 		return res;

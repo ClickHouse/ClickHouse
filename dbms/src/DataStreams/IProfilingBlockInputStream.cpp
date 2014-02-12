@@ -362,7 +362,8 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 
 		if (process_list_elem)
 		{
-			process_list_elem->update(rows, bytes);
+			if (!process_list_elem->update(rows, bytes))
+				cancel();
 
 			/// Общее количество данных, обработанных во всех листовых источниках, возможно, на удалённых серверах.
 			

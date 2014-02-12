@@ -59,6 +59,8 @@ struct Settings
 	bool use_uncompressed_cache;
 	/// Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации.
 	bool use_splitting_aggregator;
+	/// Следует ли отменять выполняющийся запрос с таким же id, как новый
+	bool replace_running_query;
 
 	LoadBalancing::LoadBalancing load_balancing;
 
@@ -84,8 +86,7 @@ struct Settings
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
 		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
 		sign_rewrite(false), extremes(false), use_uncompressed_cache(true), use_splitting_aggregator(false),
-		load_balancing(LoadBalancing::RANDOM),
-		default_sample(DBMS_DEFAULT_SAMPLE)
+		replace_running_query(false), load_balancing(LoadBalancing::RANDOM), default_sample(DBMS_DEFAULT_SAMPLE)
 	{
 	}
 

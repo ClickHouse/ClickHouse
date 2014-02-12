@@ -462,7 +462,15 @@ void TCPHandler::receiveQuery()
 	UInt64 stage = 0;
 	UInt64 compression = 0;
 
-	readIntBinary(state.query_id, *in);
+	if (client_revision < DBMS_MIN_REVISION_WITH_STRING_QUERY_ID)
+	{
+		UInt64 query_id_int;
+		readIntBinary(query_id_int, *in);
+		state.query_id = toString(query_id_int);
+	} else
+		readStringBinary(state.query_id, *in);
+
+	query_context.setCurrentQueryId(state.query_id);
 
 	/// Настройки на отдельный запрос.
 	if (client_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)

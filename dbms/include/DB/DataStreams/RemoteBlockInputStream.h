@@ -126,7 +126,7 @@ protected:
 	{
 		if (!sent_query)
 		{
-			connection.sendQuery(query, 1, stage, send_settings ? &settings : NULL);
+			connection.sendQuery(query, "1", stage, send_settings ? &settings : NULL);
 			sent_query = true;
 		}
 

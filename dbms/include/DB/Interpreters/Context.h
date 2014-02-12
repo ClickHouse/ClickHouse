@@ -145,6 +145,7 @@ private:
 	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
 	QuotaForIntervals * quota;			/// Текущая квота.
 	String current_database;			/// Текущая БД.
+	String current_query_id;			/// Id текущего запроса.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;					/// Настройки выполнения запроса.
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
@@ -194,7 +195,9 @@ public:
 	void detachDatabase(const String & database_name);
 
 	String getCurrentDatabase() const;
+	String getCurrentQueryId() const;
 	void setCurrentDatabase(const String & name);
+	void setCurrentQueryId(const String & query_id);
 
 	String getDefaultFormat() const;	/// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
 	void setDefaultFormat(const String & name);
