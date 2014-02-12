@@ -87,15 +87,11 @@ public:
 
 	/** Проверить глубину дерева.
 	  * Если задано max_depth и глубина больше - кинуть исключение.
+	  * Возвращает глубину дерева.
 	  */
 	size_t checkDepth(size_t max_depth) const
 	{
-		size_t res = 0;
-		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-			if (max_depth == 0 || (res = (*it)->checkDepth(max_depth - 1)) > max_depth - 1)
-				throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
-
-		return res + 1;
+		return checkDepthImpl(max_depth, 0);
 	}
 	
 	/** То же самое для общего количества элементов дерева.
@@ -118,6 +114,20 @@ public:
 	{
 		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
 			(*it)->collectIdentifierNames(set);
+	}
+
+private:
+	size_t checkDepthImpl(size_t max_depth, size_t level) const
+	{
+		size_t res = level + 1;
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+		{
+			if (level >= max_depth)
+				throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
+			res = std::max(res, (*it)->checkDepthImpl(max_depth, level + 1));
+		}
+
+		return res;
 	}
 };
 
