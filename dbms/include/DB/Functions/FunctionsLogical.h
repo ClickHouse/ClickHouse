@@ -183,7 +183,7 @@ private:
 		return true;
 	}
 
-	void executeUint8Other(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
+	void executeUInt8Other(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
 	{
 		if (!executeUInt8Type<  Int8 >(uint8_vec, column, res) &&
 			!executeUInt8Type<  Int16>(uint8_vec, column, res) &&
@@ -299,7 +299,7 @@ public:
 		/// По одному добавим все столбцы неправильного типа.
 		while (!other_in.empty())
 		{
-			executeUint8Other(uint8_in[0]->getData(), other_in.back(), vec_res);
+			executeUInt8Other(uint8_in[0]->getData(), other_in.back(), vec_res);
 			other_in.pop_back();
 			uint8_in[0] = col_res;
 		}
