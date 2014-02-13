@@ -120,7 +120,7 @@ inline void extractFunctions(ASTPtr expression, const std::vector<String> & colu
 }
 
 /// Построить конъюнкцию из заданных функций
-inline ASTPtr buildWhereExpression(const std::vector<ASTPtr> & functions)
+inline ASTPtr buildWhereExpression(const ASTs & functions)
 {
 	if (functions.size() == 0) return NULL;
 	if (functions.size() == 1) return functions[0];
@@ -128,11 +128,8 @@ inline ASTPtr buildWhereExpression(const std::vector<ASTPtr> & functions)
 	ASTFunction & new_function = dynamic_cast<ASTFunction & >(*new_query);
 	new_function.name = "and";
 	new_function.arguments = new ASTExpressionList();
+	new_function.arguments->children = functions;
 	new_function.children.push_back(new_function.arguments);
-	for (size_t i = 1; i < functions.size(); ++i)
-	{
-		new_function.arguments->children.push_back(functions[i]);
-	}
 	return new_query;
 }
 
