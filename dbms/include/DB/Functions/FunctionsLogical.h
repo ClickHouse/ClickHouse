@@ -149,7 +149,7 @@ private:
 		size_t n = res.size();
 		for (size_t i = 0; i < n; ++i)
 		{
-			res[i] = vec[i];
+			res[i] = !!vec[i];
 		}
 		return true;
 	}
