@@ -27,10 +27,18 @@ void Context::setPath(const String & path)
 }
 
 
-void Context::initUsersFromConfig()
+void Context::setUsersConfig(ConfigurationPtr config)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	shared->users.initFromConfig();
+	shared->users_config = config;
+	shared->users.loadFromConfig(*shared->users_config);
+	shared->quotas.loadFromConfig(*shared->users_config);
+}
+
+ConfigurationPtr Context::getUsersConfig()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return shared->users_config;
 }
 
 
@@ -47,17 +55,10 @@ void Context::setUser(const String & name, const String & password, const Poco::
 }
 
 
-void Context::initQuotasFromConfig()
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	shared->quotas.initFromConfig();
-}
-
-
 void Context::setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	quota = &shared->quotas.get(name, quota_key, user_name, address);
+	quota = shared->quotas.get(name, quota_key, user_name, address);
 }
 
 
@@ -343,7 +344,20 @@ void Context::setSettings(const Settings & settings_)
 void Context::setSetting(const String & name, const Field & value)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	settings.set(name, value);
+	if (name == "profile")
+		settings.setProfile(value.safeGet<String>(), *shared->users_config);
+	else
+		settings.set(name, value);
+}
+
+
+void Context::setSetting(const String & name, const std::string & value)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	if (name == "profile")
+		settings.setProfile(value, *shared->users_config);
+	else
+		settings.set(name, value);
 }
 
 

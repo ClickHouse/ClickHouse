@@ -25,6 +25,9 @@
 #include "OLAPQueryParser.h"
 #include "OLAPQueryConverter.h"
 
+#include <thread>
+#include <atomic>
+
 /** Сервер предоставляет три интерфейса:
   * 1. HTTP - простой интерфейс для доступа из любых приложений.
   * 2. TCP - интерфейс для доступа из родной библиотеки, родного клиента, и для межсерверного взаимодействия.
@@ -38,6 +41,27 @@
 
 namespace DB
 {
+
+
+/// Каждые две секунды проверяет, не изменился ли конфиг. Когда изменился, вызывает setUsersConfig у контекста.
+class UsersConfigReloader
+{
+public:
+	UsersConfigReloader(const std::string & path, Poco::SharedPtr<Context> context);
+	~UsersConfigReloader();
+private:
+	std::string path;
+	Poco::SharedPtr<Context> context;
+
+	time_t file_modification_time;
+	std::atomic<bool> quit;
+	std::thread thread;
+
+	Logger * log;
+
+	void reloadIfNewer(bool force);
+	void run();
+};
 
 
 class Server : public Daemon
@@ -54,6 +78,8 @@ public:
     Server() : config(Application::instance().config()) {}
 	
 protected:
+	Poco::SharedPtr<UsersConfigReloader> users_config_reloader;
+
 	void initialize(Application& self)
 	{
 		Daemon::initialize(self);

@@ -1,4 +1,5 @@
 #include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
 
@@ -82,6 +83,88 @@ public:
 };
 
 
+UsersConfigReloader::UsersConfigReloader(const std::string & path_, Poco::SharedPtr<Context> context_)
+	: path(path_), context(context_), file_modification_time(0), quit(false), log(&Logger::get("UsersConfigReloader"))
+{
+	reloadIfNewer(true);
+	thread = std::thread(&UsersConfigReloader::run, this);
+}
+
+UsersConfigReloader::~UsersConfigReloader()
+{
+	try
+	{
+		quit = true;
+		thread.join();
+	}
+	catch(...)
+	{
+		tryLogCurrentException("~UsersConfigReloader");
+	}
+}
+
+void UsersConfigReloader::run()
+{
+	while (!quit)
+	{
+		std::this_thread::sleep_for(std::chrono::seconds(2));
+		reloadIfNewer(false);
+	}
+}
+
+void UsersConfigReloader::reloadIfNewer(bool force)
+{
+	Poco::File f(path);
+	time_t new_modification_time = f.getLastModified().epochTime();
+	if (!force && new_modification_time == file_modification_time)
+		return;
+	file_modification_time = new_modification_time;
+
+	LOG_DEBUG(log, "Loading users config");
+
+	ConfigurationPtr config;
+
+	try
+	{
+		config = new Poco::Util::XMLConfiguration(path);
+	}
+	catch (Poco::Exception & e)
+	{
+		if (force)
+			throw;
+
+		LOG_ERROR(log, "Couldn't parse users config: " << e.what() << ", " << e.displayText());
+		return;
+	}
+
+	try
+	{
+		context->setUsersConfig(config);
+	}
+	catch (Exception & e)
+	{
+		if (force)
+			throw;
+
+		LOG_ERROR(log, "Error updating users config: " << e.what() << ": " << e.displayText() << "\n" << e.getStackTrace().toString());
+	}
+	catch (Poco::Exception & e)
+	{
+		if (force)
+			throw;
+
+		LOG_ERROR(log, "Error updating users config: " << e.what() << ": " << e.displayText());
+	}
+	catch (...)
+	{
+		if (force)
+			throw;
+
+		LOG_ERROR(log, "Error updating users config.");
+	}
+}
+
+
 int Server::main(const std::vector<std::string> & args)
 {
 	Logger * log = &logger();
@@ -99,11 +182,8 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(config.getString("path"));
 
-	/// Загружаем пользователей.
-	global_context->initUsersFromConfig();
-
-	/// Загружаем квоты.
-	global_context->initQuotasFromConfig();
+	std::string users_config_path = config.getString("users_config", "users.xml");
+	users_config_reloader = new UsersConfigReloader(users_config_path, global_context);
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config.getInt("max_concurrent_queries", 0));
@@ -120,7 +200,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Загружаем настройки.
 	Settings & settings = global_context->getSettingsRef();
-	settings.setProfile(config.getString("default_profile", "default"));
+	global_context->setSetting("profile", config.getString("default_profile", "default"));
 
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(*global_context);
@@ -198,6 +278,9 @@ int Server::main(const std::vector<std::string> & args)
 		waitForTerminationRequest();
 	
 		LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
+
+		users_config_reloader = NULL;
+
 		is_cancelled = true;
 
 		http_server.stop();

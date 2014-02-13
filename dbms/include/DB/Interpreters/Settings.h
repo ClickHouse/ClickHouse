@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Timespan.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Field.h>
 
@@ -102,7 +103,7 @@ struct Settings
 	/** Установить настройки из профиля (в конфиге сервера, в одном профиле может быть перечислено много настроек).
 	  * Профиль также может быть установлен с помощью функций set, как настройка profile.
 	  */
-	void setProfile(const String & profile_name);
+	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
 	void deserialize(ReadBuffer & buf);

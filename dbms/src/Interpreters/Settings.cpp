@@ -41,7 +41,6 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "extremes")			extremes 			= safeGet<UInt64>(value);
 	else if (name == "use_uncompressed_cache") use_uncompressed_cache = safeGet<UInt64>(value);
 	else if (name == "use_splitting_aggregator") use_splitting_aggregator = safeGet<UInt64>(value);
-	else if (name == "profile") 			setProfile(get<const String &>(value));
 	else if (name == "load_balancing")		load_balancing		= getLoadBalancing(safeGet<const String &>(value));
 	else if (name == "default_sample")
 	{
@@ -84,12 +83,6 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		UInt64 value = 0;
 		readVarUInt(value, buf);
 		set(name, value);
-	}
-	else if (name == "profile")
-	{
-		String value;
-		readBinary(value, buf);
-		setProfile(value);
 	}
 	else if (name == "load_balancing")
 	{
@@ -138,17 +131,12 @@ void Settings::set(const String & name, const String & value)
 	{
 		set(name, Field(value));
 	}
-	else if (name == "profile")
-	{
-		setProfile(value);
-	}
 	else if (!limits.trySet(name, value))
 		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 }
 
-void Settings::setProfile(const String & profile_name)
+void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	String elem = "profiles." + profile_name;
 	
 	if (!config.has(elem))

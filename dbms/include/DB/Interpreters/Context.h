@@ -50,6 +50,8 @@ typedef std::pair<String, String> DatabaseAndTableName;
 typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
 typedef std::vector<DatabaseAndTableName> Dependencies;
 
+typedef Poco::AutoPtr<Poco::Util::AbstractConfiguration> ConfigurationPtr;
+
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
@@ -89,6 +91,7 @@ struct ContextShared
 	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	ViewDependencies view_dependencies;						/// Текущие зависимости
+	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -143,7 +146,7 @@ private:
 
 	String user;						/// Текущий пользователь.
 	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
-	QuotaForIntervals * quota;			/// Текущая квота.
+	QuotaForIntervalsPtr quota;			/// Текущая квота.
 	String current_database;			/// Текущая БД.
 	String current_query_id;			/// Id текущего запроса.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
@@ -163,12 +166,18 @@ public:
 	String getPath() const;
 	void setPath(const String & path);
 
-	void initUsersFromConfig();
+	/** Забрать список пользователей, квот и профилей настроек из этого конфига.
+	  * Список пользователей полностью заменяется.
+	  * Накопленные значения у квоты не сбрасываются, если квота не удалена.
+	  */
+	void setUsersConfig(ConfigurationPtr config);
+
+	ConfigurationPtr getUsersConfig();
+
 	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key);
 	String getUser() const { return user; }
 	Poco::Net::IPAddress getIPAddress() const { return ip_address; }
 
-	void initQuotasFromConfig();
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();
 
@@ -211,7 +220,8 @@ public:
 
 	/// Установить настройку по имени.
 	void setSetting(const String & name, const Field & value);
-	
+	void setSetting(const String & name, const std::string & value);
+
 	const TableFunctionFactory & getTableFunctionFactory() const			{ return shared->table_function_factory; }
 	const FunctionFactory & getFunctionFactory() const						{ return shared->function_factory; }
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }

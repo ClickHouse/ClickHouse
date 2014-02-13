@@ -109,7 +109,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		{
 		}
 		else	/// Все неизвестные параметры запроса рассматриваются, как настройки.
-			context.getSettingsRef().set(it->first, it->second);
+			context.setSetting(it->first, it->second);
 	}
 
 	if (readonly)

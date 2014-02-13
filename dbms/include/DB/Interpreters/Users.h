@@ -225,10 +225,8 @@ public:
 		return false;
 	}
 
-	void addFromConfig(const String & config_elem)
+	void addFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 	{
-		Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-
 		Poco::Util::AbstractConfiguration::Keys config_keys;
 		config.keys(config_elem, config_keys);
 
@@ -266,16 +264,14 @@ struct User
 
 	AddressPatterns addresses;
 
-	User(const String & name_, const String & config_elem)
+	User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config)
 		: name(name_)
 	{
-		Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-
 		password 	= config.getString(config_elem + ".password");
 		profile 	= config.getString(config_elem + ".profile");
 		quota 		= config.getString(config_elem + ".quota");
 
-		addresses.addFromConfig(config_elem + ".networks");
+		addresses.addFromConfig(config_elem + ".networks", config);
 	}
 
 	/// Для вставки в контейнер.
@@ -291,15 +287,15 @@ private:
 	Container cont;
 	
 public:
-	void initFromConfig()
+	void loadFromConfig(Poco::Util::AbstractConfiguration & config)
 	{
-		Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
+		cont.clear();
 
 		Poco::Util::AbstractConfiguration::Keys config_keys;
 		config.keys("users", config_keys);
 
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
-			cont[*it] = User(*it, "users." + *it);
+			cont[*it] = User(*it, "users." + *it, config);
 	}
 
 	const User & get(const String & name, const String & password, const Poco::Net::IPAddress & address) const

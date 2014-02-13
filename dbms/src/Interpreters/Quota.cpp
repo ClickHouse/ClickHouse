@@ -6,14 +6,14 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/Interpreters/Quota.h>
 
+#include <set>
+
 
 namespace DB
 {
 
-void QuotaValues::initFromConfig(const String & config_elem)
+void QuotaValues::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-
 	queries 		= parse<UInt64>(config.getString(config_elem + ".queries", 		"0"));
 	errors 			= parse<UInt64>(config.getString(config_elem + ".errors", 		"0"));
 	result_rows 	= parse<UInt64>(config.getString(config_elem + ".result_rows",	"0"));
@@ -24,11 +24,11 @@ void QuotaValues::initFromConfig(const String & config_elem)
 }
 
 
-void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_)
+void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, Poco::Util::AbstractConfiguration & config)
 {
 	rounded_time = 0;
 	duration = duration_;
-	max.initFromConfig(config_elem);
+	max.initFromConfig(config_elem, config);
 }
 
 void QuotaForInterval::checkExceeded(time_t current_time, const String & quota_name)
@@ -118,7 +118,7 @@ void QuotaForInterval::check(size_t max_amount, size_t used_amount, time_t curre
 		else
 			message << duration << " seconds";
 
-		message << " has been expired. "
+		message << " has been exceeded. "
 			<< resource_name << ": " << used_amount << ", max: " << max_amount << ". "
 			<< "Interval will end at " << mysqlxx::DateTime(rounded_time + duration) << ".";
 
@@ -127,10 +127,8 @@ void QuotaForInterval::check(size_t max_amount, size_t used_amount, time_t curre
 }
 
 
-void QuotaForIntervals::initFromConfig(const String & config_elem)
+void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(config_elem, config_keys);
 
@@ -142,44 +140,63 @@ void QuotaForIntervals::initFromConfig(const String & config_elem)
 		String interval_config_elem = config_elem + "." + *it;
 		time_t duration = config.getInt(interval_config_elem + ".duration");
 
-		cont[duration].initFromConfig(interval_config_elem, duration);
+		cont[duration].initFromConfig(interval_config_elem, duration, config);
+	}
+}
+
+void QuotaForIntervals::setMax(const QuotaForIntervals & quota)
+{
+	for (Container::iterator it = cont.begin(); it != cont.end();)
+	{
+		if (quota.cont.count(it->first))
+			++it;
+		else
+			cont.erase(it++);
+	}
+
+	for (auto & x : quota.cont)
+	{
+		if (!cont.count(x.first))
+			cont[x.first] = x.second;
+		else
+			cont[x.first].max = x.second.max;
 	}
 }
 
 void QuotaForIntervals::checkExceeded(time_t current_time)
 {
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.checkExceeded(current_time, parent->name);
+		it->second.checkExceeded(current_time, name);
 }
 
 void QuotaForIntervals::addQuery(time_t current_time)
 {
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.addQuery(current_time, parent->name);
+		it->second.addQuery(current_time, name);
 }
 
 void QuotaForIntervals::addError(time_t current_time)
 {
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.addError(current_time, parent->name);
+		it->second.addError(current_time, name);
 }
 
 void QuotaForIntervals::checkAndAddResultRowsBytes(time_t current_time, size_t rows, size_t bytes)
 {
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.checkAndAddResultRowsBytes(current_time, parent->name, rows, bytes);
+		it->second.checkAndAddResultRowsBytes(current_time, name, rows, bytes);
 }
 
 void QuotaForIntervals::checkAndAddReadRowsBytes(time_t current_time, size_t rows, size_t bytes)
 {
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.checkAndAddReadRowsBytes(current_time, parent->name, rows, bytes);
+		it->second.checkAndAddReadRowsBytes(current_time, name, rows, bytes);
 }
 
 void QuotaForIntervals::checkAndAddExecutionTime(time_t current_time, Poco::Timespan amount)
 {
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
-		it->second.checkAndAddExecutionTime(current_time, parent->name, amount);
+		it->second.checkAndAddExecutionTime(current_time, name, amount);
 }
 
 String QuotaForIntervals::toString() const
@@ -193,19 +210,34 @@ String QuotaForIntervals::toString() const
 }
 
 
-void Quota::initFromConfig(const String & config_elem, const String & name_)
+void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config)
 {
 	name = name_;
 
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
+	bool new_keyed_by_ip = config.has(config_elem + ".keyed_by_ip");
+	bool new_is_keyed = new_keyed_by_ip || config.has(config_elem + ".keyed");
 
-	keyed_by_ip = config.has(config_elem + ".keyed_by_ip");
-	is_keyed = keyed_by_ip || config.has(config_elem + ".keyed");
+	if (new_is_keyed != is_keyed || new_keyed_by_ip != keyed_by_ip)
+	{
+		keyed_by_ip = new_keyed_by_ip;
+		is_keyed = new_is_keyed;
+		/// Смысл ключей поменялся. Выбросим накопленные значения.
+		quota_for_keys.clear();
+	}
 
-	max.initFromConfig(config_elem);
+	QuotaForIntervals new_max(name);
+	new_max.initFromConfig(config_elem, config);
+	if (!(new_max == max))
+	{
+		max = new_max;
+		for (auto & quota : quota_for_keys)
+		{
+			quota.second->setMax(max);
+		}
+	}
 }
 
-QuotaForIntervals & Quota::get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip)
+QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip)
 {
 	if (!quota_key.empty() && (!is_keyed || keyed_by_ip))
 		throw Exception("Quota " + name + " doesn't allow client supplied keys.", ErrorCodes::QUOTA_DOESNT_ALLOW_KEYS);
@@ -228,29 +260,37 @@ QuotaForIntervals & Quota::get(const String & quota_key, const String & user_nam
 	Container::iterator it = quota_for_keys.find(quota_key_hashed);
 	if (quota_for_keys.end() == it)
 	{
-		it = quota_for_keys.insert(std::make_pair(quota_key_hashed, QuotaForIntervals(this))).first;
-		it->second = max;
+		it = quota_for_keys.insert(std::make_pair(quota_key_hashed, new QuotaForIntervals(max))).first;
 	}
 
 	return it->second;
 }
 
 
-void Quotas::initFromConfig()
+void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys("quotas", config_keys);
 
+	/// Удалим ключи, которых больше нет в кофиге.
+	std::set<std::string> keys_set(config_keys.begin(), config_keys.end());
+	for (Container::iterator it = cont.begin(); it != cont.end();)
+	{
+		if (keys_set.count(it->first))
+			++it;
+		else
+			cont.erase(it++);
+	}
+
 	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
-		cont[*it] = new Quota();
-		cont[*it]->initFromConfig("quotas." + *it, *it);
+		if (!cont[*it])
+			cont[*it] = new Quota();
+		cont[*it]->loadFromConfig("quotas." + *it, *it, config);
 	}
 }
 
-QuotaForIntervals & Quotas::get(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip)
+QuotaForIntervalsPtr Quotas::get(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip)
 {
 	Container::iterator it = cont.find(name);
 	if (cont.end() == it)

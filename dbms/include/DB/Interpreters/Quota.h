@@ -50,7 +50,19 @@ struct QuotaValues
 		memset(this, 0, sizeof(*this));
 	}
 
-	void initFromConfig(const String & config_elem);
+	void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+
+	bool operator== (const QuotaValues & rhs) const
+	{
+		return
+			queries			== rhs.queries &&
+			errors			== rhs.errors &&
+			result_rows		== rhs.result_rows &&
+			result_bytes	== rhs.result_bytes &&
+			read_rows		== rhs.read_rows &&
+			read_bytes		== rhs.read_bytes &&
+			execution_time	== rhs.execution_time;
+	}
 };
 
 
@@ -65,7 +77,7 @@ struct QuotaForInterval
 	QuotaForInterval() : rounded_time() {}
 	QuotaForInterval(time_t duration_) : duration(duration_) {}
 
-	void initFromConfig(const String & config_elem, time_t duration_);
+	void initFromConfig(const String & config_elem, time_t duration_, Poco::Util::AbstractConfiguration & config);
 
 	/// Увеличить соответствующее значение.
 	void addQuery(time_t current_time, const String & quota_name);
@@ -82,6 +94,14 @@ struct QuotaForInterval
 	/// Получить текст, описывающий, какая часть квоты израсходована.
 	String toString() const;
 
+	bool operator== (const QuotaForInterval & rhs) const
+	{
+		return
+			rounded_time	== rhs.rounded_time &&
+			duration		== rhs.duration &&
+			max				== rhs.max &&
+			used			== rhs.used;
+	}
 private:
 	/// Сбросить счётчик использованных ресурсов, если соответствующий интервал, за который считается квота, прошёл.
 	void updateTime(time_t current_time);
@@ -99,10 +119,10 @@ private:
 	typedef std::map<size_t, QuotaForInterval> Container;
 	Container cont;
 
-	Quota * parent;
+	std::string name;
 
 public:
-	QuotaForIntervals(Quota * parent_) : parent(parent_) {}
+	QuotaForIntervals(const std::string & name_ = "") : name(name_) {}
 
 	/// Есть ли хотя бы один интервал, за который считается квота?
 	bool empty() const
@@ -110,7 +130,11 @@ public:
 		return cont.empty();
 	}
 	
-	void initFromConfig(const String & config_elem);
+	void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+
+	/// Обновляет максимальные значения значениями из quota.
+	/// Удаляет интервалы, которых нет в quota, добавляет интревалы, которых нет здесь, но есть в quota.
+	void setMax(const QuotaForIntervals & quota);
 
 	void addQuery(time_t current_time);
 	void addError(time_t current_time);
@@ -123,29 +147,37 @@ public:
 
 	/// Получить текст, описывающий, какая часть квоты израсходована.
 	String toString() const;
+
+	bool operator== (const QuotaForIntervals & rhs) const
+	{
+		return cont == rhs.cont && name == rhs.name;
+	}
 };
+
+typedef Poco::SharedPtr<QuotaForIntervals> QuotaForIntervalsPtr;
 
 
 /// Ключ квоты -> квоты за интервалы. Если квота не допускает ключей, то накопленные значения хранятся по ключу 0.
 struct Quota
 {
-	typedef std::unordered_map<UInt64, QuotaForIntervals> Container;
+	typedef std::unordered_map<UInt64, QuotaForIntervalsPtr> Container;
 
 	String name;
 
 	/// Максимальные значения из конфига.
 	QuotaForIntervals max;
 	/// Максимальные и накопленные значения для разных ключей.
+	/// Для всех ключей максимальные значения одинаковы и взяты из max.
 	Container quota_for_keys;
 	Poco::FastMutex mutex;
 
 	bool is_keyed;
 	bool keyed_by_ip;
 
-	Quota() : max(this), is_keyed(false), keyed_by_ip(false) {}
+	Quota() : is_keyed(false), keyed_by_ip(false) {}
 
-	void initFromConfig(const String & config_elem, const String & name_);
-	QuotaForIntervals & get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
+	void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config);
+	QuotaForIntervalsPtr get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
 
@@ -157,8 +189,9 @@ private:
 	Container cont;
 
 public:
-	void initFromConfig();
-	QuotaForIntervals & get(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
+	void loadFromConfig(Poco::Util::AbstractConfiguration & config);
+	QuotaForIntervalsPtr get(const String & name, const String & quota_key,
+							const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
 }
