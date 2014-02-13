@@ -123,19 +123,17 @@ inline void extractFunctions(ASTPtr expression, const std::vector<String> & colu
 inline ASTPtr buildWhereExpression(const std::vector<ASTPtr> & functions)
 {
 	if (functions.size() == 0) return NULL;
-	ASTPtr result = functions[0];
+	if (functions.size() == 1) return functions[0];
+	ASTPtr new_query = new ASTFunction();
+	ASTFunction & new_function = dynamic_cast<ASTFunction & >(*new_query);
+	new_function.name = "and";
+	new_function.arguments = new ASTExpressionList();
+	new_function.children.push_back(new_function.arguments);
 	for (size_t i = 1; i < functions.size(); ++i)
 	{
-		ASTPtr new_query = new ASTFunction();
-		ASTFunction & new_function = dynamic_cast<ASTFunction & >(*new_query);
-		new_function.name = "and";
-		new_function.arguments = new ASTExpressionList();
-		new_function.arguments->children.push_back(result);
 		new_function.arguments->children.push_back(functions[i]);
-		new_function.children.push_back(new_function.arguments);
-		result = new_query;
 	}
-	return result;
+	return new_query;
 }
 
 /// Получить поток блоков содержащий интересующие нас значения виртуальных столбцов

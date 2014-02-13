@@ -96,8 +96,9 @@ void PKCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 			for (size_t i = 0; i < args.size(); ++i)
 			{
 				traverseAST(args[i], block_with_constants);
+				if (i)
+					rpn.push_back(element);
 			}
-			rpn.push_back(element);
 			
 			return;
 		}
@@ -194,9 +195,6 @@ bool PKCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 	}
 	else
 	{
-		if (args.size() != 2)
-			return false;
-	
 		if (func->name == "and")
 			out.function = RPNElement::FUNCTION_AND;
 		else if (func->name == "or")

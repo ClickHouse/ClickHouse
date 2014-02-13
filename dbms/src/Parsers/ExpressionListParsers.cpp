@@ -135,6 +135,49 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 	return true;
 }
 
+bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+{
+	ParserWhiteSpaceOrComments ws;
+
+	Pos begin = pos;
+	ASTPtr arguments;
+
+	if (!elem_parser->parse(pos, end, node, expected))
+		return false;
+
+	while (true)
+	{
+		ws.ignore(pos, end);
+
+		if (!infix_parser.ignore(pos, end, expected))
+			break;
+
+		ws.ignore(pos, end);
+
+		if (!arguments)
+		{
+			ASTFunction * function = new ASTFunction;
+			ASTPtr function_node = function;
+			arguments = new ASTExpressionList;
+			function->arguments = arguments;
+			function->children.push_back(arguments);
+			function->name = function_name;
+			arguments->children.push_back(node);
+			node = function_node;
+		}
+
+		ASTPtr elem;
+		if (!elem_parser->parse(pos, end, elem, expected))
+			return false;
+
+		arguments->children.push_back(elem);
+	}
+
+	if (arguments)
+		arguments->range = node->range = StringRange(begin, pos);
+
+	return true;
+}
 
 bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
 {

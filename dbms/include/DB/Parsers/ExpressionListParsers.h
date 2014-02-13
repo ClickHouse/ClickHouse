@@ -38,7 +38,7 @@ private:
 /** Выражение с инфиксным бинарным лево-ассоциативным оператором.
   * Например, a + b - c + d.
   * NOTE: если оператор словесный (например, OR), то после него не требуется границы слова.
-  *  то есть, можно написать a = b ORx = y.
+  *  То есть, можно написать a LIKEx.
   */
 class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
@@ -57,6 +57,33 @@ public:
 protected:
 	String getName() { return "list, delimited by binary operators"; }
 	
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+};
+
+
+/** Выражение с инфиксным оператором произвольной арности.
+  * Например, a AND b AND c AND d.
+  * NOTE: если оператор словесный (например, OR), то после него не требуется границы слова.
+  *  То есть, можно написать a = b ORx = y.
+  */
+class ParserVariableArityOperatorList : public IParserBase
+{
+private:
+	ParserString infix_parser;
+	String function_name;
+	ParserPtr elem_parser;
+
+public:
+	/** operators_ - допустимые операторы и соответствующие им функции
+	  */
+	ParserVariableArityOperatorList(const String & infix_, const String & function_, ParserPtr elem_parser_)
+		: infix_parser(infix_), function_name(function_), elem_parser(elem_parser_)
+	{
+	}
+
+protected:
+	String getName() { return "list, delimited by operator of variable arity"; }
+
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
 };
 
@@ -235,11 +262,11 @@ class ParserLogicalAndExpression : public IParserBase
 {
 private:
 	ParserPtr elem_parser;
-	ParserLeftAssociativeBinaryOperatorList operator_parser;
+	ParserVariableArityOperatorList operator_parser;
 public:
 	ParserLogicalAndExpression()
 		: elem_parser(new ParserLogicalNotExpression),
-		operator_parser(boost::assign::map_list_of("AND", "and"), elem_parser)
+		operator_parser("AND", "and", elem_parser)
 	{
 	}
 	
@@ -257,11 +284,11 @@ class ParserLogicalOrExpression : public IParserBase
 {
 private:
 	ParserPtr elem_parser;
-	ParserLeftAssociativeBinaryOperatorList operator_parser;
+	ParserVariableArityOperatorList operator_parser;
 public:
 	ParserLogicalOrExpression()
 		: elem_parser(new ParserLogicalAndExpression),
-		operator_parser(boost::assign::map_list_of("OR", "or"), elem_parser)
+		operator_parser("OR", "or", elem_parser)
 	{
 	}
 	
