@@ -66,7 +66,7 @@ private:
 	Containter cont;
 	size_t cur_size;		/// В C++03 std::list::size не O(1).
 	size_t max_size;		/// Если 0 - не ограничено. Иначе, если пытаемся добавить больше - кидается исключение.
-	UserToQueries userToQueries;
+	UserToQueries user_to_queries;
 
 	/// Держит итератор на список, и удаляет элемент из списка в деструкторе.
 	class Entry
@@ -84,8 +84,8 @@ private:
 			parent.cont.erase(it);
 			--parent.cur_size;
 			parent.have_space.signal();
-			UserToQueries::iterator queries = parent.userToQueries.find(it->user);
-			if (queries != parent.userToQueries.end())
+			UserToQueries::iterator queries = parent.user_to_queries.find(it->user);
+			if (queries != parent.user_to_queries.end())
 			{
 				QueryToElement::iterator element = queries->second.find(it->query_id);
 				if (element != queries->second.end())
@@ -117,9 +117,9 @@ public:
 			if (max_size && cur_size >= max_size && (!max_wait_milliseconds || !have_space.tryWait(mutex, max_wait_milliseconds)))
 				throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-			UserToQueries::iterator queries = userToQueries.find(user_);
+			UserToQueries::iterator queries = user_to_queries.find(user_);
 
-			if (queries != userToQueries.end())
+			if (queries != user_to_queries.end())
 			{
 				QueryToElement::iterator element = queries->second.find(query_id_);
 				if (element != queries->second.end())
@@ -136,7 +136,7 @@ public:
 
 			res = new Entry(*this, cont.insert(cont.end(), Element(query_, user_, query_id_, ip_address_)));
 
-			userToQueries[user_][query_id_] = &res->get();
+			user_to_queries[user_][query_id_] = &res->get();
 		}
 
 		return res;

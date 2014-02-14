@@ -83,7 +83,7 @@ public:
 	String getServerAddress() const;
 
 	/// query_id не должен быть равен "".
-	void sendQuery(const String & query, String query_id_ = "1", UInt64 stage = QueryProcessingStage::Complete,
+	void sendQuery(const String & query, UInt64 query_id_ = 1, UInt64 stage = QueryProcessingStage::Complete,
 		const Settings * settings = NULL);
 	
 	void sendCancel();
