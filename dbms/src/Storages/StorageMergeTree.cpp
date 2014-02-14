@@ -769,6 +769,9 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 	{
 		while (!shutdown_called)
 		{
+			/// Удаляем старые куски.
+			clearOldParts();
+
 			{
 				/// К концу этого логического блока должен быть вызван деструктор, чтобы затем корректно определить удаленные куски
 				Poco::SharedPtr<CurrentlyMergingPartsTagger> what;
@@ -782,9 +785,6 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 			if (shutdown_called)
 				break;
 
-			/// Удаляем старые куски.
-			clearOldParts();
-			
 			if (!while_can)
 				break;
 		}
