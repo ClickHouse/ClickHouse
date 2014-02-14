@@ -220,6 +220,8 @@ public:
 
 	/// Установить настройку по имени.
 	void setSetting(const String & name, const Field & value);
+
+	/// Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
 	void setSetting(const String & name, const std::string & value);
 
 	const TableFunctionFactory & getTableFunctionFactory() const			{ return shared->table_function_factory; }
