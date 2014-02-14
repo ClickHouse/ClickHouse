@@ -292,7 +292,7 @@ public:
 		/// Эффективно скомбинируем все столбцы правильного типа.
 		while (uint8_in.size() > 1)
 		{
-			AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
+			AssociativeOperationImpl<Impl<UInt8>, 6>::execute(uint8_in, vec_res);
 			uint8_in.push_back(col_res);
 		}
 
