@@ -37,8 +37,6 @@ private:
 
 /** Выражение с инфиксным бинарным лево-ассоциативным оператором.
   * Например, a + b - c + d.
-  * NOTE: если оператор словесный (например, OR), то после него не требуется границы слова.
-  *  То есть, можно написать a LIKEx.
   */
 class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
@@ -63,8 +61,6 @@ protected:
 
 /** Выражение с инфиксным оператором произвольной арности.
   * Например, a AND b AND c AND d.
-  * NOTE: если оператор словесный (например, OR), то после него не требуется границы слова.
-  *  То есть, можно написать a = b ORx = y.
   */
 class ParserVariableArityOperatorList : public IParserBase
 {
@@ -74,10 +70,8 @@ private:
 	ParserPtr elem_parser;
 
 public:
-	/** operators_ - допустимые операторы и соответствующие им функции
-	  */
 	ParserVariableArityOperatorList(const String & infix_, const String & function_, ParserPtr elem_parser_)
-		: infix_parser(infix_), function_name(function_), elem_parser(elem_parser_)
+		: infix_parser(infix_, true, true), function_name(function_), elem_parser(elem_parser_)
 	{
 	}
 
@@ -90,8 +84,6 @@ protected:
 
 /** Выражение с префиксным унарным оператором.
   * Например, NOT x.
-  * NOTE: если оператор словесный (например, NOT), то после него не требуется границы слова.
-  *  то есть, можно написать NOTx.
   */
 class ParserPrefixUnaryOperatorExpression : public IParserBase
 {
