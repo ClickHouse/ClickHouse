@@ -41,7 +41,10 @@ struct QueryState
 	/// Потоки блоков, с помощью которых выполнять запрос.
 	BlockIO io;
 
+	/// Отменен ли запрос
 	bool is_cancelled;
+	/// Пустой или нет
+	bool is_empty;
 	/// Данные были отправлены.
 	bool sent_all_data;
 
@@ -51,7 +54,7 @@ struct QueryState
 
 
 	QueryState() : query_id(""), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable),
-		is_cancelled(false), sent_all_data(false), rows_processed(0), bytes_processed(0) {}
+		is_cancelled(false), is_empty(true), sent_all_data(false), rows_processed(0), bytes_processed(0) {}
 	
 	void reset()
 	{
@@ -60,7 +63,7 @@ struct QueryState
 
 	bool empty()
 	{
-		return query_id == "";
+		return is_empty;
 	}
 };
 

@@ -85,7 +85,7 @@ private:
 			--parent.cur_size;
 			parent.have_space.signal();
 			/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
-			if (!it->is_cancelled)
+			if (!it->is_cancelled && it->query_id != "")
 			{
 				UserToQueries::iterator queries = parent.user_to_queries.find(it->user);
 				if (queries != parent.user_to_queries.end())
@@ -121,19 +121,22 @@ public:
 			if (max_size && cur_size >= max_size && (!max_wait_milliseconds || !have_space.tryWait(mutex, max_wait_milliseconds)))
 				throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-			UserToQueries::iterator queries = user_to_queries.find(user_);
-
-			if (queries != user_to_queries.end())
+			if (query_id_ != "")
 			{
-				QueryToElement::iterator element = queries->second.find(query_id_);
-				if (element != queries->second.end())
+				UserToQueries::iterator queries = user_to_queries.find(user_);
+
+				if (queries != user_to_queries.end())
 				{
-					if (!replace_running_query)
-						throw Exception("Query with id = " + query_id_ + " is already running.",
-										ErrorCodes::QUERY_ID_ALREADY_RUNNING);
-					element->second->is_cancelled = true;
-					/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
-					queries->second.erase(element);
+					QueryToElement::iterator element = queries->second.find(query_id_);
+					if (element != queries->second.end())
+					{
+						if (!replace_running_query)
+							throw Exception("Query with id = " + query_id_ + " is already running.",
+											ErrorCodes::QUERY_ID_ALREADY_RUNNING);
+						element->second->is_cancelled = true;
+						/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
+						queries->second.erase(element);
+					}
 				}
 			}
 
@@ -141,7 +144,8 @@ public:
 
 			res = new Entry(*this, cont.insert(cont.end(), Element(query_, user_, query_id_, ip_address_)));
 
-			user_to_queries[user_][query_id_] = &res->get();
+			if (query_id_ != "")
+				user_to_queries[user_][query_id_] = &res->get();
 		}
 
 		return res;

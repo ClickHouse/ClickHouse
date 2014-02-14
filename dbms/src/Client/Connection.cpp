@@ -194,11 +194,11 @@ bool Connection::ping()
 }
 
 
-void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage, const Settings * settings)
+void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings)
 {
 	forceConnected();
 	
-	query_id = toString(query_id_);
+	query_id = query_id_;
 
 	//LOG_TRACE(log, "Sending query (" << getServerAddress() << ")");
 
@@ -207,8 +207,7 @@ void Connection::sendQuery(const String & query, UInt64 query_id_, UInt64 stage,
 	if (server_revision >= DBMS_MIN_REVISION_WITH_STRING_QUERY_ID)
 		writeStringBinary(query_id, *out);
 	else
-		writeIntBinary(query_id_, *out);
-
+		writeIntBinary(1, *out);
 
 	/// Настройки на отдельный запрос.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
