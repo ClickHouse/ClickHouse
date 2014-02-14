@@ -84,12 +84,16 @@ private:
 			parent.cont.erase(it);
 			--parent.cur_size;
 			parent.have_space.signal();
-			UserToQueries::iterator queries = parent.user_to_queries.find(it->user);
-			if (queries != parent.user_to_queries.end())
+			/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
+			if (!it->is_cancelled)
 			{
-				QueryToElement::iterator element = queries->second.find(it->query_id);
-				if (element != queries->second.end())
-					queries->second.erase(element);
+				UserToQueries::iterator queries = parent.user_to_queries.find(it->user);
+				if (queries != parent.user_to_queries.end())
+				{
+					QueryToElement::iterator element = queries->second.find(it->query_id);
+					if (element != queries->second.end())
+						queries->second.erase(element);
+				}
 			}
 		}
 
@@ -128,6 +132,7 @@ public:
 						throw Exception("Query with id = " + query_id_ + " is already running.",
 										ErrorCodes::QUERY_ID_ALREADY_RUNNING);
 					element->second->is_cancelled = true;
+					/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
 					queries->second.erase(element);
 				}
 			}

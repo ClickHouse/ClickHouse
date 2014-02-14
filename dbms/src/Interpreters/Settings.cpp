@@ -41,6 +41,7 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "extremes")			extremes 			= safeGet<UInt64>(value);
 	else if (name == "use_uncompressed_cache") use_uncompressed_cache = safeGet<UInt64>(value);
 	else if (name == "use_splitting_aggregator") use_splitting_aggregator = safeGet<UInt64>(value);
+	else if (name == "replace_running_query") replace_running_query = safeGet<UInt64>(value);
 	else if (name == "load_balancing")		load_balancing		= getLoadBalancing(safeGet<const String &>(value));
 	else if (name == "default_sample")
 	{
@@ -78,7 +79,8 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		|| name == "sign_rewrite"
 		|| name == "extremes"
 		|| name == "use_uncompressed_cache"
-		|| name == "use_splitting_aggregator")
+		|| name == "use_splitting_aggregator"
+		|| name == "replace_running_query")
 	{
 		UInt64 value = 0;
 		readVarUInt(value, buf);
@@ -119,7 +121,8 @@ void Settings::set(const String & name, const String & value)
 		|| name == "sign_rewrite"
 		|| name == "extremes"
 		|| name == "use_uncompressed_cache"
-		|| name == "use_splitting_aggregator")
+		|| name == "use_splitting_aggregator"
+		|| name == "replace_running_query")
 	{
 		set(name, parse<UInt64>(value));
 	}
@@ -184,6 +187,7 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("extremes", buf);								writeVarUInt(extremes, buf);
 	writeStringBinary("use_uncompressed_cache", buf);				writeVarUInt(use_uncompressed_cache, buf);
 	writeStringBinary("use_splitting_aggregator", buf);				writeVarUInt(use_splitting_aggregator, buf);
+	writeStringBinary("replace_running_query", buf);				writeVarUInt(replace_running_query, buf);
 	writeStringBinary("load_balancing", buf);						writeStringBinary(toString(load_balancing), buf);
 	writeStringBinary("default_sample", buf);						writeStringBinary(DB::toString(default_sample), buf);
 
