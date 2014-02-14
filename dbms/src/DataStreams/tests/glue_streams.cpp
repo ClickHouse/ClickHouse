@@ -44,7 +44,7 @@ int main(int argc, char ** argv)
 		loadMetadata(context);
 
 		context.setCurrentDatabase("default");
-		context.setSetting("asynchronous", 0UL);
+		context.setSetting("asynchronous", Field(0UL));
 		context.setSetting("max_threads", 1UL);
 
 		BlockIO io1 = executeQuery(
