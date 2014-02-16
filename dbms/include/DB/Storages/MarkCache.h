@@ -2,6 +2,8 @@
 
 #include <DB/Common/LRUCache.h>
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Interpreters/AggregationCommon.h>
 
 
 namespace DB
