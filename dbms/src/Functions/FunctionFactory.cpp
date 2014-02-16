@@ -60,7 +60,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "or")							return new FunctionOr;
 	else if (name == "xor")							return new FunctionXor;
 	else if (name == "not")							return new FunctionNot;
-	
+
 	else if (name == "roundToExp2")				return new FunctionRoundToExp2;
 	else if (name == "roundDuration")				return new FunctionRoundDuration;
 	else if (name == "roundAge")					return new FunctionRoundAge;
@@ -201,7 +201,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "countEqual")					return new FunctionCountEqual;
 	else if (name == "arrayEnumerate")				return new FunctionArrayEnumerate;
 	else if (name == "arrayEnumerateUniq")			return new FunctionArrayEnumerateUniq;
-	
+
 	else if (name == "arrayMap")					return new FunctionArrayMap;
 	else if (name == "arrayFilter")				return new FunctionArrayFilter;
 	else if (name == "arrayCount")					return new FunctionArrayCount;
