@@ -108,13 +108,13 @@ public:
 protected:
 	void populateBlock(Block & res)
 	{
-		if (_host_column != "" && !res.has(_host_column))
+		if (!_host_column.empty() && !res.has(_host_column))
 		{
 			ColumnPtr column_ptr = ColumnConst<String>(res.rows(), connection.getHost(), new DataTypeString).convertToFullColumn();
 			ColumnWithNameAndType column(column_ptr, new DataTypeString, _host_column);
 			res.insert(column);
 		}
-		if (_port_column != "" && !res.has(_port_column))
+		if (!_port_column.empty() && !res.has(_port_column))
 		{
 			ColumnPtr column_ptr = ColumnConst<UInt16>(res.rows(), connection.getPort(), new DataTypeUInt16).convertToFullColumn();
 			ColumnWithNameAndType column(column_ptr, new DataTypeUInt16, _port_column);

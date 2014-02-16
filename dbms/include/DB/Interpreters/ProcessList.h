@@ -85,7 +85,7 @@ private:
 			--parent.cur_size;
 			parent.have_space.signal();
 			/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
-			if (!it->is_cancelled && it->query_id != "")
+			if (!it->is_cancelled && !it->query_id.empty())
 			{
 				UserToQueries::iterator queries = parent.user_to_queries.find(it->user);
 				if (queries != parent.user_to_queries.end())
@@ -121,7 +121,7 @@ public:
 			if (max_size && cur_size >= max_size && (!max_wait_milliseconds || !have_space.tryWait(mutex, max_wait_milliseconds)))
 				throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-			if (query_id_ != "")
+			if (!query_id_.empty())
 			{
 				UserToQueries::iterator queries = user_to_queries.find(user_);
 
@@ -144,7 +144,7 @@ public:
 
 			res = new Entry(*this, cont.insert(cont.end(), Element(query_, user_, query_id_, ip_address_)));
 
-			if (query_id_ != "")
+			if (!query_id_.empty())
 				user_to_queries[user_][query_id_] = &res->get();
 		}
 
