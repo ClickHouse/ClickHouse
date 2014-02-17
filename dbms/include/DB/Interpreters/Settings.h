@@ -23,6 +23,25 @@ namespace LoadBalancing
 	};
 }
 
+/// Какие строки включать в TOTALS.
+namespace TotalsMode
+{
+	enum TotalsMode
+	{
+		BEFORE_HAVING			= 0, /// Считать HAVING по всем прочитанным строкам;
+										///  включая не попавшие в max_rows_to_group_by
+										///  и не прошедшие HAVING после группировки.
+		AFTER_HAVING_INCLUSIVE	= 1, /// Считать по всем строкам, кроме не прошедших HAVING;
+										///  то есть, включать в TOTALS все строки, не прошедшие max_rows_to_group_by.
+		AFTER_HAVING_EXCLUSIVE	= 2, /// Включать только строки, прошедшие и max_rows_to_group_by, и HAVING.
+		AFTER_HAVING_AUTO		= 3, /// Автоматически выбирать между INCLUSIVE и EXCLUSIVE,
+										///  учитывая долю строк, прошедших HAVING.
+	};
+
+	String toString(TotalsMode mode);
+	TotalsMode parse(const String & s);
+};
+
 /** Настройки выполнения запроса.
   */
 struct Settings
@@ -68,6 +87,8 @@ struct Settings
 	/// Сэмплирование по умолчанию. Если равно 1, то отключено
 	float default_sample;
 
+	TotalsMode::TotalsMode totals_mode;
+
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
 
@@ -87,7 +108,8 @@ struct Settings
 		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
 		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
 		sign_rewrite(false), extremes(false), use_uncompressed_cache(true), use_splitting_aggregator(false),
-		replace_running_query(false), load_balancing(LoadBalancing::RANDOM), default_sample(DBMS_DEFAULT_SAMPLE)
+		replace_running_query(false), load_balancing(LoadBalancing::RANDOM), default_sample(DBMS_DEFAULT_SAMPLE),
+		totals_mode(TotalsMode::BEFORE_HAVING)
 	{
 	}
 

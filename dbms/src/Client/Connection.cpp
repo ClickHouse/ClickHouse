@@ -207,7 +207,7 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	if (server_revision >= DBMS_MIN_REVISION_WITH_STRING_QUERY_ID)
 		writeStringBinary(query_id, *out);
 	else
-		writeIntBinary(1, *out);
+		writeIntBinary<UInt64>(1, *out);
 
 	/// Настройки на отдельный запрос.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
