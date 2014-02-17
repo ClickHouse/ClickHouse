@@ -5,7 +5,7 @@ echo -n "#define REVISION " >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h
 
 cd ${CMAKE_CURRENT_SOURCE_DIR};
 
-if (git rev-parse --is-inside-work-tree >/dev/null 2>&1)
+if (git rev-parse --is-inside-work-tree &> /dev/null)
 then
 	# GIT
 	( git describe --tags || echo 1 ) | cut -d "-" -f 1 >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
