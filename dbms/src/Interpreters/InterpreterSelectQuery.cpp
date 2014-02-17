@@ -557,7 +557,7 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 		&& (!settings.limits.max_rows_to_group_by || limit_length + limit_offset < settings.limits.max_rows_to_group_by))
 	{
 		settings.limits.max_rows_to_group_by = limit_length + limit_offset;
-		settings.limits.group_by_overflow_mode = Limits::ANY;
+		settings.limits.group_by_overflow_mode = OverflowMode::ANY;
 	}
 
 	bool separate_totals = to_stage > QueryProcessingStage::WithMergeableState;

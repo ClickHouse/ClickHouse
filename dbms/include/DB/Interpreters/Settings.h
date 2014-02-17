@@ -6,113 +6,173 @@
 #include <DB/Core/Field.h>
 
 #include <DB/Interpreters/Limits.h>
+#include <DB/Interpreters/SettingsCommon.h>
 
 
 namespace DB
 {
 
-namespace LoadBalancing
-{
-	enum LoadBalancing
-	{
-		/// среди реплик с минимальным количеством ошибок выбирается случайная
-		RANDOM = 0,
-		/// среди реплик с минимальным количеством ошибок выбирается реплика
-		/// с минимальным количеством отличающихся символов в имени реплики и имени локального хоста
-		NEAREST_HOSTNAME
-	};
-}
-
 /** Настройки выполнения запроса.
   */
 struct Settings
 {
-	/// Максимальный размер блока для чтения
-	size_t max_block_size;
-	/// Максимальное количество потоков выполнения запроса
-	size_t max_threads;
-	/// Максимальное количество соединений при распределённой обработке одного запроса (должно быть больше, чем max_threads).
-	size_t max_distributed_connections;
-	/// Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже)
-	size_t max_query_size;
-	/// Выполнять разные стадии конвейера выполнения запроса параллельно
-	bool asynchronous;
-	/// Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса.
-	size_t interactive_delay;
-	Poco::Timespan connect_timeout;
-	Poco::Timespan connect_timeout_with_failover_ms;	/// Если следует выбрать одну из рабочих реплик.
-	Poco::Timespan receive_timeout;
-	Poco::Timespan send_timeout;
-	Poco::Timespan queue_max_wait_ms;	/// Время ожидания в очереди запросов, если количество одновременно выполняющихся запросов превышает максимальное.
-	/// Блокироваться в цикле ожидания запроса в сервере на указанное количество секунд.
-	size_t poll_interval;
-	/// Максимальное количество соединений с одним удалённым сервером в пуле.
-	size_t distributed_connections_pool_size;
-	/// Максимальное количество попыток соединения с репликами.
-	size_t connections_with_failover_max_tries;
-	/** Переписывать запросы SELECT из CollapsingMergeTree с агрегатными функциями
-	  * для автоматического учета поля Sign
+	/** Перечисление настроек: тип, имя, значение по-умолчанию.
+	  *
+	  * Это сделано несколько неудобно, чтобы не перечислять настройки во многих разных местах.
+	  * Замечание: можно было бы сделать полностью динамические настройки вида map: String -> Field,
+	  *  но пока рано, так как в коде они используются как статический struct.
 	  */
-	bool sign_rewrite;
-	/// Считать минимумы и максимумы столбцов результата. Они могут выводиться в JSON-форматах.
-	bool extremes;
-	/// Использовать ли кэш разжатых блоков.
-	bool use_uncompressed_cache;
-	/// Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации.
-	bool use_splitting_aggregator;
-	/// Следует ли отменять выполняющийся запрос с таким же id, как новый
-	bool replace_running_query;
 
-	LoadBalancing::LoadBalancing load_balancing;
-
-	/// Сэмплирование по умолчанию. Если равно 1, то отключено
-	float default_sample;
+#define APPLY_FOR_SETTINGS(M) \
+	/** Максимальный размер блока для чтения */ \
+	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
+	/** Максимальное количество потоков выполнения запроса */ \
+	M(SettingUInt64, max_threads, DEFAULT_MAX_THREADS) \
+	/** Максимальное количество соединений при распределённой обработке одного запроса (должно быть больше, чем max_threads). */ \
+	M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
+	/** Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже) */ \
+	M(SettingUInt64, max_query_size, DEFAULT_MAX_QUERY_SIZE) \
+	/** Выполнять разные стадии конвейера выполнения запроса параллельно. */ \
+	M(SettingBool, asynchronous, false) \
+	/** Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса. */ \
+	M(SettingUInt64, interactive_delay, DEFAULT_INTERACTIVE_DELAY) \
+	M(SettingSeconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC) \
+	/** Если следует выбрать одну из рабочих реплик. */ \
+	M(SettingMilliseconds, connect_timeout_with_failover_ms, DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS) \
+	M(SettingSeconds, receive_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC) \
+	M(SettingSeconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC) \
+	/** Время ожидания в очереди запросов, если количество одновременно выполняющихся запросов превышает максимальное. */ \
+	M(SettingMilliseconds, queue_max_wait_ms, DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS) \
+	/** Блокироваться в цикле ожидания запроса в сервере на указанное количество секунд. */ \
+	M(SettingUInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL) \
+	/** Максимальное количество соединений с одним удалённым сервером в пуле. */ \
+	M(SettingUInt64, distributed_connections_pool_size, DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE) \
+	/** Максимальное количество попыток соединения с репликами. */ \
+	M(SettingUInt64, connections_with_failover_max_tries, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES) \
+	/** Переписывать запросы SELECT из CollapsingMergeTree с агрегатными функциями для автоматического учета поля Sign. */ \
+	M(SettingBool, sign_rewrite, false) \
+	/** Считать минимумы и максимумы столбцов результата. Они могут выводиться в JSON-форматах. */ \
+	M(SettingBool, extremes, false) \
+	/** Использовать ли кэш разжатых блоков. */ \
+	M(SettingBool, use_uncompressed_cache, true) \
+	/** Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации. */ \
+	M(SettingBool, use_splitting_aggregator, false) \
+	/** Следует ли отменять выполняющийся запрос с таким же id, как новый. */ \
+	M(SettingBool, replace_running_query, false) \
+	\
+	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
+	\
+	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
+	M(SettingFloat, default_sample, 1.0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
 
-	Settings() :
-		max_block_size(DEFAULT_BLOCK_SIZE),
-		max_threads(DEFAULT_MAX_THREADS),
-		max_distributed_connections(DEFAULT_MAX_DISTRIBUTED_CONNECTIONS),
-		max_query_size(DEFAULT_MAX_QUERY_SIZE),
-		asynchronous(false),
-		interactive_delay(DEFAULT_INTERACTIVE_DELAY),
-		connect_timeout(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
-		connect_timeout_with_failover_ms(1000 * DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS),
-		receive_timeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
-		send_timeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
-		queue_max_wait_ms(1000 * DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS),
-		poll_interval(DBMS_DEFAULT_POLL_INTERVAL),
-		distributed_connections_pool_size(DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE),
-		connections_with_failover_max_tries(DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES),
-		sign_rewrite(false), extremes(false), use_uncompressed_cache(true), use_splitting_aggregator(false),
-		replace_running_query(false), load_balancing(LoadBalancing::RANDOM), default_sample(DBMS_DEFAULT_SAMPLE)
-	{
-	}
+#define DECLARE(TYPE, NAME, DEFAULT) \
+	TYPE NAME {DEFAULT};
+
+	APPLY_FOR_SETTINGS(DECLARE)
+
+#undef DECLARE
+
 
 	/// Установить настройку по имени.
-	void set(const String & name, const Field & value);
+	void set(const String & name, const Field & value)
+	{
+	#define TRY_SET(TYPE, NAME, DEFAULT) \
+		else if (name == #NAME) NAME.set(value);
+
+		if (false) {}
+		APPLY_FOR_SETTINGS(TRY_SET)
+		else if (!limits.trySet(name, value))
+			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+
+	#undef TRY_SET
+	}
 
 	/// Установить настройку по имени. Прочитать сериализованное в бинарном виде значение из буфера (для межсерверного взаимодействия).
-	void set(const String & name, ReadBuffer & buf);
+	void set(const String & name, ReadBuffer & buf)
+	{
+	#define TRY_SET(TYPE, NAME, DEFAULT) \
+		else if (name == #NAME) NAME.set(buf);
 
-	/// Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
-	void set(const String & name, const String & value);
+		if (false) {}
+		APPLY_FOR_SETTINGS(TRY_SET)
+		else if (!limits.trySet(name, buf))
+			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+
+	#undef TRY_SET
+	}
+
+	/** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
+	  */
+	void set(const String & name, const String & value)
+	{
+	#define TRY_SET(TYPE, NAME, DEFAULT) \
+		else if (name == #NAME) NAME.set(value);
+
+		if (false) {}
+		APPLY_FOR_SETTINGS(TRY_SET)
+		else if (!limits.trySet(name, value))
+			throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+
+	#undef TRY_SET
+	}
 
 	/** Установить настройки из профиля (в конфиге сервера, в одном профиле может быть перечислено много настроек).
 	  * Профиль также может быть установлен с помощью функций set, как настройка profile.
 	  */
-	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
+	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config)
+	{
+		String elem = "profiles." + profile_name;
+
+		if (!config.has(elem))
+			throw Exception("There is no profile '" + profile_name + "' in configuration file.", ErrorCodes::THERE_IS_NO_PROFILE);
+
+		Poco::Util::AbstractConfiguration::Keys config_keys;
+		config.keys(elem, config_keys);
+
+		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
+			set(*it, config.getString(elem + "." + *it));
+	}
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
-	void deserialize(ReadBuffer & buf);
+	void deserialize(ReadBuffer & buf)
+	{
+		while (true)
+		{
+			String name;
+			readBinary(name, buf);
 
-	/// Записать все настройки в буфер.
-	void serialize(WriteBuffer & buf) const;
+			/// Пустая строка - это маркер конца настроек.
+			if (name.empty())
+				break;
 
-private:
-	std::string toString(const LoadBalancing::LoadBalancing & load_balancing) const;
+			set(name, buf);
+		}
+	}
+
+	/// Записать изменённые настройки в буфер. (Например, для отправки на удалённый сервер.)
+	void serialize(WriteBuffer & buf) const
+	{
+	#define WRITE(TYPE, NAME, DEFAULT) \
+		if (NAME.changed) \
+		{ \
+			writeStringBinary(#NAME, buf); \
+			NAME.write(buf); \
+		}
+
+		APPLY_FOR_SETTINGS(WRITE)
+
+		limits.serialize(buf);
+
+		/// Пустая строка - это маркер конца настроек.
+		writeStringBinary("", buf);
+
+	#undef WRITE
+	}
+
+#undef APPLY_FOR_SETTINGS
 };
 
 

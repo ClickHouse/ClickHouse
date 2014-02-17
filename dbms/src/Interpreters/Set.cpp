@@ -195,7 +195,7 @@ void Set::create(BlockInputStreamPtr stream)
 		
 		if (!checkSetSizeLimits())
 		{
-			if (overflow_mode == Limits::THROW)
+			if (overflow_mode == OverflowMode::THROW)
 					throw Exception("IN-Set size exceeded."
 						" Rows: " + toString(getTotalRowCount()) +
 						", limit: " + toString(max_rows) +
@@ -203,7 +203,7 @@ void Set::create(BlockInputStreamPtr stream)
 						", limit: " + toString(max_bytes) + ".",
 						ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-			if (overflow_mode == Limits::BREAK)
+			if (overflow_mode == OverflowMode::BREAK)
 			{
 				if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
 					profiling_in->cancel();

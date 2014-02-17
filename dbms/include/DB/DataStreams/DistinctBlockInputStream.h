@@ -97,7 +97,7 @@ protected:
 
 			if (!checkLimits())
 			{
-				if (overflow_mode == Limits::THROW)
+				if (overflow_mode == OverflowMode::THROW)
 					throw Exception("DISTINCT-Set size limit exceeded."
 						" Rows: " + toString(set.size()) +
 						", limit: " + toString(max_rows) +
@@ -105,7 +105,7 @@ protected:
 						", limit: " + toString(max_bytes) + ".",
 						ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-				if (overflow_mode == Limits::BREAK)
+				if (overflow_mode == OverflowMode::BREAK)
 					return Block();
 
 				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
@@ -134,7 +134,7 @@ private:
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;
 	size_t max_bytes;
-	Limits::OverflowMode overflow_mode;
+	OverflowMode overflow_mode;
 
 	typedef HashSet<UInt128, UInt128Hash, UInt128ZeroTraits> SetHashed;
 	SetHashed set;

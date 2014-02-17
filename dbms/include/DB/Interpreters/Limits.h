@@ -3,6 +3,7 @@
 #include <Poco/Timespan.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Field.h>
+#include <DB/Interpreters/SettingsCommon.h>
 
 
 namespace DB
@@ -16,95 +17,138 @@ namespace DB
   */
 struct Limits
 {
-	/// Что делать, если ограничение превышено.
-	enum OverflowMode
-	{
-		THROW 	= 0,	/// Кинуть исключение.
-		BREAK 	= 1,	/// Прервать выполнение запроса, вернуть что есть.
-		ANY		= 2,	/** Только для GROUP BY: не добавлять новые строки в набор,
-						  * но продолжать агрегировать для ключей, успевших попасть в набор.
-						  */
-	};
-
-	/** Ограничения на чтение из самых "глубоких" источников.
-	  * То есть, только в самом глубоком подзапросе.
-	  * При чтении с удалённого сервера, проверяется только на удалённом сервере.
+	/** Перечисление ограничений: тип, имя, значение по-умолчанию.
+	  * По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
 	  */
-	size_t max_rows_to_read;
-	size_t max_bytes_to_read;
-	OverflowMode read_overflow_mode;
 
-	size_t max_rows_to_group_by;
-	OverflowMode group_by_overflow_mode;
-	
-	size_t max_rows_to_sort;
-	size_t max_bytes_to_sort;
-	OverflowMode sort_overflow_mode;
+#define APPLY_FOR_SETTINGS(M) \
+	/** Ограничения на чтение из самых "глубоких" источников. \
+	  * То есть, только в самом глубоком подзапросе. \
+	  * При чтении с удалённого сервера, проверяется только на удалённом сервере. \
+	  */ \
+	M(SettingUInt64, max_rows_to_read, 0) \
+	M(SettingUInt64, max_bytes_to_read, 0) \
+	M(SettingOverflowMode<false>, read_overflow_mode, OverflowMode::THROW) \
+	\
+	M(SettingUInt64, max_rows_to_group_by, 0) \
+	M(SettingOverflowMode<true>, group_by_overflow_mode, OverflowMode::THROW) \
+	\
+	M(SettingUInt64, max_rows_to_sort, 0) \
+	M(SettingUInt64, max_bytes_to_sort, 0) \
+	M(SettingOverflowMode<false>, sort_overflow_mode, OverflowMode::THROW) \
+	\
+	/** Ограничение на размер результата. \
+	  * Проверяются также для подзапросов и на удалённых серверах. \
+	  */ \
+	M(SettingUInt64, max_result_rows, 0) \
+	M(SettingUInt64, max_result_bytes, 0) \
+	M(SettingOverflowMode<false>, result_overflow_mode, OverflowMode::THROW) \
+	\
+	/* TODO: Проверять также при merge стадии сортировки, при слиянии и финализации агрегатных функций. */ \
+	M(SettingSeconds, max_execution_time, 0) \
+	M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW) \
+	\
+	/** В строчках в секунду. */ \
+	M(SettingUInt64, min_execution_speed, 0) \
+	/** Проверять, что скорость не слишком низкая, после прошествия указанного времени. */ \
+	M(SettingSeconds, timeout_before_checking_execution_speed, 0) \
+	\
+	M(SettingUInt64, max_columns_to_read, 0) \
+	M(SettingUInt64, max_temporary_columns, 0) \
+	M(SettingUInt64, max_temporary_non_const_columns, 0) \
+	\
+	M(SettingUInt64, max_subquery_depth, 100) \
+	M(SettingUInt64, max_pipeline_depth, 1000) \
+	M(SettingUInt64, max_ast_depth, 1000)		/** Проверяются не во время парсинга, */ \
+	M(SettingUInt64, max_ast_elements, 10000)	/**  а уже после парсинга запроса. */ \
+	\
+	M(SettingBool, readonly, false) \
+	\
+	/** Ограничения для максимального размера множества, получающегося при выполнении секции IN. */ \
+	M(SettingUInt64, max_rows_in_set, 0) \
+	M(SettingUInt64, max_bytes_in_set, 0) \
+	M(SettingOverflowMode<false>, set_overflow_mode, OverflowMode::THROW) \
+	\
+	/** Ограничения для максимального размера запоминаемого состояния при выполнении DISTINCT. */ \
+	M(SettingUInt64, max_rows_in_distinct, 0) \
+	M(SettingUInt64, max_bytes_in_distinct, 0) \
+	M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW)
 
-	/** Ограничение на размер результата.
-	  * Проверяются также для подзапросов и на удалённых серверах.
-	  */
-	size_t max_result_rows;
-	size_t max_result_bytes;
-	OverflowMode result_overflow_mode;
+#define DECLARE(TYPE, NAME, DEFAULT) \
+	TYPE NAME {DEFAULT};
 
-	Poco::Timespan max_execution_time;	// TODO: Проверять также при merge стадии сортировки, при слиянии и финализации агрегатных функций.
-	OverflowMode timeout_overflow_mode;
+	APPLY_FOR_SETTINGS(DECLARE)
 
-	size_t min_execution_speed;								/// В строчках в секунду.
-	Poco::Timespan timeout_before_checking_execution_speed;	/// Проверять, что скорость не слишком низкая, после прошествия указанного времени.
-
-	size_t max_columns_to_read;
-	size_t max_temporary_columns;
-	size_t max_temporary_non_const_columns;
-
-	size_t max_subquery_depth;
-	size_t max_pipeline_depth;
-	size_t max_ast_depth;				/// Проверяются не во время парсинга, 
-	size_t max_ast_elements;			///  а уже после парсинга запроса.
-
-	bool readonly;
-	
-	/// Ограничения для максимального размера множества, получающегося при выполнении секции IN.
-	size_t max_rows_in_set;
-	size_t max_bytes_in_set;
-	OverflowMode set_overflow_mode;
-	
-	/// Ограничения для максимального размера запоминаемого состояния при выполнении DISTINCT.
-	size_t max_rows_in_distinct;
-	size_t max_bytes_in_distinct;
-	OverflowMode distinct_overflow_mode;
-	
-	/// По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
-	Limits() :
-		max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(THROW),
-		max_rows_to_group_by(0), group_by_overflow_mode(THROW),
-		max_rows_to_sort(0), max_bytes_to_sort(0), sort_overflow_mode(THROW),
-		max_result_rows(0), max_result_bytes(0), result_overflow_mode(THROW),
-		max_execution_time(0), timeout_overflow_mode(THROW),
-		min_execution_speed(0), timeout_before_checking_execution_speed(0),
-		max_columns_to_read(0), max_temporary_columns(0), max_temporary_non_const_columns(0),
-		max_subquery_depth(100), max_pipeline_depth(1000), max_ast_depth(1000), max_ast_elements(10000),
-		readonly(false),
-		max_rows_in_set(0), max_bytes_in_set(0), set_overflow_mode(THROW),
-		max_rows_in_distinct(0), max_bytes_in_distinct(0), distinct_overflow_mode(THROW)
-	{
-	}
+#undef DECLARE
 
 	/// Установить настройку по имени.
-	bool trySet(const String & name, const Field & value);
+	bool trySet(const String & name, const Field & value)
+	{
+	#define TRY_SET(TYPE, NAME, DEFAULT) \
+		else if (name == #NAME) NAME.set(value);
+
+		if (false) {}
+		APPLY_FOR_SETTINGS(TRY_SET)
+		else
+			return false;
+
+		return true;
+
+	#undef TRY_SET
+	}
 
 	/// Установить настройку по имени. Прочитать сериализованное в бинарном виде значение из буфера (для межсерверного взаимодействия).
-	bool trySet(const String & name, ReadBuffer & buf);
+	bool trySet(const String & name, ReadBuffer & buf)
+	{
+	#define TRY_SET(TYPE, NAME, DEFAULT) \
+		else if (name == #NAME) NAME.set(buf);
 
-	/// Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
-	bool trySet(const String & name, const String & value);
+		if (false) {}
+		APPLY_FOR_SETTINGS(TRY_SET)
+		else
+			return false;
+
+		return true;
+
+	#undef TRY_SET
+	}
+
+	/** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
+	  */
+	bool trySet(const String & name, const String & value)
+	{
+	#define TRY_SET(TYPE, NAME, DEFAULT) \
+		else if (name == #NAME) NAME.set(value);
+
+		if (false) {}
+		APPLY_FOR_SETTINGS(TRY_SET)
+		else
+			return false;
+
+		return true;
+
+	#undef TRY_SET
+	}
 
 private:
 	friend class Settings;
 	
 	/// Записать все настройки в буфер. (В отличие от соответствующего метода в Settings, пустая строка на конце не пишется).
-	void serialize(WriteBuffer & buf) const;
+	void serialize(WriteBuffer & buf) const
+	{
+	#define WRITE(TYPE, NAME, DEFAULT) \
+		if (NAME.changed) \
+		{ \
+			writeStringBinary(#NAME, buf); \
+			NAME.write(buf); \
+		}
+
+		APPLY_FOR_SETTINGS(WRITE)
+
+	#undef WRITE
+	}
+
+#undef APPLY_FOR_SETTINGS
 };
 
 

@@ -297,14 +297,14 @@ bool IProfilingBlockInputStream::checkLimits()
 	if ((limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
 		|| (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read))
 	{
-		if (limits.read_overflow_mode == Limits::THROW)
+		if (limits.read_overflow_mode == OverflowMode::THROW)
 			throw Exception(std::string("Limit for ")
 				+ (limits.mode == LIMITS_CURRENT ? "result rows" : "rows to read")
 				+ " exceeded: read " + toString(info.rows)
 				+ " rows, maximum: " + toString(limits.max_rows_to_read),
 				ErrorCodes::TOO_MUCH_ROWS);
 
-		if (limits.read_overflow_mode == Limits::BREAK)
+		if (limits.read_overflow_mode == OverflowMode::BREAK)
 			return false;
 
 		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
@@ -313,12 +313,12 @@ bool IProfilingBlockInputStream::checkLimits()
 	if (limits.max_execution_time != 0
 		&& info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
 	{
-		if (limits.timeout_overflow_mode == Limits::THROW)
+		if (limits.timeout_overflow_mode == OverflowMode::THROW)
 			throw Exception("Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
 				+ " seconds, maximum: " + toString(limits.max_execution_time.totalMicroseconds() / 1000000.0),
 			ErrorCodes::TIMEOUT_EXCEEDED);
 
-		if (limits.timeout_overflow_mode == Limits::BREAK)
+		if (limits.timeout_overflow_mode == OverflowMode::BREAK)
 			return false;
 
 		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
@@ -379,11 +379,11 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 				&& ((limits.max_rows_to_read && total_rows > limits.max_rows_to_read)
 					|| (limits.max_bytes_to_read && total_bytes > limits.max_bytes_to_read)))
 			{
-				if (limits.read_overflow_mode == Limits::THROW)
+				if (limits.read_overflow_mode == OverflowMode::THROW)
 					throw Exception("Limit for rows to read exceeded: read " + toString(total_rows)
 						+ " rows, maximum: " + toString(limits.max_rows_to_read),
 						ErrorCodes::TOO_MUCH_ROWS);
-				else if (limits.read_overflow_mode == Limits::BREAK)
+				else if (limits.read_overflow_mode == OverflowMode::BREAK)
 					cancel();
 				else
 					throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);

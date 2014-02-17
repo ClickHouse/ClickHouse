@@ -130,7 +130,7 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		/// Проверка ограничений
 
-		if (max_rows_to_group_by && size_of_all_results > max_rows_to_group_by && group_by_overflow_mode == Limits::BREAK)
+		if (max_rows_to_group_by && size_of_all_results > max_rows_to_group_by && group_by_overflow_mode == OverflowMode::BREAK)
 			break;
 	}
 
@@ -407,7 +407,7 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 		/// Проверка ограничений.
 		size_t current_size_of_all_results = __sync_add_and_fetch(&size_of_all_results, result.size() - old_result_size);
 
-		if (max_rows_to_group_by && current_size_of_all_results > max_rows_to_group_by && group_by_overflow_mode == Limits::THROW)
+		if (max_rows_to_group_by && current_size_of_all_results > max_rows_to_group_by && group_by_overflow_mode == OverflowMode::THROW)
 			throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(current_size_of_all_results)
 				+ " rows, maximum: " + toString(max_rows_to_group_by),
 				ErrorCodes::TOO_MUCH_ROWS);

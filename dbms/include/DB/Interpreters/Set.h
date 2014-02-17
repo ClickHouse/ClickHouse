@@ -97,7 +97,7 @@ private:
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;
 	size_t max_bytes;
-	Limits::OverflowMode overflow_mode;
+	OverflowMode overflow_mode;
 	
 	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 
