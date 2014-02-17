@@ -43,17 +43,32 @@ public:
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).value = data(rhs).value;
+		if (!data(rhs).value.isNull())
+			data(place).value = data(rhs).value;
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type->serializeBinary(data(place).value, buf);
+		const Data & d = data(place);
+
+		if (unlikely(d.value.isNull()))
+		{
+			writeBinary(false, buf);
+		}
+		else
+		{
+			writeBinary(true, buf);
+			type->serializeBinary(data(place).value, buf);
+		}
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		type->deserializeBinary(data(place).value, buf);
+		bool is_not_null = false;
+		readBinary(is_not_null, buf);
+
+		if (is_not_null)
+			type->deserializeBinary(data(place).value, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
