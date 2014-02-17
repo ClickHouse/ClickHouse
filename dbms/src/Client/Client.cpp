@@ -127,7 +127,7 @@ public:
 class Client : public Poco::Util::Application
 {
 public:
-	Client() : is_interactive(true), stdin_is_not_tty(false), query_id(0),
+	Client() : is_interactive(true), stdin_is_not_tty(false),
 		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), processed_rows(0),
 		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0), written_first_block(false)
 	{
@@ -142,7 +142,6 @@ private:
 
 	SharedPtr<Connection> connection;	/// Соединение с БД.
 	String query;						/// Текущий запрос.
-	UInt64 query_id;					/// Идентификатор запроса. Его можно использовать, чтобы отменить запрос.
 
 	String format;						/// Формат вывода результата в консоль.
 	size_t format_max_block_size;		/// Максимальный размер блока при выводе в консоль.
@@ -467,7 +466,6 @@ private:
 		if (!parseQuery())
 			return true;
 
-		++query_id;
 		processed_rows = 0;
 		rows_read_on_server = 0;
 		bytes_read_on_server = 0;
