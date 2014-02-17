@@ -167,10 +167,10 @@ public:
 		
 		size_t max_rows_to_read;
 		size_t max_bytes_to_read;
-		Limits::OverflowMode read_overflow_mode;
+		OverflowMode read_overflow_mode;
 
 		Poco::Timespan max_execution_time;
-		Limits::OverflowMode timeout_overflow_mode;
+		OverflowMode timeout_overflow_mode;
 
 		/// В строчках в секунду.
 		size_t min_execution_speed;
@@ -179,8 +179,8 @@ public:
 
 		LocalLimits()
 			: mode(LIMITS_CURRENT),
-			max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(Limits::THROW),
-			max_execution_time(0), timeout_overflow_mode(Limits::THROW),
+			max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(OverflowMode::THROW),
+			max_execution_time(0), timeout_overflow_mode(OverflowMode::THROW),
 			min_execution_speed(0), timeout_before_checking_execution_speed(0)
 		{
 		}

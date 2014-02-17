@@ -433,13 +433,13 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		/// Проверка ограничений.
 		if (!no_more_keys && max_rows_to_group_by && result.size() > max_rows_to_group_by)
 		{
-			if (group_by_overflow_mode == Limits::THROW)
+			if (group_by_overflow_mode == OverflowMode::THROW)
 				throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result.size())
 					+ " rows, maximum: " + toString(max_rows_to_group_by),
 					ErrorCodes::TOO_MUCH_ROWS);
-			else if (group_by_overflow_mode == Limits::BREAK)
+			else if (group_by_overflow_mode == OverflowMode::BREAK)
 				break;
-			else if (group_by_overflow_mode == Limits::ANY)
+			else if (group_by_overflow_mode == OverflowMode::ANY)
 				no_more_keys = true;
 			else
 				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);

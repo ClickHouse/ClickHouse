@@ -54,13 +54,13 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	switch (query.overflow_mode)
 	{
 		case OLAP::OVERFLOW_MODE_THROW:
-			new_settings.limits.group_by_overflow_mode = Limits::THROW;
+			new_settings.limits.group_by_overflow_mode = DB::OverflowMode::THROW;
 			break;
 		case OLAP::OVERFLOW_MODE_BREAK:
-			new_settings.limits.group_by_overflow_mode = Limits::BREAK;
+			new_settings.limits.group_by_overflow_mode = DB::OverflowMode::BREAK;
 			break;
 		case OLAP::OVERFLOW_MODE_ANY:
-			new_settings.limits.group_by_overflow_mode = Limits::ANY;
+			new_settings.limits.group_by_overflow_mode = DB::OverflowMode::ANY;
 			break;
 	}
 	

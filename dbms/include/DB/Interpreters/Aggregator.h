@@ -175,7 +175,7 @@ class Aggregator
 {
 public:
 	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool with_totals_,
-		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		with_totals(with_totals_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -187,7 +187,7 @@ public:
 	}
 
 	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool with_totals_,
-		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		with_totals(with_totals_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -246,7 +246,7 @@ protected:
 	Poco::FastMutex mutex;
 
 	size_t max_rows_to_group_by;
-	Limits::OverflowMode group_by_overflow_mode;
+	OverflowMode group_by_overflow_mode;
 
 	Block sample;
 

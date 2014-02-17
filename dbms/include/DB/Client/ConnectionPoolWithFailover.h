@@ -26,9 +26,9 @@ public:
 	typedef detail::ConnectionPoolEntry Entry;
 
 	ConnectionPoolWithFailover(ConnectionPools & nested_pools_,
-							size_t load_balancing,
-							size_t max_tries_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-							size_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD)
+		LoadBalancing load_balancing,
+		size_t max_tries_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+		size_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD)
 	   : nested_pools(nested_pools_.begin(), nested_pools_.end(), decrease_error_period_), max_tries(max_tries_),
 	   log(&Logger::get("ConnectionPoolWithFailover")), default_load_balancing(load_balancing)
 	{
@@ -37,7 +37,7 @@ public:
 	/** Выделяет соединение для работы. */
 	Entry get(Settings * settings)
 	{
-		size_t load_balancing = default_load_balancing;
+		LoadBalancing load_balancing = default_load_balancing;
 		if (settings)
 			load_balancing = settings->load_balancing;
 
@@ -122,7 +122,7 @@ private:
 			random = rand_res;
 		}
 
-		static bool compare(const PoolWithErrorCount & lhs, const PoolWithErrorCount & rhs, size_t load_balancing_mode)
+		static bool compare(const PoolWithErrorCount & lhs, const PoolWithErrorCount & rhs, LoadBalancing load_balancing_mode)
 		{
 			if (load_balancing_mode == LoadBalancing::RANDOM)
 			{
@@ -136,7 +136,7 @@ private:
 					&& lhs.hostname_difference < rhs.hostname_difference);
 			}
 			else
-				throw Poco::Exception("Unsupported LoadBalancing mode = " + load_balancing_mode);
+				throw Poco::Exception("Unsupported load_balancing_mode: " + static_cast<int>(load_balancing_mode));
 		}
 	};
 
@@ -150,7 +150,7 @@ private:
 		{
 		}
 
-		void update(size_t load_balancing_mode)
+		void update(LoadBalancing load_balancing_mode)
 		{
 			if (load_balancing_mode == LoadBalancing::RANDOM)
 			{
@@ -163,7 +163,7 @@ private:
 				time_t delta = time(0) - last_get_time;
 				for (PoolsWithErrorCount::iterator it = begin(); it != end(); ++it)
 				{
-					it->nearest_hostname_error_count	= it->nearest_hostname_error_count >> (delta/decrease_error_period);
+					it->nearest_hostname_error_count = it->nearest_hostname_error_count >> (delta / decrease_error_period);
 				}
 			}
 			last_get_time = time(0);
@@ -184,7 +184,7 @@ private:
 
 	Logger * log;
 
-	size_t default_load_balancing;
+	LoadBalancing default_load_balancing;
 };
 
 

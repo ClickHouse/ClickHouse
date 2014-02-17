@@ -22,7 +22,7 @@ class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
 		bool with_totals_, bool separate_totals_, bool final_, unsigned max_threads_ = 1,
-		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: aggregator(new Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_)),
 		has_been_read(false), separate_totals(separate_totals_), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
 	{
@@ -35,7 +35,7 @@ public:
 	  */
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const Names & key_names, const AggregateDescriptions & aggregates,
 		bool with_totals_, bool separate_totals_, bool final_, unsigned max_threads_ = 1,
-		size_t max_rows_to_group_by_ = 0, Limits::OverflowMode group_by_overflow_mode_ = Limits::THROW)
+		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: has_been_read(false), separate_totals(separate_totals_), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
