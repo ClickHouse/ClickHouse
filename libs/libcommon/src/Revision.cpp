@@ -3,5 +3,5 @@
 
 namespace Revision
 {
-	unsigned get() { return SVN_REVISION; }
+	unsigned get() { return REVISION; }
 }
