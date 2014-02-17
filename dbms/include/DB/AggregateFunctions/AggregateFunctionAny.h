@@ -55,18 +55,34 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type->serializeBinary(data(place).value, buf);
+		const Data & d = data(place);
+
+		if (unlikely(d.value.isNull()))
+		{
+			writeBinary(false, buf);
+		}
+		else
+		{
+			writeBinary(true, buf);
+			type->serializeBinary(data(place).value, buf);
+		}
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		Data & d = data(place);
 
-		Field tmp;
-		type->deserializeBinary(tmp, buf);
+		bool is_not_null = false;
+		readBinary(is_not_null, buf);
 
-		if (d.value.isNull())
-			d.value = tmp;
+		if (is_not_null)
+		{
+			Field tmp;
+			type->deserializeBinary(tmp, buf);
+
+			if (d.value.isNull())
+				d.value = tmp;
+		}
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const

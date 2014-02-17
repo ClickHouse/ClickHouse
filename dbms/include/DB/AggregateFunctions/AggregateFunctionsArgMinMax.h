@@ -98,32 +98,48 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type_res->serializeBinary(data(place).result, buf);
-		type_val->serializeBinary(data(place).value, buf);
+		const Data & d = data(place);
+
+		if (unlikely(d.result.isNull()))
+		{
+			writeBinary(false, buf);
+		}
+		else
+		{
+			writeBinary(true, buf);
+			type_res->serializeBinary(d.result, buf);
+			type_val->serializeBinary(d.value, buf);
+		}
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		Data & d = data(place);
 
-		if (!d.value.isNull())
+		bool is_not_null = false;
+		readBinary(is_not_null, buf);
+
+		if (is_not_null)
 		{
-			Field result_;
-			Field value_;
-
-			type_res->deserializeBinary(result_, buf);
-			type_val->deserializeBinary(value_, buf);
-
-			if (Traits::better(value_, d.value))
+			if (!d.value.isNull())
 			{
-				d.result = result_;
-				d.value = value_;
+				Field result_;
+				Field value_;
+
+				type_res->deserializeBinary(result_, buf);
+				type_val->deserializeBinary(value_, buf);
+
+				if (Traits::better(value_, d.value))
+				{
+					d.result = result_;
+					d.value = value_;
+				}
 			}
-		}
-		else
-		{
-			type_res->deserializeBinary(d.result, buf);
-			type_val->deserializeBinary(d.value, buf);
+			else
+			{
+				type_res->deserializeBinary(d.result, buf);
+				type_val->deserializeBinary(d.value, buf);
+			}
 		}
 	}
 

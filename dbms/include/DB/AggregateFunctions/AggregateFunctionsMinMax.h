@@ -82,22 +82,38 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		type->serializeBinary(this->data(place).value, buf);
+		const Data & d = this->data(place);
+
+		if (unlikely(d.value.isNull()))
+		{
+			writeBinary(false, buf);
+		}
+		else
+		{
+			writeBinary(true, buf);
+			type->serializeBinary(this->data(place).value, buf);
+		}
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
 		Data & d = this->data(place);
-		
-		if (!d.value.isNull())
+
+		bool is_not_null = false;
+		readBinary(is_not_null, buf);
+
+		if (is_not_null)
 		{
-			Field value_;
-			type->deserializeBinary(value_, buf);
-			if (Traits::better(value_, d.value))
-				d.value = value_;
+			if (!d.value.isNull())
+			{
+				Field value_;
+				type->deserializeBinary(value_, buf);
+				if (Traits::better(value_, d.value))
+					d.value = value_;
+			}
+			else
+				type->deserializeBinary(d.value, buf);
 		}
-		else
-			type->deserializeBinary(d.value, buf);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
