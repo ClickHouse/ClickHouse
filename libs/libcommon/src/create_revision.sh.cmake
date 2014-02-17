@@ -5,11 +5,10 @@ echo -n "#define REVISION " >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h
 
 cd ${CMAKE_CURRENT_SOURCE_DIR};
 
-git rev-parse --is-inside-work-tree &> /dev/null
-if [ $? -eq 0 ]
+if (git rev-parse --is-inside-work-tree >/dev/null 2>&1)
 then
 	# GIT
-	( git describe --tags  || echo 1 )  | cut -d "-" -f 1 >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
+	( git describe --tags || echo 1 ) | cut -d "-" -f 1 >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
 else
 	#SVN
 	echo && (LC_ALL=C svn info ${PROJECT_SOURCE_DIR}/ 2>/dev/null || echo Revision 1) | grep Revision | cut -d " " -f 2 >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
