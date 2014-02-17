@@ -12,30 +12,6 @@
 namespace DB
 {
 
-String TotalsMode::toString(TotalsMode mode)
-{
-	switch (mode)
-	{
-		case BEFORE_HAVING:				return "before_having";
-		case AFTER_HAVING_EXCLUSIVE:	return "after_having_exclusive";
-		case AFTER_HAVING_INCLUSIVE:	return "after_having_inclusive";
-		case AFTER_HAVING_AUTO:			return "after_having_auto";
-
-		default:
-			throw Exception("Unknown TotalsMode enum value: " + toString(mode), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-	}
-}
-
-auto TotalsMode::parse(const String & s) -> TotalsMode
-{
-	if (s == "before_having") 			return BEFORE_HAVING;
-	if (s == "after_having_exclusive")	return AFTER_HAVING_EXCLUSIVE;
-	if (s == "after_having_inclusive")	return AFTER_HAVING_INCLUSIVE;
-	if (s == "after_having_auto")		return AFTER_HAVING_AUTO;
-
-	throw Exception("Unknown totals mode: '" + s + "', must be one of 'before_having', 'after_having_exclusive', 'after_having_inclusive', 'after_having_auto'", ErrorCodes::UNKNOWN_TOTALS_MODE);
-}
-
 static LoadBalancing::LoadBalancing getLoadBalancing(const String & s)
 {
 	if (s == "random") 	return LoadBalancing::RANDOM;
@@ -67,7 +43,6 @@ void Settings::set(const String & name, const Field & value)
 	else if (name == "use_splitting_aggregator") use_splitting_aggregator = safeGet<UInt64>(value);
 	else if (name == "replace_running_query") replace_running_query = safeGet<UInt64>(value);
 	else if (name == "load_balancing")		load_balancing		= getLoadBalancing(safeGet<const String &>(value));
-	else if (name == "totals_mode")			totals_mode			= TotalsMode::parse(safeGet<const String &>(value));
 	else if (name == "default_sample")
 	{
 		if (value.getType() == Field::Types::UInt64)
@@ -111,8 +86,7 @@ void Settings::set(const String & name, ReadBuffer & buf)
 		readVarUInt(value, buf);
 		set(name, value);
 	}
-	else if (  name == "load_balancing"
-			|| name == "totals_mode")
+	else if (name == "load_balancing")
 	{
 		String value;
 		readBinary(value, buf);
@@ -156,8 +130,7 @@ void Settings::set(const String & name, const String & value)
 	{
 		set(name, parse<Float64>(value));
 	}
-	else if (  name == "load_balancing"
-			|| name == "totals_mode")
+	else if (name == "load_balancing")
 	{
 		set(name, Field(value));
 	}
@@ -216,7 +189,6 @@ void Settings::serialize(WriteBuffer & buf) const
 	writeStringBinary("use_splitting_aggregator", buf);				writeVarUInt(use_splitting_aggregator, buf);
 	writeStringBinary("replace_running_query", buf);				writeVarUInt(replace_running_query, buf);
 	writeStringBinary("load_balancing", buf);						writeStringBinary(toString(load_balancing), buf);
-	writeStringBinary("totals_mode", buf);							writeStringBinary(TotalsMode::toString(totals_mode), buf);
 	writeStringBinary("default_sample", buf);						writeStringBinary(DB::toString(default_sample), buf);
 
 	limits.serialize(buf);
