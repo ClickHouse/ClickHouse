@@ -69,8 +69,8 @@ struct AssociativeOperationImpl
 	/// Возвращает комбинацию значений в i-й строке всех столбцов, запомненных в конструкторе.
 	inline UInt8 apply(size_t i) const
 	{
-		//return Op::apply(vec[i], continuation.apply(i));
-		return vec[i] && continuation.apply(i);
+		return Op::apply(vec[i], continuation.apply(i));
+		//return vec[i] && continuation.apply(i);
 	}
 };
 
@@ -313,8 +313,8 @@ int main()
 {
 	try
 	{
-		size_t block_size = 100000;
-		size_t block_count = 1000;
+		size_t block_size = 1000;
+		size_t block_count = 100000;
 		size_t columns = 10;
 		size_t repeats = 3;
 
@@ -324,20 +324,20 @@ int main()
 		{
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnVector<UInt8> * column = new ColumnVector<UInt8>(size);
+				ColumnVector<UInt8> * column = new ColumnVector<UInt8>(block_size);
 				blocks[b].insert(ColumnWithNameAndType(column, new DataTypeUInt8, "v" + toString(i)));
 
 				ColumnVector<UInt8>::Container_t & vec = column->getData();
-				vec.resize(size);
+				vec.resize(block_size);
 
-				for (size_t j = 0; j < size; ++j)
+				for (size_t j = 0; j < block_size; ++j)
 				{
 					vec[j] = rand() % 2;
 				}
 			}
 			ColumnVector<UInt8> * result_column = new ColumnVector<UInt8>;
 			blocks[b].insert(ColumnWithNameAndType(result_column, new DataTypeUInt8, "x"));
-			result_column->getData().resize(size);
+			result_column->getData().resize(block_size);
 		}
 
 		for (size_t arity = 2; arity <= columns; ++arity)
