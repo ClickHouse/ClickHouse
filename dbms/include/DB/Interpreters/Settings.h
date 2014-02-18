@@ -61,6 +61,7 @@ struct Settings
 	M(SettingBool, replace_running_query, false) \
 	\
 	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
+	M(SettingTotalsMode, totals_mode, TotalsMode::BEFORE_HAVING) \
 	\
 	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
 	M(SettingFloat, default_sample, 1.0) \
@@ -74,7 +75,6 @@ struct Settings
 	APPLY_FOR_SETTINGS(DECLARE)
 
 #undef DECLARE
-
 
 	/// Установить настройку по имени.
 	void set(const String & name, const Field & value)

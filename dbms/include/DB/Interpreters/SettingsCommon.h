@@ -270,6 +270,81 @@ struct SettingLoadBalancing
 };
 
 
+/// Какие строки включать в TOTALS.
+enum class TotalsMode
+{
+	BEFORE_HAVING			= 0, /// Считать HAVING по всем прочитанным строкам;
+								 ///  включая не попавшие в max_rows_to_group_by
+								 ///  и не прошедшие HAVING после группировки.
+	AFTER_HAVING_INCLUSIVE	= 1, /// Считать по всем строкам, кроме не прошедших HAVING;
+								 ///  то есть, включать в TOTALS все строки, не прошедшие max_rows_to_group_by.
+	AFTER_HAVING_EXCLUSIVE	= 2, /// Включать только строки, прошедшие и max_rows_to_group_by, и HAVING.
+	AFTER_HAVING_AUTO		= 3, /// Автоматически выбирать между INCLUSIVE и EXCLUSIVE,
+};
+
+struct SettingTotalsMode
+{
+	TotalsMode value;
+	bool changed = false;
+
+	SettingTotalsMode(TotalsMode x) : value(x) {}
+
+	operator TotalsMode() const { return value; }
+	SettingTotalsMode & operator= (TotalsMode x) { set(x); return *this; }
+
+	static TotalsMode getTotalsMode(const String & s)
+	{
+		if (s == "before_having") 			return TotalsMode::BEFORE_HAVING;
+		if (s == "after_having_exclusive")	return TotalsMode::AFTER_HAVING_EXCLUSIVE;
+		if (s == "after_having_inclusive")	return TotalsMode::AFTER_HAVING_INCLUSIVE;
+		if (s == "after_having_auto")		return TotalsMode::AFTER_HAVING_AUTO;
+
+		throw Exception("Unknown totals mode: '" + s + "', must be one of 'before_having', 'after_having_exclusive', 'after_having_inclusive', 'after_having_auto'", ErrorCodes::UNKNOWN_TOTALS_MODE);
+	}
+
+	String toString() const
+	{
+		switch (value)
+		{
+			case TotalsMode::BEFORE_HAVING:				return "before_having";
+			case TotalsMode::AFTER_HAVING_EXCLUSIVE:	return "after_having_exclusive";
+			case TotalsMode::AFTER_HAVING_INCLUSIVE:	return "after_having_inclusive";
+			case TotalsMode::AFTER_HAVING_AUTO:			return "after_having_auto";
+
+			default:
+				throw Exception("Unknown TotalsMode enum value: " + toString(value), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+	}
+
+	void set(TotalsMode x)
+	{
+		value = x;
+		changed = true;
+	}
+
+	void set(const Field & x)
+	{
+		set(safeGet<const String &>(x));
+	}
+
+	void set(const String & x)
+	{
+		set(getTotalsMode(x));
+	}
+
+	void set(ReadBuffer & buf)
+	{
+		String x;
+		readBinary(x, buf);
+		set(x);
+	}
+
+	void write(WriteBuffer & buf) const
+	{
+		writeBinary(toString(), buf);
+	}
+};
+
 /// Что делать, если ограничение превышено.
 enum class OverflowMode
 {
