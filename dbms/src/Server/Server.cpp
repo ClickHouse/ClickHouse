@@ -182,7 +182,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(config.getString("path"));
 
-	std::string users_config_path = config.getString("users_config", "users.xml");
+	std::string users_config_path = config.getString("users_config", config.getString("config-file", "config.xml"));
 	users_config_reloader = new UsersConfigReloader(users_config_path, global_context);
 
 	/// Максимальное количество одновременно выполняющихся запросов.
