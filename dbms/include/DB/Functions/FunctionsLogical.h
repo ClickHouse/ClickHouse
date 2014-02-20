@@ -292,7 +292,12 @@ public:
 		/// Эффективно скомбинируем все столбцы правильного типа.
 		while (uint8_in.size() > 1)
 		{
-			AssociativeOperationImpl<Impl<UInt8>, 6>::execute(uint8_in, vec_res);
+			/// При большом размере блока объединять по 6 толбцов за проход быстрее всего.
+			/// При маленьком - чем больше, тем быстрее.
+			if (n > 65536)
+				AssociativeOperationImpl<Impl<UInt8>, 6>::execute(uint8_in, vec_res);
+			else
+				AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
 			uint8_in.push_back(col_res);
 		}
 
