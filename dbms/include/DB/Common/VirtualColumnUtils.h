@@ -74,8 +74,8 @@ inline String chooseSuffixForSet(const NamesAndTypesList & columns, const std::v
 /// Например select _port as 9000.
 inline void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery & >(*ast);
-	ASTExpressionList & node = dynamic_cast<ASTExpressionList & >(*select.select_expression_list);
+	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*ast);
+	ASTExpressionList & node = dynamic_cast<ASTExpressionList &>(*select.select_expression_list);
 	ASTs & asts = node.children;
 	ASTLiteral * cur = new ASTLiteral(StringRange(NULL, NULL), value);
 	cur->alias = column_name;
@@ -84,10 +84,10 @@ inline void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Fie
 }
 
 /// Проверка, что функция зависит только от заданных столбцов
-inline bool validFunction(ASTPtr expression, const std::vector<String> & columns)
+inline bool isValidFunction(ASTPtr expression, const std::vector<String> & columns)
 {
 	for (size_t i = 0; i < expression->children.size(); ++i)
-		if (!validFunction(expression->children[i], columns))
+		if (!isValidFunction(expression->children[i], columns))
 			return false;
 
 	if (const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(&* expression))
@@ -112,8 +112,10 @@ inline void extractFunctions(ASTPtr expression, const std::vector<String> & colu
 		{
 			for (size_t i = 0; i < function->arguments->children.size(); ++i)
 				extractFunctions(function->arguments->children[i], columns, result);
-		} else {
-			if (validFunction(expression, columns))
+		}
+		else
+		{
+			if (isValidFunction(expression, columns))
 				result.push_back(expression->clone());
 		}
 	}
@@ -138,7 +140,9 @@ inline ASTPtr buildWhereExpression(const ASTs & functions)
 inline BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, const Context & context)
 {
 	const ASTSelectQuery & select = dynamic_cast<ASTSelectQuery & >(*query);
-	if (!select.where_expression) return new OneBlockInputStream(input);
+	if (!select.where_expression)
+		return new OneBlockInputStream(input);
+
 	ASTPtr new_query = new ASTSelectQuery();
 
 	/// Вычисляем имена виртуальных столбцов
@@ -147,30 +151,26 @@ inline BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & i
 		columns.push_back(it.first);
 
 	/// Формируем запрос и вычисляем имена виртуальных столбцов
-	{
-		ASTSelectQuery & new_select = dynamic_cast<ASTSelectQuery & >(*new_query);
+	ASTSelectQuery & new_select = dynamic_cast<ASTSelectQuery & >(*new_query);
 
-		new_select.select_expression_list = new ASTExpressionList();
-		ASTExpressionList & select_list = dynamic_cast<ASTExpressionList & >(*new_select.select_expression_list);
-		for (size_t i = 0; i < columns.size(); ++i)
-			select_list.children.push_back(new ASTIdentifier(StringRange(NULL, NULL), columns[i]));
+	new_select.select_expression_list = new ASTExpressionList();
+	ASTExpressionList & select_list = dynamic_cast<ASTExpressionList & >(*new_select.select_expression_list);
+	for (size_t i = 0; i < columns.size(); ++i)
+		select_list.children.push_back(new ASTIdentifier(StringRange(NULL, NULL), columns[i]));
 
-		std::vector<ASTPtr> functions;
-		extractFunctions(select.where_expression, columns, functions);
-		new_select.where_expression = buildWhereExpression(functions);
+	std::vector<ASTPtr> functions;
+	extractFunctions(select.where_expression, columns, functions);
+	new_select.where_expression = buildWhereExpression(functions);
 
-//		new_select.table = select.table->clone();
-//		new_select.children.push_back(new_select.table);
-
-		if (new_select.select_expression_list)
-			new_select.children.push_back(new_select.select_expression_list);
-		if (new_select.where_expression)
-			new_select.children.push_back(new_select.where_expression);
-	}
+	if (new_select.select_expression_list)
+		new_select.children.push_back(new_select.select_expression_list);
+	if (new_select.where_expression)
+		new_select.children.push_back(new_select.where_expression);
 
 	/// Возвращаем результат выолнения нового запроса на блоке виртуальных фукнций
-	InterpreterSelectQuery interpreter(new_query, context , columns, input.getColumnsList(),
-									   QueryProcessingStage::Complete, 0, new OneBlockInputStream(input));
+	InterpreterSelectQuery interpreter(new_query, context, columns, input.getColumnsList(),
+		QueryProcessingStage::Complete, 0, new OneBlockInputStream(input));
+
 	return interpreter.execute();
 }
 

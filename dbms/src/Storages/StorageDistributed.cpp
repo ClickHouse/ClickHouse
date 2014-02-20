@@ -152,10 +152,10 @@ BlockInputStreams StorageDistributed::read(
 	  */
 	bool select_host_column = false;
 	bool select_port_column = false;
-	const ASTExpressionList & select_list = dynamic_cast<const ASTExpressionList & >(*(dynamic_cast<const ASTSelectQuery & >(*query)).select_expression_list);
+	const ASTExpressionList & select_list = dynamic_cast<const ASTExpressionList &>(*(dynamic_cast<const ASTSelectQuery &>(*query)).select_expression_list);
 	for (const auto & it : select_list.children)
 	{
-		if (const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(&* it))
+		if (const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(&*it))
 		{
 			if (identifier->name == _host_column_name)
 				select_host_column = true;
@@ -163,6 +163,7 @@ BlockInputStreams StorageDistributed::read(
 				select_port_column = true;
 		}
 	}
+
 	Names columns_to_remove;
 	if (!select_host_column)
 		columns_to_remove.push_back(_host_column_name);
@@ -223,19 +224,17 @@ BlockInputStreams StorageDistributed::read(
 		/// добавляем запросы к локальному ClickHouse
 		DB::Context new_context = context;
 		new_context.setSettings(new_settings);
+
+		for(size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
-			DB::Context new_context = context;
-			new_context.setSettings(new_settings);
-			for(size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
-			{
-				InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
-				if (processed_stage == QueryProcessingStage::WithMergeableState)
-					res.push_back(interpreter.execute());
-				else
-					res.push_back(new RemoveColumnsBlockInputStream(interpreter.execute(), columns_to_remove));
-			}
+			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
+			if (processed_stage == QueryProcessingStage::WithMergeableState)
+				res.push_back(interpreter.execute());
+			else
+				res.push_back(new RemoveColumnsBlockInputStream(interpreter.execute(), columns_to_remove));
 		}
 	}
+	
 	return res;
 }
 
