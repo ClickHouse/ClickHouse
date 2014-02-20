@@ -35,13 +35,13 @@ public:
 	typedef std::shared_ptr<Mapped> MappedPtr;
 
 	LRUCache(size_t max_size_)
-		: max_size(std::max(1ul, max_size_)), current_size(0), hits(0), misses(0) {}
+		: max_size(std::max(1ul, max_size_)) {}
 
 	MappedPtr get(const Key & key)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-		CellsIterator it = cells.find(key);
+		auto it = cells.find(key);
 		if (it == cells.end())
 		{
 			++misses;
@@ -61,10 +61,12 @@ public:
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-		std::pair<CellsIterator, bool> it =
-			cells.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple());
-		Cell & cell = it.first->second;
-		bool inserted = it.second;
+		auto res = cells.emplace(std::piecewise_construct,
+			std::forward_as_tuple(key),
+			std::forward_as_tuple());
+
+		Cell & cell = res.first->second;
+		bool inserted = res.second;
 
 		if (inserted)
 		{
@@ -97,8 +99,9 @@ public:
 
 	size_t count() const
 	{
-		return queue.size();
+		return cells.size();
 	}
+
 private:
 	typedef std::list<Key> LRUQueue;
 	typedef typename LRUQueue::iterator LRUQueueIterator;
@@ -111,31 +114,34 @@ private:
 	};
 
 	typedef std::unordered_map<Key, Cell, HashFunction> Cells;
-	typedef typename Cells::iterator CellsIterator;
 
 	LRUQueue queue;
 	Cells cells;
-	size_t max_size;
-	size_t current_size;
+
+	/// Суммарный вес значений.
+	size_t current_size = 0;
+	const size_t max_size;
 
 	Poco::FastMutex mutex;
-	size_t hits;
-	size_t misses;
+	size_t hits = 0;
+	size_t misses = 0;
 
 	WeightFunction weight_function;
 
 	void removeOverflow()
 	{
-		while (current_size > max_size && queue.size() > 1)
+		size_t queue_size = cells.size();
+		while (current_size > max_size && queue_size > 1)
 		{
 			const Key & key = queue.front();
-			CellsIterator it = cells.find(key);
+			auto it = cells.find(key);
 			current_size -= it->second.size;
 			cells.erase(it);
 			queue.pop_front();
+			--queue_size;
 		}
 
-		if (queue.size() != cells.size() || current_size > (1ull << 63))
+		if (current_size > (1ull << 63))
 		{
 			queue.clear();
 			cells.clear();
