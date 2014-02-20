@@ -191,7 +191,7 @@ case "$1" in
 		[ -r "$PIDFILE" ] && start
 		;;
 	*)
-		echo "Usage: ${0##*/} {start|stop|status|restart|reload|condstart|condstop|condrestart|condreload|fallenstart}"
+		echo "Usage: ${0##*/} {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|fallenstart}"
 		EXIT_STATUS=2
 esac
 
