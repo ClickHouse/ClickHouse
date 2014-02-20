@@ -69,6 +69,7 @@ struct AssociativeOperationImpl
 	/// Возвращает комбинацию значений в i-й строке всех столбцов, запомненных в конструкторе.
 	inline UInt8 apply(size_t i) const
 	{
+		//return vec[i] ? continuation.apply(i) : 0;
 		return Op::apply(vec[i], continuation.apply(i));
 		//return vec[i] && continuation.apply(i);
 	}
@@ -82,10 +83,10 @@ struct AssociativeOperationImpl<Op, 1>
 		throw Exception("Logical error: AssociativeOperationImpl<Op, 1>::execute called", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	const UInt8Container & vec;
+	const UInt8 * vec;
 
 	AssociativeOperationImpl(UInt8ColumnPtrs & in)
-		: vec(in[in.size() - 1]->getData()) {}
+		: vec(&in[in.size() - 1]->getData()[0]) {}
 
 	inline UInt8 apply(size_t i) const
 	{
@@ -211,6 +212,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		//Stopwatch sw;
 		ColumnPlainPtrs in(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
@@ -293,6 +295,9 @@ public:
 		{
 			vec_res.assign(uint8_in[0]->getData());
 		}
+
+		//double seconds = sw.elapsedSeconds();
+		//std::cerr << seconds << " seconds" << std::endl;
 	}
 };
 
@@ -309,12 +314,18 @@ typedef FunctionAnyArityLogical	<XorImpl,	NameXor>	FunctionXor;
 using namespace DB;
 
 
-int main()
+int main(int argc, char ** argv)
 {
 	try
 	{
-		size_t block_size = 1000;
-		size_t block_count = 100000;
+		size_t block_size = 1 << 20;
+		if (argc > 1)
+		{
+			block_size = atoi(argv[1]);
+			if (block_size < 50)
+				block_size = 1l << block_size;
+		}
+		size_t block_count = (100000000 - 1) / block_size + 1;
 		size_t columns = 10;
 		size_t repeats = 3;
 
@@ -335,6 +346,9 @@ int main()
 					vec[j] = rand() % 2;
 				}
 			}
+		}
+		for (size_t b = 0; b < block_count; ++b)
+		{
 			ColumnVector<UInt8> * result_column = new ColumnVector<UInt8>;
 			blocks[b].insert(ColumnWithNameAndType(result_column, new DataTypeUInt8, "x"));
 			result_column->getData().resize(block_size);
