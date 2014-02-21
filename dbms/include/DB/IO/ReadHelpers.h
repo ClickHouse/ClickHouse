@@ -274,16 +274,14 @@ void readFloatText(T & x, ReadBuffer & buf)
 				}
 				else if (exponent > 0)
 				{
-					for (Int32 i = 0; i < exponent; ++i)
-						x *= 10;
+					x *= exp10(exponent);
 					if (negative)
 						x = -x;
 					return;
 				}
 				else
 				{
-					for (Int32 i = 0; i < exponent; ++i)
-						x /= 10;
+					x /= exp10(exponent);
 					if (negative)
 						x = -x;
 					return;

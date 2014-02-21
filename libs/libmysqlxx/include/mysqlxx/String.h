@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 #include <string>
 #include <limits>
@@ -353,16 +354,14 @@ private:
 					}
 					else if (exponent > 0)
 					{
-						for (Int32 i = 0; i < exponent; ++i)
-							x *= 10;
+						x *= exp10(exponent);
 						if (negative)
 							x = -x;
 						return x;
 					}
 					else
 					{
-						for (Int32 i = 0; i < exponent; ++i)
-							x /= 10;
+						x /= exp10(exponent);
 						if (negative)
 							x = -x;
 						return x;
