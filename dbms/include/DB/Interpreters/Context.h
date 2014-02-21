@@ -146,7 +146,7 @@ private:
 
 	String user;						/// Текущий пользователь.
 	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
-	QuotaForIntervalsPtr quota;			/// Текущая квота.
+	QuotaForIntervalsPtr quota;			/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
 	String current_database;			/// Текущая БД.
 	String current_query_id;			/// Id текущего запроса.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
@@ -161,7 +161,7 @@ private:
 	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
 public:
-	Context() : shared(new ContextShared), quota(NULL), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
+	Context() : shared(new ContextShared), quota(new QuotaForIntervals), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
 
 	String getPath() const;
 	void setPath(const String & path);
