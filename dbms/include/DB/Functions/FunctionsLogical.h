@@ -15,6 +15,16 @@ namespace DB
 template<typename B>
 struct AndImpl
 {
+	static inline bool isSaturable()
+	{
+		return true;
+	}
+
+	static bool isSaturatedValue(UInt8 a)
+	{
+		return !a;
+	}
+
 	static inline UInt8 apply(UInt8 a, B b)
 	{
 		return a && b;
@@ -24,6 +34,16 @@ struct AndImpl
 template<typename B>
 struct OrImpl
 {
+	static inline bool isSaturable()
+	{
+		return true;
+	}
+
+	static bool isSaturatedValue(UInt8 a)
+	{
+		return a;
+	}
+
 	static inline UInt8 apply(UInt8 a, B b)
 	{
 		return a || b;
@@ -33,6 +53,16 @@ struct OrImpl
 template<typename B>
 struct XorImpl
 {
+	static inline bool isSaturable()
+	{
+		return false;
+	}
+
+	static bool isSaturatedValue(UInt8 a)
+	{
+		return false;
+	}
+
 	static inline UInt8 apply(UInt8 a, B b)
 	{
 		return (!a) != (!b);
@@ -86,7 +116,15 @@ struct AssociativeOperationImpl
 	/// Возвращает комбинацию значений в i-й строке всех столбцов, запомненных в конструкторе.
 	inline UInt8 apply(size_t i) const
 	{
-		return Op::apply(vec[i], continuation.apply(i));
+		if (Op::isSaturable())
+		{
+			UInt8 a = vec[i];
+			return Op::isSaturatedValue(a) ? a : continuation.apply(i);
+		}
+		else
+		{
+			return Op::apply(vec[i], continuation.apply(i));
+		}
 	}
 };
 
@@ -294,10 +332,7 @@ public:
 		{
 			/// При большом размере блока объединять по 6 толбцов за проход быстрее всего.
 			/// При маленьком - чем больше, тем быстрее.
-			if (n > 65536)
-				AssociativeOperationImpl<Impl<UInt8>, 6>::execute(uint8_in, vec_res);
-			else
-				AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
+			AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
 			uint8_in.push_back(col_res);
 		}
 
