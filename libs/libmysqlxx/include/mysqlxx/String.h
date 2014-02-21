@@ -349,7 +349,6 @@ private:
 					x *= exp10(exponent);
 					if (negative)
 						x = -x;
-					return x;
 				}
 				case 'i':
 				case 'I':

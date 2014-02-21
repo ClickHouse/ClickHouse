@@ -269,7 +269,6 @@ void readFloatText(T & x, ReadBuffer & buf)
 				x *= exp10(exponent);
 				if (negative)
 					x = -x;
-				return;
 			}
 			case 'i':
 				++buf.position();
