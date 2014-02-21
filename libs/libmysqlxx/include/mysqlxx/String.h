@@ -346,26 +346,9 @@ private:
 				{
 					++buf;
 					Int32 exponent = readIntText(buf, end - buf);
-					if (exponent == 0)
-					{
-						if (negative)
-							x = -x;
-						return x;
-					}
-					else if (exponent > 0)
-					{
-						x *= exp10(exponent);
-						if (negative)
-							x = -x;
-						return x;
-					}
-					else
-					{
-						x /= exp10(exponent);
-						if (negative)
-							x = -x;
-						return x;
-					}
+					x *= exp10(exponent);
+					if (negative)
+						x = -x;
 				}
 				case 'i':
 				case 'I':
