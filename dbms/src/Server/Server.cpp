@@ -2,6 +2,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
+#include <statdaemons/ConfigProcessor.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
@@ -124,9 +125,32 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 
 	ConfigurationPtr config;
 
+	std::string processed_path;
+
 	try
 	{
-		config = new Poco::Util::XMLConfiguration(path);
+		processed_path = ConfigProcessor().processConfig(config);
+	}
+	catch (Poco::Exception & e)
+	{
+		if (force)
+			throw;
+
+		LOG_ERROR(log, "Error preprocessing users config: " << e.what() << ": " << e.displayText());
+		return;
+	}
+	catch (...)
+	{
+		if (force)
+			throw;
+
+		LOG_ERROR(log, "Error preprocessing users config.");
+		return;
+	}
+
+	try
+	{
+		config = new Poco::Util::XMLConfiguration(processed_path);
 	}
 	catch (Poco::Exception & e)
 	{
