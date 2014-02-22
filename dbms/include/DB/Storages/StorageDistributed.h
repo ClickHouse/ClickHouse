@@ -26,7 +26,6 @@ public:
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const String & cluster_name,
 		const DataTypeFactory & data_type_factory_,
-		const Settings & settings,
 		Context & context_,
 		const String & sign_column_name_ = "");
 
@@ -37,7 +36,6 @@ public:
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		Cluster & cluster_,
 		const DataTypeFactory & data_type_factory_,
-		const Settings & settings,
 		Context & context_,
 		const String & sign_column_name_ = "");
 
@@ -78,7 +76,6 @@ private:
 		const String & remote_table_,
 		Cluster & cluster_,
 		const DataTypeFactory & data_type_factory_,
-		const Settings & settings,
 		const Context & context_,
 		const String & sign_column_name_ = "");
 	

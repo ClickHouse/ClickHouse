@@ -22,7 +22,6 @@ StorageDistributed::StorageDistributed(
 	const String & remote_table_,
 	Cluster & cluster_,
 	const DataTypeFactory & data_type_factory_,
-	const Settings & settings,
 	const Context & context_,
 	const String & sign_column_name_)
 	: name(name_), columns(columns_),
@@ -47,12 +46,11 @@ StoragePtr StorageDistributed::create(
 	const String & remote_table_,
 	const String & cluster_name,
 	const DataTypeFactory & data_type_factory_,
-	const Settings & settings,
 	Context & context_,
 	const String & sign_column_name_)
 {
 	context_.initClusters();
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
+	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), data_type_factory_, context_, sign_column_name_))->thisPtr();
 }
 
 
@@ -63,11 +61,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_table_,
 	Cluster & cluster_,
 	const DataTypeFactory & data_type_factory_,
-	const Settings & settings,
 	Context & context_,
 	const String & sign_column_name_)
 {
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, cluster_, data_type_factory_, settings, context_, sign_column_name_))->thisPtr();
+	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, cluster_, data_type_factory_, context_, sign_column_name_))->thisPtr();
 }
 
 NameAndTypePair StorageDistributed::getColumn(const String &column_name) const
