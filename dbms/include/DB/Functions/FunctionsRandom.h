@@ -4,6 +4,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
+#include <stats/IntHash.h>
 
 
 namespace DB
@@ -29,13 +30,13 @@ namespace DB
 
 namespace detail
 {
-	void seed(drand48_data & rand_state)
+	void seed(drand48_data & rand_state, intptr_t additional_seed)
 	{
 		struct timespec times;
 		if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
 			throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
-		srand48_r(times.tv_nsec, &rand_state);
+		srand48_r(intHash32<0>(times.tv_nsec ^ intHash32<0>(additional_seed)), &rand_state);
 	}
 }
 
@@ -46,7 +47,7 @@ struct RandImpl
 	static void execute(PODArray<ReturnType> & res)
 	{
 		drand48_data rand_state;
-		detail::seed(rand_state);
+		detail::seed(rand_state, reinterpret_cast<intptr_t>(&res[0]));
 		
 		size_t size = res.size();
 		for (size_t i = 0; i < size; ++i)
@@ -65,7 +66,7 @@ struct Rand64Impl
 	static void execute(PODArray<ReturnType> & res)
 	{
 		drand48_data rand_state;
-		detail::seed(rand_state);
+		detail::seed(rand_state, reinterpret_cast<intptr_t>(&res[0]));
 
 		size_t size = res.size();
 		for (size_t i = 0; i < size; ++i)
