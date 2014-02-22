@@ -81,10 +81,8 @@ private:
 		~Entry()
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
-			parent.cont.erase(it);
-			--parent.cur_size;
-			parent.have_space.signal();
-			/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
+
+			/// В случае, если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
 			if (!it->is_cancelled && !it->query_id.empty())
 			{
 				UserToQueries::iterator queries = parent.user_to_queries.find(it->user);
@@ -95,6 +93,10 @@ private:
 						queries->second.erase(element);
 				}
 			}
+
+			parent.cont.erase(it);
+			--parent.cur_size;
+			parent.have_space.signal();
 		}
 
 		Element & get() { return *it; }
