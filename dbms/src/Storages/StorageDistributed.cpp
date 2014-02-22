@@ -131,7 +131,7 @@ BlockInputStreams StorageDistributed::read(
 	/// Установим sign_rewrite = 0, чтобы второй раз не переписывать запрос
 	Settings new_settings = settings;
 	new_settings.sign_rewrite = false;
-	new_settings.queue_max_wait_ms = Cluster::saturation(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
+	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
 
 	/** Запрошены ли виртуальные столбцы?
 	  * Если да - будем добавлять их в виде констант в запрос, предназначенный для выполнения на удалённом сервере,
@@ -147,7 +147,7 @@ BlockInputStreams StorageDistributed::read(
 			need_port_column = true;
 	}
 
-	/** Есть ли виртуальные столбцы в секции селект?
+	/** Есть ли виртуальные столбцы в секции SELECT?
 	  * Если нет - в случае вычисления запроса до стадии Complete, необходимо удалить их из блока.
 	  */
 	bool select_host_column = false;
@@ -175,7 +175,7 @@ BlockInputStreams StorageDistributed::read(
 		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
 	std::set< std::pair<String, UInt16> > values =
 		VirtualColumnUtils::extractTwoValuesFromBlocks<String, UInt16>(virtual_columns, _host_column_name, _port_column_name);
-	bool all_inclusive = (values.size() == virtual_columns_block.rows());
+	bool all_inclusive = values.size() == virtual_columns_block.rows();
 
 	size_t result_size = values.size();
 	if (values.find(std::make_pair("localhost", clickhouse_port)) != values.end())
@@ -208,7 +208,7 @@ BlockInputStreams StorageDistributed::read(
 			need_port_column ? _port_column_name : "",
 			processed_stage);
 
-		if (processed_stage == QueryProcessingStage::WithMergeableState)
+		if (processed_stage == QueryProcessingStage::WithMergeableState || columns_to_remove.empty())
 			res.push_back(temp);
 		else
 			res.push_back(new RemoveColumnsBlockInputStream(temp, columns_to_remove));
@@ -221,14 +221,14 @@ BlockInputStreams StorageDistributed::read(
 			need_host_column ? "localhost" : "",
 			need_port_column ? clickhouse_port : 0);
 
-		/// добавляем запросы к локальному ClickHouse
+		/// Добавляем запросы к локальному ClickHouse
 		DB::Context new_context = context;
 		new_context.setSettings(new_settings);
 
 		for(size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
 			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
-			if (processed_stage == QueryProcessingStage::WithMergeableState)
+			if (processed_stage == QueryProcessingStage::WithMergeableState || columns_to_remove.empty())
 				res.push_back(interpreter.execute());
 			else
 				res.push_back(new RemoveColumnsBlockInputStream(interpreter.execute(), columns_to_remove));
@@ -248,7 +248,7 @@ Block StorageDistributed::getBlockWithVirtualColumns()
 	for (ConnectionPools::iterator it = cluster.pools.begin(); it != cluster.pools.end(); ++it)
 	{
 		_host.column->insert((*it)->get()->getHost());
-		_port.column->insert(static_cast<uint64>((*it)->get()->getPort()));
+		_port.column->insert(static_cast<UInt64>((*it)->get()->getPort()));
 	}
 
 	if (cluster.getLocalNodesNum() > 0)
@@ -259,6 +259,7 @@ Block StorageDistributed::getBlockWithVirtualColumns()
 		_host.column->insert(clockhouse_host);
 		_port.column->insert(clickhouse_port);
 	}
+
 	res.insert(_host);
 	res.insert(_port);
 

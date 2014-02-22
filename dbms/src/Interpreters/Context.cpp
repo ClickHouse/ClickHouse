@@ -491,9 +491,7 @@ void Context::initClusters()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	if (!shared->clusters)
-	{
 		shared->clusters = new Clusters(settings, shared->data_type_factory);
-	}
 }
 
 Cluster & Context::getCluster(const std::string & cluster_name)
@@ -501,8 +499,8 @@ Cluster & Context::getCluster(const std::string & cluster_name)
 	if (!shared->clusters)
 		throw Poco::Exception("Clusters have not been initialized yet.");
 
-	Clusters::iterator it = shared->clusters->find(cluster_name);
-	if (it != shared->clusters->end())
+	Clusters::Impl::iterator it = shared->clusters->impl.find(cluster_name);
+	if (it != shared->clusters->impl.end())
 		return it->second;
 	else
 		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);

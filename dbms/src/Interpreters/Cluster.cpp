@@ -7,32 +7,44 @@
 namespace DB
 {
 
-Cluster::Address::Address(const std::string & config_prefix)
+Cluster::Address::Address(const String & config_prefix)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	host_port = Poco::Net::SocketAddress(config.getString(config_prefix + ".host"),
-										config.getInt(config_prefix + ".port"));
+		config.getInt(config_prefix + ".port"));
 
 	user = config.getString(config_prefix + ".user", "default");
 	password = config.getString(config_prefix + ".password", "");
 }
 
-Clusters::Clusters(const Settings & settings, const DataTypeFactory & data_type_factory, const std::string & config_name)
+
+Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_)
+	: user(user_), password(password_)
+{
+	UInt16 default_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
+
+	/// Похоже на то, что строка host_port_ содержит порт. Если условие срабатывает - не обязательно значит, что порт есть (пример: [::]).
+	if (nullptr != strchr(host_port_.c_str(), ':') || !default_port)
+		host_port = Poco::Net::SocketAddress(host_port_);
+	else
+		host_port = Poco::Net::SocketAddress(host_port_, default_port);
+}
+
+
+Clusters::Clusters(const Settings & settings, const DataTypeFactory & data_type_factory, const String & config_name)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(config_name, config_keys);
 
 	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
-	{
-		insert(value_type(*it, Cluster(settings, data_type_factory, config_name + "." + *it)));
-	}
+		impl.emplace(std::piecewise_construct,
+			std::forward_as_tuple(*it),
+			std::forward_as_tuple(settings, data_type_factory, config_name + "." + *it));
 }
 
-Cluster::Address::Address(const Poco::Net::SocketAddress & host_port_, const String & user_, const String & password_)
-	: host_port(host_port_), user(user_), password(password_) {}
 
-Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const std::string & cluster_name):
+Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const String & cluster_name):
 	local_nodes_num(0)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
@@ -90,9 +102,9 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 						replicas.push_back(new ConnectionPool(
 							settings.distributed_connections_pool_size,
 							jt->host_port.host().toString(), jt->host_port.port(), "", jt->user, jt->password, data_type_factory, "server", Protocol::Compression::Enable,
-							saturation(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
-							saturation(settings.receive_timeout, settings.limits.max_execution_time),
-							saturation(settings.send_timeout, settings.limits.max_execution_time)));
+							saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
+							saturate(settings.receive_timeout, settings.limits.max_execution_time),
+							saturate(settings.send_timeout, settings.limits.max_execution_time)));
 					}
 				}
 
@@ -115,15 +127,16 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 					pools.push_back(new ConnectionPool(
 						settings.distributed_connections_pool_size,
 						it->host_port.host().toString(), it->host_port.port(), "", it->user, it->password, data_type_factory, "server", Protocol::Compression::Enable,
-						saturation(settings.connect_timeout, settings.limits.max_execution_time),
-						saturation(settings.receive_timeout, settings.limits.max_execution_time),
-						saturation(settings.send_timeout, settings.limits.max_execution_time)));
+						saturate(settings.connect_timeout, settings.limits.max_execution_time),
+						saturate(settings.receive_timeout, settings.limits.max_execution_time),
+						saturate(settings.send_timeout, settings.limits.max_execution_time)));
 				}
 			}
 		}
 		else
 			throw Exception("No addresses listed in config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 }
+
 
 Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names,
 				 const String & username, const String & password): local_nodes_num(0)
@@ -132,9 +145,10 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 	{
 		Addresses current;
 		for (size_t j = 0; j < names[i].size(); ++j)
-			current.push_back(Address(Poco::Net::SocketAddress(names[i][j]), username, password));
+			current.push_back(Address(names[i][j], username, password));
 		addresses_with_failover.push_back(current);
 	}
+
 	for (AddressesWithFailover::const_iterator it = addresses_with_failover.begin(); it != addresses_with_failover.end(); ++it)
 	{
 		ConnectionPools replicas;
@@ -145,15 +159,16 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			replicas.push_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,
 				jt->host_port.host().toString(), jt->host_port.port(), "", jt->user, jt->password, data_type_factory, "server", Protocol::Compression::Enable,
-				saturation(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
-				saturation(settings.receive_timeout, settings.limits.max_execution_time),
-				saturation(settings.send_timeout, settings.limits.max_execution_time)));
+				saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
+				saturate(settings.receive_timeout, settings.limits.max_execution_time),
+				saturate(settings.send_timeout, settings.limits.max_execution_time)));
 		}
 		pools.push_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
 	}
 }
 
-Poco::Timespan Cluster::saturation(const Poco::Timespan & v, const Poco::Timespan & limit)
+
+Poco::Timespan Cluster::saturate(const Poco::Timespan & v, const Poco::Timespan & limit)
 {
 	if (limit.totalMicroseconds() == 0)
 		return v;
@@ -161,10 +176,6 @@ Poco::Timespan Cluster::saturation(const Poco::Timespan & v, const Poco::Timespa
 		return v > limit ? limit : v;
 }
 
-static bool interfaceEqual(const Poco::Net::NetworkInterface & interface, Poco::Net::IPAddress & address)
-{
-	return interface.address() == address;
-}
 
 bool Cluster::isLocal(const Address & address)
 {
@@ -173,11 +184,11 @@ bool Cluster::isLocal(const Address & address)
 	/// - её хост резолвится в набор адресов, один из которых совпадает с одним из адресов сетевых интерфейсов сервера
 	/// то нужно всегда ходить на этот шард без межпроцессного взаимодействия
 	UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
-	Poco::Net::NetworkInterface::NetworkInterfaceList interfaces = Poco::Net::NetworkInterface::list();
+	static Poco::Net::NetworkInterface::NetworkInterfaceList interfaces = Poco::Net::NetworkInterface::list();
 
 	if (clickhouse_port == address.host_port.port() &&
 		interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
-										 boost::bind(interfaceEqual, _1, address.host_port.host())))
+			[&](const Poco::Net::NetworkInterface & interface) { return interface.address() == address.host_port.host(); }))
 	{
 		LOG_INFO(&Poco::Util::Application::instance().logger(), "Replica with address " << address.host_port.toString() << " will be processed as local.");
 		return true;

@@ -13,10 +13,10 @@ namespace DB
 /// С локальными узлами соединение не устанавливается, а выполяется запрос напрямую.
 /// Поэтому храним только количество локальных узлов
 /// В конфиге кластер включает в себя узлы <node> или <shard>
-class Cluster
+class Cluster : private boost::noncopyable
 {
 public:
-	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const std::string & cluster_name);
+	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const String & cluster_name);
 
 	/// Построить кластер по именам шардов и реплик, локальные обрабатываются так же как удаленные
 	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names,
@@ -30,7 +30,7 @@ public:
 	ConnectionPools pools;
 
 	/// используеться для выставления ограничения на размер таймаута
-	static Poco::Timespan saturation(const Poco::Timespan & v, const Poco::Timespan & limit);
+	static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
 private:
 	struct Address
@@ -55,11 +55,11 @@ private:
 		String user;
 		String password;
 
-		Address(const std::string & config_prefix);
-		Address(const Poco::Net::SocketAddress & host_port_, const String & user_, const String & password_);
+		Address(const String & config_prefix);
+		Address(const String & host_port_, const String & user_, const String & password_);
 	};
 
-	bool isLocal(const Address & address);
+	static bool isLocal(const Address & address);
 
 	/// Массив шардов. Каждый шард - адреса одного сервера.
 	typedef std::vector<Address> Addresses;
@@ -73,9 +73,13 @@ private:
 	size_t local_nodes_num;
 };
 
-struct Clusters : public std::map<std::string, Cluster>
+struct Clusters
 {
+	typedef std::map<String, Cluster> Impl;
+	Impl impl;
+
 	Clusters(const Settings & settings, const DataTypeFactory & data_type_factory,
-			 const std::string & config_name = "remote_servers");
+			 const String & config_name = "remote_servers");
 };
+
 }
