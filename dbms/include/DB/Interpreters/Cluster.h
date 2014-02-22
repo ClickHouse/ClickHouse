@@ -1,9 +1,9 @@
+#pragma once
+
 #include <map>
 #include <DB/Interpreters/Settings.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Client/ConnectionPool.h>
-#pragma once
-
 #include <DB/Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>
 
