@@ -28,6 +28,8 @@ public:
 
 	/// Создать storage в соответствии с запросом
 	virtual StoragePtr execute(ASTPtr ast_function, Context & context) = 0;
+
+	virtual ~ITableFunction() {};
 };
 
 typedef SharedPtr<ITableFunction> TableFunctionPtr;

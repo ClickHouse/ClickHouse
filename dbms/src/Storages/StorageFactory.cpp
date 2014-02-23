@@ -143,7 +143,7 @@ StoragePtr StorageFactory::get(
 				" - name of configuration section with list of remote servers, name of remote database, name of remote table[, sign column name].",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
-		String cluster_name 		= dynamic_cast<ASTIdentifier &>(*args[0]).name;
+		String cluster_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		String remote_database 	= dynamic_cast<ASTIdentifier &>(*args[1]).name;
 		String remote_table 	= dynamic_cast<ASTIdentifier &>(*args[2]).name;
 		String sign_column_name	= args.size() == 4 ? dynamic_cast<ASTIdentifier &>(*args[3]).name : "";

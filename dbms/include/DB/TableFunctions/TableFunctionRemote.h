@@ -13,11 +13,11 @@ namespace DB
  * remote('address', db, table) - создаёт временный StorageDistributed.
  * Чтобы получить структуру таблицы, делается запрос DESC TABLE на удалённый сервер.
  * Например:
- * SELECT count() FROM remote('example01-01-1', merge, hits) - пойти на example01-01-1, в БД merge, таблицу hits. *
+ * SELECT count() FROM remote('example01-01-1', merge, hits) - пойти на example01-01-1, в БД merge, таблицу hits.
+ * В качестве имени хоста может быть указано также выражение, генерирующее множество шардов и реплик - см. ниже.
  */
 
-/// Пока не реализована.
-class TableFunctionRemote: public ITableFunction
+class TableFunctionRemote : public ITableFunction
 {
 public:
 	/// Максимальное количество различных шардов и максимальное количество реплик одного шарда

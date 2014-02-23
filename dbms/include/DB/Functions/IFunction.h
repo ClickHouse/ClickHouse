@@ -51,9 +51,10 @@ public:
 	  * Для неконстантных столбцов arguments[i].column=NULL.
 	  * Осмысленные типы элементов в out_prerequisites: APPLY_FUNCTION, ADD_COLUMN.
 	  */
-	virtual void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
-												DataTypePtr & out_return_type,
-												ExpressionActions::Actions & out_prerequisites)
+	virtual void getReturnTypeAndPrerequisites(
+		const ColumnsWithNameAndType & arguments,
+		DataTypePtr & out_return_type,
+		ExpressionActions::Actions & out_prerequisites)
 	{
 		DataTypes types(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)
@@ -81,6 +82,8 @@ public:
 	{
 		execute(block, arguments, result);
 	}
+
+	virtual ~IFunction() {}
 };
 
 
