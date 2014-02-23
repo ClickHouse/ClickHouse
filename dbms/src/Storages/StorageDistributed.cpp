@@ -59,12 +59,17 @@ StoragePtr StorageDistributed::create(
 	NamesAndTypesListPtr columns_,
 	const String & remote_database_,
 	const String & remote_table_,
-	Cluster & cluster_,
+	SharedPtr<Cluster> & owned_cluster_,
 	const DataTypeFactory & data_type_factory_,
 	Context & context_,
 	const String & sign_column_name_)
 {
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, cluster_, data_type_factory_, context_, sign_column_name_))->thisPtr();
+	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, data_type_factory_, context_, sign_column_name_);
+
+	/// Захватываем владение объектом-кластером.
+	res->owned_cluster = owned_cluster_;
+
+	return res->thisPtr();
 }
 
 NameAndTypePair StorageDistributed::getColumn(const String &column_name) const
@@ -184,10 +189,10 @@ BlockInputStreams StorageDistributed::read(
 
 	BlockInputStreams res;
 
-	for (ConnectionPools::iterator it = cluster.pools.begin(); it != cluster.pools.end(); ++it)
+	for (auto & conn_pool : cluster.pools)
 	{
-		String current_host = (*it)->get()->getHost();
-		UInt16 current_port = (*it)->get()->getPort();
+		String current_host = conn_pool->get()->getHost();
+		UInt16 current_port = conn_pool->get()->getPort();
 
 		if (!all_inclusive && values.find(std::make_pair(current_host, current_port)) == values.end())
 			continue;
@@ -198,7 +203,7 @@ BlockInputStreams StorageDistributed::read(
 			need_port_column ? current_port : 0));
 
 		BlockInputStreamPtr temp = new RemoteBlockInputStream(
-			(*it)->get(&new_settings),
+			conn_pool->get(&new_settings),
 			modified_query,
 			&new_settings,
 			need_host_column ? _host_column_name : "",
@@ -231,7 +236,11 @@ BlockInputStreams StorageDistributed::read(
 				res.push_back(new RemoveColumnsBlockInputStream(interpreter.execute(), columns_to_remove));
 		}
 	}
-	
+
+	/// Не дадим уничтожать объект до конца обработки запроса.
+	for (auto & stream : res)
+		stream->setOwnedStorage(thisPtr());
+
 	return res;
 }
 

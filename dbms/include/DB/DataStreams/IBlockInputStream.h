@@ -80,10 +80,12 @@ public:
 	  */
 	size_t checkDepth(size_t max_depth) const;
 
-protected:
-	BlockInputStreams children;
+	void setOwnedStorage(StoragePtr owned_storage_) { owned_storage = owned_storage_; }
 
+protected:
 	StoragePtr owned_storage;
+
+	BlockInputStreams children;
 
 private:
 	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = NULL);

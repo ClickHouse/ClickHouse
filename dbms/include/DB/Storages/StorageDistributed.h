@@ -34,7 +34,7 @@ public:
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
-		Cluster & cluster_,
+		SharedPtr<Cluster> & owned_cluster_,
 		const DataTypeFactory & data_type_factory_,
 		Context & context_,
 		const String & sign_column_name_ = "");
@@ -95,6 +95,11 @@ private:
 	String _port_column_name;
 
 	const Context & context;
+
+	/// Используется только, если таблица должна владеть объектом Cluster, которым больше никто не владеет - для реализации TableFunctionRemote.
+	SharedPtr<Cluster> owned_cluster;
+
+	/// Соединения с удалёнными серверами.
 	Cluster & cluster;
 };
 

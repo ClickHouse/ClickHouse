@@ -63,15 +63,13 @@ public:
 		for (size_t i = 0; i < shards.size(); ++i)
 			names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|'));
 
-		cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names, username, password);
+		SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names, username, password);
 
 		return StorageDistributed::create(getName(), chooseColumns(*cluster, remote_database, remote_table, context),
-			remote_database, remote_table, *cluster, context.getDataTypeFactory(), context);
+			remote_database, remote_table, cluster, context.getDataTypeFactory(), context);
 	}
 
 private:
-	Poco::SharedPtr<Cluster> cluster; /// Ссылка на объект кластер передается в StorageDistributed и должен существовать до выполнения запроса
-
 	/// Узнать имена и типы столбцов для создания таблицы
 	NamesAndTypesListPtr chooseColumns(Cluster & cluster, const String & database, const String & table, const Context & context) const
 	{
