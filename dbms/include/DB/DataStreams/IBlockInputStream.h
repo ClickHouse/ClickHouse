@@ -80,7 +80,7 @@ public:
 	  */
 	size_t checkDepth(size_t max_depth) const;
 
-	void setOwnedStorage(StoragePtr & owned_storage_) { owned_storage = owned_storage_; }
+	void setOwnedStorage(StoragePtr owned_storage_) { owned_storage = owned_storage_; }
 
 protected:
 	StoragePtr owned_storage;
