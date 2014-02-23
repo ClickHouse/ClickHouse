@@ -1,4 +1,0 @@
-Тестовый стенд(example05t/mturlrep13):
- - 2 процессора AMD Opteron(tm) Processor 6380 по 16 ядер в каждом(реальных, не hyper threading)
- - память: 64 Гб 
- - raid 5,3 T (из четырех Hitachi HUA723030ALA640)
