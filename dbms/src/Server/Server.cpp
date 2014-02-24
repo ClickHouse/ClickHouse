@@ -87,6 +87,16 @@ public:
 UsersConfigReloader::UsersConfigReloader(const std::string & path_, Poco::SharedPtr<Context> context_)
 	: path(path_), context(context_), file_modification_time(0), quit(false), log(&Logger::get("UsersConfigReloader"))
 {
+	/// Если путь к конфигу не абсолютный, угадаем, относительно чего он задан.
+	/// Сначала поищем его рядом с основным конфигом, потом - в текущей директории.
+	if (path.empty() || path[0] != '/')
+	{
+		std::string main_config_path = Application::instance().config().getString("config-file", "config.xml");
+		std::string config_dir = Poco::Path(main_config_path).parent().toString();
+		if (Poco::File(config_dir + path).exists())
+			path = config_dir + path;
+	}
+
 	reloadIfNewer(true);
 	thread = std::thread(&UsersConfigReloader::run, this);
 }
