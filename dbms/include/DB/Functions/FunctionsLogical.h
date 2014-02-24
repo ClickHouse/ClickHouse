@@ -20,7 +20,7 @@ struct AndImpl
 		return true;
 	}
 
-	static bool isSaturatedValue(UInt8 a)
+	static inline bool isSaturatedValue(UInt8 a)
 	{
 		return !a;
 	}
@@ -39,7 +39,7 @@ struct OrImpl
 		return true;
 	}
 
-	static bool isSaturatedValue(UInt8 a)
+	static inline bool isSaturatedValue(UInt8 a)
 	{
 		return a;
 	}
@@ -58,7 +58,7 @@ struct XorImpl
 		return false;
 	}
 
-	static bool isSaturatedValue(UInt8 a)
+	static inline bool isSaturatedValue(UInt8 a)
 	{
 		return false;
 	}
