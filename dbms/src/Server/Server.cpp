@@ -125,18 +125,16 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 
 	ConfigurationPtr config;
 
-	std::string processed_path;
-
 	try
 	{
-		processed_path = ConfigProcessor(!force).processConfig(path);
+		config = ConfigProcessor(!force).loadConfig(path);
 	}
 	catch (Poco::Exception & e)
 	{
 		if (force)
 			throw;
 
-		LOG_ERROR(log, "Error preprocessing users config: " << e.what() << ": " << e.displayText());
+		LOG_ERROR(log, "Error loading users config: " << e.what() << ": " << e.displayText());
 		return;
 	}
 	catch (...)
@@ -144,20 +142,7 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 		if (force)
 			throw;
 
-		LOG_ERROR(log, "Error preprocessing users config.");
-		return;
-	}
-
-	try
-	{
-		config = new Poco::Util::XMLConfiguration(processed_path);
-	}
-	catch (Poco::Exception & e)
-	{
-		if (force)
-			throw;
-
-		LOG_ERROR(log, "Couldn't parse users config: " << e.what() << ", " << e.displayText());
+		LOG_ERROR(log, "Error loading users config.");
 		return;
 	}
 
