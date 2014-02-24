@@ -1,5 +1,7 @@
 #include <iostream>
 
+#include <boost/program_options.hpp>
+
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/CompressedWriteBuffer.h>
@@ -36,24 +38,31 @@ void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 int main(int argc, char ** argv)
 {
+	boost::program_options::options_description desc("Allowed options");
+	desc.add_options()
+		("help,h", "produce help message")
+		("d,decompress", "decompress")
+		("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
+		("qlz", "use QuickLZ (level 1) instead of LZ4")
+		("stat", "print block statistics of compressed data")
+	;
+
+	boost::program_options::variables_map options;
+	boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+
+	if (options.count("help"))
+	{
+		std::cout << "Usage: " << argv[0] << " [options] < in > out" << std::endl;
+		std::cout << desc << std::endl;
+		return 1;
+	}
+
 	try
 	{
-		bool decompress = false;
-		bool use_qlz = false;
-		bool stat_mode = false;
-
-		if (argc == 2)
-		{
-			decompress = 0 == strcmp(argv[1], "-d");
-			use_qlz = 0 == strcmp(argv[1], "--qlz");
-			stat_mode = 0 == strcmp(argv[1], "--stat");
-		}
-		
-		if (argc > 2 || (argc == 2 && !decompress && !use_qlz && !stat_mode))
-		{
-			std::cerr << "Usage: " << argv[0] << " [-d|--qlz|--stat] < in > out" << std::endl;
-			return 1;
-		}
+		bool decompress = options.count("d");
+		bool use_qlz = options.count("qlz");;
+		bool stat_mode = options.count("stat");
+		unsigned block_size = options["block-size"].as<unsigned>();
 
 		DB::CompressionMethod::Enum method = use_qlz ? DB::CompressionMethod::QuickLZ : DB::CompressionMethod::LZ4;
 
@@ -74,7 +83,7 @@ int main(int argc, char ** argv)
 		else
 		{
 			/// Сжатие
-			DB::CompressedWriteBuffer to(wb, method);
+			DB::CompressedWriteBuffer to(wb, method, block_size);
 			DB::copyData(rb, to);
 		}
 	}
