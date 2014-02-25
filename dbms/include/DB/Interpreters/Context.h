@@ -25,6 +25,7 @@
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Client/ConnectionPool.h>
+#include <statdaemons/ConfigProcessor.h>
 
 
 namespace DB
@@ -49,8 +50,6 @@ typedef std::pair<String, String> DatabaseAndTableName;
 /// таблица -> множество таблиц-вьюшек, которые селектят из нее
 typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
 typedef std::vector<DatabaseAndTableName> Dependencies;
-
-typedef Poco::AutoPtr<Poco::Util::AbstractConfiguration> ConfigurationPtr;
 
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
