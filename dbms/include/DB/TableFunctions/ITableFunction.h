@@ -27,7 +27,7 @@ public:
 	virtual std::string getName() const = 0;
 
 	/// Создать storage в соответствии с запросом
-	virtual StoragePtr execute(ASTPtr ast_function, Context & context) = 0;
+	virtual StoragePtr execute(ASTPtr ast_function, Context & context) const = 0;
 
 	virtual ~ITableFunction() {};
 };

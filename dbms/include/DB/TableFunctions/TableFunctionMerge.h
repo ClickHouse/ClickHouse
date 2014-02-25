@@ -24,7 +24,7 @@ class TableFunctionMerge: public ITableFunction
 public:
  	std::string getName() const { return "merge"; }
 
-	StoragePtr execute(ASTPtr ast_function, Context & context)
+	StoragePtr execute(ASTPtr ast_function, Context & context) const override
 	{
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*ast_function).children;
 
@@ -63,7 +63,7 @@ private:
 			if (table_name_regexp.match(it->first))
 				return new NamesAndTypesList((it->second)->getColumnsList());
 
-		throw Exception("Error whyle executing table function merge. In database " + source_database + " no one matches regular 						 				 expression: " + table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
+		throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular 						 				 expression: " + table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
 	}
 };
 
