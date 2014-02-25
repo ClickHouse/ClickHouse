@@ -14,6 +14,9 @@ TableFunctionPtr TableFunctionFactory::get(
 	const String & name,
 	const Context & context) const
 {
+	if (context.getSettings().limits.readonly)
+		throw Exception("Table functions are forbidden in readonly mode", ErrorCodes::READONLY);
+
 		 if (name == "merge")						return new TableFunctionMerge;
 	else if (name == "remote")						return new TableFunctionRemote;
 	else
