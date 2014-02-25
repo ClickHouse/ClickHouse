@@ -126,6 +126,17 @@ void UsersConfigReloader::run()
 void UsersConfigReloader::reloadIfNewer(bool force)
 {
 	Poco::File f(path);
+	if (!f.exists())
+	{
+		if (force)
+			throw Exception("Users config not found at: " + path, ErrorCodes::FILE_DOESNT_EXIST);
+		if (file_modification_time)
+		{
+			LOG_ERROR(log, "Users config not found at: " << path);
+			file_modification_time = 0;
+		}
+		return;
+	}
 	time_t new_modification_time = f.getLastModified().epochTime();
 	if (!force && new_modification_time == file_modification_time)
 		return;
