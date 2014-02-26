@@ -46,6 +46,18 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 		TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<const ASTFunction *>(&*query.table)->name, context);
 		/// Выполнить ее и запомнить результат
 		table_function_storage = table_function_ptr->execute(query.table, context);
+
+		/// Затем удаляем из запроса все упоминания о табличной функции
+		/// Иначе могут возникнуть трудности при анализировании запроса
+		for (size_t i = 0; i < query.children.size(); ++i)
+		{
+			if (query.children[i] == query.table)
+			{
+				query.children.erase(query.children.begin() + i);
+				break;
+			}
+		}
+		query.table = ASTPtr();
 	}
 
 	if (table_function_storage)
@@ -60,7 +72,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 	if (context.getColumns().empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer = new ExpressionAnalyzer(query_ptr, context, subquery_depth);
+	query_analyzer = new ExpressionAnalyzer(query_ptr, context, table_function_storage, subquery_depth);
 
 	if (input_)
 		streams.push_back(input_);

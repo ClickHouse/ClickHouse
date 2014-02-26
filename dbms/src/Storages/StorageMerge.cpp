@@ -73,8 +73,14 @@ BlockInputStreams StorageMerge::read(
 	}
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
-	BlockInputStreamPtr virtual_columns =
-		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	BlockInputStreamPtr virtual_columns;
+
+	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
+	if (!virt_column_names.empty())
+		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	else /// Иначе, считаем допустимыми все возможные значения
+		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+
 	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 
@@ -87,9 +93,13 @@ BlockInputStreams StorageMerge::read(
 		if (real_column_names.size() == 0)
 			real_column_names.push_back(ExpressionActions::getSmallestColumn((*it)->getColumnsList()));
 
+		/// Подменяем виртуальный столбец на его значение
+		ASTPtr modified_query_ast = query->clone();
+		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, (*it)->getTableName());
+
 		BlockInputStreams source_streams = (*it)->read(
 			real_column_names,
-			query,
+			modified_query_ast,
 			settings,
 			tmp_processed_stage,
 			max_block_size,
