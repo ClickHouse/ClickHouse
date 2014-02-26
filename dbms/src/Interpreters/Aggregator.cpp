@@ -208,7 +208,15 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
 		}
 
-		if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
+		if (have_overflow_aggregates && !result.without_key)
+		{
+			result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->create(result.without_key + offsets_of_aggregate_states[i]);
+		}
+
+		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (!res)
@@ -250,6 +258,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 				AggregatedDataWithUInt64Key::iterator it;
 				bool inserted;
+				bool overflow = false;
 
 				if (!no_more_keys)
 					res.emplace(key, it, inserted);
@@ -258,8 +267,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					inserted = false;
 					it = res.find(key);
 					if (res.end() == it)
-						continue;
+						overflow = true;
 				}
+
+				if (overflow && !have_overflow_aggregates)
+					continue;
 				
 				if (inserted)
 				{
@@ -269,9 +281,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 				}
 
+				AggregateDataPtr value = overflow ? result.without_key : it->second;
+
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
@@ -292,6 +306,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;
+					bool overflow = false;
 
 					if (!no_more_keys)
 						res.emplace(ref, it, inserted);
@@ -300,8 +315,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						inserted = false;
 						it = res.find(ref);
 						if (res.end() == it)
-							continue;
+							overflow = true;
 					}
+
+					if (overflow && !have_overflow_aggregates)
+						continue;
 
 					if (inserted)
 					{
@@ -312,9 +330,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 					}
 
+					AggregateDataPtr value = overflow ? result.without_key : it->second;
+
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+						aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 				}
 			}
 			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -330,6 +350,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 
 					AggregatedDataWithStringKey::iterator it;
 					bool inserted;
+					bool overflow = false;
 
 					if (!no_more_keys)
 						res.emplace(ref, it, inserted);
@@ -338,8 +359,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						inserted = false;
 						it = res.find(ref);
 						if (res.end() == it)
-							continue;
+							overflow = true;
 					}
+
+					if (overflow && !have_overflow_aggregates)
+						continue;
 
 					if (inserted)
 					{
@@ -350,9 +374,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 					}
 
+					AggregateDataPtr value = overflow ? result.without_key : it->second;
+
 					/// Добавляем значения
 					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+						aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 				}
 			}
 			else
@@ -367,6 +393,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			{
 				AggregatedDataWithKeys128::iterator it;
 				bool inserted;
+				bool overflow = false;
 				UInt128 key128 = pack128(i, keys_size, key_columns, key_sizes);
 
 				if (!no_more_keys)
@@ -376,8 +403,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					inserted = false;
 					it = res.find(key128);
 					if (res.end() == it)
-						continue;
+						overflow = true;
 				}
+
+				if (overflow && !have_overflow_aggregates)
+					continue;
 
 				if (inserted)
 				{
@@ -387,9 +417,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
 				}
 
+				AggregateDataPtr value = overflow ? result.without_key : it->second;
+
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
 		else if (result.type == AggregatedDataVariants::HASHED)
@@ -401,6 +433,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			{
 				AggregatedDataHashed::iterator it;
 				bool inserted;
+				bool overflow = false;
 				UInt128 key128 = hash128(i, keys_size, key_columns, key);
 
 				if (!no_more_keys)
@@ -410,8 +443,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 					inserted = false;
 					it = res.find(key128);
 					if (res.end() == it)
-						continue;
+						overflow = true;
 				}
+
+				if (overflow && !have_overflow_aggregates)
+					continue;
 
 				if (inserted)
 				{
@@ -422,9 +458,11 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
 				}
 
+				AggregateDataPtr value = overflow ? result.without_key : it->second.second;
+
 				/// Добавляем значения
 				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(it->second.second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
 		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
@@ -455,13 +493,10 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 }
 
 
-Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals, bool final)
+Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool final)
 {
 	Block res = sample.cloneEmpty();
 	size_t rows = data_variants.size();
-
-	if (with_totals && separate_totals && rows != 0)
-		--rows;		/// Строчка с "тотальными" значениями идёт отдельно.
 
 	LOG_TRACE(log, "Converting aggregated data to block");
 
@@ -507,43 +542,23 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 		}
 	}
 
-	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
+	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
 	{
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
-		if (with_totals && separate_totals)
-		{
+		if (!final)
 			for (size_t i = 0; i < aggregates_size; ++i)
-			{
-				totals = res.cloneEmpty();
-
-				/// Для тотальных данных вместо ключей пишутся значения по-умолчанию (нули, пустые строки).
-				for (size_t i = 0; i < keys_size; ++i)
-					totals.getByPosition(i).column->insertDefault();
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-				{
-					ColumnWithNameAndType & column = totals.getByPosition(i + keys_size);
-					column.type = aggregate_functions[i]->getReturnType();
-					column.column = column.type->createColumn();
-					aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *column.column);
-				}
-			}
-		}
+				(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
 		else
-		{
-			if (!final)
-				for (size_t i = 0; i < aggregates_size; ++i)
-					(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
-			else
-				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
 
-			if (with_totals)
-				for (size_t i = 0; i < keys_size; ++i)
-					key_columns[i]->insertDefault();
-		}
+		if (overflow_row)
+			for (size_t i = 0; i < keys_size; ++i)
+				key_columns[i]->insertDefault();
 	}
+
+	size_t start_row = overflow_row ? 1 : 0;
 	
 	if (data_variants.type == AggregatedDataVariants::KEY_64)
 	{
@@ -551,7 +566,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 
 		IColumn & first_column = *key_columns[0];
 
-		size_t j = with_totals && !separate_totals ? 1 : 0;
+		size_t j = start_row;
 
 		if (!final)
 		{
@@ -579,7 +594,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 		AggregatedDataWithStringKey & data = *data_variants.key_string;
 		IColumn & first_column = *key_columns[0];
 
-		size_t j = with_totals && !separate_totals ? 1 : 0;
+		size_t j = start_row;
 
 		if (!final)
 		{
@@ -606,7 +621,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	{
 		AggregatedDataWithKeys128 & data = *data_variants.keys128;
 
-		size_t j = with_totals && !separate_totals ? 1 : 0;
+		size_t j = start_row;
 
 		if (!final)
 		{
@@ -645,7 +660,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool se
 	{
 		AggregatedDataHashed & data = *data_variants.hashed;
 
-		size_t j = with_totals && !separate_totals ? 1 : 0;
+		size_t j = start_row;
 
 		if (!final)
 		{
@@ -729,7 +744,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
 
 		/// В какой структуре данных агрегированы данные?
-		if (res->type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
+		if (res->type == AggregatedDataVariants::WITHOUT_KEY || have_overflow_aggregates)
 		{
 			AggregatedDataWithoutKey & res_data = res->without_key;
 			AggregatedDataWithoutKey & current_data = current.without_key;
@@ -901,7 +916,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			result.key_sizes = key_sizes;
 		}
 
-		if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
+		if (result.type == AggregatedDataVariants::WITHOUT_KEY || have_overflow_aggregates)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (!res)
@@ -917,13 +932,15 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 				aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
 		}
 
+		size_t start_row = have_overflow_aggregates ? 1 : 0;
+
 		if (result.type == AggregatedDataVariants::KEY_64)
 		{
 			AggregatedDataWithUInt64Key & res = *result.key64;
 			const IColumn & column = *key_columns[0];
 
 			/// Для всех строчек
-			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
+			for (size_t i = start_row; i < rows; ++i)
 			{
 				/// Строим ключ
 				UInt64 key = get<UInt64>(column[i]);
@@ -956,7 +973,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
                 const ColumnString::Chars_t & data = column_string->getChars();
 
 				/// Для всех строчек
-				for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
+				for (size_t i = start_row; i < rows; ++i)
 				{
 					/// Строим ключ
 					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
@@ -985,7 +1002,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
                 const ColumnFixedString::Chars_t & data = column_string->getChars();
 
 				/// Для всех строчек
-				for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
+				for (size_t i = start_row; i < rows; ++i)
 				{
 					/// Строим ключ
 					StringRef ref(&data[i * n], n);
@@ -1016,7 +1033,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			AggregatedDataWithKeys128 & res = *result.keys128;
 
 			/// Для всех строчек
-			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
+			for (size_t i = start_row; i < rows; ++i)
 			{
 				AggregatedDataWithKeys128::iterator it;
 				bool inserted;
@@ -1040,7 +1057,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			AggregatedDataHashed & res = *result.hashed;
 
 			/// Для всех строчек
-			for (size_t i = with_totals ? 1 : 0; i < rows; ++i)
+			for (size_t i = start_row; i < rows; ++i)
 			{
 				AggregatedDataHashed::iterator it;
 				bool inserted;
@@ -1076,7 +1093,7 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 	LOG_TRACE(log, "Destroying aggregate states");
 
 	/// В какой структуре данных агрегированы данные?
-	if (result.type == AggregatedDataVariants::WITHOUT_KEY || with_totals)
+	if (result.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
 	{
 		AggregatedDataWithoutKey & res_data = result.without_key;
 

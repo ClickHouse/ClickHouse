@@ -21,7 +21,7 @@ namespace DB
 class ColumnAggregateFunction : public ColumnVectorBase<AggregateDataPtr>
 {
 private:
-	AggregateFunctionPtr func;	/// Используется только для уничтожения состояний.
+	AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
 	Arenas arenas;
 public:
 	ColumnAggregateFunction(const AggregateFunctionPtr & func_)

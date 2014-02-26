@@ -560,6 +560,8 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	  * Будем агрегировать по первым попавшимся limit_length + limit_offset ключам.
 	  * NOTE: после этого перестаёт точно работать rows_before_limit_at_least (это нормально).
 	  * NOTE: возможно, неправильно работает, если после GROUP BY делается arrayJoin.
+	  * NOTE: неправильно работает, если источников несколько: один источник может отбросить строки с ключом,
+	  *  который другой источника отдаст в ответ, и для этого ключа агрегаты будут не по всем подходящим строкам.
 	  */
 	size_t limit_length = 0;
 	size_t limit_offset = 0;

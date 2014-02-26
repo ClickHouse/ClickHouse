@@ -12,16 +12,16 @@ using Poco::SharedPtr;
 
 /** Агрегирует поток блоков, используя заданные столбцы-ключи и агрегатные функции.
   * Столбцы с агрегатными функциями добавляет в конец блока.
-  * Агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
+  * Если final=false, агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
   * Это необходимо, чтобы можно было продолжить агрегацию (например, объединяя потоки частично агрегированных данных).
   */
 class AggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
-		bool with_totals_, bool separate_totals_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_)
-		: aggregator(new Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_)),
-		separate_totals(separate_totals_), final(final_), has_been_read(false)
+		bool overflow_row_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_)
+		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_)),
+		final(final_), has_been_read(false)
 	{
 		children.push_back(input_);
 	}
@@ -31,7 +31,7 @@ public:
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const Names & key_names, const AggregateDescriptions & aggregates,
-		bool with_totals_, bool separate_totals_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_);
+		bool overflow_row_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_);
 
 	String getName() const { return "AggregatingBlockInputStream"; }
 
@@ -46,7 +46,6 @@ protected:
 	Block readImpl();
 
 	SharedPtr<Aggregator> aggregator;
-	bool separate_totals;
 	bool final;
 	bool has_been_read;
 };

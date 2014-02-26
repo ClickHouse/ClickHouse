@@ -73,8 +73,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	Arenas aggregates_pools;
 	Arena * aggregates_pool;	/// Пул, который сейчас используется для аллокации.
 
-	/** Специализация для случая, когда ключи отсутствуют.
-	  * А также в этой стркутуре хранятся "тотальные" агрегаты, когда указано with_totals (GROUP BY ... WITH TOTALS в запросе).
+	/** Специализация для случая, когда ключи отсутствуют, и для ключей, не попавших в max_rows_to_group_by.
 	  */
 	AggregatedDataWithoutKey without_key;
 
@@ -174,10 +173,10 @@ typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 class Aggregator
 {
 public:
-	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool with_totals_,
+	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
-		with_totals(with_totals_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
+		overflow_row(overflow_row_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -186,10 +185,10 @@ public:
 		keys_size = keys.size();
 	}
 
-	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool with_totals_,
+	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
-		with_totals(with_totals_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
+		overflow_row(overflow_row_), total_size_of_aggregate_states(0), all_aggregates_has_trivial_destructor(false), initialized(false),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
 		log(&Logger::get("Aggregator"))
 	{
@@ -202,16 +201,15 @@ public:
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
 	/** Преобразовать структуру данных агрегации в блок.
-	  * Если with_totals = true и serarate_totals = true, то тотальные значения кладутся в totals.
-	  * Если with_totals = true и serarate_totals = false, то тотальные значения кладутся в первую строчку возвращаемого блока.
+	  * Если overflow_row = true, то агрегаты для строк, не попавших в max_rows_to_group_by, кладутся в первую строчку возвращаемого блока.
 	  *
 	  * Если final = false, то в качестве столбцов-агрегатов создаются ColumnAggregateFunction с состоянием вычислений,
 	  *  которые могут быть затем объединены с другими состояниями (для распределённой обработки запроса).
 	  * Если final = true, то в качестве столбцов-агрегатов создаются столбцы с готовыми значениями.
 	  */
-	Block convertToBlock(AggregatedDataVariants & data_variants, bool separate_totals, Block & totals, bool final);
+	Block convertToBlock(AggregatedDataVariants & data_variants, bool final);
 
-	/** Объединить несколько структур данных агрегации в одну. (В первый элемент массива.) Все варианты агрегации должны быть одинаковыми!
+	/** Объединить несколько структур данных агрегации в одну. (В первый непустой элемент массива.) Все варианты агрегации должны быть одинаковыми!
 	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить, пока не будет вызвана функция convertToBlock.
 	  * Это нужно, так как в слитом результате могут остаться указатели на память в пуле, которым владеют другие структуры агрегации.
 	  */
@@ -219,7 +217,7 @@ public:
 
 	/** Объединить несколько агрегированных блоков в одну структуру данных.
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
-	  * Если with_totals = true, то предполагается, что тотальные значения расположены в первой строке каждого блока.
+	  * Если overflow_row = true, то предполагается, что агрегаты для строк, не попавших в max_rows_to_group_by, расположены в первой строке каждого блока.
 	  */
 	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
@@ -235,7 +233,8 @@ protected:
 	std::vector<IAggregateFunction *> aggregate_functions;
 	size_t keys_size;
 	size_t aggregates_size;
-	bool with_totals;
+	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
+	bool overflow_row;
 
 	Sizes offsets_of_aggregate_states;	/// Смещение до n-ой агрегатной функции в строке из агрегатных функций.
 	size_t total_size_of_aggregate_states;	/// Суммарный размер строки из агрегатных функций.

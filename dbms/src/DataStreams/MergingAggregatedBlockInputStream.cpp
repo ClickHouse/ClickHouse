@@ -16,7 +16,7 @@ Block MergingAggregatedBlockInputStream::readImpl()
 	
 	AggregatedDataVariants data_variants;
 	aggregator->merge(children.back(), data_variants);
-	return aggregator->convertToBlock(data_variants, separate_totals, totals, true);
+	return aggregator->convertToBlock(data_variants, final);
 }
 
 

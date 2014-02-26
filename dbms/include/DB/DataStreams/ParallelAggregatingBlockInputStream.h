@@ -14,33 +14,31 @@ using Poco::SharedPtr;
 
 /** Агрегирует несколько источников параллельно.
   * Запускает агрегацию отдельных источников в отдельных потоках, затем объединяет результаты.
-  * Агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
+  * Если final=false, агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
   * Это необходимо, чтобы можно было продолжить агрегацию (например, объединяя потоки частично агрегированных данных).
   */
 class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
-		bool with_totals_, bool separate_totals_, bool final_, unsigned max_threads_ = 1,
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_,
+		AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, unsigned max_threads_ = 1,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
-		: aggregator(new Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_)),
-		has_been_read(false), separate_totals(separate_totals_), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
+		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_)),
+		has_been_read(false), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
 
-	/** keys берутся из GROUP BY части запроса
-	  * Агрегатные функции ищутся везде в выражении.
-	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
+	/** Столбцы из key_names и аргументы агрегатных функций, уже должны быть вычислены.
 	  */
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const Names & key_names, const AggregateDescriptions & aggregates,
-		bool with_totals_, bool separate_totals_, bool final_, unsigned max_threads_ = 1,
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const Names & key_names,
+		const AggregateDescriptions & aggregates,	bool overflow_row_, bool final_, unsigned max_threads_ = 1,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
-		: has_been_read(false), separate_totals(separate_totals_), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
+		: has_been_read(false), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 		
-		aggregator = new Aggregator(key_names, aggregates, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_);
+		aggregator = new Aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_);
 	}
 
 	String getName() const { return "ParallelAggregatingBlockInputStream"; }
@@ -88,18 +86,17 @@ protected:
 			return Block();
 
 		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
-		return aggregator->convertToBlock(*res, separate_totals, totals, final);
+		return aggregator->convertToBlock(*res, final);
 	}
 
 private:
 	SharedPtr<Aggregator> aggregator;
 	bool has_been_read;
-	bool separate_totals;
 	bool final;
 	size_t max_threads;
 	boost::threadpool::pool pool;
 
-	/// Вычисления, которые выполняться в отдельном потоке
+	/// Вычисления, которые выполнятся в отдельном потоке
 	void calculate(BlockInputStreamPtr & input, AggregatedDataVariants & data, ExceptionPtr & exception)
 	{
 		try
