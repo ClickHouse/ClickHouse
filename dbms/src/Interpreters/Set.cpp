@@ -305,6 +305,8 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	{
 		if (negative)
 			memset(&vec_res[0], 1, vec_res.size());
+		else
+			memset(&vec_res[0], 0, vec_res.size());
 		return;
 	}
 	
