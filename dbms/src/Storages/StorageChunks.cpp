@@ -44,6 +44,16 @@ BlockInputStreams StorageChunks::read(
 	size_t max_block_size,
 	unsigned threads)
 {
+	bool has_virtual_column = false;
+
+	for (const auto & column : column_names)
+		if (column == _table_column_name)
+			has_virtual_column = true;
+
+	/// Если виртуальных столбцов нет, просто считать данные из таблицы
+	if (!has_virtual_column)
+		return read(0, std::numeric_limits<size_t>::max(), column_names, query, settings, processed_stage, max_block_size, threads);
+
 	Block virtual_columns_block = getBlockWithVirtualColumns();
 	BlockInputStreamPtr virtual_columns =
 		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);

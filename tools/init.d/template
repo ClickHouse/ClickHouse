@@ -54,6 +54,7 @@ start()
 		mkdir -p $PIDDIR
 		chown -R $USER:$GROUP $LOGDIR
 		chown -R $USER:$GROUP $PIDDIR
+		chown -R $USER:$GROUP $SYSCONFDIR
 
 		su -l $USER -s $SHELL -c "\"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$PIDFILE\" --config-file=\"$CNFFILE\""
 		EXIT_STATUS=$?

@@ -20,7 +20,7 @@ TableFunctionPtr TableFunctionFactory::get(
 		 if (name == "merge")						return new TableFunctionMerge;
 	else if (name == "remote")						return new TableFunctionRemote;
 	else
-		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+		throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
 }
 
 }

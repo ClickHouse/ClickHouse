@@ -167,14 +167,20 @@ BlockInputStreams StorageDistributed::read(
 	}
 
 	Names columns_to_remove;
-	if (!select_host_column)
+	if (!select_host_column && need_host_column)
 		columns_to_remove.push_back(_host_column_name);
-	if (!select_port_column)
+	if (!select_port_column && need_port_column)
 		columns_to_remove.push_back(_port_column_name);
 
 	Block virtual_columns_block = getBlockWithVirtualColumns();
-	BlockInputStreamPtr virtual_columns =
-		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	BlockInputStreamPtr virtual_columns;
+
+	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
+	if (need_host_column || need_port_column)
+		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	else /// Иначе, считаем допустимыми все возможные значения
+		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+
 	std::set< std::pair<String, UInt16> > values =
 		VirtualColumnUtils::extractTwoValuesFromBlocks<String, UInt16>(virtual_columns, _host_column_name, _port_column_name);
 	bool all_inclusive = values.size() == virtual_columns_block.rows();
