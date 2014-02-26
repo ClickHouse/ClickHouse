@@ -8,6 +8,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Parsers/formatAST.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Interpreters/InterpreterRenameQuery.h>

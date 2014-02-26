@@ -57,4 +57,7 @@ void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::os
 void formatAST(const ASTAlterQuery 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 void formatAST(const ASTShowProcesslistQuery 	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 
+
+String formatColumnsForCreateQuery(NamesAndTypesList & columns);
+
 }
