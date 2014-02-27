@@ -14,6 +14,9 @@
 
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/IO/ReadBufferFromPocoSocket.h>
+#include <DB/IO/WriteBufferFromPocoSocket.h>
+
 #include <DB/IO/copyData.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
