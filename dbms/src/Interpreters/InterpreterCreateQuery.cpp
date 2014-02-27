@@ -154,24 +154,29 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 		/// Выбор нужного движка таблицы
 		if (create.storage)
+		{
 			storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
+		}
 		else if (!create.as_table.empty())
 		{
 			storage_name = context.getTable(as_database_name, as_table_name)->getName();
 			create.storage = dynamic_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
-		} else if (create.is_view)
+		}
+		else if (create.is_view)
 		{
 			storage_name = "View";
 			ASTFunction * func = new ASTFunction();
 			func->name = storage_name;
 			create.storage = func;
-		} else if (create.is_materialized_view)
+		}
+		else if (create.is_materialized_view)
 		{
 			storage_name = "MaterializedView";
 			ASTFunction * func = new ASTFunction();
 			func->name = storage_name;
 			create.storage = func;
-		} else
+		}
+		else
 			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
 		res = context.getStorageFactory().get(

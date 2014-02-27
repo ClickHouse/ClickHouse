@@ -18,8 +18,6 @@ BINDIR=/usr/bin
 CRONFILE=/etc/cron.d/@CRONFILE@
 
 CNFFILE=$SYSCONFDIR/config.xml
-CONFFILE=$SYSCONFDIR/config.conf
-CONFMERGEDFILE=$SYSCONFDIR/config-merged.conf
 PIDFILE=$PIDDIR/$PROGRAM.pid
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
@@ -56,19 +54,8 @@ start()
 		mkdir -p $PIDDIR
 		chown -R $USER:$GROUP $LOGDIR
 		chown -R $USER:$GROUP $PIDDIR
+		chown -R $USER:$GROUP $SYSCONFDIR
 
-		if [ -f "$CONFFILE" ]; then
-			if [ -x /usr/local/bin/conf-merge.sh ]; then
-				/usr/local/bin/conf-merge.sh $CONFFILE $SYSCONFDIR/conf.d $CONFMERGEDFILE
-				else
-				echo "Warning: there is no /usr/local/bin/conf-merge.sh file" >&2
-				cp $CONFFILE $CONFMERGEDFILE
-			fi
-			/usr/local/bin/short2old.sh $CONFMERGEDFILE > $CNFFILE
-			[ $? -ne 0 ] && echo FAILED && exit 1
-		else
-			echo "Warinig: there is no $CONFFILE file; using $CNFFILE file." >&2
-		fi
 		su -l $USER -s $SHELL -c "\"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$PIDFILE\" --config-file=\"$CNFFILE\""
 		EXIT_STATUS=$?
 	fi

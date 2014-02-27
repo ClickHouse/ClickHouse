@@ -25,6 +25,13 @@ public:
 		init();
 	}
 
+	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, StoragePtr storage_, size_t subquery_depth_ = 0)
+		: ast(ast_), context(context_), settings(context.getSettings()),
+		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(storage_ ? storage_ : getTable())
+	{
+		init();
+	}
+
 	/// columns - список известных столбцов (которых можно достать из таблицы).
 	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, const NamesAndTypesList & columns_, size_t subquery_depth_ = 0)
 		: ast(ast_), context(context_), settings(context.getSettings()),

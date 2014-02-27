@@ -2,6 +2,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
+#include <statdaemons/ConfigProcessor.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
@@ -86,6 +87,16 @@ public:
 UsersConfigReloader::UsersConfigReloader(const std::string & path_, Poco::SharedPtr<Context> context_)
 	: path(path_), context(context_), file_modification_time(0), quit(false), log(&Logger::get("UsersConfigReloader"))
 {
+	/// Если путь к конфигу не абсолютный, угадаем, относительно чего он задан.
+	/// Сначала поищем его рядом с основным конфигом, потом - в текущей директории.
+	if (path.empty() || path[0] != '/')
+	{
+		std::string main_config_path = Application::instance().config().getString("config-file", "config.xml");
+		std::string config_dir = Poco::Path(main_config_path).parent().toString();
+		if (Poco::File(config_dir + path).exists())
+			path = config_dir + path;
+	}
+
 	reloadIfNewer(true);
 	thread = std::thread(&UsersConfigReloader::run, this);
 }
@@ -115,6 +126,17 @@ void UsersConfigReloader::run()
 void UsersConfigReloader::reloadIfNewer(bool force)
 {
 	Poco::File f(path);
+	if (!f.exists())
+	{
+		if (force)
+			throw Exception("Users config not found at: " + path, ErrorCodes::FILE_DOESNT_EXIST);
+		if (file_modification_time)
+		{
+			LOG_ERROR(log, "Users config not found at: " << path);
+			file_modification_time = 0;
+		}
+		return;
+	}
 	time_t new_modification_time = f.getLastModified().epochTime();
 	if (!force && new_modification_time == file_modification_time)
 		return;
@@ -126,14 +148,22 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 
 	try
 	{
-		config = new Poco::Util::XMLConfiguration(path);
+		config = ConfigProcessor(!force).loadConfig(path);
 	}
 	catch (Poco::Exception & e)
 	{
 		if (force)
 			throw;
 
-		LOG_ERROR(log, "Couldn't parse users config: " << e.what() << ", " << e.displayText());
+		LOG_ERROR(log, "Error loading users config: " << e.what() << ": " << e.displayText());
+		return;
+	}
+	catch (...)
+	{
+		if (force)
+			throw;
+
+		LOG_ERROR(log, "Error loading users config.");
 		return;
 	}
 
