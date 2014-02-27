@@ -39,10 +39,30 @@ public:
 		func = func_;
 	}
 
+	AggregateFunctionPtr getAggregateFunction()
+	{
+		return func;
+	}
+
 	/// Захватить владение ареной.
 	void addArena(ArenaPtr arena_)
 	{
 		arenas.push_back(arena_);
+	}
+
+	ColumnPtr convertToValues()
+	{
+		IAggregateFunction * function = func;
+		ColumnPtr res = function->getReturnType()->createColumn();
+		IColumn & column = *res;
+		res->reserve(data.size());
+
+		for (size_t i = 0; i < data.size(); ++i)
+		{
+			function->insertResultInto(data[i], column);
+		}
+
+		return res;
 	}
 
 	~ColumnAggregateFunction()

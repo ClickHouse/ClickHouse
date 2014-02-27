@@ -423,8 +423,7 @@ void SplittingAggregator::convertToBlockThread(AggregatedDataVariants & data_var
 {
 	try
 	{
-		Block totals;
-		block = convertToBlock(data_variant, false, totals, final);
+		block = convertToBlock(data_variant, final);
 	}
 	catch (...)
 	{

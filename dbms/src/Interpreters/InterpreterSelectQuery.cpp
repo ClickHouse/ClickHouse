@@ -11,6 +11,7 @@
 #include <DB/DataStreams/SplittingAggregatingBlockInputStream.h>
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
+#include <DB/DataStreams/TotalsHavingBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -300,6 +301,19 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		
 		/// Теперь составим потоки блоков, выполняющие нужные действия.
 		
+		/// Нужно ли агрегировать в отдельную строку строки, не прошедшие max_rows_to_group_by.
+		bool aggregate_overflow_row =
+			need_aggregate &&
+			query.group_by_with_totals &&
+			settings.limits.max_rows_to_group_by &&
+			settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
+			settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+		/// Нужно ли после агрегации сразу финализироыать агрегатные функции.
+		bool aggregate_final =
+			need_aggregate &&
+			to_stage > QueryProcessingStage::WithMergeableState &&
+			!query.group_by_with_totals;
+
 		if (from_stage < QueryProcessingStage::WithMergeableState
 			&& to_stage >= QueryProcessingStage::WithMergeableState)
 		{
@@ -307,7 +321,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 				executeWhere(streams, before_where);
 			
 			if (need_aggregate)
-				executeAggregation(streams, before_aggregation, to_stage > QueryProcessingStage::WithMergeableState);
+				executeAggregation(streams, before_aggregation, aggregate_overflow_row, aggregate_final);
 
 			/** Оптимизация - при распределённой обработке запроса,
 			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
@@ -328,14 +342,16 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			{
 				/// Если нужно объединить агрегированные результаты с нескольких серверов
 				if (from_stage == QueryProcessingStage::WithMergeableState)
-					executeMergeAggregated(streams);
+					executeMergeAggregated(streams, aggregate_overflow_row, aggregate_final);
 			}
-			
-			if (has_having)
+
+			if (!aggregate_final)
+				executeTotalsAndHaving(streams, has_having, before_having, aggregate_overflow_row);
+			else if (has_having)
 				executeHaving(streams, before_having);
-			
+
 			executeOuterExpression(streams, before_order_and_select);
-			
+
 			if (has_order_by)
 				executeOrder(streams);
 			
@@ -541,7 +557,7 @@ void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, Expressio
 }
 
 
-void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionActionsPtr expression, bool final)
+void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionActionsPtr expression, bool overflow_row, bool final)
 {
 	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
@@ -556,49 +572,40 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
-	/** Оптимизация для случая, когда есть LIMIT, но нет HAVING и ORDER BY.
-	  * Будем агрегировать по первым попавшимся limit_length + limit_offset ключам.
-	  * NOTE: после этого перестаёт точно работать rows_before_limit_at_least (это нормально).
-	  * NOTE: возможно, неправильно работает, если после GROUP BY делается arrayJoin.
-	  * NOTE: неправильно работает, если источников несколько: один источник может отбросить строки с ключом,
-	  *  который другой источника отдаст в ответ, и для этого ключа агрегаты будут не по всем подходящим строкам.
-	  */
-	size_t limit_length = 0;
-	size_t limit_offset = 0;
-	getLimitLengthAndOffset(query, limit_length, limit_offset);
-
-	if (query.limit_length && !query.having_expression && !query.order_expression_list
-		&& (!settings.limits.max_rows_to_group_by || limit_length + limit_offset < settings.limits.max_rows_to_group_by))
-	{
-		settings.limits.max_rows_to_group_by = limit_length + limit_offset;
-		settings.limits.group_by_overflow_mode = OverflowMode::ANY;
-	}
-
 	bool separate_totals = to_stage > QueryProcessingStage::WithMergeableState;
 	
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
 		if (!settings.use_splitting_aggregator || key_names.empty())
+		{
 			stream = maybeAsynchronous(
-				new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, query.group_by_with_totals, separate_totals, final,
+				new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
 				settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
+		}
 		else
+		{
+			if (overflow_row)
+				throw Exception("Splitting aggregator cannot handle queries like this yet. "
+								"Please change use_splitting_aggregator, remove WITH TOTALS, "
+								"change group_by_overflow_mode or set totals_mode to AFTER_HAVING_EXCLUSIVE.",
+								ErrorCodes::NOT_IMPLEMENTED);
 			stream = maybeAsynchronous(
 				new SplittingAggregatingBlockInputStream(
 					new UnionBlockInputStream(streams, settings.max_threads),
 					key_names, aggregates, settings.max_threads, query.group_by_with_totals, separate_totals, final,
 					settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
+		}
 
 		streams.resize(1);
 	}
 	else
-		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, query.group_by_with_totals, separate_totals, final,
+		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, overflow_row, final,
 			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
 }
 
 
-void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams)
+void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams, bool overflow_row, bool final)
 {
 	/// Если объединять нечего
 	if (streams.size() == 1)
@@ -608,13 +615,11 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams)
 	streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
 	streams.resize(1);
 
-	bool separate_totals = to_stage > QueryProcessingStage::WithMergeableState;
-
 	/// Теперь объединим агрегированные блоки
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
-	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, query.group_by_with_totals, separate_totals), settings.asynchronous);
+	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final), settings.asynchronous);
 }
 
 
@@ -627,6 +632,25 @@ void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, Expressi
 		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression), is_async);
 		stream = maybeAsynchronous(new FilterBlockInputStream(stream, query.having_expression->getColumnName()), is_async);
 	}
+}
+
+
+void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams, bool has_having,
+	ExpressionActionsPtr expression, bool overflow_row)
+{
+	if (streams.size() > 1)
+	{
+		streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
+		streams.resize(1);
+	}
+
+	Names key_names;
+	AggregateDescriptions aggregates;
+	query_analyzer->getAggregateInfo(key_names, aggregates);
+	streams[0] = maybeAsynchronous(new TotalsHavingBlockInputStream(
+			streams[0], key_names, aggregates, overflow_row, expression,
+			has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, .5),
+		settings.asynchronous);
 }
 
 

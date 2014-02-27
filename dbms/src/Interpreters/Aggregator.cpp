@@ -208,7 +208,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
 		}
 
-		if (have_overflow_aggregates && !result.without_key)
+		if (overflow_row && !result.without_key)
 		{
 			result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
@@ -270,7 +270,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						overflow = true;
 				}
 
-				if (overflow && !have_overflow_aggregates)
+				if (overflow && !overflow_row)
 					continue;
 				
 				if (inserted)
@@ -318,7 +318,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 							overflow = true;
 					}
 
-					if (overflow && !have_overflow_aggregates)
+					if (overflow && !overflow_row)
 						continue;
 
 					if (inserted)
@@ -362,7 +362,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 							overflow = true;
 					}
 
-					if (overflow && !have_overflow_aggregates)
+					if (overflow && !overflow_row)
 						continue;
 
 					if (inserted)
@@ -406,7 +406,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						overflow = true;
 				}
 
-				if (overflow && !have_overflow_aggregates)
+				if (overflow && !overflow_row)
 					continue;
 
 				if (inserted)
@@ -446,7 +446,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 						overflow = true;
 				}
 
-				if (overflow && !have_overflow_aggregates)
+				if (overflow && !overflow_row)
 					continue;
 
 				if (inserted)
@@ -744,7 +744,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
 
 		/// В какой структуре данных агрегированы данные?
-		if (res->type == AggregatedDataVariants::WITHOUT_KEY || have_overflow_aggregates)
+		if (res->type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
 		{
 			AggregatedDataWithoutKey & res_data = res->without_key;
 			AggregatedDataWithoutKey & current_data = current.without_key;
@@ -916,7 +916,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			result.key_sizes = key_sizes;
 		}
 
-		if (result.type == AggregatedDataVariants::WITHOUT_KEY || have_overflow_aggregates)
+		if (result.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (!res)
@@ -932,7 +932,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 				aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
 		}
 
-		size_t start_row = have_overflow_aggregates ? 1 : 0;
+		size_t start_row = overflow_row ? 1 : 0;
 
 		if (result.type == AggregatedDataVariants::KEY_64)
 		{

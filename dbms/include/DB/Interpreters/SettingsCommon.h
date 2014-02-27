@@ -312,7 +312,7 @@ struct SettingTotalsMode
 			case TotalsMode::AFTER_HAVING_AUTO:			return "after_having_auto";
 
 			default:
-				throw Exception("Unknown TotalsMode enum value: " + toString(value), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+				throw Exception("Unknown TotalsMode enum value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		}
 	}
 
