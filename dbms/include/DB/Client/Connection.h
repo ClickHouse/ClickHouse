@@ -10,9 +10,6 @@
 #include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
 
-#include <DB/IO/ReadBufferFromPocoSocket.h>
-#include <DB/IO/WriteBufferFromPocoSocket.h>
-
 #include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
@@ -130,8 +127,8 @@ private:
 	UInt64 server_revision;
 	
 	Poco::Net::StreamSocket socket;
-	SharedPtr<ReadBufferFromPocoSocket> in;
-	SharedPtr<WriteBufferFromPocoSocket> out;
+	SharedPtr<ReadBuffer> in;
+	SharedPtr<WriteBuffer> out;
 
 	String query_id;
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.

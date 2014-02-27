@@ -77,7 +77,7 @@ void TCPHandler::runImpl()
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
-		while (!in->poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
+		while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
 			;
 
 		/// Если требуется завершить работу, или клиент отсоединился.
@@ -204,7 +204,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
-		while (!in->poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
+		while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
 			;
 
 		/// Если требуется завершить работу, или клиент отсоединился.
@@ -558,7 +558,7 @@ bool TCPHandler::isQueryCancelled()
 	after_check_cancelled.restart();
 
 	/// Во время выполнения запроса, единственный пакет, который может прийти от клиента - это остановка выполнения запроса.
-	if (in->poll(0))
+	if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
 	{
 		UInt64 packet_type = 0;
 		readVarUInt(packet_type, *in);

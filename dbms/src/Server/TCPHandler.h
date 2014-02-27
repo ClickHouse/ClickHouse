@@ -5,8 +5,6 @@
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadBufferFromPocoSocket.h>
-#include <DB/IO/WriteBufferFromPocoSocket.h>
 
 #include <DB/DataStreams/BlockIO.h>
 
@@ -89,8 +87,9 @@ private:
 	Context connection_context;
 	Context query_context;
 
-	SharedPtr<ReadBufferFromPocoSocket> in;
-	SharedPtr<WriteBufferFromPocoSocket> out;
+	/// Потоки для чтения/записи из/в сокет соединения с клиентом.
+	SharedPtr<ReadBuffer> in;
+	SharedPtr<WriteBuffer> out;
 
 	/// Время после последней проверки остановки запроса и отправки прогресса.
 	Stopwatch after_check_cancelled;

@@ -8,6 +8,8 @@
 
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/IO/ReadBufferFromPocoSocket.h>
+#include <DB/IO/WriteBufferFromPocoSocket.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -265,7 +267,7 @@ void Connection::sendData(const Block & block)
 
 bool Connection::poll(size_t timeout_microseconds)
 {
-	return in->poll(timeout_microseconds);
+	return static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_microseconds);
 }
 
 
