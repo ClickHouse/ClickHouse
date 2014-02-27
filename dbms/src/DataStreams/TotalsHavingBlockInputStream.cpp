@@ -33,7 +33,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 			/** Если totals_mode==AFTER_HAVING_AUTO, нужно решить, добавлять ли в TOTALS агрегаты для строк,
 			  *  не прошедших max_rows_to_group_by.
 			  */
-			if (overflow_aggregates && 1. * passed_keys / total_keys >= auto_include_threshold)
+			if (overflow_aggregates && static_cast<float>(passed_keys) / total_keys >= auto_include_threshold)
 				addToTotals(current_totals, overflow_aggregates, nullptr);
 			finalize(current_totals);
 			totals = current_totals;

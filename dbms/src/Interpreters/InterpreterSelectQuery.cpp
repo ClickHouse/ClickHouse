@@ -649,7 +649,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams,
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 	streams[0] = maybeAsynchronous(new TotalsHavingBlockInputStream(
 			streams[0], key_names, aggregates, overflow_row, expression,
-			has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, .5),
+			has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold),
 		settings.asynchronous);
 }
 

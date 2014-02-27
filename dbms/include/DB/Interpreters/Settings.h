@@ -61,7 +61,9 @@ struct Settings
 	M(SettingBool, replace_running_query, false) \
 	\
 	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
+	\
 	M(SettingTotalsMode, totals_mode, TotalsMode::BEFORE_HAVING) \
+	M(SettingFloat, totals_auto_threshold, 0.5) \
 	\
 	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
 	M(SettingFloat, default_sample, 1.0) \
