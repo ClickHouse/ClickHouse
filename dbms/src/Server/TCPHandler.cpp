@@ -471,7 +471,8 @@ void TCPHandler::receiveQuery()
 		UInt64 query_id_int;
 		readIntBinary(query_id_int, *in);
 		state.query_id = "";
-	} else
+	}
+	else
 		readStringBinary(state.query_id, *in);
 
 	query_context.setCurrentQueryId(state.query_id);
