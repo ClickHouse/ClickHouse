@@ -24,9 +24,15 @@ try
 	wb.write(query_header, sizeof(query_header) - 1);
 	wb.next();
 
-
 	std::string query_part1 = "SELE";
+
+	for (size_t i = 0; i < 1000000; ++i)
+		query_part1 += " TEST ";
+
 	std::string query_part2 = "CT 1";
+
+	for (size_t i = 0; i < 1000000; ++i)
+		query_part2 += " PRT2 ";
 
 	size_t total_size = query_part1.size() + query_part2.size();
 
