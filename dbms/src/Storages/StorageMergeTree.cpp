@@ -158,6 +158,8 @@ BlockInputStreams StorageMergeTree::read(
 	size_t max_block_size,
 	unsigned threads)
 {
+	Poco::ScopedReadRWLock lock(read_lock);
+	
 	check(column_names_to_return);
 	processed_stage = QueryProcessingStage::FetchColumns;
 	
@@ -783,6 +785,8 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 			clearOldParts();
 
 			{
+				Poco::ScopedReadRWLock lock(merge_lock);
+
 				/// К концу этого логического блока должен быть вызван деструктор, чтобы затем корректно определить удаленные куски
 				Poco::SharedPtr<CurrentlyMergingPartsTagger> what;
 

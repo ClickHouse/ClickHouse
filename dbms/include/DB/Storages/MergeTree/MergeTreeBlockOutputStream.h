@@ -22,6 +22,8 @@ public:
 	
 	void write(const Block & block)
 	{
+		Poco::ScopedReadRWLock write_lock(storage.write_lock);
+		
 		storage.check(block, true);
 		
 		DateLUTSingleton & date_lut = DateLUTSingleton::instance();

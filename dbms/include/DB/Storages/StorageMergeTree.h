@@ -7,6 +7,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
+#include <Poco/RWLock.h>
 
 
 namespace DB
@@ -408,6 +409,15 @@ private:
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;
 	Poco::FastMutex data_parts_mutex;
+
+	/** Взятие этого лока на запись, запрещает мердж */
+	Poco::RWLock merge_lock;
+
+	/** Взятие этого лока на запись, запрещает запись */
+	Poco::RWLock write_lock;
+
+	/** Взятие этого лока на запись, запрещает чтение */
+	Poco::RWLock read_lock;
 
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 					const Context & context_,
