@@ -136,7 +136,7 @@ private:
 					&& lhs.hostname_difference < rhs.hostname_difference);
 			}
 			else
-				throw Poco::Exception("Unsupported load_balancing_mode: " + static_cast<int>(load_balancing_mode));
+				throw Poco::Exception("Unsupported load_balancing_mode: " + toString(static_cast<int>(load_balancing_mode)));
 		}
 	};
 

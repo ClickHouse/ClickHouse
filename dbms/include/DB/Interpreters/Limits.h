@@ -131,7 +131,7 @@ struct Limits
 	}
 
 private:
-	friend class Settings;
+	friend struct Settings;
 	
 	/// Записать все настройки в буфер. (В отличие от соответствующего метода в Settings, пустая строка на конце не пишется).
 	void serialize(WriteBuffer & buf) const
