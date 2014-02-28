@@ -48,55 +48,42 @@ namespace DB
 struct StorageMergeTreeSettings
 {
 	/// Набор кусков разрешено объединить, если среди них максимальный размер не более чем во столько раз больше суммы остальных.
-	double max_size_ratio_to_merge_parts;
+	double max_size_ratio_to_merge_parts = 5;
 	
 	/// Сколько за раз сливать кусков.
 	/// Трудоемкость выбора кусков O(N * max_parts_to_merge_at_once), так что не следует делать это число слишком большим.
 	/// С другой стороны, чтобы слияния точно не могли зайти в тупик, нужно хотя бы
 	/// log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts).
-	size_t max_parts_to_merge_at_once;
+	size_t max_parts_to_merge_at_once = 10;
 	
 	/// Куски настолько большого размера в основном потоке объединять нельзя вообще.
-	size_t max_rows_to_merge_parts;
+	size_t max_rows_to_merge_parts = 100 * 1024 * 1024;
 	
 	/// Куски настолько большого размера во втором потоке объединять нельзя вообще.
-	size_t max_rows_to_merge_parts_second;
+	size_t max_rows_to_merge_parts_second = 1024 * 1024;
 
 	/// Во столько раз ночью увеличиваем коэффициент.
-	size_t merge_parts_at_night_inc;
+	size_t merge_parts_at_night_inc = 10;
 
 	/// Сколько потоков использовать для объединения кусков.
-	size_t merging_threads;
+	size_t merging_threads = 2;
 
 	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
-	size_t min_rows_for_concurrent_read;
+	size_t min_rows_for_concurrent_read = 20 * 8192;
 	
 	/// Можно пропускать чтение более чем стольки строк ценой одного seek по файлу.
-	size_t min_rows_for_seek;
+	size_t min_rows_for_seek = 5 * 8192;
 	
 	/// Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их.
-	size_t coarse_index_granularity;
+	size_t coarse_index_granularity = 8;
 
 	/** Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется.
 	  * (Чтобы большие запросы не вымывали кэш.)
 	  */
-	size_t max_rows_to_use_cache;
+	size_t max_rows_to_use_cache = 1024 * 1024;
 	
 	/// Через сколько секунд удалять old_куски.
-	time_t old_parts_lifetime;
-	
-	StorageMergeTreeSettings() :
-		max_size_ratio_to_merge_parts(5),
-		max_parts_to_merge_at_once(10),
-		max_rows_to_merge_parts(100 * 1024 * 1024),
-		max_rows_to_merge_parts_second(1024 * 1024),
-		merge_parts_at_night_inc(10),
-		merging_threads(2),
-		min_rows_for_concurrent_read(20 * 8192),
-		min_rows_for_seek(5 * 8192),
-		coarse_index_granularity(8),
-		max_rows_to_use_cache(1024 * 1024),
-		old_parts_lifetime(5 * 60) {}
+	time_t old_parts_lifetime = 5 * 60;
 };
 
 /// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
@@ -381,9 +368,9 @@ private:
 	{
 	public:
 		std::vector<DataPartPtr> parts;
-		Poco::FastMutex &data_mutex;
+		Poco::FastMutex & data_mutex;
 
-		CurrentlyMergingPartsTagger(const std::vector<DataPartPtr> & parts_, Poco::FastMutex &data_mutex_) : parts(parts_), data_mutex(data_mutex_)
+		CurrentlyMergingPartsTagger(const std::vector<DataPartPtr> & parts_, Poco::FastMutex & data_mutex_) : parts(parts_), data_mutex(data_mutex_)
 		{
 			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри selectPartsToMerge, где он уже залочен
 			/// Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
@@ -393,6 +380,7 @@ private:
 				StorageMergeTree::total_size_of_currently_merging_parts += parts[i]->size_in_bytes;
 			}
 		}
+
 		~CurrentlyMergingPartsTagger()
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
@@ -470,9 +458,9 @@ private:
 	
 	/// Сразу помечает их как currently_merging.
 	/// Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
-	bool selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what, bool merge_anything_for_old_months, bool aggressive);
+	bool selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> & what, bool merge_anything_for_old_months, bool aggressive);
 
-	void mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what);
+	void mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> & what);
 	
 	/// Дождаться, пока фоновые потоки закончат слияния.
 	void joinMergeThreads();

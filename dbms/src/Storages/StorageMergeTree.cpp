@@ -839,7 +839,7 @@ void StorageMergeTree::joinMergeThreads()
 /// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
-bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what, bool merge_anything_for_old_months, bool aggressive)
+bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> & what, bool merge_anything_for_old_months, bool aggressive)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
 
@@ -1045,9 +1045,9 @@ bool StorageMergeTree::selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsT
 
 
 /// parts должны быть отсортированы.
-void StorageMergeTree::mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> &what)
+void StorageMergeTree::mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> & what)
 {
-	const std::vector<DataPartPtr> &parts(what->parts);
+	const std::vector<DataPartPtr> & parts(what->parts);
 
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
