@@ -238,6 +238,19 @@ void IStorage::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTy
 		}
 		while (column_it != columns->end());
 	}
+	else if (params.type == ASTAlterQuery::MODIFY)
+	{
+		const ASTNameTypePair & ast_name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+		StringRange type_range = ast_name_type.type->range;
+		String type_string = String(type_range.first, type_range.second - type_range.first);
+
+		DB::DataTypePtr data_type = context.getDataTypeFactory().get(type_string);
+		NameAndTypePair pair(ast_name_type.name, data_type );
+		NamesAndTypesList::iterator column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, ast_name_type.name, _1) );
+		if (column_it == columns->end())
+			throw Exception("Wrong column name. Cannot find column " + ast_name_type.name + " to modify.",  DB::ErrorCodes::ILLEGAL_COLUMN);
+		column_it->second = data_type;
+	}
 	else
 		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);	
 }
