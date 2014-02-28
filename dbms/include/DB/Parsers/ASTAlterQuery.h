@@ -10,6 +10,7 @@ namespace DB
  *  ALTER TABLE [db.]name_type
  *  	ADD COLUMN col_name type [AFTER col_after],
  * 		DROP COLUMN col_drop,
+ * 		MODIFY COLUMN col_name type
  * 		...
  */
 
@@ -20,6 +21,7 @@ public:
 	{
 		ADD,
 		DROP,
+		MODIFY,
 		NO_TYPE
 	};
 
@@ -30,6 +32,7 @@ public:
 
 		/** В запросе ADD COLUMN здесь хранится имя и тип добавляемого столбца
 		 *  В запросе DROP это поле не используется
+		 *  В запросе MODIFY здесь хранится имя столбца и новый тип
 		 */
 		ASTPtr name_type;
 		/** В запросе ADD COLUMN здесь опционально хранится имя столбца, следующее после AFTER

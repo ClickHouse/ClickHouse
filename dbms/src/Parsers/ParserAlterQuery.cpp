@@ -22,6 +22,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 	ParserString s_add("ADD", true, true);
 	ParserString s_column("COLUMN", true, true);
 	ParserString s_after("AFTER", true, true);
+	ParserString s_modify("MODIFY", true, true);
 
 	ParserString s_drop("DROP", true, true);
 	ParserString s_comma(",");
@@ -91,21 +92,30 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & exp
 
 			params.type = ASTAlterQuery::ADD;
 		}
-		else
+		else if (s_drop.ignore(pos, end, expected))
 		{
-			if (s_drop.ignore(pos, end, expected))
-			{
-				ws.ignore(pos, end);
-				s_column.ignore(pos, end, expected);
-				ws.ignore(pos, end);
+			ws.ignore(pos, end);
+			s_column.ignore(pos, end, expected);
+			ws.ignore(pos, end);
 
-				parser_name.parse(pos, end, params.column, expected);
+			parser_name.parse(pos, end, params.column, expected);
 
-				params.type = ASTAlterQuery::DROP;
-			}
-			else
-				return false;
+			params.type = ASTAlterQuery::DROP;
 		}
+		else if (s_modify.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+			s_column.ignore(pos, end, expected);
+			ws.ignore(pos, end);
+
+			parser_name_type.parse(pos, end, params.name_type, expected);
+
+			ws.ignore(pos, end);
+
+			params.type = ASTAlterQuery::MODIFY;
+		}
+		else
+			return false;
 
 		ws.ignore(pos, end);
 
