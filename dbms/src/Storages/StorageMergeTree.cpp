@@ -102,6 +102,7 @@ StorageMergeTree::StorageMergeTree(
 	merge_threads = new boost::threadpool::pool(settings.merging_threads);
 	
 	loadDataParts();
+	clearOldParts();
 
 	UInt64 max_part_id = 0;
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
@@ -769,7 +770,7 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 	{
 		while (!shutdown_called)
 		{
-			/// Удаляем старые куски.
+			/// Удаляем старые куски. На случай, если в слиянии что-то сломано, и из следующего блока вылетит исключение.
 			clearOldParts();
 
 			{
@@ -784,6 +785,9 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 
 			if (shutdown_called)
 				break;
+
+			/// Удаляем куски, которые мы только что сливали.
+			clearOldParts();
 
 			if (!while_can)
 				break;
