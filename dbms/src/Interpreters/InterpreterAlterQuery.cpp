@@ -70,7 +70,7 @@ void InterpreterAlterQuery::execute()
 
 		if (params.type == ASTAlterQuery::ADD)
 		{
-			const ASTNameTypePair &name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
 			StringRange type_range = name_type.type->range;
 
 			/// проверяем корректность типа. В случае некоректного типа будет исключение
@@ -105,6 +105,22 @@ void InterpreterAlterQuery::execute()
 			else
 				columns_copy.erase(drop_it);
 		}
+		else if (params.type == ASTAlterQuery::MODIFY)
+		{
+			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+			StringRange type_range = name_type.type->range;
+
+			/// проверяем корректность типа. В случае некоректного типа будет исключение
+			String type(type_range.first, type_range.second - type_range.first);
+			data_type_factory.get(type);
+
+			/// проверяем, что колонка существует
+			auto modified_column = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, name_type.name, _1));
+			if ( modified_column == columns_copy.end())
+				throw Exception("Wrong column name. Column " + name_type.name  + " not exists", DB::ErrorCodes::ILLEGAL_COLUMN);
+
+			/// к сожалению, проверить на возможно ли это приведение типов можно только во время выполнения
+		}
 	}
 
 	/// todo cycle over sub tables and tables
@@ -132,6 +148,13 @@ void InterpreterAlterQuery::execute()
 			const ASTIdentifier & drop_column = dynamic_cast <const ASTIdentifier &>(*params.column);
 			ASTs::iterator drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
 			columns.erase(drop_it);	
+		}
+		else if (params.type == ASTAlterQuery::MODIFY)
+		{
+			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+			ASTs::iterator modify_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, name_type.name, _1));
+			ASTNameTypePair & modified_column = dynamic_cast<ASTNameTypePair &>(**modify_it);
+			modified_column.type = name_type.type;
 		}
 
 		/// Перезаписываем файл метадата каждую итерацию
