@@ -478,7 +478,10 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
-		if (node->name == "lambda")
+		if (node->kind == ASTFunction::TABLE_FUNCTION)
+		{
+		}
+		else if (node->name == "lambda")
 		{
 			node->kind = ASTFunction::LAMBDA_EXPRESSION;
 		}

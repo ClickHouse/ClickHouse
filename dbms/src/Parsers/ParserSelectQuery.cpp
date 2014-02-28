@@ -97,6 +97,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 				pos = before;
 				if (!table_function.parse(pos, end, select_query->table, expected))
 					return false;
+				if (select_query->table)
+					dynamic_cast<ASTFunction &>(*select_query->table).kind = ASTFunction::TABLE_FUNCTION;
 				ws.ignore(pos, end);
 			}
 			else

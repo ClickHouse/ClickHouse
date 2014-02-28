@@ -17,6 +17,7 @@ public:
 	enum FunctionKind
 	{
 		UNKNOWN,
+		TABLE_FUNCTION,
 		FUNCTION,
 		AGGREGATE_FUNCTION,
 		LAMBDA_EXPRESSION,
