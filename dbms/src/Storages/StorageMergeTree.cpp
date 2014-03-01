@@ -626,16 +626,26 @@ void StorageMergeTree::loadDataParts()
 		if (!isPartDirectory(file_name, matches))
 			continue;
 
-		/// Для битых кусков, которые могут образовываться после грубого перезапуска сервера, восстановить куски, из которых они сделаны.
-		if (isBrokenPart(full_path + file_name))
-		{
-			Strings new_parts = tryRestorePart(full_path, file_name, old_file_names);
-			part_file_names.insert(part_file_names.begin(), new_parts.begin(), new_parts.end());
-			continue;
-		}
-		
 		DataPartPtr part = new DataPart(*this);
 		parsePartName(file_name, matches, *part);
+
+		/// Для битых кусков, которые могут образовываться после грубого перезапуска сервера, попытаться восстановить куски, из которых они сделаны.
+		if (isBrokenPart(full_path + file_name))
+		{
+			if (part->level == 0)
+			{
+				/// Восстановить куски нулевого уровня невозможно.
+				LOG_ERROR(log, "Removing broken part " << path + file_name << " because is't impossible to repair.");
+				part->remove();
+			}
+			else
+			{
+				Strings new_parts = tryRestorePart(full_path, file_name, old_file_names);
+				part_file_names.insert(part_file_names.begin(), new_parts.begin(), new_parts.end());
+			}
+
+			continue;
+		}
 		
 		part->name = file_name;
 
