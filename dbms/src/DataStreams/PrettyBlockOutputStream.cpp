@@ -213,6 +213,30 @@ void PrettyBlockOutputStream::writeSuffix()
 		writeIntText(max_rows, ostr);
 		writeCString(".\n", ostr);
 	}
+
+	total_rows = 0;
+	writeTotals();
+	writeExtremes();
+}
+
+
+void PrettyBlockOutputStream::writeTotals()
+{
+	if (totals)
+	{
+		writeCString("\nTotals:\n", ostr);
+		write(totals);
+	}
+}
+
+
+void PrettyBlockOutputStream::writeExtremes()
+{
+	if (extremes)
+	{
+		writeCString("\nExtremes:\n", ostr);
+		write(extremes);
+	}
 }
 
 

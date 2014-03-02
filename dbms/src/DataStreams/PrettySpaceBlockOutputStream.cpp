@@ -109,6 +109,10 @@ void PrettySpaceBlockOutputStream::writeSuffix()
 		writeIntText(max_rows, ostr);
 		writeCString(".", ostr);
 	}
+
+	total_rows = 0;
+	writeTotals();
+	writeExtremes();
 }
 
 }

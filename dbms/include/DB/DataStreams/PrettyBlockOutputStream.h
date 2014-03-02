@@ -18,7 +18,13 @@ public:
 	void write(const Block & block);
 	void writeSuffix();
 
+	void setTotals(const Block & totals_) { totals = totals_; }
+	void setExtremes(const Block & extremes_) { extremes = extremes_; }
+
 protected:
+	void writeTotals();
+	void writeExtremes();
+
 	typedef std::vector<size_t> Widths_t;
 
 	/// Вычислить видимую (при выводе на консоль с кодировкой UTF-8) ширину значений и имён столбцов.
@@ -30,6 +36,9 @@ protected:
 	size_t terminal_width;
 
 	bool no_escapes;
+
+	Block totals;
+	Block extremes;
 };
 
 }

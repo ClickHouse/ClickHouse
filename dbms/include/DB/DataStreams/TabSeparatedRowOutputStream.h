@@ -24,14 +24,23 @@ public:
 	void writeFieldDelimiter();
 	void writeRowEndDelimiter();
 	void writePrefix();
+	void writeSuffix();
+
+	void setTotals(const Block & totals_) { totals = totals_; }
+	void setExtremes(const Block & extremes_) { extremes = extremes_; }
 
 protected:
+	void writeTotals();
+	void writeExtremes();
+
 	WriteBuffer & ostr;
 	const Block sample;
 	bool with_names;
 	bool with_types;
 	DataTypes data_types;
 	size_t field_number;
+	Block totals;
+	Block extremes;
 };
 
 }

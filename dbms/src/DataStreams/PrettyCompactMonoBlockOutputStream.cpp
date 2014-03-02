@@ -45,8 +45,27 @@ void PrettyCompactMonoBlockOutputStream::writeSuffix()
 	}
 
 	writeBottom(max_widths);
-	
-	PrettyBlockOutputStream::writeSuffix();
+
+	if (total_rows >= max_rows)
+	{
+		writeCString("  Showed first ", ostr);
+		writeIntText(max_rows, ostr);
+		writeCString(".\n", ostr);
+	}
+
+	total_rows = 0;
+
+	if (totals)
+	{
+		writeCString("\nTotals:\n", ostr);
+		PrettyCompactBlockOutputStream::write(totals);
+	}
+
+	if (extremes)
+	{
+		writeCString("\nExtremes:\n", ostr);
+		PrettyCompactBlockOutputStream::write(extremes);
+	}
 }
 
 }
