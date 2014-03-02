@@ -18,6 +18,7 @@ namespace CompressionMethod
 	{
 		QuickLZ = 0,
 		LZ4		= 1,
+		LZ4HC	= 2,	/// Формат такой же, как у LZ4. Разница только при сжатии.
 	};
 }
 
