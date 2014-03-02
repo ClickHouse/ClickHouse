@@ -134,7 +134,7 @@ public:
 					{
 						if (!replace_running_query)
 							throw Exception("Query with id = " + query_id_ + " is already running.",
-											ErrorCodes::QUERY_ID_ALREADY_RUNNING);
+											ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 						element->second->is_cancelled = true;
 						/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
 						queries->second.erase(element);
