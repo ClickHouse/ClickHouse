@@ -74,7 +74,9 @@ void executeQuery(
 			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
 			ErrorCodes::SYNTAX_ERROR);
 
-	String query(begin, pos - begin);
+	/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
+	auto insert = dynamic_cast<const ASTInsertQuery *>(&*ast);
+	String query(begin, (insert && insert->data) ? (insert->data - begin) : (pos - begin));
 
 	LOG_DEBUG(&Logger::get("executeQuery"), query);
 
