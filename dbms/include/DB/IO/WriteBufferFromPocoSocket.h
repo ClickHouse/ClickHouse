@@ -42,13 +42,17 @@ protected:
 			{
 				res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
 			}
-			catch (Poco::Net::NetException & e)
+			catch (const Poco::Net::NetException & e)
 			{
-				throw Exception(e.displayText() + " while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+				throw Exception(e.displayText() + "while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 			}
-			catch (Poco::TimeoutException & e)
+			catch (const Poco::TimeoutException & e)
 			{
 				throw Exception("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+			}
+			catch (const Poco::IOException & e)
+			{
+				throw Exception(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 			}
 			
 			if (res < 0)

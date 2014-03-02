@@ -36,13 +36,17 @@ protected:
 		{
 			bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
 		}
-		catch (Poco::Net::NetException & e)
+		catch (const Poco::Net::NetException & e)
 		{
-			throw Exception(e.displayText(), " while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+			throw Exception(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 		}
-		catch (Poco::TimeoutException & e)
+		catch (const Poco::TimeoutException & e)
 		{
 			throw Exception("Timeout exceeded while reading from socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+		}
+		catch (const Poco::IOException & e)
+		{
+			throw Exception(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 		}
 		
 		if (bytes_read < 0)
