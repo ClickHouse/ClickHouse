@@ -96,6 +96,8 @@ struct ContextShared
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
 	Poco::SharedPtr<Clusters> clusters;
 
+	bool shutdown_called = false;
+
 
 	ContextShared() : log(&Logger::get("Context")), after_destroy(log) {};
 
@@ -105,13 +107,32 @@ struct ContextShared
 		LOG_INFO(log, "Uninitializing shared context.");
 #endif
 
+		try
+		{
+			shutdown();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	}
+
+
+	/** Выполнить сложную работу по уничтожению объектов заранее.
+	  */
+	void shutdown()
+	{
+		if (shutdown_called)
+			return;
+		shutdown_called = true;
+
 		/** В этот момент, некоторые таблицы могут иметь потоки,
 		  *  которые модифицируют список таблиц, и блокируют наш mutex (см. StorageChunkMerger).
 		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
 		  *  и попросим их всех закончить свою работу.
 		  * Потом удалим все объекты с таблицами.
 		  */
-		
+
 		Databases current_databases;
 
 		{
@@ -130,6 +151,7 @@ struct ContextShared
 		}
 	}
 };
+
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Состоит из разделяемой части (всегда общей для всех сессий и запросов)
@@ -280,6 +302,8 @@ public:
 
 	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);
+
+	void shutdown() { shared->shutdown(); }
 };
 
 

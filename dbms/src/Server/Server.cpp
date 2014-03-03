@@ -321,6 +321,14 @@ int Server::main(const std::vector<std::string> & args)
 
 	LOG_DEBUG(log, "Closed all connections.");
 
+	/** Попросим завершить фоновую работу у всех движков таблиц.
+	  * Это важно делать заранее, не в деструкторе Context-а, так как
+	  *  движки таблиц могут при уничтожении всё ещё пользоваться Context-ом.
+	  */
+	LOG_INFO(log, "Shutting down storages.");
+	global_context->shutdown();
+	LOG_DEBUG(log, "Shutted down storages.");
+
 	/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
 	  * В этот момент никто больше не должен владеть shared-частью контекста.
 	  */
