@@ -11,8 +11,7 @@ namespace DB
 {
 
 
-/** Добавляет в блок недостающие столбцы со значениями по-умолчанию.
-  * Эти столбцы - материалированные (не константы).
+/** Удаляет из блока указанные столбцы.
   */
 class RemoveColumnsBlockInputStream : public IProfilingBlockInputStream
 {
@@ -25,7 +24,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "AddingDefaultBlockInputStream"; }
+	String getName() const { return "RemoveColumnsBlockInputStream"; }
 
 	String getID() const
 	{
