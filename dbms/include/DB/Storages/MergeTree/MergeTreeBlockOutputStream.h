@@ -103,15 +103,14 @@ private:
 		
 		size_t rows = block.rows();
 		size_t columns = block.columns();
-		UInt64 part_id = storage.increment.get(false);
+		UInt64 tmp_part_id = storage.increment.get(false);
 		size_t part_size = (rows + storage.index_granularity - 1) / storage.index_granularity;
 		
-		String part_name = storage.getPartName(
+		String tmp_part_name = storage.getPartName(
 			DayNum_t(min_date), DayNum_t(max_date),
-			part_id, part_id, 0);
+			tmp_part_id, tmp_part_id, 0);
 		
-		String part_tmp_path = storage.full_path + "tmp_" + part_name + "/";
-		String part_res_path = storage.full_path + part_name + "/";
+		String part_tmp_path = storage.full_path + "tmp_" + tmp_part_name + "/";
 		
 		Poco::File(part_tmp_path).createDirectories();
 		
@@ -169,14 +168,19 @@ private:
 
 		LOG_TRACE(storage.log, "Renaming.");
 
-		/// Переименовываем кусок.
-		Poco::File(part_tmp_path).renameTo(part_res_path);
-		
 		/// Добавляем новый кусок в набор.
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(storage.data_parts_mutex);
 			Poco::ScopedLock<Poco::FastMutex> lock_all(storage.all_data_parts_mutex);
-			
+
+			/** Важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
+			  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
+			  *  содержат ещё не добавленный кусок.
+			  */
+			UInt64 part_id = storage.increment.get(false);
+			String part_name = storage.getPartName(DayNum_t(min_date), DayNum_t(max_date), part_id, part_id, 0);
+			String part_res_path = storage.full_path + part_name + "/";
+
 			StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart(storage);
 			new_data_part->left_date = DayNum_t(min_date);
 			new_data_part->right_date = DayNum_t(max_date);
@@ -189,7 +193,10 @@ private:
 			new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 			new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
 			new_data_part->index.swap(index_vec);
-			
+
+			/// Переименовываем кусок.
+			Poco::File(part_tmp_path).renameTo(part_res_path);
+
 			storage.data_parts.insert(new_data_part);
 			storage.all_data_parts.insert(new_data_part);
 		}
