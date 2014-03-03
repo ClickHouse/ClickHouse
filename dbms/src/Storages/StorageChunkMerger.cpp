@@ -9,9 +9,7 @@
 #include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Interpreters/InterpreterDropQuery.h>
-#include <DB/Interpreters/InterpreterRenameQuery.h>
+#include <DB/Interpreters/executeQuery.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
@@ -369,7 +367,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 	std::string formatted_columns = formatColumnsForCreateQuery(*required_columns);
 	
 	std::string new_table_name = makeName(destination_name_prefix, chunks.front()->getTableName(), chunks.back()->getTableName());
-	std::string new_table_full_name = source_database + "." + new_table_name;
+	std::string new_table_full_name = backQuoteIfNeed(source_database) + "." + backQuoteIfNeed(new_table_name);
 	StoragePtr new_storage_ptr;
 	
 	try
@@ -391,40 +389,12 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			currently_written_groups.insert(new_table_full_name);
 			
 			/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
-			ASTDropQuery * drop_ast = new ASTDropQuery;
-			ASTPtr drop_ptr = drop_ast;
-			drop_ast->database = source_database;
-			drop_ast->detach = false;
-			drop_ast->if_exists = true;
-			drop_ast->table = new_table_name;
-			InterpreterDropQuery drop_interpreter(drop_ptr, context);
-			drop_interpreter.execute();
-			
-			/// Составим запрос для создания Chunks таблицы.
-			std::string create_query = "CREATE TABLE " + source_database + "." + new_table_name + " " + formatted_columns + " ENGINE = Chunks";
-			
-			/// Распарсим запрос.
-			const char * begin = create_query.data();
-			const char * end = begin + create_query.size();
-			const char * pos = begin;
-			
-			ParserCreateQuery parser;
-			ASTPtr ast_create_query;
-			String expected;
-			bool parse_res = parser.parse(pos, end, ast_create_query, expected);
-			
-			/// Распарсенный запрос должен заканчиваться на конец входных данных.
-			if (!parse_res || pos != end)
-				throw Exception("Syntax error while parsing create query made by ChunkMerger."
-					" The query is \"" + create_query + "\"."
-					+ " Failed at position " + toString(pos - begin) + ": "
-					+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-					+ ", expected " + (parse_res ? "end of query" : expected) + ".",
-					DB::ErrorCodes::LOGICAL_ERROR);
-			
-			/// Выполним запрос.
-			InterpreterCreateQuery create_interpreter(ast_create_query, context);
-			new_storage_ptr = create_interpreter.execute();
+			executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
+
+			/// Выполним запрос для создания Chunks таблицы.
+			executeQuery("CREATE TABLE " + new_table_full_name + " " + formatted_columns + " ENGINE = Chunks", context, true);
+
+			new_storage_ptr = context.getTable(source_database, new_table_name);
 		}
 		
 		/// Скопируем данные в новую таблицу.
@@ -501,15 +471,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 						continue;
 					
 					/// Роняем исходную таблицу.
-					ASTDropQuery * drop_query = new ASTDropQuery();
-					ASTPtr drop_query_ptr = drop_query;
-					drop_query->detach = false;
-					drop_query->if_exists = false;
-					drop_query->database = source_database;
-					drop_query->table = src_name;
-					
-					InterpreterDropQuery interpreter_drop(drop_query_ptr, context);
-					interpreter_drop.execute();
+					executeQuery("DROP TABLE " + backQuoteIfNeed(source_database) + "." + backQuoteIfNeed(src_name), context, true);
 					
 					/// Создаем на ее месте ChunkRef
 					try

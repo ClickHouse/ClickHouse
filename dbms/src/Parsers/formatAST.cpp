@@ -27,7 +27,7 @@ static const char * hilite_none = "\033[0m";
 
 
 /// Квотировать идентификатор обратными кавычками, если это требуется.
-static String backQuoteIfNeed(const String & x)
+String backQuoteIfNeed(const String & x)
 {
 	String res(x.size(), '\0');
 	{

@@ -59,5 +59,6 @@ void formatAST(const ASTShowProcesslistQuery 	& ast, std::ostream & s, size_t in
 
 
 String formatColumnsForCreateQuery(NamesAndTypesList & columns);
+String backQuoteIfNeed(const String & x);
 
 }
