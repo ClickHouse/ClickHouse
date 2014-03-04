@@ -628,6 +628,7 @@ void StorageMergeTree::loadDataParts()
 
 		DataPartPtr part = new DataPart(*this);
 		parsePartName(file_name, matches, *part);
+		part->name = file_name;
 
 		/// Для битых кусков, которые могут образовываться после грубого перезапуска сервера, попытаться восстановить куски, из которых они сделаны.
 		if (isBrokenPart(full_path + file_name))
@@ -647,8 +648,6 @@ void StorageMergeTree::loadDataParts()
 			continue;
 		}
 		
-		part->name = file_name;
-
 		/// Размер - в количестве засечек.
 		part->size = Poco::File(full_path + file_name + "/" + escapeForFileName(columns->front().first) + ".mrk").getSize()
 			/ MERGE_TREE_MARK_SIZE;
