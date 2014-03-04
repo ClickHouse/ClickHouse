@@ -331,12 +331,12 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 				/// Если нужно объединить агрегированные результаты с нескольких серверов
 				if (from_stage == QueryProcessingStage::WithMergeableState)
 					executeMergeAggregated(streams, aggregate_overflow_row, aggregate_final);
-			}
 
-			if (!aggregate_final)
-				executeTotalsAndHaving(streams, has_having, before_having, aggregate_overflow_row);
-			else if (has_having)
-				executeHaving(streams, before_having);
+				if (!aggregate_final)
+					executeTotalsAndHaving(streams, has_having, before_having, aggregate_overflow_row);
+				else if (has_having)
+					executeHaving(streams, before_having);
+			}
 
 			executeOuterExpression(streams, before_order_and_select);
 
