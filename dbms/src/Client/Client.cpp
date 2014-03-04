@@ -499,6 +499,7 @@ private:
 	void processOrdinaryQuery()
 	{
 		connection->sendQuery(query, "", QueryProcessingStage::Complete);
+		connection->sendTemporaryTables();
 		receiveResult();
 	}
 
@@ -516,6 +517,7 @@ private:
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
 		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete);
+		connection->sendTemporaryTables();
 
 		/// Получим структуру таблицы
 		Block sample = receiveSampleBlock();
@@ -924,6 +926,7 @@ private:
 int main(int argc, char ** argv)
 {
 	DB::Client client;
+//	client.stopOptionsProcessing();
 	client.init(argc, argv);
 	return client.run();
 }
