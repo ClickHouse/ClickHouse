@@ -73,7 +73,6 @@ public:
 	virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const = 0;
 
 	/// Объединить состояние с другим состоянием.
-	/// Нельзя объединять с "пустым" состоянием, то есть - состоянием, для которого ни разу не был выполнен метод add.
 	virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const = 0;
 
 	/// Сериализовать состояние (например, для передачи по сети). Нельзя сериализовывать "пустое" состояние.
