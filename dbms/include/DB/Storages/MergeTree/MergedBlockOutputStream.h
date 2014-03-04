@@ -329,8 +329,9 @@ public:
 		for (auto & column_stream : column_streams)
 		{
 			column_stream.second->finalize();
-			Poco::File(part_path + prefix + column_stream.first + ".bin").renameTo(part_path + column_stream.first + ".bin");
-			Poco::File(part_path + prefix + column_stream.first + ".mrk").renameTo(part_path + column_stream.first + ".mrk");
+			std::string column = escapeForFileName(column_stream.first);
+			Poco::File(part_path + prefix + column + ".bin").renameTo(part_path + column + ".bin");
+			Poco::File(part_path + prefix + column + ".mrk").renameTo(part_path + column + ".mrk");
 		}
 		column_streams.clear();
 		initialized = false;
