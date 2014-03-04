@@ -1,5 +1,3 @@
-#include <iomanip>
-
 #include <DB/Core/Field.h>
 
 #include <DB/Columns/ColumnString.h>
@@ -90,157 +88,117 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 }
 
 
-void Set::create(BlockInputStreamPtr stream)
+bool Set::insertFromBlock(Block & block)
 {
-	LOG_TRACE(log, "Creating set");
-	Stopwatch watch;
-	size_t entries = 0;
-	
-	/// Читаем все данные
-	while (Block block = stream->read())
+	size_t keys_size = block.columns();
+	Row key(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
+	data_types.resize(keys_size);
+
+	/// Запоминаем столбцы, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
 	{
-		size_t keys_size = block.columns();
-		Row key(keys_size);
-		ConstColumnPlainPtrs key_columns(keys_size);
-		data_types.resize(keys_size);
-		
-		/// Запоминаем столбцы, с которыми будем работать
-		for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByPosition(i).column;
+		data_types[i] = block.getByPosition(i).type;
+	}
+
+	size_t rows = block.rows();
+
+	/// Какую структуру данных для множества использовать?
+	keys_fit_128_bits = false;
+	type = chooseMethod(key_columns, keys_fit_128_bits, key_sizes);
+
+	if (type == KEY_64)
+	{
+		SetUInt64 & res = key64;
+		const IColumn & column = *key_columns[0];
+
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
 		{
-			key_columns[i] = block.getByPosition(i).column;
-			data_types[i] = block.getByPosition(i).type;
+			/// Строим ключ
+			UInt64 key = get<UInt64>(column[i]);
+			res.insert(key);
 		}
+	}
+	else if (type == KEY_STRING)
+	{
+		SetString & res = key_string;
+		const IColumn & column = *key_columns[0];
 
-		size_t rows = block.rows();
-
-		/// Какую структуру данных для множества использовать?
-		keys_fit_128_bits = false;
-		type = chooseMethod(key_columns, keys_fit_128_bits, key_sizes);
-
-		if (type == KEY_64)
+		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
 		{
-			SetUInt64 & res = key64;
-			const IColumn & column = *key_columns[0];
+			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
+			const ColumnString::Chars_t & data = column_string->getChars();
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
 				/// Строим ключ
- 				UInt64 key = get<UInt64>(column[i]);
-				res.insert(key);
-			}
+				StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
 
-			entries = res.size();
+				SetString::iterator it;
+				bool inserted;
+				res.emplace(ref, it, inserted);
+
+				if (inserted)
+					it->data = string_pool.insert(ref.data, ref.size);
+			}
 		}
-		else if (type == KEY_STRING)
+		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
 		{
-			SetString & res = key_string;
-			const IColumn & column = *key_columns[0];
-
-			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
-			{
-				const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-				const ColumnString::Chars_t & data = column_string->getChars();
-
-				/// Для всех строчек
-				for (size_t i = 0; i < rows; ++i)
-				{
-					/// Строим ключ
-					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-
-					SetString::iterator it;
-					bool inserted;
-					res.emplace(ref, it, inserted);
-
-					if (inserted)
-						it->data = string_pool.insert(ref.data, ref.size);
-				}
-			}
-			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
-			{
-				size_t n = column_string->getN();
-				const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-				/// Для всех строчек
-				for (size_t i = 0; i < rows; ++i)
-				{
-					/// Строим ключ
-					StringRef ref(&data[i * n], n);
-
-					SetString::iterator it;
-					bool inserted;
-					res.emplace(ref, it, inserted);
-
-					if (inserted)
-						it->data = string_pool.insert(ref.data, ref.size);
-				}
-			}
-			else
-				throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-
-			entries = res.size();
-		}
-		else if (type == HASHED)
-		{
-			SetHashed & res = hashed;
+			size_t n = column_string->getN();
+			const ColumnFixedString::Chars_t & data = column_string->getChars();
 
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
-				res.insert(keys_fit_128_bits ? pack128(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns));
+			{
+				/// Строим ключ
+				StringRef ref(&data[i * n], n);
 
-			entries = res.size();
+				SetString::iterator it;
+				bool inserted;
+				res.emplace(ref, it, inserted);
+
+				if (inserted)
+					it->data = string_pool.insert(ref.data, ref.size);
+			}
 		}
 		else
-			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-		
-		if (!checkSetSizeLimits())
-		{
-			if (overflow_mode == OverflowMode::THROW)
-					throw Exception("IN-Set size exceeded."
-						" Rows: " + toString(getTotalRowCount()) +
-						", limit: " + toString(max_rows) +
-						". Bytes: " + toString(getTotalByteCount()) +
-						", limit: " + toString(max_bytes) + ".",
-						ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-
-			if (overflow_mode == OverflowMode::BREAK)
-			{
-				if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
-					profiling_in->cancel();
-				break;
-			}
-
-			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-		}
+			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 	}
-
-	logProfileInfo(watch, *stream, entries);
-}
-
-
-void Set::logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries)
-{
-	/// Выведем информацию о том, сколько считано строк и байт.
-	size_t rows = 0;
-	size_t bytes = 0;
-
-	in.getLeafRowsBytes(rows, bytes);
-
-	size_t head_rows = 0;
-	if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&in))
-		head_rows = profiling_in->getInfo().rows;
-
-	if (rows != 0)
+	else if (type == HASHED)
 	{
-		LOG_DEBUG(log, std::fixed << std::setprecision(3)
-			<< "Created set with " << entries << " entries from " << head_rows << " rows."
-			<< " Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
-			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
+		SetHashed & res = hashed;
+
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+			res.insert(keys_fit_128_bits ? pack128(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns));
 	}
+	else
+		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+
+	if (!checkSetSizeLimits())
+	{
+		if (overflow_mode == OverflowMode::THROW)
+			throw Exception("IN-Set size exceeded."
+				" Rows: " + toString(getTotalRowCount()) +
+				", limit: " + toString(max_rows) +
+				". Bytes: " + toString(getTotalByteCount()) +
+				", limit: " + toString(max_bytes) + ".",
+				ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+
+		if (overflow_mode == OverflowMode::BREAK)
+			return false;
+
+		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	return true;
 }
 
 
-void Set::create(DataTypes & types, ASTPtr node)
+void Set::createFromAST(DataTypes & types, ASTPtr node)
 {
 	data_types = types;
 
@@ -289,12 +247,15 @@ void Set::create(DataTypes & types, ASTPtr node)
 		/// NOTE: Потом можно реализовать возможность задавать константные выражения в множествах.
 	}
 
-	create(new OneBlockInputStream(block));
+	insertFromBlock(block);
 }
 
 
 void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const
 {
+	if (source)
+		throw Exception("Using uninitialized set.", ErrorCodes::LOGICAL_ERROR);
+
 	ColumnUInt8 * c_res = new ColumnUInt8;
 	block.getByPosition(result).column = c_res;
 	ColumnUInt8::Container_t & vec_res = c_res->getData();

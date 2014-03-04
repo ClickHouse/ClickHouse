@@ -14,6 +14,7 @@
 #include <DB/DataStreams/TotalsHavingBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
+#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -377,6 +378,10 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	}
 
 	executeUnion(streams);
+
+	Sets sets_with_subqueries = query_analyzer->getSetsWithSubqueries();
+	if (!sets_with_subqueries.empty())
+		executeSubqueriesInSets(streams, sets_with_subqueries);
 
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
@@ -783,6 +788,12 @@ void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams)
 		BlockInputStreamPtr & stream = streams[0];
 		stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
 	}
+}
+
+
+void InterpreterSelectQuery::executeSubqueriesInSets(BlockInputStreams & streams, const Sets & sets)
+{
+	streams[0] = new CreatingSetsBlockInputStream(streams[0], sets);
 }
 
 
