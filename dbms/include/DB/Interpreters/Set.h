@@ -39,22 +39,14 @@ public:
 	
 	bool empty() { return type == EMPTY; }
 
+	/** Создать множество по потоку блоков (для подзапроса). */
+	void create(BlockInputStreamPtr stream);
+
 	/** Создать множество по выражению (для перечисления в самом запросе).
 	  * types - типы того, что стоит слева от IN.
 	  * node - это список значений: 1, 2, 3 или список tuple-ов: (1, 2), (3, 4), (5, 6).
 	  */
-	void createFromAST(DataTypes & types, ASTPtr node);
-
-	/** Запомнить поток блоков (для подзапросов), чтобы потом его можно было прочитать и создать множество.
-	  */
-	void setSource(BlockInputStreamPtr stream) { source = stream; }
-
-	BlockInputStreamPtr getSource() { return source; }
-
-	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
-	bool insertFromBlock(Block & block);
-
-	size_t size() const { return getTotalRowCount(); }
+	void create(DataTypes & types, ASTPtr node);
 
 	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
 	  * Записать результат в столбец в позиции result.
@@ -68,8 +60,6 @@ private:
 	typedef HashSet<UInt64> SetUInt64;
 	typedef HashSet<StringRef, StringRefHash, StringRefZeroTraits> SetString;
 	typedef HashSet<UInt128, UInt128Hash, UInt128ZeroTraits> SetHashed;
-
-	BlockInputStreamPtr source;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	SetUInt64 key64;
@@ -118,6 +108,10 @@ private:
 	/// Если в левой части набор столбцов тех же типов, что элементы множества.
 	void executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const;
 	
+	/** Вывести в лог информацию о скорости создания множества.
+	  */
+	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries);
+	
 	/// Проверить не превышены ли допустимые размеры множества ключей
 	bool checkSetSizeLimits() const;
 	
@@ -128,7 +122,6 @@ private:
 };
 
 typedef SharedPtr<Set> SetPtr;
-typedef std::vector<SetPtr> Sets;
 
 
 }

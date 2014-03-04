@@ -8,7 +8,6 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Aggregator.h>
 #include <DB/Interpreters/ExpressionActions.h>
-#include "Set.h"
 
 
 namespace DB
@@ -49,7 +48,8 @@ public:
 	
 	/// Получить набор столбцов, которые достаточно прочесть для вычисления выражения.
 	Names getRequiredColumns();
-
+	
+	
 	/** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
 	  * Выполняют подзапросы в соответствующих частях запроса.
 	  *
@@ -84,12 +84,6 @@ public:
 	/// Не выполняет подзапросы.
 	ExpressionActionsPtr getConstActions();
 	
-	/** Множества, для создания которых нужно будет выполнить подзапрос.
-	  * Только множества, нужные для выполнения действий, возвращенных из уже вызванных append* или getActions.
-	  * То есть, нужно вызвать getSubquerySets после всех вызовов append* или getActions и создать все возвращенные множества перед выполнением действий.
-	  */
-	Sets getSetsWithSubqueries();
-
 	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
 	Block getSelectSampleBlock();
 
@@ -120,8 +114,6 @@ private:
 	bool has_aggregation;
 	NamesAndTypesList aggregation_keys;
 	AggregateDescriptions aggregate_descriptions;
-
-	std::map<std::string, SetPtr> sets_with_subqueries;
 	
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;

@@ -519,32 +519,23 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 
 	if (dynamic_cast<ASTSubquery *>(&*arg))
 	{
-		/// Получаем поток блоков для подзапроса, отдаем его множеству, и кладём это множество на место подзапроса.
+		/// Исполняем подзапрос, превращаем результат в множество, и кладём это множество на место подзапроса.
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
-		ASTPtr ast_set_ptr = ast_set;
 
-		if (sets_with_subqueries.count(ast_set->getColumnName()))
-		{
-			ast_set->set = sets_with_subqueries[ast_set->getColumnName()];
-		}
-		else
-		{
-			/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
-			* Так как результат этого поздапроса - ещё не результат всего запроса.
-			* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-			*/
-			Context subquery_context = context;
-			Settings subquery_settings = context.getSettings();
-			subquery_settings.limits.max_result_rows = 0;
-			subquery_settings.limits.max_result_bytes = 0;
-			subquery_context.setSettings(subquery_settings);
+		/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
+		  * Так как результат этого поздапроса - ещё не результат всего запроса.
+		  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+		  */
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		subquery_context.setSettings(subquery_settings);
 
-			InterpreterSelectQuery interpreter(arg->children[0], subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
-			ast_set->set = new Set(settings.limits);
-			ast_set->set->setSource(interpreter.execute());
-			sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
-		}
-		arg = ast_set_ptr;
+		InterpreterSelectQuery interpreter(arg->children[0], subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+		ast_set->set = new Set(settings.limits);
+		ast_set->set->create(interpreter.execute());
+		arg = ast_set;
 	}
 	else
 	{
@@ -606,10 +597,9 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		}
 
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
-		ASTPtr ast_set_ptr = ast_set;
 		ast_set->set = new Set(settings.limits);
-		ast_set->set->createFromAST(set_element_types, elements_ast);
-		arg = ast_set_ptr;
+		ast_set->set->create(set_element_types, elements_ast);
+		arg = ast_set;
 	}
 }
 
@@ -827,22 +817,14 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 				else if (set)
 				{
-					ColumnWithNameAndType column;
-					column.type = new DataTypeSet;
-
-					/// Если аргумент - множество, заданное перечислением значений, дадим ему уникальное имя,
+					/// Если аргумент - множество, дадим ему уникальное имя,
 					///  чтобы множества с одинаковой записью не склеивались (у них может быть разный тип).
-					if (!set->set->getSource())
-						column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
-					else
-						column.name = set->getColumnName();
+					ColumnWithNameAndType column;
+					column.column = new ColumnSet(1, set->set);
+					column.type = new DataTypeSet;
+					column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
 
-					if (!actions_stack.getSampleBlock().has(column.name))
-					{
-						column.column = new ColumnSet(1, set->set);
-
-						actions_stack.addAction(ExpressionActions::Action::addColumn(column));
-					}
+					actions_stack.addAction(ExpressionActions::Action::addColumn(column));
 
 					argument_types.push_back(column.type);
 					argument_names.push_back(column.name);
@@ -1217,17 +1199,6 @@ void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain)
 	}
 
 	step.actions->add(ExpressionActions::Action::project(result_columns));
-}
-
-
-Sets ExpressionAnalyzer::getSetsWithSubqueries()
-{
-	Sets res;
-	for (auto & s : sets_with_subqueries)
-	{
-		res.push_back(s.second);
-	}
-	return res;
 }
 
 
