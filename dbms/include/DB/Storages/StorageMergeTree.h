@@ -105,7 +105,9 @@ class StorageMergeTree : public IStorage
 friend class MergeTreeReader;
 friend class MergeTreeBlockInputStream;
 friend class MergeTreeBlockOutputStream;
+friend class IMergedBlockOutputStream;
 friend class MergedBlockOutputStream;
+friend class MergedColumnOnlyOutputStream;
 
 public:
 	/// Режим работы. См. выше.
@@ -170,8 +172,7 @@ public:
 
 	/** При записи, данные сортируются и пишутся в новые куски.
 	  */
-	BlockOutputStreamPtr write(
-		ASTPtr query);
+	BlockOutputStreamPtr write(ASTPtr query);
 
 	/** Выполнить очередной шаг объединения кусков.
 	  */
@@ -399,17 +400,7 @@ private:
 
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
-	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
-	  * Ссылки на кусок есть отсюда, из списка актуальных кусков, и из каждого потока чтения, который его сейчас использует.
-	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
-	  */
-	DataParts all_data_parts;
-	Poco::FastMutex all_data_parts_mutex;
-
-	/** Актуальное множество кусков с данными. */
-	DataParts data_parts;
-	Poco::FastMutex data_parts_mutex;
-
+	/** @warning Если берете насколько блокировок, то берите их везде в одинаковом порядке - в том же как они написаны в этом файле */
 	/** Взятие этого лока на запись, запрещает мердж */
 	Poco::RWLock merge_lock;
 
@@ -418,6 +409,17 @@ private:
 
 	/** Взятие этого лока на запись, запрещает чтение */
 	Poco::RWLock read_lock;
+
+	/** Актуальное множество кусков с данными. */
+	DataParts data_parts;
+	Poco::FastMutex data_parts_mutex;
+
+	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
+	  * Ссылки на кусок есть отсюда, из списка актуальных кусков, и из каждого потока чтения, который его сейчас использует.
+	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
+	  */
+	DataParts all_data_parts;
+	Poco::FastMutex all_data_parts_mutex;
 
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 					const Context & context_,
@@ -491,6 +493,8 @@ private:
 	/// Найти самые большие old_куски, из которых получен этот кусок.
 	/// Переименовать их, убрав префикс old_ и вернуть их имена.
 	Strings tryRestorePart(const String & path, const String & file_name, Strings & old_parts);
+
+	void createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column);
 };
 
 }

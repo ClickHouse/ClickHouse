@@ -159,7 +159,7 @@ BlockInputStreams StorageMergeTree::read(
 	unsigned threads)
 {
 	Poco::ScopedReadRWLock lock(read_lock);
-	
+
 	check(column_names_to_return);
 	processed_stage = QueryProcessingStage::FetchColumns;
 	
@@ -1242,8 +1242,107 @@ void StorageMergeTree::removeColumnFiles(String column_name)
 	}
 }
 
+void StorageMergeTree::createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column)
+{
+	ASTFunction * function = new ASTFunction;
+	ASTPtr function_ptr = function;
+
+	ASTExpressionList * arguments = new ASTExpressionList;
+	ASTPtr arguments_ptr = arguments;
+
+	function->name = "to" + out_type;
+	function->arguments = arguments_ptr;
+	function->children.push_back(arguments_ptr);
+
+	ASTIdentifier * in_column = new ASTIdentifier;
+	ASTPtr in_column_ptr = in_column;
+
+	arguments->children.push_back(in_column_ptr);
+
+	in_column->name = in_column_name;
+	in_column->kind = ASTIdentifier::Column;
+
+	out_expression = ExpressionAnalyzer(function_ptr, context, *columns).getActions(false);
+	out_column = function->getColumnName();
+}
+
 void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 {
+	if (params.type == ASTAlterQuery::MODIFY)
+	{
+		Poco::ScopedWriteRWLock mlock(merge_lock);
+		Poco::ScopedWriteRWLock wlock(write_lock);
+
+		typedef std::vector<DataPartPtr> PartsList;
+		PartsList parts;
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+			for (auto & data_part : data_parts)
+			{
+				parts.push_back(data_part);
+			}
+		}
+
+		/*for (DataPart & part : parts)
+		{
+			ReadBufferFromFile in(full_path + part.name + '/');
+
+			while (DB::Block b = in.read())
+			{
+				b.
+			}
+		}*/
+		Names column_name;
+		const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+		StringRange type_range = name_type.type->range;
+		String type(type_range.first, type_range.second - type_range.first);
+		column_name.push_back(name_type.name);
+		DB::ExpressionActionsPtr expr;
+		String out_column;
+		createConvertExpression(name_type.name, type, expr, out_column);
+
+		ColumnNumbers num(1, 0);
+		for (DataPartPtr & part : parts)
+		{
+			MarkRanges ranges(1, MarkRange(0, part->size));
+			ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
+					DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
+			MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/');
+			while(DB::Block b = in.read())
+			{
+				std::stringstream s;
+				for (auto & column : b.getColumnsList())
+					 s << " " << column.first;
+				LOG_TRACE(log, "Block after modification has " << b.columns() << " columns with names " << s.str());
+				/// писать только некоторые столбцы и добавить и изменить название
+				out.write(b);
+			}
+		}
+
+		/// переименовываем файлы
+		Poco::ScopedWriteRWLock rlock(read_lock);
+		for (DataPartPtr & part : parts)
+		{
+			std::string path = full_path + part->name + '/' + name_type.name;
+			Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
+			Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
+		}
+
+		for (DataPartPtr & part : parts)
+		{
+			std::string path = full_path + part->name + '/' + out_column;
+			std::string new_path = full_path + part->name + '/' + name_type.name;
+			Poco::File(path + ".bin").renameTo(new_path + ".bin" + ".old");
+			Poco::File(path + ".mrk").renameTo(new_path + ".mrk" + ".old");
+		}
+
+		for (DataPartPtr & part : parts)
+		{
+			std::string path = full_path + part->name + '/' + name_type.name;
+			Poco::File(path + ".bin" + ".old").remove();
+			Poco::File(path + ".mrk" + ".old").remove();
+		}
+	}
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
