@@ -1270,7 +1270,7 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 {
 	if (params.type == ASTAlterQuery::MODIFY)
 	{
-		/// @TODO поддержка alter primary ключа
+		{
 		Poco::ScopedWriteRWLock mlock(merge_lock);
 		Poco::ScopedWriteRWLock wlock(write_lock);
 
@@ -1343,6 +1343,9 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 			LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
 			Poco::File(path + ".mrk" + ".old").remove();
 		}
+		}
+		context.getUncompressedCache()->reset();
+		context.getMarkCache()->reset();
 	}
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);

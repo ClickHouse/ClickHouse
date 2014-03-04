@@ -245,7 +245,7 @@ void IStorage::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTy
 		String type_string = String(type_range.first, type_range.second - type_range.first);
 
 		DB::DataTypePtr data_type = context.getDataTypeFactory().get(type_string);
-		NameAndTypePair pair(ast_name_type.name, data_type );
+		NameAndTypePair pair(ast_name_type.name, data_type);
 		NamesAndTypesList::iterator column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, ast_name_type.name, _1) );
 		if (column_it == columns->end())
 			throw Exception("Wrong column name. Cannot find column " + ast_name_type.name + " to modify.",  DB::ErrorCodes::ILLEGAL_COLUMN);

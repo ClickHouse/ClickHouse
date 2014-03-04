@@ -102,6 +102,16 @@ public:
 		return cells.size();
 	}
 
+	void reset()
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		queue.clear();
+		cells.clear();
+		current_size = 0;
+		hits = 0;
+		misses = 0;
+	}
+
 private:
 	typedef std::list<Key> LRUQueue;
 	typedef typename LRUQueue::iterator LRUQueueIterator;
