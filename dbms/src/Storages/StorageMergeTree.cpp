@@ -1300,11 +1300,9 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 			ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
 					DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
 			MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/');
+			out.writePrefix();
 			while(DB::Block b = in.read())
 			{
-				std::stringstream s;
-				for (auto & column : b.getColumnsList())
-					 s << " " << column.first;
 				/// оставляем только столбец с результатом
 				b.erase(0);
 				out.write(b);
