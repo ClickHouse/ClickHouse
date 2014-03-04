@@ -1271,78 +1271,78 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 	if (params.type == ASTAlterQuery::MODIFY)
 	{
 		{
-		Poco::ScopedWriteRWLock mlock(merge_lock);
-		Poco::ScopedWriteRWLock wlock(write_lock);
+			Poco::ScopedWriteRWLock mlock(merge_lock);
+			Poco::ScopedWriteRWLock wlock(write_lock);
 
-		typedef std::vector<DataPartPtr> PartsList;
-		PartsList parts;
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-			for (auto & data_part : data_parts)
+			typedef std::vector<DataPartPtr> PartsList;
+			PartsList parts;
 			{
-				parts.push_back(data_part);
+				Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+				for (auto & data_part : data_parts)
+				{
+					parts.push_back(data_part);
+				}
 			}
-		}
 
-		Names column_name;
-		const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
-		StringRange type_range = name_type.type->range;
-		String type(type_range.first, type_range.second - type_range.first);
-		column_name.push_back(name_type.name);
-		DB::ExpressionActionsPtr expr;
-		String out_column;
-		createConvertExpression(name_type.name, type, expr, out_column);
+			Names column_name;
+			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+			StringRange type_range = name_type.type->range;
+			String type(type_range.first, type_range.second - type_range.first);
+			column_name.push_back(name_type.name);
+			DB::ExpressionActionsPtr expr;
+			String out_column;
+			createConvertExpression(name_type.name, type, expr, out_column);
 
-		ColumnNumbers num(1, 0);
-		for (DataPartPtr & part : parts)
-		{
-			MarkRanges ranges(1, MarkRange(0, part->size));
-			ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-					DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
-			MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/');
-			out.writePrefix();
-			while(DB::Block b = in.read())
+			ColumnNumbers num(1, 0);
+			for (DataPartPtr & part : parts)
 			{
-				/// оставляем только столбец с результатом
-				b.erase(0);
-				out.write(b);
+				MarkRanges ranges(1, MarkRange(0, part->size));
+				ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
+						DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
+				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/');
+				out.writePrefix();
+				while(DB::Block b = in.read())
+				{
+					/// оставляем только столбец с результатом
+					b.erase(0);
+					out.write(b);
+				}
+				LOG_TRACE(log, "Write Suffix");
+				out.writeSuffix();
 			}
-			LOG_TRACE(log, "Write Suffix");
-			out.writeSuffix();
-		}
 
-		/// переименовываем файлы
-		Poco::ScopedWriteRWLock rlock(read_lock);
-		/// переименовываем старые столбцы, добавляя расширение .old
-		for (DataPartPtr & part : parts)
-		{
-			std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
-			Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
-			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
-			Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
-		}
+			/// переименовываем файлы
+			Poco::ScopedWriteRWLock rlock(read_lock);
+			/// переименовываем старые столбцы, добавляя расширение .old
+			for (DataPartPtr & part : parts)
+			{
+				std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+				LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
+				Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
+				LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
+				Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
+			}
 
-		/// переименовываем временные столбцы
-		for (DataPartPtr & part : parts)
-		{
-			std::string path = full_path + part->name + '/' + escapeForFileName(out_column);
-			std::string new_path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
-			Poco::File(path + ".bin").renameTo(new_path + ".bin");
-			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
-			Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
-		}
+			/// переименовываем временные столбцы
+			for (DataPartPtr & part : parts)
+			{
+				std::string path = full_path + part->name + '/' + escapeForFileName(out_column);
+				std::string new_path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+				LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
+				Poco::File(path + ".bin").renameTo(new_path + ".bin");
+				LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
+				Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
+			}
 
-		// удаляем старые столбцы
-		for (DataPartPtr & part : parts)
-		{
-			std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-			LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
-			Poco::File(path + ".bin" + ".old").remove();
-			LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
-			Poco::File(path + ".mrk" + ".old").remove();
-		}
+			// удаляем старые столбцы
+			for (DataPartPtr & part : parts)
+			{
+				std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+				LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
+				Poco::File(path + ".bin" + ".old").remove();
+				LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
+				Poco::File(path + ".mrk" + ".old").remove();
+			}
 		}
 		context.getUncompressedCache()->reset();
 		context.getMarkCache()->reset();
