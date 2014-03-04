@@ -258,10 +258,25 @@ void Connection::sendData(const Block & block)
 	}
 
 	writeVarUInt(Protocol::Client::Data, *out);
+
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
+		writeStringBinary("", *out);
+
 	block.checkNestedArraysOffsets();
 	block_out->write(block);
 	maybe_compressed_out->next();
 	out->next();
+}
+
+
+void Connection::sendTemporaryTables()
+{
+	/// Если работаем со старым сервером, то никакой информации не отправляем
+	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
+		return;
+
+	/// Отправляем пустой блок, символизируя конец передачи данных
+	sendData(Block());
 }
 
 
@@ -335,6 +350,11 @@ Block Connection::receiveData()
 	//LOG_TRACE(log, "Receiving data (" << getServerAddress() << ")");
 		
 	initBlockInput();
+
+	String temporary_table_name;
+
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
+		readStringBinary(temporary_table_name, *in);
 
 	/// Прочитать из сети один блок
 	return block_in->read();

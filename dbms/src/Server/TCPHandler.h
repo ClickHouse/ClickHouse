@@ -45,6 +45,8 @@ struct QueryState
 	bool is_empty;
 	/// Данные были отправлены.
 	bool sent_all_data;
+	/// Запрос на вставку или нет.
+	bool is_insert;
 
 	/// Для вывода прогресса - разница после предыдущей отправки прогресса.
 	volatile size_t rows_processed;
@@ -52,7 +54,7 @@ struct QueryState
 
 
 	QueryState() : query_id(""), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable),
-		is_cancelled(false), is_empty(true), sent_all_data(false), rows_processed(0), bytes_processed(0) {}
+		is_cancelled(false), is_empty(true), sent_all_data(false), is_insert(false), rows_processed(0), bytes_processed(0) {}
 	
 	void reset()
 	{
@@ -107,6 +109,7 @@ private:
 	bool receivePacket();
 	void receiveQuery();
 	bool receiveData();
+	void readData(const Settings & global_settings);
 
 	/// Обработать запрос INSERT
 	void processInsertQuery(const Settings & global_settings);
