@@ -22,8 +22,6 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 
-#include <DB/Storages/StorageMemory.h>
-
 #include "TCPHandler.h"
 
 
@@ -114,21 +112,13 @@ void TCPHandler::runImpl()
 			if (!receivePacket())
 				continue;
 
-			/// Получить блоки временных таблиц
-			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
-				readData(global_settings);
-
 			/// Обрабатываем Query
-			state.io = executeQuery(state.query, query_context, false, state.stage);
-
-			if (state.io.out)
-				state.is_insert = true;
-
+			
 			after_check_cancelled.restart();
 			after_send_progress.restart();
 
 			/// Запрос требует приёма данных от клиента?
-			if (state.is_insert)
+			if (state.io.out)
 				processInsertQuery(global_settings);
 			else
 				processOrdinaryQuery();
@@ -213,8 +203,13 @@ void TCPHandler::runImpl()
 }
 
 
-void TCPHandler::readData(const Settings & global_settings)
+void TCPHandler::processInsertQuery(const Settings & global_settings)
 {
+	/// Отправляем клиенту блок - структура таблицы.
+	Block block = state.io.out_sample;
+	sendData(block);
+
+	state.io.out->writePrefix();
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
@@ -225,22 +220,9 @@ void TCPHandler::readData(const Settings & global_settings)
 		if (Daemon::instance().isCancelled() || in->eof())
 			return;
 
-		std::cerr << "Receiving packet" << std::endl;
-
 		if (!receivePacket())
 			break;
 	}
-}
-
-
-void TCPHandler::processInsertQuery(const Settings & global_settings)
-{
-	/// Отправляем клиенту блок - структура таблицы.
-	Block block = state.io.out_sample;
-	sendData(block);
-
-	state.io.out->writePrefix();
-	readData(global_settings);
 	state.io.out->writeSuffix();
 }
 
@@ -536,37 +518,19 @@ void TCPHandler::receiveQuery()
 	LOG_DEBUG(log, "Query ID: " << state.query_id);
 	LOG_DEBUG(log, "Query: " << state.query);
 	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(stage));
+
+	state.io = executeQuery(state.query, query_context, false, state.stage);
 }
 
 
 bool TCPHandler::receiveData()
 {
 	initBlockInput();
-
-	/// Имя временной таблицы для записи данных, по умолчанию пустая строка
-	String temporary_table_name;
-	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
-		readStringBinary(temporary_table_name, *in);
-
-	/// Прочитать из сети один блок и записать его
+	
+	/// Прочитать из сети один блок и засунуть его в state.io.out (данные для INSERT-а)
 	Block block = state.block_in->read();
 	if (block)
 	{
-		/// Если запрос на вставку, то данные нужно писать напрямую в state.io.out.
-		/// Иначе пишем блоки во временную таблицу temporary_table_name.
-		if (!state.is_insert)
-		{
-			StoragePtr storage;
-			/// Если такой таблицы не существовало, создаем ее.
-			if (!(storage = query_context.tryGetTemporaryTable(temporary_table_name)))
-			{
-				NamesAndTypesListPtr columns = new NamesAndTypesList(block.getColumnsList());
-				storage = StorageMemory::create(temporary_table_name, columns);
-				query_context.addTemporaryTable(temporary_table_name, storage);
-			}
-			/// Данные будем писать напрямую в таблицу.
-			state.io.out = storage->write(ASTPtr());
-		}
 		state.io.out->write(block);
 		return true;
 	}
@@ -650,8 +614,6 @@ void TCPHandler::sendData(Block & block)
 	initBlockOutput();
 
 	writeVarUInt(Protocol::Server::Data, *out);
-	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
-		writeStringBinary("", *out);
 
 	state.block_out->write(block);
 	state.maybe_compressed_out->next();

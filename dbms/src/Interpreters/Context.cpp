@@ -161,46 +161,22 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 }
 
 
-StoragePtr Context::tryGetTemporaryTable(const String & table_name) const
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	Tables::const_iterator jt;
-	if (temporary_tables.end() == (jt = temporary_tables.find(table_name)))
-		return StoragePtr();
-
-	return jt->second;
-}
-
-
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	Databases::const_iterator it;
-	Tables::const_iterator jt;
-
-	if (database_name.empty())
-	{
-		StoragePtr res;
-		if (res = tryGetTemporaryTable(table_name))
-			return res;
-		if (res = session_context->tryGetTemporaryTable(table_name))
-			return res;
-		if (res = global_context->tryGetTemporaryTable(table_name))
-			return res;
-	}
 	String db = database_name.empty() ? current_database : database_name;
 
+	Databases::const_iterator it;
 	if (shared->databases.end() == (it = shared->databases.find(db)))
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
+	Tables::const_iterator jt;
 	if (it->second.end() == (jt = it->second.find(table_name)))
 		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
 	return jt->second;
 }
-
 
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
@@ -217,14 +193,6 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 		return StoragePtr();
 	
 	return jt->second;
-}
-
-
-void Context::addTemporaryTable(const String & table_name, StoragePtr storage)
-{
-	if (temporary_tables.end() != temporary_tables.find(table_name))
-		throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-	temporary_tables[table_name] = storage;
 }
 
 

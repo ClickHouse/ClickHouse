@@ -84,7 +84,6 @@ public:
 	
 	void sendCancel();
 	void sendData(const Block & block);
-	void sendTemporaryTables();
 
 	/// Проверить, если ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);
