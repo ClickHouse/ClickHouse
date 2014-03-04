@@ -119,6 +119,10 @@ void InterpreterAlterQuery::execute()
 			if ( modified_column == columns_copy.end())
 				throw Exception("Wrong column name. Column " + name_type.name  + " not exists", DB::ErrorCodes::ILLEGAL_COLUMN);
 
+			/// Проверяем, что поле не является ключевым
+			if (identifier_names.find(name_type.name) != identifier_names.end())
+				throw Exception("Modification of primary column not supported", DB::ErrorCodes::ILLEGAL_COLUMN);
+
 			/// к сожалению, проверить на возможно ли это приведение типов можно только во время выполнения
 		}
 	}
