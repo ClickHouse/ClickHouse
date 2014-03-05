@@ -58,6 +58,93 @@ namespace DB
 using Poco::SharedPtr;
 
 
+class ExternalTable
+{
+public:
+	std::string file;
+	std::string name;
+	std::string format;
+	std::vector<std::pair<std::string, std::string> > structure;
+
+	void write()
+	{
+		std::cerr << "file " << file << std::endl;
+		std::cerr << "name " << name << std::endl;
+		std::cerr << "format " << format << std::endl;
+		std::cerr << "structure: \n";
+		for (size_t i = 0; i < structure.size(); ++i)
+			std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
+	}
+
+	ExternalTable(const boost::program_options::variables_map & external_options)
+	{
+		if (external_options.count("file"))
+			file = external_options["file"].as<std::string>();
+		else
+			throw Exception("File field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+
+		if (external_options.count("name"))
+			name = external_options["name"].as<std::string>();
+		else
+			throw Exception("Name field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+
+		if (external_options.count("format"))
+			format = external_options["format"].as<std::string>();
+		else
+			throw Exception("format field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+
+		if (external_options.count("structure"))
+		{
+			std::vector<std::string> temp = external_options["structure"].as<std::vector<std::string>>();
+
+			std::string argument;
+			for (size_t i = 0; i < temp.size(); ++i)
+				argument = argument + temp[i] + " ";
+			std::vector<std::string> vals = split(argument, " ,");
+
+			if (vals.size() & 1)
+				throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
+
+			for (size_t i = 0; i < vals.size(); i += 2)
+				structure.push_back(std::make_pair(vals[i], vals[i+1]));
+		}
+		else if (external_options.count("types"))
+		{
+			std::vector<std::string> temp = external_options["types"].as<std::vector<std::string>>();
+			std::string argument;
+			for (size_t i = 0; i < temp.size(); ++i)
+				argument = argument + temp[i] + " ";
+			std::vector<std::string> vals = split(argument, " ,");
+
+			for (size_t i = 0; i < vals.size(); ++i)
+				structure.push_back(std::make_pair("_" + toString(i + 1), vals[i]));
+		}
+		else
+			throw Exception("Neither structure nor types have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+	}
+
+	static std::vector<std::string> split(const std::string & s, const std::string &d)
+	{
+		std::vector<std::string> res;
+		std::string now;
+		for (size_t i = 0; i < s.size(); ++i)
+		{
+			if (d.find(s[i]) != std::string::npos)
+			{
+				if (!now.empty())
+					res.push_back(now);
+				now = "";
+				continue;
+			}
+			now += s[i];
+		}
+		if (!now.empty())
+			res.push_back(now);
+		return res;
+	}
+};
+
+
 class Client : public Poco::Util::Application
 {
 public:
@@ -795,12 +882,13 @@ private:
 public:
 	void init(int argc, char ** argv)
 	{
+
 		/// Останавливаем внутреннюю обработку командной строки
 		stopOptionsProcessing();
 
-		/// Перечисляем опции командной строки
-		boost::program_options::options_description desc("Allowed options");
-		desc.add_options()
+		/// Перечисляем основные опции командной строки относящиеся к функциональности клиента
+		boost::program_options::options_description main_description("Main options");
+		main_description.add_options()
 			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file")
 			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "host")
 			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "port")
@@ -811,11 +899,40 @@ public:
 			("multiline,m", "multiline")
 		;
 
-		/// Парсим командную строку
-		boost::program_options::variables_map options;
-		boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+		/// Перечисляем опции командной строки относящиеся к внешним таблицам
+		boost::program_options::options_description external_description("Main options");
+		external_description.add_options()
+			("file", 		boost::program_options::value<std::string> (), 	"data file or - for stdin")
+			("name", 		boost::program_options::value<std::string> ()->default_value("_data"), "name of the table")
+			("format", 		boost::program_options::value<std::string> ()->default_value("TabSeparated"), "data format")
+			("structure", 	boost::program_options::value<std::vector<std::string>> ()->multitoken(), "structure")
+			("types", 		boost::program_options::value<std::vector<std::string>> ()->multitoken(), "types")
+		;
 
-		/// Сохраняем полученные значение во внутренний конфиг
+		std::vector<int> positions;
+
+		positions.push_back(0);
+		for (int i = 0; i < argc; ++i)
+			if (std::string(argv[i]) == "--external")
+				positions.push_back(i);
+		positions.push_back(argc);
+
+		/// Парсим основные опции командной строки
+		boost::program_options::variables_map options;
+		boost::program_options::store(boost::program_options::parse_command_line(positions[1] - positions[0], argv, main_description), options);
+
+		std::vector<ExternalTable> external_tables;
+
+		for (size_t i = 1; i + 1 < positions.size(); ++i)
+		{
+			boost::program_options::variables_map external_options;
+			boost::program_options::store(boost::program_options::parse_command_line(
+				positions[i+1] - positions[i], &argv[positions[i]], external_description), external_options);
+			external_tables.push_back(ExternalTable(external_options));
+//			external_tables.back().write();
+		}
+
+		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
 			config().setString("config-file", options["config-file"].as<std::string>());
 		if (options.count("host"))
