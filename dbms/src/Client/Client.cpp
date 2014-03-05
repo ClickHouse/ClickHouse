@@ -15,6 +15,7 @@
 #include <unordered_set>
 
 #include <boost/assign/list_inserter.hpp>
+#include <boost/program_options.hpp>
 
 #include <Poco/File.h>
 #include <Poco/SharedPtr.h>
@@ -790,66 +791,49 @@ private:
 		if (is_interactive && !written_first_block)
 			std::cout << "Ok." << std::endl;
 	}
-	
 
-	void defineOptions(Poco::Util::OptionSet & options)
+public:
+	void init(int argc, char ** argv)
 	{
-		Poco::Util::Application::defineOptions(options);
+		/// Останавливаем внутреннюю обработку командной строки
+		stopOptionsProcessing();
 
-		options.addOption(
-			Poco::Util::Option("config-file", "c")
-				.required(false)
-				.repeatable(false)
-				.argument("<file>")
-				.binding("config-file"));
+		/// Перечисляем опции командной строки
+		boost::program_options::options_description desc("Allowed options");
+		desc.add_options()
+			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file")
+			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "host")
+			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "port")
+			("user,u", 			boost::program_options::value<int> (), 			"user")
+			("password,p", 		boost::program_options::value<int> (), 			"password")
+			("query,q", 		boost::program_options::value<std::string> (), 	"query")
+			("database,d", 		boost::program_options::value<std::string> (), 	"database")
+			("multiline,m", "multiline")
+		;
 
-		options.addOption(
-			Poco::Util::Option("host", "h")
-				.required(false)
-				.repeatable(false)
-				.argument("<host>")
-				.binding("host"));
+		/// Парсим командную строку
+		boost::program_options::variables_map options;
+		boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-		options.addOption(
-			Poco::Util::Option("port", "")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("port"));
+		/// Сохраняем полученные значение во внутренний конфиг
+		if (options.count("config-file"))
+			config().setString("config-file", options["config-file"].as<std::string>());
+		if (options.count("host"))
+			config().setString("host", options["host"].as<std::string>());
+		if (options.count("query"))
+			config().setString("query", options["query"].as<std::string>());
+		if (options.count("database"))
+			config().setString("database", options["database"].as<std::string>());
 
-		options.addOption(
-			Poco::Util::Option("user", "u")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("user"));
+		if (options.count("port"))
+			config().setInt("port", options["port"].as<int>());
+		if (options.count("user"))
+			config().setInt("user", options["user"].as<int>());
+		if (options.count("password"))
+			config().setInt("password", options["password"].as<int>());
 
-		options.addOption(
-			Poco::Util::Option("password", "")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("password"));
-
-		options.addOption(
-			Poco::Util::Option("query", "e")
-				.required(false)
-				.repeatable(false)
-				.argument("<string>")
-				.binding("query"));
-
-		options.addOption(
-			Poco::Util::Option("database", "d")
-				.required(false)
-				.repeatable(false)
-				.argument("<string>")
-				.binding("database"));
-		
-		options.addOption(
-			Poco::Util::Option("multiline", "m")
-				.required(false)
-				.repeatable(false)
-				.binding("multiline"));
+		if (options.count("multiline"))
+			config().setBool("multiline", true);
 	}
 };
 
@@ -859,7 +843,6 @@ private:
 int main(int argc, char ** argv)
 {
 	DB::Client client;
-//	client.stopOptionsProcessing();
 	client.init(argc, argv);
 	return client.run();
 }
