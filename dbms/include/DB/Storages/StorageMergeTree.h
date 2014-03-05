@@ -191,6 +191,26 @@ public:
 	/// Например если параллельно с INSERT выполнить ALTER, то ALTER выполниться, а INSERT бросит исключение
 	void alter(const ASTAlterQuery::Parameters & params);
 
+	class BigLock
+	{
+	public:
+		BigLock(StorageMergeTree & storage) : merge_lock(storage.merge_lock),
+			write_lock(storage.write_lock), read_lock(storage.read_lock)
+		{
+		}
+
+	private:
+		Poco::ScopedWriteRWLock merge_lock;
+		Poco::ScopedWriteRWLock write_lock;
+		Poco::ScopedWriteRWLock read_lock;
+	};
+
+	typedef Poco::SharedPtr<BigLock> BigLockPtr;
+	BigLockPtr lockAllOperations()
+	{
+		return new BigLock(*this);
+	}
+
 private:
 	String path;
 	String name;

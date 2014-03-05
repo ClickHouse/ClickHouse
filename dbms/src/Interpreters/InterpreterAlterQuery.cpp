@@ -10,6 +10,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Storages/StorageMerge.h>
+#include <DB/Storages/StorageMergeTree.h>
 
 #include <algorithm>
 #include <boost/bind.hpp>
@@ -40,17 +41,26 @@ static bool namesEqualIgnoreAfterDot(const String & name_without_dot, const ASTP
 
 void InterpreterAlterQuery::execute()
 {
+	ASTAlterQuery & alter = dynamic_cast<ASTAlterQuery &>(*query_ptr);
+	String & table_name = alter.table;
+	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
+
+	StoragePtr table = context.getTable(database_name, table_name);
+
+	/// для merge tree запрещаем все операции
+	StorageMergeTree::BigLockPtr merge_tree_lock;
+	if (StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
+		merge_tree_lock = table_merge_tree->lockAllOperations();
+
 	/// Poco::Mutex является рекурсивным, т.е. взятие мьютекса дважды из одного потока не приводит к блокировке
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
 	const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
-	ASTAlterQuery & alter = dynamic_cast<ASTAlterQuery &>(*query_ptr);
 	String path = context.getPath();
-	
-	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
+
 	String database_name_escaped = escapeForFileName(database_name);
-	String & table_name = alter.table;
 	String table_name_escaped = escapeForFileName(table_name);
-	StoragePtr table = context.getTable(database_name, table_name);
+
 	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 
 	ASTPtr attach_ptr = context.getCreateQuery(database_name, table_name);

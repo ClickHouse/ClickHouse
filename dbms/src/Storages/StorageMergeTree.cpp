@@ -1271,9 +1271,6 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 	if (params.type == ASTAlterQuery::MODIFY)
 	{
 		{
-			Poco::ScopedWriteRWLock mlock(merge_lock);
-			Poco::ScopedWriteRWLock wlock(write_lock);
-
 			typedef std::vector<DataPartPtr> PartsList;
 			PartsList parts;
 			{
@@ -1318,7 +1315,6 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 			}
 
 			/// переименовываем файлы
-			Poco::ScopedWriteRWLock rlock(read_lock);
 			/// переименовываем старые столбцы, добавляя расширение .old
 			for (DataPartPtr & part : parts)
 			{
