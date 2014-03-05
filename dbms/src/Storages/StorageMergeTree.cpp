@@ -1305,7 +1305,7 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 				MarkRanges ranges(1, MarkRange(0, part->size));
 				ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
 						DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
-				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/');
+				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 				out.writePrefix();
 				while(DB::Block b = in.read())
 				{

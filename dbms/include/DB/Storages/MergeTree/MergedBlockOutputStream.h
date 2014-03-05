@@ -34,6 +34,12 @@ protected:
 			plain.next();
 			marks.next();
 		}
+
+		void sync()
+		{
+			plain.sync();
+			marks.sync();
+		}
 	};
 
 	typedef std::map<String, SharedPtr<ColumnStream> > ColumnStreams;
@@ -293,8 +299,8 @@ typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedColumnOnlyOutputStream(StorageMergeTree & storage_, String part_path_) :
-		IMergedBlockOutputStream(storage_), part_path(part_path_), initialized(false)
+	MergedColumnOnlyOutputStream(StorageMergeTree & storage_, String part_path_, bool sync_ = false) :
+		IMergedBlockOutputStream(storage_), part_path(part_path_), initialized(false), sync(sync_)
 	{
 	}
 
@@ -329,6 +335,8 @@ public:
 		for (auto & column_stream : column_streams)
 		{
 			column_stream.second->finalize();
+			if (sync)
+				column_stream.second->sync();
 			std::string column = escapeForFileName(column_stream.first);
 			Poco::File(part_path + prefix + column + ".bin").renameTo(part_path + column + ".bin");
 			Poco::File(part_path + prefix + column + ".mrk").renameTo(part_path + column + ".mrk");
@@ -343,6 +351,8 @@ private:
 	bool initialized;
 
 	const std::string prefix = "tmp_";
+
+	bool sync;
 };
 	
 }
