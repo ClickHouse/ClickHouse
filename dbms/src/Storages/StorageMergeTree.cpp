@@ -1304,11 +1304,34 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 						DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
 				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 				out.writePrefix();
-				while(DB::Block b = in.read())
+
+				bool finished = false;
+				while(!finished)
 				{
-					/// оставляем только столбец с результатом
-					b.erase(0);
-					out.write(b);
+					bool missing_all_columns = false;
+					DB::Block b;
+					try
+					{
+						 b = in.read();
+					}
+					catch (const Exception & e)
+					{
+						if (e.code() == ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
+							missing_all_columns = true;
+						else
+							throw;
+					}
+					if (!missing_all_columns)
+					{
+						if (!b)
+							finished = true;
+						else
+						{
+							/// оставляем только столбец с результатом
+							b.erase(0);
+							out.write(b);
+						}
+					}
 				}
 				LOG_TRACE(log, "Write Suffix");
 				out.writeSuffix();
