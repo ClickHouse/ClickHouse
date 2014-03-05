@@ -1304,14 +1304,23 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 						DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
 				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 				out.writePrefix();
-				while(DB::Block b = in.read())
+
+				try
 				{
-					/// оставляем только столбец с результатом
-					b.erase(0);
-					out.write(b);
+					while(DB::Block b = in.read())
+					{
+						/// оставляем только столбец с результатом
+						b.erase(0);
+						out.write(b);
+					}
+					LOG_TRACE(log, "Write Suffix");
+					out.writeSuffix();
 				}
-				LOG_TRACE(log, "Write Suffix");
-				out.writeSuffix();
+				catch (const Exception & e)
+				{
+					if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
+						throw;
+				}
 			}
 
 			/// переименовываем файлы
@@ -1319,10 +1328,13 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 			for (DataPartPtr & part : parts)
 			{
 				std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-				LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
-				Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
-				LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
-				Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
+				if (Poco::File(path + ".bin").exists())
+				{
+					LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
+					Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
+					LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
+					Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
+				}
 			}
 
 			/// переименовываем временные столбцы
@@ -1330,20 +1342,26 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 			{
 				std::string path = full_path + part->name + '/' + escapeForFileName(out_column);
 				std::string new_path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-				LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
-				Poco::File(path + ".bin").renameTo(new_path + ".bin");
-				LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
-				Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
+				if (Poco::File(path + ".bin").exists())
+				{
+					LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
+					Poco::File(path + ".bin").renameTo(new_path + ".bin");
+					LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
+					Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
+				}
 			}
 
 			// удаляем старые столбцы
 			for (DataPartPtr & part : parts)
 			{
 				std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-				LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
-				Poco::File(path + ".bin" + ".old").remove();
-				LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
-				Poco::File(path + ".mrk" + ".old").remove();
+				if (Poco::File(path + ".bin" + ".old").exists())
+				{
+					LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
+					Poco::File(path + ".bin" + ".old").remove();
+					LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
+					Poco::File(path + ".mrk" + ".old").remove();
+				}
 			}
 		}
 		context.getUncompressedCache()->reset();
