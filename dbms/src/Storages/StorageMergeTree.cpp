@@ -1288,6 +1288,12 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
 			StringRange type_range = name_type.type->range;
 			String type(type_range.first, type_range.second - type_range.first);
+			DB::DataTypePtr old_type_ptr = getDataTypeByName(name_type.name);
+			DB::DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
+			if (dynamic_cast<DataTypeNested *>(old_type_ptr.get()) || dynamic_cast<DataTypeArray *>(old_type_ptr.get()) ||
+				dynamic_cast<DataTypeNested *>(new_type_ptr.get()) || dynamic_cast<DataTypeArray *>(new_type_ptr.get()))
+				throw DB::Exception("ALTER MODIFY not supported for nested and array types");
+
 			column_name.push_back(name_type.name);
 			DB::ExpressionActionsPtr expr;
 			String out_column;
