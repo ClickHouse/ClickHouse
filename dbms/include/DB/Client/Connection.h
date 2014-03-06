@@ -24,6 +24,7 @@ namespace DB
 
 using Poco::SharedPtr;
 
+typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
 
 /** Соединение с сервером БД для использования в клиенте.
   * Как использовать - см. Core/Protocol.h
@@ -83,8 +84,8 @@ public:
 		const Settings * settings = NULL);
 	
 	void sendCancel();
-	void sendData(const Block & block);
-	void sendTemporaryTables();
+	void sendData(const Block & block, const String & name = "");
+	void sendExternalTables(std::vector<ExternalTableData> & data);
 
 	/// Проверить, если ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);

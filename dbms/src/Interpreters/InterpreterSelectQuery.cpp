@@ -126,18 +126,23 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 	/** Если таблица не указана - используем таблицу system.one.
 	  * Если база данных не указана - используем текущую базу данных.
 	  */
+	if (query.database)
+		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
+	if (query.table)
+		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
+
 	if (!query.table)
 	{
 		database_name = "system";
 		table_name = "one";
 	}
 	else if (!query.database)
-		database_name = context.getCurrentDatabase();
-
-	if (query.database)
-		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
-	if (query.table)
-		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
+	{
+		if (context.tryGetTable("", table_name))
+			database_name = "";
+		else
+			database_name = context.getCurrentDatabase();
+	}
 }
 
 

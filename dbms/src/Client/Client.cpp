@@ -65,6 +65,37 @@ public:
 	std::string name;
 	std::string format;
 	std::vector<std::pair<std::string, std::string> > structure;
+	ReadBuffer *read_buffer;
+	Block sample_block;
+
+	void initReadBuffer()
+	{
+		/// stdin
+		if (file == "-")
+			throw Exception("stdin as file is not supported yet", ErrorCodes::BAD_ARGUMENTS);
+		read_buffer = new ReadBufferFromFile(file);
+	}
+
+	void initSampleBlock(const Context &context)
+	{
+		for (size_t i = 0; i < structure.size(); ++i)
+		{
+			ColumnWithNameAndType column;
+			column.name = structure[i].first;
+			column.type = context.getDataTypeFactory().get(structure[i].second);
+			column.column = column.type->createColumn();
+			sample_block.insert(column);
+		}
+	}
+
+	ExternalTableData getData(const Context &context)
+	{
+		initReadBuffer();
+		initSampleBlock(context);
+		ExternalTableData res = std::make_pair(new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
+			format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE, context.getDataTypeFactory())), name);
+		return res;
+	}
 
 	void write()
 	{
@@ -519,11 +550,20 @@ private:
 	}
 
 
+	void sendExternalTables()
+	{
+		std::vector<ExternalTableData> data;
+		for (size_t i = 0; i < external_tables.size(); ++i)
+			data.push_back(external_tables[i].getData(context));
+		connection->sendExternalTables(data);
+	}
+
+
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
 		connection->sendQuery(query, "", QueryProcessingStage::Complete);
-		connection->sendTemporaryTables();
+		sendExternalTables();
 		receiveResult();
 	}
 
@@ -541,7 +581,7 @@ private:
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
 		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete);
-		connection->sendTemporaryTables();
+		sendExternalTables();
 
 		/// Получим структуру таблицы
 		Block sample = receiveSampleBlock();

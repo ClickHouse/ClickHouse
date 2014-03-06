@@ -243,7 +243,7 @@ void Connection::sendCancel()
 }
 
 
-void Connection::sendData(const Block & block)
+void Connection::sendData(const Block & block, const String & name)
 {
 	//LOG_TRACE(log, "Sending data (" << getServerAddress() << ")");
 	
@@ -260,7 +260,7 @@ void Connection::sendData(const Block & block)
 	writeVarUInt(Protocol::Client::Data, *out);
 
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
-		writeStringBinary("", *out);
+		writeStringBinary(name, *out);
 
 	block.checkNestedArraysOffsets();
 	block_out->write(block);
@@ -268,12 +268,19 @@ void Connection::sendData(const Block & block)
 	out->next();
 }
 
-
-void Connection::sendTemporaryTables()
+void Connection::sendExternalTables(std::vector<ExternalTableData> & data)
 {
 	/// Если работаем со старым сервером, то никакой информации не отправляем
 	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
 		return;
+
+	for (size_t i = 0; i < data.size(); ++i)
+	{
+		data[i].first->readPrefix();
+		while(Block block = data[i].first->read())
+			sendData(block, data[i].second);
+		data[i].first->readSuffix();
+	}
 
 	/// Отправляем пустой блок, символизируя конец передачи данных
 	sendData(Block());
