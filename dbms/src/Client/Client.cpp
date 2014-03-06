@@ -81,17 +81,17 @@ public:
 		if (external_options.count("file"))
 			file = external_options["file"].as<std::string>();
 		else
-			throw Exception("File field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception("--file field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
 
 		if (external_options.count("name"))
 			name = external_options["name"].as<std::string>();
 		else
-			throw Exception("Name field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception("--name field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
 
 		if (external_options.count("format"))
 			format = external_options["format"].as<std::string>();
 		else
-			throw Exception("format field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception("--format field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
 
 		if (external_options.count("structure"))
 		{
@@ -120,7 +120,7 @@ public:
 				structure.push_back(std::make_pair("_" + toString(i + 1), vals[i]));
 		}
 		else
-			throw Exception("Neither structure nor types have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception("Neither --structure nor --types have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
 	}
 
 	static std::vector<std::string> split(const std::string & s, const std::string &d)
@@ -198,6 +198,9 @@ private:
 	size_t bytes_read_on_server;
 	size_t written_progress_chars;
 	bool written_first_block;
+
+	/// Информация о внешних таблицах
+	std::vector<ExternalTable> external_tables;
 
 
 	void initialize(Poco::Util::Application & self)
@@ -912,8 +915,8 @@ public:
 		std::vector<int> positions;
 
 		positions.push_back(0);
-		for (int i = 0; i < argc; ++i)
-			if (std::string(argv[i]) == "--external")
+		for (int i = 1; i < argc; ++i)
+			if (strcmp(argv[i], "--external") == 0)
 				positions.push_back(i);
 		positions.push_back(argc);
 
@@ -921,15 +924,22 @@ public:
 		boost::program_options::variables_map options;
 		boost::program_options::store(boost::program_options::parse_command_line(positions[1] - positions[0], argv, main_description), options);
 
-		std::vector<ExternalTable> external_tables;
-
 		for (size_t i = 1; i + 1 < positions.size(); ++i)
 		{
 			boost::program_options::variables_map external_options;
 			boost::program_options::store(boost::program_options::parse_command_line(
 				positions[i+1] - positions[i], &argv[positions[i]], external_description), external_options);
-			external_tables.push_back(ExternalTable(external_options));
-//			external_tables.back().write();
+			try
+			{
+				external_tables.push_back(ExternalTable(external_options));
+			}
+			catch (const Exception & e)
+			{
+				std::string text = e.displayText();
+				std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+				std::cerr << "Table #" << i << std::endl;
+				exit(e.code());
+			}
 		}
 
 		/// Сохраняем полученные данные во внутренний конфиг
