@@ -38,6 +38,14 @@ public:
 		return res.str();
 	}
 
+	const Block & getTotals()
+	{
+		if (totals)
+			expression->execute(totals);
+
+		return totals;
+	}
+
 protected:
 	Block readImpl();
 
