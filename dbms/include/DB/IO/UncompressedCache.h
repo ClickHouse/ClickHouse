@@ -53,11 +53,6 @@ public:
 
 		return res;
 	}
-
-	void reset()
-	{
-		Base::reset();
-	}
 };
 
 typedef Poco::SharedPtr<UncompressedCache> UncompressedCachePtr;

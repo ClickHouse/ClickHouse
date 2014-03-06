@@ -62,11 +62,6 @@ public:
 
 		return res;
 	}
-
-	void reset()
-	{
-		Base::reset();
-	}
 };
 
 typedef Poco::SharedPtr<MarkCache> MarkCachePtr;
