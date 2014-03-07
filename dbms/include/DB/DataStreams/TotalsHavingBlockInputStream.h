@@ -40,7 +40,7 @@ public:
 
 	const Block & getTotals()
 	{
-		if (totals)
+		if (totals && expression)
 			expression->execute(totals);
 
 		return totals;
