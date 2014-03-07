@@ -537,7 +537,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			Settings subquery_settings = context.getSettings();
 			subquery_settings.limits.max_result_rows = 0;
 			subquery_settings.limits.max_result_bytes = 0;
-			/// Высичление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+			/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
 			subquery_settings.extremes = 0;
 			subquery_context.setSettings(subquery_settings);
 
