@@ -3,7 +3,7 @@
 #include <boost/make_shared.hpp>
 
 
-#define CHECKED(x) { ReturnCode::type code = x; if (code) throw KeeperException(code); }
+#define CHECKED(x) { ReturnCode::type code = x; if (code != ReturnCode::Ok) throw KeeperException(code); }
 
 namespace zkutil
 {
@@ -73,7 +73,7 @@ void ZooKeeper::setDefaultACL(ACLs & acl)
 	default_acl = acl;
 }
 
-std::vector<std::string> ZooKeeper::getChildren(
+Strings ZooKeeper::getChildren(
 	const std::string & path, Stat * stat, WatchFuture * watch)
 {
 	Stat s;
@@ -84,5 +84,88 @@ std::vector<std::string> ZooKeeper::getChildren(
 	return res;
 }
 
+std::string ZooKeeper::create(const std::string & path, const std::string & data, CreateMode::type mode)
+{
+	std::string res;
+	CHECKED(impl.create(path, data, default_acl, mode, res));
+	return res;
 }
 
+ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::string & data, CreateMode::type mode, std::string & pathCreated)
+{
+	ReturnCode::type code = impl.create(path, data, default_acl, mode, pathCreated);
+	if (!(	code == ReturnCode::Ok ||
+			code == ReturnCode::NoNode ||
+			code == ReturnCode::NodeExists ||
+			code == ReturnCode::NoChildrenForEphemerals))
+		return code;
+	throw KeeperException(code);
+}
+
+void ZooKeeper::remove(const std::string & path, int32_t version)
+{
+	CHECKED(impl.remove(path, version));
+}
+
+	/** Не бросает исключение при следующих ошибках:
+	  *  - Такой ноды нет.
+	  *  - У ноды другая версия.
+	  *  - У ноды есть дети.
+	  */
+ReturnCode::type ZooKeeper::tryRemove(const std::string & path, int32_t version)
+{
+	ReturnCode::type code = impl.remove(path, version);
+	if (!(	code == ReturnCode::Ok ||
+			code == ReturnCode::NoNode ||
+			code == ReturnCode::BadVersion ||
+			code == ReturnCode::NotEmpty))
+		return code;
+	throw KeeperException(code);
+}
+
+bool ZooKeeper::exists(const std::string & path, Stat * stat, WatchFuture * watch)
+{
+	Stat s;
+	ReturnCode::type code = impl.exists(path, watchForFuture(watch), s);
+	if (code != ReturnCode::Ok && code != ReturnCode::NoNode)
+		throw KeeperException(code);
+	if (stat)
+		*stat = s;
+	return code == ReturnCode::Ok;
+}
+
+std::string ZooKeeper::get(const std::string & path, Stat * stat, WatchFuture * watch)
+{
+	std::string res;
+	Stat s;
+	CHECKED(impl.get(path, watchForFuture(watch), res, s));
+	if (stat)
+		*stat = s;
+	return res;
+}
+
+bool ZooKeeper::tryGet(const std::string & path, std::string & data, Stat * stat, WatchFuture * watch)
+{
+	Stat s;
+	ReturnCode::type code = impl.get(path, watchForFuture(watch), data, s);
+	if (code == ReturnCode::NoNode)
+		return false;
+	if (stat)
+		*stat = s;
+	return true;
+}
+
+void ZooKeeper::set(const std::string & path, const std::string & data, int32_t version, Stat * stat)
+{
+	Stat s;
+	CHECKED(impl.set(path, data, version, s));
+	if (stat)
+		*stat = s;
+}
+
+void ZooKeeper::close()
+{
+	CHECKED(impl.close());
+}
+
+}

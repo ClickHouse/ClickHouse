@@ -49,7 +49,11 @@ class ZooKeeper
 public:
 	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT, WatchFunction * watch = nullptr);
 
-	/// Возвращает true, если сессия навсегда завершена.
+	/** Возвращает true, если сессия навсегда завершена.
+	  * Это возможно только если соединение было установлено, а потом разорвалось. Это достаточно редкая ситуация.
+	  * С другой стороны, если, например, указан неправильный сервер или порт, попытки соединения будут продолжаться бесконечно,
+	  * disconnected() будет возвращать false, и все вызовы будут выбрасывать исключение ConnectionLoss.
+	  */
 	bool disconnected();
 
 	void setDefaultACL(ACLs & acl);
@@ -80,7 +84,7 @@ public:
 
 	bool exists(const std::string & path, Stat * stat = nullptr, WatchFuture * watch = nullptr);
 
-	std::string get(const std::string & path, WatchFuture * watch, Stat * stat);
+	std::string get(const std::string & path, Stat * stat, WatchFuture * watch);
 
 	/// Возвращает false, если нет такой ноды. При остальных ошибках бросает исключение.
 	bool tryGet(const std::string & path, std::string & data, Stat * stat = nullptr, WatchFuture * watch = nullptr);
@@ -91,6 +95,8 @@ public:
 	Strings getChildren(const std::string & path,
 						Stat * stat = nullptr,
 						WatchFuture * watch = nullptr);
+
+	void close();
 
 	boost::ptr_vector<zk::OpResult> & multi(const boost::ptr_vector<zk::Op> & ops);
 
