@@ -1,8 +1,6 @@
 #pragma once
-#include <zookeeper/zookeeper.hh>
-#include <Yandex/Common.h>
-#include <boost/function.hpp>
-#include <future>
+#include <zkutil/Types.h>
+#include <zkutil/KeeperException.h>
 
 
 namespace zkutil
@@ -10,38 +8,10 @@ namespace zkutil
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 
-namespace zk = org::apache::zookeeper;
-namespace CreateMode = zk::CreateMode;
-namespace ReturnCode = zk::ReturnCode;
-namespace SessionState = zk::SessionState;
-namespace WatchEvent = zk::WatchEvent;
-
-typedef zk::data::Stat Stat;
-typedef zk::data::ACL ACL;
-
-typedef std::vector<ACL> ACLs;
-typedef std::vector<std::string> Strings;
-
-typedef boost::function<void (WatchEvent::type event, SessionState::type state,
-                         const std::string & path)> WatchFunction;
-
-struct WatchEventInfo
-{
-	WatchEvent::type event;
-	SessionState::type state;
-	std::string path;
-
-	WatchEventInfo() {}
-	WatchEventInfo(WatchEvent::type event_, SessionState::type state_, const std::string & path_)
-		: event(event_), state(state_), path(path_) {}
-};
-
-typedef std::future<WatchEventInfo> WatchFuture;
-
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
   * Вместо callback-ов для watch-ей используются std::future.
   * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке.
-  * Методы с названиями, начинающимися с try, не бросают исключение только при некторых видах ошибок.
+  * Методы с названиями, начинающимися с try, не бросают исключение только при перечисленных видах ошибок.
   * Например, исключение бросается в любом случае, если сессия разорвалась или если не хватает прав или ресурсов.
   */
 class ZooKeeper
@@ -57,6 +27,8 @@ public:
 	bool disconnected();
 
 	void setDefaultACL(ACLs & acl);
+
+	ACLs getDefaultACL();
 
 	/** Создать znode. Используется ACL, выставленный вызовом setDefaultACL (по умолчанию, всем полный доступ).
 	  * Если что-то пошло не так, бросить исключение.
@@ -86,19 +58,41 @@ public:
 
 	std::string get(const std::string & path, Stat * stat, WatchFuture * watch);
 
-	/// Возвращает false, если нет такой ноды. При остальных ошибках бросает исключение.
-	bool tryGet(const std::string & path, std::string & data, Stat * stat = nullptr, WatchFuture * watch = nullptr);
+	/** Не бросает исключение при следующих ошибках:
+	  *  - Такой ноды нет. В таком случае возвращает false.
+	  */
+	bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, WatchFuture * watch = nullptr);
 
 	void set(const std::string & path, const std::string & data,
 			int32_t version = -1, Stat * stat = nullptr);
+
+	/** Не бросает исключение при следующих ошибках:
+	  *  - Такой ноды нет.
+	  *  - У ноды другая версия.
+	  */
+	ReturnCode::type trySet(const std::string & path, const std::string & data,
+							int32_t version = -1, Stat * stat = nullptr);
 
 	Strings getChildren(const std::string & path,
 						Stat * stat = nullptr,
 						WatchFuture * watch = nullptr);
 
+	/** Не бросает исключение при следующих ошибках:
+	  *  - Такой ноды нет. В таком случае возвращает false.
+	  */
+	bool tryGetChildren(const std::string & path, Strings & res,
+						Stat * stat = nullptr,
+						WatchFuture * watch = nullptr);
+
 	void close();
 
-	boost::ptr_vector<zk::OpResult> & multi(const boost::ptr_vector<zk::Op> & ops);
+	/** Транзакционно выполняет несколько операций. При любой ошибке бросает исключение.
+	  */
+	OpResultsPtr multi(const Ops & ops);
+
+	/** Бросает исключение только если какая-нибудь операция вернула "неожиданную" ошибку - такую ошибку,
+	  * увидев которую соответствующий метод try* бросил бы исключение. */
+	OpResultsPtr tryMulti(const Ops & ops);
 
 private:
 	friend struct StateWatch;
