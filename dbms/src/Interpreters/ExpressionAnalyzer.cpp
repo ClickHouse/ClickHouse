@@ -530,13 +530,15 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		else
 		{
 			/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
-			* Так как результат этого поздапроса - ещё не результат всего запроса.
-			* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-			*/
+			  * Так как результат этого поздапроса - ещё не результат всего запроса.
+			  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+			  */
 			Context subquery_context = context;
 			Settings subquery_settings = context.getSettings();
 			subquery_settings.limits.max_result_rows = 0;
 			subquery_settings.limits.max_result_bytes = 0;
+			/// Высичление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+			subquery_settings.extremes = 0;
 			subquery_context.setSettings(subquery_settings);
 
 			InterpreterSelectQuery interpreter(arg->children[0], subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
