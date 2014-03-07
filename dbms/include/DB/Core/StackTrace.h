@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#define DBMS_STACK_TRACE_MAX_DEPTH 32
+
 
 namespace DB
 {
@@ -19,8 +21,8 @@ public:
 
 private:
 	typedef void* Frame;
-	typedef std::vector<Frame> Frames;
-	Frames frames;
+	Frame frames[DBMS_STACK_TRACE_MAX_DEPTH];
+	size_t frames_size;
 };
 
 }

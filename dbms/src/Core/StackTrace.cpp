@@ -16,13 +16,12 @@ namespace DB
 
 StackTrace::StackTrace()
 {
-	frames.resize(DBMS_STACK_TRACE_MAX_DEPTH);
-	frames.resize(backtrace(&frames[0], frames.size()));
+	frames_size = backtrace(frames, DBMS_STACK_TRACE_MAX_DEPTH);
 }
 
 std::string StackTrace::toString() const
 {
-	char ** symbols = backtrace_symbols(&frames[0], frames.size());
+	char ** symbols = backtrace_symbols(frames, frames_size);
 	std::stringstream res;
 
 	if (!symbols)
@@ -30,7 +29,7 @@ std::string StackTrace::toString() const
 
 	try
 	{
-		for (size_t i = 0, size = frames.size(); i < size; ++i)
+		for (size_t i = 0, size = frames_size; i < size; ++i)
 		{
 			/// Делаем demangling имён. Имя находится в скобках, до символа '+'.
 			
