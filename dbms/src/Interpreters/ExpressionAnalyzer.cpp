@@ -789,7 +789,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					fake_column.type = new DataTypeUInt8;
 					fake_column.column = new ColumnConstUInt8(1, 0);
 					actions_stack.addAction(ExpressionActions::Action::addColumn(fake_column));
-					getActionsImpl(node->arguments, no_subqueries, only_consts, actions_stack);
+					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack);
 					return;
 				}
 			}
