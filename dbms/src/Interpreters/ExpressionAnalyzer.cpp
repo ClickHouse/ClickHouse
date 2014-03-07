@@ -782,17 +782,14 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 				else
 				{
-					if (!only_consts)
-					{
-						/// Мы в той части дерева, из которой нас интересуют только типы.
-						/// Не будем выполнять подзапросы и составлять множества. Вставим произвольный столбец правильного типа.
-						ColumnWithNameAndType fake_column;
-						fake_column.name = node->getColumnName();
-						fake_column.type = new DataTypeUInt8;
-						fake_column.column = new ColumnConstUInt8(1, 0);
-						actions_stack.addAction(ExpressionActions::Action::addColumn(fake_column));
-						getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack);
-					}
+					/// Мы в той части дерева, которую не собираемся вычислять. Нужно только определить типы.
+					/// Не будем выполнять подзапросы и составлять множества. Вставим произвольный столбец правильного типа.
+					ColumnWithNameAndType fake_column;
+					fake_column.name = node->getColumnName();
+					fake_column.type = new DataTypeUInt8;
+					fake_column.column = new ColumnConstUInt8(1, 0);
+					actions_stack.addAction(ExpressionActions::Action::addColumn(fake_column));
+					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack);
 					return;
 				}
 			}
