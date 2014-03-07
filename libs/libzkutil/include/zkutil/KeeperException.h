@@ -1,6 +1,6 @@
 #pragma once
 #include <Poco/Exception.h>
-#include <zkutil/ZooKeeper.h>
+#include <zkutil/Types.h>
 
 
 namespace zkutil
