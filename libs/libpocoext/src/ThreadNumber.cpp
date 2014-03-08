@@ -9,13 +9,8 @@ static unsigned threads = 0;
 
 unsigned Poco::ThreadNumber::get()
 {
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	if (unlikely(!thread_number))
-	{
-		pthread_mutex_lock(&mutex);
-		if (likely(!thread_number))
-			thread_number = ++threads;
-		pthread_mutex_unlock(&mutex);
-	}
+	if (unlikely(thread_number == 0))
+		thread_number = __sync_add_and_fetch(&threads, 1);
+
 	return thread_number;
 }

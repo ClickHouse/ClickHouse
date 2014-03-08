@@ -1,5 +1,4 @@
-#ifndef THREAD_NUMBER_H
-#define THREAD_NUMBER_H
+#pragma once
 
 /** Последовательный номер потока, начиная с 1, среди тех потоков, для которых был получен этот номер.
   * Используется при логгировании.
@@ -13,5 +12,3 @@ namespace ThreadNumber
 }
 
 }
-
-#endif
