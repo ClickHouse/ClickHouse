@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Core/NamesAndTypes.h>
@@ -22,7 +22,7 @@ class MergeTreeReader
 {
 public:
 	MergeTreeReader(const String & path_,	/// Путь к куску
-		const Names & columns_names_, bool use_uncompressed_cache_, StorageMergeTree & storage_)
+		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_)
 	: path(path_), column_names(columns_names_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
 	{
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -220,7 +220,7 @@ private:
 	FileStreams streams;
 	Names column_names;
 	bool use_uncompressed_cache;
-	StorageMergeTree & storage;
+	MergeTreeData & storage;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0)
 	{

@@ -7,16 +7,16 @@
 
 #include <DB/Interpreters/sortBlock.h>
 
-#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
 {
-	
-class MergeTreeBlockOutputStream : public IBlockOutputStream
+
+class MergeTreeDataBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MergeTreeBlockOutputStream(StoragePtr owned_storage) : IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageMergeTree &>(*owned_storage)), flags(O_TRUNC | O_CREAT | O_WRONLY)
+	MergeTreeDataBlockOutputStream(MergeTreeData & data, StoragePtr owned_storage) : IBlockOutputStream(owned_storage), storage(data), flags(O_TRUNC | O_CREAT | O_WRONLY)
 	{
 	}
 	
@@ -25,7 +25,7 @@ public:
 		Poco::ScopedReadRWLock write_lock(storage.write_lock);
 		
 		storage.check(block, true);
-		
+
 		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 		
 		size_t rows = block.rows();
@@ -82,7 +82,7 @@ public:
 	}
 	
 private:
-	StorageMergeTree & storage;
+	MergeTreeData & storage;
 	
 	const int flags;
 	
@@ -130,7 +130,7 @@ private:
 		LOG_TRACE(storage.log, "Writing index.");
 		
 		/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
-		StorageMergeTree::DataPart::Index index_vec;
+		MergeTreeData::DataPart::Index index_vec;
 		index_vec.reserve(part_size * storage.sort_descr.size());
 		
 		{
@@ -183,7 +183,7 @@ private:
 			String part_name = storage.getPartName(DayNum_t(min_date), DayNum_t(max_date), part_id, part_id, 0);
 			String part_res_path = storage.full_path + part_name + "/";
 
-			StorageMergeTree::DataPartPtr new_data_part = new StorageMergeTree::DataPart(storage);
+			MergeTreeData::DataPartPtr new_data_part = new MergeTreeData::DataPart(storage);
 			new_data_part->left_date = DayNum_t(min_date);
 			new_data_part->right_date = DayNum_t(max_date);
 			new_data_part->left = part_id;

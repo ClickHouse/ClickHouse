@@ -13,7 +13,8 @@
 #include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/StoragePtr.h>
-#include "DatabaseDropper.h"
+#include <DB/Storages/IColumnsDeclaration.h>
+#include <DB/Storages/DatabaseDropper.h>
 #include <Poco/File.h>
 
 
@@ -30,40 +31,14 @@ class Context;
   * - структура хранения данных (сжатие, etc.)
   * - конкуррентный доступ к данным (блокировки, etc.)
   */
-class IStorage : private boost::noncopyable
+class IStorage : private boost::noncopyable, public IColumnsDeclaration
 {
 public:
-	/// Основное имя типа таблицы (например, StorageWithoutKey).
+	/// Основное имя типа таблицы (например, StorageMergeTree).
 	virtual std::string getName() const = 0;
 
 	/// Имя самой таблицы (например, hits)
 	virtual std::string getTableName() const = 0;
-
-	/** Получить список имён и типов столбцов таблицы, только невиртуальные.
-	  */
-	virtual const NamesAndTypesList & getColumnsList() const = 0;
-
-	/** Получить описание реального (невиртуального) столбца по его имени.
-	  */
-	virtual NameAndTypePair getRealColumn(const String & column_name) const;
-
-	/** Присутствует ли реальный (невиртуальный) столбец с таким именем.
-	  */
-	virtual bool hasRealColumn(const String & column_name) const;
-
-	/** Получить описание любого столбца по его имени.
-	  */
-	virtual NameAndTypePair getColumn(const String & column_name) const;
-
-	/** Присутствует ли столбец с таким именем.
-	  */
-	virtual bool hasColumn(const String & column_name) const;
-
-	const DataTypePtr getDataTypeByName(const String & column_name) const;
-
-	/** То же самое, но в виде блока-образца.
-	  */
-	Block getSampleBlock() const;
 
 	/** Возвращает true, если хранилище получает данные с удалённого сервера или серверов.
 	  */
@@ -172,19 +147,6 @@ public:
 	  */
 	virtual void shutdown() {}
 	
-	virtual ~IStorage() {}
-
-	/** Проверить, что все запрошенные имена есть в таблице и заданы корректно.
-	  * (список имён не пустой и имена не повторяются)
-	  */
-	void check(const Names & column_names) const;
-
-	/** Проверить, что блок с данными для записи содержит все столбцы таблицы с правильными типами,
-	  *  содержит только столбцы таблицы, и все столбцы различны.
-	  * Если need_all, еще проверяет, что все столбцы таблицы есть в блоке.
-	  */
-	void check(const Block & block, bool need_all = false) const;
-	
 	/** Возвращает владеющий указатель на себя.
 	  */ 
 	StoragePtr thisPtr()
@@ -213,9 +175,7 @@ public:
 
 protected:
 	IStorage() : drop_on_destroy(false) {}
-	
-	/// реализация alter, модифицирующая список столбцов.
-	void alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context) const;
+
 private:
 	boost::weak_ptr<StoragePtr::Wrapper> this_ptr;
 };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/PKCondition.h>
 
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
@@ -18,7 +18,7 @@ public:
 	/// (например, поток, сливаящий куски). В таком случае сам storage должен следить, чтобы не удалить данные, пока их читают.
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
 		size_t block_size_, const Names & column_names_,
-		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
+		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
 		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_,
 		ExpressionActionsPtr prewhere_actions_, String prewhere_column_)
 		: IProfilingBlockInputStream(owned_storage),
@@ -74,8 +74,8 @@ public:
 	
 	/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
 	static MarkRanges markRangesFromPkRange(
-		const StorageMergeTree::DataPart::Index & index,
-		StorageMergeTree & storage,
+		const MergeTreeData::DataPart::Index & index,
+		MergeTreeData & storage,
 		PKCondition & key_condition)
 	{
 		MarkRanges res;
@@ -321,8 +321,8 @@ private:
 	Names column_names;
 	NameSet column_name_set;
 	Names pre_column_names;
-	StorageMergeTree & storage;
-	const StorageMergeTree::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
+	MergeTreeData & storage;
+	const MergeTreeData::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
 	MarkRanges all_mark_ranges; /// В каких диапазонах засечек читать. В порядке возрастания номеров.
 	MarkRanges remaining_mark_ranges; /// В каких диапазонах засечек еще не прочли.
 									  /// В порядке убывания номеров, чтобы можно было выбрасывать из конца.

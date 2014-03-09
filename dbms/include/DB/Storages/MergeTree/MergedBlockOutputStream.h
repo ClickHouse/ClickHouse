@@ -3,7 +3,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 
-#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
 class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
-	IMergedBlockOutputStream(StorageMergeTree & storage_) : storage(storage_), index_offset(0)
+	IMergedBlockOutputStream(MergeTreeData & storage_) : storage(storage_), index_offset(0)
 	{
 	}
 
@@ -182,7 +182,7 @@ protected:
 		}
 	}
 
-	StorageMergeTree & storage;
+	MergeTreeData & storage;
 
 	ColumnStreams column_streams;
 
@@ -196,7 +196,7 @@ protected:
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedBlockOutputStream(StorageMergeTree & storage_,
+	MergedBlockOutputStream(MergeTreeData & storage_,
 		UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
 		: IMergedBlockOutputStream(storage_), marks_count(0)
 	{
@@ -299,7 +299,7 @@ typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedColumnOnlyOutputStream(StorageMergeTree & storage_, String part_path_, bool sync_ = false) :
+	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_ = false) :
 		IMergedBlockOutputStream(storage_), part_path(part_path_), initialized(false), sync(sync_)
 	{
 	}
