@@ -87,6 +87,7 @@ public:
 
 	void getStats(size_t & out_hits, size_t & out_misses) const volatile
 	{
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 		/// Синхронизация не нужна.
 		out_hits = hits;
 		out_misses = misses;
@@ -94,11 +95,13 @@ public:
 
 	size_t weight() const
 	{
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 		return current_size;
 	}
 
 	size_t count() const
 	{
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 		return cells.size();
 	}
 
