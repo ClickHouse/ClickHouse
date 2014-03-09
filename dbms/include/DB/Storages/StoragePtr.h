@@ -38,7 +38,7 @@ private:
 public:
 	StoragePtr() {}
 	StoragePtr(const StoragePtr & p) : ptr(p.ptr) {}
-	StoragePtr(const StorageWeakPtr & p);
+	inline StoragePtr(const StorageWeakPtr & p);
 	
 	StoragePtr& operator= (const StoragePtr & p)
 	{
@@ -101,6 +101,6 @@ private:
 	boost::weak_ptr<StoragePtr::Wrapper> ptr;
 };
 
-StoragePtr::StoragePtr(const StorageWeakPtr & p) : ptr(p.ptr) {}
+inline StoragePtr::StoragePtr(const StorageWeakPtr & p) : ptr(p.ptr) {}
 
 }
