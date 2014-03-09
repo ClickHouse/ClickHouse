@@ -140,8 +140,10 @@ public:
 	  * primary_expr_ast	- выражение для сортировки;
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
+	  *
+	  * owning_storage используется только чтобы отдавать его возвращаемым потокам блоков.
 	  */
-	MergeTreeData(	StoragePtr owning_storage_, const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	MergeTreeData(	StorageWeakPtr owning_storage_, const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 					const Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,
@@ -227,7 +229,7 @@ public:
 	}
 
 private:
-	StoragePtr owning_storage;
+	StorageWeakPtr owning_storage;
 
 	String path;
 	String name;

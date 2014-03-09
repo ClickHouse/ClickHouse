@@ -16,6 +16,7 @@
 #include <DB/Storages/IColumnsDeclaration.h>
 #include <DB/Storages/DatabaseDropper.h>
 #include <Poco/File.h>
+#include <boost/make_shared.hpp>
 
 
 namespace DB
@@ -153,7 +154,7 @@ public:
 	{
 		if (!this_ptr.lock())
 		{
-			boost::shared_ptr<StoragePtr::Wrapper> p(new StoragePtr::Wrapper(this));
+			auto p = boost::make_shared<StoragePtr::Wrapper>(this);
 			this_ptr = p;
 			return StoragePtr(this_ptr);
 		}

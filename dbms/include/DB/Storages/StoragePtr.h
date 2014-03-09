@@ -11,7 +11,7 @@ namespace DB
 {
 
 class IStorage;
-
+class StorageWeakPtr;
 
 class StoragePtr
 {
@@ -33,10 +33,12 @@ private:
 	boost::shared_ptr<Wrapper> ptr;
 	
 	friend class IStorage;
+	friend class StorageWeakPtr;
 
 public:
 	StoragePtr() {}
 	StoragePtr(const StoragePtr & p) : ptr(p.ptr) {}
+	StoragePtr(const StorageWeakPtr & p);
 	
 	StoragePtr& operator= (const StoragePtr & p)
 	{
@@ -82,5 +84,23 @@ public:
 		return !bool(ptr);
 	}
 };
+
+class StorageWeakPtr
+{
+public:
+	StorageWeakPtr(const StoragePtr & p) : ptr(p.ptr) {}
+
+	StoragePtr lock()
+	{
+		return StoragePtr(ptr);
+	}
+
+private:
+	friend class StoragePtr;
+
+	boost::weak_ptr<StoragePtr::Wrapper> ptr;
+};
+
+StoragePtr::StoragePtr(const StorageWeakPtr & p) : ptr(p.ptr) {}
 
 }

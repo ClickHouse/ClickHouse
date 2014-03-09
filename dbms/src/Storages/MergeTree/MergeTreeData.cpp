@@ -60,7 +60,7 @@ namespace DB
 size_t MergeTreeData::total_size_of_currently_merging_parts = 0;
 
 MergeTreeData::MergeTreeData(
-	StoragePtr owning_storage_, const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	StorageWeakPtr owning_storage_, const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 	const Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
