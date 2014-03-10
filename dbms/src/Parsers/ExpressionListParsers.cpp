@@ -12,6 +12,59 @@ namespace DB
 {
 
 
+const char * ParserMultiplicativeExpression::operators[] =
+{
+	"*", 	"multiply",
+	"/", 	"divide",
+	"%", 	"modulo",
+	nullptr, nullptr
+};
+
+const char * ParserUnaryMinusExpression::operators[] =
+{
+	"-", 	"negate",
+	nullptr, nullptr
+};
+
+const char * ParserAdditiveExpression::operators[] =
+{
+	"+", 	"plus",
+	"-", 	"minus",
+	nullptr, nullptr
+};
+
+const char * ParserComparisonExpression::operators[] =
+{
+	"==", 		"equals",
+	"!=", 		"notEquals",
+	"<>", 		"notEquals",
+	"<=", 		"lessOrEquals",
+	">=", 		"greaterOrEquals",
+	"<", 		"less",
+	">", 		"greater",
+	"=", 		"equals",
+	"LIKE", 	"like",
+	"NOT LIKE",	"notLike",
+	"IN",		"in",
+	"NOT IN",	"notIn",
+	nullptr, nullptr
+};
+
+const char * ParserLogicalNotExpression::operators[] =
+{
+	"NOT", "not",
+	nullptr, nullptr
+};
+
+const char * ParserAccessExpression::operators[] =
+{
+	".", 	"tupleElement",
+	"[", 	"arrayElement",
+	nullptr, nullptr
+};
+
+
+
 bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	bool first = true;
@@ -75,15 +128,16 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 
 			/// пробуем найти какой-нибудь из допустимых операторов
 			Pos begin = pos;
-			Operators_t::const_iterator it;
-			for (it = operators.begin(); it != operators.end(); ++it)
+
+			const char ** it;
+			for (it = operators; *it; it += 2)
 			{
-				ParserString op(it->first, true, true);
+				ParserString op(it[0], true, true);
 				if (op.ignore(pos, end, expected))
 					break;
 			}
 
-			if (it == operators.end())
+			if (!*it)
 				break;
 
 			ws.ignore(pos, end);
@@ -105,7 +159,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			/// первым аргументом функции будет предыдущий элемент, вторым - следующий
 			function.range.first = begin;
 			function.range.second = pos;
-			function.name = it->second;
+			function.name = it[1];
 			function.arguments = exp_list_node;
 			function.children.push_back(exp_list_node);
 
@@ -117,7 +171,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			/** специальное исключение для оператора доступа к элементу массива x[y], который
 				* содержит инфиксную часть '[' и суффиксную ']' (задаётся в виде '[')
 				*/
-			if (0 == strcmp(it->first, "["))
+			if (0 == strcmp(it[0], "["))
 			{
 				ParserString rest_p("]");
 			
@@ -191,7 +245,7 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 
 	Pos begin = pos;
 		
-	if (!elem_parser->parse(pos, end, elem_cond, expected))
+	if (!elem_parser.parse(pos, end, elem_cond, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -202,7 +256,7 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 	{
 		ws.ignore(pos, end);
 
-		if (!elem_parser->parse(pos, end, elem_then, expected))
+		if (!elem_parser.parse(pos, end, elem_then, expected))
 			return false;
 		
 		ws.ignore(pos, end);
@@ -212,7 +266,7 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 
 		ws.ignore(pos, end);
 
-		if (!elem_parser->parse(pos, end, elem_else, expected))
+		if (!elem_parser.parse(pos, end, elem_else, expected))
 			return false;
 
 		/// функция, соответствующая оператору
@@ -266,7 +320,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const 
 			was_open = true;
 		}
 		
-		if (!ParserList(new ParserIdentifier, new ParserString(",")).parse(pos, end, inner_arguments, expected))
+		if (!ParserList(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(","))).parse(pos, end, inner_arguments, expected))
 			break;
 		ws.ignore(pos, end, expected);
 		
@@ -281,7 +335,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const 
 			break;
 		ws.ignore(pos, end, expected);
 		
-		if (!elem_parser->parse(pos, end, expression, expected))
+		if (!elem_parser.parse(pos, end, expression, expected))
 		{
 			pos = begin;
 			return false;
@@ -310,7 +364,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const 
 	while (false);
 	
 	pos = begin;
-	return elem_parser->parse(pos, end, node, expected);
+	return elem_parser.parse(pos, end, node, expected);
 }
 
 
@@ -320,10 +374,10 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 
 	/// пробуем найти какой-нибудь из допустимых операторов
 	Pos begin = pos;
-	Operators_t::const_iterator it;
-	for (it = operators.begin(); it != operators.end(); ++it)
+	const char ** it;
+	for (it = operators; *it; it += 2)
 	{
-		ParserString op(it->first, true, true);
+		ParserString op(it[0], true, true);
 		if (op.ignore(pos, end, expected))
 			break;
 	}
@@ -334,7 +388,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 	if (!elem_parser->parse(pos, end, elem, expected))
 		return false;
 
-	if (it == operators.end())
+	if (!*it)
 		node = elem;
 	else
 	{
@@ -350,7 +404,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 
 		function.range.first = begin;
 		function.range.second = pos;
-		function.name = it->second;
+		function.name = it[1];
 		function.arguments = exp_list_node;
 		function.children.push_back(exp_list_node);
 
@@ -385,24 +439,22 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, co
 
 
 ParserAccessExpression::ParserAccessExpression()
-	: elem_parser(new ParserExpressionElement),
-	operator_parser(boost::assign::map_list_of
-			(".", 	"tupleElement")
-			("[", 	"arrayElement"),
-		elem_parser)
+	: operator_parser(
+		operators,
+		ParserPtr(new ParserExpressionElement))
 {
 }
 
 
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias()
-	: impl(new ParserWithOptionalAlias(new ParserLambdaExpression))
+	: impl(new ParserWithOptionalAlias(ParserPtr(new ParserLambdaExpression)))
 {
 }
 
 
 bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
-	return ParserList(new ParserExpressionWithOptionalAlias, new ParserString(",")).parse(pos, end, node, expected);
+	return ParserList(ParserPtr(new ParserExpressionWithOptionalAlias), ParserPtr(new ParserString(","))).parse(pos, end, node, expected);
 }
 
 
@@ -415,7 +467,7 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
-	return ParserList(new ParserOrderByElement, new ParserString(","), false).parse(pos, end, node, expected);
+	return ParserList(ParserPtr(new ParserOrderByElement), ParserPtr(new ParserString(",")), false).parse(pos, end, node, expected);
 }
 
 

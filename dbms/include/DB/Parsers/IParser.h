@@ -1,7 +1,7 @@
 #pragma once
 
 #include <list>
-#include <Poco/SharedPtr.h>
+#include <memory>
 
 #include <DB/Core/Types.h>
 #include <DB/Parsers/IAST.h>
@@ -63,6 +63,6 @@ public:
 	virtual ~IParser() {}
 };
 
-typedef SharedPtr<IParser> ParserPtr;
+typedef std::unique_ptr<IParser> ParserPtr;
 
 }

@@ -135,7 +135,7 @@ protected:
 class ParserWithOptionalAlias : public IParserBase
 {
 public:
-	ParserWithOptionalAlias(ParserPtr elem_parser_) : elem_parser(elem_parser_) {}
+	ParserWithOptionalAlias(ParserPtr && elem_parser_) : elem_parser(std::move(elem_parser_)) {}
 protected:
 	ParserPtr elem_parser;
 	

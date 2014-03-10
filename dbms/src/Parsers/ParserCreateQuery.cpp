@@ -130,7 +130,7 @@ bool ParserNameTypePair::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
-	return ParserList(new ParserNameTypePair, new ParserString(","), false).parse(pos, end, node, expected);
+	return ParserList(ParserPtr(new ParserNameTypePair), ParserPtr(new ParserString(",")), false).parse(pos, end, node, expected);
 }
 
 

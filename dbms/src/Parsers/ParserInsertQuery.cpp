@@ -27,7 +27,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	ParserString s_lparen("(");
 	ParserString s_rparen(")");
 	ParserIdentifier name_p;
-	ParserList columns_p(new ParserIdentifier, new ParserString(","), false);
+	ParserList columns_p(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(",")), false);
 	
 	ASTPtr database;
 	ASTPtr table;
