@@ -29,7 +29,7 @@ int main(int argc, char ** argv)
 	}
 	
 	ASTPtr root;
-	ParserPtr parsers[] = {new ParserSelectQuery, new ParserExpressionList};
+	ParserPtr parsers[] = {ParserPtr(new ParserSelectQuery), ParserPtr(new ParserExpressionList)};
 	for (size_t i = 0; i < sizeof(parsers)/sizeof(parsers[0]); ++i)
 	{
 		IParser & parser = *parsers[i];
