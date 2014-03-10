@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
 			"DontCountHits 			UInt8,\n"
 			"WithHash 				UInt8\n"
 			") ENGINE = Log";
-		std::string expected;
+		const char * expected = "";
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();

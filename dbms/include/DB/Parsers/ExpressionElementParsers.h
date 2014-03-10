@@ -10,8 +10,8 @@ namespace DB
 class ParserArray : public IParserBase
 {
 protected:
-	String getName() { return "array"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "array"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -22,8 +22,8 @@ protected:
 class ParserParenthesisExpression : public IParserBase
 {
 protected:
-	String getName() { return "expression in parenthesis"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "expression in parenthesis"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -32,8 +32,8 @@ protected:
 class ParserSubquery : public IParserBase
 {
 protected:
-	String getName() { return "SELECT subquery"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "SELECT subquery"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -42,8 +42,8 @@ protected:
 class ParserIdentifier : public IParserBase
 {
 protected:
-	String getName() { return "identifier"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "identifier"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -52,8 +52,8 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 protected:
-	String getName() { return "compound identifier"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "compound identifier"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -65,8 +65,8 @@ protected:
 class ParserFunction : public IParserBase
 {
 protected:
-	String getName() { return "function"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "function"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -75,8 +75,8 @@ protected:
 class ParserNull : public IParserBase
 {
 protected:
-	String getName() { return "NULL"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "NULL"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -85,8 +85,8 @@ protected:
 class ParserNumber : public IParserBase
 {
 protected:
-	String getName() { return "number"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "number"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -95,8 +95,8 @@ protected:
 class ParserStringLiteral : public IParserBase
 {
 protected:
-	String getName() { return "string literal"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "string literal"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -105,8 +105,8 @@ protected:
 class ParserLiteral : public IParserBase
 {
 protected:
-	String getName() { return "literal"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "literal"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -115,8 +115,8 @@ protected:
 class ParserAlias : public IParserBase
 {
 protected:
-	String getName() { return "alias"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "alias"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -125,8 +125,8 @@ protected:
 class ParserExpressionElement : public IParserBase
 {
 protected:
-	String getName() { return "element of expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "element of expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -139,8 +139,8 @@ public:
 protected:
 	ParserPtr elem_parser;
 	
-	String getName() { return "element of expression with optional alias"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "element of expression with optional alias"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -150,8 +150,8 @@ protected:
 class ParserOrderByElement : public IParserBase
 {
 protected:
-	String getName() { return "element of ORDER BY expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "element of ORDER BY expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 

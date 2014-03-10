@@ -137,7 +137,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				StringPtr type_name = new String(it->second->getName());
 
 				ParserIdentifierWithOptionalParameters storage_p;
-				String expected;
+				const char * expected = "";
 				const char * pos = type_name->data();
 				const char * end = pos + type_name->size();
 

@@ -31,7 +31,7 @@ void executeQuery(
 
 	ParserQuery parser;
 	ASTPtr ast;
-	std::string expected;
+	const char * expected = "";
 
 	std::vector<char> parse_buf;
 	const char * begin;
@@ -122,7 +122,7 @@ BlockIO executeQuery(
 	
 	ParserQuery parser;
 	ASTPtr ast;
-	std::string expected;
+	const char * expected = "";
 
 	const char * begin = query.data();
 	const char * end = begin + query.size();

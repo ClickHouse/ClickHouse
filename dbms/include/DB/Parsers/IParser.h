@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_IPARSER_H
-#define DBMS_PARSERS_IPARSER_H
+#pragma once
 
 #include <list>
 #include <Poco/SharedPtr.h>
@@ -22,7 +21,7 @@ public:
 	typedef const char * Pos;
 
 	/** Получить текст о том, что парсит этот парсер. */
-	virtual String getName() = 0;
+	virtual const char * getName() const = 0;
 
 	/** Распарсить кусок текста с позиции pos, но не дальше конца строки (end - позиция после конца строки),
 	  * переместить указатель pos на максимальное место, до которого удалось распарсить,
@@ -32,9 +31,9 @@ public:
 	  *  или что парсит этот парсер, если парсинг был успешным.
 	  * Везде предполагается, что строка, в которую входит диапазон [begin, end) 0-terminated.
 	  */
-	virtual bool parse(Pos & pos, Pos end, ASTPtr & node, String & expected) = 0;
+	virtual bool parse(Pos & pos, Pos end, ASTPtr & node, const char *& expected) = 0;
 
-	bool ignore(Pos & pos, Pos end, String & expected)
+	bool ignore(Pos & pos, Pos end, const char *& expected)
 	{
 		ASTPtr ignore_node;
 		return parse(pos, end, ignore_node, expected);
@@ -42,13 +41,13 @@ public:
 	
 	bool ignore(Pos & pos, Pos end)
 	{
-		String expected;
+		const char * expected;
 		return ignore(pos, end, expected);
 	}
 
 	/** То же самое, но не двигать позицию и не записывать результат в node.
 	  */
-	bool check(Pos & pos, Pos end, String & expected)
+	bool check(Pos & pos, Pos end, const char *& expected)
 	{
 		Pos begin = pos;
 		ASTPtr node;
@@ -67,5 +66,3 @@ public:
 typedef SharedPtr<IParser> ParserPtr;
 
 }
-
-#endif

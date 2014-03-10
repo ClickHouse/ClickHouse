@@ -35,7 +35,7 @@ int main(int argc, char ** argv)
 		IParser & parser = *parsers[i];
 		const char * pos = argv[1];
 		const char * end = argv[1] + strlen(argv[1]);
-		std::string expected;
+		const char * expected = "";
 		if (parser.parse(pos ,end, root, expected))
 			break;
 		else

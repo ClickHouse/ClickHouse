@@ -37,7 +37,7 @@ int main(int argc, char ** argv)
 			"s1 <= 'abc', s1 <= s2, s1 >= 'abc', s1 >= s2, "
 			"*/"
 			"s1 < s2 AND x % 3 < x % 5";
-		std::string expected;
+		const char * expected = "";
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();

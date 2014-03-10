@@ -14,7 +14,7 @@ namespace DB
 /** Оператор и соответствующая ему функция. Например, "+" -> "plus"
   * Не std::map, так как порядок парсинга операторов задаётся явно и может отличаться от алфавитного.
   */
-typedef std::list<std::pair<String, String> > Operators_t;
+typedef std::list<std::pair<const char *, const char *> > Operators_t;
 
 
 /** Список элементов, разделённых чем-либо. */
@@ -26,8 +26,8 @@ public:
 	{
 	}
 protected:
-	String getName() { return "list of elements (" + elem_parser->getName() + ")"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "list of elements"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 private:
 	ParserPtr elem_parser;
 	ParserPtr separator_parser;
@@ -53,9 +53,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "list, delimited by binary operators"; }
+	const char * getName() const { return "list, delimited by binary operators"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -70,15 +70,15 @@ private:
 	ParserPtr elem_parser;
 
 public:
-	ParserVariableArityOperatorList(const String & infix_, const String & function_, ParserPtr elem_parser_)
+	ParserVariableArityOperatorList(const char * infix_, const String & function_, ParserPtr elem_parser_)
 		: infix_parser(infix_, true, true), function_name(function_), elem_parser(elem_parser_)
 	{
 	}
 
 protected:
-	String getName() { return "list, delimited by operator of variable arity"; }
+	const char * getName() const { return "list, delimited by operator of variable arity"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -100,8 +100,8 @@ public:
 	}
 	
 protected:
-	String getName() { return "expression with prefix unary operator"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "expression with prefix unary operator"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -114,9 +114,9 @@ public:
 	ParserAccessExpression();
 	
 protected:
-	String getName() { return "access expression"; }
+	const char * getName() const { return "access expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -136,9 +136,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "unary minus expression"; }
+	const char * getName() const { return "unary minus expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -159,9 +159,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "multiplicative expression"; }
+	const char * getName() const { return "multiplicative expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -184,9 +184,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "additive expression"; }
+	const char * getName() const { return "additive expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -219,9 +219,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "comparison expression"; }
+	const char * getName() const { return "comparison expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -241,9 +241,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "logical-NOT expression"; }
+	const char * getName() const { return "logical-NOT expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -263,9 +263,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "logical-AND expression"; }
+	const char * getName() const { return "logical-AND expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -285,9 +285,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "logical-OR expression"; }
+	const char * getName() const { return "logical-OR expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -309,9 +309,9 @@ public:
 	}
 
 protected:
-	String getName() { return "expression with ternary operator"; }
+	const char * getName() const { return "expression with ternary operator"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -327,9 +327,9 @@ public:
 	}
 	
 protected:
-	String getName() { return "lambda expression"; }
+	const char * getName() const { return "lambda expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -340,9 +340,9 @@ public:
 protected:
 	ParserPtr impl;
 
-	String getName() { return "expression with optional alias"; }
+	const char * getName() const { return "expression with optional alias"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return impl->parse(pos, end, node, expected);
 	}
@@ -353,8 +353,8 @@ protected:
 class ParserExpressionList : public IParserBase
 {
 protected:
-	String getName() { return "list of expressions"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "list of expressions"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -363,16 +363,16 @@ class ParserNotEmptyExpressionList : public IParserBase
 private:
 	ParserExpressionList nested_parser;
 protected:
-	String getName() { return "not empty list of expressions"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "not empty list of expressions"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
 class ParserOrderByExpressionList : public IParserBase
 {
 protected:
-	String getName() { return "order by expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "order by expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 

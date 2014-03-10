@@ -15,8 +15,8 @@ namespace DB
 class ParserUseQuery : public IParserBase
 {
 protected:
-	String getName() { return "USE query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	const char * getName() const { return "USE query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		Pos begin = pos;
 

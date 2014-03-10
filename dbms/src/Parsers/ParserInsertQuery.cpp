@@ -13,7 +13,7 @@ namespace DB
 {
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 

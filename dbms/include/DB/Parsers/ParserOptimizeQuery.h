@@ -12,8 +12,8 @@ namespace DB
 class ParserOptimizeQuery : public IParserBase
 {
 protected:
-	String getName() { return "OPTIMIZE query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "OPTIMIZE query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 }

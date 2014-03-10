@@ -72,7 +72,7 @@ void InterpreterRenameQuery::execute()
 			const char * pos = create_query.data();
 			const char * end = pos + create_query.size();
 			ASTPtr ast;
-			String expected;
+			const char * expected = "";
 			bool parse_res = parser.parse(pos, end, ast, expected);
 
 			/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.

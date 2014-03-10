@@ -461,7 +461,7 @@ private:
 	bool parseQuery()
 	{
 		ParserQuery parser;
-		std::string expected;
+		const char * expected = "";
 
 		const char * begin = query.data();
 		const char * end = begin + query.size();

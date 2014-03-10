@@ -10,7 +10,7 @@
 
 namespace DB
 {
-bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 

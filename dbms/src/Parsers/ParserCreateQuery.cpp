@@ -13,7 +13,7 @@
 namespace DB
 {
 	
-bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString open("(");
@@ -55,7 +55,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 }
 	
 	
-bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 	
@@ -75,7 +75,7 @@ bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node
 }
 
 
-bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	ParserIdentifier non_parametric;
 	ParserIdentifierWithParameters parametric;
@@ -102,7 +102,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 }
 
 
-bool ParserNameTypePair::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserNameTypePair::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	ParserIdentifier name_parser;
 	ParserIdentifierWithOptionalParameters type_parser;
@@ -128,13 +128,13 @@ bool ParserNameTypePair::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & e
 }
 
 
-bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	return ParserList(new ParserNameTypePair, new ParserString(","), false).parse(pos, end, node, expected);
 }
 
 
-bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, String & expected)
+bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, const char *& expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_engine("ENGINE", true, true);
@@ -162,7 +162,7 @@ bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, String & expe
 }
 
 
-bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 

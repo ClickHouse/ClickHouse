@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_IPARSERBASE_H
-#define DBMS_PARSERS_IPARSERBASE_H
+#pragma once
 
 #include <list>
 #include <Poco/SharedPtr.h>
@@ -17,16 +16,14 @@ namespace DB
 class IParserBase : public IParser
 {
 public:
-	bool parse(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parse(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		expected = getName();
 		bool res = parseImpl(pos, end, node, expected);
 		return res;
 	}
 protected:
-	virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected) = 0;
+	virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected) = 0;
 };
 
 }
-
-#endif

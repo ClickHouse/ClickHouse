@@ -12,7 +12,7 @@ int main(int argc, char ** argv)
 	DB::ParserCreateQuery parser;
 	DB::ASTPtr ast;
 	std::string input = "CREATE TABLE hits (URL String, UserAgentMinor2 FixedString(2), EventTime DateTime) ENGINE = Log";
-	std::string expected;
+	const char * expected = "";
 
 	const char * begin = input.data();
 	const char * end = begin + input.size();
