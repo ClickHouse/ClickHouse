@@ -122,7 +122,7 @@ private:
 		Stopwatch watch;
 
 		/// В цикле, кладём все запросы в очередь.
-		for (size_t i; !interrupt_listener.check(); ++i)
+		for (size_t i = 0; !interrupt_listener.check(); ++i)
 		{
 			if (i >= queries.size())
 				i = 0;
