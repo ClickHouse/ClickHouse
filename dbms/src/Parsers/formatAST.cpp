@@ -557,6 +557,32 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 					written = true;
 				}
 			}
+
+			if (!written && 0 == strcmp(ast.name.c_str(), "array"))
+			{
+				s << '[';
+				for (size_t i = 0; i < ast.arguments->children.size(); ++i)
+				{
+					if (i != 0)
+						s << ", ";
+					formatAST(*ast.arguments->children[i], s, indent, hilite, one_line, false);
+				}
+				s << ']';
+				written = true;
+			}
+
+			if (!written && 0 == strcmp(ast.name.c_str(), "tuple"))
+			{
+				s << '(';
+				for (size_t i = 0; i < ast.arguments->children.size(); ++i)
+				{
+					if (i != 0)
+						s << ", ";
+					formatAST(*ast.arguments->children[i], s, indent, hilite, one_line, false);
+				}
+				s << ')';
+				written = true;
+			}
 		}
 	}
 
