@@ -24,7 +24,7 @@ int main(int argc, const char ** argv)
 	std::string query = "SELECT count() FROM pre.t WHERE (key > 9000 AND key < 100000 OR key > 200000 AND key < 1000000 OR key > 3000000 AND key < 8000000 OR key > 12000000)";
 	ASTPtr ast;
 	IParser::Pos pos = &query[0];
-	std::string error;
+	const char * error = "";
 	if (!parser.parse(pos, &query[0] + query.size(), ast, error))
 	{
 		std::cout << "couldn't parse query" << std::endl;
