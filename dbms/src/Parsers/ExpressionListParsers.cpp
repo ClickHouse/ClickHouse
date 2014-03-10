@@ -17,20 +17,20 @@ const char * ParserMultiplicativeExpression::operators[] =
 	"*", 	"multiply",
 	"/", 	"divide",
 	"%", 	"modulo",
-	nullptr, nullptr
+	nullptr
 };
 
 const char * ParserUnaryMinusExpression::operators[] =
 {
 	"-", 	"negate",
-	nullptr, nullptr
+	nullptr
 };
 
 const char * ParserAdditiveExpression::operators[] =
 {
 	"+", 	"plus",
 	"-", 	"minus",
-	nullptr, nullptr
+	nullptr
 };
 
 const char * ParserComparisonExpression::operators[] =
@@ -47,20 +47,20 @@ const char * ParserComparisonExpression::operators[] =
 	"NOT LIKE",	"notLike",
 	"IN",		"in",
 	"NOT IN",	"notIn",
-	nullptr, nullptr
+	nullptr
 };
 
 const char * ParserLogicalNotExpression::operators[] =
 {
 	"NOT", "not",
-	nullptr, nullptr
+	nullptr
 };
 
 const char * ParserAccessExpression::operators[] =
 {
 	".", 	"tupleElement",
 	"[", 	"arrayElement",
-	nullptr, nullptr
+	nullptr
 };
 
 
