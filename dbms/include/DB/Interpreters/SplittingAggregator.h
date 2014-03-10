@@ -86,7 +86,6 @@ private:
 
 	Sizes key_sizes;
 
-	UInt128Hash hash_func_128;
 	StringRefHash hash_func_string;
 
 	/// Для более точного контроля max_rows_to_group_by.

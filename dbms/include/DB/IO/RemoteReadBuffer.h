@@ -51,7 +51,7 @@ public:
 		session.setPort(port);
 		
 		/// устанавливаем таймаут
-		session.setTimeout(Poco::Timespan(timeout_ || DEFAULT_REMOTE_READ_BUFFER_TIMEOUT, 0));
+		session.setTimeout(Poco::Timespan(timeout_ ? timeout_ : DEFAULT_REMOTE_READ_BUFFER_TIMEOUT, 0));
 		
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri.str());
 		Poco::Net::HTTPResponse response;
@@ -100,7 +100,7 @@ public:
 		Poco::Net::HTTPClientSession session;
 		session.setHost(host);
 		session.setPort(port);
-		session.setTimeout(Poco::Timespan(timeout_ || DEFAULT_REMOTE_READ_BUFFER_TIMEOUT, 0));
+		session.setTimeout(Poco::Timespan(timeout_ ? timeout_ : DEFAULT_REMOTE_READ_BUFFER_TIMEOUT, 0));
 
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri.str());
 		Poco::Net::HTTPResponse response;

@@ -21,12 +21,10 @@ StorageDistributed::StorageDistributed(
 	const String & remote_database_,
 	const String & remote_table_,
 	Cluster & cluster_,
-	const DataTypeFactory & data_type_factory_,
 	const Context & context_,
 	const String & sign_column_name_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
-	data_type_factory(data_type_factory_),
 	sign_column_name(sign_column_name_),
 	context(context_),
 	cluster(cluster_)
@@ -45,12 +43,11 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	const String & cluster_name,
-	const DataTypeFactory & data_type_factory_,
 	Context & context_,
 	const String & sign_column_name_)
 {
 	context_.initClusters();
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), data_type_factory_, context_, sign_column_name_))->thisPtr();
+	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), context_, sign_column_name_))->thisPtr();
 }
 
 
@@ -60,11 +57,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	SharedPtr<Cluster> & owned_cluster_,
-	const DataTypeFactory & data_type_factory_,
 	Context & context_,
 	const String & sign_column_name_)
 {
-	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, data_type_factory_, context_, sign_column_name_);
+	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, context_, sign_column_name_);
 
 	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;

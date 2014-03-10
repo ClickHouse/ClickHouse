@@ -17,7 +17,9 @@
 #include <statdaemons/Stopwatch.h>
 
 
-const UInt32 decimal_table[10000] =
+#if 0
+
+static const UInt32 decimal_table[10000] =
 {
 0x30303030,0x31303030,0x32303030,0x33303030,0x34303030,0x35303030,0x36303030,0x37303030,0x38303030,0x39303030,
 0x30313030,0x31313030,0x32313030,0x33313030,0x34313030,0x35313030,0x36313030,0x37313030,0x38313030,0x39313030,
@@ -1022,7 +1024,7 @@ const UInt32 decimal_table[10000] =
 };
 
 
-const UInt8 length_table[10000] =
+static const UInt8 length_table[10000] =
 {
 3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
@@ -1095,7 +1097,6 @@ void writeUIntTextTable(T x, DB::WriteBuffer & buf)
 	buf.write(data.chars + length_table[x], len - length_table[x]);
 }
 
-
 template <typename T>
 void writeIntTextTable(T x, DB::WriteBuffer & buf)
 {
@@ -1126,6 +1127,8 @@ void writeIntTextTable(T x, DB::WriteBuffer & buf)
 	else
 		writeUIntTextTable(static_cast<typename boost::make_unsigned<T>::type>(x), buf);
 }
+
+#endif
 
 
 UInt64 rdtsc()

@@ -73,7 +73,7 @@ namespace Protocol
 		inline const char * toString(UInt64 packet)
 		{
 			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes" };
-			return packet >= 0 && packet < 9
+			return packet < 9
 				? data[packet]
 				: "Unknown packet";
 		}
@@ -97,7 +97,7 @@ namespace Protocol
 		inline const char * toString(UInt64 packet)
 		{
 			static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping" };
-			return packet >= 0 && packet < 5
+			return packet < 5
 				? data[packet]
 				: "Unknown packet";
 		}

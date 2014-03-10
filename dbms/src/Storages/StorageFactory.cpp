@@ -149,7 +149,7 @@ StoragePtr StorageFactory::get(
 		String sign_column_name	= args.size() == 4 ? dynamic_cast<ASTIdentifier &>(*args[3]).name : "";
 
 		return StorageDistributed::create(table_name, columns, remote_database, remote_table, cluster_name,
-			context.getDataTypeFactory(), context, sign_column_name);
+			context, sign_column_name);
 	}
 	else if (name == "MergeTree" || name == "SummingMergeTree")
 	{
