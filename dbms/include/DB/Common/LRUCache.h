@@ -135,7 +135,7 @@ private:
 	size_t current_size = 0;
 	const size_t max_size;
 
-	Poco::FastMutex mutex;
+	mutable Poco::FastMutex mutex;
 	size_t hits = 0;
 	size_t misses = 0;
 
