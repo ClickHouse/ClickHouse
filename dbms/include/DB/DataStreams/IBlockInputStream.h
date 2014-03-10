@@ -18,7 +18,7 @@ using Poco::SharedPtr;
   * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
   * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
   */
-typedef boost::function<void(size_t, size_t)> ProgressCallback;
+typedef std::function<void(size_t, size_t)> ProgressCallback;
 
 
 /** Интерфейс потока для чтения данных по блокам из БД.
