@@ -88,7 +88,6 @@ public:
 	void getStats(size_t & out_hits, size_t & out_misses) const
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		/// Синхронизация не нужна.
 		out_hits = hits;
 		out_misses = misses;
 	}
