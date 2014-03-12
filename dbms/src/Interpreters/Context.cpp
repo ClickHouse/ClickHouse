@@ -164,7 +164,6 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 StoragePtr Context::tryGetTemporaryTable(const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	std::cerr << temporary_tables.size() << " " << table_name << std::endl;
 
 	Tables::const_iterator jt;
 	if (temporary_tables.end() == (jt = temporary_tables.find(table_name)))
@@ -186,9 +185,9 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
 		StoragePtr res;
 		if (res = tryGetTemporaryTable(table_name))
 			return res;
-		if (res = session_context->tryGetTemporaryTable(table_name))
+		if (session_context && (res = session_context->tryGetTemporaryTable(table_name)))
 			return res;
-		if (res = global_context->tryGetTemporaryTable(table_name))
+		if (global_context && (res = global_context->tryGetTemporaryTable(table_name)))
 			return res;
 	}
 	String db = database_name.empty() ? current_database : database_name;
@@ -206,15 +205,15 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	
+
 	if (database_name.empty())
 	{
 		StoragePtr res;
 		if (res = tryGetTemporaryTable(table_name))
 			return res;
-		if (res = session_context->tryGetTemporaryTable(table_name))
+		if (session_context && (res = session_context->tryGetTemporaryTable(table_name)))
 			return res;
-		if (res = global_context->tryGetTemporaryTable(table_name))
+		if (global_context && (res = global_context->tryGetTemporaryTable(table_name)))
 			return res;
 	}
 	String db = database_name.empty() ? current_database : database_name;

@@ -35,6 +35,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/copyData.h>
+#include <DB/IO/ReadBufferFromIStream.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 
@@ -70,10 +71,10 @@ public:
 
 	void initReadBuffer()
 	{
-		/// stdin
 		if (file == "-")
-			throw Exception("stdin as file is not supported yet", ErrorCodes::BAD_ARGUMENTS);
-		read_buffer = new ReadBufferFromFile(file);
+			read_buffer = new ReadBufferFromIStream(std::cin);
+		else
+			read_buffer = new ReadBufferFromFile(file);
 	}
 
 	void initSampleBlock(const Context &context)
@@ -552,6 +553,9 @@ private:
 
 	void sendExternalTables()
 	{
+		const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*parsed_query);
+		if (!select && !external_tables.empty())
+			throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 		std::vector<ExternalTableData> data;
 		for (size_t i = 0; i < external_tables.size(); ++i)
 			data.push_back(external_tables[i].getData(context));
@@ -964,6 +968,7 @@ public:
 		boost::program_options::variables_map options;
 		boost::program_options::store(boost::program_options::parse_command_line(positions[1] - positions[0], argv, main_description), options);
 
+		size_t stdin_count = 0;
 		for (size_t i = 1; i + 1 < positions.size(); ++i)
 		{
 			boost::program_options::variables_map external_options;
@@ -972,12 +977,16 @@ public:
 			try
 			{
 				external_tables.push_back(ExternalTable(external_options));
+				if (external_tables.back().file == "-")
+					stdin_count ++;
+				if (stdin_count > 1)
+					throw Exception("Two or more external tables has stdin (-) set as --file field", ErrorCodes::BAD_ARGUMENTS);
 			}
 			catch (const Exception & e)
 			{
 				std::string text = e.displayText();
-				std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
-				std::cerr << "Table #" << i << std::endl;
+				std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+				std::cerr << "Table #" << i << std::endl << std::endl;
 				exit(e.code());
 			}
 		}
