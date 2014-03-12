@@ -16,14 +16,13 @@ namespace DB
 class MergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MergeTreeBlockOutputStream(StoragePtr owned_storage) : IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageMergeTree &>(*owned_storage)), flags(O_TRUNC | O_CREAT | O_WRONLY)
+	MergeTreeBlockOutputStream(StoragePtr owned_storage, bool take_lock) : IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageMergeTree &>(*owned_storage)), flags(O_TRUNC | O_CREAT | O_WRONLY),
+	lock(take_lock ? new Poco::ScopedReadRWLock(storage.write_lock) : NULL)
 	{
 	}
 	
 	void write(const Block & block)
 	{
-		Poco::ScopedReadRWLock write_lock(storage.write_lock);
-		
 		storage.check(block, true);
 		
 		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
@@ -86,6 +85,8 @@ private:
 	
 	const int flags;
 	
+	std::unique_ptr<Poco::ScopedReadRWLock> lock;
+
 	struct BlockWithDateInterval
 	{
 		Block block;

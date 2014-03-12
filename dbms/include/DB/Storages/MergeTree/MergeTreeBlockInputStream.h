@@ -20,13 +20,14 @@ public:
 		size_t block_size_, const Names & column_names_,
 		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
 		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_,
-		ExpressionActionsPtr prewhere_actions_, String prewhere_column_)
+		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool take_read_lock)
 		: IProfilingBlockInputStream(owned_storage),
 		path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
 		all_mark_ranges(mark_ranges_), remaining_mark_ranges(mark_ranges_),
 		use_uncompressed_cache(use_uncompressed_cache_),
-		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_)
+		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
+		lock(take_read_lock ? new Poco::ScopedReadRWLock(storage.read_lock) : NULL)
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
@@ -332,6 +333,8 @@ private:
 	ExpressionActionsPtr prewhere_actions;
 	String prewhere_column;
 	bool remove_prewhere_column;
+
+	std::unique_ptr<Poco::ScopedReadRWLock> lock;
 };
 
 }

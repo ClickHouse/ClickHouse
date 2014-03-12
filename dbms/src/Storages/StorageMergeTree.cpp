@@ -146,7 +146,7 @@ StorageMergeTree::~StorageMergeTree()
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 {
-	return new MergeTreeBlockOutputStream(thisPtr());
+	return new MergeTreeBlockOutputStream(thisPtr(), true);
 }
 
 
@@ -416,7 +416,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
 					streams.push_back(new MergeTreeBlockInputStream(
 						full_path + part.data_part->name + '/', max_block_size, column_names, *this,
 						part.data_part, part.ranges, thisPtr(), use_uncompressed_cache,
-						prewhere_actions, prewhere_column));
+						prewhere_actions, prewhere_column, true));
 					need_marks -= marks_in_part;
 					parts.pop_back();
 					sum_marks_in_parts.pop_back();
@@ -446,7 +446,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreads(
 				streams.push_back(new MergeTreeBlockInputStream(
 					full_path + part.data_part->name + '/', max_block_size, column_names, *this,
 					part.data_part, ranges_to_get_from_part, thisPtr(), use_uncompressed_cache,
-					prewhere_actions, prewhere_column));
+					prewhere_actions, prewhere_column, true));
 			}
 			
 			if (streams.size() == 1)
@@ -494,7 +494,7 @@ BlockInputStreams StorageMergeTree::spreadMarkRangesAmongThreadsFinal(
 		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
 			full_path + part.data_part->name + '/', max_block_size, column_names, *this,
 			part.data_part, part.ranges, thisPtr(), use_uncompressed_cache,
-			prewhere_actions, prewhere_column);
+			prewhere_actions, prewhere_column, true);
 		
 		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, primary_expr));
 	}
@@ -1098,7 +1098,7 @@ void StorageMergeTree::mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> &
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
 			full_path + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, *this, parts[i], ranges,
-			StoragePtr(), false, NULL, ""), primary_expr));
+			StoragePtr(), false, NULL, "", true), primary_expr));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
@@ -1301,7 +1301,7 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 			{
 				MarkRanges ranges(1, MarkRange(0, part->size));
 				ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-						DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
+						DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, "", false), expr);
 				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 				out.writePrefix();
 
