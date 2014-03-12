@@ -1229,9 +1229,7 @@ Sets ExpressionAnalyzer::getSetsWithSubqueries()
 {
 	Sets res;
 	for (auto & s : sets_with_subqueries)
-	{
 		res.push_back(s.second);
-	}
 	return res;
 }
 
