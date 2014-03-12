@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ParserSelectQuery.h>
 
 #include <DB/DataTypes/DataTypeSet.h>
 #include <DB/DataTypes/DataTypeTuple.h>
@@ -397,6 +398,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			current_asts.insert(ast);
 			replaced = true;
 		}
+		if (node->name == "in" || node->name == "notIn")
+			if (ASTIdentifier * right = dynamic_cast<ASTIdentifier *>(&*node->arguments->children[1]))
+				right->kind = ASTIdentifier::Table;
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
@@ -508,7 +512,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
 	/** Нужно преобразовать правый аргумент в множество.
-	  * Это может быть значение, перечисление значений или подзапрос.
+	  * Это может быть имя таблицы, значение, перечисление значений или подзапрос.
 	  * Перечисление значений парсится как функция tuple.
 	  */
 	IAST & args = *node->arguments;
@@ -517,7 +521,8 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	if (dynamic_cast<ASTSet *>(&*arg))
 		return;
 
-	if (dynamic_cast<ASTSubquery *>(&*arg))
+	/// Если подзапрос или имя таблицы для селекта
+	if (dynamic_cast<ASTSubquery *>(&*arg) || dynamic_cast<ASTIdentifier *>(&*arg))
 	{
 		/// Получаем поток блоков для подзапроса, отдаем его множеству, и кладём это множество на место подзапроса.
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
@@ -541,7 +546,26 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			subquery_settings.extremes = 0;
 			subquery_context.setSettings(subquery_settings);
 
-			InterpreterSelectQuery interpreter(arg->children[0], subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+			ASTPtr subquery;
+			if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
+			{
+				ParserSelectQuery parser;
+
+				String query = "SELECT * FROM " + table->name;
+				const char * begin = query.data();
+				const char * end = begin + query.size();
+				const char * pos = begin;
+				const char * expected = "";
+
+				bool parse_res = parser.parse(pos, end, subquery, expected);
+				if (!parse_res)
+					throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
+									ErrorCodes::LOGICAL_ERROR);
+			}
+			else
+				subquery = arg->children[0];
+
+			InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
 			ast_set->set = new Set(settings.limits);
 			ast_set->set->setSource(interpreter.execute());
 			sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
