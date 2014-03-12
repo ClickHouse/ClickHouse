@@ -81,7 +81,7 @@ public:
 	String getServerAddress() const;
 
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
-		const Settings * settings = NULL);
+		const Settings * settings = NULL, bool with_pending_data = false);
 	
 	void sendCancel();
 	void sendData(const Block & block, const String & name = "");

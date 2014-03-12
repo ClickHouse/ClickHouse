@@ -196,7 +196,7 @@ bool Connection::ping()
 }
 
 
-void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings)
+void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
 {
 	forceConnected();
 	
@@ -231,6 +231,10 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	maybe_compressed_out = NULL;
 	block_in = NULL;
 	block_out = NULL;
+
+	/// Отправляем пустой блок, символизируя конец передачи данных
+	if (!with_pending_data)
+		sendData(Block());
 }
 
 

@@ -566,7 +566,7 @@ private:
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, NULL, true);
 		sendExternalTables();
 		receiveResult();
 	}
@@ -584,7 +584,7 @@ private:
 		if ((is_interactive && !parsed_insert_query.data) || (stdin_is_not_tty && std_in.eof()))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, NULL, true);
 		sendExternalTables();
 
 		/// Получим структуру таблицы
