@@ -449,6 +449,10 @@ static void writeAlias(const String & name, std::ostream & s, bool hilite, bool 
 
 void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	/// Если есть алиас, то требуются скобки вокруг всего выражения, включая алиас. Потому что запись вида 0 AS x + 0 синтаксически некорректна.
+	if (need_parens && !ast.alias.empty())
+		s << '(';
+
 	/// Стоит ли записать эту функцию в виде оператора?
 	bool written = false;
 	if (ast.arguments && !ast.parameters)
@@ -558,30 +562,33 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 					written = true;
 				}
 			}
+		}
 
+		if (!written && ast.arguments->children.size() >= 1)
+		{
 			if (!written && 0 == strcmp(ast.name.c_str(), "array"))
 			{
-				s << '[';
+				s << (hilite ? hilite_operator : "") << '[' << (hilite ? hilite_none : "");
 				for (size_t i = 0; i < ast.arguments->children.size(); ++i)
 				{
 					if (i != 0)
 						s << ", ";
 					formatAST(*ast.arguments->children[i], s, indent, hilite, one_line, false);
 				}
-				s << ']';
+				s << (hilite ? hilite_operator : "") << ']' << (hilite ? hilite_none : "");
 				written = true;
 			}
 
 			if (!written && 0 == strcmp(ast.name.c_str(), "tuple"))
 			{
-				s << '(';
+				s << (hilite ? hilite_operator : "") << '(' << (hilite ? hilite_none : "");
 				for (size_t i = 0; i < ast.arguments->children.size(); ++i)
 				{
 					if (i != 0)
 						s << ", ";
 					formatAST(*ast.arguments->children[i], s, indent, hilite, one_line, false);
 				}
-				s << ')';
+				s << (hilite ? hilite_operator : "") << ')' << (hilite ? hilite_none : "");
 				written = true;
 			}
 		}
@@ -609,11 +616,18 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 	}
 
 	if (!ast.alias.empty())
+	{
 		writeAlias(ast.alias, s, hilite, one_line);
+		if (need_parens)
+			s << ')';
+	}
 }
 
 void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	if (need_parens && !ast.alias.empty())
+		s << '(';
+
 	s << (hilite ? hilite_identifier : "");
 
 	WriteBufferFromOStream wb(s, 32);
@@ -623,15 +637,26 @@ void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bo
 	s << (hilite ? hilite_none : "");
 
 	if (!ast.alias.empty())
+	{
 		writeAlias(ast.alias, s, hilite, one_line);
+		if (need_parens)
+			s << ')';
+	}
 }
 
 void formatAST(const ASTLiteral 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	if (need_parens && !ast.alias.empty())
+		s << '(';
+
 	s << apply_visitor(FieldVisitorToString(), ast.value);
 
 	if (!ast.alias.empty())
+	{
 		writeAlias(ast.alias, s, hilite, one_line);
+		if (need_parens)
+			s << ')';
+	}
 }
 
 void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
