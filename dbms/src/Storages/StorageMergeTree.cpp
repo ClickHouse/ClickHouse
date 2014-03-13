@@ -91,13 +91,12 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	BigLockPtr lock = lockAllOperations();
 
 	std::string new_full_path = new_path_to_db + escapeForFileName(new_name) + '/';
-	Poco::File(full_path).renameTo(new_full_path);
+
+	data.setPath(new_full_path);
 
 	path = new_path_to_db;
 	name = new_name;
 	full_path = new_full_path;
-
-	data.setPath(full_path);
 
 	increment.setPath(full_path + "increment.txt");
 }
