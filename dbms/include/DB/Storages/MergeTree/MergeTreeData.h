@@ -45,11 +45,9 @@ namespace DB
   * - Summing - при склейке кусков, при совпадении PK суммировать все числовые столбцы, не входящие в PK.
   */
 
-/// NOTE: Следующее пока не правда. Сейчас тут практически весь StorageMergeTree. Лишние части нужно перенести отсюда в StorageMergeTree.
-
 /** Этот класс хранит список кусков и параметры структуры данных.
   * Для чтения и изменения данных используются отдельные классы:
-  *  - MergeTreeDataReader
+  *  - MergeTreeDataSelectExecutor
   *  - MergeTreeDataWriter
   *  - MergeTreeDataMerger
   */
@@ -103,7 +101,7 @@ public:
 	{
  		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
 
- 		/// Не изменяйте никакие поля для кусков, уже вставленных в таблицу. TODO заменить почти везде const DataPart.
+ 		/// Не изменяйте никакие поля для кусков, уже вставленных в таблицу. TODO заменить почти везде на const DataPart.
 
 		MergeTreeData & storage;
 		DayNum_t left_date;
@@ -286,10 +284,12 @@ public:
 
 		const MergeTreeData & data;
 		Poco::SharedPtr<Poco::ScopedReadRWLock> parts_lock;
-		Poco::ScopedReadRWLock structure_lock;
+		Poco::SharedPtr<Poco::ScopedReadRWLock> structure_lock;
 
-		LockedTableStructure(const MergeTreeData & data_, bool lock_writing)
-			: data(data_), parts_lock(lock_writing ? new Poco::ScopedReadRWLock(data.parts_writing_lock) : nullptr), structure_lock(data.table_structure_lock) {}
+		LockedTableStructure(const MergeTreeData & data_, bool lock_structure, bool lock_writing)
+			: data(data_),
+			parts_lock(lock_writing ? new Poco::ScopedReadRWLock(data.parts_writing_lock) : nullptr),
+			structure_lock(lock_structure ? new Poco::ScopedReadRWLock(data.table_structure_lock) : nullptr) {}
 	};
 
 	typedef Poco::SharedPtr<LockedTableStructure> LockedTableStructurePtr;
@@ -299,7 +299,7 @@ public:
 	  */
 	LockedTableStructurePtr getLockedStructure(bool will_modify_parts) const
 	{
-		return new LockedTableStructure(*this, will_modify_parts);
+		return new LockedTableStructure(*this, true, will_modify_parts);
 	}
 
 	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
@@ -337,7 +337,7 @@ public:
 
 	/** Метод ALTER позволяет добавлять и удалять столбцы и менять их тип.
 	  * Нужно вызывать под залоченным lockStructure().
-	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго. Для этого есть parts_writing_lock.
+	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго. На долгую часть достаточно лочить parts_writing_lock.
 	  */
 	void alter(const ASTAlterQuery::Parameters & params);
 

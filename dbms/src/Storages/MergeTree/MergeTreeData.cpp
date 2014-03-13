@@ -427,33 +427,39 @@ void MergeTreeData::createConvertExpression(const String & in_column_name, const
 	out_column = function->getColumnName();
 }
 
+static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesList & columns)
+{
+	for (const auto & it : columns)
+	{
+		if (it.first == name)
+			return it.second;
+	}
+	throw Exception("No column " + name + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+}
+
 void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 {
-	/*if (params.type == ASTAlterQuery::MODIFY)
+	if (params.type == ASTAlterQuery::MODIFY)
 	{
 		{
-			typedef std::vector<DataPartPtr> PartsList;
-			PartsList parts;
+			DataPartsVector parts;
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-				for (auto & data_part : data_parts)
-				{
-					parts.push_back(data_part);
-				}
+				parts = DataPartsVector(data_parts.begin(), data_parts.end());
 			}
 
 			Names column_name;
 			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
 			StringRange type_range = name_type.type->range;
 			String type(type_range.first, type_range.second - type_range.first);
-			DB::DataTypePtr old_type_ptr = getDataTypeByName(name_type.name);
-			DB::DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
+			DataTypePtr old_type_ptr = getDataTypeByName(name_type.name, *columns);
+			DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
 			if (dynamic_cast<DataTypeNested *>(old_type_ptr.get()) || dynamic_cast<DataTypeArray *>(old_type_ptr.get()) ||
 				dynamic_cast<DataTypeNested *>(new_type_ptr.get()) || dynamic_cast<DataTypeArray *>(new_type_ptr.get()))
-				throw DB::Exception("ALTER MODIFY not supported for nested and array types");
+				throw Exception("ALTER MODIFY not supported for nested and array types");
 
 			column_name.push_back(name_type.name);
-			DB::ExpressionActionsPtr expr;
+			ExpressionActionsPtr expr;
 			String out_column;
 			createConvertExpression(name_type.name, type, expr, out_column);
 
@@ -462,7 +468,8 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 			{
 				MarkRanges ranges(1, MarkRange(0, part->size));
 				ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-						DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
+					new LockedTableStructure(*this, false, false), /// Не блокируем структуру таблицы, она уже заблокирована снаружи.
+					DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
 				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 				out.writePrefix();
 
@@ -531,13 +538,16 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-		alterColumns(params, columns, context);
+		IColumnsDeclaration::alterColumns(params, columns, context);
 	}
 	if (params.type == ASTAlterQuery::DROP)
 	{
 		String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
 		removeColumnFiles(column_name);
-	}*/
+
+		context.getUncompressedCache()->reset();
+		context.getMarkCache()->reset();
+	}
 }
 
 
