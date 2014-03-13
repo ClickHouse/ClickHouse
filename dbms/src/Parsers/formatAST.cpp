@@ -224,11 +224,12 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 
 void formatAST(const ASTSubquery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_nothing = one_line ? "" : "\n";
 
-	s << nl_or_nothing << "(" << nl_or_nothing;
+	s << nl_or_nothing << indent_str << "(" << nl_or_nothing;
 	formatAST(*ast.children[0], s, indent + 1, hilite, one_line);
-	s << nl_or_nothing << ")";
+	s << nl_or_nothing << indent_str << ")";
 }
 
 void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)

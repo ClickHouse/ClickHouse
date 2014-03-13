@@ -433,11 +433,31 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	Names required_columns = query_analyzer->getRequiredColumns();
 
 	if (table_function_storage)
-		table = table_function_storage; /// Если в запросе была указана табличная функция, данные читаем из нее.
+	{
+		/// Если в запросе была указана табличная функция, данные читаем из нее.
+		table = table_function_storage;
+	}
 	else if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
+	{
+		/// Запрос из обычной таблицы или без секции FROM.
 		table = getTable();
+	}
 	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+	{
+		/** Для подзапроса не действуют ограничения на максимальный размер результата.
+		  * Так как результат поздапроса - ещё не результат всего запроса.
+		  */
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		interpreter_subquery = new InterpreterSelectQuery(
+			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
 	/// если таблица не поддерживает сэмплинг получим исключение
