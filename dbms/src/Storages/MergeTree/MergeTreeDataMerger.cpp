@@ -11,7 +11,11 @@ namespace DB
 {
 
 /// Не будем соглашаться мерджить куски, если места на диске менее чем во столько раз больше суммарного размера кусков.
-static const double DISK_USAGE_COEFFICIENT = 1.5;
+static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 1.6;
+
+/// Объединяя куски, зарезервируем столько места на диске. Лучше сделать немного меньше, чем DISK_USAGE_COEFFICIENT_TO_SELECT,
+/// потому что между выбором кусков и резервированием места места может стать немного меньше.
+static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 
 
 /// Выбираем отрезок из не более чем max_parts_to_merge_at_once кусков так, чтобы максимальный размер был меньше чем в max_size_ratio_to_merge_parts раз больше суммы остальных.
@@ -32,7 +36,7 @@ static const double DISK_USAGE_COEFFICIENT = 1.5;
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
 bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, size_t available_disk_space,
-										bool merge_anything_for_old_months, bool aggressive)
+	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
 
@@ -60,14 +64,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	if (now_hour >= 1 && now_hour <= 5)
 		cur_max_rows_to_merge_parts *= data.settings.merge_parts_at_night_inc;
 
-	/// Если есть активный мердж крупных кусков, то ограничиваемся мерджем только маленьких частей.
-	for (MergeTreeData::DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
+	if (only_small)
 	{
-		if ((*it)->currently_merging && (*it)->size * data.index_granularity > 25 * 1024 * 1024)
-		{
-			cur_max_rows_to_merge_parts = data.settings.max_rows_to_merge_parts_second;
-			break;
-		}
+		cur_max_rows_to_merge_parts = data.settings.max_rows_to_merge_parts_second;
 	}
 
 	/// Левый конец отрезка.
@@ -76,10 +75,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		const MergeTreeData::DataPartPtr & first_part = *it;
 
 		max_count_from_left = std::max(0, max_count_from_left - 1);
-
-		/// Кусок не занят.
-		if (first_part->currently_merging)
-			continue;
 
 		/// Кусок достаточно мал или слияние "агрессивное".
 		if (first_part->size * data.index_granularity > cur_max_rows_to_merge_parts
@@ -115,12 +110,18 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 		/// Правый конец отрезка.
 		MergeTreeData::DataParts::iterator jt = it;
-		for (++jt; jt != data_parts.end() && cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once); ++jt)
+		for (; cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once);)
 		{
+			const MergeTreeData::DataPartPtr & prev_part = *jt;
+			++jt;
+
+			if (jt == data_parts.end())
+				break;
+
 			const MergeTreeData::DataPartPtr & last_part = *jt;
 
-			/// Кусок не занят и в одном правильном месяце.
-			if (last_part->currently_merging ||
+			/// Кусок разрешено сливать с предыдущим, и в одном правильном месяце.
+			if (!can_merge(prev_part, last_part) ||
 				last_part->left_month != last_part->right_month ||
 				last_part->left_month != month)
 				break;
@@ -172,7 +173,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 					|| aggressive))
 			{
 				/// Достаточно места на диске, чтобы покрыть новый мердж с запасом.
-				if (available_disk_space > cur_total_size * DISK_USAGE_COEFFICIENT)
+				if (available_disk_space > cur_total_size * DISK_USAGE_COEFFICIENT_TO_SELECT)
 				{
 					cur_longest_max = cur_max;
 					cur_longest_min = cur_min;
@@ -181,7 +182,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 				else
 					LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name
 						<< " because not enough free space: " << available_disk_space << " free and unreserved, "
-						<< cur_total_size << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT - 1.0) * 100)
+						<< cur_total_size << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
 						<< "% on overhead)");
 			}
 		}
@@ -334,6 +335,16 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
 	return new_data_part->name;
+}
+
+size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts)
+{
+	size_t res = 0;
+	for (const MergeTreeData::DataPartPtr & part : parts)
+	{
+		res += part->size_in_bytes;
+	}
+	return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
 }

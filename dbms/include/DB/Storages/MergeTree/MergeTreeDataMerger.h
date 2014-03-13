@@ -6,23 +6,31 @@ namespace DB
 {
 
 /** Умеет выбирать куски для слияния и сливать их.
-  * Требуется внешний механизм координации слияний со вставками и другими слияниями, обеспечивающий:
-  *  - Куски, между которыми еще может появиться новый кусок, нельзя сливать. См. METR-7001.
-  *  - Кусок, который уже сливаются с кем-то в одном месте, нельзя начать сливать в кем-то другим в другом месте.
   */
 class MergeTreeDataMerger
 {
 public:
 	MergeTreeDataMerger(MergeTreeData & data_) : data(data_), log(&Logger::get("MergeTreeDataMerger")), canceled(false) {}
 
-	/// Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
+	typedef boost::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> AllowedMergingPredicate;
+
+	/** Выбирает, какие куски слить. Использует кучу эвристик.
+	  * Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
+	  *
+	  * can_merge - функция, определяющая, можно ли объединить пару соседних кусков.
+	  *  Эта функция должна координировать слияния со вставками и другими слияниями, обеспечивая, что:
+	  *  - Куски, между которыми еще может появиться новый кусок, нельзя сливать. См. METR-7001.
+	  *  - Кусок, который уже сливается с кем-то в одном месте, нельзя начать сливать в кем-то другим в другом месте.
+	  */
 	bool selectPartsToMerge(
 		MergeTreeData::DataPartsVector & what,
 		size_t available_disk_space,
 		bool merge_anything_for_old_months,
-		bool aggressive);
+		bool aggressive,
+		bool only_small,
+		const AllowedMergingPredicate & can_merge);
 
-	/// Возвращает название нового куска. Если слияние отменили, возвращает пустую строку.
+	/// Сливает куски. Возвращает название нового куска. Если слияние отменили, возвращает пустую строку.
 	String mergeParts(const MergeTreeData::DataPartsVector & parts);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.

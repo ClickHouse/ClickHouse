@@ -55,7 +55,7 @@
 namespace DB
 {
 
-static String lastTwoPathComponents(const String & path)
+static String lastTwoPathComponents(String path)
 {
 	if (!path.empty() && *path.rbegin() == '/')
 		path.erase(path.end() - 1);
@@ -77,11 +77,11 @@ MergeTreeData::MergeTreeData(
 	Mode mode_,
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
-	: context(context_), primary_expr_ast(primary_expr_ast_->clone()),
+	: context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_),
-	settings(settings_),
+	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
 	full_path(full_path_), columns(columns_),
 	log(&Logger::get("MergeTreeData: " + lastTwoPathComponents(full_path))),
 	file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)")
@@ -647,6 +647,37 @@ void MergeTreeData::replaceParts(DataPartsVector old_parts, DataPartPtr new_part
 
 	for (size_t i = 0; i < old_parts.size(); ++i)
 		data_parts.erase(data_parts.find(old_parts[i]));
+}
+
+void MergeTreeData::renameTempPartAndAdd(DataPartPtr part, Increment * increment,
+		const MergeTreeData::LockedTableStructurePtr & structure)
+{
+	LOG_TRACE(log, "Renaming.");
+
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	String old_path = structure->getFullPath() + part->name + "/";
+
+	UInt64 part_id = part->left;
+
+	/** Важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
+	  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
+	  *  содержат ещё не добавленный кусок.
+	  */
+	if (increment)
+		part_id = increment->get(false);
+
+	part->left = part->right = part_id;
+	part->name = getPartName(part->left_date, part->right_date, part_id, part_id, 0);
+
+	String new_path = structure->getFullPath() + part->name + "/";
+
+	/// Переименовываем кусок.
+	Poco::File(old_path).renameTo(new_path);
+
+	data_parts.insert(part);
+	all_data_parts.insert(part);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()

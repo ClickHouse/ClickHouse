@@ -101,7 +101,9 @@ public:
 	/// Описание куска с данными.
 	struct DataPart
 	{
- 		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0), currently_merging(false) {}
+ 		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
+
+ 		/// Не изменяйте никакие поля для кусков, уже вставленных в таблицу. TODO заменить почти везде const DataPart.
 
 		MergeTreeData & storage;
 		DayNum_t left_date;
@@ -118,9 +120,6 @@ public:
 
 		DayNum_t left_month;
 		DayNum_t right_month;
-
-		/// Смотреть и изменять это поле следует под залоченным data_parts_mutex.
-		bool currently_merging;
 
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
@@ -163,26 +162,18 @@ public:
 
 		bool operator< (const DataPart & rhs) const
 		{
-			if (left_month < rhs.left_month)
-				return true;
-			if (left_month > rhs.left_month)
-				return false;
-			if (right_month < rhs.right_month)
-				return true;
-			if (right_month > rhs.right_month)
-				return false;
+			if (left_month != rhs.left_month)
+				return left_month < rhs.left_month;
+			if (right_month != rhs.right_month)
+				return right_month < rhs.right_month;
 
-			if (left < rhs.left)
-				return true;
-			if (left > rhs.left)
-				return false;
-			if (right < rhs.right)
-				return true;
-			if (right > rhs.right)
-				return false;
+			if (left != rhs.left)
+				return left < rhs.left;
+			if (right != rhs.right)
+				return right < rhs.right;
 
-			if (level < rhs.level)
-				return true;
+			if (level != rhs.level)
+				return level < rhs.level;
 
 			return false;
 		}
@@ -265,41 +256,23 @@ public:
 
 	UInt64 getMaxDataPartIndex();
 
-	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
-	  */
-	DataParts getDataParts();
-
-	/** Удаляет куски old_parts и добавляет кусок new_part. Если какого-нибудь из удаляемых кусков нет, бросает исключение.
-	  */
-	void replaceParts(DataPartsVector old_parts, DataPartPtr new_part);
-
-	/** Удалить неактуальные куски.
-	  */
-	void clearOldParts();
-
-	/** После вызова dropAllData больше ничего вызывать нельзя.
-	  */
-	void dropAllData();
-
-	/** Поменять путь к директории с данными. Предполагается, что все данные из старой директории туда перенесли.
-	  * Нужно вызывать под залоченным lockStructure().
-	  */
-	void setPath(const String & full_path);
-
-	/** Метод ALTER позволяет добавлять и удалять столбцы и менять их тип.
-	  * Нужно вызывать под залоченным lockStructure().
-	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго. Для этого есть parts_writing_lock.
-	  */
-	void alter(const ASTAlterQuery::Parameters & params);
-
 	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
+
+	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
+	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
+
+	/// Кладет в DataPart данные из имени кусочка.
+	void parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part);
 
 	/** Изменяемая часть описания таблицы. Содержит лок, запрещающий изменение описания таблицы.
 	  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать один лок на все ее время.
 	  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
 	  * (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
-	  * NOTE: можно перенести сюда другие поля, чтобы сделать их динамически изменяемыми.
+	  * NOTE: Можно перенести сюда другие поля, чтобы сделать их динамически изменяемыми.
 	  *       Например, index_granularity, sign_column, primary_expr_ast.
+	  * NOTE: Можно вынести эту штуку в IStorage и брать ее в Interpreter-ах,
+	  *       чтобы избавиться от оставшихся небольших race conditions.
+	  *       Скорее всего, даже можно заменить этой штукой весь механизм отложенного дропа таблиц и убрать owned_storage из потоков блоков.
 	  */
 	class LockedTableStructure : public IColumnsDeclaration
 	{
@@ -333,9 +306,41 @@ public:
 
 	TableStructureWriteLockPtr lockStructure() { return new Poco::ScopedWriteRWLock(table_structure_lock); }
 
+	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
+	  */
+	DataParts getDataParts();
+
+	/** Удаляет куски old_parts и добавляет кусок new_part. Если какого-нибудь из удаляемых кусков нет, бросает исключение.
+	  */
+	void replaceParts(DataPartsVector old_parts, DataPartPtr new_part);
+
+	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
+	  * Если increment!=nullptr, индекс куска бурется из инкремента. Иначе индекс куска не меняется.
+	  */
+	void renameTempPartAndAdd(DataPartPtr part, Increment * increment,
+		const LockedTableStructurePtr & structure);
+
+	/** Удалить неактуальные куски.
+	  */
+	void clearOldParts();
+
+	/** После вызова dropAllData больше ничего вызывать нельзя.
+	  */
+	void dropAllData();
+
+	/** Поменять путь к директории с данными. Предполагается, что все данные из старой директории туда перенесли.
+	  * Нужно вызывать под залоченным lockStructure().
+	  */
+	void setPath(const String & full_path);
+
+	/** Метод ALTER позволяет добавлять и удалять столбцы и менять их тип.
+	  * Нужно вызывать под залоченным lockStructure().
+	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго. Для этого есть parts_writing_lock.
+	  */
+	void alter(const ASTAlterQuery::Parameters & params);
+
 	/// Эти поля не нужно изменять снаружи. NOTE нужно спрятать их и сделать методы get*.
 	const Context & context;
-	ASTPtr primary_expr_ast;
 	String date_column_name;
 	ASTPtr sampling_expression;
 	size_t index_granularity;
@@ -354,6 +359,8 @@ public:
 	StorageWeakPtr owning_storage;
 
 private:
+	ASTPtr primary_expr_ast;
+
 	String full_path;
 
 	NamesAndTypesListPtr columns;
@@ -400,12 +407,6 @@ private:
 	void loadDataParts();
 
 	void removeColumnFiles(String column_name);
-
-	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
-	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
-
-	/// Кладет в DataPart данные из имени кусочка.
-	void parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part);
 
 	/// Определить, не битые ли данные в директории. Проверяет индекс и засечеки, но не сами данные.
 	bool isBrokenPart(const String & path);

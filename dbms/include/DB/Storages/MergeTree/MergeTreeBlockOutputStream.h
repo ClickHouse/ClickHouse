@@ -14,12 +14,13 @@ public:
 
 	void write(const Block & block)
 	{
-		BlocksList part_blocks = storage.writer.splitBlockIntoParts(block, structure);
-		for (const Block & current_block : part_blocks)
+		auto part_blocks = storage.writer.splitBlockIntoParts(block, structure);
+		for (auto & current_block : part_blocks)
 		{
 			UInt64 temp_index = storage.increment.get();
-			String temp_name = storage.writer.writeTempPart(current_block, temp_index, structure);
-			storage.writer.renameTempPart(temp_name, &storage.increment);
+			MergeTreeData::DataPartPtr part = storage.writer.writeTempPart(current_block, temp_index, structure);
+			storage.data.renameTempPartAndAdd(part, &storage.increment, structure);
+			storage.merge(2);
 		}
 	}
 

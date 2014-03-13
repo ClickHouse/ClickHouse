@@ -4,6 +4,7 @@
 #include "MergeTree/MergeTreeDataSelectExecutor.h"
 #include "MergeTree/MergeTreeDataWriter.h"
 #include "MergeTree/MergeTreeDataMerger.h"
+#include "MergeTree/DiskSpaceMonitor.h"
 
 namespace DB
 {
@@ -94,9 +95,49 @@ private:
 	MergeTreeDataWriter writer;
 	MergeTreeDataMerger merger;
 
+	MergeTreeData::DataParts currently_merging;
+	Poco::FastMutex currently_merging_mutex;
+
 	Logger * log;
 
 	volatile bool shutdown_called;
+
+	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
+
+	/// Пока существует, помечает части как currently_merging и держит резерв места.
+	/// Вероятно, что части будут помечены заранее.
+	struct CurrentlyMergingPartsTagger
+	{
+		MergeTreeData::DataPartsVector parts;
+		DiskSpaceMonitor::ReservationPtr reserved_space;
+		StorageMergeTree & storage;
+
+		CurrentlyMergingPartsTagger(const MergeTreeData::DataPartsVector & parts_, size_t total_size, StorageMergeTree & storage_)
+			: parts(parts_), storage(storage_)
+		{
+			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри mergeThread, где он уже залочен.
+			reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// Может бросить исключение.
+			storage.currently_merging.insert(parts.begin(), parts.end());
+		}
+
+		~CurrentlyMergingPartsTagger()
+		{
+			try
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
+				for (size_t i = 0; i < parts.size(); ++i)
+				{
+					storage.currently_merging.erase(parts[i]);
+				}
+			}
+			catch (...)
+			{
+				tryLogCurrentException("~CurrentlyMergingPartsTagger");
+			}
+		}
+	};
+
+	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
 
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 					const Context & context_,
@@ -121,7 +162,8 @@ private:
 	/// Дождаться, пока фоновые потоки закончат слияния.
 	void joinMergeThreads();
 
-	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
+	/// Вызывается во время выбора кусков для слияния.
+	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
 };
 
 }
