@@ -1,6 +1,9 @@
 #pragma once
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
+#include "MergeTree/MergeTreeDataSelectExecutor.h"
+#include "MergeTree/MergeTreeDataWriter.h"
+#include "MergeTree/MergeTreeDataMerger.h"
 
 namespace DB
 {
@@ -9,6 +12,8 @@ namespace DB
   */
 class StorageMergeTree : public IStorage
 {
+friend class MergeTreeBlockOutputStream;
+
 public:
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
 	  *  (корректность имён и путей не проверяется)
@@ -36,13 +41,13 @@ public:
 		return data.getModePrefix() + "MergeTree";
 	}
 
-	std::string getTableName() const { return data.getTableName(); }
+	std::string getTableName() const { return name; }
 	std::string getSignColumnName() const { return data.getSignColumnName(); }
 	bool supportsSampling() const { return data.supportsSampling(); }
 	bool supportsFinal() const { return data.supportsFinal(); }
 	bool supportsPrewhere() const { return data.supportsPrewhere(); }
 
-	const NamesAndTypesList & getColumnsList() const { return data.getColumnsList(); }
+	const NamesAndTypesList & getColumnsList() const { return data.getLockedStructure(false)->getColumnsList(); }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -58,7 +63,8 @@ public:
 	  */
 	bool optimize()
 	{
-		return data.optimize();
+		merge(1, false, true);
+		return true;
 	}
 
 	void dropImpl();
@@ -70,12 +76,27 @@ public:
 	/// Например если параллельно с INSERT выполнить ALTER, то ALTER выполниться, а INSERT бросит исключение
 	void alter(const ASTAlterQuery::Parameters & params);
 
-	typedef MergeTreeData::BigLockPtr BigLockPtr;
+	typedef MergeTreeData::TableStructureWriteLockPtr BigLockPtr;
 
-	BigLockPtr lockAllOperations() { return data.lockAllOperations(); }
+	BigLockPtr lockAllOperations()
+	{
+		return data.lockStructure();
+	}
 
 private:
+	String path;
+	String name;
+	String full_path;
+	Increment increment;
+
 	MergeTreeData data;
+	MergeTreeDataSelectExecutor reader;
+	MergeTreeDataWriter writer;
+	MergeTreeDataMerger merger;
+
+	Logger * log;
+
+	volatile bool shutdown_called;
 
 	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 					const Context & context_,
@@ -83,9 +104,24 @@ private:
 					const String & date_column_name_,
 					const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
 					size_t index_granularity_,
-					MergeTreeData::Mode mode_ = MergeTreeData::Ordinary,
-					const String & sign_column_ = "",
-					const MergeTreeSettings & settings_ = MergeTreeSettings());
+					MergeTreeData::Mode mode_,
+					const String & sign_column_,
+					const MergeTreeSettings & settings_);
+
+	
+
+	/** Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке. Если iterations = 0, объединяет, пока это возможно.
+	  * Если aggressive - выбрать куски не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
+	  */
+	void merge(size_t iterations = 1, bool async = true, bool aggressive = false);
+
+	/// Если while_can, объединяет в цикле, пока можно; иначе выбирает и объединяет только одну пару кусков.
+	void mergeThread(bool while_can, bool aggressive);
+
+	/// Дождаться, пока фоновые потоки закончат слияния.
+	void joinMergeThreads();
+
+	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
 };
 
 }

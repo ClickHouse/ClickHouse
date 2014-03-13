@@ -13,6 +13,34 @@
 namespace DB
 {
 
+/** Записывает новые куски с данными в merge-дерево.
+  */
+class MergeTreeDataWriter
+{
+public:
+	MergeTreeDataWriter(MergeTreeData & data_) : data(data_) {}
+
+	/** Разбивает блок на блоки, каждый из которых нужно записать в отдельный кусок.
+	  * (читай: разбивает строки по месяцам)
+	  * Работает детерминированно: если отдать на вход такой же блок, на выходе получатся такие же блоки в таком же порядке.
+	  */
+	BlocksList splitBlockIntoParts(const Block & block, const MergeTreeData::LockedTableStructurePtr & structure);
+
+	/** Все строки должны относиться к одному месяцу. Возвращает название временного куска.
+	  * temp_index - значение left и right для нового куска. Можно будет изменить при переименовании.
+	  * NOTE потом понадобится возвращать отсюда структуру с контрольными суммами и размерами.
+	  */
+	String writeTempPart(const Block & block, UInt64 temp_index, const MergeTreeData::LockedTableStructurePtr & structure);
+
+	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
+	  * Если increment!=nullptr, индекс куска бурется из инкремента. Иначе индекс куска не меняется.
+	  */
+	String renameTempPart(const String & temp_name, Increment * increment);
+
+private:
+	MergeTreeData & data;
+};
+#if 0
 class MergeTreeDataBlockOutputStream : public IBlockOutputStream
 {
 public:
@@ -294,5 +322,5 @@ private:
 		}
 	}
 };
-	
+#endif
 }

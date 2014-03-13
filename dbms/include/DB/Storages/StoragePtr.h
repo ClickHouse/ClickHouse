@@ -88,6 +88,7 @@ public:
 class StorageWeakPtr
 {
 public:
+	StorageWeakPtr() {}
 	StorageWeakPtr(const StoragePtr & p) : ptr(p.ptr) {}
 
 	StoragePtr lock()

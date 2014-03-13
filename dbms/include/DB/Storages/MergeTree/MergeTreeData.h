@@ -47,18 +47,11 @@ namespace DB
 
 /// NOTE: Следующее пока не правда. Сейчас тут практически весь StorageMergeTree. Лишние части нужно перенести отсюда в StorageMergeTree.
 
-/** Этот класс отвечает за хранение локальных данных всех *MergeTree движков.
-  *  - Поддерживает набор кусков на диске. Синхронизирует доступ к ним, поддерживает в памяти их список.
-  *  - Полностью выполняет запросы SELECT.
-  *  - Сам не принимает решений об изменении данных.
-  *  - Умеет дававть рекомендации:
-  *  	- Говорить, какие куски нужно удалить, потому что они покрыты другими кусками.
-  *  	- Выбирать набор кусков для слияния.
-  *  	  При этом нужна внешняя информация о том, какие куски с какими разрешено объединять.
-  *  - Умеет изменять данные по запросу:
-  *  	- Записать новый кусок с данными из блока.
-  *  	- Слить указанные куски.
-  *  	- Сделать ALTER.
+/** Этот класс хранит список кусков и параметры структуры данных.
+  * Для чтения и изменения данных используются отдельные классы:
+  *  - MergeTreeDataReader
+  *  - MergeTreeDataWriter
+  *  - MergeTreeDataMerger
   */
 
 struct MergeTreeSettings
@@ -102,169 +95,9 @@ struct MergeTreeSettings
 	time_t old_parts_lifetime = 5 * 60;
 };
 
-/// Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
-struct MarkRange
+class MergeTreeData
 {
-	size_t begin;
-	size_t end;
-
-	MarkRange() {}
-	MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
-};
-
-typedef std::vector<MarkRange> MarkRanges;
-
-
-class MergeTreeData : public IColumnsDeclaration
-{
-friend class MergeTreeReader;
-friend class MergeTreeBlockInputStream;
-friend class MergeTreeDataBlockOutputStream;
-friend class IMergedBlockOutputStream;
-friend class MergedBlockOutputStream;
-friend class MergedColumnOnlyOutputStream;
-
 public:
-	/// Режим работы. См. выше.
-	enum Mode
-	{
-		Ordinary,
-		Collapsing,
-		Summing,
-	};
-
-	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
-	  *  (корректность имён и путей не проверяется)
-	  *  состоящую из указанных столбцов.
-	  *
-	  * primary_expr_ast	- выражение для сортировки;
-	  * date_column_name 	- имя столбца с датой;
-	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
-	  *
-	  * owning_storage используется только чтобы отдавать его возвращаемым потокам блоков.
-	  */
-	MergeTreeData(	StorageWeakPtr owning_storage_, const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-					const Context & context_,
-					ASTPtr & primary_expr_ast_,
-					const String & date_column_name_,
-					const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
-					size_t index_granularity_,
-					Mode mode_,
-					const String & sign_column_,
-					const MergeTreeSettings & settings_);
-
-	void shutdown();
-	~MergeTreeData();
-
-	std::string getModePrefix() const
-	{
-		switch (mode)
-		{
-			case Ordinary: 		return "";
-			case Collapsing: 	return "Collapsing";
-			case Summing: 		return "Summing";
-
-			default:
-				throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
-		}
-	}
-
-	std::string getTableName() const { return name; }
-	std::string getSignColumnName() const { return sign_column; }
-	bool supportsSampling() const { return !!sampling_expression; }
-	bool supportsFinal() const { return !sign_column.empty(); }
-	bool supportsPrewhere() const { return true; }
-
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
-
-	/** При чтении, выбирается набор кусков, покрывающий нужный диапазон индекса.
-	  */
-	BlockInputStreams read(
-		const Names & column_names,
-		ASTPtr query,
-		const Settings & settings,
-		QueryProcessingStage::Enum & processed_stage,
-		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
-
-	/** При записи, данные сортируются и пишутся в новые куски.
-	  */
-	BlockOutputStreamPtr write(ASTPtr query);
-
-	/** Выполнить очередной шаг объединения кусков.
-	  */
-	bool optimize()
-	{
-		merge(1, false, true);
-		return true;
-	}
-
-	void dropImpl();
-
-	void rename(const String & new_path_to_db, const String & new_name);
-
-	/// Метод ALTER позволяет добавлять и удалять столбцы.
-	/// Метод ALTER нужно применять, когда обращения к базе приостановлены.
-	/// Например если параллельно с INSERT выполнить ALTER, то ALTER выполниться, а INSERT бросит исключение
-	void alter(const ASTAlterQuery::Parameters & params);
-
-	class BigLock
-	{
-	public:
-		BigLock(MergeTreeData & storage) : merge_lock(storage.merge_lock),
-			write_lock(storage.write_lock), read_lock(storage.read_lock)
-		{
-		}
-
-	private:
-		Poco::ScopedWriteRWLock merge_lock;
-		Poco::ScopedWriteRWLock write_lock;
-		Poco::ScopedWriteRWLock read_lock;
-	};
-
-	typedef Poco::SharedPtr<BigLock> BigLockPtr;
-	BigLockPtr lockAllOperations()
-	{
-		return new BigLock(*this);
-	}
-
-private:
-	StorageWeakPtr owning_storage;
-
-	String path;
-	String name;
-	String full_path;
-	NamesAndTypesListPtr columns;
-
-	const Context & context;
-	ASTPtr primary_expr_ast;
-	String date_column_name;
-	ASTPtr sampling_expression;
-	size_t index_granularity;
-
-	size_t min_marks_for_seek;
-	size_t min_marks_for_concurrent_read;
-	size_t max_marks_to_use_cache;
-
-	/// Режим работы - какие дополнительные действия делать при мердже.
-	Mode mode;
-	/// Для схлопывания записей об изменениях, если используется Collapsing режим работы.
-	String sign_column;
-
-	MergeTreeSettings settings;
-
-	ExpressionActionsPtr primary_expr;
-	SortDescription sort_descr;
-	Block primary_key_sample;
-
-	Increment increment;
-
-	Logger * log;
-	volatile bool shutdown_called;
-
-	/// Регулярное выражение соответсвующее названию директории с кусочками
-	Poco::RegularExpression file_name_regexp;
-
 	/// Описание куска с данными.
 	struct DataPart
 	{
@@ -309,7 +142,7 @@ private:
 			return res;
 		}
 
-		void remove() const
+		void remove()
 		{
 			String from = storage.full_path + name + "/";
 			String to = storage.full_path + "tmp2_" + name + "/";
@@ -389,124 +222,182 @@ private:
 	typedef SharedPtr<DataPart> DataPartPtr;
 	struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
 	typedef std::set<DataPartPtr, DataPartPtrLess> DataParts;
+	typedef std::vector<DataPartPtr> DataPartsVector;
 
-	struct RangesInDataPart
+
+	/// Режим работы. См. выше.
+	enum Mode
 	{
-		DataPartPtr data_part;
-		MarkRanges ranges;
-
-		RangesInDataPart() {}
-
-		RangesInDataPart(DataPartPtr data_part_)
-			: data_part(data_part_)
-		{
-		}
+		Ordinary,
+		Collapsing,
+		Summing,
 	};
 
-	/// Пока существует, помечает части как currently_merging и пересчитывает общий объем сливаемых данных.
-	/// Вероятно, что части будут помечены заранее.
-	class CurrentlyMergingPartsTagger
+	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
+	  *  (корректность имён и путей не проверяется)
+	  *  состоящую из указанных столбцов.
+	  *
+	  * primary_expr_ast	- выражение для сортировки;
+	  * date_column_name 	- имя столбца с датой;
+	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
+	  */
+	MergeTreeData(	const String & full_path_, NamesAndTypesListPtr columns_,
+					const Context & context_,
+					ASTPtr & primary_expr_ast_,
+					const String & date_column_name_,
+					const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
+					size_t index_granularity_,
+					Mode mode_,
+					const String & sign_column_,
+					const MergeTreeSettings & settings_);
+
+	/**
+	  * owning_storage используется только чтобы отдавать его потокам блоков.
+	  */
+	void setOwningStorage(StoragePtr storage) { owning_storage = storage; }
+
+	std::string getModePrefix() const;
+
+	std::string getSignColumnName() const { return sign_column; }
+	bool supportsSampling() const { return !!sampling_expression; }
+	bool supportsFinal() const { return !sign_column.empty(); }
+	bool supportsPrewhere() const { return true; }
+
+	UInt64 getMaxDataPartIndex();
+
+	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
+	  */
+	DataParts getDataParts();
+
+	/** Удаляет куски old_parts и добавляет кусок new_part. Если какого-нибудь из удаляемых кусков нет, бросает исключение.
+	  */
+	void replaceParts(DataPartsVector old_parts, DataPartPtr new_part);
+
+	/** Удалить неактуальные куски.
+	  */
+	void clearOldParts();
+
+	/** После вызова dropAllData больше ничего вызывать нельзя.
+	  */
+	void dropAllData();
+
+	/** Поменять путь к директории с данными. Предполагается, что все данные из старой директории туда перенесли.
+	  * Нужно вызывать под залоченным lockStructure().
+	  */
+	void setPath(const String & full_path);
+
+	/** Метод ALTER позволяет добавлять и удалять столбцы и менять их тип.
+	  * Нужно вызывать под залоченным lockStructure().
+	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго. Для этого есть parts_writing_lock.
+	  */
+	void alter(const ASTAlterQuery::Parameters & params);
+
+	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
+
+	/** Изменяемая часть описания таблицы. Содержит лок, запрещающий изменение описания таблицы.
+	  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать один лок на все ее время.
+	  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
+	  * (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
+	  * NOTE: можно перенести сюда другие поля, чтобы сделать их динамически изменяемыми.
+	  *       Например, index_granularity, sign_column, primary_expr_ast.
+	  */
+	class LockedTableStructure : public IColumnsDeclaration
 	{
 	public:
-		std::vector<DataPartPtr> parts;
-		Poco::FastMutex & data_mutex;
+		const NamesAndTypesList & getColumnsList() const { return *data.columns; }
 
-		CurrentlyMergingPartsTagger(const std::vector<DataPartPtr> & parts_, Poco::FastMutex & data_mutex_) : parts(parts_), data_mutex(data_mutex_)
-		{
-			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри selectPartsToMerge, где он уже залочен
-			/// Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
-			for (size_t i = 0; i < parts.size(); ++i)
-			{
-				parts[i]->currently_merging = true;
-				MergeTreeData::total_size_of_currently_merging_parts += parts[i]->size_in_bytes;
-			}
-		}
+		String getFullPath() const { return data.full_path; }
 
-		~CurrentlyMergingPartsTagger()
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(data_mutex);
-			for (size_t i = 0; i < parts.size(); ++i)
-			{
-				parts[i]->currently_merging = false;
-				MergeTreeData::total_size_of_currently_merging_parts -= parts[i]->size_in_bytes;
-			}
-		}
+	private:
+		friend class MergeTreeData;
+
+		const MergeTreeData & data;
+		Poco::SharedPtr<Poco::ScopedReadRWLock> parts_lock;
+		Poco::ScopedReadRWLock structure_lock;
+
+		LockedTableStructure(const MergeTreeData & data_, bool lock_writing)
+			: data(data_), parts_lock(lock_writing ? new Poco::ScopedReadRWLock(data.parts_writing_lock) : nullptr), structure_lock(data.table_structure_lock) {}
 	};
 
-	/// Сумарный размер currently_merging кусочков в байтах.
-	/// Нужно чтобы оценить количество места на диске, которое может понадобится для завершения этих мерджей.
-	static size_t total_size_of_currently_merging_parts;
+	typedef Poco::SharedPtr<LockedTableStructure> LockedTableStructurePtr;
 
-	typedef std::vector<RangesInDataPart> RangesInDataParts;
+	/** Если в рамках этого лока будут добавлены или удалены куски данных, обязательно указать will_modify_parts=true.
+	  * Это возьмет дополнительный лок, не позволяющий начать ALTER MODIFY.
+	  */
+	LockedTableStructurePtr getLockedStructure(bool will_modify_parts) const
+	{
+		return new LockedTableStructure(*this, will_modify_parts);
+	}
 
-	/** @warning Если берете насколько блокировок, то берите их везде в одинаковом порядке - в том же как они написаны в этом файле */
-	/** Взятие этого лока на запись, запрещает мердж */
-	Poco::RWLock merge_lock;
+	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
 
-	/** Взятие этого лока на запись, запрещает запись */
-	Poco::RWLock write_lock;
+	TableStructureWriteLockPtr lockStructure() { return new Poco::ScopedWriteRWLock(table_structure_lock); }
 
-	/** Взятие этого лока на запись, запрещает чтение */
-	Poco::RWLock read_lock;
+	/// Эти поля не нужно изменять снаружи. NOTE нужно спрятать их и сделать методы get*.
+	const Context & context;
+	ASTPtr primary_expr_ast;
+	String date_column_name;
+	ASTPtr sampling_expression;
+	size_t index_granularity;
+
+	/// Режим работы - какие дополнительные действия делать при мердже.
+	Mode mode;
+	/// Для схлопывания записей об изменениях, если используется Collapsing режим работы.
+	String sign_column;
+
+	MergeTreeSettings settings;
+
+	ExpressionActionsPtr primary_expr;
+	SortDescription sort_descr;
+	Block primary_key_sample;
+
+	StorageWeakPtr owning_storage;
+
+private:
+	String full_path;
+
+	NamesAndTypesListPtr columns;
+
+	Logger * log;
+	volatile bool shutdown_called;
+
+	/// Регулярное выражение соответсвующее названию директории с кусочками
+	Poco::RegularExpression file_name_regexp;
+
+	/// Брать следующие два лока всегда нужно в этом порядке.
+
+	/** Берется на чтение на все время запроса INSERT и на все время слияния кусков. Берется на запись на все время ALTER MODIFY.
+	  *
+	  * Формально:
+	  * Ввзятие на запись гарантирует, что:
+	  *  1) множество кусков не изменится, пока лок жив,
+	  *  2) все операции над множеством кусков после отпускания лока будут основаны на структуре таблицы на момент после отпускания лока.
+	  * Взятие на чтение обязательно, если будет добавляться или удалять кусок.
+	  * Брать на чтение нужно до получения структуры таблицы, которой будет соответствовать добавляемый кусок.
+	  */
+	mutable Poco::RWLock parts_writing_lock;
+
+	/** Лок для множества столбцов и пути к таблице. Берется на запись в RENAME и ALTER (для ALTER MODIFY ненадолго).
+	  *
+	  * Взятие этого лока на запись - строго более "сильная" операция, чем взятие parts_writing_lock на запись.
+	  * То есть, если этот лок взят на запись, о parts_writing_lock можно не заботиться.
+	  * parts_writing_lock нужен только для случаев, когда не хочется брать table_structure_lock надолго.
+	  */
+	mutable Poco::RWLock table_structure_lock;
 
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;
 	Poco::FastMutex data_parts_mutex;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
-	  * Ссылки на кусок есть отсюда, из списка актуальных кусков, и из каждого потока чтения, который его сейчас использует.
+	  * Ссылки на кусок есть отсюда, из списка актуальных кусков и из каждого потока чтения, который его сейчас использует.
 	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
 	  */
 	DataParts all_data_parts;
 	Poco::FastMutex all_data_parts_mutex;
 
-	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
-
-	BlockInputStreams spreadMarkRangesAmongThreads(
-		RangesInDataParts parts,
-		size_t threads,
-		const Names & column_names,
-		size_t max_block_size,
-		bool use_uncompressed_cache,
-		ExpressionActionsPtr prewhere_actions,
-		const String & prewhere_column);
-
-	BlockInputStreams spreadMarkRangesAmongThreadsFinal(
-		RangesInDataParts parts,
-		size_t threads,
-		const Names & column_names,
-		size_t max_block_size,
-		bool use_uncompressed_cache,
-		ExpressionActionsPtr prewhere_actions,
-		const String & prewhere_column);
-
-	/// Создать выражение "Sign == 1".
-	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);
-
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
-
-	/// Удалить неактуальные куски.
-	void clearOldParts();
-
-	/** Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке. Если iterations = 0, объединяет, пока это возможно.
-	  * Если aggressive - выбрать куски не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
-	  */
-	void merge(size_t iterations = 1, bool async = true, bool aggressive = false);
-
-	/// Если while_can, объединяет в цикле, пока можно; иначе выбирает и объединяет только одну пару кусков.
-	void mergeThread(bool while_can, bool aggressive);
-
-	/// Сразу помечает их как currently_merging.
-	/// Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
-	bool selectPartsToMerge(Poco::SharedPtr<CurrentlyMergingPartsTagger> & what, bool merge_anything_for_old_months, bool aggressive);
-
-	void mergeParts(Poco::SharedPtr<CurrentlyMergingPartsTagger> & what);
-
-	/// Дождаться, пока фоновые потоки закончат слияния.
-	void joinMergeThreads();
-
-	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
 
 	void removeColumnFiles(String column_name);
 

@@ -3,10 +3,13 @@
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/IO/CachedCompressedReadBuffer.h>
 #include <DB/IO/CompressedReadBufferFromFile.h>
+#include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNested.h>
 
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
@@ -15,6 +18,20 @@
 namespace DB
 {
 
+/** Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
+  */
+struct MarkRange
+{
+	size_t begin;
+	size_t end;
+
+	MarkRange() {}
+	MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
+};
+
+typedef std::vector<MarkRange> MarkRanges;
+
+
 /** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
   * При чтении почти последовательных отрезков делает seek-и быстро, не выбрасывая содержимое буфера.
   */
@@ -22,11 +39,13 @@ class MergeTreeReader
 {
 public:
 	MergeTreeReader(const String & path_,	/// Путь к куску
-		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_)
-	: path(path_), column_names(columns_names_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
+		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_,
+		MergeTreeData::LockedTableStructurePtr structure_)
+	: path(path_), column_names(columns_names_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_),
+	structure(structure_)
 	{
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			addStream(*it, *storage.getDataTypeByName(*it));
+			addStream(*it, *structure->getDataTypeByName(*it));
 	}
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
@@ -59,7 +78,7 @@ public:
 
 			ColumnWithNameAndType column;
 			column.name = *it;
-			column.type = storage.getDataTypeByName(*it);
+			column.type = structure->getDataTypeByName(*it);
 			if (append)
 				column.column = res.getByName(column.name).column;
 
@@ -114,7 +133,7 @@ public:
 				{
 					ColumnWithNameAndType column;
 					column.name = *it;
-					column.type = storage.getDataTypeByName(*it);
+					column.type = structure->getDataTypeByName(*it);
 
 					/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
 						*  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
@@ -221,6 +240,7 @@ private:
 	Names column_names;
 	bool use_uncompressed_cache;
 	MergeTreeData & storage;
+	MergeTreeData::LockedTableStructurePtr structure;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0)
 	{
