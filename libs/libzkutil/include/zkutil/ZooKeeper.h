@@ -1,6 +1,7 @@
 #pragma once
 #include <zkutil/Types.h>
 #include <zkutil/KeeperException.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 
 namespace zkutil
@@ -18,6 +19,9 @@ class ZooKeeper
 {
 public:
 	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT, WatchFunction * watch = nullptr);
+
+	ZooKeeper(const Poco::Util::LayeredConfiguration & config, const std::string & config_name,
+			  WatchFunction * watch = nullptr);
 
 	/** Возвращает true, если сессия навсегда завершена.
 	  * Это возможно только если соединение было установлено, а потом разорвалось. Это достаточно редкая ситуация.
@@ -95,6 +99,7 @@ public:
 	OpResultsPtr tryMulti(const Ops & ops);
 
 private:
+	void init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_);
 	friend struct StateWatch;
 
 	zk::ZooKeeper impl;

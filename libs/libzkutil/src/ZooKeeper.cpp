@@ -43,9 +43,10 @@ struct StateWatch : public zk::Watch
 	}
 };
 
-ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
-	: state_watch(watch_)
+void ZooKeeper::init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
 {
+	state_watch = watch_;
+
 	CHECKED(impl.init(hosts, sessionTimeoutMs, boost::make_shared<StateWatch>(this)));
 
 	ACL perm;
@@ -53,6 +54,48 @@ ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchF
 	perm.getid().getid() = "anyone";
 	perm.setperms(zk::Permission::All);
 	default_acl.push_back(perm);
+}
+
+ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
+{
+	init(hosts, sessionTimeoutMs, watch_);
+}
+
+struct ZooKeeperArgs
+{
+	ZooKeeperArgs(const Poco::Util::LayeredConfiguration & config, const std::string & config_name)
+	{
+		Poco::Util::AbstractConfiguration::Keys keys;
+		config.keys(config_name, keys);
+		std::string node_key = "node";
+		std::string node_key_ext = "node[";
+
+		session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
+		for (const auto & key : keys)
+		{
+			if (key == node_key || key.compare(0, node_key.size(), node_key) == 0)
+			{
+				if (hosts.size())
+					hosts += std::string(" ");
+				hosts += config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port");
+			}
+			else if (key == "session_timeout_ms")
+			{
+				session_timeout_ms = config.getInt(config_name + "." + key);
+			}
+			else throw KeeperException(std::string("Unknown key ") + key + " in config file");
+		}
+	}
+
+	std::string hosts;
+	size_t session_timeout_ms;
+};
+
+ZooKeeper::ZooKeeper(const Poco::Util::LayeredConfiguration & config, const std::string & config_name,
+			  WatchFunction * watch)
+{
+	ZooKeeperArgs args(config, config_name);
+	init(args.hosts, args.session_timeout_ms, watch);
 }
 
 void ZooKeeper::stateChanged(WatchEvent::type event, SessionState::type state, const std::string & path)
