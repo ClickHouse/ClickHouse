@@ -49,6 +49,11 @@ public:
 	  */
 	virtual bool isRemote() const { return false; }
 
+	virtual void storeExternalTables(const std::map<String, StoragePtr> & tables_)
+	{
+		throw Exception("Method storeExternalTables is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/** Возвращает true, если хранилище поддерживает запросы с секцией SAMPLE.
 	 */
 	virtual bool supportsSampling() const { return false; }

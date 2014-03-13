@@ -10,13 +10,23 @@
 namespace DB
 {
 
-bool ITableDeclaration::hasRealColumn(const String &column_name) const
+bool IStorage::hasRealColumn(const String &column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
 		if (it.first == column_name)
 			return true;
 	return false;
+}
+
+
+Names ITableDeclaration::getColumnNamesList() const
+{
+	const NamesAndTypesList & real_columns = getColumnsList();
+	Names res;
+	for (auto & it : real_columns)
+		res.push_back(it.first);
+	return res;
 }
 
 

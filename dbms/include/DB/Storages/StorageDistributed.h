@@ -49,6 +49,7 @@ public:
 	bool hasColumn(const String &column_name) const;
 
 	bool isRemote() const { return true; }
+	void storeExternalTables(const Tables & tables_) { external_tables = tables_; }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -91,6 +92,8 @@ private:
 	String _port_column_name;
 
 	const Context & context;
+
+	Tables external_tables;
 
 	/// Используется только, если таблица должна владеть объектом Cluster, которым больше никто не владеет - для реализации TableFunctionRemote.
 	SharedPtr<Cluster> owned_cluster;

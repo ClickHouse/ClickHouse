@@ -4,8 +4,8 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include <DB/Core/Defines.h>
 #include <DB/Core/Block.h>
+#include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
 #include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
@@ -24,7 +24,10 @@ namespace DB
 
 using Poco::SharedPtr;
 
+/// Поток блоков читающих из таблицы и ее имя
 typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
+/// Вектор пар, описывающих таблицы
+typedef std::vector<ExternalTableData> ExternalTablesData;
 
 /** Соединение с сервером БД для использования в клиенте.
   * Как использовать - см. Core/Protocol.h
@@ -85,7 +88,7 @@ public:
 	
 	void sendCancel();
 	void sendData(const Block & block, const String & name = "");
-	void sendExternalTables(std::vector<ExternalTableData> & data);
+	void sendExternalTables(ExternalTablesData & data);
 
 	/// Проверить, если ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);

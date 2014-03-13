@@ -115,7 +115,7 @@ void TCPHandler::runImpl()
 				continue;
 
 			/// Получить блоки временных таблиц
-			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
+			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 				readData(global_settings);
 
 			/// Обрабатываем Query
@@ -544,25 +544,25 @@ bool TCPHandler::receiveData()
 	initBlockInput();
 
 	/// Имя временной таблицы для записи данных, по умолчанию пустая строка
-	String temporary_table_name;
-	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
-		readStringBinary(temporary_table_name, *in);
+	String external_table_name;
+	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		readStringBinary(external_table_name, *in);
 
 	/// Прочитать из сети один блок и записать его
 	Block block = state.block_in->read();
 	if (block)
 	{
 		/// Если запрос на вставку, то данные нужно писать напрямую в state.io.out.
-		/// Иначе пишем блоки во временную таблицу temporary_table_name.
+		/// Иначе пишем блоки во временную таблицу external_table_name.
 		if (!state.is_insert)
 		{
 			StoragePtr storage;
 			/// Если такой таблицы не существовало, создаем ее.
-			if (!(storage = query_context.tryGetTemporaryTable(temporary_table_name)))
+			if (!(storage = query_context.tryGetExternalTable(external_table_name)))
 			{
 				NamesAndTypesListPtr columns = new NamesAndTypesList(block.getColumnsList());
-				storage = StorageMemory::create(temporary_table_name, columns);
-				query_context.addTemporaryTable(temporary_table_name, storage);
+				storage = StorageMemory::create(external_table_name, columns);
+				query_context.addExternalTable(external_table_name, storage);
 			}
 			/// Данные будем писать напрямую в таблицу.
 			state.io.out = storage->write(ASTPtr());
@@ -650,7 +650,7 @@ void TCPHandler::sendData(Block & block)
 	initBlockOutput();
 
 	writeVarUInt(Protocol::Server::Data, *out);
-	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
+	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		writeStringBinary("", *out);
 
 	state.block_out->write(block);

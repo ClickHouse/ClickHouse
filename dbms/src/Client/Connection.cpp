@@ -263,7 +263,7 @@ void Connection::sendData(const Block & block, const String & name)
 
 	writeVarUInt(Protocol::Client::Data, *out);
 
-	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		writeStringBinary(name, *out);
 
 	block.checkNestedArraysOffsets();
@@ -272,10 +272,10 @@ void Connection::sendData(const Block & block, const String & name)
 	out->next();
 }
 
-void Connection::sendExternalTables(std::vector<ExternalTableData> & data)
+void Connection::sendExternalTables(ExternalTablesData & data)
 {
 	/// Если работаем со старым сервером, то никакой информации не отправляем
-	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
+	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		return;
 
 	for (size_t i = 0; i < data.size(); ++i)
@@ -362,10 +362,10 @@ Block Connection::receiveData()
 		
 	initBlockInput();
 
-	String temporary_table_name;
+	String external_table_name;
 
-	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPRORY_TABLES)
-		readStringBinary(temporary_table_name, *in);
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		readStringBinary(external_table_name, *in);
 
 	/// Прочитать из сети один блок
 	return block_in->read();
