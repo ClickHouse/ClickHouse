@@ -20,6 +20,19 @@ class ZooKeeper
 public:
 	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT, WatchFunction * watch = nullptr);
 
+	/** конфиг вида
+		<zookeeper>
+			<node>
+				<host>example1</host>
+				<port>2181</port>
+			</node>
+			<node>
+				<host>example2</host>
+				<port>2181</port>
+			</node>
+			<session_timeout_ms>30000</session_timeout_ms>
+		</zookeeper>
+	*/
 	ZooKeeper(const Poco::Util::LayeredConfiguration & config, const std::string & config_name,
 			  WatchFunction * watch = nullptr);
 
