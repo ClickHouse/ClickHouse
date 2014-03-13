@@ -138,33 +138,35 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 			size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
 			{
+				/// К концу этого логического блока должен быть вызван деструктор, чтобы затем корректно определить удаленные куски
 				/// Нужно вызывать деструктор под незалоченным currently_merging_mutex.
 				CurrentlyMergingPartsTaggerPtr merging_tagger;
 
-				Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
-
-				/// К концу этого логического блока должен быть вызван деструктор, чтобы затем корректно определить удаленные куски
-				MergeTreeData::DataPartsVector parts;
-				auto can_merge = boost::bind(&StorageMergeTree::canMergeParts, this, _1, _2);
-				bool only_small = false;
-
-				/// Если есть активный мердж крупных кусков, то ограничиваемся мерджем только маленьких частей.
-				for (const auto & part : currently_merging)
 				{
-					if (part->size * data.index_granularity > 25 * 1024 * 1024)
+					Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
+
+					MergeTreeData::DataPartsVector parts;
+					auto can_merge = boost::bind(&StorageMergeTree::canMergeParts, this, _1, _2);
+					bool only_small = false;
+
+					/// Если есть активный мердж крупных кусков, то ограничиваемся мерджем только маленьких частей.
+					for (const auto & part : currently_merging)
 					{
-						only_small = true;
-						break;
+						if (part->size * data.index_granularity > 25 * 1024 * 1024)
+						{
+							only_small = true;
+							break;
+						}
 					}
+
+					if (!merger.selectPartsToMerge(parts, disk_space, false, aggressive, only_small, can_merge) &&
+						!merger.selectPartsToMerge(parts, disk_space,  true, aggressive, only_small, can_merge))
+						break;
+
+					merging_tagger = new CurrentlyMergingPartsTagger(parts, merger.estimateDiskSpaceForMerge(parts), *this);
 				}
 
-				if (!merger.selectPartsToMerge(parts, disk_space, false, aggressive, only_small, can_merge) &&
-					!merger.selectPartsToMerge(parts, disk_space,  true, aggressive, only_small, can_merge))
-					break;
-
-				merging_tagger = new CurrentlyMergingPartsTagger(parts, merger.estimateDiskSpaceForMerge(parts), *this);
-
-				merger.mergeParts(parts);
+				merger.mergeParts(merging_tagger->parts);
 			}
 
 			if (shutdown_called)

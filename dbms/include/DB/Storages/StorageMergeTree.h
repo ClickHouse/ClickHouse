@@ -117,6 +117,11 @@ private:
 		{
 			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри mergeThread, где он уже залочен.
 			reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// Может бросить исключение.
+			for (const auto & part : parts)
+			{
+				if (storage.currently_merging.count(part))
+					throw Exception("Tagging alreagy tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+			}
 			storage.currently_merging.insert(parts.begin(), parts.end());
 		}
 
@@ -125,9 +130,11 @@ private:
 			try
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
-				for (size_t i = 0; i < parts.size(); ++i)
+				for (const auto & part : parts)
 				{
-					storage.currently_merging.erase(parts[i]);
+					if (!storage.currently_merging.count(part))
+						throw Exception("Untagging already untagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+					storage.currently_merging.erase(part);
 				}
 			}
 			catch (...)

@@ -353,6 +353,9 @@ void MergeTreeData::clearOldParts()
 void MergeTreeData::setPath(const String & new_full_path)
 {
 	full_path = new_full_path;
+	context.getUncompressedCache()->reset();
+	context.getMarkCache()->reset();
+	log = &Logger::get(lastTwoPathComponents(full_path));
 }
 
 void MergeTreeData::dropAllData()
