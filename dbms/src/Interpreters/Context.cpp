@@ -163,6 +163,8 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 
 Tables Context::getExternalTables() const
 {
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
 	Tables res = external_tables;
 	if (session_context && session_context != this)
 	{

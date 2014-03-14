@@ -123,6 +123,7 @@ protected:
 		}
 	}
 
+	/// Отправить на удаленные сервера все временные таблицы
 	void sendExternalTables()
 	{
 		ExternalTablesData res;
@@ -133,7 +134,7 @@ protected:
 			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
 			res.push_back(std::make_pair(cur->read(cur->getColumnNamesList(), ASTPtr(), settings, stage, DEFAULT_BLOCK_SIZE, 1)[0], it->first));
 		}
-		connection.sendExternalTables(res);
+		connection.sendExternalTablesData(res);
 	}
 
 	Block readImpl()
@@ -268,6 +269,7 @@ private:
 	String _host_column;
 	/// Имя столбца, куда записать номер порта (Например "_port"). Пустая строка, если записывать не надо.
 	String _port_column;
+	/// Временные таблицы, которые необходимо переслать на удаленные сервера.
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 

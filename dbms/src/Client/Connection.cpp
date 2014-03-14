@@ -272,7 +272,7 @@ void Connection::sendData(const Block & block, const String & name)
 	out->next();
 }
 
-void Connection::sendExternalTables(ExternalTablesData & data)
+void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
 	/// Если работаем со старым сервером, то никакой информации не отправляем
 	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)

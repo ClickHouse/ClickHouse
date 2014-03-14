@@ -83,12 +83,15 @@ public:
 	/// Адрес сервера - для сообщений в логе и в эксепшенах.
 	String getServerAddress() const;
 
+	/// Если последний флаг true, то затем необходимо вызвать sendExternalTablesData
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
 		const Settings * settings = NULL, bool with_pending_data = false);
 	
 	void sendCancel();
+	/// Отправить блок данных, на сервере сохранить во временную таблицу name
 	void sendData(const Block & block, const String & name = "");
-	void sendExternalTables(ExternalTablesData & data);
+	/// Отправить все содержимое внешних таблиц
+	void sendExternalTablesData(ExternalTablesData & data);
 
 	/// Проверить, если ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);

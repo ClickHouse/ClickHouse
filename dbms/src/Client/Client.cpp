@@ -58,14 +58,17 @@ namespace DB
 
 using Poco::SharedPtr;
 
-
+/// Описание внешней таблицы
 class ExternalTable
 {
 public:
-	std::string file;
-	std::string name;
-	std::string format;
+	std::string file; 		/// Файл с данными или '-' если stdin
+	std::string name; 		/// Имя таблицы
+	std::string format; 	/// Название формата хранения данных
+
+	/// Описание структуры таблицы: (имя столбца, имя типа данных)
 	std::vector<std::pair<std::string, std::string> > structure;
+
 	ReadBuffer *read_buffer;
 	Block sample_block;
 
@@ -98,6 +101,7 @@ public:
 		return res;
 	}
 
+	/// Функция для отладочного вывода информации
 	void write()
 	{
 		std::cerr << "file " << file << std::endl;
@@ -108,6 +112,7 @@ public:
 			std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
 	}
 
+	/// Извлечение параметров из variables_map, которая строится по командной строке
 	ExternalTable(const boost::program_options::variables_map & external_options)
 	{
 		if (external_options.count("file"))
@@ -551,15 +556,17 @@ private:
 	}
 
 
+	/// Преобразовать внешние таблицы к ExternalTableData и переслать через connection
 	void sendExternalTables()
 	{
 		const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*parsed_query);
 		if (!select && !external_tables.empty())
 			throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
+
 		std::vector<ExternalTableData> data;
 		for (size_t i = 0; i < external_tables.size(); ++i)
 			data.push_back(external_tables[i].getData(context));
-		connection->sendExternalTables(data);
+		connection->sendExternalTablesData(data);
 	}
 
 

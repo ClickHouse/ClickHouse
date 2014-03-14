@@ -403,6 +403,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			current_asts.insert(ast);
 			replaced = true;
 		}
+		/// может быть указано in t, где t - таблица, что равносильно select * from t.
 		if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
 			if (ASTIdentifier * right = dynamic_cast<ASTIdentifier *>(&*node->arguments->children[1]))
 				right->kind = ASTIdentifier::Table;
@@ -514,12 +515,12 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 }
 
 
-void ExpressionAnalyzer::findGlobalFunctions(ASTPtr & ast)
+void ExpressionAnalyzer::findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes)
 {
 	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			findGlobalFunctions(*it);
+			findGlobalFunctions(*it, global_nodes);
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
@@ -1181,7 +1182,8 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 
 void ExpressionAnalyzer::processGlobalOperations()
 {
-	findGlobalFunctions(ast);
+	std::vector<ASTPtr> global_nodes;
+	findGlobalFunctions(ast, global_nodes);
 
 	size_t id = 1;
 	for (size_t i = 0; i < global_nodes.size(); ++i)

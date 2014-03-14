@@ -49,6 +49,7 @@ public:
 	bool hasColumn(const String &column_name) const;
 
 	bool isRemote() const { return true; }
+	/// Сохранить временные таблицы, чтобы при следующем вызове метода read переслать их на удаленные сервера
 	void storeExternalTables(const Tables & tables_) { external_tables = tables_; }
 
 	BlockInputStreams read(
@@ -93,6 +94,8 @@ private:
 
 	const Context & context;
 
+	/// Временные таблицы, которые необходимо отправить на сервер. Переменная очищается после каждого вызова метода read
+	/// Для подготовки к отправке нужно использовтаь метод storeExternalTables
 	Tables external_tables;
 
 	/// Используется только, если таблица должна владеть объектом Cluster, которым больше никто не владеет - для реализации TableFunctionRemote.
