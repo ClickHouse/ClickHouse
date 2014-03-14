@@ -1,55 +1,15 @@
-#include <boost/bind.hpp>
-#include <numeric>
-
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Ext/ScopedTry.h>
-
-#include <Yandex/time2str.h>
-
-#include <DB/Common/escapeForFileName.h>
-
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/CompressedReadBuffer.h>
-
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
-
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNested.h>
-
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/MergingSortedBlockInputStream.h>
-#include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
-#include <DB/DataStreams/SummingSortedBlockInputStream.h>
-#include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
-#include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/ConcatBlockInputStream.h>
-#include <DB/DataStreams/narrowBlockInputStreams.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/DataStreams/FilterBlockInputStream.h>
-
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTNameTypePair.h>
-
-#include <DB/Interpreters/sortBlock.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-
 #include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/Storages/MergeTree/PKCondition.h>
+#include <Yandex/time2str.h>
+#include <Poco/Ext/ScopedTry.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Common/escapeForFileName.h>
+#include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/DataStreams/ExpressionBlockInputStream.h>
 
-#include <algorithm>
 
 
 namespace DB
