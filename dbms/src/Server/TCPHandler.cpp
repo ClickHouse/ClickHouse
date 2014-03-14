@@ -225,8 +225,6 @@ void TCPHandler::readData(const Settings & global_settings)
 		if (Daemon::instance().isCancelled() || in->eof())
 			return;
 
-		std::cerr << "Receiving packet" << std::endl;
-
 		if (!receivePacket())
 			break;
 	}

@@ -191,8 +191,10 @@ FunctionPtr FunctionFactory::get(
 
 	else if (name == "tuple")						return new FunctionTuple;
 	else if (name == "tupleElement")				return new FunctionTupleElement;
-	else if (name == "in")							return new FunctionIn;
-	else if (name == "notIn")						return new FunctionIn(true);
+	else if (name == "in")							return new FunctionIn(false, false);
+	else if (name == "notIn")						return new FunctionIn(true, false);
+	else if (name == "globalIn")					return new FunctionIn(false, true);
+	else if (name == "globalNotIn")					return new FunctionIn(true, true);
 
 	else if (name == "array")						return new FunctionArray;
 	else if (name == "arrayElement")				return new FunctionArrayElement;

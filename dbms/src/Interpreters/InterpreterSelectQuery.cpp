@@ -78,6 +78,11 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth);
 
+	query_analyzer->processGlobalOperations();
+
+	for (auto & it : query_analyzer->external_tables)
+		context.addExternalTable(it->getTableName(), it);
+
 	if (input_)
 		streams.push_back(input_);
 }

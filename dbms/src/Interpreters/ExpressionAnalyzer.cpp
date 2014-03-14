@@ -23,6 +23,11 @@
 
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
+#include <DB/Storages/StorageMemory.h>
+
+#include <DB/DataStreams/copyData.h>
+
+#include <DB/Parsers/formatAST.h>
 
 
 namespace DB
@@ -398,7 +403,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			current_asts.insert(ast);
 			replaced = true;
 		}
-		if (node->name == "in" || node->name == "notIn")
+		if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
 			if (ASTIdentifier * right = dynamic_cast<ASTIdentifier *>(&*node->arguments->children[1]))
 				right->kind = ASTIdentifier::Table;
 	}
@@ -509,6 +514,87 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 }
 
 
+void ExpressionAnalyzer::findGlobalFunctions(ASTPtr & ast)
+{
+	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			findGlobalFunctions(*it);
+
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (node->name == "globalIn" || node->name == "globalNotIn")
+		{
+			global_nodes.push_back(ast);
+		}
+	}
+}
+
+
+void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id)
+{
+	IAST & args = *node->arguments;
+	ASTPtr & arg = args.children[1];
+	StoragePtr external_storage = StoragePtr();
+
+	/// Если подзапрос или имя таблицы для селекта
+	if (dynamic_cast<ASTSubquery *>(&*arg) || dynamic_cast<ASTIdentifier *>(&*arg))
+	{
+		/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
+			* Так как результат этого поздапроса - ещё не результат всего запроса.
+			* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+			*/
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		ASTPtr subquery;
+		if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
+		{
+			ParserSelectQuery parser;
+
+			if (context.tryGetExternalTable(table->name))
+				return;
+
+			String query = "SELECT * FROM " + table->name;
+			const char * begin = query.data();
+			const char * end = begin + query.size();
+			const char * pos = begin;
+			const char * expected = "";
+
+			bool parse_res = parser.parse(pos, end, subquery, expected);
+			if (!parse_res)
+				throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
+								ErrorCodes::LOGICAL_ERROR);
+		}
+		else
+			subquery = arg->children[0];
+
+		InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+
+		Block sample = interpreter.getSampleBlock();
+		NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
+
+		String external_table_name = "_table" + toString(name_id++);
+		external_storage = StorageMemory::create(external_table_name, columns);
+		BlockOutputStreamPtr output = external_storage->write(ASTPtr());
+		copyData(*interpreter.execute(), *output);
+
+		ASTIdentifier * ast_ident = new ASTIdentifier();
+		ast_ident->kind = ASTIdentifier::Table;
+		ast_ident->name = external_storage->getTableName();
+		arg = ast_ident;
+		external_tables.push_back(external_storage);
+	}
+	else
+		throw Exception("Global in (notIn) supports only select data.", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
 void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
 	/** Нужно преобразовать правый аргумент в множество.
@@ -566,6 +652,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 				subquery = arg->children[0];
 
 			InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+
 			ast_set->set = new Set(settings.limits);
 			ast_set->set->setSource(interpreter.execute());
 			sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
@@ -797,7 +884,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 		if (node->kind == ASTFunction::FUNCTION)
 		{
-			if (node->name == "in" || node->name == "notIn")
+			if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
 			{
 				if (!no_subqueries)
 				{
@@ -1092,6 +1179,19 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 	actions.add(ExpressionActions::Action::arrayJoin(result_columns));
 }
 
+void ExpressionAnalyzer::processGlobalOperations()
+{
+	findGlobalFunctions(ast);
+
+	size_t id = 1;
+	for (size_t i = 0; i < global_nodes.size(); ++i)
+	{
+		String external_table_name = "_data";
+		while (context.tryGetExternalTable(external_table_name + toString(id)))
+			id ++;
+		addExternalStorage(dynamic_cast<ASTFunction *>(&*global_nodes[i]), id);
+	}
+}
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
 {
