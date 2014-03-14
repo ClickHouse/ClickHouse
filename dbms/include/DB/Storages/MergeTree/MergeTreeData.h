@@ -101,9 +101,7 @@ public:
 	{
  		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
 
- 		/// Не изменяйте никакие поля для кусков, уже вставленных в таблицу. TODO заменить почти везде на const DataPart.
-
-		MergeTreeData & storage;
+ 		MergeTreeData & storage;
 		DayNum_t left_date;
 		DayNum_t right_date;
 		UInt64 left;
@@ -208,7 +206,9 @@ public:
 		}
 	};
 
-	typedef SharedPtr<DataPart> DataPartPtr;
+	typedef std::shared_ptr<DataPart> MutableDataPartPtr;
+	/// После добавление в рабочее множество DataPart нельзя изменять.
+	typedef std::shared_ptr<const DataPart> DataPartPtr;
 	struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
 	typedef std::set<DataPartPtr, DataPartPtrLess> DataParts;
 	typedef std::vector<DataPartPtr> DataPartsVector;
@@ -317,9 +317,9 @@ public:
 	void replaceParts(DataPartsVector old_parts, DataPartPtr new_part);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
-	  * Если increment!=nullptr, индекс куска бурется из инкремента. Иначе индекс куска не меняется.
+	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
 	  */
-	void renameTempPartAndAdd(DataPartPtr part, Increment * increment,
+	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment,
 		const LockedTableStructurePtr & structure);
 
 	/** Удалить неактуальные куски.

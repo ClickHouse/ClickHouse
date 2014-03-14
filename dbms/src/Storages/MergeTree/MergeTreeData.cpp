@@ -181,7 +181,7 @@ void MergeTreeData::loadDataParts()
 		if (!isPartDirectory(file_name, matches))
 			continue;
 
-		DataPartPtr part = new DataPart(*this);
+		MutableDataPartPtr part = std::make_shared<DataPart>(*this);
 		parsePartName(file_name, matches, *part);
 		part->name = file_name;
 
@@ -285,7 +285,7 @@ void MergeTreeData::clearOldParts()
 	LOG_TRACE(log, "Clearing old parts");
 	for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
 	{
-		int ref_count = it->referenceCount();
+		int ref_count = it->use_count();
 		if (ref_count == 1)		/// После этого ref_count не может увеличиться.
 		{
 			LOG_DEBUG(log, "'Removing' part " << (*it)->name << " (prepending old_ to its name)");
@@ -628,7 +628,7 @@ void MergeTreeData::replaceParts(DataPartsVector old_parts, DataPartPtr new_part
 		data_parts.erase(data_parts.find(old_parts[i]));
 }
 
-void MergeTreeData::renameTempPartAndAdd(DataPartPtr part, Increment * increment,
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment,
 		const MergeTreeData::LockedTableStructurePtr & structure)
 {
 	LOG_TRACE(log, "Renaming.");

@@ -43,7 +43,7 @@ public:
 	  * temp_index - значение left и right для нового куска. Можно будет изменить при переименовании.
 	  * Возвращает кусок с именем, начинающимся с tmp_, еще не добавленный в MergeTreeData.
 	  */
-	MergeTreeData::DataPartPtr writeTempPart(BlockWithDateInterval & block, UInt64 temp_index, const MergeTreeData::LockedTableStructurePtr & structure);
+	MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithDateInterval & block, UInt64 temp_index, const MergeTreeData::LockedTableStructurePtr & structure);
 
 private:
 	MergeTreeData & data;

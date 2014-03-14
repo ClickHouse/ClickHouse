@@ -69,7 +69,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	return res;
 }
 
-MergeTreeData::DataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, UInt64 temp_index,
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, UInt64 temp_index,
 	const MergeTreeData::LockedTableStructurePtr & structure)
 {
 	Block & block = block_with_dates.block;
@@ -144,7 +144,7 @@ MergeTreeData::DataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInter
 		writeData(part_tmp_path, column.name, *column.type, *column.column, offset_columns);
 	}
 
-	MergeTreeData::DataPartPtr new_data_part = new MergeTreeData::DataPart(data);
+	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	new_data_part->left_date = DayNum_t(min_date);
 	new_data_part->right_date = DayNum_t(max_date);
 	new_data_part->left = temp_index;

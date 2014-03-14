@@ -241,7 +241,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
-	MergeTreeData::DataPartPtr new_data_part = new MergeTreeData::DataPart(data);
+	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	new_data_part->left_date = std::numeric_limits<UInt16>::max();
 	new_data_part->right_date = std::numeric_limits<UInt16>::min();
 	new_data_part->left = parts.front()->left;

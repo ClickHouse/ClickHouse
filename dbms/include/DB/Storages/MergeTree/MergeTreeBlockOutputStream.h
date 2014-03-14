@@ -18,7 +18,7 @@ public:
 		for (auto & current_block : part_blocks)
 		{
 			UInt64 temp_index = storage.increment.get();
-			MergeTreeData::DataPartPtr part = storage.writer.writeTempPart(current_block, temp_index, structure);
+			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, temp_index, structure);
 			storage.data.renameTempPartAndAdd(part, &storage.increment, structure);
 			storage.merge(2);
 		}
