@@ -75,7 +75,7 @@ ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchF
 
 struct ZooKeeperArgs
 {
-	ZooKeeperArgs(const Poco::Util::LayeredConfiguration & config, const std::string & config_name)
+	ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_name, keys);
@@ -102,7 +102,7 @@ struct ZooKeeperArgs
 	size_t session_timeout_ms;
 };
 
-ZooKeeper::ZooKeeper(const Poco::Util::LayeredConfiguration & config, const std::string & config_name,
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
 			  WatchFunction * watch)
 {
 	ZooKeeperArgs args(config, config_name);
