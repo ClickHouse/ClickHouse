@@ -245,6 +245,8 @@ public:
 	  */
 	void setOwningStorage(StoragePtr storage) { owning_storage = storage; }
 
+	StoragePtr getOwningStorage() const { return owning_storage; }
+
 	std::string getModePrefix() const;
 
 	std::string getSignColumnName() const { return sign_column; }
@@ -341,26 +343,29 @@ public:
 	  */
 	void alter(const ASTAlterQuery::Parameters & params);
 
-	/// Эти поля не нужно изменять снаружи. NOTE нужно спрятать их и сделать методы get*.
+
+	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
+	SortDescription getSortDescription() const { return sort_descr; }
+
 	const Context & context;
-	String date_column_name;
-	ASTPtr sampling_expression;
-	size_t index_granularity;
+	const String date_column_name;
+	const ASTPtr sampling_expression;
+	const size_t index_granularity;
 
 	/// Режим работы - какие дополнительные действия делать при мердже.
-	Mode mode;
+	const Mode mode;
 	/// Для схлопывания записей об изменениях, если используется Collapsing режим работы.
-	String sign_column;
+	const String sign_column;
 
-	MergeTreeSettings settings;
+	const MergeTreeSettings settings;
 
+private:
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 	Block primary_key_sample;
 
 	StorageWeakPtr owning_storage;
 
-private:
 	ASTPtr primary_expr_ast;
 
 	String full_path;

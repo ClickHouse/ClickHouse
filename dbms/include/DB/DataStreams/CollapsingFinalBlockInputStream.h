@@ -14,7 +14,7 @@ namespace DB
 class CollapsingFinalBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	CollapsingFinalBlockInputStream(BlockInputStreams inputs_, SortDescription & description_,
+	CollapsingFinalBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
 									 const String & sign_column_)
 		: description(description_), sign_column(sign_column_),
 		log(&Logger::get("CollapsingSortedBlockInputStream")),

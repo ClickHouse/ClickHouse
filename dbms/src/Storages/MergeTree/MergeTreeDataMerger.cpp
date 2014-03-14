@@ -269,7 +269,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
 			structure->getFullPath() + parts[i]->name + '/', structure, DEFAULT_MERGE_BLOCK_SIZE, all_column_names, data, parts[i], ranges,
-			StoragePtr(), false, NULL, ""), data.primary_expr));
+			StoragePtr(), false, NULL, ""), data.getPrimaryExpression()));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
@@ -279,15 +279,15 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	switch (data.mode)
 	{
 		case MergeTreeData::Ordinary:
-			merged_stream = new MergingSortedBlockInputStream(src_streams, data.sort_descr, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = new MergingSortedBlockInputStream(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Collapsing:
-			merged_stream = new CollapsingSortedBlockInputStream(src_streams, data.sort_descr, data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = new CollapsingSortedBlockInputStream(src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Summing:
-			merged_stream = new SummingSortedBlockInputStream(src_streams, data.sort_descr, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = new SummingSortedBlockInputStream(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		default:

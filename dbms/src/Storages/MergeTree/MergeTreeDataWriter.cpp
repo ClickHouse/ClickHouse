@@ -93,19 +93,21 @@ MergeTreeData::DataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInter
 	LOG_TRACE(log, "Calculating primary expression.");
 
 	/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
-	data.primary_expr->execute(block);
+	data.getPrimaryExpression()->execute(block);
 
 	LOG_TRACE(log, "Sorting by primary key.");
 
+	SortDescription sort_descr = data.getSortDescription();
+
 	/// Сортируем.
-	stableSortBlock(block, data.sort_descr);
+	stableSortBlock(block, sort_descr);
 
 	/// Наконец-то можно писать данные на диск.
 	LOG_TRACE(log, "Writing index.");
 
 	/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
 	MergeTreeData::DataPart::Index index_vec;
-	index_vec.reserve(part_size * data.sort_descr.size());
+	index_vec.reserve(part_size * sort_descr.size());
 
 	{
 		WriteBufferFromFile index(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, flags);
@@ -113,11 +115,11 @@ MergeTreeData::DataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInter
 		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
 		PrimaryColumns primary_columns;
 
-		for (size_t i = 0, size = data.sort_descr.size(); i < size; ++i)
+		for (size_t i = 0, size = sort_descr.size(); i < size; ++i)
 			primary_columns.push_back(
-				!data.sort_descr[i].column_name.empty()
-				? &block.getByName(data.sort_descr[i].column_name)
-				: &block.getByPosition(data.sort_descr[i].column_number));
+				!sort_descr[i].column_name.empty()
+				? &block.getByName(sort_descr[i].column_name)
+				: &block.getByPosition(sort_descr[i].column_number));
 
 		for (size_t i = 0; i < rows; i += data.index_granularity)
 		{

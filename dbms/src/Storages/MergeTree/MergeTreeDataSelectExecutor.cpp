@@ -32,7 +32,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	structure->check(column_names_to_return);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	PKCondition key_condition(query, data.context, structure->getColumnsList(), data.sort_descr);
+	PKCondition key_condition(query, data.context, structure->getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, data.context, structure->getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
 	MergeTreeData::DataPartsVector parts;
@@ -90,7 +90,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		}
 
 		UInt64 sampling_column_max = 0;
-		DataTypePtr type = data.primary_expr->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
+		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
 		if (type->getName() == "UInt64")
 			sampling_column_max = std::numeric_limits<UInt64>::max();
@@ -173,7 +173,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (select.final)
 	{
 		/// Добавим столбцы, нужные для вычисления первичного ключа и знака.
-		std::vector<String> add_columns = data.primary_expr->getRequiredColumns();
+		std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();
 		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 		column_names_to_read.push_back(data.sign_column);
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
@@ -284,7 +284,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 					streams.push_back(new MergeTreeBlockInputStream(
 						structure->getFullPath() + part.data_part->name + '/', structure, max_block_size, column_names, data,
-						part.data_part, part.ranges, data.owning_storage, use_uncompressed_cache,
+						part.data_part, part.ranges, data.getOwningStorage(), use_uncompressed_cache,
 						prewhere_actions, prewhere_column));
 					need_marks -= marks_in_part;
 					parts.pop_back();
@@ -314,7 +314,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 				streams.push_back(new MergeTreeBlockInputStream(
 					structure->getFullPath() + part.data_part->name + '/', structure, max_block_size, column_names, data,
-					part.data_part, ranges_to_get_from_part, data.owning_storage, use_uncompressed_cache,
+					part.data_part, ranges_to_get_from_part, data.getOwningStorage(), use_uncompressed_cache,
 					prewhere_actions, prewhere_column));
 			}
 
@@ -361,17 +361,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
 			structure->getFullPath() + part.data_part->name + '/', structure, max_block_size, column_names, data,
-			part.data_part, part.ranges, data.owning_storage, use_uncompressed_cache,
+			part.data_part, part.ranges, data.getOwningStorage(), use_uncompressed_cache,
 			prewhere_actions, prewhere_column);
 
-		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, data.primary_expr));
+		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
 	}
 
 	BlockInputStreams res;
 	if (to_collapse.size() == 1)
 		res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
 	else if (to_collapse.size() > 1)
-		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, data.sort_descr, data.sign_column));
+		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, data.getSortDescription(), data.sign_column));
 
 	return res;
 }
@@ -413,7 +413,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(const MergeTreeDat
 {
 	MarkRanges res;
 
-	size_t key_size = data.sort_descr.size();
+	size_t key_size = data.getSortDescription().size();
 	size_t marks_count = index.size() / key_size;
 
 	/// Если индекс не используется.

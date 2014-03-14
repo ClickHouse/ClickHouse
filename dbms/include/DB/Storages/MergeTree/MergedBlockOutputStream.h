@@ -224,11 +224,11 @@ public:
 		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
 		PrimaryColumns primary_columns;
 		
-		for (size_t i = 0, size = storage.sort_descr.size(); i < size; ++i)
+		for (const auto & descr : storage.getSortDescription())
 			primary_columns.push_back(
-				!storage.sort_descr[i].column_name.empty()
-				? &block.getByName(storage.sort_descr[i].column_name)
-				: &block.getByPosition(storage.sort_descr[i].column_number));
+				!descr.column_name.empty()
+				? &block.getByName(descr.column_name)
+				: &block.getByPosition(descr.column_number));
 			
 		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 		{
