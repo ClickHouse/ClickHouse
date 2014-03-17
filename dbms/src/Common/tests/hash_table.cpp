@@ -46,9 +46,18 @@ int main(int argc, char ** argv)
 		Cont cont;
 
 		cont.insert(std::make_pair(1, "Hello, world!"));
+		cont[1] = "Goodbye.";
 
 		for (auto x : cont)
 			std::cerr << x.first << " -> " << x.second << std::endl;
+
+		std::string dump;
+		{
+			DB::WriteBufferFromString wb(dump);
+			cont.writeText(wb);
+		}
+
+		std::cerr << "dump: " << dump << std::endl;
 	}
 
 	return 0;

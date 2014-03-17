@@ -42,7 +42,9 @@ struct HashMapCell
 
 	void writeText(DB::WriteBuffer & wb) const
 	{
-		throw DB::Exception("Method HashMapCell::writeText is not implemented", DB::ErrorCodes::NOT_IMPLEMENTED);
+		DB::writeDoubleQuoted(value.first, wb);
+		DB::writeChar(',', wb);
+		DB::writeDoubleQuoted(value.second, wb);
 	}
 
 	/// Десериализация, в бинарном и текстовом виде.
@@ -54,7 +56,9 @@ struct HashMapCell
 
 	void readText(DB::ReadBuffer & rb)
 	{
-		throw DB::Exception("Method HashMapCell::readText is not implemented", DB::ErrorCodes::NOT_IMPLEMENTED);
+		DB::readDoubleQuoted(value.first, rb);
+		DB::assertString(",", rb);
+		DB::readDoubleQuoted(value.second, rb);
 	}
 };
 
