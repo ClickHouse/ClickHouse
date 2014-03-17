@@ -209,7 +209,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		bool need_aggregate = false;
 		bool has_having     = false;
 		bool has_order_by   = !query.order_expression_list.isNull();
-		
+
+		ExpressionActionsPtr array_join;
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
 		ExpressionActionsPtr before_having;
@@ -225,8 +226,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		if (from_stage < QueryProcessingStage::WithMergeableState
 			&& to_stage >= QueryProcessingStage::WithMergeableState)
 		{
-			query_analyzer->appendArrayJoin(chain);
-			
+			if (query_analyzer->appendArrayJoin(chain))
+				array_join = chain.getLastActions();
+
 			if (query_analyzer->appendWhere(chain))
 			{
 				has_where = true;
@@ -312,6 +314,16 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			if (need_aggregate)
 				executeAggregation(streams, before_aggregation, aggregate_overflow_row, aggregate_final);
 
+			if (array_join && !has_where && !need_aggregate && to_stage == QueryProcessingStage::WithMergeableState)
+			{
+				/** Если есть ARRAY JOIN, его действие сначала старается оказаться в
+				  *  before_where, before_aggregation или before_order_and_select.
+				  * Если ни одного из них нет, array_join нужно выполнить отдельно.
+				  */
+
+				executeExpression(streams, array_join);
+			}
+
 			/** Оптимизация - при распределённой обработке запроса,
 			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
 			  *  то выполним предварительный LIMIT на удалёном сервере.
@@ -339,7 +351,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 					executeHaving(streams, before_having);
 			}
 
-			executeOuterExpression(streams, before_order_and_select);
+			executeExpression(streams, before_order_and_select);
 
 			if (has_order_by)
 				executeOrder(streams);
@@ -433,11 +445,31 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	Names required_columns = query_analyzer->getRequiredColumns();
 
 	if (table_function_storage)
-		table = table_function_storage; /// Если в запросе была указана табличная функция, данные читаем из нее.
+	{
+		/// Если в запросе была указана табличная функция, данные читаем из нее.
+		table = table_function_storage;
+	}
 	else if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
+	{
+		/// Запрос из обычной таблицы или без секции FROM.
 		table = getTable();
+	}
 	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+	{
+		/** Для подзапроса не действуют ограничения на максимальный размер результата.
+		  * Так как результат поздапроса - ещё не результат всего запроса.
+		  */
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		interpreter_subquery = new InterpreterSelectQuery(
+			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
 	/// если таблица не поддерживает сэмплинг получим исключение
@@ -647,7 +679,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams,
 }
 
 
-void InterpreterSelectQuery::executeOuterExpression(BlockInputStreams & streams, ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeExpression(BlockInputStreams & streams, ExpressionActionsPtr expression)
 {
 	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)

@@ -29,13 +29,13 @@ int main(int argc, char ** argv)
 	}
 	
 	ASTPtr root;
-	ParserPtr parsers[] = {new ParserSelectQuery, new ParserExpressionList};
+	ParserPtr parsers[] = {ParserPtr(new ParserSelectQuery), ParserPtr(new ParserExpressionList)};
 	for (size_t i = 0; i < sizeof(parsers)/sizeof(parsers[0]); ++i)
 	{
 		IParser & parser = *parsers[i];
 		const char * pos = argv[1];
 		const char * end = argv[1] + strlen(argv[1]);
-		std::string expected;
+		const char * expected = "";
 		if (parser.parse(pos ,end, root, expected))
 			break;
 		else

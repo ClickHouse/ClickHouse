@@ -13,7 +13,7 @@ namespace DB
 {
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 
@@ -27,7 +27,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & ex
 	ParserString s_lparen("(");
 	ParserString s_rparen(")");
 	ParserIdentifier name_p;
-	ParserList columns_p(new ParserIdentifier, new ParserString(","), false);
+	ParserList columns_p(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(",")), false);
 	
 	ASTPtr database;
 	ASTPtr table;

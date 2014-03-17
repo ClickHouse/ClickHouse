@@ -18,7 +18,8 @@ using Poco::SharedPtr;
 class ParserString : public IParserBase
 {
 private:
-	String s;
+	const char * s;
+	size_t s_size;
 	bool word_boundary;
 	bool case_insensitive;
 
@@ -28,23 +29,23 @@ private:
 	}
 	
 public:
-	ParserString(const String & s_, bool word_boundary_ = false, bool case_insensitive_ = false)
-		: s(s_), word_boundary(word_boundary_), case_insensitive(case_insensitive_) {}
+	ParserString(const char * s_, bool word_boundary_ = false, bool case_insensitive_ = false)
+		: s(s_), s_size(strlen(s)), word_boundary(word_boundary_), case_insensitive(case_insensitive_) {}
 	
 protected:
-	String getName() { return s; }
+	const char * getName() const { return s; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
-		if (static_cast<ssize_t>(s.size()) > end - pos || (case_insensitive ? strncasecmp : strncmp)(pos, s.data(), s.size()))
+		if (static_cast<ssize_t>(s_size) > end - pos || (case_insensitive ? strncasecmp : strncmp)(pos, s, s_size))
 			return false;
 		else
 		{
-			if (word_boundary && s.size() && is_word(*s.rbegin())
-				&& pos + s.size() != end && is_word(pos[s.size()]))
+			if (word_boundary && s_size && is_word(s[s_size - 1])
+				&& pos + s_size != end && is_word(pos[s_size]))
 				return false;
 		
-			pos += s.size();
+			pos += s_size;
  			return true;
  		}
 	}
@@ -61,9 +62,9 @@ public:
 protected:
 	bool allow_newlines;
 	
-	String getName() { return "white space"; }
+	const char * getName() const { return "white space"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		Pos begin = pos;
 		while (*pos == ' ' || *pos == '\t' || (allow_newlines && *pos == '\n') || *pos == '\r' || *pos == '\f')
@@ -77,9 +78,9 @@ protected:
 class ParserCStyleComment : public IParserBase
 {
 protected:
-	String getName() { return "C-style comment"; }
+	const char * getName() const { return "C-style comment"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		if (end - pos >= 4 && pos[0] == '/' && pos[1] == '*')
 		{
@@ -107,9 +108,9 @@ protected:
 class ParserSQLStyleComment : public IParserBase
 {
 protected:
-	String getName() { return "SQL-style comment"; }
+	const char * getName() const { return "SQL-style comment"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		if (end - pos >= 2 && pos[0] == '-' && pos[1] == '-')
 		{
@@ -132,9 +133,9 @@ protected:
 class ParserComment : public IParserBase
 {
 protected:
-	String getName() { return "comment"; }
+	const char * getName() const { return "comment"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		ParserCStyleComment p1;
 		ParserSQLStyleComment p2;
@@ -153,9 +154,9 @@ public:
 protected:
 	bool allow_newlines_outside_comments;
 	
-	String getName() { return "white space or comments"; }
+	const char * getName() const { return "white space or comments"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		ParserWhiteSpace p1(allow_newlines_outside_comments);
 		ParserComment p2;

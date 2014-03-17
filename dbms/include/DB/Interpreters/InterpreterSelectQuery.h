@@ -65,7 +65,7 @@ private:
 	void executeTotalsAndHaving(	BlockInputStreams & streams, bool has_having, ExpressionActionsPtr expression,
 									bool overflow_row);
 	void executeHaving(				BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeOuterExpression(	BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeExpression(			BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeOrder(				BlockInputStreams & streams);
 	void executePreLimit(			BlockInputStreams & streams);
 	void executeUnion(				BlockInputStreams & streams);

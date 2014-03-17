@@ -62,7 +62,7 @@ public:
 		SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names, username, password);
 
 		return StorageDistributed::create(getName(), chooseColumns(*cluster, remote_database, remote_table, context),
-			remote_database, remote_table, cluster, context.getDataTypeFactory(), context);
+			remote_database, remote_table, cluster, context);
 	}
 
 private:

@@ -10,7 +10,7 @@ namespace DB
 
 
 /// Парсит database.table или table.
-static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, String & expected)
+static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, const char *& expected)
 {
 	ParserIdentifier name_p;
 	ParserWhiteSpaceOrComments ws;
@@ -42,7 +42,7 @@ static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser:
 }
 
 	
-bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 

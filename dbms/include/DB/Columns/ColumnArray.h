@@ -452,41 +452,32 @@ private:
 
 		for (size_t i = 0; i < col_size; ++i)
 		{
-	//		std::cerr << "i: " << i << std::endl;
 			/// Насколько размножить массив.
 			size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-	//		std::cerr << "size_to_replicate: " << size_to_replicate << std::endl;
 			/// Количество строк в массиве.
 			size_t value_size = cur_offsets[i] - prev_cur_offset;
-	//		std::cerr << "value_size: " << value_size << std::endl;
 
 			size_t sum_chars_size = 0;
 
 			for (size_t j = 0; j < size_to_replicate; ++j)
 			{
-	//			std::cerr << "j: " << j << std::endl;
 				current_res_offset += value_size;
 				res_offsets.push_back(current_res_offset);
-	//			std::cerr << "current_res_offset: " << current_res_offset << std::endl;
 
 				sum_chars_size = 0;
 
 				size_t prev_cur_string_offset_local = prev_cur_string_offset;
 				for (size_t k = 0; k < value_size; ++k)
 				{
-	//				std::cerr << "k: " << k << std::endl;
 					/// Размер одной строки.
 					size_t chars_size = cur_string_offsets[k + prev_cur_offset] - prev_cur_string_offset_local;
-	//				std::cerr << "chars_size: " << chars_size << std::endl;
 
 					current_res_string_offset += chars_size;
 					res_string_offsets.push_back(current_res_string_offset);
-	//				std::cerr << "current_res_string_offset: " << current_res_string_offset << std::endl;
 
 					/// Копирование символов одной строки.
 					res_chars.resize(res_chars.size() + chars_size);
 					memcpy(&res_chars[res_chars.size() - chars_size], &cur_chars[prev_cur_string_offset_local], chars_size);
-	//				std::cerr << "copied: " << mysqlxx::escape << std::string(reinterpret_cast<const char *>(&cur_chars[prev_cur_string_offset_local]), chars_size) << std::endl;
 
 					sum_chars_size += chars_size;
 					prev_cur_string_offset_local += chars_size;

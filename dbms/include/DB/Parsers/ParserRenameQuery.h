@@ -14,8 +14,8 @@ namespace DB
 class ParserRenameQuery : public IParserBase
 {
 protected:
-	String getName() { return "RENAME query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "RENAME query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 }

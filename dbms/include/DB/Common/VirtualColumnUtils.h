@@ -10,7 +10,6 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Storages/StoragePtr.h>
-#include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Columns/ColumnString.h>
 
 namespace DB

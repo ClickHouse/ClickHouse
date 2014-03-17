@@ -20,7 +20,7 @@ namespace QueryProcessingStage
 	inline const char * toString(UInt64 stage)
 	{
 		static const char * data[] = { "FetchColumns", "WithMergeableState", "Complete" };
-		return stage >= 0 && stage < 3
+		return stage < 3
 			? data[stage]
 			: "Unknown stage";
 	}

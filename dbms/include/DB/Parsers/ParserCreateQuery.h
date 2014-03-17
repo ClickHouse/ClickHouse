@@ -12,8 +12,8 @@ namespace DB
 class ParserNestedTable : public IParserBase
 {
 protected:
-	String getName() { return "nested table"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "nested table"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 	
@@ -26,8 +26,8 @@ protected:
 class ParserIdentifierWithParameters : public IParserBase
 {
 protected:
-	String getName() { return "identifier with parameters"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "identifier with parameters"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -37,8 +37,8 @@ protected:
 class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
-	String getName() { return "identifier with optional parameters"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "identifier with optional parameters"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -46,8 +46,8 @@ protected:
 class ParserNameTypePair : public IParserBase
 {
 protected:
-	String getName() { return "name and type pair"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "name and type pair"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -55,8 +55,8 @@ protected:
 class ParserNameTypePairList : public IParserBase
 {
 protected:
-	String getName() { return "name and type pair list"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "name and type pair list"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -64,8 +64,8 @@ protected:
 class ParserEngine : public IParserBase
 {
 protected:
-	String getName() { return "ENGINE"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "ENGINE"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -89,8 +89,8 @@ protected:
 class ParserCreateQuery : public IParserBase
 {
 protected:
-	String getName() { return "CREATE TABLE or ATTACH TABLE query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "CREATE TABLE or ATTACH TABLE query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 }

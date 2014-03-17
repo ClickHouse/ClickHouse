@@ -22,6 +22,7 @@ namespace DB
 static const char * hilite_keyword = "\033[1;37m";
 static const char * hilite_identifier = "\033[0;36m";
 static const char * hilite_function = "\033[0;33m";
+static const char * hilite_operator = "\033[1;33m";
 static const char * hilite_alias = "\033[0;32m";
 static const char * hilite_none = "\033[0m";
 
@@ -38,12 +39,12 @@ String backQuoteIfNeed(const String & x)
 }
 
 
-void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 
 #define DISPATCH(NAME) \
 	else if (const AST ## NAME * concrete = dynamic_cast<const AST ## NAME *>(&ast)) \
-		formatAST(*concrete, s, indent, hilite, one_line);
+		formatAST(*concrete, s, indent, hilite, one_line, need_parens);
 
 	if (false) {}
 	DISPATCH(SelectQuery)
@@ -76,7 +77,37 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 }
 
 
-void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTExpressionList 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+	for (ASTs::const_iterator it = ast.children.begin(); it != ast.children.end(); ++it)
+	{
+		if (it != ast.children.begin())
+			s << ", ";
+
+		formatAST(**it, s, indent, hilite, one_line, need_parens);
+	}
+}
+
+/** Вывести список выражений в секциях запроса SELECT - по одному выражению на строку.
+  */
+static void formatExpressionListMultiline(const ASTExpressionList & ast, std::ostream & s, size_t indent, bool hilite)
+{
+	std::string indent_str = "\n" + std::string(4 * (indent + 1), ' ');
+
+	for (ASTs::const_iterator it = ast.children.begin(); it != ast.children.end(); ++it)
+	{
+		if (it != ast.children.begin())
+			s << ", ";
+
+		if (ast.children.size() > 1)
+			s << indent_str;
+
+		formatAST(**it, s, indent + 1, hilite, false);
+	}
+}
+
+
+void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	std::string nl_or_nothing = one_line ? "" : "\n";
 		
@@ -84,7 +115,9 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	std::string nl_or_ws = one_line ? " " : "\n";
 			
 	s << (hilite ? hilite_keyword : "") << indent_str << "SELECT " << (ast.distinct ? "DISTINCT " : "") << (hilite ? hilite_none : "");
-	formatAST(*ast.select_expression_list, s, indent, hilite, one_line);
+	one_line
+		? formatAST(*ast.select_expression_list, s, indent, hilite, one_line)
+		: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.select_expression_list), s, indent, hilite);
 
 	if (ast.table)
 	{
@@ -116,7 +149,9 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	if (ast.array_join_expression_list)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "ARRAY JOIN " << (hilite ? hilite_none : "");
-		formatAST(*ast.array_join_expression_list, s, indent, hilite, one_line);
+		one_line
+			? formatAST(*ast.array_join_expression_list, s, indent, hilite, one_line)
+			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.array_join_expression_list), s, indent, hilite);
 	}
 	
 	if (ast.final)
@@ -133,7 +168,9 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	if (ast.prewhere_expression)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "PREWHERE " << (hilite ? hilite_none : "");
-		formatAST(*ast.prewhere_expression, s, indent, hilite, one_line);
+		one_line
+			? formatAST(*ast.prewhere_expression, s, indent, hilite, one_line)
+			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.prewhere_expression), s, indent, hilite);
 	}
 
 	if (ast.where_expression)
@@ -145,10 +182,12 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	if (ast.group_expression_list)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "GROUP BY " << (hilite ? hilite_none : "");
-		formatAST(*ast.group_expression_list, s, indent, hilite, one_line);
+		one_line
+			? formatAST(*ast.group_expression_list, s, indent, hilite, one_line)
+			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.group_expression_list), s, indent, hilite);
 
 		if (ast.group_by_with_totals)
-			s << (hilite ? hilite_keyword : "") << " WITH TOTALS" << (hilite ? hilite_none : "");
+			s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << (one_line ? "" : "    ") << "WITH TOTALS" << (hilite ? hilite_none : "");
 	}
 
 	if (ast.having_expression)
@@ -160,7 +199,9 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	if (ast.order_expression_list)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "ORDER BY " << (hilite ? hilite_none : "");
-		formatAST(*ast.order_expression_list, s, indent, hilite, one_line);
+		one_line
+			? formatAST(*ast.order_expression_list, s, indent, hilite, one_line)
+			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.order_expression_list), s, indent, hilite);
 	}
 
 	if (ast.limit_length)
@@ -181,16 +222,17 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	}
 }
 
-void formatAST(const ASTSubquery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTSubquery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_nothing = one_line ? "" : "\n";
 
-	s << nl_or_nothing << "(" << nl_or_nothing;
+	s << nl_or_nothing << indent_str << "(" << nl_or_nothing;
 	formatAST(*ast.children[0], s, indent + 1, hilite, one_line);
-	s << nl_or_nothing << ")";
+	s << nl_or_nothing << indent_str << ")";
 }
 
-void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	std::string nl_or_ws = one_line ? " " : "\n";
 	
@@ -249,7 +291,7 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 	}
 }
 
-void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	if (ast.table.empty() && !ast.database.empty())
 	{
@@ -261,13 +303,13 @@ void formatAST(const ASTDropQuery 			& ast, std::ostream & s, size_t indent, boo
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 }
 
-void formatAST(const ASTOptimizeQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTOptimizeQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << (hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 }
 
-void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << (hilite ? hilite_keyword : "") << name << " " << (hilite ? hilite_none : "")
 	<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
@@ -281,22 +323,22 @@ void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::os
 	}
 }
 
-void formatAST(const ASTExistsQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTExistsQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "EXISTS TABLE", s, indent, hilite, one_line);
 }
 
-void formatAST(const ASTDescribeQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTDescribeQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "DESCRIBE TABLE", s, indent, hilite, one_line);
 }
 
-void formatAST(const ASTShowCreateQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTShowCreateQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "SHOW CREATE TABLE", s, indent, hilite, one_line);
 }
 
-void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << (hilite ? hilite_keyword : "") << "RENAME TABLE " << (hilite ? hilite_none : "");
 
@@ -311,7 +353,7 @@ void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bo
 	}
 }
 
-void formatAST(const ASTSetQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTSetQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << (hilite ? hilite_keyword : "") << "SET " << (ast.global ? "GLOBAL " : "") << (hilite ? hilite_none : "");
 
@@ -324,7 +366,7 @@ void formatAST(const ASTSetQuery			& ast, std::ostream & s, size_t indent, bool 
 	}
 }
 
-void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	if (ast.databases)
 	{
@@ -352,19 +394,19 @@ void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent,
 	}
 }
 
-void formatAST(const ASTUseQuery				& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTUseQuery				& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << (hilite ? hilite_keyword : "") << "USE " << (hilite ? hilite_none : "") << backQuoteIfNeed(ast.database);
 	return;
 }
 
-void formatAST(const ASTShowProcesslistQuery	& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTShowProcesslistQuery	& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << (hilite ? hilite_keyword : "") << "SHOW PROCESSLIST" << (hilite ? hilite_none : "");
 	return;
 }
 
-void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << (hilite ? hilite_keyword : "") << "INSERT INTO " << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
@@ -394,16 +436,6 @@ void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bo
 	}
 }
 
-void formatAST(const ASTExpressionList 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
-{
-	for (ASTs::const_iterator it = ast.children.begin(); it != ast.children.end(); ++it)
-	{
-		if (it != ast.children.begin())
-			s << ", ";
-		formatAST(**it, s, indent, hilite, one_line);
-	}
-}
-
 static void writeAlias(const String & name, std::ostream & s, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
@@ -415,32 +447,187 @@ static void writeAlias(const String & name, std::ostream & s, bool hilite, bool 
 	s << (hilite ? hilite_none : "");
 }
 
-void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
-	s << (hilite ? hilite_function : "") << ast.name;
+	/// Если есть алиас, то требуются скобки вокруг всего выражения, включая алиас. Потому что запись вида 0 AS x + 0 синтаксически некорректна.
+	if (need_parens && !ast.alias.empty())
+		s << '(';
 
-	if (ast.parameters)
+	/// Стоит ли записать эту функцию в виде оператора?
+	bool written = false;
+	if (ast.arguments && !ast.parameters)
 	{
-		s << '(' << (hilite ? hilite_none : "");
-		formatAST(*ast.parameters, s, indent, hilite, one_line);
-		s << (hilite ? hilite_function : "") << ')';
+		if (ast.arguments->children.size() == 1)
+		{
+			const char * operators[] =
+			{
+				"negate", "-",
+				"not", "NOT ",
+				nullptr
+			};
+
+			for (const char ** func = operators; *func; func += 2)
+			{
+				if (0 == strcmp(ast.name.c_str(), func[0]))
+				{
+					s << (hilite ? hilite_operator : "") << func[1] << (hilite ? hilite_none : "");
+					formatAST(*ast.arguments, s, indent, hilite, one_line, true);
+					written = true;
+				}
+			}
+		}
+
+		/** need_parens - нужны ли скобки вокруг выражения с оператором.
+		  * Они нужны, только если это выражение входит в другое выражение с оператором.
+		  */
+
+		if (!written && ast.arguments->children.size() == 2)
+		{
+			const char * operators[] =
+			{
+				"multiply",			" * ",
+				"divide",			" / ",
+				"modulo",			" % ",
+				"plus", 			" + ",
+				"minus", 			" - ",
+				"notEquals",		" != ",
+				"lessOrEquals",		" <= ",
+				"greaterOrEquals",	" >= ",
+				"less",				" < ",
+				"greater",			" > ",
+				"equals",			" = ",
+				"like",				" LIKE ",
+				"notLike",			" NOT LIKE ",
+				"in",				" IN ",
+				"notIn",			" NOT IN ",
+				nullptr
+			};
+
+			for (const char ** func = operators; *func; func += 2)
+			{
+				if (0 == strcmp(ast.name.c_str(), func[0]))
+				{
+					if (need_parens)
+						s << '(';
+					formatAST(*ast.arguments->children[0], s, indent, hilite, one_line, true);
+					s << (hilite ? hilite_operator : "") << func[1] << (hilite ? hilite_none : "");
+					formatAST(*ast.arguments->children[1], s, indent, hilite, one_line, true);
+					if (need_parens)
+						s << ')';
+					written = true;
+				}
+			}
+
+			if (!written && 0 == strcmp(ast.name.c_str(), "arrayElement"))
+			{
+				formatAST(*ast.arguments->children[0], s, indent, hilite, one_line, true);
+				s << (hilite ? hilite_operator : "") << '[' << (hilite ? hilite_none : "");
+				formatAST(*ast.arguments->children[1], s, indent, hilite, one_line, true);
+				s << (hilite ? hilite_operator : "") << ']' << (hilite ? hilite_none : "");
+				written = true;
+			}
+
+			if (!written && 0 == strcmp(ast.name.c_str(), "tupleElement"))
+			{
+				formatAST(*ast.arguments->children[0], s, indent, hilite, one_line, true);
+				s << (hilite ? hilite_operator : "") << "." << (hilite ? hilite_none : "");
+				formatAST(*ast.arguments->children[1], s, indent, hilite, one_line, true);
+				written = true;
+			}
+		}
+
+		if (!written && ast.arguments->children.size() >= 2)
+		{
+			const char * operators[] =
+			{
+				"and",				" AND ",
+				"or",				" OR ",
+				nullptr
+			};
+
+			for (const char ** func = operators; *func; func += 2)
+			{
+				if (0 == strcmp(ast.name.c_str(), func[0]))
+				{
+					if (need_parens)
+						s << '(';
+					for (size_t i = 0; i < ast.arguments->children.size(); ++i)
+					{
+						if (i != 0)
+							s << (hilite ? hilite_operator : "") << func[1] << (hilite ? hilite_none : "");
+						formatAST(*ast.arguments->children[i], s, indent, hilite, one_line, true);
+					}
+					if (need_parens)
+						s << ')';
+					written = true;
+				}
+			}
+		}
+
+		if (!written && ast.arguments->children.size() >= 1)
+		{
+			if (!written && 0 == strcmp(ast.name.c_str(), "array"))
+			{
+				s << (hilite ? hilite_operator : "") << '[' << (hilite ? hilite_none : "");
+				for (size_t i = 0; i < ast.arguments->children.size(); ++i)
+				{
+					if (i != 0)
+						s << ", ";
+					formatAST(*ast.arguments->children[i], s, indent, hilite, one_line, false);
+				}
+				s << (hilite ? hilite_operator : "") << ']' << (hilite ? hilite_none : "");
+				written = true;
+			}
+
+			if (!written && 0 == strcmp(ast.name.c_str(), "tuple"))
+			{
+				s << (hilite ? hilite_operator : "") << '(' << (hilite ? hilite_none : "");
+				for (size_t i = 0; i < ast.arguments->children.size(); ++i)
+				{
+					if (i != 0)
+						s << ", ";
+					formatAST(*ast.arguments->children[i], s, indent, hilite, one_line, false);
+				}
+				s << (hilite ? hilite_operator : "") << ')' << (hilite ? hilite_none : "");
+				written = true;
+			}
+		}
 	}
 
-	if (ast.arguments)
+	if (!written)
 	{
-		s << '(' << (hilite ? hilite_none : "");
-		formatAST(*ast.arguments, s, indent, hilite, one_line);
-		s << (hilite ? hilite_function : "") << ')';
+		s << (hilite ? hilite_function : "") << ast.name;
+
+		if (ast.parameters)
+		{
+			s << '(' << (hilite ? hilite_none : "");
+			formatAST(*ast.parameters, s, indent, hilite, one_line);
+			s << (hilite ? hilite_function : "") << ')';
+		}
+
+		if (ast.arguments)
+		{
+			s << '(' << (hilite ? hilite_none : "");
+			formatAST(*ast.arguments, s, indent, hilite, one_line);
+			s << (hilite ? hilite_function : "") << ')';
+		}
+
+		s << (hilite ? hilite_none : "");
 	}
-	
-	s << (hilite ? hilite_none : "");
 
 	if (!ast.alias.empty())
+	{
 		writeAlias(ast.alias, s, hilite, one_line);
+		if (need_parens)
+			s << ')';
+	}
 }
 
-void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	if (need_parens && !ast.alias.empty())
+		s << '(';
+
 	s << (hilite ? hilite_identifier : "");
 
 	WriteBufferFromOStream wb(s, 32);
@@ -450,18 +637,29 @@ void formatAST(const ASTIdentifier 			& ast, std::ostream & s, size_t indent, bo
 	s << (hilite ? hilite_none : "");
 
 	if (!ast.alias.empty())
+	{
 		writeAlias(ast.alias, s, hilite, one_line);
+		if (need_parens)
+			s << ')';
+	}
 }
 
-void formatAST(const ASTLiteral 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTLiteral 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	if (need_parens && !ast.alias.empty())
+		s << '(';
+
 	s << apply_visitor(FieldVisitorToString(), ast.value);
 
 	if (!ast.alias.empty())
+	{
 		writeAlias(ast.alias, s, hilite, one_line);
+		if (need_parens)
+			s << ')';
+	}
 }
 
-void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_ws = one_line ? " " : "\n";
@@ -470,12 +668,12 @@ void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bo
 	formatAST(*ast.type, s, indent, hilite, one_line);
 }
 
-void formatAST(const ASTAsterisk			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTAsterisk			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << "*";
 }
 
-void formatAST(const ASTOrderByElement		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTOrderByElement		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	formatAST(*ast.children.front(), s, indent, hilite, one_line);
 	s << (hilite ? hilite_keyword : "") << (ast.direction == -1 ? " DESC" : " ASC") << (hilite ? hilite_none : "");
@@ -486,7 +684,7 @@ void formatAST(const ASTOrderByElement		& ast, std::ostream & s, size_t indent, 
 	}
 }
 
-void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line)
+void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	std::string nl_or_nothing = one_line ? "" : "\n";
 

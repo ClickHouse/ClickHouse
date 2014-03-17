@@ -16,8 +16,8 @@ namespace DB
 class ParserDropQuery : public IParserBase
 {
 protected:
-	String getName() { return "DROP query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "DROP query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 }

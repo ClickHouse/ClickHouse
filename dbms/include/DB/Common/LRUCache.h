@@ -85,10 +85,9 @@ public:
 		removeOverflow();
 	}
 
-	void getStats(size_t & out_hits, size_t & out_misses) const volatile
+	void getStats(size_t & out_hits, size_t & out_misses) const
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		/// Синхронизация не нужна.
 		out_hits = hits;
 		out_misses = misses;
 	}
@@ -135,7 +134,7 @@ private:
 	size_t current_size = 0;
 	const size_t max_size;
 
-	Poco::FastMutex mutex;
+	mutable Poco::FastMutex mutex;
 	size_t hits = 0;
 	size_t misses = 0;
 

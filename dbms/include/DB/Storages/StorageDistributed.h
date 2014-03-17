@@ -25,7 +25,6 @@ public:
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const String & cluster_name,
-		const DataTypeFactory & data_type_factory_,
 		Context & context_,
 		const String & sign_column_name_ = "");
 
@@ -35,7 +34,6 @@ public:
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		SharedPtr<Cluster> & owned_cluster_,
-		const DataTypeFactory & data_type_factory_,
 		Context & context_,
 		const String & sign_column_name_ = "");
 
@@ -75,7 +73,6 @@ private:
 		const String & remote_database_,
 		const String & remote_table_,
 		Cluster & cluster_,
-		const DataTypeFactory & data_type_factory_,
 		const Context & context_,
 		const String & sign_column_name_ = "");
 	
@@ -86,7 +83,6 @@ private:
 	NamesAndTypesListPtr columns;
 	String remote_database;
 	String remote_table;
-	const DataTypeFactory & data_type_factory;
 	String sign_column_name;
 
 	/// Имя виртуального столбца, куда записывается имя хоста (Например "_host").

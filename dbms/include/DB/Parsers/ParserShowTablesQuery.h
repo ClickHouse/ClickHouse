@@ -14,8 +14,8 @@ namespace DB
 class ParserShowTablesQuery : public IParserBase
 {
 protected:
-	String getName() { return "SHOW TABLES|DATABASES query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "SHOW TABLES|DATABASES query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 }

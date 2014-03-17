@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 

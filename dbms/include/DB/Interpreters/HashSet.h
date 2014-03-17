@@ -417,7 +417,9 @@ public:
 
 		size_degree = new_size <= 1
 			 ? GrowthTraits::INITIAL_SIZE_DEGREE
-			 : std::max(GrowthTraits::INITIAL_SIZE_DEGREE, static_cast<int>(log2(new_size - 1)) + 2);
+			 : ((GrowthTraits::INITIAL_SIZE_DEGREE > static_cast<int>(log2(new_size - 1)) + 2)
+				 ? GrowthTraits::INITIAL_SIZE_DEGREE
+				 : (static_cast<int>(log2(new_size - 1)) + 2));
 
 		alloc();
 
@@ -436,7 +438,9 @@ public:
 
 		size_t new_size_degree = new_size <= 1
 			 ? GrowthTraits::INITIAL_SIZE_DEGREE
-			 : std::max(GrowthTraits::INITIAL_SIZE_DEGREE, static_cast<int>(log2(new_size - 1)) + 2);
+			 : ((GrowthTraits::INITIAL_SIZE_DEGREE > static_cast<int>(log2(new_size - 1)) + 2)
+				 ? GrowthTraits::INITIAL_SIZE_DEGREE
+				 : (static_cast<int>(log2(new_size - 1)) + 2));
 
 		if (new_size_degree > size_degree)
 			resize(new_size_degree);

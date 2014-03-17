@@ -33,12 +33,12 @@ int main(int argc, char ** argv)
 		names_and_types->push_back(NameAndTypePair("a", new DataTypeArray(new DataTypeUInt32)));
 
 		ASTPtr primary_expr;
-		String exprected;
+		const char * expected = "";
 		String primary_expr_str = "d";
 		const char * begin = primary_expr_str.data();
 		const char * end = begin + primary_expr_str.size();
 		ParserExpressionList parser;
-		if (!parser.parse(begin, end, primary_expr, exprected))
+		if (!parser.parse(begin, end, primary_expr, expected))
 			throw Poco::Exception("Cannot parse " + primary_expr_str);
 
 		StoragePtr table = StorageMergeTree::create("./", "test", names_and_types, context, primary_expr, "d", NULL, 101);
@@ -82,12 +82,12 @@ int main(int argc, char ** argv)
 			QueryProcessingStage::Enum stage;
 
 			ASTPtr select;
-			String exprected;
+			const char * expected = "";
 			String select_str = "SELECT * FROM test";
 			const char * begin = select_str.data();
 			const char * end = begin + select_str.size();
 			ParserSelectQuery parser;
-			if (!parser.parse(begin, end, select, exprected))
+			if (!parser.parse(begin, end, select, expected))
 				throw Poco::Exception("Cannot parse " + primary_expr_str);
 
 			SharedPtr<IBlockInputStream> in = table->read(column_names, select, Settings(), stage)[0];

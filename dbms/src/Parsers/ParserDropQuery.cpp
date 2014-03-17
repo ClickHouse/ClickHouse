@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {
 	Pos begin = pos;
 

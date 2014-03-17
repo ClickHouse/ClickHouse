@@ -12,8 +12,8 @@ namespace DB
 class ParserTablePropertiesQuery : public IParserBase
 {
 protected:
-	String getName() { return "EXISTS, SHOW CREATE or DESCRIBE query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "EXISTS, SHOW CREATE or DESCRIBE query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 }

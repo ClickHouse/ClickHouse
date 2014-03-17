@@ -20,7 +20,7 @@ public:
 		size_t block_size_, const Names & column_names_,
 		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
 		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_,
-		ExpressionActionsPtr prewhere_actions_, String prewhere_column_)
+		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool take_read_lock)
 		: IProfilingBlockInputStream(owned_storage),
 		path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),

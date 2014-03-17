@@ -20,12 +20,12 @@ namespace DB
   */
 struct Memory : boost::noncopyable
 {
-	size_t m_capacity;
-	size_t m_size;
-	char * m_data;
-	size_t alignment;
+	size_t m_capacity = 0;
+	size_t m_size = 0;
+	char * m_data = nullptr;
+	size_t alignment = 0;
 
-	Memory() : m_capacity(0), m_size(0), m_data(NULL), alignment(0) {}
+    Memory() {}
 
 	/// Если alignment != 0, то будет выделяться память, выровненная на alignment.
 	Memory(size_t size_, size_t alignment_ = 0) : m_capacity(size_), m_size(m_capacity), alignment(alignment_)
@@ -36,6 +36,21 @@ struct Memory : boost::noncopyable
 	~Memory()
 	{
 		dealloc();
+	}
+
+	Memory(Memory && rhs)
+	{
+		*this = std::move(rhs);
+	}
+
+	Memory & operator=(Memory && rhs)
+	{
+		std::swap(m_capacity, rhs.m_capacity);
+		std::swap(m_size, rhs.m_size);
+		std::swap(m_data, rhs.m_data);
+		std::swap(alignment, rhs.alignment);
+
+		return *this;
 	}
 
 	size_t size() const { return m_size; }

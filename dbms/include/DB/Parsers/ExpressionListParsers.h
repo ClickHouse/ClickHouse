@@ -2,8 +2,6 @@
 
 #include <list>
 
-#include <boost/assign/list_of.hpp>
-
 #include <DB/Parsers/IParserBase.h>
 #include <DB/Parsers/CommonParsers.h>
 
@@ -11,23 +9,23 @@
 namespace DB
 {
 
-/** Оператор и соответствующая ему функция. Например, "+" -> "plus"
-  * Не std::map, так как порядок парсинга операторов задаётся явно и может отличаться от алфавитного.
+/** Идущие подряд пары строк: оператор и соответствующая ему функция. Например, "+" -> "plus".
+  * Порядок парсинга операторов имеет значение.
   */
-typedef std::list<std::pair<String, String> > Operators_t;
+typedef const char ** Operators_t;
 
 
 /** Список элементов, разделённых чем-либо. */
 class ParserList : public IParserBase
 {
 public:
-	ParserList(ParserPtr elem_parser_, ParserPtr separator_parser_, bool allow_empty_ = true)
-		: elem_parser(elem_parser_), separator_parser(separator_parser_), allow_empty(allow_empty_)
+	ParserList(ParserPtr && elem_parser_, ParserPtr && separator_parser_, bool allow_empty_ = true)
+		: elem_parser(std::move(elem_parser_)), separator_parser(std::move(separator_parser_)), allow_empty(allow_empty_)
 	{
 	}
 protected:
-	String getName() { return "list of elements (" + elem_parser->getName() + ")"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "list of elements"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 private:
 	ParserPtr elem_parser;
 	ParserPtr separator_parser;
@@ -47,15 +45,15 @@ private:
 public:
 	/** operators_ - допустимые операторы и соответствующие им функции
 	  */
-	ParserLeftAssociativeBinaryOperatorList(const Operators_t & operators_, ParserPtr elem_parser_)
-		: operators(operators_), elem_parser(elem_parser_)
+	ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && elem_parser_)
+		: operators(operators_), elem_parser(std::move(elem_parser_))
 	{
 	}
 	
 protected:
-	String getName() { return "list, delimited by binary operators"; }
+	const char * getName() const { return "list, delimited by binary operators"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -66,19 +64,19 @@ class ParserVariableArityOperatorList : public IParserBase
 {
 private:
 	ParserString infix_parser;
-	String function_name;
+	const char * function_name;
 	ParserPtr elem_parser;
 
 public:
-	ParserVariableArityOperatorList(const String & infix_, const String & function_, ParserPtr elem_parser_)
-		: infix_parser(infix_, true, true), function_name(function_), elem_parser(elem_parser_)
+	ParserVariableArityOperatorList(const char * infix_, const char * function_, ParserPtr && elem_parser_)
+		: infix_parser(infix_, true, true), function_name(function_), elem_parser(std::move(elem_parser_))
 	{
 	}
 
 protected:
-	String getName() { return "list, delimited by operator of variable arity"; }
+	const char * getName() const { return "list, delimited by operator of variable arity"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -94,29 +92,29 @@ private:
 public:
 	/** operators_ - допустимые операторы и соответствующие им функции
 	  */
-	ParserPrefixUnaryOperatorExpression(const Operators_t & operators_, ParserPtr elem_parser_)
-		: operators(operators_), elem_parser(elem_parser_)
+	ParserPrefixUnaryOperatorExpression(Operators_t operators_, ParserPtr && elem_parser_)
+		: operators(operators_), elem_parser(std::move(elem_parser_))
 	{
 	}
 	
 protected:
-	String getName() { return "expression with prefix unary operator"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "expression with prefix unary operator"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
 class ParserAccessExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
+	static const char * operators[];
 	ParserLeftAssociativeBinaryOperatorList operator_parser;
 public:
 	ParserAccessExpression();
 	
 protected:
-	String getName() { return "access expression"; }
+	const char * getName() const { return "access expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -126,42 +124,26 @@ protected:
 class ParserUnaryMinusExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
-	ParserPrefixUnaryOperatorExpression operator_parser;
-public:
-	ParserUnaryMinusExpression()
-		: elem_parser(new ParserAccessExpression),
-		operator_parser(boost::assign::map_list_of("-", "negate"), elem_parser)
-	{
-	}
+	static const char * operators[];
+	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr(new ParserAccessExpression)};
 	
 protected:
-	String getName() { return "unary minus expression"; }
+	const char * getName() const { return "unary minus expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
 class ParserMultiplicativeExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
-	ParserLeftAssociativeBinaryOperatorList operator_parser;
-public:
-	ParserMultiplicativeExpression()
-		: elem_parser(new ParserUnaryMinusExpression),
-		operator_parser(boost::assign::map_list_of
-				("*", 	"multiply")
-				("/", 	"divide")
-				("%", 	"modulo"),
-			elem_parser)
-	{
-	}
-	
+	static const char * operators[];
+	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserUnaryMinusExpression)};
+
 protected:
-	String getName() { return "multiplicative expression"; }
+	const char * getName() const { return "multiplicative expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -171,22 +153,13 @@ protected:
 class ParserAdditiveExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
-	ParserLeftAssociativeBinaryOperatorList operator_parser;
-public:
-	ParserAdditiveExpression()
-		: elem_parser(new ParserMultiplicativeExpression),
-		operator_parser(boost::assign::map_list_of
-				("+", 	"plus")
-				("-", 	"minus"),
-			elem_parser)
-	{
-	}
+	static const char * operators[];
+	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserMultiplicativeExpression)};
 	
 protected:
-	String getName() { return "additive expression"; }
+	const char * getName() const { return "additive expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -196,32 +169,13 @@ protected:
 class ParserComparisonExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
-	ParserLeftAssociativeBinaryOperatorList operator_parser;
-public:
-	ParserComparisonExpression()
-		: elem_parser(new ParserAdditiveExpression),
-		operator_parser(boost::assign::map_list_of
-				("==", 			"equals")
-				("!=", 			"notEquals")
-				("<>", 			"notEquals")
-				("<=", 			"lessOrEquals")
-				(">=", 			"greaterOrEquals")
-				("<", 			"less")
-				(">", 			"greater")
-				("=", 			"equals")
-				("LIKE", 		"like")
-				("NOT LIKE",	"notLike")
-				("IN",			"in")
-				("NOT IN",		"notIn"),
-			elem_parser)
-	{
-	}
+	static const char * operators[];
+	ParserLeftAssociativeBinaryOperatorList operator_parser {operators, ParserPtr(new ParserAdditiveExpression)};
 	
 protected:
-	String getName() { return "comparison expression"; }
+	const char * getName() const { return "comparison expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -231,19 +185,13 @@ protected:
 class ParserLogicalNotExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
-	ParserPrefixUnaryOperatorExpression operator_parser;
-public:
-	ParserLogicalNotExpression()
-		: elem_parser(new ParserComparisonExpression),
-		operator_parser(boost::assign::map_list_of("NOT", "not"), elem_parser)
-	{
-	}
-	
+	static const char * operators[];
+	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr(new ParserComparisonExpression)};
+
 protected:
-	String getName() { return "logical-NOT expression"; }
+	const char * getName() const { return "logical-NOT expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -253,19 +201,17 @@ protected:
 class ParserLogicalAndExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
 	ParserVariableArityOperatorList operator_parser;
 public:
 	ParserLogicalAndExpression()
-		: elem_parser(new ParserLogicalNotExpression),
-		operator_parser("AND", "and", elem_parser)
+		: operator_parser("AND", "and", ParserPtr(new ParserLogicalNotExpression))
 	{
 	}
 	
 protected:
-	String getName() { return "logical-AND expression"; }
+	const char * getName() const { return "logical-AND expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -275,19 +221,17 @@ protected:
 class ParserLogicalOrExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
 	ParserVariableArityOperatorList operator_parser;
 public:
 	ParserLogicalOrExpression()
-		: elem_parser(new ParserLogicalAndExpression),
-		operator_parser("OR", "or", elem_parser)
+		: operator_parser("OR", "or", ParserPtr(new ParserLogicalAndExpression))
 	{
 	}
 	
 protected:
-	String getName() { return "logical-OR expression"; }
+	const char * getName() const { return "logical-OR expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -300,36 +244,24 @@ protected:
 class ParserTernaryOperatorExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
-
-public:
-	ParserTernaryOperatorExpression()
-		: elem_parser(new ParserLogicalOrExpression)
-	{
-	}
+	ParserLogicalOrExpression elem_parser;
 
 protected:
-	String getName() { return "expression with ternary operator"; }
+	const char * getName() const { return "expression with ternary operator"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
 class ParserLambdaExpression : public IParserBase
 {
 private:
-	ParserPtr elem_parser;
-	
-public:
-	ParserLambdaExpression()
-		: elem_parser(new ParserTernaryOperatorExpression)
-	{
-	}
+	ParserTernaryOperatorExpression elem_parser;
 	
 protected:
-	String getName() { return "lambda expression"; }
+	const char * getName() const { return "lambda expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -340,9 +272,9 @@ public:
 protected:
 	ParserPtr impl;
 
-	String getName() { return "expression with optional alias"; }
+	const char * getName() const { return "expression with optional alias"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		return impl->parse(pos, end, node, expected);
 	}
@@ -353,8 +285,8 @@ protected:
 class ParserExpressionList : public IParserBase
 {
 protected:
-	String getName() { return "list of expressions"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "list of expressions"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
@@ -363,16 +295,16 @@ class ParserNotEmptyExpressionList : public IParserBase
 private:
 	ParserExpressionList nested_parser;
 protected:
-	String getName() { return "not empty list of expressions"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "not empty list of expressions"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 
 class ParserOrderByExpressionList : public IParserBase
 {
 protected:
-	String getName() { return "order by expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "order by expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 

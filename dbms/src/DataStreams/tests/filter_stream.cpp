@@ -34,7 +34,7 @@ int main(int argc, char ** argv)
 		DB::ParserSelectQuery parser;
 		DB::ASTPtr ast;
 		std::string input = "SELECT number, number % 3 == 1";
-		std::string expected;
+		const char * expected = "";
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();

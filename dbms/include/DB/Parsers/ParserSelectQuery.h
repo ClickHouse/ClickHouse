@@ -10,8 +10,8 @@ namespace DB
 class ParserSelectQuery : public IParserBase
 {
 protected:
-	String getName() { return "SELECT query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, String & expected);
+	const char * getName() const { return "SELECT query"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
 };
 
 }

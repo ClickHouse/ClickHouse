@@ -19,7 +19,7 @@ int main(int argc, char ** argv)
 		" HAVING SUM(Refresh) > 100"
 		" ORDER BY Visits, PageViews"
 		" LIMIT 1000, 10";
-	std::string expected;
+	const char * expected = "";
 
 	const char * begin = input.data();
 	const char * end = begin + input.size();

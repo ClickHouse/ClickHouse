@@ -28,7 +28,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 
 	ParserCreateQuery parser;
 	ASTPtr ast;
-	String expected;
+	const char * expected = "";
 	bool parse_res = parser.parse(pos, end, ast, expected);
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
