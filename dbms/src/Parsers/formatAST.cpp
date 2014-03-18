@@ -496,7 +496,6 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 				"less",				" < ",
 				"greater",			" > ",
 				"equals",			" = ",
-				"lambda",			" -> ",
 				"like",				" LIKE ",
 				"notLike",			" NOT LIKE ",
 				"in",				" IN ",
