@@ -580,7 +580,7 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 				written = true;
 			}
 
-			if (!written && 0 == strcmp(ast.name.c_str(), "tuple"))
+			if (!written && 0 == strcmp(ast.name.c_str(), "tuple") && ast.arguments->children.size() >= 2)
 			{
 				s << (hilite ? hilite_operator : "") << '(' << (hilite ? hilite_none : "");
 				for (size_t i = 0; i < ast.arguments->children.size(); ++i)
