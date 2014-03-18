@@ -73,7 +73,6 @@ private:
 	/// Узнать имена и типы столбцов для создания таблицы
 	NamesAndTypesListPtr chooseColumns(Cluster & cluster, const String & database, const String & table, const Context & context) const
 	{
-		std::cerr << "Here" << std::endl;
 		/// Запрос на описание таблицы
 		String query = "DESC TABLE " + database + "." + table;
 		Settings settings = context.getSettings();
