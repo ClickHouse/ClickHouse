@@ -56,8 +56,12 @@ public:
 
 		std::vector <std::vector< String> > names;
 		std::vector<String> shards = parseDescription(descripton, 0, descripton.size(), ',');
+
 		for (size_t i = 0; i < shards.size(); ++i)
 			names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|'));
+
+		if (names.empty())
+			throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
 		SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names, username, password);
 
@@ -69,6 +73,7 @@ private:
 	/// Узнать имена и типы столбцов для создания таблицы
 	NamesAndTypesListPtr chooseColumns(Cluster & cluster, const String & database, const String & table, const Context & context) const
 	{
+		std::cerr << "Here" << std::endl;
 		/// Запрос на описание таблицы
 		String query = "DESC TABLE " + database + "." + table;
 		Settings settings = context.getSettings();
