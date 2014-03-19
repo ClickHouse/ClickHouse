@@ -580,7 +580,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 		Block sample = interpreter.getSampleBlock();
 		NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
 
-		String external_table_name = "_table" + toString(name_id++);
+		String external_table_name = "_data" + toString(name_id++);
 		external_storage = StorageMemory::create(external_table_name, columns);
 		BlockOutputStreamPtr output = external_storage->write(ASTPtr());
 		copyData(*interpreter.execute(), *output);
