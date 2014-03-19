@@ -138,6 +138,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, data.getColumnsList());
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
+		/// TODO: Чтобы работали подзапросы в PREWHERE, можно тут сохранить analyzer.getSetsWithSubqueries(), а потом их выполнить.
 	}
 
 	RangesInDataParts parts_with_ranges;
