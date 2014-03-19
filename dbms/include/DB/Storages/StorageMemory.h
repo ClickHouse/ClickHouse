@@ -69,6 +69,8 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
+	size_t getSize() const { return data.size(); }
+
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,

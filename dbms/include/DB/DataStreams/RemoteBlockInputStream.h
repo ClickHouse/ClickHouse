@@ -132,7 +132,11 @@ protected:
 		{
 			StoragePtr cur = it->second;
 			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-			res.push_back(std::make_pair(cur->read(cur->getColumnNamesList(), ASTPtr(), settings, stage, DEFAULT_BLOCK_SIZE, 1)[0], it->first));
+			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), settings, stage, DEFAULT_BLOCK_SIZE, 1);
+			if (input.size() == 0)
+				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), it->first));
+			else
+				res.push_back(std::make_pair(input[0], it->first));
 		}
 		connection.sendExternalTablesData(res);
 	}

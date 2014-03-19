@@ -548,7 +548,7 @@ bool TCPHandler::receiveData()
 
 	/// Прочитать из сети один блок и записать его
 	Block block = state.block_in->read();
-	if (block)
+	if (block || !external_table_name.empty())
 	{
 		/// Если запрос на вставку, то данные нужно писать напрямую в state.io.out.
 		/// Иначе пишем блоки во временную таблицу external_table_name.
@@ -565,7 +565,8 @@ bool TCPHandler::receiveData()
 			/// Данные будем писать напрямую в таблицу.
 			state.io.out = storage->write(ASTPtr());
 		}
-		state.io.out->write(block);
+		if (block)
+			state.io.out->write(block);
 		return true;
 	}
 	else
