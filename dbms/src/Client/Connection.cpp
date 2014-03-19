@@ -232,8 +232,8 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	block_in = NULL;
 	block_out = NULL;
 
-	/// Отправляем пустой блок, символизируя конец передачи данных
-	if (!with_pending_data)
+	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
+	if (server_revision > DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
 		sendData(Block());
 }
 
