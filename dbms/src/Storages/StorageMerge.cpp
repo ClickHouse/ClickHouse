@@ -81,7 +81,7 @@ BlockInputStreams StorageMerge::read(
 	else /// Иначе, считаем допустимыми все возможные значения
 		virtual_columns = new OneBlockInputStream(virtual_columns_block);
 
-	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 
 	for (SelectedTables::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)

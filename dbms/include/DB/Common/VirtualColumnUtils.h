@@ -35,9 +35,9 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 
 /// Извлечь из входного потока множество значений столбца name
 template<typename T1>
-std::set<T1> extractSingleValueFromBlocks(BlockInputStreamPtr input, const String & name)
+std::multiset<T1> extractSingleValueFromBlocks(BlockInputStreamPtr input, const String & name)
 {
-	std::set<T1> res;
+	std::multiset<T1> res;
 	input->readPrefix();
 	while(1)
 	{
@@ -52,10 +52,10 @@ std::set<T1> extractSingleValueFromBlocks(BlockInputStreamPtr input, const Strin
 
 /// Извлечь из входного потока множество пар значений в столбцах first_name и second_name
 template<typename T1, typename T2>
-std::set< std::pair<T1, T2> > extractTwoValuesFromBlocks(BlockInputStreamPtr input,
+std::multiset< std::pair<T1, T2> > extractTwoValuesFromBlocks(BlockInputStreamPtr input,
 														 const String & first_name, const String & second_name)
 {
-	std::set< std::pair<T1, T2> > res;
+	std::multiset< std::pair<T1, T2> > res;
 	input->readPrefix();
 	while(1)
 	{
