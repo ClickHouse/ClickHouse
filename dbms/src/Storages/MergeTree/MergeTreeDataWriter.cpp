@@ -6,9 +6,9 @@
 namespace DB
 {
 
-BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & block, const MergeTreeData::LockedTableStructurePtr & structure)
+BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & block)
 {
-	structure->check(block, true);
+	data.check(block, true);
 
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
@@ -69,8 +69,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	return res;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, UInt64 temp_index,
-	const MergeTreeData::LockedTableStructurePtr & structure)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, UInt64 temp_index)
 {
 	Block & block = block_with_dates.block;
 	UInt16 min_date = block_with_dates.min_date;
@@ -86,7 +85,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 		DayNum_t(min_date), DayNum_t(max_date),
 		temp_index, temp_index, 0);
 
-	String part_tmp_path = structure->getFullPath() + tmp_part_name + "/";
+	String part_tmp_path = data.getFullPath() + tmp_part_name + "/";
 
 	Poco::File(part_tmp_path).createDirectories();
 

@@ -27,9 +27,22 @@ namespace DB
 using Poco::SharedPtr;
 
 
-TinyLogBlockInputStream::TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage)
-	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(dynamic_cast<StorageTinyLog &>(*owned_storage)), finished(false)
+TinyLogBlockInputStream::TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_)
+	: block_size(block_size_), column_names(column_names_), storage(storage_), finished(false)
 {
+}
+
+
+String TinyLogBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "TinyLog(" << storage.getTableName() << ", " << &storage;
+
+	for (size_t i = 0; i < column_names.size(); ++i)
+		res << ", " << column_names[i];
+
+	res << ")";
+	return res.str();
 }
 
 
@@ -172,8 +185,8 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 }
 
 
-TinyLogBlockOutputStream::TinyLogBlockOutputStream(StoragePtr owned_storage)
-	: IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageTinyLog &>(*owned_storage))
+TinyLogBlockOutputStream::TinyLogBlockOutputStream(StorageTinyLog & storage_)
+	: storage(storage_)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		addStream(it->first, *it->second);
@@ -363,14 +376,14 @@ BlockInputStreams StorageTinyLog::read(
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
-	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, thisPtr()));
+	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this));
 }
 
 	
 BlockOutputStreamPtr StorageTinyLog::write(
 	ASTPtr query)
 {
-	return new TinyLogBlockOutputStream(thisPtr());
+	return new TinyLogBlockOutputStream(*this);
 }
 
 

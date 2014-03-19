@@ -55,8 +55,7 @@ private:
 		size_t max_block_size,
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
-		const String & prewhere_column,
-		const MergeTreeData::LockedTableStructurePtr & structure);
+		const String & prewhere_column);
 
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(
 		RangesInDataParts parts,
@@ -65,12 +64,10 @@ private:
 		size_t max_block_size,
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
-		const String & prewhere_column,
-		const MergeTreeData::LockedTableStructurePtr & structure);
+		const String & prewhere_column);
 
 	/// Создать выражение "Sign == 1".
-	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column,
-		const MergeTreeData::LockedTableStructurePtr & structure);
+	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);
 
 	MarkRanges markRangesFromPkRange(const MergeTreeData::DataPart::Index & index, PKCondition & key_condition);
 };

@@ -11,12 +11,14 @@ namespace DB
 
 class Context;
 
-/** Описание столбцов таблицы.
+/** Описание таблицы.
+  * Не thread safe. См. IStorage::lockStructure().
   */
-class IColumnsDeclaration
+class ITableDeclaration
 {
 public:
-	/// Имя таблицы. Ни на что не влияет, используется только для сообщений об ошибках.
+	/** Имя таблицы.
+	  */
 	virtual std::string getTableName() const { return ""; }
 
 	/** Получить список имён и типов столбцов таблицы, только невиртуальные.
@@ -59,7 +61,7 @@ public:
 	/// реализация alter, модифицирующая список столбцов.
 	static void alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context);
 
-	virtual ~IColumnsDeclaration() {}
+	virtual ~ITableDeclaration() {}
 };
 
 }

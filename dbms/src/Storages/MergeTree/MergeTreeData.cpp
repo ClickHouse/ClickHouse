@@ -412,7 +412,7 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
 			StringRange type_range = name_type.type->range;
 			String type(type_range.first, type_range.second - type_range.first);
-			DataTypePtr old_type_ptr = getDataTypeByName(name_type.name, *columns);
+			DataTypePtr old_type_ptr = DB::getDataTypeByName(name_type.name, *columns);
 			DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
 			if (dynamic_cast<DataTypeNested *>(old_type_ptr.get()) || dynamic_cast<DataTypeArray *>(old_type_ptr.get()) ||
 				dynamic_cast<DataTypeNested *>(new_type_ptr.get()) || dynamic_cast<DataTypeArray *>(new_type_ptr.get()))
@@ -428,8 +428,7 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 			{
 				MarkRanges ranges(1, MarkRange(0, part->size));
 				ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-					new LockedTableStructure(*this, false, false), /// Не блокируем структуру таблицы, она уже заблокирована снаружи.
-					DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, StoragePtr(), false, NULL, ""), expr);
+					DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, NULL, ""), expr);
 				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 				out.writePrefix();
 
@@ -498,7 +497,7 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-		IColumnsDeclaration::alterColumns(params, columns, context);
+		alterColumns(params, columns, context);
 	}
 	if (params.type == ASTAlterQuery::DROP)
 	{
@@ -628,15 +627,14 @@ void MergeTreeData::replaceParts(DataPartsVector old_parts, DataPartPtr new_part
 		data_parts.erase(data_parts.find(old_parts[i]));
 }
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment,
-		const MergeTreeData::LockedTableStructurePtr & structure)
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
 {
 	LOG_TRACE(log, "Renaming.");
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
-	String old_path = structure->getFullPath() + part->name + "/";
+	String old_path = getFullPath() + part->name + "/";
 
 	UInt64 part_id = part->left;
 
@@ -650,7 +648,7 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 	part->left = part->right = part_id;
 	part->name = getPartName(part->left_date, part->right_date, part_id, part_id, 0);
 
-	String new_path = structure->getFullPath() + part->name + "/";
+	String new_path = getFullPath() + part->name + "/";
 
 	/// Переименовываем кусок.
 	Poco::File(old_path).renameTo(new_path);

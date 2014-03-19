@@ -27,13 +27,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	MergeTreeData::LockedTableStructurePtr structure = data.getLockedStructure(false);
-
-	structure->check(column_names_to_return);
+	data.check(column_names_to_return);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	PKCondition key_condition(query, data.context, structure->getColumnsList(), data.getSortDescription());
-	PKCondition date_condition(query, data.context, structure->getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+	PKCondition key_condition(query, data.context, data.getColumnsList(), data.getSortDescription());
+	PKCondition date_condition(query, data.context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
 	MergeTreeData::DataPartsVector parts;
 
@@ -120,7 +118,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		filter_function->arguments = filter_function_args;
 		filter_function->children.push_back(filter_function->arguments);
 
-		filter_expression = ExpressionAnalyzer(filter_function, data.context, structure->getColumnsList()).getActions(false);
+		filter_expression = ExpressionAnalyzer(filter_function, data.context, data.getColumnsList()).getActions(false);
 
 		/// Добавим столбцы, нужные для sampling_expression.
 		std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -137,7 +135,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	String prewhere_column;
 	if (select.prewhere_expression)
 	{
-		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, structure->getColumnsList());
+		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, data.getColumnsList());
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
 	}
@@ -186,8 +184,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			max_block_size,
 			settings.use_uncompressed_cache,
 			prewhere_actions,
-			prewhere_column,
-			structure);
+			prewhere_column);
 	}
 	else
 	{
@@ -198,8 +195,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			max_block_size,
 			settings.use_uncompressed_cache,
 			prewhere_actions,
-			prewhere_column,
-			structure);
+			prewhere_column);
 	}
 
 	if (select.sample_size)
@@ -223,8 +219,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	size_t max_block_size,
 	bool use_uncompressed_cache,
 	ExpressionActionsPtr prewhere_actions,
-	const String & prewhere_column,
-	const MergeTreeData::LockedTableStructurePtr & structure)
+	const String & prewhere_column)
 {
 	/// На всякий случай перемешаем куски.
 	std::random_shuffle(parts.begin(), parts.end());
@@ -283,8 +278,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 					std::reverse(part.ranges.begin(), part.ranges.end());
 
 					streams.push_back(new MergeTreeBlockInputStream(
-						structure->getFullPath() + part.data_part->name + '/', structure, max_block_size, column_names, data,
-						part.data_part, part.ranges, data.getOwningStorage(), use_uncompressed_cache,
+						data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
+						part.data_part, part.ranges, use_uncompressed_cache,
 						prewhere_actions, prewhere_column));
 					need_marks -= marks_in_part;
 					parts.pop_back();
@@ -313,8 +308,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				}
 
 				streams.push_back(new MergeTreeBlockInputStream(
-					structure->getFullPath() + part.data_part->name + '/', structure, max_block_size, column_names, data,
-					part.data_part, ranges_to_get_from_part, data.getOwningStorage(), use_uncompressed_cache,
+					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
+					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
 					prewhere_actions, prewhere_column));
 			}
 
@@ -338,8 +333,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	size_t max_block_size,
 	bool use_uncompressed_cache,
 	ExpressionActionsPtr prewhere_actions,
-	const String & prewhere_column,
-	const MergeTreeData::LockedTableStructurePtr & structure)
+	const String & prewhere_column)
 {
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
@@ -351,7 +345,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 	ExpressionActionsPtr sign_filter_expression;
 	String sign_filter_column;
-	createPositiveSignCondition(sign_filter_expression, sign_filter_column, structure);
+	createPositiveSignCondition(sign_filter_expression, sign_filter_column);
 
 	BlockInputStreams to_collapse;
 
@@ -360,8 +354,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		RangesInDataPart & part = parts[part_index];
 
 		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
-			structure->getFullPath() + part.data_part->name + '/', structure, max_block_size, column_names, data,
-			part.data_part, part.ranges, data.getOwningStorage(), use_uncompressed_cache,
+			data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
+			part.data_part, part.ranges, use_uncompressed_cache,
 			prewhere_actions, prewhere_column);
 
 		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
@@ -376,8 +370,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	return res;
 }
 
-void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column,
-	const MergeTreeData::LockedTableStructurePtr & structure)
+void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column)
 {
 	ASTFunction * function = new ASTFunction;
 	ASTPtr function_ptr = function;
@@ -404,7 +397,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 	one->type = new DataTypeInt8;
 	one->value = Field(static_cast<Int64>(1));
 
-	out_expression = ExpressionAnalyzer(function_ptr, data.context, structure->getColumnsList()).getActions(false);
+	out_expression = ExpressionAnalyzer(function_ptr, data.context, data.getColumnsList()).getActions(false);
 	out_column = function->getColumnName();
 }
 

@@ -39,13 +39,11 @@ class MergeTreeReader
 {
 public:
 	MergeTreeReader(const String & path_,	/// Путь к куску
-		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_,
-		MergeTreeData::LockedTableStructurePtr structure_)
-	: path(path_), column_names(columns_names_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_),
-	structure(structure_)
+		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_)
+	: path(path_), column_names(columns_names_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
 	{
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			addStream(*it, *structure->getDataTypeByName(*it));
+			addStream(*it, *storage.getDataTypeByName(*it));
 	}
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
@@ -78,7 +76,7 @@ public:
 
 			ColumnWithNameAndType column;
 			column.name = *it;
-			column.type = structure->getDataTypeByName(*it);
+			column.type = storage.getDataTypeByName(*it);
 			if (append)
 				column.column = res.getByName(column.name).column;
 
@@ -133,7 +131,7 @@ public:
 				{
 					ColumnWithNameAndType column;
 					column.name = *it;
-					column.type = structure->getDataTypeByName(*it);
+					column.type = storage.getDataTypeByName(*it);
 
 					/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
 						*  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
@@ -240,7 +238,6 @@ private:
 	Names column_names;
 	bool use_uncompressed_cache;
 	MergeTreeData & storage;
-	MergeTreeData::LockedTableStructurePtr structure;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0)
 	{

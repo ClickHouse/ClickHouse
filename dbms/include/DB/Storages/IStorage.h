@@ -7,15 +7,14 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/QueryProcessingStage.h>
-#include <DB/DataStreams/IBlockInputStream.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/StoragePtr.h>
-#include <DB/Storages/IColumnsDeclaration.h>
+#include <DB/Storages/ITableDeclaration.h>
 #include <DB/Storages/DatabaseDropper.h>
 #include <Poco/File.h>
+#include <Poco/RWLock.h>
 #include <boost/make_shared.hpp>
 
 
@@ -23,6 +22,12 @@ namespace DB
 {
 
 class Context;
+class IBlockInputStream;
+class IBlockOutputStream;
+
+typedef SharedPtr<IBlockOutputStream> BlockOutputStreamPtr;
+typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
+typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
 
 
 /** Хранилище. Отвечает за:
@@ -32,14 +37,11 @@ class Context;
   * - структура хранения данных (сжатие, etc.)
   * - конкуррентный доступ к данным (блокировки, etc.)
   */
-class IStorage : private boost::noncopyable, public IColumnsDeclaration
+class IStorage : private boost::noncopyable, public ITableDeclaration
 {
 public:
 	/// Основное имя типа таблицы (например, StorageMergeTree).
 	virtual std::string getName() const = 0;
-
-	/// Имя самой таблицы (например, hits)
-	virtual std::string getTableName() const = 0;
 
 	/** Возвращает true, если хранилище получает данные с удалённого сервера или серверов.
 	  */
@@ -57,6 +59,55 @@ public:
 	 */
 	virtual bool supportsPrewhere() const { return false; }
 
+	/** Не дает изменять описание таблицы (в том числе переименовывать и удалять таблицу).
+	  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать такой лок на все ее время.
+	  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
+	  * (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
+	  * NOTE: Это лок на "чтение" описания таблицы. Чтобы изменить описание таблицы, нужно взять TableStructureWriteLock.
+	  */
+	class TableStructureReadLock
+	{
+	private:
+		friend class IStorage;
+
+		/// Порядок важен.
+		Poco::SharedPtr<Poco::ScopedReadRWLock> data_lock;
+		Poco::SharedPtr<Poco::ScopedReadRWLock> structure_lock;
+
+		TableStructureReadLock(IStorage & storage, bool lock_structure, bool lock_data)
+		:	     data_lock(lock_data      ? new Poco::ScopedReadRWLock(storage.     data_lock) : nullptr),
+			structure_lock(lock_structure ? new Poco::ScopedReadRWLock(storage.structure_lock) : nullptr) {}
+	};
+
+	typedef Poco::SharedPtr<TableStructureReadLock> TableStructureReadLockPtr;
+	typedef std::vector<TableStructureReadLockPtr> TableStructureReadLocks;
+
+	/** Не дает изменять структуру или имя таблицы.
+	  * Если в рамках этого лока будут изменены данные в таблице, нужно указать will_modify_data=true.
+	  * Это возьмет дополнительный лок, не позволяющий начать ALTER MODIFY.
+	  *
+	  * WARNING: Вызывать методы из ITableDeclaration нужно под такой блокировкой. Без нее они не thread safe.
+	  * WARNING: Чтобы не было дедлоков, нельзя вызывать это метод при захваченном мьютексе в Context.
+	  */
+	TableStructureReadLockPtr lockStructure(bool will_modify_data)
+	{
+		return new TableStructureReadLock(*this, true, will_modify_data);
+	}
+
+	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
+	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableDataWriteLockPtr;
+
+	/** Не дает читать структуру таблицы. Берется для ALTER, RENAME и DROP.
+	  */
+	TableStructureWriteLockPtr lockStructureForAlter() { return new Poco::ScopedWriteRWLock(structure_lock); }
+
+	/** Не дает изменять данные в таблице. (Более того, не дает посмотреть на структуру таблицы с намерением изменить данные).
+	  * Берется на время записи временных данных в ALTER MODIFY.
+	  * Под этим локом можно брать lockStructureForAlter(), чтобы изменить структуру таблицы.
+	  */
+	TableDataWriteLockPtr lockDataForAlter() { return new Poco::ScopedWriteRWLock(data_lock); }
+
+
 	/** Читать набор столбцов из таблицы.
 	  * Принимает список столбцов, которых нужно прочитать, а также описание запроса,
 	  *  из которого может быть извлечена информация о том, каким способом извлекать данные
@@ -73,6 +124,8 @@ public:
 	  *
 	  * threads - рекомендация, сколько потоков возвращать,
 	  *  если хранилище может возвращать разное количество потоков.
+	  *
+	  * Гарантируется, что структура таблицы не изменится за время жизни возвращенных потоков (то есть не будет ALTER, RENAME и DROP).
 	  */
 	virtual BlockInputStreams read(
 		const Names & column_names,
@@ -88,6 +141,8 @@ public:
 	/** Пишет данные в таблицу.
 	  * Принимает описание запроса, в котором может содержаться информация о методе записи данных.
 	  * Возвращает объект, с помощью которого можно последовательно писать данные.
+	  *
+	  * Гарантируется, что структура таблицы не изменится за время жизни возвращенных потоков (то есть не будет ALTER, RENAME и DROP).
 	  */
 	virtual BlockOutputStreamPtr write(
 		ASTPtr query)
@@ -101,7 +156,7 @@ public:
 	{
 		drop_on_destroy = true;
 	}
-	
+
 	/** Вызывается перед удалением директории с данными и вызовом деструктора.
 	  * Если не требуется никаких действий, кроме удаления директории с данными, этот метод можно оставить пустым.
 	  */
@@ -110,6 +165,7 @@ public:
 	/** Переименовать таблицу.
 	  * Переименование имени в файле с метаданными, имени в списке таблиц в оперативке, осуществляется отдельно.
 	  * В этой функции нужно переименовать директорию с данными, если она есть.
+	  * Вызывается при заблокированной на запись структуре таблицы.
 	  */
 	virtual void rename(const String & new_path_to_db, const String & new_name)
 	{
@@ -118,10 +174,29 @@ public:
 
 	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
 	  * (ALTER, затрагивающий изменение движка, делается внешним кодом, путём копирования данных.)
+	  * Вызывается при заблокированной на запись структуре таблицы.
+	  * Для ALTER MODIFY используются другие методы (см. ниже). TODO: Пока эта строчка не верна, и для ALTER MODIFY используется метод alter.
 	  */
 	virtual void alter(const ASTAlterQuery::Parameters & params)
 	{
 		throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	/** ALTER ... MODIFY (изменение типа столбца) выполняется в два вызова:
+	  * Сначала вызывается prepareAlterModify при заблокированной записи данных, но незаблокированной структуре таблицы.
+	  *  В нем можно выполнить долгую работу по записи сконвертированных данных, оставляя доступными существующие данные.
+	  * Потом вызывается commitAlterModify при заблокированной структуре таблицы.
+	  *  В нем нужно закончить изменение типа столбца.
+	  */
+
+	virtual void prepareAlterModify(const ASTAlterQuery::Parameters & params)
+	{
+		throw Exception("Method prepareAlterModify is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	virtual void commitAlterModify(const ASTAlterQuery::Parameters & params)
+	{
+		throw Exception("Method commitAlterModify is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
@@ -167,7 +242,7 @@ public:
 	/** Не дает удалить БД до удаления таблицы. Присваивается перед удалением таблицы или БД.
 	  */
 	DatabaseDropperPtr database_to_drop;
-	
+
 	bool drop_on_destroy;
 	
 	/** Директория с данными. Будет удалена после удаления таблицы (после вызова dropImpl).
@@ -179,7 +254,30 @@ protected:
 
 private:
 	boost::weak_ptr<StoragePtr::Wrapper> this_ptr;
+
+	/// Брать следующие два лока всегда нужно в этом порядке.
+
+	/** Берется на чтение на все время запроса INSERT и на все время слияния кусков (для MergeTree).
+	  * Берется на запись на все время ALTER MODIFY.
+	  *
+	  * Формально:
+	  * Ввзятие на запись гарантирует, что:
+	  *  1) данные в таблице не изменится, пока лок жив,
+	  *  2) все изменения данных после отпускания лока будут основаны на структуре таблицы на момент после отпускания лока.
+	  * Нужно брать на чтение на все время операции, изменяющей данные.
+	  */
+	mutable Poco::RWLock data_lock;
+
+	/** Лок для множества столбцов и пути к таблице. Берется на запись в RENAME, ALTER (для ALTER MODIFY ненадолго) и DROP.
+	  * Берется на чтение на все время SELECT, INSERT и слияния кусков (для MergeTree).
+	  *
+	  * Взятие этого лока на запись - строго более "сильная" операция, чем взятие parts_writing_lock на запись.
+	  * То есть, если этот лок взят на запись, о parts_writing_lock можно не заботиться.
+	  * parts_writing_lock нужен только для случаев, когда не хочется брать table_structure_lock надолго (ALTER MODIFY).
+	  */
+	mutable Poco::RWLock structure_lock;
 };
 
 typedef std::vector<StoragePtr> StorageVector;
+
 }

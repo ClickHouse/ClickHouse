@@ -37,13 +37,13 @@ public:
 	  * (читай: разбивает строки по месяцам)
 	  * Работает детерминированно: если отдать на вход такой же блок, на выходе получатся такие же блоки в таком же порядке.
 	  */
-	BlocksWithDateIntervals splitBlockIntoParts(const Block & block, const MergeTreeData::LockedTableStructurePtr & structure);
+	BlocksWithDateIntervals splitBlockIntoParts(const Block & block);
 
 	/** Все строки должны относиться к одному месяцу. Возвращает название временного куска.
 	  * temp_index - значение left и right для нового куска. Можно будет изменить при переименовании.
 	  * Возвращает кусок с именем, начинающимся с tmp_, еще не добавленный в MergeTreeData.
 	  */
-	MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithDateInterval & block, UInt64 temp_index, const MergeTreeData::LockedTableStructurePtr & structure);
+	MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithDateInterval & block, UInt64 temp_index);
 
 private:
 	MergeTreeData & data;

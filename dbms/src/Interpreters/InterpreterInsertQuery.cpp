@@ -64,13 +64,19 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 {
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
-	
+
+	auto table_lock = table->lockStructure(true);
+
 	BlockInputStreamPtr in;
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList (table->getSampleBlock().getColumnsList());
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	table->write(query_ptr);
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
+
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
+
+	/// TODO: Взять также IStorage::TableStructureReadLock-и для всех затронутых materialized views.
+	out->addTableLock(table_lock);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
@@ -117,12 +123,17 @@ BlockOutputStreamPtr InterpreterInsertQuery::execute()
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
 
+	auto table_lock = table->lockStructure(true);
+
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
 
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	table->write(query_ptr);
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
+
+	/// TODO: Взять также IStorage::TableStructureReadLock-и для всех затронутых materialized views.
+	out->addTableLock(table_lock);
 
 	/// Какой тип запроса: INSERT или INSERT SELECT?
 	if (!query.select)

@@ -47,8 +47,6 @@ private:
 	  */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 	
-	StoragePtr getTable();
-
 	/** Выбрать из списка столбцов какой-нибудь, лучше - минимального размера.
 	  */
 	String getAnyColumn();
@@ -83,7 +81,10 @@ private:
 	size_t subquery_depth;
 	ExpressionAnalyzerPtr query_analyzer;
 	BlockInputStreams streams;
-	StoragePtr table_function_storage;
+
+	/// Таблица, откуда читать данные, если не подзапрос.
+	StoragePtr storage;
+	IStorage::TableStructureReadLockPtr table_lock;
 
 	Logger * log;
 };

@@ -46,11 +46,7 @@ void InterpreterAlterQuery::execute()
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
 
 	StoragePtr table = context.getTable(database_name, table_name);
-
-	/// для merge tree запрещаем все операции
-	StorageMergeTree::BigLockPtr merge_tree_lock;
-	if (StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
-		merge_tree_lock = table_merge_tree->lockAllOperations();
+	auto table_lock = table->lockStructureForAlter();
 
 	/// Poco::Mutex является рекурсивным, т.е. взятие мьютекса дважды из одного потока не приводит к блокировке
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());

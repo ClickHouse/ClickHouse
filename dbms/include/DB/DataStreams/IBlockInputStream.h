@@ -5,7 +5,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
-#include <DB/Storages/StoragePtr.h>
+#include <DB/Storages/IStorage.h>
 
 
 namespace DB
@@ -30,11 +30,7 @@ public:
 	typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
 	typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
 	
-	/** Листовой BlockInputStream обычно требует, чтобы был жив какой-то Storage.
-	  * Переданный сюда указатель на Storage будет просто храниться в этом экземпляре,
-	  *  не позволяя уничтожить Storage раньше этого BlockInputStream.
-	  */
-	IBlockInputStream(StoragePtr owned_storage_ = StoragePtr()) : owned_storage(owned_storage_) {}
+	IBlockInputStream() {}
 	
 	/** Прочитать следующий блок.
 	  * Если блоков больше нет - вернуть пустой блок (для которого operator bool возвращает false).
@@ -80,10 +76,12 @@ public:
 	  */
 	size_t checkDepth(size_t max_depth) const;
 
-	void setOwnedStorage(StoragePtr owned_storage_) { owned_storage = owned_storage_; }
+	/** Не давать изменить таблицу, пока жив поток блоков.
+	  */
+	void addTableLock(const IStorage::TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
 protected:
-	StoragePtr owned_storage;
+	IStorage::TableStructureReadLocks table_locks;
 
 	BlockInputStreams children;
 
@@ -98,9 +96,6 @@ private:
 	String getTreeID() const;
 };
 
-
-typedef IBlockInputStream::BlockInputStreamPtr BlockInputStreamPtr;
-typedef IBlockInputStream::BlockInputStreams BlockInputStreams;
 
 }
 

@@ -93,7 +93,7 @@ struct MergeTreeSettings
 	time_t old_parts_lifetime = 5 * 60;
 };
 
-class MergeTreeData
+class MergeTreeData : public ITableDeclaration
 {
 public:
 	/// Описание куска с данными.
@@ -240,13 +240,6 @@ public:
 					const String & sign_column_,
 					const MergeTreeSettings & settings_);
 
-	/**
-	  * owning_storage используется только чтобы отдавать его потокам блоков.
-	  */
-	void setOwningStorage(StoragePtr storage) { owning_storage = storage; }
-
-	StoragePtr getOwningStorage() const { return owning_storage; }
-
 	std::string getModePrefix() const;
 
 	std::string getSignColumnName() const { return sign_column; }
@@ -264,49 +257,11 @@ public:
 	/// Кладет в DataPart данные из имени кусочка.
 	void parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part);
 
-	/** Изменяемая часть описания таблицы. Содержит лок, запрещающий изменение описания таблицы.
-	  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать один лок на все ее время.
-	  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
-	  * (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
-	  * NOTE: Можно перенести сюда другие поля, чтобы сделать их динамически изменяемыми.
-	  *       Например, index_granularity, sign_column, primary_expr_ast.
-	  * NOTE: Можно вынести эту штуку в IStorage и брать ее в Interpreter-ах,
-	  *       чтобы избавиться от оставшихся небольших race conditions.
-	  *       Скорее всего, даже можно заменить этой штукой весь механизм отложенного дропа таблиц и убрать owned_storage из потоков блоков.
-	  */
-	class LockedTableStructure : public IColumnsDeclaration
-	{
-	public:
-		const NamesAndTypesList & getColumnsList() const { return *data.columns; }
+	std::string getTableName() { return ""; }
 
-		String getFullPath() const { return data.full_path; }
+	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
-	private:
-		friend class MergeTreeData;
-
-		const MergeTreeData & data;
-		Poco::SharedPtr<Poco::ScopedReadRWLock> parts_lock;
-		Poco::SharedPtr<Poco::ScopedReadRWLock> structure_lock;
-
-		LockedTableStructure(const MergeTreeData & data_, bool lock_structure, bool lock_writing)
-			: data(data_),
-			parts_lock(lock_writing ? new Poco::ScopedReadRWLock(data.parts_writing_lock) : nullptr),
-			structure_lock(lock_structure ? new Poco::ScopedReadRWLock(data.table_structure_lock) : nullptr) {}
-	};
-
-	typedef Poco::SharedPtr<LockedTableStructure> LockedTableStructurePtr;
-
-	/** Если в рамках этого лока будут добавлены или удалены куски данных, обязательно указать will_modify_parts=true.
-	  * Это возьмет дополнительный лок, не позволяющий начать ALTER MODIFY.
-	  */
-	LockedTableStructurePtr getLockedStructure(bool will_modify_parts) const
-	{
-		return new LockedTableStructure(*this, true, will_modify_parts);
-	}
-
-	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
-
-	TableStructureWriteLockPtr lockStructure() { return new Poco::ScopedWriteRWLock(table_structure_lock); }
+	String getFullPath() const { return full_path; }
 
 	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
 	  */
@@ -319,8 +274,7 @@ public:
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment,
-		const LockedTableStructurePtr & structure);
+	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment);
 
 	/** Удалить неактуальные куски.
 	  */
@@ -339,7 +293,7 @@ public:
 
 	/** Метод ALTER позволяет добавлять и удалять столбцы и менять их тип.
 	  * Нужно вызывать под залоченным lockStructure().
-	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго. На долгую часть достаточно лочить parts_writing_lock.
+	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго.
 	  */
 	void alter(const ASTAlterQuery::Parameters & params);
 
@@ -364,8 +318,6 @@ private:
 	SortDescription sort_descr;
 	Block primary_key_sample;
 
-	StorageWeakPtr owning_storage;
-
 	ASTPtr primary_expr_ast;
 
 	String full_path;
@@ -377,27 +329,6 @@ private:
 
 	/// Регулярное выражение соответсвующее названию директории с кусочками
 	Poco::RegularExpression file_name_regexp;
-
-	/// Брать следующие два лока всегда нужно в этом порядке.
-
-	/** Берется на чтение на все время запроса INSERT и на все время слияния кусков. Берется на запись на все время ALTER MODIFY.
-	  *
-	  * Формально:
-	  * Ввзятие на запись гарантирует, что:
-	  *  1) множество кусков не изменится, пока лок жив,
-	  *  2) все операции над множеством кусков после отпускания лока будут основаны на структуре таблицы на момент после отпускания лока.
-	  * Взятие на чтение обязательно, если будет добавляться или удалять кусок.
-	  * Брать на чтение нужно до получения структуры таблицы, которой будет соответствовать добавляемый кусок.
-	  */
-	mutable Poco::RWLock parts_writing_lock;
-
-	/** Лок для множества столбцов и пути к таблице. Берется на запись в RENAME и ALTER (для ALTER MODIFY ненадолго).
-	  *
-	  * Взятие этого лока на запись - строго более "сильная" операция, чем взятие parts_writing_lock на запись.
-	  * То есть, если этот лок взят на запись, о parts_writing_lock можно не заботиться.
-	  * parts_writing_lock нужен только для случаев, когда не хочется брать table_structure_lock надолго.
-	  */
-	mutable Poco::RWLock table_structure_lock;
 
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;

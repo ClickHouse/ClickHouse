@@ -1,6 +1,6 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
-#include <DB/Storages/IColumnsDeclaration.h>
+#include <DB/Storages/ITableDeclaration.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
@@ -10,7 +10,7 @@
 namespace DB
 {
 
-bool IColumnsDeclaration::hasRealColumn(const String &column_name) const
+bool ITableDeclaration::hasRealColumn(const String &column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
@@ -20,7 +20,7 @@ bool IColumnsDeclaration::hasRealColumn(const String &column_name) const
 }
 
 
-NameAndTypePair IColumnsDeclaration::getRealColumn(const String &column_name) const
+NameAndTypePair ITableDeclaration::getRealColumn(const String &column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
@@ -30,19 +30,19 @@ NameAndTypePair IColumnsDeclaration::getRealColumn(const String &column_name) co
 }
 
 
-bool IColumnsDeclaration::hasColumn(const String &column_name) const
+bool ITableDeclaration::hasColumn(const String &column_name) const
 {
 	return hasRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 
-NameAndTypePair IColumnsDeclaration::getColumn(const String &column_name) const
+NameAndTypePair ITableDeclaration::getColumn(const String &column_name) const
 {
 	return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 
-const DataTypePtr IColumnsDeclaration::getDataTypeByName(const String & column_name) const
+const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_name) const
 {
 	const NamesAndTypesList & names_and_types = getColumnsList();
 	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
@@ -53,7 +53,7 @@ const DataTypePtr IColumnsDeclaration::getDataTypeByName(const String & column_n
 }
 
 
-Block IColumnsDeclaration::getSampleBlock() const
+Block ITableDeclaration::getSampleBlock() const
 {
 	Block res;
 	const NamesAndTypesList & names_and_types = getColumnsList();
@@ -99,7 +99,7 @@ static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_column
 }
 
 
-void IColumnsDeclaration::check(const Names & column_names) const
+void ITableDeclaration::check(const Names & column_names) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
 
@@ -129,7 +129,7 @@ void IColumnsDeclaration::check(const Names & column_names) const
 }
 
 
-void IColumnsDeclaration::check(const Block & block, bool need_all) const
+void ITableDeclaration::check(const Block & block, bool need_all) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
 	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
@@ -176,7 +176,7 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
 	return (name_with_dot == name_type.first.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.first);
 }
 
-void IColumnsDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context)
+void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context)
 {
 	if (params.type == ASTAlterQuery::ADD)
 	{

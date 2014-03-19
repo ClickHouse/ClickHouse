@@ -11,6 +11,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB
@@ -22,20 +23,10 @@ class StorageTinyLog;
 class TinyLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage);
+	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_);
 	String getName() const { return "TinyLogBlockInputStream"; }
 
-	String getID() const
-	{
-		std::stringstream res;
-		res << "TinyLog(" << owned_storage->getTableName() << ", " << &*owned_storage;
-		
-		for (size_t i = 0; i < column_names.size(); ++i)
-			res << ", " << column_names[i];
-
-		res << ")";
-		return res.str();
-	}
+	String getID() const;
 	
 protected:
 	Block readImpl();
@@ -68,7 +59,7 @@ private:
 class TinyLogBlockOutputStream : public IBlockOutputStream
 {
 public:
-	TinyLogBlockOutputStream(StoragePtr owned_storage);
+	TinyLogBlockOutputStream(StorageTinyLog & storage_);
 	void write(const Block & block);
 	void writeSuffix();
 private:

@@ -12,8 +12,8 @@ namespace DB
 using Poco::SharedPtr;
 
 
-MemoryBlockInputStream::MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, StoragePtr owned_storage)
-	: IProfilingBlockInputStream(owned_storage), column_names(column_names_), begin(begin_), end(end_), it(begin)
+MemoryBlockInputStream::MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_)
+	: column_names(column_names_), begin(begin_), end(end_), it(begin)
 {
 }
 
@@ -39,8 +39,8 @@ Block MemoryBlockInputStream::readImpl()
 }
 
 
-MemoryBlockOutputStream::MemoryBlockOutputStream(StoragePtr owned_storage)
-	: IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageMemory &>(*owned_storage))
+MemoryBlockOutputStream::MemoryBlockOutputStream(StorageMemory & storage_)
+	: storage(storage_)
 {
 }
 
@@ -92,7 +92,7 @@ BlockInputStreams StorageMemory::read(
 		std::advance(begin, thread * size / threads);
 		std::advance(end, (thread + 1) * size / threads);
 		
-		res.push_back(new MemoryBlockInputStream(column_names, begin, end, thisPtr()));
+		res.push_back(new MemoryBlockInputStream(column_names, begin, end));
 	}
 	
 	return res;
@@ -102,7 +102,7 @@ BlockInputStreams StorageMemory::read(
 BlockOutputStreamPtr StorageMemory::write(
 	ASTPtr query)
 {
-	return new MemoryBlockOutputStream(thisPtr());
+	return new MemoryBlockOutputStream(*this);
 }
 
 

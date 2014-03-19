@@ -13,22 +13,18 @@ namespace DB
 class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// Параметры storage_ и owned_storage разделены, чтобы можно было сделать поток, не владеющий своим storage
-	/// (например, поток, сливаящий куски). В таком случае сам storage должен следить, чтобы не удалить данные, пока их читают.
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
-		MergeTreeData::LockedTableStructurePtr structure_lock_,
 		size_t block_size_, const Names & column_names_,
 		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
-		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_,
-		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool take_read_lock)
-		: IProfilingBlockInputStream(owned_storage),
+		const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
+		ExpressionActionsPtr prewhere_actions_, String prewhere_column_)
+		:
 		path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
 		all_mark_ranges(mark_ranges_), remaining_mark_ranges(mark_ranges_),
 		use_uncompressed_cache(use_uncompressed_cache_),
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
-		log(&Logger::get("MergeTreeBlockInputStream")),
-		structure_lock(structure_lock_)
+		log(&Logger::get("MergeTreeBlockInputStream"))
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
@@ -60,7 +56,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "MergeTree(" << owned_storage->getTableName() << ", " << path << ", columns";
+		res << "MergeTree(" << path << ", columns";
 
 		for (size_t i = 0; i < column_names.size(); ++i)
 			res << ", " << column_names[i];
@@ -88,9 +84,9 @@ protected:
 		if (!reader)
 		{
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader = new MergeTreeReader(path, column_names, uncompressed_cache, storage, structure_lock);
+			reader = new MergeTreeReader(path, column_names, uncompressed_cache, storage);
 			if (prewhere_actions)
-				pre_reader = new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage, structure_lock);
+				pre_reader = new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage);
 		}
 
 		if (prewhere_actions)
@@ -272,8 +268,6 @@ private:
 	bool remove_prewhere_column;
 
 	Logger * log;
-
-	MergeTreeData::LockedTableStructurePtr structure_lock;
 };
 
 }

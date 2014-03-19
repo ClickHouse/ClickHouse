@@ -31,9 +31,23 @@ namespace DB
 using Poco::SharedPtr;
 
 
-LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage, size_t mark_number_, size_t rows_limit_)
-	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(dynamic_cast<StorageLog &>(*owned_storage)), mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0), current_mark(mark_number_)
+LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_)
+	: block_size(block_size_), column_names(column_names_), storage(storage_),
+	mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0), current_mark(mark_number_)
 {
+}
+
+
+String LogBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
+
+	for (size_t i = 0; i < column_names.size(); ++i)
+		res << ", " << column_names[i];
+
+	res << ")";
+	return res.str();
 }
 
 
@@ -232,8 +246,8 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 }
 
 
-LogBlockOutputStream::LogBlockOutputStream(StoragePtr owned_storage)
-	: IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageLog &>(*owned_storage)),
+LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
+	: storage(storage_),
 	lock(storage.rwlock), marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
@@ -599,7 +613,7 @@ BlockInputStreams StorageLog::read(
 		res.push_back(new LogBlockInputStream(
 			max_block_size,
 			column_names,
-			thisPtr(),
+			*this,
 			0, std::numeric_limits<size_t>::max()));
 	}
 	else
@@ -621,7 +635,7 @@ BlockInputStreams StorageLog::read(
 			res.push_back(new LogBlockInputStream(
 				max_block_size,
 				column_names,
-				thisPtr(),
+				*this,
 				from_mark + thread * (to_mark - from_mark) / threads,
 				marks[from_mark + (thread + 1) * (to_mark - from_mark) / threads - 1].rows -
 					((thread == 0 && from_mark == 0)
@@ -650,7 +664,7 @@ BlockOutputStreamPtr StorageLog::write(
 	ASTPtr query)
 {
 	loadMarks();
-	return new LogBlockOutputStream(thisPtr());
+	return new LogBlockOutputStream(*this);
 }
 
 

@@ -232,10 +232,8 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
-	auto structure = data.getLockedStructure(true);
-
 	Names all_column_names;
-	NamesAndTypesList columns_list = structure->getColumnsList();
+	NamesAndTypesList columns_list = data.getColumnsList();
 	for (const auto & it : columns_list)
 		all_column_names.push_back(it.first);
 
@@ -268,8 +266,8 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			structure->getFullPath() + parts[i]->name + '/', structure, DEFAULT_MERGE_BLOCK_SIZE, all_column_names, data, parts[i], ranges,
-			StoragePtr(), false, NULL, ""), data.getPrimaryExpression()));
+			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, data,
+			parts[i], ranges, false, NULL, ""), data.getPrimaryExpression()));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
@@ -294,7 +292,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
-	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, structure,
+	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data,
 		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
 
 	merged_stream->readPrefix();

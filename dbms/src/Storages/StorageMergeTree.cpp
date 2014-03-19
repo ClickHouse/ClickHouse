@@ -39,12 +39,9 @@ StoragePtr StorageMergeTree::create(
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
 {
-	StorageMergeTree * storage = new StorageMergeTree(
+	return (new StorageMergeTree(
 		path_, name_, columns_, context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, mode_, sign_column_, settings_);
-	StoragePtr ptr = storage->thisPtr();
-	storage->data.setOwningStorage(ptr);
-	return ptr;
+		sampling_expression_, index_granularity_, mode_, sign_column_, settings_))->thisPtr();
 }
 
 void StorageMergeTree::shutdown()
@@ -76,7 +73,7 @@ BlockInputStreams StorageMergeTree::read(
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 {
-	return new MergeTreeBlockOutputStream(thisPtr());
+	return new MergeTreeBlockOutputStream(*this);
 }
 
 void StorageMergeTree::dropImpl()
@@ -88,8 +85,6 @@ void StorageMergeTree::dropImpl()
 
 void StorageMergeTree::rename(const String & new_path_to_db, const String & new_name)
 {
-	BigLockPtr lock = lockAllOperations();
-
 	std::string new_full_path = new_path_to_db + escapeForFileName(new_name) + '/';
 
 	data.setPath(new_full_path);
@@ -103,8 +98,6 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 
 void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 {
-	/// InterpreterAlterQuery уже взял BigLock.
-
 	data.alter(params);
 }
 
@@ -158,13 +151,17 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 						}
 					}
 
-					if (!merger.selectPartsToMerge(parts, disk_space, false, aggressive, only_small, can_merge) &&
-						!merger.selectPartsToMerge(parts, disk_space,  true, aggressive, only_small, can_merge))
-						break;
+					{
+						auto structure_lock = lockStructure(false);
+						if (!merger.selectPartsToMerge(parts, disk_space, false, aggressive, only_small, can_merge) &&
+							!merger.selectPartsToMerge(parts, disk_space,  true, aggressive, only_small, can_merge))
+							break;
+					}
 
 					merging_tagger = new CurrentlyMergingPartsTagger(parts, merger.estimateDiskSpaceForMerge(parts), *this);
 				}
 
+				auto structure_lock = lockStructure(true);
 				merger.mergeParts(merging_tagger->parts);
 			}
 

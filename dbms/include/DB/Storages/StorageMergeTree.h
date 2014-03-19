@@ -48,7 +48,7 @@ public:
 	bool supportsFinal() const { return data.supportsFinal(); }
 	bool supportsPrewhere() const { return data.supportsPrewhere(); }
 
-	const NamesAndTypesList & getColumnsList() const { return data.getLockedStructure(false)->getColumnsList(); }
+	const NamesAndTypesList & getColumnsList() const { return data.getColumnsList(); }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -76,13 +76,6 @@ public:
 	/// Метод ALTER нужно применять, когда обращения к базе приостановлены.
 	/// Например если параллельно с INSERT выполнить ALTER, то ALTER выполниться, а INSERT бросит исключение
 	void alter(const ASTAlterQuery::Parameters & params);
-
-	typedef MergeTreeData::TableStructureWriteLockPtr BigLockPtr;
-
-	BigLockPtr lockAllOperations()
-	{
-		return data.lockStructure();
-	}
 
 private:
 	String path;

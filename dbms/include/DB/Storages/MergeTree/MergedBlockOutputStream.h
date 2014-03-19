@@ -196,22 +196,22 @@ protected:
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedBlockOutputStream(MergeTreeData & storage_, MergeTreeData::LockedTableStructurePtr structure_,
+	MergedBlockOutputStream(MergeTreeData & storage_,
 		UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
-		: IMergedBlockOutputStream(storage_), structure(structure_), marks_count(0)
+		: IMergedBlockOutputStream(storage_), marks_count(0)
 	{
 		part_name = storage.getPartName(
 			DayNum_t(min_date), DayNum_t(max_date),
 			min_part_id, max_part_id, level);
 		
-		part_tmp_path = structure->getFullPath() + "tmp_" + part_name + "/";
-		part_res_path = structure->getFullPath() + part_name + "/";
+		part_tmp_path = storage.getFullPath() + "tmp_" + part_name + "/";
+		part_res_path = storage.getFullPath() + part_name + "/";
 		
 		Poco::File(part_tmp_path).createDirectories();
 		
 		index_stream = new WriteBufferFromFile(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 		
-		columns_list = structure->getColumnsList();
+		columns_list = storage.getColumnsList();
 		for (const auto & it : columns_list)
 			addStream(part_tmp_path, it.first, *it.second);
 	}
@@ -286,7 +286,6 @@ public:
 	}
 
 private:
-	MergeTreeData::LockedTableStructurePtr structure;
 	NamesAndTypesList columns_list;
 
 	String part_name;
