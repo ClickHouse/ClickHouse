@@ -76,6 +76,7 @@ struct HashTableCell
 	/// Установить значение ключа в ноль.
 	void setZero() { key = 0; }
 
+	/// Установить отображаемое значение, если есть (для HashMap), в соответствующиее из value.
 	void setMapped(const value_type & value) {}
 
 	/// Сериализация, в бинарном и текстовом виде.

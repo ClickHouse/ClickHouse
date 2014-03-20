@@ -17,7 +17,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
-#include <DB/Common/HashTableAllocator.h>
+#include <DB/Common/HashTable/HashTableAllocator.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 	#include <iostream>
