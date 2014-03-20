@@ -387,7 +387,7 @@ BlockOutputStreamPtr StorageTinyLog::write(
 }
 
 
-void StorageTinyLog::dropImpl()
+void StorageTinyLog::drop()
 {
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		if (it->second.data_file.exists())

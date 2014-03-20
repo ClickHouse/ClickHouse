@@ -76,7 +76,7 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 	return new MergeTreeBlockOutputStream(*this);
 }
 
-void StorageMergeTree::dropImpl()
+void StorageMergeTree::drop()
 {
 	merger.cancelAll();
 	joinMergeThreads();

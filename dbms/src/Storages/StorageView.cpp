@@ -65,7 +65,7 @@ BlockInputStreams StorageView::read(
 }
 
 
-void StorageView::dropImpl() {
+void StorageView::drop() {
 	context.getGlobalContext().removeDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
 }
 

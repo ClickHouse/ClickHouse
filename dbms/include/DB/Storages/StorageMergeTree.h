@@ -68,7 +68,7 @@ public:
 		return true;
 	}
 
-	void dropImpl();
+	void drop() override;
 
 	void rename(const String & new_path_to_db, const String & new_name);
 

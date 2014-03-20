@@ -106,7 +106,7 @@ BlockOutputStreamPtr StorageMemory::write(
 }
 
 
-void StorageMemory::dropImpl()
+void StorageMemory::drop()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 	data.clear();
