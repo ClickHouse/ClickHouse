@@ -291,12 +291,9 @@ public:
 	  */
 	void setPath(const String & full_path);
 
-	/** Метод ALTER позволяет добавлять и удалять столбцы и менять их тип.
-	  * Нужно вызывать под залоченным lockStructure().
-	  * TODO: сделать, чтобы ALTER MODIFY не лочил чтения надолго.
-	  */
 	void alter(const ASTAlterQuery::Parameters & params);
-
+	void prepareAlterModify(const ASTAlterQuery::Parameters & params);
+	void commitAlterModify(const ASTAlterQuery::Parameters & params);
 
 	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
 	SortDescription getSortDescription() const { return sort_descr; }

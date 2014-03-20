@@ -86,7 +86,7 @@ BlockInputStreams StorageChunkMerger::read(
 				{
 					if (chunk_ref->source_database_name != source_database)
 					{
-						LOG_WARNING(log, "ChunkRef " + chunk_ref->getTableName() + " points to another database, ignoring");
+						LOG_WARNING(log, "ChunkRef " + it->first + " points to another database, ignoring");
 						continue;
 					}
 					if (!chunks_table_names.count(chunk_ref->source_table_name))
@@ -98,7 +98,7 @@ BlockInputStreams StorageChunkMerger::read(
 						}
 						else
 						{
-							LOG_WARNING(log, "ChunkRef " + chunk_ref->getTableName() + " points to non-existing Chunks table, ignoring");
+							LOG_WARNING(log, "ChunkRef " + it->first + " points to non-existing Chunks table, ignoring");
 						}
 					}
 				}
@@ -108,6 +108,14 @@ BlockInputStreams StorageChunkMerger::read(
 				}
 			}
 		}
+	}
+
+	TableLocks table_locks;
+
+	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
+	for (auto table : selected_tables)
+	{
+		table_locks.push_back(table->lockStructure(false));
 	}
 
 	BlockInputStreams res;
@@ -134,36 +142,44 @@ BlockInputStreams StorageChunkMerger::read(
 	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 	
-	for (Storages::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
+	for (size_t i = 0; i < selected_tables.size(); ++i)
 	{
-		if ((*it)->getName() != "Chunks" && !all_inclusive && values.find((*it)->getTableName()) == values.end())
+		StoragePtr table = selected_tables[i];
+		auto table_lock = table_locks[i];
+
+		if (table->getName() != "Chunks" && !all_inclusive && values.find(table->getTableName()) == values.end())
 			continue;
 
 		/// Список виртуальных столбцов, которые мы заполним сейчас и список столбцов, которые передадим дальше
 		Names virt_column_names, real_column_names;
 		for (const auto & column : column_names)
-			if (column == _table_column_name && (*it)->getName() != "Chunks") /// таблица Chunks сама заполняет столбец _table
+			if (column == _table_column_name && table->getName() != "Chunks") /// таблица Chunks сама заполняет столбец _table
 				virt_column_names.push_back(column);
 			else
 				real_column_names.push_back(column);
 
 		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 		if (real_column_names.size() == 0)
-			real_column_names.push_back(ExpressionActions::getSmallestColumn((*it)->getColumnsList()));
+			real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
 		ASTPtr modified_query_ast = query->clone();
 
 		/// Подменяем виртуальный столбец на его значение
 		if (!virt_column_names.empty())
-			VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, (*it)->getTableName());
+			VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, table->getTableName());
 
-		BlockInputStreams source_streams = (*it)->read(
+		BlockInputStreams source_streams = table->read(
 			real_column_names,
 			modified_query_ast,
 			settings,
 			tmp_processed_stage,
 			max_block_size,
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
+
+		for (auto & stream : source_streams)
+		{
+			stream->addTableLock(table_lock);
+		}
 
 		/// Добавляем в ответ вирутальные столбцы
 		for (const auto & virtual_column : virt_column_names)
@@ -172,7 +188,7 @@ BlockInputStreams StorageChunkMerger::read(
 			{
 				for (auto & stream : source_streams)
 				{
-					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, (*it)->getTableName(), _table_column_name);
+					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, table->getTableName(), _table_column_name);
 				}
 			}
 		}
@@ -336,6 +352,14 @@ static ASTPtr newIdentifier(const std::string & name, ASTIdentifier::Kind kind)
 bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 {
 	typedef std::map<std::string, DataTypePtr> ColumnsMap;
+
+	TableLocks table_locks;
+
+	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
+	for (auto table : chunks)
+	{
+		table_locks.push_back(table->lockStructure(false));
+	}
 	
 	/// Объединим множества столбцов сливаемых чанков.
 	ColumnsMap known_columns_types(columns->begin(), columns->end());
@@ -436,7 +460,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				DEFAULT_MERGE_BLOCK_SIZE);
 			
 			BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
-			
+
 			input->readPrefix();
 			output->writePrefix();
 
@@ -495,6 +519,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		}
 
 		/// Теперь удалим данные отцепленных таблиц.
+		table_locks.clear();
 		for (StoragePtr table : tables_to_drop)
 		{
 			InterpreterDropQuery::dropDetachedTable(source_database, table, context);

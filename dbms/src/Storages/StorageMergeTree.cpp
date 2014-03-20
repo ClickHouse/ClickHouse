@@ -101,6 +101,16 @@ void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
 	data.alter(params);
 }
 
+void StorageMergeTree::prepareAlterModify(const ASTAlterQuery::Parameters & params)
+{
+	data.prepareAlterModify(params);
+}
+
+void StorageMergeTree::commitAlterModify(const ASTAlterQuery::Parameters & params)
+{
+	data.commitAlterModify(params);
+}
+
 void StorageMergeTree::merge(size_t iterations, bool async, bool aggressive)
 {
 	bool while_can = false;

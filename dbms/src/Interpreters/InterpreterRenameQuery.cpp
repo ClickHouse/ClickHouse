@@ -52,7 +52,7 @@ void InterpreterRenameQuery::execute()
 		
 		/// Заблокировать таблицу нужно при незаблокированном контексте.
 		StoragePtr table = context.getTable(from_database_name, from_table_name);
-		auto table_lock = table->lockStructureForAlter();
+		auto table_lock = table->lockForAlter();
 
 		/** Все таблицы переименовываются под глобальной блокировкой. */
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());

@@ -67,7 +67,7 @@ void InterpreterDropQuery::execute()
 		table->shutdown();
 
 		/// Если кто-то успел удалить эту таблицу, выбросит исключение.
-		auto table_lock = table->lockStructureForAlter();
+		auto table_lock = table->lockForAlter();
 
 		String current_table_name = table->getTableName();
 
@@ -117,7 +117,7 @@ void InterpreterDropQuery::dropDetachedTable(String database_name, StoragePtr ta
 {
 	table->shutdown();
 
-	auto table_lock = table->lockStructureForAlter();
+	auto table_lock = table->lockForAlter();
 
 	String table_name = table->getTableName();
 

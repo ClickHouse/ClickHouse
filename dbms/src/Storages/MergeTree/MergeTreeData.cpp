@@ -399,101 +399,6 @@ static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesLis
 
 void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 {
-	if (params.type == ASTAlterQuery::MODIFY)
-	{
-		{
-			DataPartsVector parts;
-			{
-				Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-				parts = DataPartsVector(data_parts.begin(), data_parts.end());
-			}
-
-			Names column_name;
-			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
-			StringRange type_range = name_type.type->range;
-			String type(type_range.first, type_range.second - type_range.first);
-			DataTypePtr old_type_ptr = DB::getDataTypeByName(name_type.name, *columns);
-			DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
-			if (dynamic_cast<DataTypeNested *>(old_type_ptr.get()) || dynamic_cast<DataTypeArray *>(old_type_ptr.get()) ||
-				dynamic_cast<DataTypeNested *>(new_type_ptr.get()) || dynamic_cast<DataTypeArray *>(new_type_ptr.get()))
-				throw Exception("ALTER MODIFY not supported for nested and array types");
-
-			column_name.push_back(name_type.name);
-			ExpressionActionsPtr expr;
-			String out_column;
-			createConvertExpression(name_type.name, type, expr, out_column);
-
-			ColumnNumbers num(1, 0);
-			for (DataPartPtr & part : parts)
-			{
-				MarkRanges ranges(1, MarkRange(0, part->size));
-				ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-					DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, NULL, ""), expr);
-				MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
-				out.writePrefix();
-
-				try
-				{
-					while(DB::Block b = in.read())
-					{
-						/// оставляем только столбец с результатом
-						b.erase(0);
-						out.write(b);
-					}
-					LOG_TRACE(log, "Write Suffix");
-					out.writeSuffix();
-				}
-				catch (const Exception & e)
-				{
-					if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
-						throw;
-				}
-			}
-
-			/// переименовываем файлы
-			/// переименовываем старые столбцы, добавляя расширение .old
-			for (DataPartPtr & part : parts)
-			{
-				std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-				if (Poco::File(path + ".bin").exists())
-				{
-					LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
-					Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
-					LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
-					Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
-				}
-			}
-
-			/// переименовываем временные столбцы
-			for (DataPartPtr & part : parts)
-			{
-				std::string path = full_path + part->name + '/' + escapeForFileName(out_column);
-				std::string new_path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-				if (Poco::File(path + ".bin").exists())
-				{
-					LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
-					Poco::File(path + ".bin").renameTo(new_path + ".bin");
-					LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
-					Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
-				}
-			}
-
-			// удаляем старые столбцы
-			for (DataPartPtr & part : parts)
-			{
-				std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
-				if (Poco::File(path + ".bin" + ".old").exists())
-				{
-					LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
-					Poco::File(path + ".bin" + ".old").remove();
-					LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
-					Poco::File(path + ".mrk" + ".old").remove();
-				}
-			}
-		}
-		context.getUncompressedCache()->reset();
-		context.getMarkCache()->reset();
-	}
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
@@ -506,6 +411,124 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 
 		context.getUncompressedCache()->reset();
 		context.getMarkCache()->reset();
+	}
+}
+
+void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
+{
+	DataPartsVector parts;
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		parts = DataPartsVector(data_parts.begin(), data_parts.end());
+	}
+
+	Names column_name;
+	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+	StringRange type_range = name_type.type->range;
+	String type(type_range.first, type_range.second - type_range.first);
+	DataTypePtr old_type_ptr = DB::getDataTypeByName(name_type.name, *columns);
+	DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
+	if (dynamic_cast<DataTypeNested *>(old_type_ptr.get()) || dynamic_cast<DataTypeArray *>(old_type_ptr.get()) ||
+		dynamic_cast<DataTypeNested *>(new_type_ptr.get()) || dynamic_cast<DataTypeArray *>(new_type_ptr.get()))
+		throw Exception("ALTER MODIFY not supported for nested and array types");
+
+	column_name.push_back(name_type.name);
+	ExpressionActionsPtr expr;
+	String out_column;
+	createConvertExpression(name_type.name, type, expr, out_column);
+
+	ColumnNumbers num(1, 0);
+	for (DataPartPtr & part : parts)
+	{
+		MarkRanges ranges(1, MarkRange(0, part->size));
+		ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
+			DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, NULL, ""), expr);
+		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
+		out.writePrefix();
+
+		try
+		{
+			while(DB::Block b = in.read())
+			{
+				/// оставляем только столбец с результатом
+				b.erase(0);
+				out.write(b);
+			}
+			LOG_TRACE(log, "Write Suffix");
+			out.writeSuffix();
+		}
+		catch (const Exception & e)
+		{
+			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
+				throw;
+		}
+	}
+}
+
+void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
+{
+	DataPartsVector parts;
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		parts = DataPartsVector(data_parts.begin(), data_parts.end());
+	}
+
+	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+	StringRange type_range = name_type.type->range;
+	String type(type_range.first, type_range.second - type_range.first);
+
+	ExpressionActionsPtr expr;
+	String out_column;
+	createConvertExpression(name_type.name, type, expr, out_column);
+
+	/// переименовываем файлы
+	/// переименовываем старые столбцы, добавляя расширение .old
+	for (DataPartPtr & part : parts)
+	{
+		std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		if (Poco::File(path + ".bin").exists())
+		{
+			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
+			Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
+			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
+			Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
+		}
+	}
+
+	/// переименовываем временные столбцы
+	for (DataPartPtr & part : parts)
+	{
+		std::string path = full_path + part->name + '/' + escapeForFileName(out_column);
+		std::string new_path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		if (Poco::File(path + ".bin").exists())
+		{
+			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
+			Poco::File(path + ".bin").renameTo(new_path + ".bin");
+			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
+			Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
+		}
+	}
+
+	// удаляем старые столбцы
+	for (DataPartPtr & part : parts)
+	{
+		std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		if (Poco::File(path + ".bin" + ".old").exists())
+		{
+			LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
+			Poco::File(path + ".bin" + ".old").remove();
+			LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
+			Poco::File(path + ".mrk" + ".old").remove();
+		}
+	}
+
+	context.getUncompressedCache()->reset();
+	context.getMarkCache()->reset();
+
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+		alterColumns(params, columns, context);
 	}
 }
 

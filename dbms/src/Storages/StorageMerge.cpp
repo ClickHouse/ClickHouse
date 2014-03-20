@@ -72,7 +72,6 @@ BlockInputStreams StorageMerge::read(
 		getSelectedTables(selected_tables);
 	}
 
-	typedef std::vector<IStorage::TableStructureReadLockPtr> TableLocks;
 	TableLocks table_locks;
 
 	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.

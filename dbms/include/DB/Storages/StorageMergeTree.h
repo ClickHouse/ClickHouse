@@ -72,10 +72,9 @@ public:
 
 	void rename(const String & new_path_to_db, const String & new_name);
 
-	/// Метод ALTER позволяет добавлять и удалять столбцы.
-	/// Метод ALTER нужно применять, когда обращения к базе приостановлены.
-	/// Например если параллельно с INSERT выполнить ALTER, то ALTER выполниться, а INSERT бросит исключение
 	void alter(const ASTAlterQuery::Parameters & params);
+	void prepareAlterModify(const ASTAlterQuery::Parameters & params);
+	void commitAlterModify(const ASTAlterQuery::Parameters & params);
 
 private:
 	String path;

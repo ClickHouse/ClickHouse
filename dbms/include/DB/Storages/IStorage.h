@@ -96,15 +96,13 @@ public:
 
 	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
 	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableDataWriteLockPtr;
+	typedef std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr> TableFullWriteLockPtr;
 
 	/** Не дает читать структуру таблицы. Берется для ALTER, RENAME и DROP.
 	  */
-	TableStructureWriteLockPtr lockStructureForAlter()
+	TableFullWriteLockPtr lockForAlter()
 	{
-		TableStructureWriteLockPtr res = new Poco::ScopedWriteRWLock(structure_lock);
-		if (is_dropped)
-			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
-		return res;
+		return std::make_pair(lockDataForAlter(), lockStructureForAlter());
 	}
 
 	/** Не дает изменять данные в таблице. (Более того, не дает посмотреть на структуру таблицы с намерением изменить данные).
@@ -114,6 +112,14 @@ public:
 	TableDataWriteLockPtr lockDataForAlter()
 	{
 		TableDataWriteLockPtr res = new Poco::ScopedWriteRWLock(data_lock);
+		if (is_dropped)
+			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+		return res;
+	}
+
+	TableStructureWriteLockPtr lockStructureForAlter()
+	{
+		TableStructureWriteLockPtr res = new Poco::ScopedWriteRWLock(structure_lock);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -180,28 +186,26 @@ public:
 	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
 	  * (ALTER, затрагивающий изменение движка, делается внешним кодом, путём копирования данных.)
 	  * Вызывается при заблокированной на запись структуре таблицы.
-	  * Для ALTER MODIFY используются другие методы (см. ниже). TODO: Пока эта строчка не верна, и для ALTER MODIFY используется метод alter.
+	  * Для ALTER MODIFY можно использовать другие методы (см. ниже).
 	  */
 	virtual void alter(const ASTAlterQuery::Parameters & params)
 	{
 		throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	/** ALTER ... MODIFY (изменение типа столбца) выполняется в два вызова:
+	/** ALTER MODIFY (изменение типа столбца) выполняется в два вызова:
 	  * Сначала вызывается prepareAlterModify при заблокированной записи данных, но незаблокированной структуре таблицы.
 	  *  В нем можно выполнить долгую работу по записи сконвертированных данных, оставляя доступными существующие данные.
 	  * Потом вызывается commitAlterModify при заблокированной структуре таблицы.
 	  *  В нем нужно закончить изменение типа столбца.
+	  * Для движков с тривиальным ALTER MODIFY можно оставить реализацию по умолчанию, вызывающую alter.
 	  */
 
-	virtual void prepareAlterModify(const ASTAlterQuery::Parameters & params)
-	{
-		throw Exception("Method prepareAlterModify is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
+	virtual void prepareAlterModify(const ASTAlterQuery::Parameters & params) {}
 
 	virtual void commitAlterModify(const ASTAlterQuery::Parameters & params)
 	{
-		throw Exception("Method commitAlterModify is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		alter(params);
 	}
 
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
@@ -275,5 +279,6 @@ private:
 
 typedef std::shared_ptr<IStorage> StoragePtr;
 typedef std::vector<StoragePtr> StorageVector;
+typedef IStorage::TableStructureReadLocks TableLocks;
 
 }
