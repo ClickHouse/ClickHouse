@@ -116,6 +116,37 @@ public:
 
 #pragma GCC diagnostic pop
 
+struct Set
+{
+public:
+	Set(DB::ASTPtr column_set_ptr_) : column_set_ptr(column_set_ptr_)
+	{
+	}
+
+	std::string toString()
+	{
+		std::ostringstream ss;
+		ss << "{";
+		bool first = true;
+		for (auto & n : data)
+		{
+			if (first)
+			{
+				ss << n;
+				first = false;
+			}
+			else
+			{
+				ss << ", " << n;
+			}
+		}
+		ss << "}";
+		return ss.str();
+	}
+
+private:
+	DB::ASTPtr column_set_ptr;
+};
 
 /** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
   */
@@ -295,6 +326,7 @@ private:
 			/// Атомы логического выражения.
 			FUNCTION_IN_RANGE,
 			FUNCTION_NOT_IN_RANGE,
+			FUNCTION_IN_SET,
 			FUNCTION_UNKNOWN, /// Может принимать любое значение.
 			/// Операторы логического выражения.
 			FUNCTION_NOT,
@@ -320,6 +352,10 @@ private:
 					return "not";
 				case FUNCTION_UNKNOWN:
 					return "unknown";
+				case FUNCTION_IN_SET:
+					std::ostringstream ss;
+					ss << "(column " << key_column << " in " << set.toString() << ")";
+					return ss.str();
 				case FUNCTION_IN_RANGE:
 				case FUNCTION_NOT_IN_RANGE:
 				{
@@ -337,6 +373,8 @@ private:
 		/// Для FUNCTION_IN_RANGE и FUNCTION_NOT_IN_RANGE.
 		Range range;
 		size_t key_column;
+		/// Для FUNCTION_IN_SET
+		Set set;
 	};
 	
 	typedef std::vector<RPNElement> RPN;

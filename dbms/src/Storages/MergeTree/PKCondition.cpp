@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Columns/ColumnSet.h>
 
 namespace DB
 {
@@ -114,7 +115,7 @@ void PKCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 
 bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
-	/// Фнукции < > = != <= >=, у которых один агрумент константа, другой - один из столбцов первичного ключа.
+	/// Фнукции < > = != <= >= in , у которых один агрумент константа, другой - один из столбцов первичного ключа.
 	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
 	{
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
@@ -126,6 +127,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		bool inverted;
 		size_t column;
 		Field value;
+
 		if (pk_columns.count(args[0]->getColumnName()) && getConstant(args[1], block_with_constants, value))
 		{
 			inverted = false;
@@ -134,6 +136,11 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		else if (pk_columns.count(args[1]->getColumnName()) && getConstant(args[0], block_with_constants, value))
 		{
 			inverted = true;
+			column = pk_columns[args[1]->getColumnName()];
+		}
+		/// для In, notIn
+		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<DB::ColumnSet *>(args[1]))
+		{
 			column = pk_columns[args[1]->getColumnName()];
 		}
 		else
@@ -172,6 +179,11 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			out.range = Range::createRightBounded(value, true);
 		else if (func->name == "greaterOrEquals")
 			out.range = Range::createLeftBounded(value, true);
+		else if (func->name == "in" || func->name == "notIn")
+		{
+			out.function = RPNElement::FUNCTION_IN_SET;
+			out.set = Set(args[1]);
+		}
 		else
 			return false;
 		
