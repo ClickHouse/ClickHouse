@@ -436,7 +436,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
 
-	if (dynamic_cast<ASTSelectQuery *>(&*query.table))
+	if (query.table && dynamic_cast<ASTSelectQuery *>(&*query.table))
 	{
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		  * Так как результат поздапроса - ещё не результат всего запроса.
@@ -509,7 +509,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 	
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
-	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
+	if (!interpreter_subquery)
 	{
  		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
  		for (auto stream : streams)
