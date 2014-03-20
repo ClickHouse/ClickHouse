@@ -27,9 +27,6 @@ InterpreterRenameQuery::InterpreterRenameQuery(ASTPtr query_ptr_, Context & cont
 
 void InterpreterRenameQuery::execute()
 {
-	/** Все таблицы переименовываются под глобальной блокировкой. */
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
 	
@@ -53,12 +50,17 @@ void InterpreterRenameQuery::execute()
 		String to_table_name_escaped = escapeForFileName(to_table_name);
 		String to_metadata_path = path + "metadata/" + to_database_name_escaped + "/" + (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
 		
-		context.assertTableExists(from_database_name, from_table_name);
+		/// Заблокировать таблицу нужно при незаблокированном контексте.
+		StoragePtr table = context.getTable(from_database_name, from_table_name);
+		auto table_lock = table->lockStructureForAlter();
+
+		/** Все таблицы переименовываются под глобальной блокировкой. */
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
 		context.assertTableDoesntExist(to_database_name, to_table_name);
 
 		/// Уведомляем таблицу о том, что она переименовается. Если таблица не поддерживает переименование - кинется исключение.
-		StoragePtr table = context.getTable(from_database_name, from_table_name);
-		auto table_lock = table->lockStructureForAlter(); // TODO: Тут возможен дедлок.
+
 		table->rename(path + "data/" + to_database_name_escaped + "/", to_table_name);
 
 		/// Пишем новый файл с метаданными.

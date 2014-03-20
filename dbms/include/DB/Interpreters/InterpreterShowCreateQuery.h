@@ -68,18 +68,9 @@ private:
 	{
 		const ASTShowCreateQuery & ast = dynamic_cast<const ASTShowCreateQuery &>(*query_ptr);
 		
-		String res;
-		
-		{
-			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-		
-			if (!context.isTableExist(ast.database, ast.table))
-				throw Exception("Table " + (ast.database.empty() ? "" : ast.database + ".") + ast.table + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
-			
-			std::stringstream stream;
-			formatAST(*context.getCreateQuery(ast.database, ast.table), stream, 0, false, true);
-			res = stream.str();
-		}
+		std::stringstream stream;
+		formatAST(*context.getCreateQuery(ast.database, ast.table), stream, 0, false, true);
+		String res = stream.str();
 		
 		ColumnWithNameAndType col;
 		col.name = "statement";

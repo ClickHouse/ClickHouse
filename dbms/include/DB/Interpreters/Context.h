@@ -41,9 +41,6 @@ typedef std::map<String, StoragePtr> Tables;
 /// имя БД -> таблицы
 typedef std::map<String, Tables> Databases;
 
-/// имя БД -> dropper
-typedef std::map<String, DatabaseDropperPtr> DatabaseDroppers;
-
 /// (имя базы данных, имя таблицы)
 typedef std::pair<String, String> DatabaseAndTableName;
 
@@ -76,7 +73,6 @@ struct ContextShared
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
-	DatabaseDroppers database_droppers;						/// Reference counter'ы для ленивого удаления БД.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	FunctionFactory function_factory;						/// Обычные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -137,7 +133,6 @@ struct ContextShared
 
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(mutex);
-			database_droppers.clear();
 			current_databases = databases;
 		}
 
@@ -232,8 +227,6 @@ public:
 	String getDefaultFormat() const;	/// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
 	void setDefaultFormat(const String & name);
 
-	DatabaseDropperPtr getDatabaseDropper(const String & name);
-	
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);
 

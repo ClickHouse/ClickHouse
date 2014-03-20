@@ -55,7 +55,7 @@ BlockInputStreams StorageMerge::read(
 		else
 			virt_column_names.push_back(it);
 
-	SelectedTables selected_tables;
+	StorageVector selected_tables;
 
 	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
 	processed_stage = QueryProcessingStage::Complete;
@@ -72,6 +72,15 @@ BlockInputStreams StorageMerge::read(
 		getSelectedTables(selected_tables);
 	}
 
+	typedef std::vector<IStorage::TableStructureReadLockPtr> TableLocks;
+	TableLocks table_locks;
+
+	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
+	for (auto table : selected_tables)
+	{
+		table_locks.push_back(table->lockStructure(false));
+	}
+
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
 	BlockInputStreamPtr virtual_columns;
 
@@ -84,20 +93,23 @@ BlockInputStreams StorageMerge::read(
 	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 
-	for (SelectedTables::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
+	for (size_t i = 0; i < selected_tables.size(); ++i)
 	{
-		if (!all_inclusive && values.find((*it)->getTableName()) == values.end())
+		StoragePtr table = selected_tables[i];
+		auto table_lock = table_locks[i];
+
+		if (!all_inclusive && values.find(table->getTableName()) == values.end())
 			continue;
 
 		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 		if (real_column_names.size() == 0)
-			real_column_names.push_back(ExpressionActions::getSmallestColumn((*it)->getColumnsList()));
+			real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
 		/// Подменяем виртуальный столбец на его значение
 		ASTPtr modified_query_ast = query->clone();
-		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, (*it)->getTableName());
+		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, table->getTableName());
 
-		BlockInputStreams source_streams = (*it)->read(
+		BlockInputStreams source_streams = table->read(
 			real_column_names,
 			modified_query_ast,
 			settings,
@@ -105,17 +117,21 @@ BlockInputStreams StorageMerge::read(
 			max_block_size,
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
 
+		for (auto & stream : source_streams)
+		{
+			stream->addTableLock(table_lock);
+		}
+
 		for (auto & virtual_column : virt_column_names)
 		{
 			if (virtual_column == _table_column_name)
 			{
 				for (auto & stream : source_streams)
-					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, (*it)->getTableName(), _table_column_name);
+					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, table->getTableName(), _table_column_name);
 			}
 		}
 
-		for (BlockInputStreams::iterator jt = source_streams.begin(); jt != source_streams.end(); ++jt)
-			res.push_back(*jt);
+		res.insert(res.end(), source_streams.begin(), source_streams.end());
 
 		if (tmp_processed_stage < processed_stage)
 			processed_stage = tmp_processed_stage;
@@ -135,7 +151,7 @@ Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & s
 	Block res;
 	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
 
-	for (SelectedTables::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
+	for (StorageVector::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 		_table.column->insert((*it)->getTableName());
 
 	res.insert(_table);
@@ -146,7 +162,7 @@ void StorageMerge::getSelectedTables(StorageVector & selected_tables)
 {
 	const Tables & tables = context.getDatabases().at(source_database);
 	for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
-		if (it->second != this && table_name_regexp.match(it->first))
+		if (it->second.get() != this && table_name_regexp.match(it->first))
 			selected_tables.push_back(it->second);
 }
 

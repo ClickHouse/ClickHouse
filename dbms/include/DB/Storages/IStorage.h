@@ -10,12 +10,9 @@
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Interpreters/Settings.h>
-#include <DB/Storages/StoragePtr.h>
 #include <DB/Storages/ITableDeclaration.h>
-#include <DB/Storages/DatabaseDropper.h>
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
-#include <boost/make_shared.hpp>
 
 
 namespace DB
@@ -91,7 +88,10 @@ public:
 	  */
 	TableStructureReadLockPtr lockStructure(bool will_modify_data)
 	{
-		return new TableStructureReadLock(*this, true, will_modify_data);
+		TableStructureReadLockPtr res = new TableStructureReadLock(*this, true, will_modify_data);
+		if (is_dropped)
+			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+		return res;
 	}
 
 	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
@@ -99,13 +99,25 @@ public:
 
 	/** Не дает читать структуру таблицы. Берется для ALTER, RENAME и DROP.
 	  */
-	TableStructureWriteLockPtr lockStructureForAlter() { return new Poco::ScopedWriteRWLock(structure_lock); }
+	TableStructureWriteLockPtr lockStructureForAlter()
+	{
+		TableStructureWriteLockPtr res = new Poco::ScopedWriteRWLock(structure_lock);
+		if (is_dropped)
+			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+		return res;
+	}
 
 	/** Не дает изменять данные в таблице. (Более того, не дает посмотреть на структуру таблицы с намерением изменить данные).
 	  * Берется на время записи временных данных в ALTER MODIFY.
 	  * Под этим локом можно брать lockStructureForAlter(), чтобы изменить структуру таблицы.
 	  */
-	TableDataWriteLockPtr lockDataForAlter() { return new Poco::ScopedWriteRWLock(data_lock); }
+	TableDataWriteLockPtr lockDataForAlter()
+	{
+		TableDataWriteLockPtr res = new Poco::ScopedWriteRWLock(data_lock);
+		if (is_dropped)
+			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+		return res;
+	}
 
 
 	/** Читать набор столбцов из таблицы.
@@ -150,17 +162,10 @@ public:
 		throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	/** Удалить данные таблицы. После вызова этого метода, использование объекта некорректно (его можно лишь уничтожить).
-	  */
-	void drop()
-	{
-		drop_on_destroy = true;
-	}
-
-	/** Вызывается перед удалением директории с данными и вызовом деструктора.
+	/** Удалить данные таблицы. Вызывается перед удалением директории с данными.
 	  * Если не требуется никаких действий, кроме удаления директории с данными, этот метод можно оставить пустым.
 	  */
-	virtual void dropImpl() {}
+	virtual void drop();
 
 	/** Переименовать таблицу.
 	  * Переименование имени в файле с метаданными, имени в списке таблиц в оперативке, осуществляется отдельно.
@@ -220,40 +225,30 @@ public:
 	/** Если при уничтожении объекта надо сделать какую-то сложную работу - сделать её заранее.
 	  * Например, если таблица содержит какие-нибудь потоки для фоновой работы - попросить их завершиться и дождаться завершения.
 	  * По-умолчанию - ничего не делать.
+	  * Может вызываться одновременно из разных потоков, даже после вызова drop().
 	  */
 	virtual void shutdown() {}
-	
+
 	/** Возвращает владеющий указатель на себя.
 	  */ 
-	StoragePtr thisPtr()
+	std::shared_ptr<IStorage> thisPtr()
 	{
-		if (!this_ptr.lock())
+		std::shared_ptr<IStorage> res = this_ptr.lock();
+		if (!res)
 		{
-			auto p = boost::make_shared<StoragePtr::Wrapper>(this);
-			this_ptr = p;
-			return StoragePtr(this_ptr);
+			res.reset(this);
+			this_ptr = res;
 		}
-		else
-		{
-			return StoragePtr(this_ptr);
-		}
+		return res;
 	}
-	
-	/** Не дает удалить БД до удаления таблицы. Присваивается перед удалением таблицы или БД.
-	  */
-	DatabaseDropperPtr database_to_drop;
 
-	bool drop_on_destroy;
-	
-	/** Директория с данными. Будет удалена после удаления таблицы (после вызова dropImpl).
-	  */
-	std::string path_to_remove_on_drop;
+	bool is_dropped;
 
 protected:
-	IStorage() : drop_on_destroy(false) {}
+	IStorage() : is_dropped(false) {}
 
 private:
-	boost::weak_ptr<StoragePtr::Wrapper> this_ptr;
+	std::weak_ptr<IStorage> this_ptr;
 
 	/// Брать следующие два лока всегда нужно в этом порядке.
 
@@ -278,6 +273,7 @@ private:
 	mutable Poco::RWLock structure_lock;
 };
 
+typedef std::shared_ptr<IStorage> StoragePtr;
 typedef std::vector<StoragePtr> StorageVector;
 
 }

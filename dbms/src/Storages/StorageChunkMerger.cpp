@@ -10,6 +10,7 @@
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
@@ -387,16 +388,16 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 			
 			currently_written_groups.insert(new_table_full_name);
-			
-			/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
-			executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
-
-			/// Выполним запрос для создания Chunks таблицы.
-			executeQuery("CREATE TABLE " + new_table_full_name + " " + formatted_columns + " ENGINE = Chunks", context, true);
-
-			new_storage_ptr = context.getTable(source_database, new_table_name);
 		}
-		
+			
+		/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
+		executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
+
+		/// Выполним запрос для создания Chunks таблицы.
+		executeQuery("CREATE TABLE " + new_table_full_name + " " + formatted_columns + " ENGINE = Chunks", context, true);
+
+		new_storage_ptr = context.getTable(source_database, new_table_name);
+
 		/// Скопируем данные в новую таблицу.
 		StorageChunks & new_storage = dynamic_cast<StorageChunks &>(*new_storage_ptr);
 		
@@ -455,6 +456,9 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		}
 		
 		/// Атомарно подменим исходные таблицы ссылками на новую.
+		/// При этом удалять таблицы под мьютексом контекста нельзя, пока только отцепим их.
+		Storages tables_to_drop;
+
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 			
@@ -467,13 +471,13 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 					std::string src_name = src_storage->getTableName();
 					
 					/// Если таблицу успели удалить, ничего не делаем.
-					if (!context.getDatabases()[source_database].count(src_name))
+					if (!context.isTableExist(source_database, src_name))
 						continue;
 					
-					/// Роняем исходную таблицу.
-					executeQuery("DROP TABLE " + backQuoteIfNeed(source_database) + "." + backQuoteIfNeed(src_name), context, true);
-					
-					/// Создаем на ее месте ChunkRef
+					/// Отцепляем исходную таблицу. Ее данные и метаданные остаются на диске.
+					tables_to_drop.push_back(context.detachTable(source_database, src_name));
+
+					/// Создаем на ее месте ChunkRef. Это возможно только потому что у ChunkRef нет ни, ни метаданных.
 					try
 					{
 						context.addTable(source_database, src_name, StorageChunkRef::create(src_name, context, source_database, new_table_name, false));
@@ -488,6 +492,14 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 
 			currently_written_groups.erase(new_table_full_name);
+		}
+
+		/// Теперь удалим данные отцепленных таблиц.
+		for (StoragePtr table : tables_to_drop)
+		{
+			InterpreterDropQuery::dropDetachedTable(source_database, table, context);
+			/// NOTE: Если между подменой таблицы и этой строчкой кто-то успеет попытаться создать новую таблицу на ее месте,
+			///  что-нибудь может сломаться.
 		}
 
 		/// Сейчас на new_storage ссылаются таблицы типа ChunkRef. Удалим лишнюю ссылку, которая была при создании.

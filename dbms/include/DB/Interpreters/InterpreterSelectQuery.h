@@ -34,10 +34,6 @@ public:
 	DataTypes getReturnTypes();
 	Block getSampleBlock();
 
-	/** Получить CREATE запрос для таблицы, из которой идёт выбор.
-	  */
-	ASTPtr getCreateQuery();
-
 private:
 	typedef Poco::SharedPtr<ExpressionAnalyzer> ExpressionAnalyzerPtr;
 	

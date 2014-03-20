@@ -141,16 +141,6 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 }
 
 
-ASTPtr InterpreterSelectQuery::getCreateQuery()
-{
-	String database_name;
-	String table_name;
-
-	getDatabaseAndTableNames(database_name, table_name);
-	return context.getCreateQuery(database_name, table_name);
-}
-
-
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
 	DataTypes res;

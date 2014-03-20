@@ -199,7 +199,7 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 void Context::addTable(const String & database_name, const String & table_name, StoragePtr table)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	
+
 	String db = database_name.empty() ? current_database : database_name;
 
 	assertDatabaseExists(db);
@@ -240,19 +240,22 @@ void Context::detachDatabase(const String & database_name)
 	String db = database_name.empty() ? current_database : database_name;
 
 	assertDatabaseExists(db);
-	shared->databases.erase(shared->databases.find(db));
-	shared->database_droppers.erase(db);
+	shared->databases.erase(db);
 }
 
 
 ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	StoragePtr table;
+	String db;
 
-	String db = database_name.empty() ? current_database : database_name;
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		db = database_name.empty() ? current_database : database_name;
+		table = getTable(db, table_name);
+	}
 
-	assertDatabaseExists(db);
-	assertTableExists(db, table_name);
+	auto table_lock = table->lockStructure(false);
 
 	/// Здесь хранится определение таблицы
 	String metadata_path = shared->path + "metadata/" + escapeForFileName(db) + "/" + escapeForFileName(table_name) + ".sql";
@@ -262,7 +265,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 		try
 		{
 			/// Если файл .sql не предусмотрен (например, для таблиц типа ChunkRef), то движок может сам предоставить запрос CREATE.
-			return getTable(database_name, table_name)->getCustomCreateQuery(*this);
+			return table->getCustomCreateQuery(*this);
 		}
 		catch (...)
 		{
@@ -301,22 +304,6 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 	ast_create_query.query_string = query;
 
 	return ast;
-}
-
-
-DatabaseDropperPtr Context::getDatabaseDropper(const String & name)
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	
-	String db = name.empty() ? current_database : name;
-	
-	if (shared->databases.count(db) == 0)
-		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-	
-	if (shared->database_droppers.count(db) == 0)
-		shared->database_droppers[db] = DatabaseDropperPtr(new DatabaseDropper(shared->path +  "data/" + escapeForFileName(db)));
-	
-	return shared->database_droppers[db];
 }
 
 

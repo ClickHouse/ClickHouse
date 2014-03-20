@@ -17,8 +17,6 @@ typedef Poco::SharedPtr<StorageMerge> StorageMergePtr;
   */
 class StorageMerge : public IStorage
 {
-typedef std::vector<StoragePtr> SelectedTables;
-
 public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
