@@ -1,10 +1,9 @@
 #include <Poco/File.h>
 
 #include <DB/Common/escapeForFileName.h>
-
 #include <DB/Parsers/ASTDropQuery.h>
-
 #include <DB/Interpreters/InterpreterDropQuery.h>
+#include <DB/Storages/IStorage.h>
 
 
 namespace DB
@@ -19,8 +18,6 @@ InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_
 
 void InterpreterDropQuery::execute()
 {
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-	
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
 	
@@ -28,92 +25,116 @@ void InterpreterDropQuery::execute()
 
 	String database_name = drop.database.empty() ? current_database : drop.database;
 	String database_name_escaped = escapeForFileName(database_name);
-	String table_name = drop.table;
-	String table_name_escaped = escapeForFileName(table_name);
 
-	String data_path = path + "data/" + database_name_escaped + "/" + table_name_escaped;
-	String metadata_path = path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
+	String data_path = path + "data/" + database_name_escaped + "/";
+	String metadata_path = path + "metadata/" + database_name_escaped + "/";
 
-	if (!drop.if_exists)
-		context.assertDatabaseExists(database_name);
+	StorageVector tables_to_drop;
 
 	if (!drop.table.empty())
 	{
-		/// Удаление таблицы
-		if (!context.isTableExist(database_name, table_name))
-		{
-			if (!drop.if_exists)
-				throw Exception("Table " + database_name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-		}
+		StoragePtr table;
+
+		if (drop.if_exists)
+			table = context.tryGetTable(database_name, drop.table);
 		else
-		{
-			/// Удаляем данные таблицы
-			if (!drop.detach)
-			{
-				StoragePtr table = context.getTable(database_name, table_name);
-				DatabaseDropperPtr database_dropper = context.getDatabaseDropper(database_name);
-				table->path_to_remove_on_drop = data_path;
-				/// Присвоим database_to_drop на случай, если БД попробуют удалить до завершения удаления этой таблицы.
-				table->database_to_drop = database_dropper;
-				table->drop();
+			table = context.getTable(database_name, drop.table);
 
-				/// Для таблиц типа ChunkRef, файла с метаданными не существует.
-				if (Poco::File(metadata_path).exists())
-					Poco::File(metadata_path).remove();
-			}
-
-			/// Удаляем информацию о таблице из оперативки
-			StoragePtr detached_table = context.detachTable(database_name, table_name);
-
-			{
-				/** Во время уничтожения объекта с таблицей, mutex должен быть разблокирован,
-				  * так как таблица может ожидать завершения потоков, которые прямо сейчас ждут этого mutex-а.
-				  */
-				Poco::ScopedUnlock<Poco::Mutex> unlock(context.getMutex());
-				detached_table->shutdown();
-				detached_table = StoragePtr();
-			}
-		}
+		if (table)
+			tables_to_drop.push_back(table);
+		else
+			return;
 	}
 	else
 	{
-		if (context.isDatabaseExist(database_name))
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+		if (!drop.if_exists)
+			context.assertDatabaseExists(database_name);
+		else if (!context.isDatabaseExist(database_name))
+			return;
+
+		Tables tables = context.getDatabases()[database_name];
+
+		for (auto & it : tables)
 		{
-			/// Удаление базы данных
-			if (!drop.detach)
-			{
-				/// Тот, кто удалит директорию с БД, когда все ее таблицы будут удалены.
-				DatabaseDropperPtr database_dropper = context.getDatabaseDropper(database_name);
-				database_dropper->drop_on_destroy = true;
-
-				Tables detached_tables = context.getDatabases()[database_name];
-				
-				/// Удаление всех таблиц
-				for (Tables::iterator it = detached_tables.begin(); it != detached_tables.end(); ++it)
-					context.detachTable(database_name, it->first);
-
-				{
-					Poco::ScopedUnlock<Poco::Mutex> unlock(context.getMutex());
-
-					for (Tables::iterator it = detached_tables.begin(); it != detached_tables.end(); ++it)
-					{
-						StoragePtr & table = it->second;
-
-						table->path_to_remove_on_drop = data_path + escapeForFileName(it->first);
-						table->database_to_drop = database_dropper;
-						table->drop();
-						table->shutdown();
-						table = StoragePtr();
-					}
-				}
-
-				Poco::File(metadata_path).remove(true);
-			}
-
-			/// Удаляем информацию о БД из оперативки
-			context.detachDatabase(database_name);
+			tables_to_drop.push_back(it.second);
 		}
 	}
+
+	for (StoragePtr table : tables_to_drop)
+	{
+		table->shutdown();
+
+		/// Если кто-то успел удалить эту таблицу, выбросит исключение.
+		auto table_lock = table->lockForAlter();
+
+		String current_table_name = table->getTableName();
+
+		/// Удаляем информацию о таблице из оперативки
+		context.detachTable(database_name, current_table_name);
+
+		/// Удаляем данные таблицы
+		if (!drop.detach)
+		{
+			String current_data_path = data_path + escapeForFileName(current_table_name);
+			String current_metadata_path = metadata_path + escapeForFileName(current_table_name) + ".sql";
+
+			/// Для таблиц типа ChunkRef, файла с метаданными не существует.
+			if (Poco::File(current_metadata_path).exists())
+				Poco::File(current_metadata_path).remove();
+
+			table->drop();
+			table->is_dropped = true;
+
+			if (Poco::File(current_data_path).exists())
+				Poco::File(current_data_path).remove(true);
+		}
+	}
+
+	if (drop.table.empty())
+	{
+		/// Удаление базы данных. Таблицы в ней уже удалены.
+
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+		/// Кто-то мог успеть удалить БД до нас.
+		context.assertDatabaseExists(database_name);
+
+		/// Кто-то мог успеть создать таблицу в удаляемой БД, пока мы удаляли таблицы без лока контекста.
+		if (!context.getDatabases()[database_name].empty())
+			throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
+
+		/// Удаляем информацию о БД из оперативки
+		context.detachDatabase(database_name);
+
+		Poco::File(data_path).remove(false);
+		Poco::File(metadata_path).remove(false);
+	}
+}
+
+void InterpreterDropQuery::dropDetachedTable(String database_name, StoragePtr table, Context & context)
+{
+	table->shutdown();
+
+	auto table_lock = table->lockForAlter();
+
+	String table_name = table->getTableName();
+
+	String path = context.getPath();
+	String database_name_escaped = escapeForFileName(database_name);
+
+	String data_path = path + "data/" + database_name_escaped + "/" + escapeForFileName(table_name);
+	String metadata_path = path + "metadata/" + database_name_escaped + "/" + escapeForFileName(table_name) + ".sql";
+
+	if (Poco::File(metadata_path).exists())
+		Poco::File(metadata_path).remove();
+
+	table->drop();
+	table->is_dropped = true;
+
+	if (Poco::File(data_path).exists())
+		Poco::File(data_path).remove(true);
 }
 
 

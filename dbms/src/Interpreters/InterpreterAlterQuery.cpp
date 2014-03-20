@@ -46,14 +46,7 @@ void InterpreterAlterQuery::execute()
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
 
 	StoragePtr table = context.getTable(database_name, table_name);
-
-	/// для merge tree запрещаем все операции
-	StorageMergeTree::BigLockPtr merge_tree_lock;
-	if (StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
-		merge_tree_lock = table_merge_tree->lockAllOperations();
-
-	/// Poco::Mutex является рекурсивным, т.е. взятие мьютекса дважды из одного потока не приводит к блокировке
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	auto table_soft_lock = table->lockDataForAlter();
 
 	const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
 	String path = context.getPath();
@@ -67,7 +60,6 @@ void InterpreterAlterQuery::execute()
 	ASTCreateQuery & attach = dynamic_cast< ASTCreateQuery &>(*attach_ptr);
 	attach.attach = true;
 	ASTs & columns = dynamic_cast<ASTExpressionList &>(*attach.columns).children;
-
 
 	/// Различные проверки, на возможность выполнения запроса
 	ASTs columns_copy = columns;
@@ -137,13 +129,35 @@ void InterpreterAlterQuery::execute()
 		}
 	}
 
+	/// Пока разрешим читать из таблицы. Запретим при первой попытке изменить структуру таблицы.
+	/// Это позволит сделать большую часть первого MODIFY, не останавливая чтение из таблицы.
+	IStorage::TableStructureWriteLockPtr table_hard_lock;
+
+	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
 	/// todo cycle over sub tables and tables
 	/// Применяем изменения
 	for (ASTAlterQuery::ParameterContainer::const_iterator alter_it = alter.parameters.begin();
 			alter_it != alter.parameters.end(); ++alter_it)
 	{
 		const ASTAlterQuery::Parameters & params = *alter_it;
-		table->alter(params);
+
+		if (params.type == ASTAlterQuery::MODIFY)
+		{
+			table->prepareAlterModify(params);
+
+			if (!table_hard_lock)
+				table_hard_lock = table->lockStructureForAlter();
+
+			table->commitAlterModify(params);
+		}
+		else
+		{
+			if (!table_hard_lock)
+				table_hard_lock = table->lockStructureForAlter();
+
+			table->alter(params);
+		}
 		
 		if (params.type == ASTAlterQuery::ADD)
 		{

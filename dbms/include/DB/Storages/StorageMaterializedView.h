@@ -16,7 +16,7 @@ public:
 	std::string getInnerTableName() const { return  ".inner." + table_name; }
 
 	BlockOutputStreamPtr write(ASTPtr query);
-	void dropImpl();
+	void drop() override;
 	bool optimize();
 
 	BlockInputStreams read(

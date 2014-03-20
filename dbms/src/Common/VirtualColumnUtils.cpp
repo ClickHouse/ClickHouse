@@ -9,7 +9,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Storages/StoragePtr.h>
+#include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 
 namespace DB

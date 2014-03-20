@@ -212,7 +212,7 @@ StoragePtr StorageFactory::get(
 
 		return StorageMergeTree::create(
 			data_path, table_name, columns, context, primary_expr_list, date_column_name, sampling_expression, index_granularity,
-			name == "SummingMergeTree" ? StorageMergeTree::Summing : StorageMergeTree::Ordinary);
+			name == "SummingMergeTree" ? MergeTreeData::Summing : MergeTreeData::Ordinary);
 	}
 	else if (name == "CollapsingMergeTree")
 	{
@@ -249,7 +249,7 @@ StoragePtr StorageFactory::get(
 
 		return StorageMergeTree::create(
 			data_path, table_name, columns, context, primary_expr_list, date_column_name,
-			sampling_expression, index_granularity, StorageMergeTree::Collapsing, sign_column_name);
+			sampling_expression, index_granularity, MergeTreeData::Collapsing, sign_column_name);
 	}
 	else if (name == "SystemNumbers")
 	{

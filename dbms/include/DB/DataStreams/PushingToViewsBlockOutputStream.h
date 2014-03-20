@@ -23,7 +23,10 @@ public:
 	{
 		if (database.empty())
 			database = context.getCurrentDatabase();
+
 		storage = context.getTable(database, table);
+		addTableLock(storage->lockStructure(true));
+
 		Dependencies dependencies = context.getDependencies(DatabaseAndTableName(database, table));
 		for (size_t i = 0; i < dependencies.size(); ++i)
 		{

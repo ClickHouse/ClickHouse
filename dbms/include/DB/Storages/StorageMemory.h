@@ -5,6 +5,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB
@@ -15,13 +16,13 @@ class StorageMemory;
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, StoragePtr owned_storage);
+	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_);
 	String getName() const { return "MemoryBlockInputStream"; }
 
 	String getID() const
 	{
 		std::stringstream res;
-		res << "Memory(" << owned_storage->getTableName() << ", " << &*owned_storage << ", " << &*begin << ", " << &*end;
+		res << "Memory(" << &*begin << ", " << &*end;
 
 		for (size_t i = 0; i < column_names.size(); ++i)
 			res << ", " << column_names[i];
@@ -43,7 +44,7 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MemoryBlockOutputStream(StoragePtr owned_storage);
+	MemoryBlockOutputStream(StorageMemory & storage_);
 	void write(const Block & block);
 private:
 	StorageMemory & storage;
@@ -79,7 +80,7 @@ public:
 	BlockOutputStreamPtr write(
 		ASTPtr query);
 
-	void dropImpl();
+	void drop() override;
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 
 private:

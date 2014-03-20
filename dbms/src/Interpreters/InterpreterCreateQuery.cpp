@@ -74,10 +74,25 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		return StoragePtr();
 	}
 
-	StoragePtr res;
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
+	Block select_sample;
+	if (create.select && !create.attach)
+	{
+		interpreter_select = new InterpreterSelectQuery(create.select, context);
+		select_sample = interpreter_select->getSampleBlock();
+	}
+
+	StoragePtr res;
 	String storage_name;
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
+
+	StoragePtr as_storage;
+	IStorage::TableStructureReadLockPtr as_storage_lock;
+	if (!as_table_name.empty())
+	{
+		as_storage = context.getTable(as_database_name, as_table_name);
+		as_storage_lock = as_storage->lockStructure(false);
+	}
 
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
@@ -91,12 +106,6 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			else
 				throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 		}
-
-		if (!create.as_table.empty())
-			context.assertTableExists(as_database_name, as_table_name);
-
-		if (create.select && !create.attach)
-			interpreter_select = new InterpreterSelectQuery(create.select, context);
 
 		/// Получаем список столбцов
 		if (create.columns)
@@ -112,13 +121,12 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			}
 		}
 		else if (!create.as_table.empty())
-			columns = new NamesAndTypesList(context.getTable(as_database_name, as_table_name)->getColumnsList());
+			columns = new NamesAndTypesList(as_storage->getColumnsList());
 		else if (create.select)
 		{
-			Block sample = interpreter_select->getSampleBlock();
 			columns = new NamesAndTypesList;
-			for (size_t i = 0; i < sample.columns(); ++i)
-				columns->push_back(NameAndTypePair(sample.getByPosition(i).name, sample.getByPosition(i).type));
+			for (size_t i = 0; i < select_sample.columns(); ++i)
+				columns->push_back(NameAndTypePair(select_sample.getByPosition(i).name, select_sample.getByPosition(i).type));
 		}
 		else
 			throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
@@ -159,7 +167,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		}
 		else if (!create.as_table.empty())
 		{
-			storage_name = context.getTable(as_database_name, as_table_name)->getName();
+			storage_name = as_storage->getName();
 			create.storage = dynamic_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
 		}
 		else if (create.is_view)

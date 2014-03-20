@@ -2,7 +2,7 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/Storages/StoragePtr.h>
+#include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Interpreters/Context.h>
 

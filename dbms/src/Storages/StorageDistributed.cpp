@@ -239,10 +239,6 @@ BlockInputStreams StorageDistributed::read(
 		}
 	}
 
-	/// Не дадим уничтожать объект до конца обработки запроса.
-	for (auto & stream : res)
-		stream->setOwnedStorage(thisPtr());
-
 	return res;
 }
 

@@ -3,7 +3,6 @@
 #include <sstream>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/Core/SortDescription.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>

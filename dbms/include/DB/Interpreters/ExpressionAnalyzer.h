@@ -15,6 +15,8 @@ namespace DB
 {
 
 /** Превращает выражение из синтаксического дерева в последовательность действий для его выполнения.
+  *
+  * NOTE: если ast - запрос SELECT из таблицы, структура этой таблицы не должна меняться во все время жизни ExpressionAnalyzer-а.
   */
 class ExpressionAnalyzer : private boost::noncopyable
 {

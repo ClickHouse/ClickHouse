@@ -76,12 +76,9 @@ private:
 		NamesAndTypesList columns;
 		
 		{
-			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-			
-			if (!context.isTableExist(ast.database, ast.table))
-				throw Exception("Table " + (ast.database.empty() ? "" : ast.database + ".") + ast.table + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
-			
-			columns = context.getTable(ast.database, ast.table)->getColumnsList();
+			StoragePtr table = context.getTable(ast.database, ast.table);
+			auto table_lock = table->lockStructure(false);
+			columns = table->getColumnsList();
 		}
 		
 		ColumnString * name_column = new ColumnString;

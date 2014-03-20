@@ -23,7 +23,7 @@ namespace DB
 class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-	CollapsingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_,
+	CollapsingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
 		const String & sign_column_, size_t max_block_size_)
 		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
 		sign_column(sign_column_), sign_column_number(0),

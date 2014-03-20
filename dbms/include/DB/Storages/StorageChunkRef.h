@@ -32,7 +32,7 @@ public:
 
 	ASTPtr getCustomCreateQuery(const Context & context) const;
 	
-	void dropImpl();
+	void drop() override;
 	
 	String source_database_name;
 	String source_table_name;

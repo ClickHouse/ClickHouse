@@ -3,7 +3,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 
-#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
 class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
-	IMergedBlockOutputStream(StorageMergeTree & storage_) : storage(storage_), index_offset(0)
+	IMergedBlockOutputStream(MergeTreeData & storage_) : storage(storage_), index_offset(0)
 	{
 	}
 
@@ -182,7 +182,7 @@ protected:
 		}
 	}
 
-	StorageMergeTree & storage;
+	MergeTreeData & storage;
 
 	ColumnStreams column_streams;
 
@@ -196,7 +196,7 @@ protected:
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedBlockOutputStream(StorageMergeTree & storage_,
+	MergedBlockOutputStream(MergeTreeData & storage_,
 		UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
 		: IMergedBlockOutputStream(storage_), marks_count(0)
 	{
@@ -204,17 +204,18 @@ public:
 			DayNum_t(min_date), DayNum_t(max_date),
 			min_part_id, max_part_id, level);
 		
-		part_tmp_path = storage.full_path + "tmp_" + part_name + "/";
-		part_res_path = storage.full_path + part_name + "/";
+		part_tmp_path = storage.getFullPath() + "tmp_" + part_name + "/";
+		part_res_path = storage.getFullPath() + part_name + "/";
 		
 		Poco::File(part_tmp_path).createDirectories();
 		
 		index_stream = new WriteBufferFromFile(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 		
-		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-			addStream(part_tmp_path, it->first, *it->second);
+		columns_list = storage.getColumnsList();
+		for (const auto & it : columns_list)
+			addStream(part_tmp_path, it.first, *it.second);
 	}
-	
+
 	void write(const Block & block)
 	{
 		size_t rows = block.rows();
@@ -223,11 +224,11 @@ public:
 		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
 		PrimaryColumns primary_columns;
 		
-		for (size_t i = 0, size = storage.sort_descr.size(); i < size; ++i)
+		for (const auto & descr : storage.getSortDescription())
 			primary_columns.push_back(
-				!storage.sort_descr[i].column_name.empty()
-				? &block.getByName(storage.sort_descr[i].column_name)
-				: &block.getByPosition(storage.sort_descr[i].column_number));
+				!descr.column_name.empty()
+				? &block.getByName(descr.column_name)
+				: &block.getByPosition(descr.column_number));
 			
 		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 		{
@@ -243,9 +244,9 @@ public:
 		OffsetColumns offset_columns;
 		
 		/// Теперь пишем данные.
-		for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+		for (const auto & it : columns_list)
 		{
-			const ColumnWithNameAndType & column = block.getByName(it->first);
+			const ColumnWithNameAndType & column = block.getByName(it.first);
 			writeData(column.name, *column.type, *column.column, offset_columns);
 		}
 
@@ -285,6 +286,8 @@ public:
 	}
 
 private:
+	NamesAndTypesList columns_list;
+
 	String part_name;
 	String part_tmp_path;
 	String part_res_path;
@@ -299,7 +302,7 @@ typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedColumnOnlyOutputStream(StorageMergeTree & storage_, String part_path_, bool sync_ = false) :
+	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_ = false) :
 		IMergedBlockOutputStream(storage_), part_path(part_path_), initialized(false), sync(sync_)
 	{
 	}
