@@ -116,8 +116,10 @@ private:
 	friend struct StateWatch;
 
 	zk::ZooKeeper impl;
-	ACLs default_acl;
 	WatchFunction * state_watch;
+
+	Poco::FastMutex mutex;
+	ACLs default_acl;
 	SessionState::type session_state;
 
 	void stateChanged(WatchEvent::type event, SessionState::type state, const std::string& path);

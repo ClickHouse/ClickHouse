@@ -100,6 +100,8 @@ ZooKeeper::ZooKeeper(const Poco::Util::LayeredConfiguration & config, const std:
 
 void ZooKeeper::stateChanged(WatchEvent::type event, SessionState::type state, const std::string & path)
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
 	session_state = state;
 	if (state_watch)
 		(*state_watch)(event, state, path);
@@ -107,16 +109,22 @@ void ZooKeeper::stateChanged(WatchEvent::type event, SessionState::type state, c
 
 bool ZooKeeper::disconnected()
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
 	return session_state == SessionState::Expired || session_state == SessionState::AuthFailed;
 }
 
 void ZooKeeper::setDefaultACL(ACLs & acl)
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
 	default_acl = acl;
 }
 
 ACLs ZooKeeper::getDefaultACL()
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
 	return default_acl;
 }
 
@@ -148,6 +156,8 @@ bool ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 
 std::string ZooKeeper::create(const std::string & path, const std::string & data, CreateMode::type mode)
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
 	std::string res;
 	CHECKED(impl.create(path, data, default_acl, mode, res));
 	return res;
@@ -155,6 +165,8 @@ std::string ZooKeeper::create(const std::string & path, const std::string & data
 
 ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::string & data, CreateMode::type mode, std::string & pathCreated)
 {
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
 	ReturnCode::type code = impl.create(path, data, default_acl, mode, pathCreated);
 	if (!(	code == ReturnCode::Ok ||
 			code == ReturnCode::NoNode ||
