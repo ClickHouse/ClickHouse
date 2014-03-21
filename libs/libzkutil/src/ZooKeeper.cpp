@@ -68,7 +68,6 @@ struct ZooKeeperArgs
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_name, keys);
 		std::string node_key = "node";
-		std::string node_key_ext = "node[";
 
 		session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
 		for (const auto & key : keys)

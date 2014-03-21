@@ -5,16 +5,22 @@
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <zkutil/ZooKeeper.h>
 
 namespace DB
 {
 
+/** Движок, использующий merge-дерево и реплицируемый через ZooKeeper.
+  */
 class StorageReplicatedMergeTree : public IStorage
 {
 public:
+	/** Если !attach, либо создает новую таблицу в ZK, либо добавляет реплику в существующую таблицу.
+	  */
 	static StoragePtr create(
 		const String & zookeeper_path_,
 		const String & replica_name_,
+		bool attach,
 		const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 		const Context & context_,
 		ASTPtr & primary_expr_ast_,
@@ -28,18 +34,18 @@ public:
 	void shutdown();
 	~StorageReplicatedMergeTree();
 
-	std::string getName() const
+	std::string getName() const override
 	{
 		return "Replicated" + data.getModePrefix() + "MergeTree";
 	}
 
-	std::string getTableName() const { return name; }
+	std::string getTableName() const override { return name; }
 	std::string getSignColumnName() const { return data.getSignColumnName(); }
-	bool supportsSampling() const { return data.supportsSampling(); }
-	bool supportsFinal() const { return data.supportsFinal(); }
-	bool supportsPrewhere() const { return data.supportsPrewhere(); }
+	bool supportsSampling() const override { return data.supportsSampling(); }
+	bool supportsFinal() const override { return data.supportsFinal(); }
+	bool supportsPrewhere() const override { return data.supportsPrewhere(); }
 
-	const NamesAndTypesList & getColumnsList() const { return data.getColumnsList(); }
+	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -47,10 +53,12 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(ASTPtr query);
+	BlockOutputStreamPtr write(ASTPtr query) override;
 
+	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
+	  */
 	void drop() override;
 
 private:
@@ -71,7 +79,7 @@ private:
 
 	typedef std::list<LogEntry> LogEntries;
 
-	/** "Очередь" того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из Zookeeper (/replicas/me/queue/).
+	/** "Очередь" того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
 	  * В ZK записи в хронологическом порядке. Здесь записи в том порядке, в котором их лучше выполнять.
 	  */
 	LogEntries queue;
@@ -84,13 +92,15 @@ private:
 	String zookeeper_path;
 	String replica_name;
 
-	/** Является ли эта реплика "главной". Главная реплика выбирает куски для слияния.
+	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
-	bool is_master_node;
+	bool is_leader_node;
 
 	MergeTreeData data;
 	MergeTreeDataSelectExecutor reader;
 	MergeTreeDataWriter writer;
+
+	zkutil::ZooKeeper * zookeeper;
 
 	Logger * log;
 
@@ -99,6 +109,7 @@ private:
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
 		const String & replica_name_,
+		bool attach,
 		const String & path_, const String & name_, NamesAndTypesListPtr columns_,
 		const Context & context_,
 		ASTPtr & primary_expr_ast_,
@@ -108,6 +119,17 @@ private:
 		MergeTreeData::Mode mode_ = MergeTreeData::Ordinary,
 		const String & sign_column_ = "",
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
+
+	/// Инициализация.
+
+	bool isTableExistsInZooKeeper();
+	bool isTableEmptyInZooKeeper();
+
+	void createNewTableInZooKeeper();
+	void createNewReplicaInZooKeeper();
+
+	void removeReplicaInZooKeeper();
+	void removeTableInZooKeeper();
 
 	/** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	  * Если нет - бросить исключение.
@@ -121,7 +143,9 @@ private:
 	  */
 	void checkParts();
 
-	/** Кладет в queue записи из Zookeeper (/replicas/me/queue/).
+	/// Работа с очередью и логом.
+
+	/** Кладет в queue записи из ZooKeeper (/replicas/me/queue/).
 	  */
 	void loadQueue();
 
@@ -145,6 +169,14 @@ private:
 	  *  - Не смогли объединить куски, потому что не все из них у нас есть.
 	  */
 	bool tryExecute(const LogEntry & entry);
+
+	/// Обмен кусками.
+
+	void registerEndpoint();
+	void unregisterEndpoint();
+
+	String findReplicaHavingPart(const String & part_name);
+	void getPart(const String & name, const String & replica_name);
 };
 
 }

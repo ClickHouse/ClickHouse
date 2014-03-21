@@ -474,6 +474,22 @@ MarkCachePtr Context::getMarkCache() const
 	return shared->mark_cache;
 }
 
+void Context::setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (shared->zookeeper)
+		throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
+
+	shared->zookeeper = zookeeper;
+}
+
+zkutil::ZooKeeper * Context::getZooKeeper() const
+{
+	return shared->zookeeper.get();
+}
+
+
 void Context::initClusters()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);

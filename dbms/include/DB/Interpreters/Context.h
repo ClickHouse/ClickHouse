@@ -27,6 +27,7 @@
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Client/ConnectionPool.h>
 #include <statdaemons/ConfigProcessor.h>
+#include <zkutil/ZooKeeper.h>
 
 
 namespace DB
@@ -71,6 +72,8 @@ struct ContextShared
 	} after_destroy;
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
+
+	mutable SharedPtr<zkutil::ZooKeeper> zookeeper;			/// Клиент для ZooKeeper.
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
@@ -292,6 +295,9 @@ public:
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
 	void setUncompressedCache(size_t cache_size_in_cells);
 	UncompressedCachePtr getUncompressedCache() const;
+
+	void setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper);
+	zkutil::ZooKeeper * getZooKeeper() const;
 
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);

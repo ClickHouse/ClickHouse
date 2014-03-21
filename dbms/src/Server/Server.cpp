@@ -213,6 +213,9 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(config.getString("path"));
 
+	if (config.has("zookeeper"))
+		global_context->setZooKeeper(new zkutil::ZooKeeper(config, "zookeeper"));
+
 	std::string users_config_path = config.getString("users_config", config.getString("config-file", "config.xml"));
 	users_config_reloader = new UsersConfigReloader(users_config_path, global_context);
 
