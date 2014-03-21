@@ -133,8 +133,6 @@ void InterpreterAlterQuery::execute()
 	/// Это позволит сделать большую часть первого MODIFY, не останавливая чтение из таблицы.
 	IStorage::TableStructureWriteLockPtr table_hard_lock;
 
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
 	/// todo cycle over sub tables and tables
 	/// Применяем изменения
 	for (ASTAlterQuery::ParameterContainer::const_iterator alter_it = alter.parameters.begin();
