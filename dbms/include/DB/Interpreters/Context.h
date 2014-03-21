@@ -24,6 +24,7 @@
 #include <DB/Interpreters/Dictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Client/ConnectionPool.h>
 #include <statdaemons/ConfigProcessor.h>
 
@@ -87,6 +88,7 @@ struct ContextShared
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
+	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -245,6 +247,8 @@ public:
 	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 	const Dictionaries & getDictionaries() const;
+
+	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
