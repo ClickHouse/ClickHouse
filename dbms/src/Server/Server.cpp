@@ -285,8 +285,19 @@ int Server::main(const std::vector<std::string> & args)
 		Poco::SharedPtr<Poco::Net::HTTPServer> interserver_io_http_server;
 		if (config.has("interserver_http_port"))
 		{
+			String this_host;
+			if (config.has("interserver_http_host"))
+				this_host = config.getString("interserver_http_host");
+			else
+				this_host = Poco::Net::DNS::hostName();
+
+			String port_str = config.getString("interserver_http_port");
+			int port = parse<int>(port_str);
+
+			global_context->setInterserverIOHost(this_host, port);
+
 			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress("[::]:"
-				+ config.getString("interserver_http_port")));
+				+ port_str));
 			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
 			interserver_io_http_server = new Poco::Net::HTTPServer(

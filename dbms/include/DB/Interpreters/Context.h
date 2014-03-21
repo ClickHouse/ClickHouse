@@ -75,6 +75,9 @@ struct ContextShared
 
 	mutable SharedPtr<zkutil::ZooKeeper> zookeeper;			/// Клиент для ZooKeeper.
 
+	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
+	int interserver_io_port;								///           и порт,
+
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
@@ -252,6 +255,11 @@ public:
 	const Dictionaries & getDictionaries() const;
 
 	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
+
+	/// Как другие серверы могут обратиться к этому.
+	void setInterserverIOHost(const String & host, int port);
+	String getInterserverIOHost() const;
+	int getInterserverIOPort() const;
 
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;

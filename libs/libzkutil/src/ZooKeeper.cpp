@@ -75,7 +75,7 @@ struct ZooKeeperArgs
 			if (key == node_key || key.compare(0, node_key.size(), node_key) == 0)
 			{
 				if (hosts.size())
-					hosts += std::string(" ");
+					hosts += std::string(",");
 				hosts += config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port");
 			}
 			else if (key == "session_timeout_ms")

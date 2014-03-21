@@ -25,6 +25,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	zookeeper(context_.getZooKeeper()), log(&Logger::get("StorageReplicatedMergeTree")),
 	shutdown_called(false)
 {
+	if (zookeeper_path.empty() || *zookeeper_path.rbegin() != '/')
+		zookeeper_path += '/';
+
 	if (!attach)
 	{
 		if (isTableExistsInZooKeeper())

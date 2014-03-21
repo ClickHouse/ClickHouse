@@ -490,6 +490,23 @@ zkutil::ZooKeeper * Context::getZooKeeper() const
 }
 
 
+void Context::setInterserverIOHost(const String & host, int port)
+{
+	shared->interserver_io_host = host;
+	shared->interserver_io_port = port;
+}
+
+String Context::getInterserverIOHost() const
+{
+	return shared->interserver_io_host;
+}
+
+int Context::getInterserverIOPort() const
+{
+	return shared->interserver_io_port;
+}
+
+
 void Context::initClusters()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
