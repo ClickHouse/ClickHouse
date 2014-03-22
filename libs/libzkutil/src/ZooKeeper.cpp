@@ -1,5 +1,6 @@
 #include <zkutil/ZooKeeper.h>
 #include <boost/make_shared.hpp>
+#include <Yandex/logger_useful.h>
 
 
 #define CHECKED(x) { ReturnCode::type code = x; if (code != ReturnCode::Ok) throw KeeperException(code); }
@@ -302,9 +303,29 @@ OpResultsPtr ZooKeeper::tryMulti(const Ops & ops)
 	return res;
 }
 
+void ZooKeeper::removeRecursive(const std::string & path)
+{
+	Strings children = getChildren(path);
+	for (const std::string & child : children)
+		removeRecursive(path + "/" + child);
+	remove(path);
+}
+
 void ZooKeeper::close()
 {
 	CHECKED(impl.close());
+}
+
+ZooKeeper::~ZooKeeper()
+{
+	try
+	{
+		close();
+	}
+	catch(...)
+	{
+		LOG_ERROR(&Logger::get("~ZooKeeper"), "Failed to close ZooKeeper session");
+	}
 }
 
 }

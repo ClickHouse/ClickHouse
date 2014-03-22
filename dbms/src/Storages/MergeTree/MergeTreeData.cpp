@@ -51,11 +51,9 @@ MergeTreeData::MergeTreeData(
 
 	/// инициализируем описание сортировки
 	sort_descr.reserve(primary_expr_ast->children.size());
-	for (ASTs::iterator it = primary_expr_ast->children.begin();
-		it != primary_expr_ast->children.end();
-		++it)
+	for (const ASTPtr & ast : primary_expr_ast->children)
 	{
-		String name = (*it)->getColumnName();
+		String name = ast->getColumnName();
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
 

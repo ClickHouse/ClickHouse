@@ -484,9 +484,11 @@ void Context::setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper)
 	shared->zookeeper = zookeeper;
 }
 
-zkutil::ZooKeeper * Context::getZooKeeper() const
+zkutil::ZooKeeper & Context::getZooKeeper() const
 {
-	return shared->zookeeper.get();
+	if (!shared->zookeeper)
+		throw Exception("No ZooKeeper in Context", ErrorCodes::NO_ZOOKEEPER);
+	return *shared->zookeeper;
 }
 
 

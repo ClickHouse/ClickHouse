@@ -115,6 +115,11 @@ inline void readChar(char & x, ReadBuffer & buf)
 
 void assertString(const char * s, ReadBuffer & buf);
 
+void assertString(const String & s, ReadBuffer & buf)
+{
+	assertString(s.c_str(), buf);
+}
+
 
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {

@@ -305,7 +305,7 @@ public:
 	UncompressedCachePtr getUncompressedCache() const;
 
 	void setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper);
-	zkutil::ZooKeeper * getZooKeeper() const;
+	zkutil::ZooKeeper & getZooKeeper() const;
 
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);

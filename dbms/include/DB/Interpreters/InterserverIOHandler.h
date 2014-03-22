@@ -23,7 +23,7 @@ typedef Poco::SharedPtr<InterserverIOEndpoint> InterserverIOEndpointPtr;
 
 
 /** Сюда можно зарегистрировать сервис, обрататывающий запросы от других серверов.
-  * Используется для передачи данных в ReplicatedMergeTree.
+  * Используется для передачи кусков в ReplicatedMergeTree.
   */
 class InterserverIOHandler
 {
@@ -58,5 +58,34 @@ private:
 	EndpointMap endpoint_map;
 	Poco::FastMutex mutex;
 };
+
+/// В конструкторе вызывает addEndpoint, в деструкторе - removeEndpoint.
+class InterserverIOEndpointHolder
+{
+public:
+	InterserverIOEndpointHolder(const String & name_, InterserverIOEndpointPtr endpoint, InterserverIOHandler & handler_)
+		: name(name_), handler(handler_)
+	{
+		handler.addEndpoint(name, endpoint);
+	}
+
+	~InterserverIOEndpointHolder()
+	{
+		try
+		{
+			handler.removeEndpoint(name);
+		}
+		catch (...)
+		{
+			tryLogCurrentException("~InterserverIOEndpointHolder");
+		}
+	}
+
+private:
+	String name;
+	InterserverIOHandler & handler;
+};
+
+typedef Poco::SharedPtr<InterserverIOEndpointHolder> InterserverIOEndpointHolderPtr;
 
 }

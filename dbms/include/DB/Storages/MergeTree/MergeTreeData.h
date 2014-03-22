@@ -310,12 +310,12 @@ public:
 
 	const MergeTreeSettings settings;
 
+	const ASTPtr primary_expr_ast;
+
 private:
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 	Block primary_key_sample;
-
-	ASTPtr primary_expr_ast;
 
 	String full_path;
 

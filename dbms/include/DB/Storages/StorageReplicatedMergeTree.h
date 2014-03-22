@@ -22,7 +22,7 @@ public:
 		const String & replica_name_,
 		bool attach,
 		const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-		const Context & context_,
+		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
@@ -79,6 +79,21 @@ private:
 
 	typedef std::list<LogEntry> LogEntries;
 
+	class MyInterserverIOEndpoint : public InterserverIOEndpoint
+	{
+	public:
+		MyInterserverIOEndpoint(StorageReplicatedMergeTree & storage_) : storage(storage_), owned_storage(storage.thisPtr()) {}
+
+		void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) override;
+
+	private:
+		StorageReplicatedMergeTree & storage;
+		StoragePtr owned_storage;
+	};
+
+	Context & context;
+	zkutil::ZooKeeper & zookeeper;
+
 	/** "Очередь" того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
 	  * В ZK записи в хронологическом порядке. Здесь записи в том порядке, в котором их лучше выполнять.
 	  */
@@ -91,16 +106,21 @@ private:
 
 	String zookeeper_path;
 	String replica_name;
+	String replica_path;
+
+	/** /replicas/me/is_active.
+	  */
+	zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
 	bool is_leader_node;
 
+	InterserverIOEndpointHolderPtr endpoint_holder;
+
 	MergeTreeData data;
 	MergeTreeDataSelectExecutor reader;
 	MergeTreeDataWriter writer;
-
-	zkutil::ZooKeeper * zookeeper;
 
 	Logger * log;
 
@@ -111,7 +131,7 @@ private:
 		const String & replica_name_,
 		bool attach,
 		const String & path_, const String & name_, NamesAndTypesListPtr columns_,
-		const Context & context_,
+		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_,
@@ -122,14 +142,18 @@ private:
 
 	/// Инициализация.
 
-	bool isTableExistsInZooKeeper();
-	bool isTableEmptyInZooKeeper();
+	/** Проверяет, что в ZooKeeper в таблице нет данных.
+	  */
+	bool isTableEmpty();
 
-	void createNewTableInZooKeeper();
-	void createNewReplicaInZooKeeper();
+	/** Создает минимальный набор нод в ZooKeeper.
+	  */
+	void createTable();
+	void createReplica();
 
-	void removeReplicaInZooKeeper();
-	void removeTableInZooKeeper();
+	/** Отметить в ZooKeeper, что эта реплика сейчас активна.
+	  */
+	void activateReplica();
 
 	/** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	  * Если нет - бросить исключение.
@@ -171,9 +195,6 @@ private:
 	bool tryExecute(const LogEntry & entry);
 
 	/// Обмен кусками.
-
-	void registerEndpoint();
-	void unregisterEndpoint();
 
 	String findReplicaHavingPart(const String & part_name);
 	void getPart(const String & name, const String & replica_name);
