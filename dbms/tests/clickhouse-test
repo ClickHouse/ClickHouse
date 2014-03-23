@@ -61,6 +61,7 @@ do
 			cat $diff_file
 		else
 			echo -e "$MSG_OK"
+			rm $error_file $result_file $diff_file
 		fi
 	fi
 done
