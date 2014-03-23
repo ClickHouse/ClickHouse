@@ -2,7 +2,7 @@
 
 # Скрипт для тестирования запросов к ClickHouse.
 # Из файлов *.sql в заданной директории, в алфавитном порядке, отправляются все запросы.
-# Результат сравнивается с эталоном.
+# Результаты сравниваются с эталонами.
 
 QUERIES_DIR="./queries"
 CLIENT_PROGRAM="clickhouse-client"
@@ -31,7 +31,7 @@ do
 	reference_file=$QUERIES_DIR/$test_name.reference
 	diff_file=$QUERIES_DIR/$test_name.diff
 
-	printf "%-30s" "$test_name: "
+	printf "%-60s" "$test_name: "
 
 	$CLIENT_PROGRAM < $query_file > $result_file 2> $error_file
 	ret_code=$?
