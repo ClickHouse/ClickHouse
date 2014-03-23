@@ -24,7 +24,7 @@ ERRORS=0
 
 for query_file in $(ls $QUERIES_DIR/*.sql)
 do
-	test_name=$(basename -s .sql $query_file)
+	test_name=$(basename $query_file .sql)
 
 	result_file=$QUERIES_DIR/$test_name.result
 	error_file=$QUERIES_DIR/$test_name.error
