@@ -19,6 +19,8 @@ MSG_UNKNOWN="${COLOR_WHITE}[ ${COLOR_UNKNOWN}UNKNOWN${COLOR_WHITE} ]${COLOR_RESE
 MSG_OK="${COLOR_WHITE}[ ${COLOR_OK}OK${COLOR_WHITE} ]${COLOR_RESET}"
 MSG_GENERATED="${COLOR_WHITE}[ ${COLOR_UNKNOWN}GENERATED${COLOR_WHITE} ]${COLOR_RESET}"
 
+HAS_ERROR=0
+
 
 for query_file in $(ls $QUERIES_DIR/*.sql)
 do
@@ -35,6 +37,7 @@ do
 	ret_code=$?
 
 	if [ $ret_code -ne 0 ]; then
+		HAS_ERROR=1
 		echo -e "$MSG_FAIL - return code $ret_code"
 		if [ -s "$error_file" ]; then
 			cat $error_file
@@ -44,6 +47,7 @@ do
 			exit 1;
 		fi
 	elif [ -s "$error_file" ]; then
+		HAS_ERROR=1
 		echo -e "$MSG_FAIL - having stderror:"
 		cat $error_file
 	elif [ ! -e "$reference_file" ]; then
@@ -57,6 +61,7 @@ do
 	else
 		diff $reference_file $result_file > $diff_file
 		if [ -s "$diff_file" ]; then
+			HAS_ERROR=1
 			echo -e "$MSG_FAIL - result differs with reference:"
 			cat $diff_file
 		else
@@ -65,3 +70,5 @@ do
 		fi
 	fi
 done
+
+exit $HAS_ERROR
