@@ -5,7 +5,7 @@
 # Результаты сравниваются с эталонами.
 
 QUERIES_DIR="./queries"
-CLIENT_PROGRAM="clickhouse-client"
+CLIENT_PROGRAM="curl -sS http://localhost:8123/ --data-binary @-"
 
 
 COLOR_RESET="\033[0m"
@@ -50,6 +50,10 @@ do
 		ERRORS=$(($ERRORS + 1))
 		echo -e "$MSG_FAIL - having stderror:"
 		cat $error_file
+	elif grep -q "Exception" $result_file; then
+		ERRORS=$(($ERRORS + 1))
+		echo -e "$MSG_FAIL - having exception:"
+		cat $result_file
 	elif [ ! -e "$reference_file" ]; then
 		# надо сгенерировать эталонный результат
 		if [ "$1" == "--generate" ]; then
