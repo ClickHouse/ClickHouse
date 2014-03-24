@@ -1,0 +1,4 @@
+*.result
+*.diff
+*.error
+test_data
