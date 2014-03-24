@@ -37,6 +37,8 @@ typedef std::vector<MarkRange> MarkRanges;
   */
 class MergeTreeReader
 {
+	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+
 public:
 	MergeTreeReader(const String & path_,	/// Путь к куску
 		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_)
@@ -60,7 +62,6 @@ public:
 
 		/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 		/// Если append, все значения NULL, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
-		typedef std::map<std::string, ColumnPtr> OffsetColumns;
 		OffsetColumns offset_columns;
 
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -124,6 +125,24 @@ public:
 	{
 		try
 		{
+			/** Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов
+			  *  правильных длин.
+			  * TODO: Если для какой-то вложенной структуры были запрошены только отсутствующие столбцы, для них вернутся пустые
+			  *  массивы, даже если в куске есть смещения для этой вложенной структуры. Это можно исправить.
+			  */
+
+			/// Сначала запомним столбцы смещений для всех массивов в блоке.
+			OffsetColumns offset_columns;
+			for (size_t i = 0; i < res.columns(); ++i)
+			{
+				const ColumnWithNameAndType & column = res.getByPosition(i);
+				if (const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*column.column))
+				{
+					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+					offset_columns[offsets_name] = array->getOffsetsColumn();
+				}
+			}
+
 			size_t pos = 0;	/// Позиция, куда надо вставить недостающий столбец.
 			for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it, ++pos)
 			{
@@ -133,11 +152,27 @@ public:
 					column.name = *it;
 					column.type = storage.getDataTypeByName(*it);
 
-					/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
-						*  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
-						*/
-					column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
-						res.rows(), column.type->getDefault())).convertToFullColumn();
+					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+					if (offset_columns.count(offsets_name))
+					{
+						ColumnPtr offsets_column = offset_columns[offsets_name];
+						DataTypePtr nested_type = dynamic_cast<DataTypeArray &>(*column.type).getNestedType();
+						size_t nested_rows = offsets_column->empty() ? 0
+							: dynamic_cast<ColumnUInt64 &>(*offsets_column).getData().back();
+
+						ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
+							nested_rows, nested_type->getDefault())).convertToFullColumn();
+
+						column.column = new ColumnArray(nested_column, offsets_column);
+					}
+					else
+					{
+						/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
+						  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
+						  */
+						column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
+							res.rows(), column.type->getDefault())).convertToFullColumn();
+					}
 
 					res.insert(pos, column);
 				}
@@ -265,17 +300,6 @@ private:
 					path + escaped_size_name, uncompressed_cache, mark_cache)));
 
 			addStream(name, *type_arr->getNestedType(), level + 1);
-		}
-		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
-		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-			streams[size_name] = new Stream(path + escaped_size_name, uncompressed_cache, mark_cache);
-
-			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-				addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 		}
 		else
 			streams[name] = new Stream(path + escaped_column_name, uncompressed_cache, mark_cache);
