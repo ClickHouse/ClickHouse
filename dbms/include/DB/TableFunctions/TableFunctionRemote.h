@@ -50,7 +50,7 @@ public:
 		String password = args.size() == 5 ? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[4]).value) : "";
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на эти Identifier.
-		/// Нам необходимо их пометить как имя базы данных и таблицы посколку по умолчанию стоит значение column
+		/// Нам необходимо их пометить как имя базы данных и таблицы поскольку по умолчанию стоит значение column
 		dynamic_cast<ASTIdentifier &>(*args[1]).kind = ASTIdentifier::Database;
 		dynamic_cast<ASTIdentifier &>(*args[2]).kind = ASTIdentifier::Table;
 
