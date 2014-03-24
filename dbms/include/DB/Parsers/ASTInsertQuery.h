@@ -18,6 +18,8 @@ public:
 	ASTPtr columns;
 	String format;
 	ASTPtr select;
+	/// Идентификатор запроса INSERT. Используется при репликации.
+	String insert_id;
 	/// Данные для вставки
 	const char * data;
 	const char * end;

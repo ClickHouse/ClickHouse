@@ -217,11 +217,10 @@ StoragePtr StorageFactory::get(
 
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
-		if (args_func.size() != 1)
-			throw Exception("Unexpected AST structure.",
-				ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+		ASTs args;
 
-		ASTs args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+		if (args_func.size() == 1)
+			args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		size_t additional_params = (replicated ? 2 : 0) + (mode == MergeTreeData::Collapsing ? 1 : 0);
 		if (args.size() != additional_params + 3 && args.size() != additional_params + 4)
@@ -232,7 +231,7 @@ StoragePtr StorageFactory::get(
 			params += "name of column with date, [name of column for sampling], primary key expression, index granularity";
 			if (mode == MergeTreeData::Collapsing)
 				params += "sign column";
-			throw Exception("Storage CollapsingMergeTree requires " + toString(additional_params + 3) + " or "
+			throw Exception("Storage " + name + " requires " + toString(additional_params + 3) + " or "
 				+ toString(additional_params + 4) +" parameters: " + params,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
