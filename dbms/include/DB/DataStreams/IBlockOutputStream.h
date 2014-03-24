@@ -6,7 +6,7 @@
 
 #include <DB/Core/Block.h>
 #include <DB/Core/Row.h>
-#include <DB/Storages/StoragePtr.h>
+#include <DB/Storages/IStorage.h>
 
 
 namespace DB
@@ -21,7 +21,7 @@ class IBlockOutputStream : private boost::noncopyable
 {
 public:
 	
-	IBlockOutputStream(StoragePtr owned_storage_ = StoragePtr()) : owned_storage(owned_storage_) {}
+	IBlockOutputStream() {}
 
 	/** Записать блок.
 	  */
@@ -39,11 +39,13 @@ public:
 	virtual void setExtremes(const Block & extremes) {}
 
 	virtual ~IBlockOutputStream() {}
+
+	/** Не давать изменить таблицу, пока жив поток блоков.
+	  */
+	void addTableLock(const IStorage::TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 	
 protected:
-	StoragePtr owned_storage;
+	IStorage::TableStructureReadLocks table_locks;
 };
-
-typedef SharedPtr<IBlockOutputStream> BlockOutputStreamPtr;
 
 }

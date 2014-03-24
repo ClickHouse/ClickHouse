@@ -58,7 +58,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
-	void dropImpl() {}
+	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется

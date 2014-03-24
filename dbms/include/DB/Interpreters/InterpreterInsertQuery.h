@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/DataStreams/BlockIO.h>
 #include <DB/Interpreters/Context.h>
 
 
@@ -24,12 +25,12 @@ public:
 	/** Подготовить запрос к выполнению. Вернуть поток блоков, в который можно писать данные для выполнения запроса.
 	  * Или вернуть NULL, если запрос INSERT SELECT (самодостаточный запрос - не принимает входные данные).
 	  */
-	BlockOutputStreamPtr execute();
-
-	Block getSampleBlock();
+	BlockIO execute();
 
 private:
 	StoragePtr getTable();
+
+	Block getSampleBlock();
 
 	ASTPtr query_ptr;
 	Context context;

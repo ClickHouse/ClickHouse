@@ -74,7 +74,8 @@ BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query)
 	return data->write(query);
 }
 
-void StorageMaterializedView::dropImpl() {
+void StorageMaterializedView::drop()
+{
 	context.getGlobalContext().removeDependency(DatabaseAndTableName(select_database_name, select_table_name), 	DatabaseAndTableName(database_name, table_name));
 
 	/// Состваляем и выполняем запрос drop для внутреннего хранилища.

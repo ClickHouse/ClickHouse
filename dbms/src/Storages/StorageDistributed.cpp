@@ -177,12 +177,12 @@ BlockInputStreams StorageDistributed::read(
 	else /// Иначе, считаем допустимыми все возможные значения
 		virtual_columns = new OneBlockInputStream(virtual_columns_block);
 
-	std::set< std::pair<String, UInt16> > values =
+	std::multiset< std::pair<String, UInt16> > values =
 		VirtualColumnUtils::extractTwoValuesFromBlocks<String, UInt16>(virtual_columns, _host_column_name, _port_column_name);
 	bool all_inclusive = values.size() == virtual_columns_block.rows();
 
 	size_t result_size = values.size();
-	if (values.find(std::make_pair("localhost", clickhouse_port)) != values.end())
+	if (cluster.getLocalNodesNum() > 0 && values.find(std::make_pair("localhost", clickhouse_port)) != values.end())
 		result_size += cluster.getLocalNodesNum() - 1;
 
 	processed_stage = result_size == 1
@@ -238,10 +238,6 @@ BlockInputStreams StorageDistributed::read(
 				res.push_back(new RemoveColumnsBlockInputStream(interpreter.execute(), columns_to_remove));
 		}
 	}
-
-	/// Не дадим уничтожать объект до конца обработки запроса.
-	for (auto & stream : res)
-		stream->setOwnedStorage(thisPtr());
 
 	return res;
 }

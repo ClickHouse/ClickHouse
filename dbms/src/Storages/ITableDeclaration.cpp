@@ -1,21 +1,16 @@
-#include <set>
-#include <boost/bind.hpp>
-
-#include <sparsehash/dense_hash_set>
 #include <sparsehash/dense_hash_map>
-
-#include <DB/Columns/ColumnNested.h>
+#include <sparsehash/dense_hash_set>
+#include <DB/Storages/ITableDeclaration.h>
 #include <DB/DataTypes/DataTypeNested.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Interpreters/Context.h>
-
+#include <boost/bind.hpp>
 
 namespace DB
 {
 
-bool IStorage::hasRealColumn(const String &column_name) const
+bool ITableDeclaration::hasRealColumn(const String &column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
@@ -25,7 +20,7 @@ bool IStorage::hasRealColumn(const String &column_name) const
 }
 
 
-NameAndTypePair IStorage::getRealColumn(const String &column_name) const
+NameAndTypePair ITableDeclaration::getRealColumn(const String &column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
@@ -35,30 +30,30 @@ NameAndTypePair IStorage::getRealColumn(const String &column_name) const
 }
 
 
-bool IStorage::hasColumn(const String &column_name) const
+bool ITableDeclaration::hasColumn(const String &column_name) const
 {
 	return hasRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 
-NameAndTypePair IStorage::getColumn(const String &column_name) const
+NameAndTypePair ITableDeclaration::getColumn(const String &column_name) const
 {
 	return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 
-const DataTypePtr IStorage::getDataTypeByName(const String & column_name) const
+const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_name) const
 {
 	const NamesAndTypesList & names_and_types = getColumnsList();
 	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
 		if (it->first == column_name)
 			return it->second;
-		
+
 	throw Exception("There is no column " + column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 
-Block IStorage::getSampleBlock() const
+Block ITableDeclaration::getSampleBlock() const
 {
 	Block res;
 	const NamesAndTypesList & names_and_types = getColumnsList();
@@ -71,7 +66,7 @@ Block IStorage::getSampleBlock() const
 		col.column = col.type->createColumn();
 		res.insert(col);
 	}
-	
+
 	return res;
 }
 
@@ -104,10 +99,10 @@ static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_column
 }
 
 
-void IStorage::check(const Names & column_names) const
+void ITableDeclaration::check(const Names & column_names) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
-	
+
 	if (column_names.empty())
 		throw Exception("Empty list of columns queried for table " + getTableName()
 			+ ". There are columns: " + listOfColumns(available_columns),
@@ -134,14 +129,14 @@ void IStorage::check(const Names & column_names) const
 }
 
 
-void IStorage::check(const Block & block, bool need_all) const
+void ITableDeclaration::check(const Block & block, bool need_all) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
 	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
-	
+
 	typedef std::unordered_set<String> NameSet;
 	NameSet names_in_block;
-	
+
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & column = block.getByPosition(i);
@@ -163,7 +158,7 @@ void IStorage::check(const Block & block, bool need_all) const
 				+ ". Column has type " + it->second->getName() + ", got type " + column.type->getName(),
 				ErrorCodes::TYPE_MISMATCH);
 	}
-	
+
 	if (need_all && names_in_block.size() < columns_map.size())
 	{
 		for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
@@ -174,7 +169,6 @@ void IStorage::check(const Block & block, bool need_all) const
 	}
 }
 
-
 /// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
 static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
 {
@@ -182,7 +176,7 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
 	return (name_with_dot == name_type.first.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.first);
 }
 
-void IStorage::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context) const
+void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context)
 {
 	if (params.type == ASTAlterQuery::ADD)
 	{
@@ -219,14 +213,14 @@ void IStorage::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTy
 	else if (params.type == ASTAlterQuery::DROP)
 	{
 		String column_name = dynamic_cast<const ASTIdentifier &>(*(params.column)).name;
-	
+
 		/// Удаляем колонки из листа columns
 		bool is_first = true;
 		NamesAndTypesList::iterator column_it;
 		do
 		{
 			column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, column_name, _1));
-	
+
 			if (column_it == columns->end())
 			{
 				if (is_first)
@@ -252,7 +246,7 @@ void IStorage::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTy
 		column_it->second = data_type;
 	}
 	else
-		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);	
+		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
 }

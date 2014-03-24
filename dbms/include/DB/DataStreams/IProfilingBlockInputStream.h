@@ -69,7 +69,7 @@ private:
 	mutable bool calculated_rows_before_limit;	/// Вычислялось ли поле rows_before_limit
 };
 
-	
+
 /** Смотрит за тем, как работает источник блоков.
   * Позволяет получить информацию для профайлинга:
   *  строк в секунду, блоков в секунду, мегабайт в секунду и т. п.
@@ -78,8 +78,8 @@ private:
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	IProfilingBlockInputStream(StoragePtr owned_storage_ = StoragePtr())
-		: IBlockInputStream(owned_storage_), is_cancelled(false), process_list_elem(NULL),
+	IProfilingBlockInputStream()
+		: is_cancelled(false), process_list_elem(NULL),
 		enabled_extremes(false), quota(NULL), prev_elapsed(0) {}
 	
 	Block read();

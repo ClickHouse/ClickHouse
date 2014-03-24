@@ -10,6 +10,7 @@
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
@@ -85,7 +86,7 @@ BlockInputStreams StorageChunkMerger::read(
 				{
 					if (chunk_ref->source_database_name != source_database)
 					{
-						LOG_WARNING(log, "ChunkRef " + chunk_ref->getTableName() + " points to another database, ignoring");
+						LOG_WARNING(log, "ChunkRef " + it->first + " points to another database, ignoring");
 						continue;
 					}
 					if (!chunks_table_names.count(chunk_ref->source_table_name))
@@ -97,7 +98,7 @@ BlockInputStreams StorageChunkMerger::read(
 						}
 						else
 						{
-							LOG_WARNING(log, "ChunkRef " + chunk_ref->getTableName() + " points to non-existing Chunks table, ignoring");
+							LOG_WARNING(log, "ChunkRef " + it->first + " points to non-existing Chunks table, ignoring");
 						}
 					}
 				}
@@ -107,6 +108,14 @@ BlockInputStreams StorageChunkMerger::read(
 				}
 			}
 		}
+	}
+
+	TableLocks table_locks;
+
+	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
+	for (auto table : selected_tables)
+	{
+		table_locks.push_back(table->lockStructure(false));
 	}
 
 	BlockInputStreams res;
@@ -130,39 +139,47 @@ BlockInputStreams StorageChunkMerger::read(
 	else /// Иначе, считаем допустимыми все возможные значения
 		virtual_columns = new OneBlockInputStream(virtual_columns_block);
 
-	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 	
-	for (Storages::iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
+	for (size_t i = 0; i < selected_tables.size(); ++i)
 	{
-		if ((*it)->getName() != "Chunks" && !all_inclusive && values.find((*it)->getTableName()) == values.end())
+		StoragePtr table = selected_tables[i];
+		auto table_lock = table_locks[i];
+
+		if (table->getName() != "Chunks" && !all_inclusive && values.find(table->getTableName()) == values.end())
 			continue;
 
 		/// Список виртуальных столбцов, которые мы заполним сейчас и список столбцов, которые передадим дальше
 		Names virt_column_names, real_column_names;
 		for (const auto & column : column_names)
-			if (column == _table_column_name && (*it)->getName() != "Chunks") /// таблица Chunks сама заполняет столбец _table
+			if (column == _table_column_name && table->getName() != "Chunks") /// таблица Chunks сама заполняет столбец _table
 				virt_column_names.push_back(column);
 			else
 				real_column_names.push_back(column);
 
 		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 		if (real_column_names.size() == 0)
-			real_column_names.push_back(ExpressionActions::getSmallestColumn((*it)->getColumnsList()));
+			real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
 		ASTPtr modified_query_ast = query->clone();
 
 		/// Подменяем виртуальный столбец на его значение
 		if (!virt_column_names.empty())
-			VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, (*it)->getTableName());
+			VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, table->getTableName());
 
-		BlockInputStreams source_streams = (*it)->read(
+		BlockInputStreams source_streams = table->read(
 			real_column_names,
 			modified_query_ast,
 			settings,
 			tmp_processed_stage,
 			max_block_size,
 			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
+
+		for (auto & stream : source_streams)
+		{
+			stream->addTableLock(table_lock);
+		}
 
 		/// Добавляем в ответ вирутальные столбцы
 		for (const auto & virtual_column : virt_column_names)
@@ -171,7 +188,7 @@ BlockInputStreams StorageChunkMerger::read(
 			{
 				for (auto & stream : source_streams)
 				{
-					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, (*it)->getTableName(), _table_column_name);
+					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, table->getTableName(), _table_column_name);
 				}
 			}
 		}
@@ -335,6 +352,14 @@ static ASTPtr newIdentifier(const std::string & name, ASTIdentifier::Kind kind)
 bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 {
 	typedef std::map<std::string, DataTypePtr> ColumnsMap;
+
+	TableLocks table_locks;
+
+	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
+	for (auto table : chunks)
+	{
+		table_locks.push_back(table->lockStructure(false));
+	}
 	
 	/// Объединим множества столбцов сливаемых чанков.
 	ColumnsMap known_columns_types(columns->begin(), columns->end());
@@ -387,16 +412,16 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 			
 			currently_written_groups.insert(new_table_full_name);
-			
-			/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
-			executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
-
-			/// Выполним запрос для создания Chunks таблицы.
-			executeQuery("CREATE TABLE " + new_table_full_name + " " + formatted_columns + " ENGINE = Chunks", context, true);
-
-			new_storage_ptr = context.getTable(source_database, new_table_name);
 		}
-		
+			
+		/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
+		executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
+
+		/// Выполним запрос для создания Chunks таблицы.
+		executeQuery("CREATE TABLE " + new_table_full_name + " " + formatted_columns + " ENGINE = Chunks", context, true);
+
+		new_storage_ptr = context.getTable(source_database, new_table_name);
+
 		/// Скопируем данные в новую таблицу.
 		StorageChunks & new_storage = dynamic_cast<StorageChunks &>(*new_storage_ptr);
 		
@@ -435,7 +460,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				DEFAULT_MERGE_BLOCK_SIZE);
 			
 			BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
-			
+
 			input->readPrefix();
 			output->writePrefix();
 
@@ -455,6 +480,9 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		}
 		
 		/// Атомарно подменим исходные таблицы ссылками на новую.
+		/// При этом удалять таблицы под мьютексом контекста нельзя, пока только отцепим их.
+		Storages tables_to_drop;
+
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 			
@@ -467,13 +495,13 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 					std::string src_name = src_storage->getTableName();
 					
 					/// Если таблицу успели удалить, ничего не делаем.
-					if (!context.getDatabases()[source_database].count(src_name))
+					if (!context.isTableExist(source_database, src_name))
 						continue;
 					
-					/// Роняем исходную таблицу.
-					executeQuery("DROP TABLE " + backQuoteIfNeed(source_database) + "." + backQuoteIfNeed(src_name), context, true);
-					
-					/// Создаем на ее месте ChunkRef
+					/// Отцепляем исходную таблицу. Ее данные и метаданные остаются на диске.
+					tables_to_drop.push_back(context.detachTable(source_database, src_name));
+
+					/// Создаем на ее месте ChunkRef. Это возможно только потому что у ChunkRef нет ни, ни метаданных.
 					try
 					{
 						context.addTable(source_database, src_name, StorageChunkRef::create(src_name, context, source_database, new_table_name, false));
@@ -488,6 +516,15 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 
 			currently_written_groups.erase(new_table_full_name);
+		}
+
+		/// Теперь удалим данные отцепленных таблиц.
+		table_locks.clear();
+		for (StoragePtr table : tables_to_drop)
+		{
+			InterpreterDropQuery::dropDetachedTable(source_database, table, context);
+			/// NOTE: Если между подменой таблицы и этой строчкой кто-то успеет попытаться создать новую таблицу на ее месте,
+			///  что-нибудь может сломаться.
 		}
 
 		/// Сейчас на new_storage ссылаются таблицы типа ChunkRef. Удалим лишнюю ссылку, которая была при создании.

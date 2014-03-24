@@ -37,7 +37,7 @@ DataParts copy(const DataParts &a)
 
 const int RowsPerSec = 100000;
 
-StorageMergeTreeSettings settings;
+MergeTreeSettings settings;
 
 
 size_t index_granularity = 1;

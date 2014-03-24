@@ -57,7 +57,7 @@ BlockInputStreams StorageChunks::read(
 	Block virtual_columns_block = getBlockWithVirtualColumns();
 	BlockInputStreamPtr virtual_columns =
 		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
-	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 
 	if (all_inclusive)

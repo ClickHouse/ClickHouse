@@ -34,10 +34,6 @@ public:
 	DataTypes getReturnTypes();
 	Block getSampleBlock();
 
-	/** Получить CREATE запрос для таблицы, из которой идёт выбор.
-	  */
-	ASTPtr getCreateQuery();
-
 private:
 	typedef Poco::SharedPtr<ExpressionAnalyzer> ExpressionAnalyzerPtr;
 	
@@ -47,8 +43,6 @@ private:
 	  */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 	
-	StoragePtr getTable();
-
 	/** Выбрать из списка столбцов какой-нибудь, лучше - минимального размера.
 	  */
 	String getAnyColumn();
@@ -65,7 +59,7 @@ private:
 	void executeTotalsAndHaving(	BlockInputStreams & streams, bool has_having, ExpressionActionsPtr expression,
 									bool overflow_row);
 	void executeHaving(				BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeOuterExpression(	BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeExpression(			BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeOrder(				BlockInputStreams & streams);
 	void executePreLimit(			BlockInputStreams & streams);
 	void executeUnion(				BlockInputStreams & streams);
@@ -83,7 +77,10 @@ private:
 	size_t subquery_depth;
 	ExpressionAnalyzerPtr query_analyzer;
 	BlockInputStreams streams;
-	StoragePtr table_function_storage;
+
+	/// Таблица, откуда читать данные, если не подзапрос.
+	StoragePtr storage;
+	IStorage::TableStructureReadLockPtr table_lock;
 
 	Logger * log;
 };

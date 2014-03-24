@@ -29,6 +29,31 @@
 namespace DB
 {
 
+
+/** Для StorageMergeTree: достать первичный ключ в виде ASTExpressionList.
+  * Он может быть указан в кортеже: (CounterID, Date),
+  *  или как один столбец: CounterID.
+  */
+static ASTPtr extractPrimaryKey(const ASTPtr & node, const std::string & storage_name)
+{
+	const ASTFunction * primary_expr_func = dynamic_cast<const ASTFunction *>(&*node);
+
+	if (primary_expr_func && primary_expr_func->name == "tuple")
+	{
+		/// Первичный ключ указан в кортеже.
+		return primary_expr_func->children.at(0);
+	}
+	else
+	{
+		/// Первичный ключ состоит из одного столбца.
+		ASTExpressionList * res = new ASTExpressionList;
+		ASTPtr res_ptr = res;
+		res->children.push_back(node);
+		return res_ptr;
+	}
+}
+
+
 StoragePtr StorageFactory::get(
 	const String & name,
 	const String & data_path,
@@ -182,17 +207,12 @@ StoragePtr StorageFactory::get(
 		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
 		UInt64 index_granularity	= safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
-		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
-		
-		if (primary_expr_func.name != "tuple")
-			throw Exception("Primary expression for storage " + name + " must be in parentheses.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		ASTPtr primary_expr = primary_expr_func.children.at(0);
+		ASTPtr primary_expr_list = extractPrimaryKey(args[arg_offset + 1], name);
 
 		return StorageMergeTree::create(
-			data_path, table_name, columns, context, primary_expr, date_column_name, sampling_expression, index_granularity,
-			name == "SummingMergeTree" ? StorageMergeTree::Summing : StorageMergeTree::Ordinary);
+			data_path, table_name, columns, context, primary_expr_list, date_column_name, sampling_expression, index_granularity,
+			name == "SummingMergeTree" ? MergeTreeData::Summing : MergeTreeData::Ordinary);
 	}
 	else if (name == "CollapsingMergeTree")
 	{
@@ -224,17 +244,12 @@ StoragePtr StorageFactory::get(
 		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
 		UInt64 index_granularity	= safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
 		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[arg_offset + 3]).name;
-		ASTFunction & primary_expr_func = dynamic_cast<ASTFunction &>(*args[arg_offset + 1]);
 
-		if (primary_expr_func.name != "tuple")
-			throw Exception("Primary expression for storage CollapsingMergeTree must be in parentheses.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		ASTPtr primary_expr = primary_expr_func.children.at(0);
+		ASTPtr primary_expr_list = extractPrimaryKey(args[arg_offset + 1], name);
 
 		return StorageMergeTree::create(
-			data_path, table_name, columns, context, primary_expr, date_column_name,
-			sampling_expression, index_granularity, StorageMergeTree::Collapsing, sign_column_name);
+			data_path, table_name, columns, context, primary_expr_list, date_column_name,
+			sampling_expression, index_granularity, MergeTreeData::Collapsing, sign_column_name);
 	}
 	else if (name == "SystemNumbers")
 	{

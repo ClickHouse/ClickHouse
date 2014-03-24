@@ -41,28 +41,42 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-	/// Если имееем дело с табличной функцией
-	if (query.table && dynamic_cast<const ASTFunction *>(&*query.table))
+	if (query.table && dynamic_cast<ASTSelectQuery *>(&*query.table))
 	{
-		/// Получить табличную функцию
-		TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<const ASTFunction *>(&*query.table)->name, context);
-		/// Выполнить ее и запомнить результат
-		table_function_storage = table_function_ptr->execute(query.table, context);
+		if (table_column_names.empty())
+			context.setColumns(InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
+	}
+	else
+	{
+		if (query.table && dynamic_cast<const ASTFunction *>(&*query.table))
+		{
+			/// Получить табличную функцию
+			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<const ASTFunction *>(&*query.table)->name, context);
+			/// Выполнить ее и запомнить результат
+			storage = table_function_ptr->execute(query.table, context);
+		}
+		else
+		{
+			String database_name;
+			String table_name;
+
+			getDatabaseAndTableNames(database_name, table_name);
+
+			storage = context.getTable(database_name, table_name);
+		}
+
+		table_lock = storage->lockStructure(false);
+		if (table_column_names.empty())
+			context.setColumns(storage->getColumnsList());
 	}
 
-	if (table_function_storage)
-		context.setColumns(table_function_storage->getColumnsList());
-	else if (!table_column_names.empty())
+	if (!table_column_names.empty())
 		context.setColumns(table_column_names);
-	else
-		context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
-			? getTable()->getColumnsList()
-			: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
 
 	if (context.getColumns().empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer = new ExpressionAnalyzer(query_ptr, context, table_function_storage, subquery_depth);
+	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth);
 
 	if (input_)
 		streams.push_back(input_);
@@ -124,26 +138,6 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
 	if (query.table)
 		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
-}
-
-
-StoragePtr InterpreterSelectQuery::getTable()
-{
-	String database_name;
-	String table_name;
-
-	getDatabaseAndTableNames(database_name, table_name);
-	return context.getTable(database_name, table_name);
-}
-
-
-ASTPtr InterpreterSelectQuery::getCreateQuery()
-{
-	String database_name;
-	String table_name;
-
-	getDatabaseAndTableNames(database_name, table_name);
-	return context.getCreateQuery(database_name, table_name);
 }
 
 
@@ -209,7 +203,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		bool need_aggregate = false;
 		bool has_having     = false;
 		bool has_order_by   = !query.order_expression_list.isNull();
-		
+
+		ExpressionActionsPtr array_join;
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
 		ExpressionActionsPtr before_having;
@@ -225,8 +220,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		if (from_stage < QueryProcessingStage::WithMergeableState
 			&& to_stage >= QueryProcessingStage::WithMergeableState)
 		{
-			query_analyzer->appendArrayJoin(chain);
-			
+			if (query_analyzer->appendArrayJoin(chain))
+				array_join = chain.getLastActions();
+
 			if (query_analyzer->appendWhere(chain))
 			{
 				has_where = true;
@@ -312,6 +308,16 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			if (need_aggregate)
 				executeAggregation(streams, before_aggregation, aggregate_overflow_row, aggregate_final);
 
+			if (array_join && !has_where && !need_aggregate && to_stage == QueryProcessingStage::WithMergeableState)
+			{
+				/** Если есть ARRAY JOIN, его действие сначала старается оказаться в
+				  *  before_where, before_aggregation или before_order_and_select.
+				  * Если ни одного из них нет, array_join нужно выполнить отдельно.
+				  */
+
+				executeExpression(streams, array_join);
+			}
+
 			/** Оптимизация - при распределённой обработке запроса,
 			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
 			  *  то выполним предварительный LIMIT на удалёном сервере.
@@ -339,7 +345,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 					executeHaving(streams, before_having);
 			}
 
-			executeOuterExpression(streams, before_order_and_select);
+			executeExpression(streams, before_order_and_select);
 
 			if (has_order_by)
 				executeOrder(streams);
@@ -424,20 +430,28 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (!streams.empty())
 		return QueryProcessingStage::FetchColumns;
 
-	/// Таблица, откуда читать данные, если не подзапрос.
-	StoragePtr table;
 	/// Интерпретатор подзапроса, если подзапрос
 	SharedPtr<InterpreterSelectQuery> interpreter_subquery;
 
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
 
-	if (table_function_storage)
-		table = table_function_storage; /// Если в запросе была указана табличная функция, данные читаем из нее.
-	else if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-		table = getTable();
-	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
-		interpreter_subquery = new InterpreterSelectQuery(query.table, context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+	if (query.table && dynamic_cast<ASTSelectQuery *>(&*query.table))
+	{
+		/** Для подзапроса не действуют ограничения на максимальный размер результата.
+		  * Так как результат поздапроса - ещё не результат всего запроса.
+		  */
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		interpreter_subquery = new InterpreterSelectQuery(
+			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
 	/// если таблица не поддерживает сэмплинг получим исключение
@@ -445,13 +459,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (!query.sample_size && settings.default_sample != 1)
 		query.sample_size = new ASTLiteral(StringRange(NULL, NULL), Float64(settings.default_sample));
 
-	if (query.sample_size && (!table || !table->supportsSampling()))
+	if (query.sample_size && (!storage || !storage->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 	
-	if (query.final && (!table || !table->supportsFinal()))
+	if (query.final && (!storage || !storage->supportsFinal()))
 		throw Exception("Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 	
-	if (query.prewhere_expression && (!table || !table->supportsPrewhere()))
+	if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
 		throw Exception("Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
 	/** При распределённой обработке запроса, в потоках почти не делается вычислений,
@@ -466,7 +480,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	  *  и там должно быть оригинальное значение max_threads, а не увеличенное.
 	  */
 	Settings settings_for_storage = settings;
-	if (table && table->isRemote())
+	if (storage && storage->isRemote())
 		settings.max_threads = settings.max_distributed_connections;
 	
 	/// Ограничение на количество столбцов для чтения.
@@ -495,10 +509,18 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 	
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
-	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
- 		streams = table->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
+	if (!interpreter_subquery)
+	{
+ 		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
+ 		for (auto stream : streams)
+ 		{
+			stream->addTableLock(table_lock);
+ 		}
+ 	}
 	else
+	{
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), settings.asynchronous));
+	}
 
 	/** Если истчоников слишком много, то склеим их в max_threads источников.
 	  * (Иначе действия в каждом маленьком источнике, а затем объединение состояний, слишком неэффективно.)
@@ -510,7 +532,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	  * Такие ограничения проверяются на сервере-инициаторе запроса, а не на удалённых серверах.
 	  * Потому что сервер-инициатор имеет суммарные данные о выполнении запроса на всех серверах.
 	  */
-	if (table && to_stage == QueryProcessingStage::Complete)
+	if (storage && to_stage == QueryProcessingStage::Complete)
 	{
 		IProfilingBlockInputStream::LocalLimits limits;
 		limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
@@ -647,7 +669,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams,
 }
 
 
-void InterpreterSelectQuery::executeOuterExpression(BlockInputStreams & streams, ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeExpression(BlockInputStreams & streams, ExpressionActionsPtr expression)
 {
 	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
 	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)

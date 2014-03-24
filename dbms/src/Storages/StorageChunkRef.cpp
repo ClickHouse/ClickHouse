@@ -43,7 +43,7 @@ ASTPtr StorageChunkRef::getCustomCreateQuery(const Context & context) const
 	return res;
 }
 
-void StorageChunkRef::dropImpl()
+void StorageChunkRef::drop()
 {
 	try
 	{
