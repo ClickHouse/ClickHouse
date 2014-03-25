@@ -293,7 +293,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			settings.limits.max_rows_to_group_by &&
 			settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
 			settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
-		/// Нужно ли после агрегации сразу финализироыать агрегатные функции.
+		/// Нужно ли после агрегации сразу финализировать агрегатные функции.
 		bool aggregate_final =
 			need_aggregate &&
 			to_stage > QueryProcessingStage::WithMergeableState &&

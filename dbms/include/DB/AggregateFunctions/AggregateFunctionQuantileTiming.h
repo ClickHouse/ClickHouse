@@ -511,7 +511,7 @@ public:
 	{
 	}
 
-	void setParameters(const Row & params)
+	void setParameters(const Array & params)
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -570,7 +570,7 @@ public:
 	{
 	}
 
-	void setParameters(const Row & params)
+	void setParameters(const Array & params)
 	{
 		if (params.empty())
 			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

@@ -1004,7 +1004,7 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 		if (node->parameters)
 		{
 			ASTs & parameters = dynamic_cast<ASTExpressionList &>(*node->parameters).children;
-			Row params_row(parameters.size());
+			Array params_row(parameters.size());
 
 			for (size_t i = 0; i < parameters.size(); ++i)
 			{
@@ -1015,6 +1015,7 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 				params_row[i] = lit->value;
 			}
 
+			aggregate.parameters = params_row;
 			aggregate.function->setParameters(params_row);
 		}
 
