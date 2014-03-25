@@ -55,7 +55,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	else
 	{
 		checkTableStructure();
-		checkParts();
+		//checkParts();
 	}
 
 	String endpoint_name = "ReplicatedMergeTree:" + replica_path;

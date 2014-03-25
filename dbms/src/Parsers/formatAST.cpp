@@ -409,6 +409,10 @@ void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bo
 	s << (hilite ? hilite_keyword : "") << "INSERT INTO " << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 
+	if (!ast.insert_id.empty())
+		s << (hilite ? hilite_keyword : "") << " ID = " << (hilite ? hilite_none : "")
+			<< mysqlxx::quote << ast.insert_id;
+
 	if (ast.columns)
 	{
 		s << " (";
