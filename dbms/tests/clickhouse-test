@@ -68,11 +68,11 @@ do
 			cat $result_file
 		elif [ ! -e "$reference_file" ]; then
 			# надо сгенерировать эталонный результат
-			if [ "$1" == "--generate" ]; then
+			if [ "$1" == "--generate" ] && ( [ "$2" == "" ] || [ "$2" == "$test_name" ] ); then
 				cp $result_file $reference_file
 				echo -e "$MSG_GENERATED - no reference file"
 			else
-				echo -e "$MSG_UNKNOWN - no reference file (use --generate to create)"
+				echo -e "$MSG_UNKNOWN - no reference file (use --generate [test_name] to create)"
 			fi
 		else
 			diff $reference_file $result_file > $diff_file
