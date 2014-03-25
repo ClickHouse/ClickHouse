@@ -96,7 +96,7 @@ public:
 	AutoArray & operator= (AutoArray && src)
 	{
 		if (this == &src)
-			return;
+			return *this;
 		uninit();
 		data = src.data;
 		src.setEmpty();
