@@ -21,6 +21,15 @@ MSG_GENERATED="${COLOR_WHITE}[ ${COLOR_UNKNOWN}GENERATED${COLOR_WHITE} ]${COLOR_
 
 ERRORS=0
 
+
+if [ "$1" == "--generate" ]; then
+	GENERATE=1
+	shift
+else
+	GENERATE=0
+fi
+
+
 for dir in $(ls $QUERIES_DIR)
 do
 	tests_name=$(echo $dir | sed -E 's/^[0-9_]+//')
@@ -68,11 +77,11 @@ do
 			cat $result_file
 		elif [ ! -e "$reference_file" ]; then
 			# надо сгенерировать эталонный результат
-			if [ "$1" == "--generate" ] && ( [ "$2" == "" ] || [ "$2" == "$test_name" ] ); then
+			if [[ $GENERATE -eq 1 && ( -z "$1" || "$@" =~ "$test_name") ]]; then
 				cp $result_file $reference_file
 				echo -e "$MSG_GENERATED - no reference file"
 			else
-				echo -e "$MSG_UNKNOWN - no reference file (use --generate [test_name] to create)"
+				echo -e "$MSG_UNKNOWN - no reference file (use --generate [test_name]... to create)"
 			fi
 		else
 			diff $reference_file $result_file > $diff_file
