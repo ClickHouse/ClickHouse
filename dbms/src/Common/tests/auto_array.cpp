@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
 
 		std::cerr << std::endl;
 
-		Arr arr2 = arr;
+		Arr arr2 = std::move(arr);
 
 		std::cerr << arr.size() << ", " << arr2.size() << std::endl;
 		
