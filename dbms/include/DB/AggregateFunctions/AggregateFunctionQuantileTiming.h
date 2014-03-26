@@ -324,11 +324,13 @@ private:
 
 	void toLarge()
 	{
-		large = new detail::QuantileTimingLarge;
+		/// На время копирования данных из tiny, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
+		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (size_t i = 0; i < tiny.count; ++i)
-			large->insert(tiny.elems[i]);
+			tmp_large->insert(tiny.elems[i]);
 
+		large = tmp_large;
 		tiny.count = TINY_MAX_ELEMS + 1;
 	}
 
