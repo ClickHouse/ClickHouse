@@ -1,6 +1,7 @@
 #pragma once
 
 #include <set>
+#include <boost/concept_check.hpp>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -18,6 +19,8 @@
 #include <DB/Interpreters/Limits.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+
+#include <DB/Storages/MergeTree/PKCondition.h>
 
 
 namespace DB
@@ -60,7 +63,39 @@ public:
 	  * Записать результат в столбец в позиции result.
 	  */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
+
+	std::string toString()
+	{
+		if (type == KEY_64)
+			return setToString(key64);
+		else if (type == KEY_STRING)
+			return setToString(key_string);
+		else if (type == HASHED)
+			return setToString(hashed);
+		else if (type == EMPTY)
+			return "{}";
+	}
 	
+	void createOrderedSet()
+	{
+		for (auto & key : key64)
+			ordered_key64.push_back(key);
+		std::sort(ordered_key64.begin(), ordered_key64.end());
+
+		for (auto & key : key_string)
+			ordered_string.push_back(key);
+		std::sort(ordered_string.begin(), ordered_string.end());
+	}
+
+	BoolMask mayBeTrueInRange(const Range & key_range)
+	{
+		if (type == KEY_64)
+			return mayBeTrueInRangeImpl(key_range, ordered_key64);
+		else if (type == KEY_STRING)
+			return mayBeTrueInRangeImpl(key_range, ordered_string);
+		else
+			throw DB::Exception("Unsupported set of type " << type);
+	}
 private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
 	  *  одного или нескольких столбцов значений множеству.
@@ -125,6 +160,83 @@ private:
 	size_t getTotalRowCount() const;
 	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
 	size_t getTotalByteCount() const;
+
+	template <typename T>
+	std::string setToString(const T & set)
+	{
+		std::stringstream ss;
+		bool first = false;
+		for (auto & n : set)
+		{
+			if (first)
+			{
+				ss << n;
+				first = false;
+			}
+			else
+			{
+				ss << ", " << n;
+			}
+		}
+
+		ss << "}";
+		return ss.str();
+	}
+
+	/// несколько столбцов пока не поддерживаем
+	std::vector<UInt64> ordered_key64;
+	std::vector<StringRef> ordered_string;
+
+	template <class Set>
+	BoolMask mayBeTrueInRangeImpl(const Range & key_range, const Set & set)
+	{
+		bool can_be_true;
+		bool can_be_false = true;
+
+		/// Если во всем диапазоне одинаковый ключ и он есть в Set, то выбираем блок для in и не выбираем для notIn
+		if (key_range.left == key_range.right)
+		{
+			if (set.find(key_range.left) != set.end())
+			{
+				can_be_false = false;
+				can_be_true = true;
+			}
+		}
+		else
+		{
+			auto left_it = set.lower_boud(key_range.left);
+			/// если весь диапазон, правее in
+			if (left_it == set.end())
+			{
+				can_be_true = false;
+			}
+			else
+			{
+				auto right_it = set.upper_bound(key_range.right);
+				/// весь диапазон, левее in
+				if (right_it == set.begin())
+				{
+					can_be_true = false;
+				}
+				else
+				{
+					--right_it;
+					/// в диапазон не попадает ни одного ключа из in
+					if (*right_it < *left_it)
+					{
+						can_be_true = false;
+					}
+					else
+					{
+						can_be_true = true;
+					}
+				}
+			}
+		}
+
+		return BoolMask(can_be_true, can_be_false);
+	}
+
 };
 
 typedef SharedPtr<Set> SetPtr;

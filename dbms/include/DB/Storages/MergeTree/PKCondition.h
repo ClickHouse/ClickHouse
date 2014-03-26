@@ -8,6 +8,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Columns/ColumnSet.h>
 
 
 namespace DB
@@ -114,39 +115,30 @@ public:
     bool operator() (const Array & l, const Array & r)      const { return l < r; }
 };
 
-#pragma GCC diagnostic pop
-
-struct Set
+/// Множество значений булевой переменной. То есть два булевых значения: может ли быть true, может ли быть false.
+struct BoolMask
 {
-public:
-	Set(DB::ASTPtr column_set_ptr_) : column_set_ptr(column_set_ptr_)
-	{
-	}
+	bool can_be_true;
+	bool can_be_false;
 
-	std::string toString()
-	{
-		std::ostringstream ss;
-		ss << "{";
-		bool first = true;
-		for (auto & n : data)
-		{
-			if (first)
-			{
-				ss << n;
-				first = false;
-			}
-			else
-			{
-				ss << ", " << n;
-			}
-		}
-		ss << "}";
-		return ss.str();
-	}
+	BoolMask() {}
+	BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
 
-private:
-	DB::ASTPtr column_set_ptr;
+	BoolMask operator &(const BoolMask & m)
+	{
+		return BoolMask(can_be_true && m.can_be_true, can_be_false || m.can_be_false);
+	}
+	BoolMask operator |(const BoolMask & m)
+	{
+		return BoolMask(can_be_true || m.can_be_true, can_be_false && m.can_be_false);
+	}
+	BoolMask operator !()
+	{
+		return BoolMask(can_be_false, can_be_true);
+	}
 };
+
+#pragma GCC diagnostic pop
 
 /** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
   */
@@ -327,6 +319,7 @@ private:
 			FUNCTION_IN_RANGE,
 			FUNCTION_NOT_IN_RANGE,
 			FUNCTION_IN_SET,
+			FUNCTION_NOT_IN_SET,
 			FUNCTION_UNKNOWN, /// Может принимать любое значение.
 			/// Операторы логического выражения.
 			FUNCTION_NOT,
@@ -354,7 +347,7 @@ private:
 					return "unknown";
 				case FUNCTION_IN_SET:
 					std::ostringstream ss;
-					ss << "(column " << key_column << " in " << set.toString() << ")";
+					ss << "(column " << key_column << " in " << set->toString() << ")";
 					return ss.str();
 				case FUNCTION_IN_RANGE:
 				case FUNCTION_NOT_IN_RANGE:
@@ -374,7 +367,7 @@ private:
 		Range range;
 		size_t key_column;
 		/// Для FUNCTION_IN_SET
-		Set set;
+		SetPtr set;
 	};
 	
 	typedef std::vector<RPNElement> RPN;

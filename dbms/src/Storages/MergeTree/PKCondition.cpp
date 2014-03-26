@@ -141,7 +141,10 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		/// для In, notIn
 		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<DB::ColumnSet *>(args[1]))
 		{
-			column = pk_columns[args[1]->getColumnName()];
+			/// не поддерживаем Primary Key, если аргумент функции in tuple
+			if (dynamic_cast<DB::ColumnTuple*>(args[0]))
+				return false;
+			column = pk_columns[args[0]->getColumnName()];
 		}
 		else
 			return false;
@@ -181,8 +184,9 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			out.range = Range::createLeftBounded(value, true);
 		else if (func->name == "in" || func->name == "notIn")
 		{
-			out.function = RPNElement::FUNCTION_IN_SET;
-			out.set = Set(args[1]);
+			out.function = func->name == "in" ? RPNElement::FUNCTION_IN_SET : RPNElement::FUNCTION_NOT_IN_SET;
+			out.set = (dynamic_cast<DB::ColumnSet *>(args[1])->getData();
+			out.set->createOrderedSet();
 		}
 		else
 			return false;
@@ -230,29 +234,6 @@ String PKCondition::toString()
 	return res;
 }
 
-/// Множество значений булевой переменной. То есть два булевых значения: может ли быть true, может ли быть false.
-struct BoolMask
-{
-	bool can_be_true;
-	bool can_be_false;
-	
-	BoolMask() {}
-	BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
-	
-	BoolMask operator &(const BoolMask & m)
-	{
-		return BoolMask(can_be_true && m.can_be_true, can_be_false || m.can_be_false);
-	}
-	BoolMask operator |(const BoolMask & m)
-	{
-		return BoolMask(can_be_true || m.can_be_true, can_be_false && m.can_be_false);
-	}
-	BoolMask operator !()
-	{
-		return BoolMask(can_be_false, can_be_true);
-	}
-};
-
 bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded)
 {
 	/// Найдем диапазоны элементов ключа.
@@ -294,6 +275,14 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 
 			rpn_stack.push_back(BoolMask(intersects, !contains));
 			if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+				rpn_stack.back() = !rpn_stack.back();
+		}
+		else if (element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+		{
+			const Range & key_range = key_ranges[element.key_column];
+
+			rpn_stack.push_back(element.set->mayBeTrueInRange(key_range));
+			if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
 				rpn_stack.back() = !rpn_stack.back();
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT)

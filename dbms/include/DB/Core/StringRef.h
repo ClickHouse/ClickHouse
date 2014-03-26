@@ -69,6 +69,11 @@ namespace DB
 		}
 		return true;
 	}
+
+	inline bool operator<(StringRef lhs, StringRef rhs)
+	{
+		return strcmp(lhs.data, rhs.data) < 0 ? true : false;
+	}
 }
 
 namespace std
