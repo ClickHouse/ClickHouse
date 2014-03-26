@@ -20,8 +20,7 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 
-#include <DB/Storages/MergeTree/PKCondition.h>
-
+#include <DB/Storages/MergeTree/BoolMask.h>
 
 namespace DB
 {
@@ -64,16 +63,18 @@ public:
 	  */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
 
-	std::string toString()
+	std::string descibe()
 	{
 		if (type == KEY_64)
 			return setToString(key64);
 		else if (type == KEY_STRING)
 			return setToString(key_string);
 		else if (type == HASHED)
-			return setToString(hashed);
+			return "{hashed values}";
 		else if (type == EMPTY)
 			return "{}";
+		else
+			throw DB::Exception("Unknown type");
 	}
 	
 	void createOrderedSet()
@@ -87,14 +88,17 @@ public:
 		std::sort(ordered_string.begin(), ordered_string.end());
 	}
 
-	BoolMask mayBeTrueInRange(const Range & key_range)
+	BoolMask mayBeTrueInRange(const Field & left, const Field & right)
 	{
 		if (type == KEY_64)
-			return mayBeTrueInRangeImpl(key_range, ordered_key64);
+			return mayBeTrueInRangeImpl(left, right, ordered_key64);
 		else if (type == KEY_STRING)
-			return mayBeTrueInRangeImpl(key_range, ordered_string);
-		else
-			throw DB::Exception("Unsupported set of type " << type);
+			return mayBeTrueInRangeImpl(left, right, ordered_string);
+		else{
+			std::stringstream ss;
+			ss << "Unsupported set of type " << type;
+			throw DB::Exception(ss.str());
+		}
 	}
 private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
@@ -166,16 +170,17 @@ private:
 	{
 		std::stringstream ss;
 		bool first = false;
-		for (auto & n : set)
+
+		for (auto it = set.begin(); it != set.end(); ++it)
 		{
 			if (first)
 			{
-				ss << n;
+				ss << *it;
 				first = false;
 			}
 			else
 			{
-				ss << ", " << n;
+				ss << ", " << *it;
 			}
 		}
 
@@ -187,34 +192,42 @@ private:
 	std::vector<UInt64> ordered_key64;
 	std::vector<StringRef> ordered_string;
 
-	template <class Set>
-	BoolMask mayBeTrueInRangeImpl(const Range & key_range, const Set & set)
+	template <class T>
+	BoolMask mayBeTrueInRangeImpl(const Field & field_left, const Field & field_right, const std::vector<T> & v)
 	{
+		T left = field_left.get<T>();
+		T right = field_right.get<T>();
+
 		bool can_be_true;
 		bool can_be_false = true;
 
 		/// Если во всем диапазоне одинаковый ключ и он есть в Set, то выбираем блок для in и не выбираем для notIn
-		if (key_range.left == key_range.right)
+		if (left == right)
 		{
-			if (set.find(key_range.left) != set.end())
+			if (std::find(v.begin(), v.end(), left) != v.end())
 			{
 				can_be_false = false;
 				can_be_true = true;
 			}
+			else
+			{
+				can_be_true = false;
+				can_be_false = true;
+			}
 		}
 		else
 		{
-			auto left_it = set.lower_boud(key_range.left);
+			auto left_it = std::lower_bound(v.begin(), v.end(), left);
 			/// если весь диапазон, правее in
-			if (left_it == set.end())
+			if (left_it == v.end())
 			{
 				can_be_true = false;
 			}
 			else
 			{
-				auto right_it = set.upper_bound(key_range.right);
+				auto right_it = std::upper_bound(v.begin(), v.end(), right);
 				/// весь диапазон, левее in
-				if (right_it == set.begin())
+				if (right_it == v.begin())
 				{
 					can_be_true = false;
 				}
@@ -239,7 +252,7 @@ private:
 
 };
 
-typedef SharedPtr<Set> SetPtr;
+typedef Poco::SharedPtr<Set> SetPtr;
 typedef std::vector<SetPtr> Sets;
 
 

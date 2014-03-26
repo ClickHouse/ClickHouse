@@ -74,6 +74,14 @@ namespace DB
 	{
 		return strcmp(lhs.data, rhs.data) < 0 ? true : false;
 	}
+
+	inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
+	{
+		if (str.data)
+			return os << str.toString();
+		else
+			return os;
+	}
 }
 
 namespace std

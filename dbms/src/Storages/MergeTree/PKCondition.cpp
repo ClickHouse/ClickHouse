@@ -2,6 +2,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Columns/ColumnSet.h>
+#include <DB/Columns/ColumnTuple.h>
 
 namespace DB
 {
@@ -139,10 +140,12 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			column = pk_columns[args[1]->getColumnName()];
 		}
 		/// для In, notIn
-		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<DB::ColumnSet *>(args[1]))
+		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<DB::ColumnSet *>(args[1].get()))
 		{
+			/// для in не бывает inverted
+			inverted = false;
 			/// не поддерживаем Primary Key, если аргумент функции in tuple
-			if (dynamic_cast<DB::ColumnTuple*>(args[0]))
+			if (dynamic_cast<DB::ColumnTuple*>(args[0].get()))
 				return false;
 			column = pk_columns[args[0]->getColumnName()];
 		}
@@ -185,7 +188,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		else if (func->name == "in" || func->name == "notIn")
 		{
 			out.function = func->name == "in" ? RPNElement::FUNCTION_IN_SET : RPNElement::FUNCTION_NOT_IN_SET;
-			out.set = (dynamic_cast<DB::ColumnSet *>(args[1])->getData();
+			out.set = (dynamic_cast<DB::ColumnSet *>(args[1].get())->getData());
 			out.set->createOrderedSet();
 		}
 		else
@@ -281,7 +284,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		{
 			const Range & key_range = key_ranges[element.key_column];
 
-			rpn_stack.push_back(element.set->mayBeTrueInRange(key_range));
+			rpn_stack.push_back(element.set->mayBeTrueInRange(key_range.left, key_range.right));
 			if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
 				rpn_stack.back() = !rpn_stack.back();
 		}

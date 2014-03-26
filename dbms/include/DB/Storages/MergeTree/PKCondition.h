@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Columns/ColumnSet.h>
+#include <DB/Storages/MergeTree/BoolMask.h>
 
 
 namespace DB
@@ -113,29 +114,6 @@ public:
     bool operator() (const Array & l, const Float64 & r)    const { return false; }
     bool operator() (const Array & l, const String & r)     const { return false; }
     bool operator() (const Array & l, const Array & r)      const { return l < r; }
-};
-
-/// Множество значений булевой переменной. То есть два булевых значения: может ли быть true, может ли быть false.
-struct BoolMask
-{
-	bool can_be_true;
-	bool can_be_false;
-
-	BoolMask() {}
-	BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
-
-	BoolMask operator &(const BoolMask & m)
-	{
-		return BoolMask(can_be_true && m.can_be_true, can_be_false || m.can_be_false);
-	}
-	BoolMask operator |(const BoolMask & m)
-	{
-		return BoolMask(can_be_true || m.can_be_true, can_be_false && m.can_be_false);
-	}
-	BoolMask operator !()
-	{
-		return BoolMask(can_be_false, can_be_true);
-	}
 };
 
 #pragma GCC diagnostic pop
@@ -335,6 +313,7 @@ private:
 		
 		String toString()
 		{
+			std::ostringstream ss;
 			switch (function)
 			{
 				case FUNCTION_AND:
@@ -345,14 +324,15 @@ private:
 					return "not";
 				case FUNCTION_UNKNOWN:
 					return "unknown";
+				case FUNCTION_NOT_IN_SET:
 				case FUNCTION_IN_SET:
-					std::ostringstream ss;
-					ss << "(column " << key_column << " in " << set->toString() << ")";
+				{
+					ss << "(column " << key_column << (function == FUNCTION_IN_SET ? " in " : " notIn ") << set->descibe() << ")";
 					return ss.str();
+				}
 				case FUNCTION_IN_RANGE:
 				case FUNCTION_NOT_IN_RANGE:
 				{
-					std::ostringstream ss;
 					ss << "(column " << key_column << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString() << ")";
 					return ss.str();
 				}
