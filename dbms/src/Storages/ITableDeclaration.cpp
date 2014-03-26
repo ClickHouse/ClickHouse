@@ -10,7 +10,7 @@
 namespace DB
 {
 
-bool IStorage::hasRealColumn(const String &column_name) const
+bool ITableDeclaration::hasRealColumn(const String &column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
