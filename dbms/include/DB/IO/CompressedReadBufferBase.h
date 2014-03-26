@@ -26,7 +26,6 @@ protected:
 	/// Если в буфере compressed_in помещается целый сжатый блок - используем его. Иначе - копируем данные по кусочкам в own_compressed_buffer.
 	PODArray<char> own_compressed_buffer;
 	char * compressed_buffer;
-	size_t size_compressed;
 
 	qlz_state_decompress * qlz_state;
 
