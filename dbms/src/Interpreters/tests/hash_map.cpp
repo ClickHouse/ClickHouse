@@ -48,7 +48,7 @@
   * Но в этом тесте осталось нечто похожее на старый сценарий использования хэш-таблиц при агрегации.
   */
 
-#define USE_AUTO_ARRAY	1
+#define USE_AUTO_ARRAY	0
 
 
 int main(int argc, char ** argv)
@@ -131,7 +131,7 @@ int main(int argc, char ** argv)
 			map.emplace(data[i], it, inserted);
 			if (inserted)
 			{
-				new(&it->second) Value(value);
+				new(&it->second) Value(std::move(value));
 				INIT;
 			}
 		}
@@ -155,7 +155,7 @@ int main(int argc, char ** argv)
 		std::unordered_map<Key, Value, DB::default_hash<Key> >::iterator it;
 		for (size_t i = 0; i < n; ++i)
 		{
-			it = map.insert(std::make_pair(data[i], value)).first;
+			it = map.insert(std::make_pair(data[i], std::move(value))).first;
 			INIT;
 		}
 
@@ -176,7 +176,7 @@ int main(int argc, char ** argv)
 		map.set_empty_key(-1ULL);
 		for (size_t i = 0; i < n; ++i)
 		{
-			it = map.insert(std::make_pair(data[i], value)).first;
+			it = map.insert(std::make_pair(data[i], std::move(value))).first;
 			INIT;
 		}
 
@@ -196,7 +196,7 @@ int main(int argc, char ** argv)
 		google::sparse_hash_map<Key, Value, DB::default_hash<Key> >::iterator it;
 		for (size_t i = 0; i < n; ++i)
 		{
-			map.insert(std::make_pair(data[i], value));
+			map.insert(std::make_pair(data[i], std::move(value)));
 			INIT;
 		}
 
