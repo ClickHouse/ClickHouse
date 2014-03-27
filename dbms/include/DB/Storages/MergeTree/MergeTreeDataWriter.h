@@ -34,12 +34,12 @@ public:
 	MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get("MergeTreeDataWriter")), flags(O_TRUNC | O_CREAT | O_WRONLY) {}
 
 	/** Разбивает блок на блоки, каждый из которых нужно записать в отдельный кусок.
-	  * (читай: разбивает строки по месяцам)
+	  *  (читай: разбивает строки по месяцам)
 	  * Работает детерминированно: если отдать на вход такой же блок, на выходе получатся такие же блоки в таком же порядке.
 	  */
 	BlocksWithDateIntervals splitBlockIntoParts(const Block & block);
 
-	/** Все строки должны относиться к одному месяцу. Возвращает название временного куска.
+	/** Все строки должны относиться к одному месяцу.
 	  * temp_index - значение left и right для нового куска. Можно будет изменить при переименовании.
 	  * Возвращает кусок с именем, начинающимся с tmp_, еще не добавленный в MergeTreeData.
 	  */
@@ -56,7 +56,7 @@ private:
 
 	/// Записать данные одного столбца.
 	void writeData(const String & path, const String & name, const IDataType & type, const IColumn & column,
-					OffsetColumns & offset_columns, size_t level = 0);
+					OffsetColumns & offset_columns, MergeTreeData::DataPart::Checksums & checksums, size_t level = 0);
 };
 
 }
