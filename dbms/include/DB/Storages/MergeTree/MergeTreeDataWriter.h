@@ -31,7 +31,7 @@ typedef std::list<BlockWithDateInterval> BlocksWithDateIntervals;
 class MergeTreeDataWriter
 {
 public:
-	MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get("MergeTreeDataWriter")), flags(O_TRUNC | O_CREAT | O_WRONLY) {}
+	MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get("MergeTreeDataWriter")) {}
 
 	/** Разбивает блок на блоки, каждый из которых нужно записать в отдельный кусок.
 	  *  (читай: разбивает строки по месяцам)
@@ -49,14 +49,6 @@ private:
 	MergeTreeData & data;
 
 	Logger * log;
-
-	const int flags;
-
-	typedef std::set<std::string> OffsetColumns;
-
-	/// Записать данные одного столбца.
-	void writeData(const String & path, const String & name, const IDataType & type, const IColumn & column,
-					OffsetColumns & offset_columns, MergeTreeData::DataPart::Checksums & checksums, size_t level = 0);
 };
 
 }

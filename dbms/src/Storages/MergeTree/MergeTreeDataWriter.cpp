@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
+#include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
@@ -78,9 +79,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
-	size_t rows = block.rows();
-	size_t columns = block.columns();
-	size_t part_size = (rows + data.index_granularity - 1) / data.index_granularity;
+	size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
 	String tmp_part_name = "tmp_" + data.getPartName(
 		DayNum_t(min_date), DayNum_t(max_date),
@@ -102,59 +101,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	/// Сортируем.
 	stableSortBlock(block, sort_descr);
 
-	/// Наконец-то можно писать данные на диск.
-	LOG_TRACE(log, "Writing index.");
+	MergedBlockOutputStream out(data, part_tmp_path, block.getColumnsList());
+	out.getIndex().reserve(part_size * sort_descr.size());
 
-	MergeTreeData::DataPart::Checksums checksums;
-	MergeTreeData::DataPart::Index index_vec;
-
-	/// Сначала пишем индекс. Индекс содержит значение PK для каждой index_granularity строки.
-	index_vec.reserve(part_size * sort_descr.size());
-
-	{
-		WriteBufferFromFile index_file(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, flags);
-		HashingWriteBuffer index(index_file);
-
-		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
-		PrimaryColumns primary_columns;
-
-		for (size_t i = 0, size = sort_descr.size(); i < size; ++i)
-			primary_columns.push_back(
-				!sort_descr[i].column_name.empty()
-				? &block.getByName(sort_descr[i].column_name)
-				: &block.getByPosition(sort_descr[i].column_number));
-
-		for (size_t i = 0; i < rows; i += data.index_granularity)
-		{
-			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
-			{
-				index_vec.push_back((*(*it)->column)[i]);
-				(*it)->type->serializeBinary(index_vec.back(), index);
-			}
-		}
-
-		index.next();
-		checksums.file_checksums["primary.idx"].size = index.count();
-		checksums.file_checksums["primary.idx"].hash = index.getHash();
-	}
-
-	LOG_TRACE(log, "Writing data.");
-
-	/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
-	OffsetColumns offset_columns;
-
-	for (size_t i = 0; i < columns; ++i)
-	{
-		const ColumnWithNameAndType & column = block.getByPosition(i);
-		writeData(part_tmp_path, column.name, *column.type, *column.column, offset_columns, checksums);
-	}
-
-	/// Запишем файл с чексуммами.
-	{
-		WriteBufferFromFile checksums_file(part_tmp_path + "checksums.txt", 1024, flags);
-		checksums.writeText(checksums_file);
-		checksums_file.next();
-	}
+	out.writePrefix();
+	out.write(block);
+	out.writeSuffix();
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	new_data_part->left_date = DayNum_t(min_date);
@@ -167,83 +119,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->modification_time = time(0);
 	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
-	new_data_part->index.swap(index_vec);
-	new_data_part->checksums = checksums;
+	new_data_part->index.swap(out.getIndex());
 
 	return new_data_part;
-}
-
-void MergeTreeDataWriter::writeData(const String & path, const String & name, const IDataType & type, const IColumn & column,
-				OffsetColumns & offset_columns, MergeTreeData::DataPart::Checksums & checksums, size_t level)
-{
-	String escaped_column_name = escapeForFileName(name);
-	size_t size = column.size();
-
-	/// Для массивов требуется сначала сериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
-	{
-		String size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
-			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		if (offset_columns.count(size_name) == 0)
-		{
-			offset_columns.insert(size_name);
-
-			WriteBufferFromFile plain_file(path + size_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
-			WriteBufferFromFile marks_file(path + size_name + ".mrk", 4096, flags);
-			CompressedWriteBuffer compressed_file(plain_file);
-			HashingWriteBuffer marks(marks_file);
-			HashingWriteBuffer compressed(compressed_file);
-
-			size_t prev_mark = 0;
-			while (prev_mark < size)
-			{
-				/// Каждая засечка - это: (смещение в файле до начала сжатого блока, смещение внутри блока)
-				writeIntBinary(plain_file.count(), marks);
-				writeIntBinary(compressed.offset(), marks);
-
-				type_arr->serializeOffsets(column, compressed, prev_mark, data.index_granularity);
-				prev_mark += data.index_granularity;
-
-				compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
-			}
-
-			compressed.next();
-			plain_file.next();
-			marks.next();
-			checksums.file_checksums[size_name + ".bin"].size = compressed.count();
-			checksums.file_checksums[size_name + ".bin"].hash = compressed.getHash();
-			checksums.file_checksums[size_name + ".mrk"].size = marks.count();
-			checksums.file_checksums[size_name + ".mrk"].hash = marks.getHash();
-		}
-	}
-
-	{
-		WriteBufferFromFile plain_file(path + escaped_column_name + ".bin", DBMS_DEFAULT_BUFFER_SIZE, flags);
-		WriteBufferFromFile marks_file(path + escaped_column_name + ".mrk", 4096, flags);
-		CompressedWriteBuffer compressed_file(plain_file);
-		HashingWriteBuffer marks(marks_file);
-		HashingWriteBuffer compressed(compressed_file);
-
-		size_t prev_mark = 0;
-		while (prev_mark < size)
-		{
-			writeIntBinary(plain_file.count(), marks);
-			writeIntBinary(compressed.offset(), marks);
-
-			type.serializeBinary(column, compressed, prev_mark, data.index_granularity);
-			prev_mark += data.index_granularity;
-
-			compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
-		}
-
-		compressed.next();
-		plain_file.next();
-		marks.next();
-		checksums.file_checksums[escaped_column_name + ".bin"].size = compressed.count();
-		checksums.file_checksums[escaped_column_name + ".bin"].hash = compressed.getHash();
-		checksums.file_checksums[escaped_column_name + ".mrk"].size = marks.count();
-		checksums.file_checksums[escaped_column_name + ".mrk"].hash = marks.getHash();
-	}
 }
 
 }

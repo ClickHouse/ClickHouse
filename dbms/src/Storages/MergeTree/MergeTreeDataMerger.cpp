@@ -292,8 +292,10 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
-	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data,
-		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
+	String new_part_tmp_path = data.getFullPath() + "tmp_" + new_data_part->name + "/";
+	String new_part_res_path = data.getFullPath() + new_data_part->name + "/";
+
+	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, data.getColumnsList());
 
 	merged_stream->readPrefix();
 	to->writePrefix();
@@ -311,6 +313,8 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	merged_stream->readSuffix();
 	to->writeSuffix();
 
+	new_data_part->index.swap(to->getIndex());
+
 	/// В обычном режиме строчки не могут удалиться при мердже.
 	if (0 == to->marksCount() && data.mode == MergeTreeData::Ordinary)
 		throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
@@ -324,8 +328,8 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 		return "";
 	}
 
-	/// NOTE Только что записанный индекс заново считывается с диска. Можно было бы формировать его сразу при записи.
-	new_data_part->loadIndex();
+	/// Переименовываем кусок.
+	Poco::File(new_part_tmp_path).renameTo(new_part_res_path);
 
 	/// Добавляем новый кусок в набор.
 	data.replaceParts(parts, new_data_part);

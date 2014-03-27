@@ -4,6 +4,9 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
+#include <DB/Common/escapeForFileName.h>
+#include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -20,9 +23,9 @@ protected:
 	struct ColumnStream
 	{
 		ColumnStream(const String & data_path, const std::string & marks_path) :
-		plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY),
-		compressed(plain),
-		marks(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY) {}
+			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY),
+			compressed(plain),
+			marks(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY) {}
 
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
@@ -65,19 +68,6 @@ protected:
 				path + escaped_size_name + ".mrk");
 
 			addStream(path, name, *type_arr->getNestedType(), level + 1);
-		}
-		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
-		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-			column_streams[size_name] = new ColumnStream(
-				path + escaped_size_name + ".bin",
-				path + escaped_size_name + ".mrk");
-
-			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-				addStream(path, DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 		}
 		else
 			column_streams[name] = new ColumnStream(
@@ -126,34 +116,6 @@ protected:
 				}
 			}
 		}
-		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
-		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-			ColumnStream & stream = *column_streams[size_name];
-
-			size_t prev_mark = 0;
-			while (prev_mark < size)
-			{
-				size_t limit = 0;
-
-				/// Если есть index_offset, то первая засечка идёт не сразу, а после этого количества строк.
-				if (prev_mark == 0 && index_offset != 0)
-				{
-					limit = index_offset;
-				}
-				else
-				{
-					limit = storage.index_granularity;
-					writeIntBinary(stream.plain.count(), stream.marks);
-					writeIntBinary(stream.compressed.offset(), stream.marks);
-				}
-
-				type_nested->serializeOffsets(column, stream.compressed, prev_mark, limit);
-				stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
-				prev_mark += limit;
-			}
-		}
 
 		{
 			ColumnStream & stream = *column_streams[name];
@@ -190,30 +152,21 @@ protected:
 	size_t index_offset;
 };
 
-/** Для записи куска, полученного слиянием нескольких других.
-  * Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
+/** Для записи одного куска. Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
   */
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedBlockOutputStream(MergeTreeData & storage_,
-		UInt16 min_date, UInt16 max_date, UInt64 min_part_id, UInt64 max_part_id, UInt32 level)
-		: IMergedBlockOutputStream(storage_), marks_count(0)
+	MergedBlockOutputStream(MergeTreeData & storage_, String part_path_, const NamesAndTypesList & columns_list_)
+		: IMergedBlockOutputStream(storage_), columns_list(columns_list_), part_path(part_path_), marks_count(0)
 	{
-		part_name = storage.getPartName(
-			DayNum_t(min_date), DayNum_t(max_date),
-			min_part_id, max_part_id, level);
+		Poco::File(part_path).createDirectories();
 		
-		part_tmp_path = storage.getFullPath() + "tmp_" + part_name + "/";
-		part_res_path = storage.getFullPath() + part_name + "/";
-		
-		Poco::File(part_tmp_path).createDirectories();
-		
-		index_stream = new WriteBufferFromFile(part_tmp_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+		index_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 		
 		columns_list = storage.getColumnsList();
 		for (const auto & it : columns_list)
-			addStream(part_tmp_path, it.first, *it.second);
+			addStream(part_path, it.first, *it.second);
 	}
 
 	void write(const Block & block)
@@ -234,7 +187,8 @@ public:
 		{
 			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
 			{
-				(*it)->type->serializeBinary((*(*it)->column)[i], *index_stream);
+				index_vec.push_back((*(*it)->column)[i]);
+				(*it)->type->serializeBinary(index_vec.back(), *index_stream);
 			}
 			
 			++marks_count;
@@ -268,15 +222,13 @@ public:
 		if (marks_count == 0)
 		{
 			/// Кусок пустой - все записи удалились.
-			Poco::File(part_tmp_path).remove(true);
+			Poco::File(part_path).remove(true);
 		}
-		else
-		{
-			/// Переименовываем кусок.
-			Poco::File(part_tmp_path).renameTo(part_res_path);
+	}
 
-			/// А добавление нового куска в набор (и удаление исходных кусков) сделает вызывающая сторона.
-		}
+	MergeTreeData::DataPart::Index & getIndex()
+	{
+		return index_vec;
 	}
 	
 	/// Сколько засечек уже записано.
@@ -287,13 +239,12 @@ public:
 
 private:
 	NamesAndTypesList columns_list;
+	String part_path;
 
-	String part_name;
-	String part_tmp_path;
-	String part_res_path;
 	size_t marks_count;
-	
+
 	SharedPtr<WriteBufferFromFile> index_stream;
+	MergeTreeData::DataPart::Index index_vec;
 };
 
 typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
@@ -315,7 +266,7 @@ public:
 			for (size_t i = 0; i < block.columns(); ++i)
 			{
 				addStream(part_path, block.getByPosition(i).name,
-												   *block.getByPosition(i).type, 0, prefix + block.getByPosition(i).name);
+					*block.getByPosition(i).type, 0, prefix + block.getByPosition(i).name);
 			}
 			initialized = true;
 		}
