@@ -60,7 +60,7 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 		}
 		if (done)
 			break;
-		id ++;
+		++id;
 		current_suffix = toString<Int32>(id);
 	}
 	return current_suffix;

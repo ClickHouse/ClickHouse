@@ -985,7 +985,7 @@ public:
 			{
 				external_tables.push_back(ExternalTable(external_options));
 				if (external_tables.back().file == "-")
-					stdin_count ++;
+					++stdin_count;
 				if (stdin_count > 1)
 					throw Exception("Two or more external tables has stdin (-) set as --file field", ErrorCodes::BAD_ARGUMENTS);
 			}

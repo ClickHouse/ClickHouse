@@ -85,7 +85,7 @@ Block LogBlockInputStream::readImpl()
 		if (mark_number > 0)
 			current_row += marks[mark_number-1].rows;
 		while (current_mark < marks.size() && marks[current_mark].rows <= current_row)
-			current_mark ++;
+			++current_mark;
 
 		current_table = storage.getTableFromMark(current_mark);
 		current_table.second = std::min(current_table.second, marks.size() - 1);

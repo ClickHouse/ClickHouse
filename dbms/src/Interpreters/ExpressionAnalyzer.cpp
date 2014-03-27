@@ -1190,7 +1190,7 @@ void ExpressionAnalyzer::processGlobalOperations()
 	{
 		String external_table_name = "_data";
 		while (context.tryGetExternalTable(external_table_name + toString(id)))
-			id ++;
+			++id;
 		addExternalStorage(dynamic_cast<ASTFunction *>(&*global_nodes[i]), id);
 	}
 }
