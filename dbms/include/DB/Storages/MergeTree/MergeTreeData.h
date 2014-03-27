@@ -33,6 +33,7 @@ namespace DB
   * Структура файлов:
   *  / min-date _ max-date _ min-id _ max-id _ level / - директория с куском.
   * Внутри директории с куском:
+  *  checksums.txt - список файлов с их размерами и контрольными суммами.
   *  primary.idx - индексный файл.
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
@@ -99,6 +100,33 @@ public:
 	/// Описание куска с данными.
 	struct DataPart
 	{
+		/** Контрольные суммы всех не временных файлов.
+		  * Для сжатых файлов хранятся чексумма и размер разжатых данных, чтобы не зависеть от способа сжатия.
+		  */
+		struct Checksums
+		{
+			struct Checksum
+			{
+				size_t size;
+				uint128 hash;
+			};
+
+			typedef std::map<String, Checksum> FileChecksums;
+			FileChecksums files;
+
+			/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
+			void check(const Checksums & rhs) const;
+
+			/// Сериализует и десериализует в человекочитаемом виде.
+			void readText(ReadBuffer & in);
+			void writeText(WriteBuffer & out) const;
+
+			bool empty() const
+			{
+				return files.empty();
+			}
+		};
+
  		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
 
  		MergeTreeData & storage;
@@ -120,6 +148,8 @@ public:
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
 		Index index;
+
+		Checksums checksums;
 
 		/// NOTE можно загружать засечки тоже в оперативку
 
@@ -203,6 +233,18 @@ public:
 				throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 
 			size_in_bytes = calcTotalSize(storage.full_path + name + "/");
+		}
+
+		/// Прочитать контрольные суммы, если есть.
+		bool loadChecksums()
+		{
+			String path = storage.full_path + name + "/checksums.txt";
+			if (!Poco::File(path).exists())
+				return false;
+			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+			checksums.readText(file);
+			assertEOF(file);
+			return true;
 		}
 	};
 

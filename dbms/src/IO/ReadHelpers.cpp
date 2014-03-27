@@ -36,6 +36,12 @@ void assertString(const char * s, ReadBuffer & buf)
 	}
 }
 
+void assertEOF(ReadBuffer & buf)
+{
+	if (!buf.eof())
+		throwAtAssertionFailed("eof", buf);
+}
+
 void readString(String & s, ReadBuffer & buf)
 {
 	s = "";
