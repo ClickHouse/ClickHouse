@@ -60,7 +60,16 @@ public:
 					DB::ErrorCodes::UNKNOWN_IDENTIFIER);
 
 		}
-		select_expression_list.swap(result);
+
+		for (auto & child : children)
+		{
+			if (child == select_expression_list)
+			{
+				child = result;
+				break;
+			}
+		}
+		select_expression_list = result;
 	}
 
 	ASTPtr clone() const

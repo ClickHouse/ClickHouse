@@ -1,1 +1,1 @@
-SELECT count() FROM (SELECT sum(1), sum(2))
+SELECT count() FROM (SELECT sum(materialize(1)), sum(materialize(2)))

@@ -104,13 +104,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_);
-
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
 		query.rewriteSelectExpressionList(required_column_names_);
+
+	init(input_);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names_,
@@ -119,13 +119,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_, table_column_names);
-
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
 		query.rewriteSelectExpressionList(required_column_names_);
+
+	init(input_, table_column_names);
 }
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
