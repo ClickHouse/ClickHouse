@@ -37,11 +37,35 @@ public:
 	String getID() const { return "SelectQuery"; };
 
 
+	static bool hasArrayJoin(const ASTPtr & ast)
+	{
+		if (const ASTFunction * function = dynamic_cast<const ASTFunction *>(&*ast))
+		{
+			if (function->kind == ASTFunction::ARRAY_JOIN)
+				return true;
+		}
+		for (const auto & child : ast->children)
+			if (hasArrayJoin(child))
+				return true;
+		return false;
+	}
+
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names)
 	{
 		ASTPtr result = new ASTExpressionList;
 		ASTs asts = select_expression_list->children;
+
+		/// Не будем выбрасывать выражения, содержащие функцию arrayJoin.
+		std::set<ASTPtr> unremovable_asts;
+		for (size_t j = 0; j < asts.size(); ++j)
+		{
+			if (hasArrayJoin(asts[j]))
+			{
+				result->children.push_back(asts[j]->clone());
+				unremovable_asts.insert(asts[j]);
+			}
+		}
 
 		for (size_t i = 0; i < column_names.size(); ++i)
 		{
@@ -50,7 +74,8 @@ public:
 			{
 				if (asts[j]->getAlias() == column_names[i])
 				{
-					result->children.push_back(asts[j]->clone());
+					if (!unremovable_asts.count(asts[j]))
+						result->children.push_back(asts[j]->clone());
 					done = 1;
 				}
 			}
@@ -70,6 +95,11 @@ public:
 			}
 		}
 		select_expression_list = result;
+
+		/** NOTE: Может показаться, что мы могли испортить запрос, выбросив выражение с алиасом, который используется где-то еще.
+		  *       Такого произойти не может, потому что этот метод вызывается всегда для запроса, на котором хоть раз создавали
+		  *       ExpressionAnalyzer, что гарантирует, что в нем все алиасы уже подставлены. Не совсем очевидная логика :)
+		  */
 	}
 
 	ASTPtr clone() const
