@@ -2,6 +2,7 @@
 
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/IO/HashingWriteBuffer.h>
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Common/escapeForFileName.h>
@@ -22,26 +23,41 @@ protected:
 	typedef std::set<std::string> OffsetColumns;
 	struct ColumnStream
 	{
-		ColumnStream(const String & data_path, const std::string & marks_path) :
-			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY),
-			compressed(plain),
-			marks(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY) {}
+		ColumnStream(const String & escaped_column_name_, const String & data_path, const std::string & marks_path) :
+			escaped_column_name(escaped_column_name_),
+			plain_file(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY),
+			compressed_buf(plain_file),
+			marks_file(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY),
+			compressed(compressed_buf), marks(marks_file) {}
 
-		WriteBufferFromFile plain;
-		CompressedWriteBuffer compressed;
-		WriteBufferFromFile marks;
+		String escaped_column_name;
+		WriteBufferFromFile plain_file;
+		CompressedWriteBuffer compressed_buf;
+		WriteBufferFromFile marks_file;
+		HashingWriteBuffer compressed;
+		HashingWriteBuffer marks;
 
 		void finalize()
 		{
 			compressed.next();
-			plain.next();
+			plain_file.next();
 			marks.next();
 		}
 
 		void sync()
 		{
-			plain.sync();
-			marks.sync();
+			plain_file.sync();
+			marks_file.sync();
+		}
+
+		void addToChecksums(MergeTreeData::DataPart::Checksums & checksums, String name = "")
+		{
+			if (name == "")
+				name = escaped_column_name;
+			checksums.files[name + ".bin"].size = compressed.count();
+			checksums.files[name + ".bin"].hash = compressed.getHash();
+			checksums.files[name + ".mrk"].size = marks.count();
+			checksums.files[name + ".mrk"].hash = marks.getHash();
 		}
 	};
 
@@ -64,6 +80,7 @@ protected:
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 			column_streams[size_name] = new ColumnStream(
+				escaped_size_name,
 				path + escaped_size_name + ".bin",
 				path + escaped_size_name + ".mrk");
 
@@ -71,6 +88,7 @@ protected:
 		}
 		else
 			column_streams[name] = new ColumnStream(
+				escaped_column_name,
 				path + escaped_column_name + ".bin",
 				path + escaped_column_name + ".mrk");
 	}
@@ -106,7 +124,7 @@ protected:
 					else
 					{
 						limit = storage.index_granularity;
-						writeIntBinary(stream.plain.count(), stream.marks);
+						writeIntBinary(stream.plain_file.count(), stream.marks);
 						writeIntBinary(stream.compressed.offset(), stream.marks);
 					}
 
@@ -133,7 +151,7 @@ protected:
 				else
 				{
 					limit = storage.index_granularity;
-					writeIntBinary(stream.plain.count(), stream.marks);
+					writeIntBinary(stream.plain_file.count(), stream.marks);
 					writeIntBinary(stream.compressed.offset(), stream.marks);
 				}
 
@@ -162,7 +180,8 @@ public:
 	{
 		Poco::File(part_path).createDirectories();
 		
-		index_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+		index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+		index_stream = new HashingWriteBuffer(*index_file_stream);
 		
 		columns_list = storage.getColumnsList();
 		for (const auto & it : columns_list)
@@ -207,23 +226,44 @@ public:
 		size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
 		index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
 	}
-	
-	void writeSuffix()
+
+	void writeSuffix() override
 	{
-		/// Заканчиваем запись.
+		throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
+	}
+	
+	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums()
+	{
+		/// Заканчиваем запись и достаем чексуммы.
+		MergeTreeData::DataPart::Checksums checksums;
+
 		index_stream->next();
-		index_stream = NULL;
+		checksums.files["primary.idx"].size = index_stream->count();
+		checksums.files["primary.idx"].hash = index_stream->getHash();
 
 		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
+		{
 			it->second->finalize();
+			it->second->addToChecksums(checksums);
+		}
 
+		index_stream = NULL;
 		column_streams.clear();
 
 		if (marks_count == 0)
 		{
 			/// Кусок пустой - все записи удалились.
 			Poco::File(part_path).remove(true);
+			checksums.files.clear();
 		}
+		else
+		{
+			/// Записываем файл с чексуммами.
+			WriteBufferFromFile out(part_path + "checksums.txt", 1024);
+			checksums.writeText(out);
+		}
+
+		return checksums;
 	}
 
 	MergeTreeData::DataPart::Index & getIndex()
@@ -243,7 +283,8 @@ private:
 
 	size_t marks_count;
 
-	SharedPtr<WriteBufferFromFile> index_stream;
+	SharedPtr<WriteBufferFromFile> index_file_stream;
+	SharedPtr<HashingWriteBuffer> index_stream;
 	MergeTreeData::DataPart::Index index_vec;
 };
 
@@ -284,19 +325,30 @@ public:
 		index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
 	}
 
-	void writeSuffix()
+	void writeSuffix() override
 	{
+		throw Exception("Method writeSuffix is not supported by MergedColumnOnlyOutputStream", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums()
+	{
+		MergeTreeData::DataPart::Checksums checksums;
+
 		for (auto & column_stream : column_streams)
 		{
 			column_stream.second->finalize();
 			if (sync)
 				column_stream.second->sync();
 			std::string column = escapeForFileName(column_stream.first);
+			column_stream.second->addToChecksums(checksums, column);
 			Poco::File(part_path + prefix + column + ".bin").renameTo(part_path + column + ".bin");
 			Poco::File(part_path + prefix + column + ".mrk").renameTo(part_path + column + ".mrk");
 		}
+
 		column_streams.clear();
 		initialized = false;
+
+		return checksums;
 	}
 
 private:

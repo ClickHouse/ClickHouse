@@ -106,7 +106,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	out.writePrefix();
 	out.write(block);
-	out.writeSuffix();
+	MergeTreeData::DataPart::Checksums checksums = out.writeSuffixAndGetChecksums();
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	new_data_part->left_date = DayNum_t(min_date);
@@ -120,6 +120,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
 	new_data_part->index.swap(out.getIndex());
+	new_data_part->checksums = checksums;
 
 	return new_data_part;
 }

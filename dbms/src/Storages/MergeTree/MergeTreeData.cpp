@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
+#include <DB/DataStreams/copyData.h>
 
 
 
@@ -366,26 +367,15 @@ void MergeTreeData::removeColumnFiles(String column_name)
 
 void MergeTreeData::createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column)
 {
-	ASTFunction * function = new ASTFunction;
-	ASTPtr function_ptr = function;
+	Names out_names;
+	out_expression = new ExpressionActions(
+		NamesAndTypesList(1, NameAndTypePair(in_column_name, getDataTypeByName(in_column_name))), context.getSettingsRef());
 
-	ASTExpressionList * arguments = new ASTExpressionList;
-	ASTPtr arguments_ptr = arguments;
+	FunctionPtr function = context.getFunctionFactory().get("to" + out_type, context);
+	out_expression->add(ExpressionActions::Action::applyFunction(function, Names(1, in_column_name)), out_names);
+	out_expression->add(ExpressionActions::Action::removeColumn(in_column_name));
 
-	function->name = "to" + out_type;
-	function->arguments = arguments_ptr;
-	function->children.push_back(arguments_ptr);
-
-	ASTIdentifier * in_column = new ASTIdentifier;
-	ASTPtr in_column_ptr = in_column;
-
-	arguments->children.push_back(in_column_ptr);
-
-	in_column->name = in_column_name;
-	in_column->kind = ASTIdentifier::Column;
-
-	out_expression = ExpressionAnalyzer(function_ptr, context, *columns).getActions(false);
-	out_column = function->getColumnName();
+	out_column = out_names[0];
 }
 
 static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesList & columns)
@@ -445,18 +435,29 @@ void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 		ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
 			DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, NULL, ""), expr);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
+		in.readPrefix();
 		out.writePrefix();
 
 		try
 		{
 			while(DB::Block b = in.read())
-			{
-				/// оставляем только столбец с результатом
-				b.erase(0);
 				out.write(b);
+
+			in.readSuffix();
+			DataPart::Checksums add_checksums = out.writeSuffixAndGetChecksums();
+
+			/// Запишем обновленные контрольные суммы во временный файл.
+			if (!part->checksums.empty())
+			{
+				DataPart::Checksums new_checksums = part->checksums;
+				std::string escaped_name = escapeForFileName(name_type.name);
+				std::string escaped_out_column = escapeForFileName(out_column);
+				new_checksums.files[escaped_name  + ".bin"] = add_checksums.files[escaped_out_column + ".bin"];
+				new_checksums.files[escaped_name  + ".mrk"] = add_checksums.files[escaped_out_column + ".mrk"];
+
+				WriteBufferFromFile checksums_file(full_path + part->name + '/' + escaped_out_column + ".checksums.txt", 1024);
+				new_checksums.writeText(checksums_file);
 			}
-			LOG_TRACE(log, "Write Suffix");
-			out.writeSuffix();
 		}
 		catch (const Exception & e)
 		{
@@ -486,40 +487,63 @@ void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
 	/// переименовываем старые столбцы, добавляя расширение .old
 	for (DataPartPtr & part : parts)
 	{
-		std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		std::string part_path = full_path + part->name + '/';
+		std::string path = part_path + escapeForFileName(name_type.name);
 		if (Poco::File(path + ".bin").exists())
 		{
 			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
 			Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
 			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
 			Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
+
+			if (Poco::File(part_path + "checksums.txt").exists())
+			{
+				LOG_TRACE(log, "Renaming " << part_path + "checksums.txt" << " to " << part_path + "checksums.txt" + ".old");
+				Poco::File(part_path + "checksums.txt").renameTo(part_path + "checksums.txt" + ".old");
+			}
 		}
 	}
 
 	/// переименовываем временные столбцы
 	for (DataPartPtr & part : parts)
 	{
-		std::string path = full_path + part->name + '/' + escapeForFileName(out_column);
-		std::string new_path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		std::string part_path = full_path + part->name + '/';
+		std::string name = escapeForFileName(out_column);
+		std::string new_name = escapeForFileName(name_type.name);
+		std::string path = part_path + name;
+		std::string new_path = part_path + new_name;
 		if (Poco::File(path + ".bin").exists())
 		{
 			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
 			Poco::File(path + ".bin").renameTo(new_path + ".bin");
 			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
 			Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
+
+			if (Poco::File(path + ".checksums.txt").exists())
+			{
+				LOG_TRACE(log, "Renaming " << path + ".checksums.txt" << " to " << part_path + ".checksums.txt");
+				Poco::File(path + ".checksums.txt").renameTo(part_path + "checksums.txt");
+			}
 		}
 	}
 
 	// удаляем старые столбцы
 	for (DataPartPtr & part : parts)
 	{
-		std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		std::string part_path = full_path + part->name + '/';
+		std::string path = part_path + escapeForFileName(name_type.name);
 		if (Poco::File(path + ".bin" + ".old").exists())
 		{
 			LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
 			Poco::File(path + ".bin" + ".old").remove();
 			LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
 			Poco::File(path + ".mrk" + ".old").remove();
+
+			if (Poco::File(part_path + "checksums.txt" + ".old").exists())
+			{
+				LOG_TRACE(log, "Removing old checksums " << part_path + "checksums.txt" + ".old");
+				Poco::File(part_path + "checksums.txt" + ".old").remove();
+			}
 		}
 	}
 
@@ -691,20 +715,20 @@ MergeTreeData::DataParts MergeTreeData::getDataParts()
 
 void MergeTreeData::DataPart::Checksums::check(const Checksums & rhs) const
 {
-	for (const auto & it : rhs.file_checksums)
+	for (const auto & it : rhs.files)
 	{
 		const String & name = it.first;
 
-		if (!file_checksums.count(name))
+		if (!files.count(name))
 			throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
 	}
 
-	for (const auto & it : file_checksums)
+	for (const auto & it : files)
 	{
 		const String & name = it.first;
 
-		auto jt = rhs.file_checksums.find(name);
-		if (jt == rhs.file_checksums.end())
+		auto jt = rhs.files.find(name);
+		if (jt == rhs.files.end())
 			throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
 
 		const Checksum & expected = it.second;
@@ -720,7 +744,7 @@ void MergeTreeData::DataPart::Checksums::check(const Checksums & rhs) const
 
 void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 {
-	file_checksums.clear();
+	files.clear();
 	size_t count;
 
 	DB::assertString("checksums format version: 1\n", in);
@@ -741,17 +765,17 @@ void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 		DB::readText(sum.hash.second, in);
 		DB::assertString("\n", in);
 
-		file_checksums.insert(std::make_pair(name, sum));
+		files.insert(std::make_pair(name, sum));
 	}
 }
 
 void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
 {
 	DB::writeString("checksums format version: 1\n", out);
-	DB::writeText(file_checksums.size(), out);
+	DB::writeText(files.size(), out);
 	DB::writeString(" files:\n", out);
 
-	for (const auto & it : file_checksums)
+	for (const auto & it : files)
 	{
 		DB::writeString(it.first, out);
 		DB::writeString("\n\tsize: ", out);

@@ -112,7 +112,7 @@ public:
 			};
 
 			typedef std::map<String, Checksum> FileChecksums;
-			FileChecksums file_checksums;
+			FileChecksums files;
 
 			/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
 			void check(const Checksums & rhs) const;
@@ -120,6 +120,11 @@ public:
 			/// Сериализует и десериализует в человекочитаемом виде.
 			void readText(ReadBuffer & in);
 			void writeText(WriteBuffer & out) const;
+
+			bool empty() const
+			{
+				return files.empty();
+			}
 		};
 
  		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}

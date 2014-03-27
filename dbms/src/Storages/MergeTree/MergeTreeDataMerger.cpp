@@ -311,7 +311,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	}
 
 	merged_stream->readSuffix();
-	to->writeSuffix();
+	new_data_part->checksums = to->writeSuffixAndGetChecksums();
 
 	new_data_part->index.swap(to->getIndex());
 
