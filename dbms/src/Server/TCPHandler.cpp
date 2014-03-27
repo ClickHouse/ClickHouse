@@ -118,6 +118,10 @@ void TCPHandler::runImpl()
 			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 				readData(global_settings);
 
+			/// Пересоздаем, поскольку получая данные внешних таблиц, мы получили пустой блок.
+			/// Из-за этого весь stream помечен как cancelled
+			state.block_in = BlockInputStreamPtr();
+
 			/// Обрабатываем Query
 			state.io = executeQuery(state.query, query_context, false, state.stage);
 
@@ -548,7 +552,8 @@ bool TCPHandler::receiveData()
 
 	/// Прочитать из сети один блок и записать его
 	Block block = state.block_in->read();
-	if (block || !external_table_name.empty())
+
+	if (block)
 	{
 		/// Если запрос на вставку, то данные нужно писать напрямую в state.io.out.
 		/// Иначе пишем блоки во временную таблицу external_table_name.
