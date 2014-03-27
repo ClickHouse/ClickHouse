@@ -44,7 +44,7 @@ public:
 		String table_name_regexp	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на этот Identifier.
-		/// Нам необходимо его пометить как имя базы данных, посколку по умолчанию стоит значение column
+		/// Нам необходимо его пометить как имя базы данных, поскольку по умолчанию стоит значение column
 		dynamic_cast<ASTIdentifier &>(*args[0]).kind = ASTIdentifier::Database;
 
 		return StorageMerge::create(getName(), chooseColumns(source_database, table_name_regexp, context), source_database, table_name_regexp, context);

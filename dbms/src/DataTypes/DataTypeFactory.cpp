@@ -21,14 +21,15 @@
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 namespace DB
 {
 
 
 DataTypeFactory::DataTypeFactory()
-	: fixed_string_regexp("^FixedString\\s*\\(\\s*(\\d+)\\s*\\)$"),
-	nested_regexp("^(\\w+)\\s*\\(\\s*(.+)\\s*\\)$", Poco::RegularExpression::RE_MULTILINE | Poco::RegularExpression::RE_DOTALL)
+	: fixed_string_regexp(R"--(^FixedString\s*\(\s*(\d+)\s*\)$)--"),
+	nested_regexp(R"--(^(\w+)\s*\(\s*(.+)\s*\)$)--", Poco::RegularExpression::RE_MULTILINE | Poco::RegularExpression::RE_DOTALL)
 {
 	boost::assign::insert(non_parametric_data_types)
 		("UInt8",				new DataTypeUInt8)
@@ -71,6 +72,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			String function_name;
 			AggregateFunctionPtr function;
 			DataTypes argument_types;
+			Array params_row;
 
 			ParserExpressionList args_parser;
 			ASTPtr args_ast;
@@ -87,14 +89,38 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 				throw Exception("Data type AggregateFunction requires parameters: "
 					"name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			ASTs::iterator it = args_list.children.begin();
-			function_name = (*it)->getColumnName();
+			if (ASTFunction * parametric = dynamic_cast<ASTFunction *>(&*args_list.children[0]))
+			{
+				if (parametric->parameters)
+					throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
+				function_name = parametric->name;
 
-			for (++it; it != args_list.children.end(); ++it)
-				argument_types.push_back(get((*it)->getColumnName()));
+				ASTs & parameters = dynamic_cast<ASTExpressionList &>(*parametric->arguments).children;
+				params_row.resize(parameters.size());
+
+				for (size_t i = 0; i < parameters.size(); ++i)
+				{
+					ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*parameters[i]);
+					if (!lit)
+						throw Exception("Parameters to aggregate functions must be literals",
+							ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+
+					params_row[i] = lit->value;
+				}
+			}
+			else
+			{
+				function_name = args_list.children[0]->getColumnName();
+			}
+
+			for (size_t i = 1; i < args_list.children.size(); ++i)
+				argument_types.push_back(get(args_list.children[i]->getColumnName()));
 
 			function = AggregateFunctionFactory().get(function_name, argument_types);
-			return new DataTypeAggregateFunction(function, argument_types);
+			if (!params_row.empty())
+				function->setParameters(params_row);
+			function->setArguments(argument_types);
+			return new DataTypeAggregateFunction(function, argument_types, params_row);
 		}
 		
 		if (base_name == "Nested")

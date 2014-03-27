@@ -161,27 +161,80 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 }
 
 
+Tables Context::getExternalTables() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	Tables res = external_tables;
+	if (session_context && session_context != this)
+	{
+		Tables buf = session_context->getExternalTables();
+		res.insert(buf.begin(), buf.end());
+	}
+	else if (global_context && global_context != this)
+	{
+		Tables buf = global_context->getExternalTables();
+		res.insert(buf.begin(), buf.end());
+	}
+	return res;
+}
+
+
+StoragePtr Context::tryGetExternalTable(const String & table_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	Tables::const_iterator jt;
+	if (external_tables.end() == (jt = external_tables.find(table_name)))
+		return StoragePtr();
+
+	return jt->second;
+}
+
+
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
+	Databases::const_iterator it;
+	Tables::const_iterator jt;
+
+	if (database_name.empty())
+	{
+		StoragePtr res;
+		if (res = tryGetExternalTable(table_name))
+			return res;
+		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
+			return res;
+		if (global_context && (res = global_context->tryGetExternalTable(table_name)))
+			return res;
+	}
 	String db = database_name.empty() ? current_database : database_name;
 
-	Databases::const_iterator it;
 	if (shared->databases.end() == (it = shared->databases.find(db)))
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-	Tables::const_iterator jt;
 	if (it->second.end() == (jt = it->second.find(table_name)))
 		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
 	return jt->second;
 }
 
+
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	
+
+	if (database_name.empty())
+	{
+		StoragePtr res;
+		if (res = tryGetExternalTable(table_name))
+			return res;
+		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
+			return res;
+		if (global_context && (res = global_context->tryGetExternalTable(table_name)))
+			return res;
+	}
 	String db = database_name.empty() ? current_database : database_name;
 	
 	Databases::const_iterator it;
@@ -193,6 +246,14 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 		return StoragePtr();
 	
 	return jt->second;
+}
+
+
+void Context::addExternalTable(const String & table_name, StoragePtr storage)
+{
+	if (external_tables.end() != external_tables.find(table_name))
+		throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+	external_tables[table_name] = storage;
 }
 
 

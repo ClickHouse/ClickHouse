@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ParserSelectQuery.h>
 
 #include <DB/DataTypes/DataTypeSet.h>
 #include <DB/DataTypes/DataTypeTuple.h>
@@ -22,6 +23,11 @@
 
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
+#include <DB/Storages/StorageMemory.h>
+
+#include <DB/DataStreams/copyData.h>
+
+#include <DB/Parsers/formatAST.h>
 
 
 namespace DB
@@ -397,6 +403,10 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			current_asts.insert(ast);
 			replaced = true;
 		}
+		/// может быть указано in t, где t - таблица, что равносильно select * from t.
+		if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
+			if (ASTIdentifier * right = dynamic_cast<ASTIdentifier *>(&*node->arguments->children[1]))
+				right->kind = ASTIdentifier::Table;
 	}
 	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
@@ -505,10 +515,91 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 }
 
 
+void ExpressionAnalyzer::findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes)
+{
+	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			findGlobalFunctions(*it, global_nodes);
+
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (node->name == "globalIn" || node->name == "globalNotIn")
+		{
+			global_nodes.push_back(ast);
+		}
+	}
+}
+
+
+void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id)
+{
+	IAST & args = *node->arguments;
+	ASTPtr & arg = args.children[1];
+	StoragePtr external_storage = StoragePtr();
+
+	/// Если подзапрос или имя таблицы для селекта
+	if (dynamic_cast<ASTSubquery *>(&*arg) || dynamic_cast<ASTIdentifier *>(&*arg))
+	{
+		/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
+			* Так как результат этого поздапроса - ещё не результат всего запроса.
+			* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+			*/
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		ASTPtr subquery;
+		if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
+		{
+			ParserSelectQuery parser;
+
+			if (context.tryGetExternalTable(table->name))
+				return;
+
+			String query = "SELECT * FROM " + table->name;
+			const char * begin = query.data();
+			const char * end = begin + query.size();
+			const char * pos = begin;
+			const char * expected = "";
+
+			bool parse_res = parser.parse(pos, end, subquery, expected);
+			if (!parse_res)
+				throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
+								ErrorCodes::LOGICAL_ERROR);
+		}
+		else
+			subquery = arg->children[0];
+
+		InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+
+		Block sample = interpreter.getSampleBlock();
+		NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
+
+		String external_table_name = "_data" + toString(name_id++);
+		external_storage = StorageMemory::create(external_table_name, columns);
+		BlockOutputStreamPtr output = external_storage->write(ASTPtr());
+		copyData(*interpreter.execute(), *output);
+
+		ASTIdentifier * ast_ident = new ASTIdentifier();
+		ast_ident->kind = ASTIdentifier::Table;
+		ast_ident->name = external_storage->getTableName();
+		arg = ast_ident;
+		external_tables.push_back(external_storage);
+	}
+	else
+		throw Exception("Global in (notIn) supports only select data.", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
 void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
 	/** Нужно преобразовать правый аргумент в множество.
-	  * Это может быть значение, перечисление значений или подзапрос.
+	  * Это может быть имя таблицы, значение, перечисление значений или подзапрос.
 	  * Перечисление значений парсится как функция tuple.
 	  */
 	IAST & args = *node->arguments;
@@ -517,7 +608,8 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	if (dynamic_cast<ASTSet *>(&*arg))
 		return;
 
-	if (dynamic_cast<ASTSubquery *>(&*arg))
+	/// Если подзапрос или имя таблицы для селекта
+	if (dynamic_cast<ASTSubquery *>(&*arg) || dynamic_cast<ASTIdentifier *>(&*arg))
 	{
 		/// Получаем поток блоков для подзапроса, отдаем его множеству, и кладём это множество на место подзапроса.
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
@@ -541,7 +633,27 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			subquery_settings.extremes = 0;
 			subquery_context.setSettings(subquery_settings);
 
-			InterpreterSelectQuery interpreter(arg->children[0], subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+			ASTPtr subquery;
+			if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
+			{
+				ParserSelectQuery parser;
+
+				String query = "SELECT * FROM " + table->name;
+				const char * begin = query.data();
+				const char * end = begin + query.size();
+				const char * pos = begin;
+				const char * expected = "";
+
+				bool parse_res = parser.parse(pos, end, subquery, expected);
+				if (!parse_res)
+					throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
+									ErrorCodes::LOGICAL_ERROR);
+			}
+			else
+				subquery = arg->children[0];
+
+			InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+
 			ast_set->set = new Set(settings.limits);
 			ast_set->set->setSource(interpreter.execute());
 			sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
@@ -773,7 +885,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 		if (node->kind == ASTFunction::FUNCTION)
 		{
-			if (node->name == "in" || node->name == "notIn")
+			if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
 			{
 				if (!no_subqueries)
 				{
@@ -1004,7 +1116,7 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 		if (node->parameters)
 		{
 			ASTs & parameters = dynamic_cast<ASTExpressionList &>(*node->parameters).children;
-			Row params_row(parameters.size());
+			Array params_row(parameters.size());
 
 			for (size_t i = 0; i < parameters.size(); ++i)
 			{
@@ -1015,6 +1127,7 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 				params_row[i] = lit->value;
 			}
 
+			aggregate.parameters = params_row;
 			aggregate.function->setParameters(params_row);
 		}
 
@@ -1067,6 +1180,20 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 	actions.add(ExpressionActions::Action::arrayJoin(result_columns));
 }
 
+void ExpressionAnalyzer::processGlobalOperations()
+{
+	std::vector<ASTPtr> global_nodes;
+	findGlobalFunctions(ast, global_nodes);
+
+	size_t id = 1;
+	for (size_t i = 0; i < global_nodes.size(); ++i)
+	{
+		String external_table_name = "_data";
+		while (context.tryGetExternalTable(external_table_name + toString(id)))
+			id ++;
+		addExternalStorage(dynamic_cast<ASTFunction *>(&*global_nodes[i]), id);
+	}
+}
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain)
 {

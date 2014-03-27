@@ -210,6 +210,7 @@ BlockInputStreams StorageDistributed::read(
 			&new_settings,
 			need_host_column ? _host_column_name : "",
 			need_port_column ? _port_column_name : "",
+			external_tables,
 			processed_stage);
 
 		if (processed_stage == QueryProcessingStage::WithMergeableState || columns_to_remove.empty())
@@ -218,7 +219,7 @@ BlockInputStreams StorageDistributed::read(
 			res.push_back(new RemoveColumnsBlockInputStream(temp, columns_to_remove));
 	}
 
-	if (all_inclusive || values.find(std::make_pair("localhost", clickhouse_port)) != values.end())
+	if (cluster.getLocalNodesNum() > 0 && (all_inclusive || values.find(std::make_pair("localhost", clickhouse_port)) != values.end()))
 	{
 		ASTPtr modified_query_ast = remakeQuery(
 			query,
@@ -228,6 +229,9 @@ BlockInputStreams StorageDistributed::read(
 		/// Добавляем запросы к локальному ClickHouse
 		DB::Context new_context = context;
 		new_context.setSettings(new_settings);
+		for (auto & it : external_tables)
+			if (!new_context.tryGetExternalTable(it.first))
+				new_context.addExternalTable(it.first, it.second);
 
 		for(size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
@@ -238,6 +242,7 @@ BlockInputStreams StorageDistributed::read(
 				res.push_back(new RemoveColumnsBlockInputStream(interpreter.execute(), columns_to_remove));
 		}
 	}
+	external_tables.clear();
 
 	return res;
 }

@@ -15,6 +15,7 @@
 #include <unordered_set>
 
 #include <boost/assign/list_inserter.hpp>
+#include <boost/program_options.hpp>
 
 #include <Poco/File.h>
 #include <Poco/SharedPtr.h>
@@ -34,6 +35,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/copyData.h>
+#include <DB/IO/ReadBufferFromIStream.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 
@@ -55,6 +57,129 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+/// Описание внешней таблицы
+class ExternalTable
+{
+public:
+	std::string file; 		/// Файл с данными или '-' если stdin
+	std::string name; 		/// Имя таблицы
+	std::string format; 	/// Название формата хранения данных
+
+	/// Описание структуры таблицы: (имя столбца, имя типа данных)
+	std::vector<std::pair<std::string, std::string> > structure;
+
+	ReadBuffer *read_buffer;
+	Block sample_block;
+
+	void initReadBuffer()
+	{
+		if (file == "-")
+			read_buffer = new ReadBufferFromIStream(std::cin);
+		else
+			read_buffer = new ReadBufferFromFile(file);
+	}
+
+	void initSampleBlock(const Context &context)
+	{
+		for (size_t i = 0; i < structure.size(); ++i)
+		{
+			ColumnWithNameAndType column;
+			column.name = structure[i].first;
+			column.type = context.getDataTypeFactory().get(structure[i].second);
+			column.column = column.type->createColumn();
+			sample_block.insert(column);
+		}
+	}
+
+	ExternalTableData getData(const Context &context)
+	{
+		initReadBuffer();
+		initSampleBlock(context);
+		ExternalTableData res = std::make_pair(new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
+			format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE, context.getDataTypeFactory())), name);
+		return res;
+	}
+
+	/// Функция для отладочного вывода информации
+	void write()
+	{
+		std::cerr << "file " << file << std::endl;
+		std::cerr << "name " << name << std::endl;
+		std::cerr << "format " << format << std::endl;
+		std::cerr << "structure: \n";
+		for (size_t i = 0; i < structure.size(); ++i)
+			std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
+	}
+
+	/// Извлечение параметров из variables_map, которая строится по командной строке
+	ExternalTable(const boost::program_options::variables_map & external_options)
+	{
+		if (external_options.count("file"))
+			file = external_options["file"].as<std::string>();
+		else
+			throw Exception("--file field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+
+		if (external_options.count("name"))
+			name = external_options["name"].as<std::string>();
+		else
+			throw Exception("--name field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+
+		if (external_options.count("format"))
+			format = external_options["format"].as<std::string>();
+		else
+			throw Exception("--format field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+
+		if (external_options.count("structure"))
+		{
+			std::vector<std::string> temp = external_options["structure"].as<std::vector<std::string>>();
+
+			std::string argument;
+			for (size_t i = 0; i < temp.size(); ++i)
+				argument = argument + temp[i] + " ";
+			std::vector<std::string> vals = split(argument, " ,");
+
+			if (vals.size() & 1)
+				throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
+
+			for (size_t i = 0; i < vals.size(); i += 2)
+				structure.push_back(std::make_pair(vals[i], vals[i+1]));
+		}
+		else if (external_options.count("types"))
+		{
+			std::vector<std::string> temp = external_options["types"].as<std::vector<std::string>>();
+			std::string argument;
+			for (size_t i = 0; i < temp.size(); ++i)
+				argument = argument + temp[i] + " ";
+			std::vector<std::string> vals = split(argument, " ,");
+
+			for (size_t i = 0; i < vals.size(); ++i)
+				structure.push_back(std::make_pair("_" + toString(i + 1), vals[i]));
+		}
+		else
+			throw Exception("Neither --structure nor --types have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+	}
+
+	static std::vector<std::string> split(const std::string & s, const std::string &d)
+	{
+		std::vector<std::string> res;
+		std::string now;
+		for (size_t i = 0; i < s.size(); ++i)
+		{
+			if (d.find(s[i]) != std::string::npos)
+			{
+				if (!now.empty())
+					res.push_back(now);
+				now = "";
+				continue;
+			}
+			now += s[i];
+		}
+		if (!now.empty())
+			res.push_back(now);
+		return res;
+	}
+};
 
 
 class Client : public Poco::Util::Application
@@ -110,6 +235,9 @@ private:
 	size_t bytes_read_on_server;
 	size_t written_progress_chars;
 	bool written_first_block;
+
+	/// Информация о внешних таблицах
+	std::vector<ExternalTable> external_tables;
 
 
 	void initialize(Poco::Util::Application & self)
@@ -428,10 +556,25 @@ private:
 	}
 
 
+	/// Преобразовать внешние таблицы к ExternalTableData и переслать через connection
+	void sendExternalTables()
+	{
+		const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*parsed_query);
+		if (!select && !external_tables.empty())
+			throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
+
+		std::vector<ExternalTableData> data;
+		for (size_t i = 0; i < external_tables.size(); ++i)
+			data.push_back(external_tables[i].getData(context));
+		connection->sendExternalTablesData(data);
+	}
+
+
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, NULL, true);
+		sendExternalTables();
 		receiveResult();
 	}
 
@@ -448,7 +591,8 @@ private:
 		if ((is_interactive && !parsed_insert_query.data) || (stdin_is_not_tty && std_in.eof()))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, NULL, true);
+		sendExternalTables();
 
 		/// Получим структуру таблицы
 		Block sample = receiveSampleBlock();
@@ -788,66 +932,91 @@ private:
 		if (is_interactive && !written_first_block)
 			std::cout << "Ok." << std::endl;
 	}
-	
 
-	void defineOptions(Poco::Util::OptionSet & options)
+public:
+	void init(int argc, char ** argv)
 	{
-		Poco::Util::Application::defineOptions(options);
 
-		options.addOption(
-			Poco::Util::Option("config-file", "c")
-				.required(false)
-				.repeatable(false)
-				.argument("<file>")
-				.binding("config-file"));
+		/// Останавливаем внутреннюю обработку командной строки
+		stopOptionsProcessing();
 
-		options.addOption(
-			Poco::Util::Option("host", "h")
-				.required(false)
-				.repeatable(false)
-				.argument("<host>")
-				.binding("host"));
+		/// Перечисляем основные опции командной строки относящиеся к функциональности клиента
+		boost::program_options::options_description main_description("Main options");
+		main_description.add_options()
+			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file")
+			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "host")
+			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "port")
+			("user,u", 			boost::program_options::value<int> (), 			"user")
+			("password,p", 		boost::program_options::value<int> (), 			"password")
+			("query,q", 		boost::program_options::value<std::string> (), 	"query")
+			("database,d", 		boost::program_options::value<std::string> (), 	"database")
+			("multiline,m", "multiline")
+		;
 
-		options.addOption(
-			Poco::Util::Option("port", "")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("port"));
+		/// Перечисляем опции командной строки относящиеся к внешним таблицам
+		boost::program_options::options_description external_description("Main options");
+		external_description.add_options()
+			("file", 		boost::program_options::value<std::string> (), 	"data file or - for stdin")
+			("name", 		boost::program_options::value<std::string> ()->default_value("_data"), "name of the table")
+			("format", 		boost::program_options::value<std::string> ()->default_value("TabSeparated"), "data format")
+			("structure", 	boost::program_options::value<std::vector<std::string>> ()->multitoken(), "structure")
+			("types", 		boost::program_options::value<std::vector<std::string>> ()->multitoken(), "types")
+		;
 
-		options.addOption(
-			Poco::Util::Option("user", "u")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("user"));
+		std::vector<int> positions;
 
-		options.addOption(
-			Poco::Util::Option("password", "")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("password"));
+		positions.push_back(0);
+		for (int i = 1; i < argc; ++i)
+			if (strcmp(argv[i], "--external") == 0)
+				positions.push_back(i);
+		positions.push_back(argc);
 
-		options.addOption(
-			Poco::Util::Option("query", "e")
-				.required(false)
-				.repeatable(false)
-				.argument("<string>")
-				.binding("query"));
+		/// Парсим основные опции командной строки
+		boost::program_options::variables_map options;
+		boost::program_options::store(boost::program_options::parse_command_line(positions[1] - positions[0], argv, main_description), options);
 
-		options.addOption(
-			Poco::Util::Option("database", "d")
-				.required(false)
-				.repeatable(false)
-				.argument("<string>")
-				.binding("database"));
-		
-		options.addOption(
-			Poco::Util::Option("multiline", "m")
-				.required(false)
-				.repeatable(false)
-				.binding("multiline"));
+		size_t stdin_count = 0;
+		for (size_t i = 1; i + 1 < positions.size(); ++i)
+		{
+			boost::program_options::variables_map external_options;
+			boost::program_options::store(boost::program_options::parse_command_line(
+				positions[i+1] - positions[i], &argv[positions[i]], external_description), external_options);
+			try
+			{
+				external_tables.push_back(ExternalTable(external_options));
+				if (external_tables.back().file == "-")
+					stdin_count ++;
+				if (stdin_count > 1)
+					throw Exception("Two or more external tables has stdin (-) set as --file field", ErrorCodes::BAD_ARGUMENTS);
+			}
+			catch (const Exception & e)
+			{
+				std::string text = e.displayText();
+				std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+				std::cerr << "Table #" << i << std::endl << std::endl;
+				exit(e.code());
+			}
+		}
+
+		/// Сохраняем полученные данные во внутренний конфиг
+		if (options.count("config-file"))
+			config().setString("config-file", options["config-file"].as<std::string>());
+		if (options.count("host"))
+			config().setString("host", options["host"].as<std::string>());
+		if (options.count("query"))
+			config().setString("query", options["query"].as<std::string>());
+		if (options.count("database"))
+			config().setString("database", options["database"].as<std::string>());
+
+		if (options.count("port"))
+			config().setInt("port", options["port"].as<int>());
+		if (options.count("user"))
+			config().setInt("user", options["user"].as<int>());
+		if (options.count("password"))
+			config().setInt("password", options["password"].as<int>());
+
+		if (options.count("multiline"))
+			config().setBool("multiline", true);
 	}
 };
 

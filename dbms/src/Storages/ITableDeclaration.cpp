@@ -20,6 +20,16 @@ bool ITableDeclaration::hasRealColumn(const String &column_name) const
 }
 
 
+Names ITableDeclaration::getColumnNamesList() const
+{
+	const NamesAndTypesList & real_columns = getColumnsList();
+	Names res;
+	for (auto & it : real_columns)
+		res.push_back(it.first);
+	return res;
+}
+
+
 NameAndTypePair ITableDeclaration::getRealColumn(const String &column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();

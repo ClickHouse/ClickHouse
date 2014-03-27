@@ -97,14 +97,17 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
-		context.assertDatabaseExists(database_name);
-
-		if (context.isTableExist(database_name, table_name))
+		if (!create.is_temporary)
 		{
-			if (create.if_not_exists)
-				return context.getTable(database_name, table_name);
-			else
-				throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+			context.assertDatabaseExists(database_name);
+
+			if (context.isTableExist(database_name, table_name))
+			{
+				if (create.if_not_exists)
+					return context.getTable(database_name, table_name);
+				else
+					throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+			}
 		}
 
 		/// Получаем список столбцов
@@ -170,6 +173,13 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			storage_name = as_storage->getName();
 			create.storage = dynamic_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
 		}
+		else if (create.is_temporary)
+		{
+			storage_name = "Memory";
+			ASTFunction * func = new ASTFunction();
+			func->name = storage_name;
+			create.storage = func;
+		}
 		else if (create.is_view)
 		{
 			storage_name = "View";
@@ -191,7 +201,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			storage_name, data_path, table_name, database_name, context.getGlobalContext(), query_ptr, columns, create.attach);
 
 		/// Проверка наличия метаданных таблицы на диске и создание метаданных
-		if (!assume_metadata_exists)
+		if (!assume_metadata_exists && !create.is_temporary)
 		{
 			if (Poco::File(metadata_path).exists())
 			{
@@ -225,7 +235,13 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			}
 		}
 
-		context.addTable(database_name, table_name, res);
+		if (create.is_temporary)
+		{
+			res->is_dropped = true;
+			context.getSessionContext().addExternalTable(table_name, res);
+		}
+		else
+			context.addTable(database_name, table_name, res);
 	}
 
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные

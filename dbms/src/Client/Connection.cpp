@@ -196,7 +196,7 @@ bool Connection::ping()
 }
 
 
-void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings)
+void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
 {
 	forceConnected();
 	
@@ -231,6 +231,10 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	maybe_compressed_out = NULL;
 	block_in = NULL;
 	block_out = NULL;
+
+	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
+		sendData(Block());
 }
 
 
@@ -243,7 +247,7 @@ void Connection::sendCancel()
 }
 
 
-void Connection::sendData(const Block & block)
+void Connection::sendData(const Block & block, const String & name)
 {
 	//LOG_TRACE(log, "Sending data (" << getServerAddress() << ")");
 	
@@ -258,10 +262,32 @@ void Connection::sendData(const Block & block)
 	}
 
 	writeVarUInt(Protocol::Client::Data, *out);
+
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		writeStringBinary(name, *out);
+
 	block.checkNestedArraysOffsets();
 	block_out->write(block);
 	maybe_compressed_out->next();
 	out->next();
+}
+
+void Connection::sendExternalTablesData(ExternalTablesData & data)
+{
+	/// Если работаем со старым сервером, то никакой информации не отправляем
+	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		return;
+
+	for (size_t i = 0; i < data.size(); ++i)
+	{
+		data[i].first->readPrefix();
+		while(Block block = data[i].first->read())
+			sendData(block, data[i].second);
+		data[i].first->readSuffix();
+	}
+
+	/// Отправляем пустой блок, символизируя конец передачи данных
+	sendData(Block());
 }
 
 
@@ -335,6 +361,11 @@ Block Connection::receiveData()
 	//LOG_TRACE(log, "Receiving data (" << getServerAddress() << ")");
 		
 	initBlockInput();
+
+	String external_table_name;
+
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		readStringBinary(external_table_name, *in);
 
 	/// Прочитать из сети один блок
 	return block_in->read();

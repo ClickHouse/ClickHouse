@@ -47,6 +47,8 @@ const char * ParserComparisonExpression::operators[] =
 	"NOT LIKE",	"notLike",
 	"IN",		"in",
 	"NOT IN",	"notIn",
+	"GLOBAL IN",	"globalIn",
+	"GLOBAL NOT IN","globalNotIn",
 	nullptr
 };
 

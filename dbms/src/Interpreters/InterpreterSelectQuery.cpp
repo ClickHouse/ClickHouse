@@ -78,6 +78,13 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth);
 
+	/// Выполняем все Global in подзапросы, результаты будут сохранены в query_analyzer->external_tables
+	query_analyzer->processGlobalOperations();
+
+	/// Сохраняем в query context новые временные таблицы
+	for (auto & it : query_analyzer->external_tables)
+		context.addExternalTable(it->getTableName(), it);
+
 	if (input_)
 		streams.push_back(input_);
 }
@@ -126,18 +133,23 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 	/** Если таблица не указана - используем таблицу system.one.
 	  * Если база данных не указана - используем текущую базу данных.
 	  */
+	if (query.database)
+		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
+	if (query.table)
+		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
+
 	if (!query.table)
 	{
 		database_name = "system";
 		table_name = "one";
 	}
 	else if (!query.database)
-		database_name = context.getCurrentDatabase();
-
-	if (query.database)
-		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
-	if (query.table)
-		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
+	{
+		if (context.tryGetTable("", table_name))
+			database_name = "";
+		else
+			database_name = context.getCurrentDatabase();
+	}
 }
 
 
@@ -293,7 +305,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			settings.limits.max_rows_to_group_by &&
 			settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
 			settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
-		/// Нужно ли после агрегации сразу финализироыать агрегатные функции.
+		/// Нужно ли после агрегации сразу финализировать агрегатные функции.
 		bool aggregate_final =
 			need_aggregate &&
 			to_stage > QueryProcessingStage::WithMergeableState &&
@@ -511,6 +523,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
 	{
+		if (storage->isRemote())
+			storage->storeExternalTables(context.getExternalTables());
  		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
  		for (auto stream : streams)
  		{

@@ -47,7 +47,7 @@ public:
 		nested_func->setArguments(nested_arguments);
 	}
 
-	void setParameters(const Row & params)
+	void setParameters(const Array & params)
 	{
 		nested_func->setParameters(params);
 	}

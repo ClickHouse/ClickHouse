@@ -19,7 +19,7 @@ private:
 	  *  - size_compressed содержит сжатый размер этого блока.
 	  */
 	ReadBufferFromFile file_in;
-	size_t size_compressed;
+	size_t size_compressed = 0;
 
 	bool nextImpl()
 	{

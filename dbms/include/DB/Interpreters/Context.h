@@ -50,7 +50,6 @@ typedef std::pair<String, String> DatabaseAndTableName;
 typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
 typedef std::vector<DatabaseAndTableName> Dependencies;
 
-
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
   */
@@ -180,7 +179,7 @@ private:
 
 	String default_format;				/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
 										/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
-	
+	Tables external_tables;				/// Временные таблицы.
 	Context * session_context;			/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
 	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
@@ -217,8 +216,11 @@ public:
 	void assertDatabaseExists(const String & database_name) const;
 	void assertDatabaseDoesntExist(const String & database_name) const;
 
+	Tables getExternalTables() const;
+	StoragePtr tryGetExternalTable(const String & table_name) const;
 	StoragePtr getTable(const String & database_name, const String & table_name) const;
 	StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
+	void addExternalTable(const String & table_name, StoragePtr storage);
 	void addTable(const String & database_name, const String & table_name, StoragePtr table);
 	void addDatabase(const String & database_name);
 

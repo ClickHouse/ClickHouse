@@ -48,9 +48,10 @@ public:
 	}
 
 	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
-		const String & _host_column_, const String & _port_column_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		const String & _host_column_, const String & _port_column_, const Tables & external_tables_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
 		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), _host_column(_host_column_),
-		_port_column(_port_column_), stage(stage_), sent_query(false), finished(false), was_cancelled(false),
+		_port_column(_port_column_), external_tables(external_tables_), stage(stage_), sent_query(false), finished(false),
+		was_cancelled(false),
 		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
 	{
 		if (settings_)
@@ -122,11 +123,30 @@ protected:
 		}
 	}
 
+	/// Отправить на удаленные сервера все временные таблицы
+	void sendExternalTables()
+	{
+		ExternalTablesData res;
+		Tables::const_iterator it;
+		for (it = external_tables.begin(); it != external_tables.end(); it ++)
+		{
+			StoragePtr cur = it->second;
+			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
+			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), settings, stage, DEFAULT_BLOCK_SIZE, 1);
+			if (input.size() == 0)
+				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), it->first));
+			else
+				res.push_back(std::make_pair(input[0], it->first));
+		}
+		connection.sendExternalTablesData(res);
+	}
+
 	Block readImpl()
 	{
 		if (!sent_query)
 		{
-			connection.sendQuery(query, "", stage, send_settings ? &settings : NULL);
+			connection.sendQuery(query, "", stage, send_settings ? &settings : NULL, true);
+			sendExternalTables();
 			sent_query = true;
 		}
 
@@ -253,6 +273,8 @@ private:
 	String _host_column;
 	/// Имя столбца, куда записать номер порта (Например "_port"). Пустая строка, если записывать не надо.
 	String _port_column;
+	/// Временные таблицы, которые необходимо переслать на удаленные сервера.
+	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 
 	/// Отправили запрос (это делается перед получением первого блока).

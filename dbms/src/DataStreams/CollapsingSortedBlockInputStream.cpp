@@ -129,7 +129,7 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 			/// Запишем данные для предыдущего визита.
 			insertRows(merged_columns, merged_rows);
 
-			current_key = next_key;
+			current_key = std::move(next_key);
 			next_key.resize(description.size());
 			
 			count_negative = 0;

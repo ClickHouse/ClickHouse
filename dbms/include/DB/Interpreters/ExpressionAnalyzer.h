@@ -64,6 +64,8 @@ public:
 	  *   chain.finalize();
 	  */
 	
+	void processGlobalOperations();
+
 	/// До агрегации:
 	bool appendArrayJoin(ExpressionActionsChain & chain);
 	bool appendWhere(ExpressionActionsChain & chain);
@@ -95,6 +97,8 @@ public:
 	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
 	Block getSelectSampleBlock();
 
+	/// Все новые временные таблицы, полученные при выполнении подзапросов Global In
+	std::vector<StoragePtr> external_tables;
 private:
 	typedef std::set<String> NamesSet;
 	
@@ -124,7 +128,6 @@ private:
 	AggregateDescriptions aggregate_descriptions;
 
 	std::map<std::string, SetPtr> sets_with_subqueries;
-	
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
 	
@@ -257,10 +260,16 @@ private:
 	  */
 	void normalizeTree();
 	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, bool in_sign_rewritten);
+
+	/// Обходит запрос и сохраняет найденные глобальные функции (например Global in)
+	void findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes);
 	
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
-	
+	/// Выполнить подзапрос в секции global in и запомнить результат во временную таблицу типа memory
+	/// Все новые временные таблицы хранятся в переменной external_tables
+	void addExternalStorage(ASTFunction * node, size_t & name_id);
+
 	void getArrayJoinedColumns();
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
 	void addMultipleArrayJoinAction(ExpressionActions & actions);
