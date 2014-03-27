@@ -11,6 +11,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantileTiming.h>
 #include <DB/AggregateFunctions/AggregateFunctionIf.h>
+#include <DB/AggregateFunctions/AggregateFunctionArray.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -317,8 +318,24 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
 		DataTypes nested_dt = argument_types;
 		nested_dt.pop_back();
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), nested_dt);
+		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), nested_dt, recursion_level + 1);
 		return new AggregateFunctionIf(nested);
+	}
+	else if (recursion_level <= 1 && name.size() >= 6 && name.substr(name.size()-5) == "Array")
+	{
+		/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
+		size_t num_agruments = argument_types.size();
+
+		DataTypes nested_arguments;
+		for (size_t i = 0; i < num_agruments; ++i)
+		{
+			if (const DataTypeArray * array = dynamic_cast<const DataTypeArray *>(&*argument_types[i]))
+				nested_arguments.push_back(array->getNestedType());
+			else
+				throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) + " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 5), nested_arguments, recursion_level + 1);
+		return new AggregateFunctionArray(nested);
 	}
 	else
 		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
@@ -369,6 +386,9 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
 	if (recursion_level == 0 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
 		return isAggregateFunctionName(String(name.data(), name.size() - 2), 1);
+	/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
+	if (recursion_level <= 1 && name.size() >= 6 && name.substr(name.size()-5) == "Array")
+		return isAggregateFunctionName(String(name.data(), name.size() - 5), 1);
 
 	return false;
 }
