@@ -212,6 +212,7 @@ void MergeTreeData::loadDataParts()
 		try
 		{
 			part->loadIndex();
+			part->loadChecksums();
 		}
 		catch (...)
 		{
@@ -685,6 +686,82 @@ MergeTreeData::DataParts MergeTreeData::getDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
+}
+
+
+void MergeTreeData::DataPart::Checksums::check(const Checksums & rhs) const
+{
+	for (const auto & it : rhs.file_checksums)
+	{
+		const String & name = it.first;
+
+		if (!file_checksums.count(name))
+			throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
+	}
+
+	for (const auto & it : file_checksums)
+	{
+		const String & name = it.first;
+
+		auto jt = rhs.file_checksums.find(name);
+		if (jt == rhs.file_checksums.end())
+			throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
+
+		const Checksum & expected = it.second;
+		const Checksum & found = jt->second;
+
+		if (expected.size != found.size)
+			throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+		if (expected.hash != found.hash)
+			throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+	}
+}
+
+void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
+{
+	file_checksums.clear();
+	size_t count;
+
+	DB::assertString("checksums format version: 1\n", in);
+	DB::readText(count, in);
+	DB::assertString(" files:\n", in);
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		String name;
+		Checksum sum;
+
+		DB::readString(name, in);
+		DB::assertString("\n\tsize: ", in);
+		DB::readText(sum.size, in);
+		DB::assertString("\n\thash: ", in);
+		DB::readText(sum.hash.first, in);
+		DB::assertString(" ", in);
+		DB::readText(sum.hash.second, in);
+		DB::assertString("\n", in);
+
+		file_checksums.insert(std::make_pair(name, sum));
+	}
+}
+
+void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
+{
+	DB::writeString("checksums format version: 1\n", out);
+	DB::writeText(file_checksums.size(), out);
+	DB::writeString(" files:\n", out);
+
+	for (const auto & it : file_checksums)
+	{
+		DB::writeString(it.first, out);
+		DB::writeString("\n\tsize: ", out);
+		DB::writeText(it.second.size, out);
+		DB::writeString("\n\thash: ", out);
+		DB::writeText(it.second.hash.first, out);
+		DB::writeString(" ", out);
+		DB::writeText(it.second.hash.second, out);
+		DB::writeString("\n", out);
+	}
 }
 
 }
