@@ -81,18 +81,18 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		const IColumn ** nested = new const IColumn*[num_agruments];
-		std::vector<ColumnPtr> column_ptrs;
+		const IColumn * nested[num_agruments];
+
 		for (int i = 0; i < num_agruments; ++i)
-		{
-			ColumnPtr single_value_column = dynamic_cast<const ColumnArray &>(*columns[i]).cut(row_num, 1);
-			column_ptrs.push_back(single_value_column);
-			nested[i] = dynamic_cast<const ColumnArray &>(*single_value_column).getDataPtr().get();
-		}
-		for (int i = 0; i < num_agruments; ++i)
-			if (nested[i]->size() != nested[0]->size())
-				throw Exception("All arrays must be of the same size. Aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS);
-		for (size_t i = 0; i < nested[0]->size(); ++i)
+			nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
+
+		const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
+		const IColumn::Offsets_t & offsets = first_array_column.getOffsets();
+
+		size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
+		size_t end = offsets[row_num];
+
+		for (size_t i = begin; i < end; ++i)
 			nested_func->add(place, nested, i);
 	}
 
