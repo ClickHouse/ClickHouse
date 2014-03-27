@@ -134,6 +134,8 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 	{
 		while (!shutdown_called)
 		{
+			auto structure_lock = lockStructure(false);
+
 			/// Удаляем старые куски. На случай, если в слиянии что-то сломано, и из следующего блока вылетит исключение.
 			data.clearOldParts();
 
@@ -161,17 +163,13 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 						}
 					}
 
-					{
-						auto structure_lock = lockStructure(false);
-						if (!merger.selectPartsToMerge(parts, disk_space, false, aggressive, only_small, can_merge) &&
-							!merger.selectPartsToMerge(parts, disk_space,  true, aggressive, only_small, can_merge))
-							break;
-					}
+					if (!merger.selectPartsToMerge(parts, disk_space, false, aggressive, only_small, can_merge) &&
+						!merger.selectPartsToMerge(parts, disk_space,  true, aggressive, only_small, can_merge))
+						break;
 
 					merging_tagger = new CurrentlyMergingPartsTagger(parts, merger.estimateDiskSpaceForMerge(parts), *this);
 				}
 
-				auto structure_lock = lockStructure(true);
 				merger.mergeParts(merging_tagger->parts);
 			}
 
