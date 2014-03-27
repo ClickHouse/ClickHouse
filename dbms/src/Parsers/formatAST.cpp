@@ -498,6 +498,8 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 				"notLike",			" NOT LIKE ",
 				"in",				" IN ",
 				"notIn",			" NOT IN ",
+				"globalIn",			" GLOBAL IN ",
+				"globalNotIn",		" GLOBAL NOT IN ",
 				nullptr
 			};
 

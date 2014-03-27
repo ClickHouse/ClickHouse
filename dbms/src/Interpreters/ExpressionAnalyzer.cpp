@@ -569,7 +569,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 
 			bool parse_res = parser.parse(pos, end, subquery, expected);
 			if (!parse_res)
-				throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
+				throw Exception("Error in parsing SELECT query while creating set for table " + table->name + ".",
 								ErrorCodes::LOGICAL_ERROR);
 		}
 		else
@@ -592,7 +592,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 		external_tables.push_back(external_storage);
 	}
 	else
-		throw Exception("Global in (notIn) supports only select data.", ErrorCodes::BAD_ARGUMENTS);
+		throw Exception("GLOBAL [NOT] IN supports only SELECT data.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

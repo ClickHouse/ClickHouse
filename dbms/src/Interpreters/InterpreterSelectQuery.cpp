@@ -78,7 +78,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth);
 
-	/// Выполняем все Global in подзапросы, результаты будут сохранены в query_analyzer->external_tables
+	/// Выполняем все GLOBAL IN подзапросы, результаты будут сохранены в query_analyzer->external_tables
 	query_analyzer->processGlobalOperations();
 
 	/// Сохраняем в query context новые временные таблицы
