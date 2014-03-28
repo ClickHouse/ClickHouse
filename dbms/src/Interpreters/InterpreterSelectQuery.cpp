@@ -222,6 +222,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		ExpressionActionsPtr before_having;
 		ExpressionActionsPtr before_order_and_select;
 		ExpressionActionsPtr final_projection;
+
+		/// Столбцы из списка SELECT, до переименования в алиасы.
+		Names selected_columns;
 		
 		/// Нужно ли выполнять первую часть конвейера - выполняемую на удаленных серверах при распределенной обработке.
 		bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
@@ -268,6 +271,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 		/// Если есть агрегация, выполняем выражения в SELECT и ORDER BY на инициировавшем сервере, иначе - на серверах-источниках.
 		query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
+		selected_columns = chain.getLastStep().required_output;
 		has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
 		before_order_and_select = chain.getLastActions();
 		chain.addStep();
@@ -305,14 +309,17 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			if (need_aggregate)
 				executeAggregation(streams, before_aggregation, aggregate_overflow_row, aggregate_final);
 			else
+			{
 				executeExpression(streams, before_order_and_select);
+				executeDistinct(streams, true, selected_columns);
+			}
 
 			/** Оптимизация - при распределённой обработке запроса,
-			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
+			  *  если не указаны GROUP, HAVING, ORDER, но указан LIMIT,
 			  *  то выполним предварительный LIMIT на удалёном сервере.
 			  */
 			if (!second_stage
-				&& !query.distinct && !need_aggregate && !has_having && !has_order_by
+				&& !need_aggregate && !has_having && !has_order_by
 				&& query.limit_length)
 			{
 				executePreLimit(streams);
@@ -321,6 +328,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 		if (second_stage)
 		{
+			bool need_second_distinct_pass = true;
+
 			if (need_aggregate)
 			{
 				/// Если нужно объединить агрегированные результаты с нескольких серверов
@@ -333,15 +342,16 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 					executeHaving(streams, before_having);
 
 				executeExpression(streams, before_order_and_select);
+
+				executeDistinct(streams, true, selected_columns);
+
+				need_second_distinct_pass = streams.size() > 1;
 			}
 
 			if (has_order_by)
 				executeOrder(streams);
 			
 			executeProjection(streams, final_projection);
-			
-			/// Сначала выполняем DISTINCT во всех источниках.
-			executeDistinct(streams, true);
 
 			/// На этой стадии можно считать минимумы и максимумы, если надо.
 			if (settings.extremes)
@@ -352,20 +362,14 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 			  * ограничивающий число записей в каждом до offset + limit.
 			  */
-			if (query.limit_length && streams.size() > 1)
+			if (query.limit_length && streams.size() > 1 && !query.distinct)
 				executePreLimit(streams);
-			
-			bool need_second_distinct_pass = streams.size() > 1;
 			
 			executeUnion(streams);
 			
 			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 			if (need_second_distinct_pass)
-				executeDistinct(streams, false);
-			
-			/** NOTE: В некоторых случаях, DISTINCT можно было бы применять раньше
-			  *  - до сортировки и, возможно, на удалённых серверах.
-			  */
+				executeDistinct(streams, false, Names());
 
 			executeLimit(streams);
 		}
@@ -734,7 +738,7 @@ void InterpreterSelectQuery::executeProjection(BlockInputStreams & streams, Expr
 }
 
 
-void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order)
+void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order, Names columns)
 {
 	if (query.distinct)
 	{
@@ -752,7 +756,8 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = maybeAsynchronous(new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct), is_async);
+			stream = maybeAsynchronous(new DistinctBlockInputStream(
+				stream, settings.limits, limit_for_distinct, columns), is_async);
 		}
 	}
 }

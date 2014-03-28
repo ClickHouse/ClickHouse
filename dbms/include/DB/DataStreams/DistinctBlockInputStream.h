@@ -17,8 +17,10 @@ namespace DB
 class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_ = 0)
-		: limit(limit_),
+	/// Пустой columns_ значит все столбцы.
+	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_, Names columns_)
+		: columns_names(columns_),
+		limit(limit_),
 		max_rows(limits.max_rows_in_distinct),
 		max_bytes(limits.max_bytes_in_distinct),
 		overflow_mode(limits.distinct_overflow_mode)
@@ -51,11 +53,17 @@ protected:
 				return Block();
 			
 			size_t rows = block.rows();
-			size_t columns = block.columns();
+			size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
 
 			ConstColumnPlainPtrs column_ptrs(columns);
+
 			for (size_t i = 0; i < columns; ++i)
-				column_ptrs[i] = block.getByPosition(i).column;
+			{
+				if (columns_names.empty())
+					column_ptrs[i] = block.getByPosition(i).column;
+				else
+					column_ptrs[i] = block.getByName(columns_names[i]).column;
+			}
 
 			/// Будем фильтровать блок, оставляя там только строки, которых мы ещё не видели.
 			IColumn::Filter filter(rows);
@@ -111,7 +119,8 @@ protected:
 				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 			}
 
-			for (size_t i = 0; i < columns; ++i)
+			size_t all_columns = block.columns();
+			for (size_t i = 0; i < all_columns; ++i)
 				block.getByPosition(i).column = block.getByPosition(i).column->filter(filter);
 
 			return block;
@@ -129,6 +138,8 @@ private:
 		return true;
 	}
 	
+	Names columns_names;
+
 	size_t limit;
 	
 	/// Ограничения на максимальный размер множества

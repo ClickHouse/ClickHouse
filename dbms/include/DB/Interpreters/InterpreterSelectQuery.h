@@ -65,7 +65,7 @@ private:
 	void executeUnion(				BlockInputStreams & streams);
 	void executeLimit(				BlockInputStreams & streams);
 	void executeProjection(			BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeDistinct(			BlockInputStreams & streams, bool before_order);
+	void executeDistinct(			BlockInputStreams & streams, bool before_order, Names columns);
 	void executeSubqueriesInSets(	BlockInputStreams & streams, const Sets & sets);
 	
 
