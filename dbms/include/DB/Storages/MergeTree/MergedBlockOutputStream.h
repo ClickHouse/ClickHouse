@@ -132,7 +132,7 @@ protected:
 
 					type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
 					/// Уже могло накопиться достаточно данных для сжатия в новый блок.
-					if (stream.compressed.offset() > storage.context.getSettings().min_compress_block_size)
+					if (stream.compressed.offset() >= storage.context.getSettings().min_compress_block_size)
 						stream.compressed.next();
 					else
 						stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
@@ -163,7 +163,7 @@ protected:
 
 				type.serializeBinary(column, stream.compressed, prev_mark, limit);
 				/// Уже могло накопиться достаточно данных для сжатия в новый блок.
-				if (stream.compressed.offset() > storage.context.getSettings().min_compress_block_size)
+				if (stream.compressed.offset() >= storage.context.getSettings().min_compress_block_size)
 					stream.compressed.next();
 				else
 					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
