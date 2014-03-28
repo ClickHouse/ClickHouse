@@ -346,6 +346,8 @@ void TCPHandler::sendTotals()
 			initBlockOutput();
 
 			writeVarUInt(Protocol::Server::Totals, *out);
+			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+				writeStringBinary("", *out);
 
 			state.block_out->write(totals);
 			state.maybe_compressed_out->next();
@@ -369,6 +371,8 @@ void TCPHandler::sendExtremes()
 			initBlockOutput();
 
 			writeVarUInt(Protocol::Server::Extremes, *out);
+			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+				writeStringBinary("", *out);
 
 			state.block_out->write(extremes);
 			state.maybe_compressed_out->next();
