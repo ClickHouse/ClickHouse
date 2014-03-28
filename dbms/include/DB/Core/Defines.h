@@ -13,6 +13,8 @@
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC						300
 #define DBMS_DEFAULT_POLL_INTERVAL 								10
 
+#define DEFAULT_MIN_COMPRESS_BLOCK_SIZE							65536
+#define DEFAULT_MAX_COMPRESS_BLOCK_SIZE 						1048576
 /// Какими блоками по-умолчанию читаются и пишутся данные (в числе строк).
 #define DEFAULT_BLOCK_SIZE 										1048576
 /// То же самое, но для операций слияния. Меньше DEFAULT_BLOCK_SIZE для экономии оперативки (так как читаются все столбцы).

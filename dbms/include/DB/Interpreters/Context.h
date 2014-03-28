@@ -288,7 +288,7 @@ public:
 	const ProcessList & getProcessList() const								{ return shared->process_list; }
 
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
-	void setUncompressedCache(size_t cache_size_in_cells);
+	void setUncompressedCache(size_t max_size_in_bytes);
 	UncompressedCachePtr getUncompressedCache() const;
 
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.

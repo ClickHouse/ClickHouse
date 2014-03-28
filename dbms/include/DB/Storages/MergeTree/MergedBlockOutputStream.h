@@ -23,9 +23,9 @@ protected:
 	typedef std::set<std::string> OffsetColumns;
 	struct ColumnStream
 	{
-		ColumnStream(const String & escaped_column_name_, const String & data_path, const std::string & marks_path) :
+		ColumnStream(const String & escaped_column_name_, const String & data_path, const std::string & marks_path, size_t max_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE) :
 			escaped_column_name(escaped_column_name_),
-			plain_file(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY),
+			plain_file(data_path, max_compress_block_size, O_TRUNC | O_CREAT | O_WRONLY),
 			compressed_buf(plain_file),
 			marks_file(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY),
 			compressed(compressed_buf), marks(marks_file) {}
@@ -82,7 +82,8 @@ protected:
 			column_streams[size_name] = new ColumnStream(
 				escaped_size_name,
 				path + escaped_size_name + ".bin",
-				path + escaped_size_name + ".mrk");
+				path + escaped_size_name + ".mrk",
+				storage.context.getSettings().max_compress_block_size);
 
 			addStream(path, name, *type_arr->getNestedType(), level + 1);
 		}
@@ -90,7 +91,8 @@ protected:
 			column_streams[name] = new ColumnStream(
 				escaped_column_name,
 				path + escaped_column_name + ".bin",
-				path + escaped_column_name + ".mrk");
+				path + escaped_column_name + ".mrk",
+				storage.context.getSettings().max_compress_block_size);
 	}
 
 
@@ -129,7 +131,11 @@ protected:
 					}
 
 					type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
-					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+					/// Уже могло накопиться достаточно данных для сжатия в новый блок.
+					if (stream.compressed.offset() > storage.context.getSettings().min_compress_block_size)
+						stream.compressed.next();
+					else
+						stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 					prev_mark += limit;
 				}
 			}
@@ -156,7 +162,11 @@ protected:
 				}
 
 				type.serializeBinary(column, stream.compressed, prev_mark, limit);
-				stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+				/// Уже могло накопиться достаточно данных для сжатия в новый блок.
+				if (stream.compressed.offset() > storage.context.getSettings().min_compress_block_size)
+					stream.compressed.next();
+				else
+					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
 				prev_mark += limit;
 			}
 		}

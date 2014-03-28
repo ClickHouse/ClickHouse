@@ -137,7 +137,7 @@ StorageChunks::StorageChunks(
 	Context & context_,
 	bool attach)
 	:
-	StorageLog(path_, name_, columns_),
+	StorageLog(path_, name_, columns_, context_.getSettings().max_compress_block_size),
 	database_name(database_name_),
 	reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"),
 	context(context_),
