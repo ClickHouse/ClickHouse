@@ -588,7 +588,7 @@ private:
 			? query.substr(0, parsed_insert_query.data - query.data())
 			: query;
 
-		if ((is_interactive && !parsed_insert_query.data) || (stdin_is_not_tty && std_in.eof()))
+		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
 		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, NULL, true);
