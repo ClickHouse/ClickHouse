@@ -130,8 +130,8 @@ int main(int argc, char ** argv)
 
 		DB::ExpressionAnalyzer analyzer(ast, context);
 		DB::ExpressionActionsChain chain;
-		analyzer.appendSelect(chain);
-		analyzer.appendWhere(chain);
+		analyzer.appendSelect(chain, false);
+		analyzer.appendWhere(chain, false);
 		chain.finalize();
 		DB::ExpressionActionsPtr expression = chain.getLastActions();
 

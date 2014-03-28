@@ -56,8 +56,8 @@ int main(int argc, char ** argv)
 
 		DB::ExpressionAnalyzer analyzer(ast, context);
 		DB::ExpressionActionsChain chain;
-		analyzer.appendSelect(chain);
-		analyzer.appendProjectResult(chain);
+		analyzer.appendSelect(chain, false);
+		analyzer.appendProjectResult(chain, false);
 		chain.finalize();
 		DB::ExpressionActionsPtr expression = chain.getLastActions();
 		
