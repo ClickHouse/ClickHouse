@@ -118,9 +118,9 @@ void TCPHandler::runImpl()
 			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 				readData(global_settings);
 
-			/// Пересоздаем, поскольку получая данные внешних таблиц, мы получили пустой блок.
-			/// Из-за этого весь stream помечен как cancelled
-			state.block_in = BlockInputStreamPtr();
+			/// Очищаем, так как, получая данные внешних таблиц, мы получили пустой блок.
+			/// А значит, stream помечен как cancelled и читать из него нельзя.
+			state.block_in = NULL;
 
 			/// Обрабатываем Query
 			state.io = executeQuery(state.query, query_context, false, state.stage);
