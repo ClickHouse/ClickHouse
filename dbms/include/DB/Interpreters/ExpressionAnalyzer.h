@@ -53,7 +53,6 @@ public:
 	Names getRequiredColumns();
 
 	/** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
-	  * Выполняют подзапросы в соответствующих частях запроса.
 	  *
 	  * Пример использования:
 	  *   ExpressionActionsChain chain;
@@ -62,22 +61,25 @@ public:
 	  *   analyzer.appendSelect(chain);
 	  *   analyzer.appendOrderBy(chain);
 	  *   chain.finalize();
+	  *
+	  * Если указано only_types=true, не выполняет подзапросы в соответствующих частях запроса. Полученные таким
+	  *  образом действия не следует выполнять, они нужны только чтобы получить список столбцов с их типами.
 	  */
 	
 	void processGlobalOperations();
 
 	/// До агрегации:
-	bool appendArrayJoin(ExpressionActionsChain & chain);
-	bool appendWhere(ExpressionActionsChain & chain);
-	bool appendGroupBy(ExpressionActionsChain & chain);
-	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain);
+	bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
+	bool appendWhere(ExpressionActionsChain & chain, bool only_types);
+	bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
+	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 	
 	/// После агрегации:
-	bool appendHaving(ExpressionActionsChain & chain);
-	void appendSelect(ExpressionActionsChain & chain);
-	bool appendOrderBy(ExpressionActionsChain & chain);
+	bool appendHaving(ExpressionActionsChain & chain, bool only_types);
+	void appendSelect(ExpressionActionsChain & chain, bool only_types);
+	bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
 	/// Удаляет все столбцы кроме выбираемых SELECT, упорядочивает оставшиеся столбцы и переименовывает их в алиасы.
-	void appendProjectResult(ExpressionActionsChain & chain);
+	void appendProjectResult(ExpressionActionsChain & chain, bool only_types);
 	
 	/// Если ast не запрос SELECT, просто получает все действия для вычисления выражения.
 	/// Если project_result, в выходном блоке останутся только вычисленные значения в нужном порядке, переименованные в алиасы.
@@ -113,9 +115,7 @@ private:
 	
 	/// Исходные столбцы.
 	NamesAndTypesList columns;
-	/// Столбцы после ARRAY JOIN. Если нет ARRAY JOIN, совпадает с columns.
-	NamesAndTypesList columns_after_array_join;
-	/// Столбцы после агрегации. Если нет агрегации, совпадает с columns_after_array_join.
+	/// Столбцы после ARRAY JOIN и/или агрегации.
 	NamesAndTypesList aggregated_columns;
 
 	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
@@ -278,7 +278,7 @@ private:
 	
 	void getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions);
 	
-	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions);
+	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions, bool no_subqueries);
 	
 	/// Добавить агрегатные функции в aggregate_descriptions.
 	/// Установить has_aggregation=true, если есть хоть одна агрегатная функция.
