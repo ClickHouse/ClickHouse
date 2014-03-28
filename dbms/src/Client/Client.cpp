@@ -448,7 +448,7 @@ private:
 			
 			query += line;
 			
-			if (!ends_with_backslash && (ends_with_semicolon || !config().hasOption("multiline")))
+			if (!ends_with_backslash && (ends_with_semicolon || !config().has("multiline")))
 			{
 				if (query != prev_query)
 				{
@@ -490,8 +490,9 @@ private:
 
 	void nonInteractive()
 	{
+		String line;
 		if (config().has("query"))
-			process(config().getString("query"));
+			line = config().getString("query");
 		else
 		{
 			/** В случае, если параметр query не задан, то запрос будет читаться из stdin.
@@ -499,20 +500,52 @@ private:
 			  * Поддерживается только один запрос в stdin.
 			  */
 			
-			String stdin_str;
+			ReadBufferFromFileDescriptor in(STDIN_FILENO);
+			WriteBufferFromString out(line);
+			copyData(in, out);
+		}
 
+		if (config().has("multiquery"))
+		{
+			/// Несколько запросов, разделенных ';'.
+			/// Данные для INSERT заканчиваются переводом строки, а не ';'.
+
+			String query;
+
+			const char * begin = line.data();
+			const char * end = begin + line.size();
+
+			while (begin < end)
 			{
-				ReadBufferFromFileDescriptor in(STDIN_FILENO);
-				WriteBufferFromString out(stdin_str);
-				copyData(in, out);
-			}
+				const char * pos = begin;
+				ASTPtr ast = parseQuery(pos, end);
+				ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*ast);
 
-			process(stdin_str);
+				if (insert && insert->data)
+				{
+					pos = insert->data;
+					while (*pos && *pos != '\n')
+						++pos;
+					insert->end = pos;
+				}
+
+				query = line.substr(begin - line.data(), pos - begin);
+
+				begin = pos;
+				while (isWhitespace(*begin) || *begin == ';')
+					++begin;
+
+				process(query, ast);
+			}
+		}
+		else
+		{
+			process(line);
 		}
 	}
 
 
-	bool process(const String & line)
+	bool process(const String & line, ASTPtr parsed_query_ = nullptr)
 	{
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
@@ -524,7 +557,15 @@ private:
 		query = line;
 
 		/// Некоторые части запроса выполняются на стороне клиента (форматирование результата). Поэтому, распарсим запрос.
-		if (!parseQuery())
+		parsed_query = parsed_query_;
+
+		if (!parsed_query)
+		{
+			const char * begin = query.data();
+			parsed_query = parseQuery(begin, begin + query.size());
+		}
+
+		if (!parsed_query)
 			return true;
 
 		processed_rows = 0;
@@ -602,16 +643,15 @@ private:
 	}
 
 
-	bool parseQuery()
+	ASTPtr parseQuery(const char *& pos, const char * end)
 	{
 		ParserQuery parser;
 		const char * expected = "";
 
-		const char * begin = query.data();
-		const char * end = begin + query.size();
-		const char * pos = begin;
+		const char * begin = pos;
 
-		bool parse_res = parser.parse(pos, end, parsed_query, expected);
+		ASTPtr res;
+		bool parse_res = parser.parse(pos, end, res, expected);
 
 		/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 		if (!parse_res || (pos != end && *pos != ';'))
@@ -629,17 +669,17 @@ private:
 			else
 				throw Exception(message.str(), ErrorCodes::SYNTAX_ERROR);
 
-			return false;
+			return nullptr;
 		}
 
 		if (is_interactive)
 		{
 			std::cout << std::endl;
-			formatAST(*parsed_query, std::cout);
+			formatAST(*res, std::cout);
 			std::cout << std::endl << std::endl;
 		}
 		
-		return true;
+		return res;
 	}
 
 
@@ -950,7 +990,8 @@ public:
 			("password,p", 		boost::program_options::value<int> (), 			"password")
 			("query,q", 		boost::program_options::value<std::string> (), 	"query")
 			("database,d", 		boost::program_options::value<std::string> (), 	"database")
-			("multiline,m", "multiline")
+			("multiline,m",														"multiline")
+			("multiquery,n",													"multiquery")
 		;
 
 		/// Перечисляем опции командной строки относящиеся к внешним таблицам
@@ -1017,6 +1058,8 @@ public:
 
 		if (options.count("multiline"))
 			config().setBool("multiline", true);
+		if (options.count("multiquery"))
+			config().setBool("multiquery", true);
 	}
 };
 
