@@ -3,6 +3,7 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
+#include <DB/Parsers/ASTSet.h>
 
 namespace DB
 {
@@ -139,15 +140,11 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			inverted = true;
 			column = pk_columns[args[1]->getColumnName()];
 		}
-		/// для In, notIn
-		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<DB::ColumnSet *>(args[1].get()))
+		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<ASTSet *>(args[1].get()))
 		{
-			/// для in не бывает inverted
 			inverted = false;
-			/// не поддерживаем Primary Key, если аргумент функции in tuple
-			if (dynamic_cast<DB::ColumnTuple*>(args[0].get()))
-				return false;
 			column = pk_columns[args[0]->getColumnName()];
+			dynamic_cast<ASTSet *>(args[1].get())->set->createOrderedSet();
 		}
 		else
 			return false;
@@ -188,8 +185,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		else if (func->name == "in" || func->name == "notIn")
 		{
 			out.function = func->name == "in" ? RPNElement::FUNCTION_IN_SET : RPNElement::FUNCTION_NOT_IN_SET;
-			out.set = (dynamic_cast<DB::ColumnSet *>(args[1].get())->getData());
-			out.set->createOrderedSet();
+			out.in_function = node;
 		}
 		else
 			return false;
@@ -282,11 +278,21 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		}
 		else if (element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET)
 		{
-			const Range & key_range = key_ranges[element.key_column];
+			ASTFunction * in_func = dynamic_cast<ASTFunction *>(element.in_function.get());
+			ASTs & args = dynamic_cast<ASTExpressionList &>(*in_func->arguments).children;
+			ASTSet * ast_set = dynamic_cast<ASTSet *>(args[1].get());
+			if (in_func && ast_set)
+			{
+				const Range & key_range = key_ranges[element.key_column];
 
-			rpn_stack.push_back(element.set->mayBeTrueInRange(key_range.left, key_range.right));
-			if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-				rpn_stack.back() = !rpn_stack.back();
+				rpn_stack.push_back(ast_set->set->mayBeTrueInRange(key_range.left, key_range.right));
+				if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+					rpn_stack.back() = !rpn_stack.back();
+			}
+			else
+			{
+				throw DB::Exception("Set for IN is not created yet!");
+			}
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT)
 		{

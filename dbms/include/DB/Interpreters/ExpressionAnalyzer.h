@@ -101,6 +101,10 @@ public:
 
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
+
+	/// создает Set, заданные явно
+	void makeExplicitSets();
+
 private:
 	typedef std::set<String> NamesSet;
 	
@@ -313,6 +317,9 @@ private:
 	void assertSelect();
 	void assertAggregation();
 	void assertArrayJoin();
+
+	void makeExplicitSet(ASTFunction * node, const Block & sample_block);
+	void makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block);
 };
 
 }

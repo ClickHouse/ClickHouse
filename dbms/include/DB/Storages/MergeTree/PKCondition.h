@@ -8,7 +8,6 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
-#include <DB/Columns/ColumnSet.h>
 #include <DB/Storages/MergeTree/BoolMask.h>
 
 
@@ -347,7 +346,7 @@ private:
 		Range range;
 		size_t key_column;
 		/// Для FUNCTION_IN_SET
-		SetPtr set;
+		ASTPtr in_function;
 	};
 	
 	typedef std::vector<RPNElement> RPN;

@@ -21,6 +21,7 @@
 #include <DB/Columns/ColumnArray.h>
 
 #include <DB/Storages/MergeTree/BoolMask.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 
 namespace DB
 {

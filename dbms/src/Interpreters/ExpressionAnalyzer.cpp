@@ -498,6 +498,26 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	finished_asts[initial_ast] = ast;
 }
 
+void ExpressionAnalyzer::makeExplicitSets()
+{
+	makeExplicitSetsRecursively(ast, storage->getSampleBlock());
+}
+
+void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block)
+{
+	for (auto & child : node->children)
+		makeExplicitSetsRecursively(child, sample_block);
+
+	ASTFunction * func = dynamic_cast<ASTFunction *>(node.get());
+	if (func && func->kind == ASTFunction::FUNCTION && (func->name == "in" || func->name == "notIn"))
+	{
+		IAST & args = *func->arguments;
+		ASTPtr & arg = args.children[1];
+
+		if (!dynamic_cast<ASTSet *>(&*arg) && !dynamic_cast<ASTSubquery *>(&*arg))
+			makeExplicitSet(func, sample_block);
+	}
+}
 
 void ExpressionAnalyzer::findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes)
 {
@@ -679,7 +699,15 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	}
 	else
 	{
-		/// Случай явного перечисления значений.
+		makeExplicitSet(node, sample_block);
+	}
+}
+
+/// Случай явного перечисления значений.
+void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block)
+{
+		IAST & args = *node->arguments;
+		ASTPtr & arg = args.children[1];
 
 		DataTypes set_element_types;
 		ASTPtr & left_arg = args.children[0];
@@ -741,7 +769,6 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		ast_set->set = new Set(settings.limits);
 		ast_set->set->createFromAST(set_element_types, elements_ast);
 		arg = ast_set_ptr;
-	}
 }
 
 
