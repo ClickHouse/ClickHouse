@@ -100,7 +100,7 @@ public:
 	Block getSelectSampleBlock();
 
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
-	std::vector<StoragePtr> external_tables;
+	Tables external_tables;
 private:
 	typedef std::set<String> NamesSet;
 	
@@ -263,7 +263,8 @@ private:
 
 	/// Обходит запрос и сохраняет найденные глобальные функции (например GLOBAL IN)
 	void findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes);
-	
+	void findExternalTables(ASTPtr & ast);
+
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 	/// Выполнить подзапрос в секции GLOBAL IN и запомнить результат во временную таблицу типа memory

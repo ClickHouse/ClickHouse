@@ -83,7 +83,8 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->external_tables)
-		context.addExternalTable(it->getTableName(), it);
+		if (!(context.tryGetExternalTable(it.first)))
+		context.addExternalTable(it.first, it.second);
 
 	if (input_)
 		streams.push_back(input_);
@@ -504,7 +505,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (!interpreter_subquery)
 	{
 		if (storage->isRemote())
-			storage->storeExternalTables(context.getExternalTables());
+			storage->storeExternalTables(query_analyzer->external_tables);
  		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
  		for (auto stream : streams)
  		{
