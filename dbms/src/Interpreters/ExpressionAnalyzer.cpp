@@ -516,6 +516,34 @@ void ExpressionAnalyzer::findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> &
 }
 
 
+void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
+{
+	/// Рекурсивные вызовы. Намеренно опускаемся в подзапросы.
+	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+		findExternalTables(*it);
+
+	/// Если идентификатор типа таблица
+	StoragePtr external_storage;
+	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+		if (node->kind == ASTIdentifier::Kind::Table)
+			if (external_storage = context.tryGetExternalTable(node->name))
+				external_tables[node->name] = external_storage;
+
+	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	{
+		if (node->name == "globalIn" || node->name == "globalNotIn" || node->name == "In" || node->name == "NotIn")
+		{
+			IAST & args = *node->arguments;
+			ASTPtr & arg = args.children[1];
+			/// Если имя таблицы для селекта
+			if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*arg))
+				if (external_storage = context.tryGetExternalTable(id->name))
+					external_tables[id->name] = external_storage;
+		}
+	}
+}
+
+
 void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id)
 {
 	IAST & args = *node->arguments;
@@ -542,8 +570,13 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 		{
 			ParserSelectQuery parser;
 
-			if (context.tryGetExternalTable(table->name))
+			StoragePtr existing_storage;
+
+			if (existing_storage = context.tryGetExternalTable(table->name))
+			{
+				external_tables[table->name] = existing_storage;
 				return;
+			}
 
 			String query = "SELECT * FROM " + table->name;
 			const char * begin = query.data();
@@ -573,7 +606,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 		ast_ident->kind = ASTIdentifier::Table;
 		ast_ident->name = external_storage->getTableName();
 		arg = ast_ident;
-		external_tables.push_back(external_storage);
+		external_tables[external_table_name] = external_storage;
 	}
 	else
 		throw Exception("GLOBAL [NOT] IN supports only SELECT data.", ErrorCodes::BAD_ARGUMENTS);
@@ -1177,6 +1210,8 @@ void ExpressionAnalyzer::processGlobalOperations()
 			++id;
 		addExternalStorage(dynamic_cast<ASTFunction *>(&*global_nodes[i]), id);
 	}
+
+	findExternalTables(ast);
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
