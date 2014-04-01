@@ -573,7 +573,7 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 	else
 	{
 		auto left_it = range.left_bounded ? std::lower_bound(ordered_set->begin(), ordered_set->end(), left) : ordered_set->begin();
-		if (!range.left_included && left_it != ordered_set->end() && *left_it == left)
+		if (range.left_bounded && !range.left_included && left_it != ordered_set->end() && *left_it == left)
 			++left_it;
 
 		/// если весь диапазон, правее in
@@ -584,7 +584,7 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 		else
 		{
 			auto right_it = range.right_bounded ? std::upper_bound(ordered_set->begin(), ordered_set->end(), right) : ordered_set->end();
-			if (!range.right_included && right_it != ordered_set->begin() && *(right_it--) == right)
+			if (range.right_bounded && !range.right_included && right_it != ordered_set->begin() && *(right_it--) == right)
 				--right_it;
 
 			/// весь диапазон, левее in
