@@ -331,4 +331,43 @@ bool PKCondition::mayBeTrueAfter(const Field * left_pk)
 	return mayBeTrueInRange(left_pk, NULL, false);
 }
 
+ASTSet * PKCondition::RPNElement::inFunctionToSet()
+{
+	ASTFunction * in_func = dynamic_cast<ASTFunction *>(in_function.get());
+	if (!in_func)
+		return nullptr;
+	ASTs & args = dynamic_cast<ASTExpressionList &>(*in_func->arguments).children;
+	ASTSet * ast_set = dynamic_cast<ASTSet *>(args[1].get());
+	return ast_set;
+}
+
+String PKCondition::RPNElement::toString()
+{
+	std::ostringstream ss;
+	switch (function)
+	{
+		case FUNCTION_AND:
+			return "and";
+		case FUNCTION_OR:
+			return "or";
+		case FUNCTION_NOT:
+			return "not";
+		case FUNCTION_UNKNOWN:
+			return "unknown";
+		case FUNCTION_NOT_IN_SET:
+		case FUNCTION_IN_SET:
+		{
+			ss << "(column " << key_column << (function == FUNCTION_IN_SET ? " in " : " notIn ") << inFunctionToSet()->set->describe() << ")";
+			return ss.str();
+		}
+		case FUNCTION_IN_RANGE:
+		case FUNCTION_NOT_IN_RANGE:
+		{
+			ss << "(column " << key_column << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString() << ")";
+			return ss.str();
+		}
+		default:
+			return "ERROR";
+	}
+}
 }

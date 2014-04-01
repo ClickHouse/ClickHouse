@@ -261,7 +261,7 @@ public:
 	}
 };
 
-
+struct ASTSet;
 class PKCondition
 {
 public:
@@ -310,35 +310,7 @@ private:
 		RPNElement(Function function_, size_t key_column_, const Range & range_)
 			: function(function_), range(range_), key_column(key_column_){}
 		
-		String toString()
-		{
-			std::ostringstream ss;
-			switch (function)
-			{
-				case FUNCTION_AND:
-					return "and";
-				case FUNCTION_OR:
-					return "or";
-				case FUNCTION_NOT:
-					return "not";
-				case FUNCTION_UNKNOWN:
-					return "unknown";
-				case FUNCTION_NOT_IN_SET:
-				case FUNCTION_IN_SET:
-				{
-					ss << "(column " << key_column << (function == FUNCTION_IN_SET ? " in " : " notIn ") << set->descibe() << ")";
-					return ss.str();
-				}
-				case FUNCTION_IN_RANGE:
-				case FUNCTION_NOT_IN_RANGE:
-				{
-					ss << "(column " << key_column << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString() << ")";
-					return ss.str();
-				}
-				default:
-					return "ERROR";
-			}
-		}
+		String toString();
 		
 		Function function;
 		
@@ -347,6 +319,8 @@ private:
 		size_t key_column;
 		/// Для FUNCTION_IN_SET
 		ASTPtr in_function;
+		
+		ASTSet * inFunctionToSet();
 	};
 	
 	typedef std::vector<RPNElement> RPN;

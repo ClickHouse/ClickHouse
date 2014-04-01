@@ -64,7 +64,7 @@ public:
 	  */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
 
-	std::string descibe()
+	std::string describe()
 	{
 		if (!ordered_set)
 			return "{}";
