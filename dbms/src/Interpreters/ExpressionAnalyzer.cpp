@@ -498,15 +498,15 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	finished_asts[initial_ast] = ast;
 }
 
-void ExpressionAnalyzer::makeExplicitSets()
+void ExpressionAnalyzer::makeExplicitSets(bool create_ordered_set)
 {
-	makeExplicitSetsRecursively(ast, storage->getSampleBlock());
+	makeExplicitSetsRecursively(ast, storage->getSampleBlock(), create_ordered_set);
 }
 
-void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block)
+void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block, bool create_ordered_set)
 {
 	for (auto & child : node->children)
-		makeExplicitSetsRecursively(child, sample_block);
+		makeExplicitSetsRecursively(child, sample_block, create_ordered_set);
 
 	ASTFunction * func = dynamic_cast<ASTFunction *>(node.get());
 	if (func && func->kind == ASTFunction::FUNCTION && (func->name == "in" || func->name == "notIn"))
@@ -515,7 +515,7 @@ void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block 
 		ASTPtr & arg = args.children[1];
 
 		if (!dynamic_cast<ASTSet *>(&*arg) && !dynamic_cast<ASTSubquery *>(&*arg))
-			makeExplicitSet(func, sample_block);
+			makeExplicitSet(func, sample_block, create_ordered_set);
 	}
 }
 
@@ -699,12 +699,12 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	}
 	else
 	{
-		makeExplicitSet(node, sample_block);
+		makeExplicitSet(node, sample_block, false);
 	}
 }
 
 /// Случай явного перечисления значений.
-void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block)
+void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set)
 {
 		IAST & args = *node->arguments;
 		ASTPtr & arg = args.children[1];
@@ -767,7 +767,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
 		ASTPtr ast_set_ptr = ast_set;
 		ast_set->set = new Set(settings.limits);
-		ast_set->set->createFromAST(set_element_types, elements_ast);
+		ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
 		arg = ast_set_ptr;
 }
 

@@ -501,7 +501,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 	
-	query_analyzer->makeExplicitSets();
+	/// Создаем In заданные явно. Внутри In создаем дополнительно сортированный вектор значений
+	query_analyzer->makeExplicitSets(true);
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
 	{

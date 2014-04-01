@@ -46,7 +46,7 @@ public:
 	  * types - типы того, что стоит слева от IN.
 	  * node - это список значений: 1, 2, 3 или список tuple-ов: (1, 2), (3, 4), (5, 6).
 	  */
-	void createFromAST(DataTypes & types, ASTPtr node);
+	void createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set);
 
 	/** Запомнить поток блоков (для подзапросов), чтобы потом его можно было прочитать и создать множество.
 	  */
@@ -55,7 +55,7 @@ public:
 	BlockInputStreamPtr getSource() { return source; }
 
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
-	bool insertFromBlock(Block & block);
+	bool insertFromBlock(Block & block, bool create_ordered_set = false);
 
 	size_t size() const { return getTotalRowCount(); }
 
@@ -66,41 +66,25 @@ public:
 
 	std::string descibe()
 	{
-		if (type == KEY_64)
-			return setToString(key64);
-		else if (type == KEY_STRING)
-			return setToString(key_string);
-		else if (type == HASHED)
-			return "{hashed values}";
-		else if (type == EMPTY)
+		if (!ordered_set)
 			return "{}";
-		else
-			throw DB::Exception("Unknown type");
-	}
-	
-	void createOrderedSet()
-	{
-		for (auto & key : key64)
-			ordered_key64.push_back(key);
-		std::sort(ordered_key64.begin(), ordered_key64.end());
-
-		for (auto & key : key_string)
-			ordered_string.push_back(key);
-		std::sort(ordered_string.begin(), ordered_string.end());
-	}
-
-	BoolMask mayBeTrueInRange(const Field & left, const Field & right)
-	{
-		if (type == KEY_64)
-			return mayBeTrueInRangeImpl(left, right, ordered_key64);
-		else if (type == KEY_STRING)
-			return mayBeTrueInRangeImpl(left, right, ordered_string);
-		else{
-			std::stringstream ss;
-			ss << "Unsupported set of type " << type;
-			throw DB::Exception(ss.str());
+		
+		bool first = true;
+		std::stringstream ss;
+		
+		for (const Field & f : *ordered_set)
+		{
+			if (!first)
+				ss << ", " << f;
+			else
+				ss << f;
+			first = false;
 		}
+		return ss.str();
 	}
+
+	BoolMask mayBeTrueInRange(const Range & range);
+	
 private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
 	  *  одного или нескольких столбцов значений множеству.
@@ -166,91 +150,9 @@ private:
 	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
 	size_t getTotalByteCount() const;
 
-	template <typename T>
-	std::string setToString(const T & set)
-	{
-		std::stringstream ss;
-		bool first = false;
-
-		for (auto it = set.begin(); it != set.end(); ++it)
-		{
-			if (first)
-			{
-				ss << *it;
-				first = false;
-			}
-			else
-			{
-				ss << ", " << *it;
-			}
-		}
-
-		ss << "}";
-		return ss.str();
-	}
-
-	/// несколько столбцов пока не поддерживаем
-	std::vector<UInt64> ordered_key64;
-	std::vector<StringRef> ordered_string;
-
-	template <class T>
-	BoolMask mayBeTrueInRangeImpl(const Field & field_left, const Field & field_right, const std::vector<T> & v)
-	{
-		T left = field_left.get<T>();
-		T right = field_right.get<T>();
-
-		bool can_be_true;
-		bool can_be_false = true;
-
-		/// Если во всем диапазоне одинаковый ключ и он есть в Set, то выбираем блок для in и не выбираем для notIn
-		if (left == right)
-		{
-			if (std::find(v.begin(), v.end(), left) != v.end())
-			{
-				can_be_false = false;
-				can_be_true = true;
-			}
-			else
-			{
-				can_be_true = false;
-				can_be_false = true;
-			}
-		}
-		else
-		{
-			auto left_it = std::lower_bound(v.begin(), v.end(), left);
-			/// если весь диапазон, правее in
-			if (left_it == v.end())
-			{
-				can_be_true = false;
-			}
-			else
-			{
-				auto right_it = std::upper_bound(v.begin(), v.end(), right);
-				/// весь диапазон, левее in
-				if (right_it == v.begin())
-				{
-					can_be_true = false;
-				}
-				else
-				{
-					--right_it;
-					/// в диапазон не попадает ни одного ключа из in
-					if (*right_it < *left_it)
-					{
-						can_be_true = false;
-					}
-					else
-					{
-						can_be_true = true;
-					}
-				}
-			}
-		}
-
-		return BoolMask(can_be_true, can_be_false);
-	}
-
+	typedef std::vector<Field> OrderedSet;
+	typedef std::unique_ptr<OrderedSet> OrderedSetPtr;
+	OrderedSetPtr ordered_set;
 };
 
 typedef Poco::SharedPtr<Set> SetPtr;

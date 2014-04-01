@@ -144,7 +144,6 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		{
 			inverted = false;
 			column = pk_columns[args[0]->getColumnName()];
-			dynamic_cast<ASTSet *>(args[1].get())->set->createOrderedSet();
 		}
 		else
 			return false;
@@ -285,7 +284,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 			{
 				const Range & key_range = key_ranges[element.key_column];
 
-				rpn_stack.push_back(ast_set->set->mayBeTrueInRange(key_range.left, key_range.right));
+				rpn_stack.push_back(ast_set->set->mayBeTrueInRange(key_range));
 				if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
 					rpn_stack.back() = !rpn_stack.back();
 			}

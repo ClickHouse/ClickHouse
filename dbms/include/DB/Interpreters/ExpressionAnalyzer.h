@@ -102,9 +102,8 @@ public:
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
 
-	/// создает Set, заданные явно
-	void makeExplicitSets();
-
+	/// ordered_set нужен если в In используется Primary Key
+	void makeExplicitSets(bool create_ordered_set);
 private:
 	typedef std::set<String> NamesSet;
 	
@@ -318,8 +317,8 @@ private:
 	void assertAggregation();
 	void assertArrayJoin();
 
-	void makeExplicitSet(ASTFunction * node, const Block & sample_block);
-	void makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block);
+	void makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set);
+	void makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block, bool create_ordered_set);
 };
 
 }

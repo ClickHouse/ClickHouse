@@ -352,7 +352,36 @@ private:
 	}
 };
 
-
+static std::ostream & operator<< (std::ostream & os, const Field & x)
+{
+	bool first = false;
+	switch (x.getType())
+	{
+		case Field::Types::Null: 			os << "Null";						break;
+		case Field::Types::UInt64: 			os << x.get<UInt64>();				break;
+		case Field::Types::Int64: 			os << x.get<Int64>();				break;
+		case Field::Types::Float64: 		os << x.get<Float64>();				break;
+		case Field::Types::String: 			os << x.get<String>();				break;
+		case Field::Types::Array: 				
+			for(const Field & f : x.get<Array>())
+			{
+				os << "[";
+				if (first)
+					os << f;
+				else
+					os << ", " << f;
+				os << "]";
+			}
+			break;
+		default: 
+		{
+			std::stringstream ss;
+			ss << "Unsupported type " << x.getTypeName();
+			throw DB::Exception(ss.str());
+		}
+	}
+	return os;
+}
 template <> struct Field::TypeToEnum<Null> 								{ static const Types::Which value = Types::Null; };
 template <> struct Field::TypeToEnum<UInt64> 							{ static const Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<Int64> 							{ static const Types::Which value = Types::Int64; };
