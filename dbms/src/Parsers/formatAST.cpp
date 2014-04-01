@@ -248,7 +248,7 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 		if (ast.is_materialized_view)
 			what = "MATERIALIZED VIEW";
 
-		s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH " : "CREATE ") << what << " " << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
+		s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH " : "CREATE ") << (ast.is_temporary ? "TEMPORARY " : "") << what << " " << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 	}
 
