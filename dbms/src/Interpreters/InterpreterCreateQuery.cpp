@@ -237,7 +237,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 		if (create.is_temporary)
 		{
-			res->is_dropped = true;
+//			res->is_dropped = true;
 			context.getSessionContext().addExternalTable(table_name, res);
 		}
 		else
