@@ -63,10 +63,15 @@ private:
 class InterserverIOEndpointHolder
 {
 public:
-	InterserverIOEndpointHolder(const String & name_, InterserverIOEndpointPtr endpoint, InterserverIOHandler & handler_)
-		: name(name_), handler(handler_)
+	InterserverIOEndpointHolder(const String & name_, InterserverIOEndpointPtr endpoint_, InterserverIOHandler & handler_)
+		: name(name_), endpoint(endpoint_), handler(handler_)
 	{
 		handler.addEndpoint(name, endpoint);
+	}
+
+	InterserverIOEndpointPtr getEndpoint()
+	{
+		return endpoint;
 	}
 
 	~InterserverIOEndpointHolder()
@@ -83,6 +88,7 @@ public:
 
 private:
 	String name;
+	InterserverIOEndpointPtr endpoint;
 	InterserverIOHandler & handler;
 };
 

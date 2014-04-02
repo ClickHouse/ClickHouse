@@ -290,7 +290,7 @@ void MergeTreeData::clearOldParts()
 		{
 			LOG_DEBUG(log, "'Removing' part " << (*it)->name << " (prepending old_ to its name)");
 
-			(*it)->renameToOld();
+			(*it)->renameAddPrefix("old_");
 			all_data_parts.erase(it++);
 		}
 		else
@@ -701,6 +701,14 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 
 	data_parts.insert(part);
 	all_data_parts.insert(part);
+}
+
+void MergeTreeData::renameAndRemovePart(DataPartPtr part, const String & prefix)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	if (!data_parts.erase(part))
+		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
+	part->renameAddPrefix(prefix);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()

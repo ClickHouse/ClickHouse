@@ -7,6 +7,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/IO/ReadBufferFromString.h>
 #include <Poco/RWLock.h>
 
 namespace DB
@@ -125,6 +126,15 @@ public:
 			{
 				return files.empty();
 			}
+
+			static Checksums parse(const String & s)
+			{
+				ReadBufferFromString in(s);
+				Checksums res;
+				res.readText(in);
+				assertEOF(in);
+				return res;
+			}
 		};
 
  		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
@@ -176,10 +186,11 @@ public:
 			Poco::File(to).remove(true);
 		}
 
-		void renameToOld() const
+		/// Переименовывает кусок, дописав к имени префикс.
+		void renameAddPrefix(const String & prefix) const
 		{
 			String from = storage.full_path + name + "/";
-			String to = storage.full_path + "old_" + name + "/";
+			String to = storage.full_path + prefix + name + "/";
 
 			Poco::File f(from);
 			f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
@@ -317,6 +328,12 @@ public:
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
 	  */
 	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment);
+
+	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
+	  * Лучше использовать только когда никто не может читать или писать этот кусок
+	  *  (например, при инициализации таблицы).
+	  */
+	void renameAndRemovePart(DataPartPtr part, const String & prefix);
 
 	/** Удалить неактуальные куски.
 	  */

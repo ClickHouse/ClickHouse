@@ -55,7 +55,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	else
 	{
 		checkTableStructure();
-		//checkParts();
+		checkParts();
 	}
 
 	String endpoint_name = "ReplicatedMergeTree:" + replica_path;
@@ -79,8 +79,12 @@ StoragePtr StorageReplicatedMergeTree::create(
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
 {
-	return (new StorageReplicatedMergeTree(zookeeper_path_, replica_name_, attach, path_, name_, columns_, context_, primary_expr_ast_,
-		date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_))->thisPtr();
+	StorageReplicatedMergeTree * res = new StorageReplicatedMergeTree(zookeeper_path_, replica_name_, attach,
+		path_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
+		index_granularity_, mode_, sign_column_, settings_);
+	StoragePtr res_ptr = res->thisPtr();
+	dynamic_cast<MyInterserverIOEndpoint &>(*res->endpoint_holder->getEndpoint()).setOwnedStorage(res_ptr);
+	return res_ptr;
 }
 
 static String formattedAST(const ASTPtr & ast)
@@ -156,6 +160,7 @@ void StorageReplicatedMergeTree::checkTableStructure()
 		assertString(it.second->getName(), buf);
 		assertString("\n", buf);
 	}
+	assertEOF(buf);
 }
 
 void StorageReplicatedMergeTree::createReplica()
@@ -170,6 +175,8 @@ void StorageReplicatedMergeTree::createReplica()
 
 void StorageReplicatedMergeTree::activateReplica()
 {
+	throw Exception("test");
+
 	std::stringstream host;
 	host << "host: " << context.getInterserverIOHost() << std::endl;
 	host << "port: " << context.getInterserverIOPort() << std::endl;
@@ -194,7 +201,42 @@ bool StorageReplicatedMergeTree::isTableEmpty()
 	return true;
 }
 
-void StorageReplicatedMergeTree::checkParts() { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+void StorageReplicatedMergeTree::checkParts()
+{
+	Strings expected_parts_vec = zookeeper.getChildren(replica_path + "/parts");
+	NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
+
+	MergeTreeData::DataParts parts = data.getDataParts();
+
+	MergeTreeData::DataPartsVector unexpected_parts;
+	for (const auto & part : parts)
+	{
+		if (expected_parts.count(part->name))
+		{
+			expected_parts.erase(part->name);
+		}
+		else
+		{
+			unexpected_parts.push_back(part);
+		}
+	}
+
+	if (!expected_parts.empty())
+		throw Exception("Not found " + toString(expected_parts.size())
+			+ " (including " + *expected_parts.begin() + ") parts in table " + data.getTableName(),
+			ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+
+	if (unexpected_parts.size() > 1)
+		throw Exception("More than one unexpected part (including " + unexpected_parts[0]->name
+			+ ") in table " + data.getTableName(),
+			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+
+	for (MergeTreeData::DataPartPtr part : unexpected_parts)
+	{
+		LOG_ERROR(log, "Unexpected part " << part->name << ". Renaming it to ignored_" + part->name);
+		data.renameAndRemovePart(part, "ignored_");
+	}
+}
 
 void StorageReplicatedMergeTree::loadQueue() { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
 
@@ -207,6 +249,7 @@ void StorageReplicatedMergeTree::executeSomeQueueEntry() { throw Exception("Not 
 bool StorageReplicatedMergeTree::tryExecute(const LogEntry & entry) { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name) { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+
 void StorageReplicatedMergeTree::getPart(const String & name, const String & replica_name) { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
 
 void StorageReplicatedMergeTree::shutdown()

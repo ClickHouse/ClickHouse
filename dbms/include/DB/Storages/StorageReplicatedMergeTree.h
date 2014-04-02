@@ -62,6 +62,8 @@ public:
 	void drop() override;
 
 private:
+	friend class ReplicatedMergeTreeBlockOutputStream;
+
 	struct LogEntry
 	{
 		enum Type
@@ -82,7 +84,12 @@ private:
 	class MyInterserverIOEndpoint : public InterserverIOEndpoint
 	{
 	public:
-		MyInterserverIOEndpoint(StorageReplicatedMergeTree & storage_) : storage(storage_), owned_storage(storage.thisPtr()) {}
+		MyInterserverIOEndpoint(StorageReplicatedMergeTree & storage_) : storage(storage_) {}
+
+		void setOwnedStorage(StoragePtr owned_storage_)
+		{
+			owned_storage = owned_storage_;
+		}
 
 		void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) override;
 
