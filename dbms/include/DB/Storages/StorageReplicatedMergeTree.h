@@ -72,11 +72,33 @@ private:
 			MERGE_PARTS,
 		};
 
-		Type type;
 		String znode_name;
 
+		Type type;
 		String new_part_name;
 		Strings parts_to_merge;
+
+		void writeText(WriteBuffer & out) const;
+		void readText(ReadBuffer & in);
+
+		String toString() const
+		{
+			String s;
+			{
+				WriteBufferFromString out(s);
+				writeText(out);
+			}
+			return s;
+		}
+
+		static LogEntry parse(const String & s)
+		{
+			ReadBufferFromString in(s);
+			LogEntry res;
+			res.readText(in);
+			assertEOF(in);
+			return res;
+		}
 	};
 
 	typedef std::list<LogEntry> LogEntries;

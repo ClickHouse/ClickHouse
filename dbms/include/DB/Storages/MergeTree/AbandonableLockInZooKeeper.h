@@ -23,7 +23,7 @@ public:
 		ABANDONED,
 	};
 
-	AbandonableLockInZookeeper(
+	AbandonableLockInZooKeeper(
 		const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_)
 		: zookeeper(zookeeper_), path_prefix(path_prefix_)
 	{
@@ -42,7 +42,7 @@ public:
 	/// Распарсить число в конце пути.
 	UInt64 getNumber()
 	{
-		return static_cast<UInt64>(atol(path.substr(path_prefix.size())));
+		return static_cast<UInt64>(atol(path.substr(path_prefix.size()).c_str()));
 	}
 
 	void unlock()
@@ -51,16 +51,23 @@ public:
 		zookeeper.remove(holder_path);
 	}
 
-	~AbandonableLockInZookeeper()
+	/// Добавляет в список действия, эквивалентные unlock().
+	void getUnlockOps(zkutil::Ops & ops)
+	{
+		ops.push_back(new zkutil::Op::Remove(path, -1));
+		ops.push_back(new zkutil::Op::Remove(holder_path, -1));
+	}
+
+	~AbandonableLockInZooKeeper()
 	{
 		try
 		{
-			zookeeper.remove(holder_path);
-			zookeeper.set(path, ""); /// Это не обязательно.
+			zookeeper.tryRemove(holder_path);
+			zookeeper.trySet(path, ""); /// Это не обязательно.
 		}
 		catch (...)
 		{
-			tryLogCurrentException();
+			tryLogCurrentException("~AbandonableLockInZooKeeper");
 		}
 	}
 

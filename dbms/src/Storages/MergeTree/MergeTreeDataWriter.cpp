@@ -114,7 +114,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->left = temp_index;
 	new_data_part->right = temp_index;
 	new_data_part->level = 0;
-	new_data_part->name = tmp_part_name; (no tmp_ here?)
+	new_data_part->name = tmp_part_name;
 	new_data_part->size = part_size;
 	new_data_part->modification_time = time(0);
 	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);

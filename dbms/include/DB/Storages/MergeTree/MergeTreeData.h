@@ -127,6 +127,16 @@ public:
 				return files.empty();
 			}
 
+			String toString() const
+			{
+				String s;
+				{
+					WriteBufferFromString out(s);
+					writeText(out);
+				}
+				return s;
+			}
+
 			static Checksums parse(const String & s)
 			{
 				ReadBufferFromString in(s);
@@ -333,7 +343,11 @@ public:
 	  * Лучше использовать только когда никто не может читать или писать этот кусок
 	  *  (например, при инициализации таблицы).
 	  */
-	void renameAndRemovePart(DataPartPtr part, const String & prefix);
+	void renameAndDetachPart(DataPartPtr part, const String & prefix);
+
+	/** Удаляет кусок из рабочего набора. clearOldParts удалит его файлы, если на него никто не ссылается.
+	  */
+	void removePart(DataPartPtr part);
 
 	/** Удалить неактуальные куски.
 	  */

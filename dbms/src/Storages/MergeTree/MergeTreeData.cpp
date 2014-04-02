@@ -703,7 +703,7 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 	all_data_parts.insert(part);
 }
 
-void MergeTreeData::renameAndRemovePart(DataPartPtr part, const String & prefix)
+void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	if (!data_parts.erase(part))

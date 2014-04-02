@@ -34,15 +34,22 @@ public:
 				storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
 			{
 				/// Блок с таким ID уже когда-то вставляли. Проверим чексуммы и не будем его вставлять.
-				auto expected_checksums = MergeTreeData::DataPart::Checksums.parse(expected_checksums_str);
+				auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
 				expected_checksums.check(part->checksums);
+
+				part->remove();
 
 				/// Бросаем block_number_lock.
 				continue;
 			}
 
-			storage.data.renameTempPartAndAdd(part);
+			storage.data.renameTempPartAndAdd(part, nullptr);
 
+			StorageReplicatedMergeTree::LogEntry log_entry;
+			log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+			log_entry.new_part_name = part->name;
+
+			/// Одновременно добавим информацию о куске во все нужные места в ZooKeeper и снимем block_number_lock.
 			zkutil::Ops ops;
 			ops.push_back(new zkutil::Op::Create(
 				storage.zookeeper_path + "/blocks/" + block_id,
@@ -56,18 +63,22 @@ public:
 				zkutil::CreateMode::Persistent));
 			ops.push_back(new zkutil::Op::Create(
 				storage.zookeeper_path + "/blocks/" + block_id + "/number",
-				toString(part_numbre),
+				toString(part_number),
 				storage.zookeeper.getDefaultACL(),
 				zkutil::CreateMode::Persistent));
 			ops.push_back(new zkutil::Op::Create(
-				storage.replica_path + "/parts/" + block_id + "/number",
-				toString(part_numbre),
+				storage.replica_path + "/parts/" + part->name,
+				"",
 				storage.zookeeper.getDefaultACL(),
 				zkutil::CreateMode::Persistent));
+			ops.push_back(new zkutil::Op::Create(
+				storage.replica_path + "/log/log-",
+				log_entry.toString(),
+				storage.zookeeper.getDefaultACL(),
+				zkutil::CreateMode::PersistentSequential));
+			block_number_lock.getUnlockOps(ops);
 
-           const std::vector<data::ACL>& acl, CreateMode::type mode);
-
-			block_number_lock.unlock();
+			storage.zookeeper.multi(ops);
 		}
 	}
 

@@ -1,4 +1,5 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
@@ -175,8 +176,6 @@ void StorageReplicatedMergeTree::createReplica()
 
 void StorageReplicatedMergeTree::activateReplica()
 {
-	throw Exception("test");
-
 	std::stringstream host;
 	host << "host: " << context.getInterserverIOHost() << std::endl;
 	host << "port: " << context.getInterserverIOPort() << std::endl;
@@ -223,7 +222,7 @@ void StorageReplicatedMergeTree::checkParts()
 
 	if (!expected_parts.empty())
 		throw Exception("Not found " + toString(expected_parts.size())
-			+ " (including " + *expected_parts.begin() + ") parts in table " + data.getTableName(),
+			+ " parts (including " + *expected_parts.begin() + ") in table " + data.getTableName(),
 			ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 
 	if (unexpected_parts.size() > 1)
@@ -234,7 +233,7 @@ void StorageReplicatedMergeTree::checkParts()
 	for (MergeTreeData::DataPartPtr part : unexpected_parts)
 	{
 		LOG_ERROR(log, "Unexpected part " << part->name << ". Renaming it to ignored_" + part->name);
-		data.renameAndRemovePart(part, "ignored_");
+		data.renameAndDetachPart(part, "ignored_");
 	}
 }
 
@@ -286,7 +285,14 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	return reader.read(column_names, query, settings, processed_stage, max_block_size, threads);
 }
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query) { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
+{
+	String insert_id;
+	if (ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*query))
+		insert_id = insert->insert_id;
+
+	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id);
+}
 
 void StorageReplicatedMergeTree::drop()
 {
@@ -294,6 +300,59 @@ void StorageReplicatedMergeTree::drop()
 	zookeeper.removeRecursive(replica_path);
 	if (zookeeper.getChildren(zookeeper_path + "/replicas").empty())
 		zookeeper.removeRecursive(zookeeper_path);
+}
+
+void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const
+{
+	writeString("format version: 1\n", out);
+	switch (type)
+	{
+		case GET_PART:
+			writeString("get\n", out);
+			writeString(new_part_name, out);
+			break;
+		case MERGE_PARTS:
+			writeString("merge\n", out);
+			for (const String & s : parts_to_merge)
+			{
+				writeString(s, out);
+				writeString("\n", out);
+			}
+			writeString("into\n", out);
+			writeString(new_part_name, out);
+			break;
+	}
+	writeString("\n", out);
+}
+
+void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
+{
+	String type_str;
+
+	assertString("format version: 1\n", in);
+	readString(type_str, in);
+	assertString("\n", in);
+
+	if (type_str == "get")
+	{
+		type = GET_PART;
+		readString(new_part_name, in);
+	}
+	else if (type_str == "merge")
+	{
+		type = MERGE_PARTS;
+		while (true)
+		{
+			String s;
+			readString(s, in);
+			assertString("\n", in);
+			if (s == "into")
+				break;
+			parts_to_merge.push_back(s);
+		}
+		readString(new_part_name, in);
+	}
+	assertString("\n", in);
 }
 
 }
