@@ -2,7 +2,6 @@
 #include <Yandex/time2str.h>
 #include <Poco/Ext/ScopedTry.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Common/escapeForFileName.h>
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
@@ -120,8 +119,18 @@ String MergeTreeData::getPartName(DayNum_t left_date, DayNum_t right_date, UInt6
 }
 
 
-void MergeTreeData::parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part)
+void MergeTreeData::parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches_p)
 {
+	Poco::RegularExpression::MatchVec match_vec;
+	if (!matches_p)
+	{
+		if (!isPartDirectory(file_name, match_vec))
+			throw Exception("Unexpected part name: " + file_name, ErrorCodes::BAD_DATA_PART_NAME);
+		matches_p = &match_vec;
+	}
+
+	const Poco::RegularExpression::MatchVec & matches = *matches_p;
+
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 	part.left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
@@ -181,7 +190,7 @@ void MergeTreeData::loadDataParts()
 			continue;
 
 		MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-		parsePartName(file_name, matches, *part);
+		parsePartName(file_name, *part, &matches);
 		part->name = file_name;
 
 		/// Для битых кусков, которые могут образовываться после грубого перезапуска сервера, попытаться восстановить куски, из которых они сделаны.
@@ -201,10 +210,6 @@ void MergeTreeData::loadDataParts()
 
 			continue;
 		}
-
-		/// Размер - в количестве засечек.
-		part->size = Poco::File(full_path + file_name + "/" + escapeForFileName(columns->front().first) + ".mrk").getSize()
-			/ MERGE_TREE_MARK_SIZE;
 
 		part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
 
@@ -618,9 +623,8 @@ Strings MergeTreeData::tryRestorePart(const String & path, const String & file_n
 	Poco::RegularExpression::MatchVec matches;
 	Strings restored_parts;
 
-	isPartDirectory(file_name, matches);
 	DataPart broken_part(*this);
-	parsePartName(file_name, matches, broken_part);
+	parsePartName(file_name, broken_part);
 
 	for (int i = static_cast<int>(old_parts.size()) - 1; i >= 0; --i)
 	{
@@ -632,7 +636,7 @@ Strings MergeTreeData::tryRestorePart(const String & path, const String & file_n
 			old_parts.erase(old_parts.begin() + i);
 			continue;
 		}
-		parsePartName(name, matches, old_part);
+		parsePartName(name, old_part, &matches);
 		if (broken_part.contains(old_part))
 		{
 			/// Восстанавливаем все содержащиеся куски. Если некоторые из них содержатся в других, их удалит loadDataParts.

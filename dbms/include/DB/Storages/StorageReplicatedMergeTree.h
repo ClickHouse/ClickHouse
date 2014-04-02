@@ -103,23 +103,6 @@ private:
 
 	typedef std::list<LogEntry> LogEntries;
 
-	class MyInterserverIOEndpoint : public InterserverIOEndpoint
-	{
-	public:
-		MyInterserverIOEndpoint(StorageReplicatedMergeTree & storage_) : storage(storage_) {}
-
-		void setOwnedStorage(StoragePtr owned_storage_)
-		{
-			owned_storage = owned_storage_;
-		}
-
-		void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) override;
-
-	private:
-		StorageReplicatedMergeTree & storage;
-		StoragePtr owned_storage;
-	};
-
 	Context & context;
 	zkutil::ZooKeeper & zookeeper;
 

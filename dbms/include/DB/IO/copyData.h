@@ -12,6 +12,10 @@ namespace DB
   */
 void copyData(ReadBuffer & from, WriteBuffer & to);
 
+/** Копирует bytes байт из ReadBuffer в WriteBuffer
+  */
+void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes);
+
 }
 
 #endif

@@ -23,13 +23,12 @@ public:
 		size_t timeout = 0,
 		size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
 	{
-		std::string encoded_path;
-		Poco::URI::encode(path, "&#", encoded_path);
-		
-		std::stringstream params;
-		params << "action=read&path=" << encoded_path << "&compress=" << (compress ? "true" : "false");
+		ReadBufferFromHTTP::Params params = {
+			std::make_pair("action", "read"),
+			std::make_pair("path", path),
+			std::make_pair("compress", (compress ? "true" : "false"))};
 
-		impl = new ReadBufferFromHTTP(host, port, params.str, timeout, buffer_size);
+		impl = new ReadBufferFromHTTP(host, port, params, timeout, buffer_size);
 	}
 
 	bool nextImpl()
@@ -48,13 +47,11 @@ public:
 		const std::string & path,
 		size_t timeout = 0)
 	{
-		std::string encoded_path;
-		Poco::URI::encode(path, "&#", encoded_path);
+		ReadBufferFromHTTP::Params params = {
+			std::make_pair("action", "list"),
+			std::make_pair("path", path)};
 
-		std::stringstream params;
-		params << "action=list&path=" << encoded_path;
-
-		ReadBufferFromHTTP in(host, port, params.str(), timeout);
+		ReadBufferFromHTTP in(host, port, params, timeout);
 
 		std::vector<std::string> files;
 		while (!in.eof())

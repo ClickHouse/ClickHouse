@@ -1,19 +1,12 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
 
 namespace DB
 {
-
-void StorageReplicatedMergeTree::MyInterserverIOEndpoint::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out)
-{
-	writeString("Hello. You requested part ", out);
-	writeString(params.get("part"), out);
-	writeString(".", out);
-}
-
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
@@ -59,10 +52,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		checkParts();
 	}
 
-	String endpoint_name = "ReplicatedMergeTree:" + replica_path;
-	InterserverIOEndpointPtr endpoint = new MyInterserverIOEndpoint(*this);
-	endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, context.getInterserverIOHandler());
-
 	activateReplica();
 }
 
@@ -84,7 +73,9 @@ StoragePtr StorageReplicatedMergeTree::create(
 		path_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 		index_granularity_, mode_, sign_column_, settings_);
 	StoragePtr res_ptr = res->thisPtr();
-	dynamic_cast<MyInterserverIOEndpoint &>(*res->endpoint_holder->getEndpoint()).setOwnedStorage(res_ptr);
+	String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
+	InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, res_ptr);
+	res->endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, res->context.getInterserverIOHandler());
 	return res_ptr;
 }
 
@@ -127,6 +118,7 @@ void StorageReplicatedMergeTree::createTable()
 	zookeeper.create(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent);
 	zookeeper.create(zookeeper_path + "/blocks", "", zkutil::CreateMode::Persistent);
 	zookeeper.create(zookeeper_path + "/block-numbers", "", zkutil::CreateMode::Persistent);
+	zookeeper.create(zookeeper_path + "/temp", "", zkutil::CreateMode::Persistent);
 }
 
 /** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).

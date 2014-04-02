@@ -18,6 +18,7 @@
 #include <DB/IO/WriteIntText.h>
 #include <DB/IO/VarInt.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <city.h>
 
 #define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
 
@@ -448,6 +449,7 @@ inline void writeBinary(const Float32 & x, 	WriteBuffer & buf) { writePODBinary(
 inline void writeBinary(const Float64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const String & x,	WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const bool & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const uint128 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const VisitID_t & x, 	WriteBuffer & buf) { writePODBinary(static_cast<const UInt64 &>(x), buf); }
 inline void writeBinary(const mysqlxx::Date & x,		WriteBuffer & buf) { writePODBinary(x, buf); }

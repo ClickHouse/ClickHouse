@@ -11,7 +11,7 @@ class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
 	ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, const String & insert_id_)
-		: storage(storage_), insert_id(insert_id_), block_index(0) {}
+		: storage(storage_), insert_id(insert_id_), block_index(0), log(&Logger::get("ReplicatedMergeTreeBlockOutputStream")) {}
 
 	void write(const Block & block) override
 	{
@@ -33,6 +33,8 @@ public:
 			if (!block_id.empty() && storage.zookeeper.tryGet(
 				storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
 			{
+				LOG_INFO(log, "Block with this ID already exists; ignoring it");
+
 				/// Блок с таким ID уже когда-то вставляли. Проверим чексуммы и не будем его вставлять.
 				auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
 				expected_checksums.check(part->checksums);
@@ -49,26 +51,36 @@ public:
 			log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
 			log_entry.new_part_name = part->name;
 
+			String checksums_str = part->checksums.toString();
+
 			/// Одновременно добавим информацию о куске во все нужные места в ZooKeeper и снимем block_number_lock.
 			zkutil::Ops ops;
-			ops.push_back(new zkutil::Op::Create(
-				storage.zookeeper_path + "/blocks/" + block_id,
-				"",
-				storage.zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
-			ops.push_back(new zkutil::Op::Create(
-				storage.zookeeper_path + "/blocks/" + block_id + "/checksums",
-				part->checksums.toString(),
-				storage.zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
-			ops.push_back(new zkutil::Op::Create(
-				storage.zookeeper_path + "/blocks/" + block_id + "/number",
-				toString(part_number),
-				storage.zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
+			if (!block_id.empty())
+			{
+				ops.push_back(new zkutil::Op::Create(
+					storage.zookeeper_path + "/blocks/" + block_id,
+					"",
+					storage.zookeeper.getDefaultACL(),
+					zkutil::CreateMode::Persistent));
+				ops.push_back(new zkutil::Op::Create(
+					storage.zookeeper_path + "/blocks/" + block_id + "/checksums",
+					checksums_str,
+					storage.zookeeper.getDefaultACL(),
+					zkutil::CreateMode::Persistent));
+				ops.push_back(new zkutil::Op::Create(
+					storage.zookeeper_path + "/blocks/" + block_id + "/number",
+					toString(part_number),
+					storage.zookeeper.getDefaultACL(),
+					zkutil::CreateMode::Persistent));
+			}
 			ops.push_back(new zkutil::Op::Create(
 				storage.replica_path + "/parts/" + part->name,
 				"",
+				storage.zookeeper.getDefaultACL(),
+				zkutil::CreateMode::Persistent));
+			ops.push_back(new zkutil::Op::Create(
+				storage.replica_path + "/parts/" + part->name + "/checksums",
+				checksums_str,
 				storage.zookeeper.getDefaultACL(),
 				zkutil::CreateMode::Persistent));
 			ops.push_back(new zkutil::Op::Create(
@@ -86,6 +98,8 @@ private:
 	StorageReplicatedMergeTree & storage;
 	String insert_id;
 	size_t block_index;
+
+	Logger * log;
 };
 
 }

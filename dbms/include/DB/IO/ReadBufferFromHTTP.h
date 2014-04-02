@@ -24,32 +24,42 @@ class ReadBufferFromHTTP : public ReadBuffer
 private:
 	std::string host;
 	int port;
-	std::string params;
 
 	Poco::Net::HTTPClientSession session;
 	std::istream * istr;	/// этим владеет session
 	Poco::SharedPtr<ReadBufferFromIStream> impl;
 
 public:
+	typedef std::vector<std::pair<String, String> > Params;
+
 	ReadBufferFromHTTP(
 		const std::string & host_,
 		int port_,
-		const std::string & params_,
+		const Params & params,
 		size_t timeout_ = 0,
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-		: ReadBuffer(NULL, 0), host(host_), port(port_), params(params_)
+		: ReadBuffer(NULL, 0), host(host_), port(port_)
 	{
-		std::string encoded_path;
-		Poco::URI::encode(path, "&#", encoded_path);
-
 		std::stringstream uri;
-		uri << "http://" << host << ":" << port << "/?" << params;
+		uri << "http://" << host << ":" << port << "/";
+
+		bool first = true;
+		for (const auto & it : params)
+		{
+			uri << (first ? "?" : "&");
+			first = false;
+			String encoded_key;
+			String encoded_value;
+			Poco::URI::encode(it.first, "=&#", encoded_key);
+			Poco::URI::encode(it.second, "&#", encoded_value);
+			uri << encoded_key << "=" << encoded_value;
+		}
 
 		session.setHost(host);
 		session.setPort(port);
 
 		/// устанавливаем таймаут
-		session.setTimeout(Poco::Timespan(timeout_ ? timeout_ : DEFAULT_REMOTE_READ_BUFFER_TIMEOUT, 0));
+		session.setTimeout(Poco::Timespan(timeout_ ? timeout_ : DEFAULT_HTTP_READ_BUFFER_TIMEOUT, 0));
 
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri.str());
 		Poco::Net::HTTPResponse response;

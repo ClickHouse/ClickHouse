@@ -15,6 +15,10 @@ public:
 	KeeperException(ReturnCode::type code_)
 		: DB::Exception(ReturnCode::toString(code_)), code(code_) {}
 
+	const char * name() const throw() { return "zkutil::KeeperException"; }
+	const char * className() const throw() { return "zkutil::KeeperException"; }
+	KeeperException * clone() const { return new KeeperException(message(), code); }
+
 	ReturnCode::type code;
 };
 

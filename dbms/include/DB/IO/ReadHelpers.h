@@ -18,6 +18,7 @@
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/VarInt.h>
+#include <city.h>
 
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
@@ -417,6 +418,7 @@ inline void readBinary(Float32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Float64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(String & x, 	ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(bool & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(uint128 & x,	ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(VisitID_t & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(mysqlxx::Date & x, 	ReadBuffer & buf) 	{ readPODBinary(x, buf); }

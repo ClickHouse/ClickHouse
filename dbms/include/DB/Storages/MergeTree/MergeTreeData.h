@@ -8,7 +8,12 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/Common/escapeForFileName.h>
 #include <Poco/RWLock.h>
+
+
+#define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
+
 
 namespace DB
 {
@@ -147,7 +152,7 @@ public:
 			}
 		};
 
- 		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
+ 		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0) {}
 
  		MergeTreeData & storage;
 		DayNum_t left_date;
@@ -237,14 +242,20 @@ public:
 				&& right >= rhs.right;
 		}
 
-		/// Загрузить индекс и вычислить размер.
+		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
 		void loadIndex()
 		{
+			/// Размер - в количестве засечек.
+			if (!size)
+				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(storage.columns->front().first) + ".mrk")
+					.getSize() / MERGE_TREE_MARK_SIZE;
+
 			size_t key_size = storage.sort_descr.size();
 			index.resize(key_size * size);
 
 			String index_path = storage.full_path + name + "/primary.idx";
-			ReadBufferFromFile index_file(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+			ReadBufferFromFile index_file(index_path,
+				std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
 			for (size_t i = 0; i < size; ++i)
 				for (size_t j = 0; j < key_size; ++j)
@@ -318,7 +329,7 @@ public:
 	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
 
 	/// Кладет в DataPart данные из имени кусочка.
-	void parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part);
+	void parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
 
 	std::string getTableName() { return ""; }
 
