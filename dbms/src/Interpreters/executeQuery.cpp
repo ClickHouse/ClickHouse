@@ -33,7 +33,7 @@ void executeQuery(
 	ASTPtr ast;
 	const char * expected = "";
 
-	std::vector<char> parse_buf;
+	PODArray<char> parse_buf;
 	const char * begin;
 	const char * end;
 
