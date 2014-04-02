@@ -78,7 +78,7 @@ StoragePtr StorageFactory::get(
 	
 	if (name == "Log")
 	{
-		return StorageLog::create(data_path, table_name, columns);
+		return StorageLog::create(data_path, table_name, columns, context.getSettings().max_compress_block_size);
 	}
 	else if (name == "Chunks")
 	{
@@ -129,7 +129,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "TinyLog")
 	{
-		return StorageTinyLog::create(data_path, table_name, columns, attach);
+		return StorageTinyLog::create(data_path, table_name, columns, attach, context.getSettings().max_compress_block_size);
 	}
 	else if (name == "Memory")
 	{

@@ -321,7 +321,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), nested_dt, recursion_level + 1);
 		return new AggregateFunctionIf(nested);
 	}
-	else if (recursion_level <= 1 && name.size() >= 6 && name.substr(name.size()-5) == "Array")
+	else if (recursion_level <= 1 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
 	{
 		/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
 		size_t num_agruments = argument_types.size();
@@ -334,7 +334,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 			else
 				throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) + " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 5), nested_arguments, recursion_level + 1);
+		AggregateFunctionPtr nested = get(String(name.data(), name.size() - strlen("Array")), nested_arguments, recursion_level + 1);
 		return new AggregateFunctionArray(nested);
 	}
 	else
@@ -387,8 +387,8 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 	if (recursion_level == 0 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
 		return isAggregateFunctionName(String(name.data(), name.size() - 2), 1);
 	/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 1 && name.size() >= 6 && name.substr(name.size()-5) == "Array")
-		return isAggregateFunctionName(String(name.data(), name.size() - 5), 1);
+	if (recursion_level <= 1 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
+		return isAggregateFunctionName(String(name.data(), name.size() - strlen("Array")), 1);
 
 	return false;
 }

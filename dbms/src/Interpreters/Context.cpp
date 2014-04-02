@@ -503,14 +503,14 @@ ProcessList::Element * Context::getProcessListElement()
 }
 
 
-void Context::setUncompressedCache(size_t cache_size_in_cells)
+void Context::setUncompressedCache(size_t max_size_in_bytes)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	if (shared->uncompressed_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->uncompressed_cache = new UncompressedCache(cache_size_in_cells);
+	shared->uncompressed_cache = new UncompressedCache(max_size_in_bytes);
 }
 
 

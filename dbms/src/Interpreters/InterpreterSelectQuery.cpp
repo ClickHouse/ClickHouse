@@ -78,7 +78,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth);
 
-	/// Выполняем все Global in подзапросы, результаты будут сохранены в query_analyzer->external_tables
+	/// Выполняем все GLOBAL IN подзапросы, результаты будут сохранены в query_analyzer->external_tables
 	query_analyzer->processGlobalOperations();
 
 	/// Сохраняем в query context новые временные таблицы
@@ -104,13 +104,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_);
-
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
 		query.rewriteSelectExpressionList(required_column_names_);
+
+	init(input_);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names_,
@@ -119,13 +119,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_, table_column_names);
-
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
 		query.rewriteSelectExpressionList(required_column_names_);
+
+	init(input_, table_column_names);
 }
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
@@ -214,7 +214,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		bool has_where      = false;
 		bool need_aggregate = false;
 		bool has_having     = false;
-		bool has_order_by   = !query.order_expression_list.isNull();
+		bool has_order_by   = false;
 
 		ExpressionActionsPtr array_join;
 		ExpressionActionsPtr before_where;
@@ -222,79 +222,69 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		ExpressionActionsPtr before_having;
 		ExpressionActionsPtr before_order_and_select;
 		ExpressionActionsPtr final_projection;
-		
-		/// Сначала составим цепочку действий и запомним нужные шаги из нее.
-		
-		ExpressionActionsChain chain;
-		
-		need_aggregate = query_analyzer->hasAggregation();
-			
-		if (from_stage < QueryProcessingStage::WithMergeableState
-			&& to_stage >= QueryProcessingStage::WithMergeableState)
-		{
-			if (query_analyzer->appendArrayJoin(chain))
-				array_join = chain.getLastActions();
 
-			if (query_analyzer->appendWhere(chain))
-			{
-				has_where = true;
-				before_where = chain.getLastActions();
-				
-				/// Если кроме WHERE ничего выполнять не нужно, пометим все исходные столбцы как нужные, чтобы finalize их не выбросил.
-				if (!need_aggregate && to_stage == QueryProcessingStage::WithMergeableState)
-				{
-					Names columns = query_analyzer->getRequiredColumns();
-					chain.getLastStep().required_output.insert(chain.getLastStep().required_output.end(),
-															columns.begin(), columns.end());
-					
-					chain.finalize();
-				}
-				else
-				{
-					chain.addStep();
-				}
-			}
-			
-			if (need_aggregate)
-			{
-				query_analyzer->appendGroupBy(chain);
-				query_analyzer->appendAggregateFunctionsArguments(chain);
-				before_aggregation = chain.getLastActions();
-				
-				chain.finalize();
-				
-				chain.clear();
-			}
-		}
+		/// Столбцы из списка SELECT, до переименования в алиасы.
+		Names selected_columns;
 		
-		if (from_stage <= QueryProcessingStage::WithMergeableState
-			&& to_stage > QueryProcessingStage::WithMergeableState)
+		/// Нужно ли выполнять первую часть конвейера - выполняемую на удаленных серверах при распределенной обработке.
+		bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
+			&& to_stage >= QueryProcessingStage::WithMergeableState;
+		/// Нужно ли выполнять вторую часть конвейера - выполняемую на сервере-инициаторе при распределенной обработке.
+		bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
+			&& to_stage > QueryProcessingStage::WithMergeableState;
+
+		/** Сначала составим цепочку действий и запомним нужные шаги из нее.
+		  * Независимо от from_stage и to_stage составим полную последовательность действий, чтобы выполнять оптимизации и
+		  *  выбрасывать ненужные столбцы с учетом всего запроса. В ненужных частях запроса не будем выполнять подзапросы.
+		  */
+
+		ExpressionActionsChain chain;
+
+		need_aggregate = query_analyzer->hasAggregation();
+
+		if (query_analyzer->appendArrayJoin(chain, !first_stage))
+			array_join = chain.getLastActions();
+
+		if (query_analyzer->appendWhere(chain, !first_stage))
 		{
-			if (need_aggregate && query_analyzer->appendHaving(chain))
+			has_where = true;
+			before_where = chain.getLastActions();
+			chain.addStep();
+		}
+
+		if (need_aggregate)
+		{
+			query_analyzer->appendGroupBy(chain, !first_stage);
+			query_analyzer->appendAggregateFunctionsArguments(chain, !first_stage);
+			before_aggregation = chain.getLastActions();
+
+			chain.finalize();
+			chain.clear();
+
+			if (query_analyzer->appendHaving(chain, !second_stage))
 			{
 				has_having = true;
 				before_having = chain.getLastActions();
 				chain.addStep();
 			}
-			
-			query_analyzer->appendSelect(chain);
-			query_analyzer->appendOrderBy(chain);
-			before_order_and_select = chain.getLastActions();
-			chain.addStep();
-			
-			query_analyzer->appendProjectResult(chain);
-			final_projection = chain.getLastActions();
-			chain.finalize();
-			
-			/// Если предыдущая стадия запроса выполнялась отдельно, нам могли дать лишних столбцов (например, используемых только в секции WHERE).
-			/// Уберем их. Они могут существенно мешать, например, при arrayJoin.
-			if (from_stage == QueryProcessingStage::WithMergeableState)
-				before_order_and_select->prependProjectInput();
-			
-			/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
-			if (has_having)
-				before_having->prependProjectInput();
 		}
+
+		/// Если есть агрегация, выполняем выражения в SELECT и ORDER BY на инициировавшем сервере, иначе - на серверах-источниках.
+		query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
+		selected_columns = chain.getLastStep().required_output;
+		has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
+		before_order_and_select = chain.getLastActions();
+		chain.addStep();
+
+		query_analyzer->appendProjectResult(chain, !second_stage);
+		final_projection = chain.getLastActions();
+
+		chain.finalize();
+		chain.clear();
+
+		/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
+		if (has_having)
+			before_having->prependProjectInput();
 		
 		/// Теперь составим потоки блоков, выполняющие нужные действия.
 		
@@ -311,61 +301,57 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			to_stage > QueryProcessingStage::WithMergeableState &&
 			!query.group_by_with_totals;
 
-		if (from_stage < QueryProcessingStage::WithMergeableState
-			&& to_stage >= QueryProcessingStage::WithMergeableState)
+		if (first_stage)
 		{
 			if (has_where)
 				executeWhere(streams, before_where);
-			
+
 			if (need_aggregate)
 				executeAggregation(streams, before_aggregation, aggregate_overflow_row, aggregate_final);
-
-			if (array_join && !has_where && !need_aggregate && to_stage == QueryProcessingStage::WithMergeableState)
+			else
 			{
-				/** Если есть ARRAY JOIN, его действие сначала старается оказаться в
-				  *  before_where, before_aggregation или before_order_and_select.
-				  * Если ни одного из них нет, array_join нужно выполнить отдельно.
-				  */
-
-				executeExpression(streams, array_join);
+				executeExpression(streams, before_order_and_select);
+				executeDistinct(streams, true, selected_columns);
 			}
 
 			/** Оптимизация - при распределённой обработке запроса,
-			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
+			  *  если не указаны GROUP, HAVING, ORDER, но указан LIMIT,
 			  *  то выполним предварительный LIMIT на удалёном сервере.
 			  */
-			if (to_stage == QueryProcessingStage::WithMergeableState
-				&& !query.distinct && !need_aggregate && !has_having && !has_order_by
+			if (!second_stage
+				&& !need_aggregate && !has_having && !has_order_by
 				&& query.limit_length)
 			{
 				executePreLimit(streams);
 			}
 		}
 
-		if (from_stage <= QueryProcessingStage::WithMergeableState
-			&& to_stage > QueryProcessingStage::WithMergeableState)
+		if (second_stage)
 		{
+			bool need_second_distinct_pass = true;
+
 			if (need_aggregate)
 			{
 				/// Если нужно объединить агрегированные результаты с нескольких серверов
-				if (from_stage == QueryProcessingStage::WithMergeableState)
+				if (!first_stage)
 					executeMergeAggregated(streams, aggregate_overflow_row, aggregate_final);
 
 				if (!aggregate_final)
 					executeTotalsAndHaving(streams, has_having, before_having, aggregate_overflow_row);
 				else if (has_having)
 					executeHaving(streams, before_having);
-			}
 
-			executeExpression(streams, before_order_and_select);
+				executeExpression(streams, before_order_and_select);
+
+				executeDistinct(streams, true, selected_columns);
+
+				need_second_distinct_pass = streams.size() > 1;
+			}
 
 			if (has_order_by)
 				executeOrder(streams);
 			
 			executeProjection(streams, final_projection);
-			
-			/// Сначала выполняем DISTINCT во всех источниках.
-			executeDistinct(streams, true);
 
 			/// На этой стадии можно считать минимумы и максимумы, если надо.
 			if (settings.extremes)
@@ -376,20 +362,14 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 			  * ограничивающий число записей в каждом до offset + limit.
 			  */
-			if (query.limit_length && streams.size() > 1)
+			if (query.limit_length && streams.size() > 1 && !query.distinct)
 				executePreLimit(streams);
-			
-			bool need_second_distinct_pass = streams.size() > 1;
 			
 			executeUnion(streams);
 			
 			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 			if (need_second_distinct_pass)
-				executeDistinct(streams, false);
-			
-			/** NOTE: В некоторых случаях, DISTINCT можно было бы применять раньше
-			  *  - до сортировки и, возможно, на удалённых серверах.
-			  */
+				executeDistinct(streams, false, Names());
 
 			executeLimit(streams);
 		}
@@ -758,7 +738,7 @@ void InterpreterSelectQuery::executeProjection(BlockInputStreams & streams, Expr
 }
 
 
-void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order)
+void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order, Names columns)
 {
 	if (query.distinct)
 	{
@@ -776,7 +756,8 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = maybeAsynchronous(new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct), is_async);
+			stream = maybeAsynchronous(new DistinctBlockInputStream(
+				stream, settings.limits, limit_for_distinct, columns), is_async);
 		}
 	}
 }

@@ -5,7 +5,7 @@
 # Результаты сравниваются с эталонами.
 
 QUERIES_DIR="./queries"
-CLIENT_PROGRAM="curl -sS http://localhost:8123/ --data-binary @-"
+CLIENT_PROGRAM="clickhouse-client -n"
 
 
 COLOR_RESET="\033[0m"

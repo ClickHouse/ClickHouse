@@ -24,6 +24,10 @@ struct Settings
 	  */
 
 #define APPLY_FOR_SETTINGS(M) \
+	/** Минимальный размер блока, готового для сжатия */ \
+	M(SettingUInt64, min_compress_block_size, DEFAULT_MIN_COMPRESS_BLOCK_SIZE) \
+	/** Максимальный размер блока, пригодного для сжатия */ \
+	M(SettingUInt64, max_compress_block_size, DEFAULT_MAX_COMPRESS_BLOCK_SIZE) \
 	/** Максимальный размер блока для чтения */ \
 	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
 	/** Максимальное количество потоков выполнения запроса */ \

@@ -256,7 +256,7 @@ bool makeMerge(int cur_time) {
 	mergeScheduled --;
 	std::vector<DataPtr> e;
 	if (!selectPartsToMerge(e)) return 1;
-	int curId = uniqId ++;
+	int curId = ++uniqId;
 	size_t size = 0;
 	for (size_t i = 0; i < e.size(); ++i)
 	{
@@ -300,11 +300,11 @@ void process(pair<int, pair<int, int> > ev)
 				size += (*it)->size;
 				st = min(st, (*it)->time);
 				DataParts::iterator nxt = it;
-				nxt ++;
+				++nxt;
 				data_parts.erase(it);
 				it = nxt;
 			} else
-				it ++;
+				++it;
 		}
 		data_parts.insert(new DataPart(st, size, 0, cur_time));
 	} else if (type == 3) /// do merge
@@ -342,7 +342,7 @@ int main()
 		averageNumberOfParts += 1.0 * (cur_time - last_time) * data_parts.size();
 		if (cur_time > total_time) break;
 		updateStat(cur_time);
-		iter ++;
+		++iter;
 		if (iter % 3000 == 0)
 		{
 			printf("Current time: %d\n", cur_time);

@@ -88,8 +88,8 @@ private:
 
 	struct Stream
 	{
-		Stream(const std::string & data_path) :
-			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY),
+		Stream(const std::string & data_path, size_t max_compress_block_size) :
+			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
 			compressed(plain)
 		{
 			plain_offset = Poco::File(data_path).getSize();
@@ -136,7 +136,7 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов; создать файлы, если их нет.
 	  */
-	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 	
 	std::string getName() const { return "Log"; }
 	std::string getTableName() const { return name; }
@@ -174,7 +174,7 @@ protected:
 		throw Exception("There is no column " + _table_column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 	}
 
-	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_);
 	
 	/// Прочитать файлы с засечками, если они ещё не прочитаны.
 	/// Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
@@ -215,6 +215,8 @@ private:
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
 	bool loaded_marks;
+
+	size_t max_compress_block_size;
 
 	/** Для обычных столбцов, в засечках указано количество строчек в блоке.
 	  * Для столбцов-массивов и вложенных структур, есть более одной группы засечек, соответствующих разным файлам:
