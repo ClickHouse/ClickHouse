@@ -27,7 +27,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	replica_name(replica_name_),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 			index_granularity_,mode_, sign_column_, settings_),
-	reader(data), writer(data),
+	reader(data), writer(data), fetcher(data),
 	log(&Logger::get("StorageReplicatedMergeTree")),
 	shutdown_called(false)
 {
@@ -52,6 +52,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		checkParts();
 	}
 
+	loadQueue();
 	activateReplica();
 }
 
@@ -172,7 +173,7 @@ void StorageReplicatedMergeTree::activateReplica()
 	host << "host: " << context.getInterserverIOHost() << std::endl;
 	host << "port: " << context.getInterserverIOPort() << std::endl;
 
-	/// Одновременно объявим, что эта реплика активна и обновим хост.
+	/// Одновременно объявим, что эта реплика активна, и обновим хост.
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(replica_path + "/is_active", "", zookeeper.getDefaultACL(), zkutil::CreateMode::Ephemeral));
 	ops.push_back(new zkutil::Op::SetData(replica_path + "/host", host.str(), -1));
@@ -229,11 +230,67 @@ void StorageReplicatedMergeTree::checkParts()
 	}
 }
 
-void StorageReplicatedMergeTree::loadQueue() { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+void StorageReplicatedMergeTree::loadQueue()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
 
-void StorageReplicatedMergeTree::pullLogsToQueue() { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+	Strings children = zookeeper.getChildren(replica_path + "/queue");
+	std::sort(children.begin(), children.end());
+	for (const String & child : children)
+	{
+		String s = zookeeper.get(child);
+		queue.push_back(LogEntry::parse(s));
+	}
+}
 
-void StorageReplicatedMergeTree::optimizeQueue() { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+void StorageReplicatedMergeTree::pullLogsToQueue()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+
+	Strings replicas = zookeeper.getChildren(zookeeper_path + "/replicas");
+	for (const String & replica : replicas)
+	{
+		String log_path = zookeeper_path + "/" + replica + "/log";
+
+		String pointer_str;
+		UInt64 pointer;
+
+		if (zookeeper.tryGet(replica_path + "/log_pointers/" + replica, pointer_str))
+		{
+			pointer = Poco::NumberParser::parseUnsigned64(pointer_str);
+		}
+		else
+		{
+			/// Если у нас еще нет указателя на лог этой реплики, поставим указатель на первую запись в нем.
+			Strings entries = zookeeper.getChildren(log_path);
+			std::sort(entries.begin(), entries.end());
+			pointer = entries.empty() ? 0 : Poco::NumberParser::parseUnsigned64(entries[0].substr(strlen("log-")));
+
+			zookeeper.create(replica_path + "/log_pointers/" + replica, toString(pointer), zkutil::CreateMode::Persistent);
+		}
+
+		String entry_str;
+		while (zookeeper.tryGet(log_path + "/log-" + toString(pointer), entry_str))
+		{
+			queue.push_back(LogEntry::parse(entry_str));
+
+			/// Одновременно добавим запись в очередь и продвинем указатель на лог.
+			zkutil::Ops ops;
+			ops.push_back(new zkutil::Op::Create(
+				replica_path + "/queue/queue-", entry_str, zookeeper.getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+			ops.push_back(new zkutil::Op::SetData(
+				replica_path + "/log_pointers/" + replica, toString(pointer + 1), -1));
+			zookeeper.multi(ops);
+
+			++pointer;
+		}
+	}
+}
+
+void StorageReplicatedMergeTree::optimizeQueue()
+{
+
+}
 
 void StorageReplicatedMergeTree::executeSomeQueueEntry() { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
 

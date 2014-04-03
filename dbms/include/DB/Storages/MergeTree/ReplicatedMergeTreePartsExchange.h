@@ -82,7 +82,8 @@ public:
 		LOG_TRACE(log, "Fetching part " << part_name);
 		ReadBufferFromHTTP::Params params = {
 			std::make_pair("endpoint", "ReplicatedMergeTree:" + replica_path),
-			std::make_pair("part", part_name)};
+			std::make_pair("part", part_name),
+			std::make_pair("compress", "false")};
 		ReadBufferFromHTTP in(host, port, params);
 
 		String part_path = data.getFullPath() + "tmp_" + part_name + "/";

@@ -5,6 +5,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include "MergeTree/ReplicatedMergeTreePartsExchange.h"
 #include <zkutil/ZooKeeper.h>
 
 namespace DB
@@ -133,6 +134,7 @@ private:
 	MergeTreeData data;
 	MergeTreeDataSelectExecutor reader;
 	MergeTreeDataWriter writer;
+	ReplicatedMergeTreePartsFetcher fetcher;
 
 	Logger * log;
 
