@@ -698,6 +698,9 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 	part->left = part->right = part_id;
 	part->name = getPartName(part->left_date, part->right_date, part_id, part_id, 0);
 
+	if (data_parts.count(part))
+		throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+
 	String new_path = getFullPath() + part->name + "/";
 
 	/// Переименовываем кусок.
@@ -720,6 +723,34 @@ MergeTreeData::DataParts MergeTreeData::getDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
+}
+
+MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_name)
+{
+	MutableDataPartPtr tmp_part(new DataPart(*this));
+	parsePartName(part_name, *tmp_part);
+
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	/// Кусок может покрываться только предыдущим или следующим в data_parts.
+	DataParts::iterator it = data_parts.lower_bound(tmp_part);
+
+	if (it != data_parts.end())
+	{
+		if ((*it)->name == part_name)
+			return *it;
+		if ((*it)->contains(*tmp_part))
+			return *it;
+	}
+
+	if (it != data_parts.begin())
+	{
+		--it;
+		if ((*it)->contains(*tmp_part))
+			return *it;
+	}
+
+	return nullptr;
 }
 
 

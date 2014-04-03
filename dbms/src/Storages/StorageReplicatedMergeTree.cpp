@@ -8,6 +8,13 @@
 namespace DB
 {
 
+
+const auto QUEUE_UPDATE_SLEEP = std::chrono::seconds(5);
+const auto QUEUE_NO_WORK_SLEEP = std::chrono::seconds(5);
+const auto QUEUE_ERROR_SLEEP = std::chrono::seconds(1);
+const auto QUEUE_AFTER_WORK_SLEEP = std::chrono::seconds(0);
+
+
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
 	const String & replica_name_,
@@ -54,6 +61,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	loadQueue();
 	activateReplica();
+
+	queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
+	for (size_t i = 0; i < settings_.replication_threads; ++i)
+		queue_threads.push_back(std::thread(&StorageReplicatedMergeTree::queueThread, this));
 }
 
 StoragePtr StorageReplicatedMergeTree::create(
@@ -239,7 +250,9 @@ void StorageReplicatedMergeTree::loadQueue()
 	for (const String & child : children)
 	{
 		String s = zookeeper.get(child);
-		queue.push_back(LogEntry::parse(s));
+		LogEntry entry = LogEntry::parse(s);
+		entry.znode_name = child;
+		queue.push_back(entry);
 	}
 }
 
@@ -272,7 +285,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 		String entry_str;
 		while (zookeeper.tryGet(log_path + "/log-" + toString(pointer), entry_str))
 		{
-			queue.push_back(LogEntry::parse(entry_str));
+			LogEntry entry = LogEntry::parse(entry_str);
 
 			/// Одновременно добавим запись в очередь и продвинем указатель на лог.
 			zkutil::Ops ops;
@@ -280,7 +293,11 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 				replica_path + "/queue/queue-", entry_str, zookeeper.getDefaultACL(), zkutil::CreateMode::PersistentSequential));
 			ops.push_back(new zkutil::Op::SetData(
 				replica_path + "/log_pointers/" + replica, toString(pointer + 1), -1));
-			zookeeper.multi(ops);
+			auto results = zookeeper.multi(ops);
+
+			String path_created = dynamic_cast<zkutil::OpResult::Create &>((*results)[0]).getPathCreated();
+			entry.znode_name = path.substr(path.find_last_of('/') + 1);
+			queue.push_back(entry);
 
 			++pointer;
 		}
@@ -289,16 +306,157 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 
 void StorageReplicatedMergeTree::optimizeQueue()
 {
-
 }
 
-void StorageReplicatedMergeTree::executeSomeQueueEntry() { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
+{
+	if (entry.type == LogEntry::GET_PART ||
+		entry.type == LogEntry::MERGE_PARTS)
+	{
+		/// Если у нас уже есть этот кусок или покрывающий его кусок, ничего делать не нужно.
+		MergeTreeData::DataPartPtr containing_part = data.getContainingPart(entry.new_part_name);
 
-bool StorageReplicatedMergeTree::tryExecute(const LogEntry & entry) { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+		/// Даже если кусок есть локально, его (в исключительных случаях) может не быть в zookeeper.
+		if (containing_part && zookeeper.exists(replica_path + "/parts/" + containing_part->name))
+			return;
+	}
 
-String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name) { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+	if (entry.type != LogEntry::GET_PART)
+		throw Exception("Merging is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
-void StorageReplicatedMergeTree::getPart(const String & name, const String & replica_name) { throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED); }
+	String replica = findActiveReplicaHavingPart(entry.new_part_name);
+	fetchPart(entry.new_part_name, replica);
+}
+
+void StorageReplicatedMergeTree::queueUpdatingThread()
+{
+	while (!shutdown_called)
+	{
+		pullLogsToQueue();
+		optimizeQueue();
+		std::this_thread::sleep_for(QUEUE_UPDATE_SLEEP);
+	}
+}
+
+void StorageReplicatedMergeTree::queueThread()
+{
+	while (!shutdown_called)
+	{
+		LogEntry entry;
+		bool empty;
+
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+			empty = queue.empty();
+			if (!empty)
+			{
+				entry = queue.front();
+				queue.pop_front();
+			}
+		}
+
+		if (empty)
+		{
+			std::this_thread::sleep_for(QUEUE_NO_WORK_SLEEP);
+			continue;
+		}
+
+		bool success = false;
+
+		try
+		{
+			executeLogEntry(entry);
+
+			success = true;
+		}
+		catch (const Exception & e)
+		{
+			LOG_ERROR(log, "Code: " << e.code() << ". " << e.displayText() << std::endl
+				<< std::endl
+				<< "Stack trace:" << std::endl
+				<< e.getStackTrace().toString());
+		}
+		catch (const Poco::Exception & e)
+		{
+			LOG_ERROR(log, "Poco::Exception: " << e.code() << ". " << e.displayText());
+		}
+		catch (const std::exception & e)
+		{
+			LOG_ERROR(log, "std::exception: " << e.what());
+		}
+		catch (...)
+		{
+			LOG_ERROR(log, "Unknown exception");
+		}
+
+		if (shutdown_called)
+			break;
+
+		if (success)
+		{
+			std::this_thread::sleep_for(QUEUE_AFTER_WORK_SLEEP);
+		}
+		else
+		{
+			{
+				/// Добавим действие, которое не получилось выполнить, в конец очереди.
+				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+				queue.push_back(entry);
+			}
+			std::this_thread::sleep_for(QUEUE_ERROR_SLEEP);
+		}
+	}
+}
+
+String StorageReplicatedMergeTree::findActiveReplicaHavingPart(const String & part_name)
+{
+	Strings replicas = zookeeper.getChildren(zookeeper_path + "/replicas");
+
+	/// Из реплик, у которых есть кусок, выберем одну равновероятно.
+	std::random_shuffle(replicas.begin(), replicas.end());
+
+	for (const String & replica : replicas)
+	{
+		if (zookeeper.exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name) &&
+			zookeeper.exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+			return replica;
+	}
+
+	throw Exception("No active replica has part " + part_name, ErrorCodes::NO_REPLICA_HAS_PART);
+}
+
+void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_name)
+{
+	auto table_lock = lockStructure(true);
+
+	String host;
+	int port;
+
+	String host_port_str = zookeeper.get(zookeeper_path + "/replicas/" + replica_name + "/host");
+	ReadBufferFromString buf(host_port_str);
+	assertString("host: ", buf);
+	readString(host, buf);
+	assertString("\nport: ", buf);
+	readText(port, buf);
+	assertString("\n", buf);
+	assertEOF(buf);
+
+	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(name, zookeeper_path + "/replicas/" + replica_name, host, port);
+	data.renameTempPartAndAdd(part, nullptr);
+
+	zkutil::Ops ops;
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part->name,
+		"",
+		zookeeper.getDefaultACL(),
+		zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part->name + "/checksums",
+		part->checksums.toString(),
+		zookeeper.getDefaultACL(),
+		zkutil::CreateMode::Persistent));
+	zookeeper.multi(ops);
+}
 
 void StorageReplicatedMergeTree::shutdown()
 {
@@ -308,7 +466,11 @@ void StorageReplicatedMergeTree::shutdown()
 	replica_is_active_node = nullptr;
 	endpoint_holder = nullptr;
 
-	/// Кажется, чтобы был невозможен дедлок, тут придется дождаться удаления MyInterserverIOEndpoint.
+	LOG_TRACE(log, "Waiting for threads to finish");
+	queue_updating_thread.join();
+	for (auto & thread : queue_threads)
+		thread.join();
+	LOG_TRACE(log, "Threads finished");
 }
 
 StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
@@ -345,6 +507,8 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 
 void StorageReplicatedMergeTree::drop()
 {
+	shutdown();
+
 	replica_is_active_node = nullptr;
 	zookeeper.removeRecursive(replica_path);
 	if (zookeeper.getChildren(zookeeper_path + "/replicas").empty())

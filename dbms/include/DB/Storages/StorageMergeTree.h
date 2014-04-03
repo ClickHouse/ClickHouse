@@ -1,10 +1,11 @@
 #pragma once
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
-#include "MergeTree/MergeTreeDataSelectExecutor.h"
-#include "MergeTree/MergeTreeDataWriter.h"
-#include "MergeTree/MergeTreeDataMerger.h"
-#include "MergeTree/DiskSpaceMonitor.h"
+#include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
+#include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
+#include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <statdaemons/threadpool.hpp>
 
 namespace DB
 {

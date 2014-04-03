@@ -57,12 +57,9 @@ private:
 
 	MergeTreeData::DataPartPtr findPart(const String & name)
 	{
-		MergeTreeData::DataParts parts = data.getDataParts();
-		for (const auto & part : parts)
-		{
-			if (part->name == name)
-				return part;
-		}
+		MergeTreeData::DataPartPtr part = data.getContainingPart(name);
+		if (part && part->name == name)
+			return part;
 		throw Exception("No part " + name + " in table");
 	}
 };
@@ -72,7 +69,7 @@ class ReplicatedMergeTreePartsFetcher
 public:
 	ReplicatedMergeTreePartsFetcher(MergeTreeData & data_) : data(data_), log(&Logger::get("ReplicatedMergeTreePartsFetcher")) {}
 
-	/// Скачивает кусок в tmp_директорию, проверяет чексуммы.
+	/// Скачивает кусок в tmp_директорию.
 	MergeTreeData::MutableDataPartPtr fetchPart(
 		const String & part_name,
 		const String & replica_path,

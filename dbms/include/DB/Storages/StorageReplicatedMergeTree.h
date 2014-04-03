@@ -7,6 +7,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include "MergeTree/ReplicatedMergeTreePartsExchange.h"
 #include <zkutil/ZooKeeper.h>
+#include <statdaemons/threadpool.hpp>
 
 namespace DB
 {
@@ -136,6 +137,14 @@ private:
 	MergeTreeDataWriter writer;
 	ReplicatedMergeTreePartsFetcher fetcher;
 
+	typedef std::vector<std::thread> Threads;
+
+	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
+	std::thread queue_updating_thread;
+
+	/// Потоки, выполняющие действия из очереди.
+	Threads queue_threads;
+
 	Logger * log;
 
 	volatile bool shutdown_called;
@@ -197,21 +206,28 @@ private:
 	  */
 	void optimizeQueue();
 
-	/** По порядку пытается выполнить действия из очереди, пока не получится. Что получилось, выбрасывает из очереди.
+	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  */
-	void executeSomeQueueEntry();
+	void executeLogEntry(const LogEntry & entry);
 
-	/** Попробовать выполнить действие из очереди. Возвращает false, если не получилось по какой-то ожидаемой причине:
-	  *  - GET_PART, и ни у кого нет этого куска. Это возможно, если этот кусок уже слили с кем-то и удалили.
-	  *  - Не смогли скачать у кого-то кусок, потому что его там уже нет.
-	  *  - Не смогли объединить куски, потому что не все из них у нас есть.
+	/** В бесконечном цикле обновляет очередь.
 	  */
-	bool tryExecute(const LogEntry & entry);
+	void queueUpdatingThread();
+
+	/** В бесконечном цикле выполняет действия из очереди.
+	  */
+	void queueThread();
 
 	/// Обмен кусками.
 
-	String findReplicaHavingPart(const String & part_name);
-	void getPart(const String & name, const String & replica_name);
+	/** Бросает исключение, если куска ни у кого нет.
+	  */
+	String findActiveReplicaHavingPart(const String & part_name);
+
+	/** Скачать указанный кусок с указанной реплики.
+	  */
+	void fetchPart(const String & part_name, const String & replica_name);
+
 };
 
 }
