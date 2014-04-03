@@ -22,7 +22,7 @@ public:
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
 
 			AbandonableLockInZooKeeper block_number_lock(
-				storage.zookeeper_path + "/block-numbers/block-",
+				storage.zookeeper_path + "/block_numbers/block-",
 				storage.zookeeper_path + "/temp", storage.zookeeper);
 
 			UInt64 part_number = block_number_lock.getNumber();

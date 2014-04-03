@@ -133,7 +133,8 @@ void loadMetadata(Context & context)
 			}
 			catch (const Exception & e)
 			{
-				throw Exception("Cannot create table from metadata file " + tables[j] + ", error: " + e.displayText(),
+				throw Exception("Cannot create table from metadata file " + tables[j] + ", error: " + e.displayText() +
+					", stack trace:\n" + e.getStackTrace().toString(),
 					ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 			}
 		}
