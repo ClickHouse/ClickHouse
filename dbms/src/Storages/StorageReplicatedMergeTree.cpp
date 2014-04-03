@@ -188,7 +188,19 @@ void StorageReplicatedMergeTree::activateReplica()
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(replica_path + "/is_active", "", zookeeper.getDefaultACL(), zkutil::CreateMode::Ephemeral));
 	ops.push_back(new zkutil::Op::SetData(replica_path + "/host", host.str(), -1));
-	zookeeper.multi(ops);
+
+	try
+	{
+		zookeeper.multi(ops);
+	}
+	catch (zkutil::KeeperException & e)
+	{
+		if (e.code == zkutil::ReturnCode::NodeExists)
+			throw Exception("Replica " + replica_path + " appears to be already active. If you're sure it's not, "
+				"try again in a minute or remove znode " + replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
+
+		throw;
+	}
 
 	replica_is_active_node = zkutil::EphemeralNodeHolder::existing(replica_path + "/is_active", zookeeper);
 }
