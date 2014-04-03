@@ -28,7 +28,7 @@ public:
 		: zookeeper(zookeeper_), path_prefix(path_prefix_)
 	{
 		/// Создадим вспомогательную эфемерную ноду.
-		holder_path = zookeeper.create(temp_path + "/abandonable-lock-", "", zkutil::CreateMode::EphemeralSequential);
+		holder_path = zookeeper.create(temp_path + "/abandonable_lock-", "", zkutil::CreateMode::EphemeralSequential);
 
 		/// Запишем в основную ноду путь к вспомогательной.
 		path = zookeeper.create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);

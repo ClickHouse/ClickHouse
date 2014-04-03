@@ -419,6 +419,7 @@ void StorageReplicatedMergeTree::queueThread()
 		try
 		{
 			executeLogEntry(entry);
+			zookeeper.remove(replica_path + "/queue/" + entry.znode_name);
 
 			success = true;
 		}
