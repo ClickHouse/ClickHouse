@@ -383,7 +383,7 @@ private:
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
 
-	void removeColumnFiles(String column_name);
+	void removeColumnFiles(String column_name, bool remove_array_size_files);
 
 	/// Определить, не битые ли данные в директории. Проверяет индекс и засечеки, но не сами данные.
 	bool isBrokenPart(const String & path);
