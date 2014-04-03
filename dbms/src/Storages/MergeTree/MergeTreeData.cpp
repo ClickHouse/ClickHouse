@@ -334,10 +334,20 @@ void MergeTreeData::dropAllData()
 	Poco::File(full_path).remove(true);
 }
 
-void MergeTreeData::removeColumnFiles(String column_name)
+void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size_files)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	size_t dot_pos = column_name.find('.');
+	if (dot_pos != std::string::npos)
+	{
+		std::string nested_column = column_name.substr(0, dot_pos);
+		column_name = nested_column + "%2E" + column_name.substr(dot_pos + 1);
+
+		if (remove_array_size_files)
+			column_name = std::string("(?:") + nested_column + "|" + column_name + ")";
+	}
 
 	/// Регэксп выбирает файлы столбца для удаления
 	Poco::RegularExpression re(column_name + "(?:(?:\\.|\\%2E).+){0,1}" +"(?:\\.mrk|\\.bin|\\.size\\d+\\.bin|\\.size\\d+\\.mrk)");
@@ -388,6 +398,12 @@ static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesLis
 	throw Exception("No column " + name + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
+/// одинаковыми считаются имена, вида "name.*"
+static bool namesWithDotEqual(const String & name_with_dot, const DB::NameAndTypePair & name_type)
+{
+	return (name_with_dot == name_type.first.substr(0, name_with_dot.length()));
+}
+
 void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 {
 	{
@@ -398,7 +414,15 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 	if (params.type == ASTAlterQuery::DROP)
 	{
 		String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
-		removeColumnFiles(column_name);
+
+		/// Если нет колонок вида nested_name.*, то удалим столбцы размера массивов
+		bool remove_array_size_files = false;
+		size_t dot_pos = column_name.find('.');
+		if (dot_pos != std::string::npos)
+		{
+			remove_array_size_files = (columns->end() == std::find_if(columns->begin(), columns->end(), boost::bind(namesWithDotEqual, column_name.substr(0, dot_pos), _1)));
+		}
+		removeColumnFiles(column_name, remove_array_size_files);
 
 		context.getUncompressedCache()->reset();
 		context.getMarkCache()->reset();
