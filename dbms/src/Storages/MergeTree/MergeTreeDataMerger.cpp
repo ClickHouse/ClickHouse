@@ -237,7 +237,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 
 /// parts должны быть отсортированы.
-String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name)
+MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name)
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
@@ -298,10 +298,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 		to->write(block);
 
 	if (canceled)
-	{
-		LOG_INFO(log, "Canceled merging parts.");
-		return "";
-	}
+		throw Exception("Canceled merging parts", ErrorCodes::ABORTED);
 
 	merged_stream->readSuffix();
 	new_data_part->checksums = to->writeSuffixAndGetChecksums();
@@ -318,7 +315,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	if (0 == to->marksCount())
 	{
 		LOG_INFO(log, "All rows have been deleted while merging from " << parts.front()->name << " to " << parts.back()->name);
-		return "";
+		return nullptr;
 	}
 
 	/// Переименовываем кусок.
@@ -329,7 +326,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
-	return new_data_part->name;
+	return new_data_part;
 }
 
 size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts)

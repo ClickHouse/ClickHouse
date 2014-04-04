@@ -32,13 +32,13 @@ public:
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
 
-	/// Сливает куски. Возвращает название нового куска. Если слияние отменили, возвращает пустую строку.
-	String mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name);
+	/// Сливает куски. Если получившийся кусок оказался пустым, возаращает nullptr.
+	MergeTreeData::DataPartPtr mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
-	/** Отменяет все текущие мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро отменят слияние и вернут пустую строку.
+	/** Отменяет все текущие мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
 	  * После этого с этим экземпляром ничего делать нельзя.
 	  */
 	void cancelAll() { canceled = true; }

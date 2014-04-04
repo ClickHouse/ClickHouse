@@ -396,7 +396,31 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 	}
 	else if (entry.type == LogEntry::MERGE_PARTS)
 	{
-		throw Exception("Merging is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+		MergeTreeData::DataPartsVector parts;
+		for (const String & name : entry.parts_to_merge)
+		{
+			MergeTreeData::DataPartPtr part = data.getContainingPart(name);
+			if (!part || part->name != name)
+				throw Exception("Part to merge doesn't exist: " + name, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+			parts.push_back(part);
+		}
+		MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name);
+
+		if (part)
+		{
+			zkutil::Ops ops;
+			ops.push_back(new zkutil::Op::Create(
+				replica_path + "/parts/" + part->name,
+				"",
+				zookeeper.getDefaultACL(),
+				zkutil::CreateMode::Persistent));
+			ops.push_back(new zkutil::Op::Create(
+				replica_path + "/parts/" + part->name + "/checksums",
+				part->checksums.toString(),
+				zookeeper.getDefaultACL(),
+				zkutil::CreateMode::Persistent));
+			zookeeper.multi(ops);
+		}
 	}
 	else
 	{
