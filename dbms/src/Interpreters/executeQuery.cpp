@@ -76,7 +76,13 @@ void executeQuery(
 
 	/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
 	auto insert = dynamic_cast<const ASTInsertQuery *>(&*ast);
-	String query(begin, (insert && insert->data) ? (insert->data - begin) : (pos - begin));
+	size_t query_size = (insert && insert->data) ? (insert->data - begin) : (pos - begin);
+
+	if (query_size > max_query_size)
+		throw Exception("Query is too large (" + toString(query_size) + ")."
+			" max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
+
+	String query(begin, query_size);
 
 	LOG_DEBUG(&Logger::get("executeQuery"), query);
 
