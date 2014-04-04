@@ -217,19 +217,19 @@ FunctionPtr FunctionFactory::get(
 
 	else if (name == "if")							return new FunctionIf;
 
-	else if (name == "regionToCity")				return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchy());
-	else if (name == "regionToArea")				return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchy());
-	else if (name == "regionToCountry")			return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchy());
-	else if (name == "regionToContinent")			return new FunctionRegionToContinent(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "regionToCity")				return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchies());
+	else if (name == "regionToArea")				return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchies());
+	else if (name == "regionToCountry")			return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchies());
+	else if (name == "regionToContinent")			return new FunctionRegionToContinent(context.getDictionaries().getRegionsHierarchies());
 	else if (name == "OSToRoot")					return new FunctionOSToRoot(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEToRoot")					return new FunctionSEToRoot(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryToRoot")				return new FunctionCategoryToRoot(context.getDictionaries().getCategoriesHierarchy());
 	else if (name == "categoryToSecondLevel")		return new FunctionCategoryToSecondLevel(context.getDictionaries().getCategoriesHierarchy());
-	else if (name == "regionIn")					return new FunctionRegionIn(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "regionIn")					return new FunctionRegionIn(context.getDictionaries().getRegionsHierarchies());
 	else if (name == "OSIn")						return new FunctionOSIn(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEIn")						return new FunctionSEIn(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryIn")					return new FunctionCategoryIn(context.getDictionaries().getCategoriesHierarchy());
-	else if (name == "regionHierarchy")			return new FunctionRegionHierarchy(context.getDictionaries().getRegionsHierarchy());
+	else if (name == "regionHierarchy")			return new FunctionRegionHierarchy(context.getDictionaries().getRegionsHierarchies());
 	else if (name == "OSHierarchy")				return new FunctionOSHierarchy(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "SEHierarchy")				return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryHierarchy")			return new FunctionCategoryHierarchy(context.getDictionaries().getCategoriesHierarchy());

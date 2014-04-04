@@ -6,7 +6,7 @@
 
 #include <Yandex/MultiVersion.h>
 #include <Yandex/logger_useful.h>
-#include <statdaemons/RegionsHierarchy.h>
+#include <statdaemons/RegionsHierarchies.h>
 #include <statdaemons/TechDataHierarchy.h>
 #include <statdaemons/CategoriesHierarchy.h>
 #include <statdaemons/RegionsNames.h>
@@ -22,7 +22,7 @@ using Poco::SharedPtr;
 class Dictionaries
 {
 private:
-	MultiVersion<RegionsHierarchy> regions_hierarchy;
+	MultiVersion<RegionsHierarchies> regions_hierarchies;
 	MultiVersion<TechDataHierarchy> tech_data_hierarchy;
 	MultiVersion<CategoriesHierarchy> categories_hierarchy;
 	MultiVersion<RegionsNames> regions_names;
@@ -81,9 +81,9 @@ private:
 
 		try
 		{
-			MultiVersion<RegionsHierarchy>::Version new_regions_hierarchy = new RegionsHierarchy;
-			new_regions_hierarchy->reload();
-			regions_hierarchy.set(new_regions_hierarchy);
+			MultiVersion<RegionsHierarchies>::Version new_regions_hierarchies = new RegionsHierarchies;
+			new_regions_hierarchies->reload();
+			regions_hierarchies.set(new_regions_hierarchies);
 
 		}
 		catch (...)
@@ -148,9 +148,9 @@ public:
 		reloading_thread.join();
 	}
 
-	MultiVersion<RegionsHierarchy>::Version getRegionsHierarchy() const
+	MultiVersion<RegionsHierarchies>::Version getRegionsHierarchies() const
 	{
-		return regions_hierarchy.get();
+		return regions_hierarchies.get();
 	}
 
 	MultiVersion<TechDataHierarchy>::Version getTechDataHierarchy() const

@@ -119,8 +119,41 @@ struct CategoryHierarchyImpl
 };
 
 
+/** Вспомогательная вещь, позволяющая достать из словаря конкретный словарь, соответствующий точке зрения
+  *  (ключу словаря, передаваемому в аргументе функции).
+  * Пример: при вызове regionToCountry(x, 'ua'), может быть использован словарь, в котором Крым относится к Украине.
+  */
+struct RegionsHierarchyGetter
+{
+	typedef RegionsHierarchies Src;
+	typedef RegionsHierarchy Dst;
+
+	static const Dst & get(const Src & src, const std::string & key)
+	{
+		return src.get(key);
+	}
+};
+
+/** Для словарей без поддержки ключей. Ничего не делает.
+  */
+template <typename Dict>
+struct IdentityDictionaryGetter
+{
+	typedef Dict Src;
+	typedef Dict Dst;
+
+	static const Dst & get(const Src & src, const std::string & key)
+	{
+		if (key.empty())
+			return src;
+		else
+			throw Exception("Dictionary doesn't support 'point of view' keys.", ErrorCodes::BAD_ARGUMENTS);
+	}
+};
+
+
 /// Преобразует идентификатор, используя словарь.
-template <typename T, typename Transform, typename Dict, typename Name>
+template <typename T, typename Transform, typename Dict, typename DictGetter, typename Name>
 class FunctionTransformWithDictionary : public IFunction
 {
 private:
@@ -143,14 +176,19 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 1)
+		if (arguments.size() != 1 && arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (arguments[0]->getName() != TypeName<T>::get())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
 				+ " (must be " + TypeName<T>::get() + ")",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+			throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
+				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return arguments[0];
@@ -159,6 +197,24 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		/// Ключ словаря, определяющий "точку зрения".
+		std::string dict_key;
+
+		if (arguments.size() == 2)
+		{
+			const ColumnConstString * key_col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+
+			if (!key_col)
+				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+					+ " of second ('point of view') argument of function " + Name::get()
+					+ ". Must be constant string.",
+					ErrorCodes::ILLEGAL_COLUMN);
+
+			dict_key = key_col->getData();
+		}
+
+		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
+
 		if (const ColumnVector<T> * col_from = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<T> * col_to = new ColumnVector<T>;
@@ -169,13 +225,12 @@ public:
 			size_t size = vec_from.size();
 			vec_to.resize(size);
 
-			const Dict & dict = *owned_dict;
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::apply(vec_from[i], dict);
 		}
 		else if (const ColumnConst<T> * col_from = dynamic_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			block.getByPosition(result).column = new ColumnConst<T>(col_from->size(), Transform::apply(col_from->getData(), *owned_dict));
+			block.getByPosition(result).column = new ColumnConst<T>(col_from->size(), Transform::apply(col_from->getData(), dict));
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -186,7 +241,7 @@ public:
 
 
 /// Проверяет принадлежность, используя словарь.
-template <typename T, typename Transform, typename Dict, typename Name>
+template <typename T, typename Transform, typename Dict, typename DictGetter, typename Name>
 class FunctionIsInWithDictionary : public IFunction
 {
 private:
@@ -209,9 +264,9 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 2)
+		if (arguments.size() != 2 && arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 2 or 3.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (arguments[0]->getName() != TypeName<T>::get())
@@ -224,12 +279,35 @@ public:
 				+ " (must be " + TypeName<T>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+		if (arguments.size() == 3 && arguments[2]->getName() != TypeName<String>::get())
+			throw Exception("Illegal type " + arguments[2]->getName() + " of the third ('point of view') argument of function " + getName()
+				+ " (must be " + TypeName<String>::get() + ")",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
 		return new DataTypeUInt8;
 	}
 
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		/// Ключ словаря, определяющий "точку зрения".
+		std::string dict_key;
+
+		if (arguments.size() == 3)
+		{
+			const ColumnConstString * key_col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[2]).column);
+
+			if (!key_col)
+				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				+ " of third ('point of view') argument of function " + Name::get()
+				+ ". Must be constant string.",
+				ErrorCodes::ILLEGAL_COLUMN);
+
+			dict_key = key_col->getData();
+		}
+
+		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
+
 		const ColumnVector<T> * col_vec1 = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnVector<T> * col_vec2 = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[1]).column);
 		const ColumnConst<T> * col_const1 = dynamic_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column);
@@ -246,7 +324,6 @@ public:
 			size_t size = vec_from1.size();
 			vec_to.resize(size);
 
-			const Dict & dict = *owned_dict;
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::apply(vec_from1[i], vec_from2[i], dict);
 		}
@@ -261,7 +338,6 @@ public:
 			size_t size = vec_from1.size();
 			vec_to.resize(size);
 
-			const Dict & dict = *owned_dict;
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::apply(vec_from1[i], const_from2, dict);
 		}
@@ -276,14 +352,13 @@ public:
 			size_t size = vec_from2.size();
 			vec_to.resize(size);
 
-			const Dict & dict = *owned_dict;
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::apply(const_from1, vec_from2[i], dict);
 		}
 		else if (col_const1 && col_const2)
 		{
 			block.getByPosition(result).column = new ColumnConst<UInt8>(col_const1->size(),
-				Transform::apply(col_const1->getData(), col_const2->getData(), *owned_dict));
+				Transform::apply(col_const1->getData(), col_const2->getData(), dict));
 		}
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
@@ -295,7 +370,7 @@ public:
 
 
 /// Получает массив идентификаторов, состоящий из исходного и цепочки родителей.
-template <typename T, typename Transform, typename Dict, typename Name>
+template <typename T, typename Transform, typename Dict, typename DictGetter, typename Name>
 class FunctionHierarchyWithDictionary : public IFunction
 {
 private:
@@ -318,15 +393,20 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 1)
+		if (arguments.size() != 1 && arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		
 		if (arguments[0]->getName() != TypeName<T>::get())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
 			+ " (must be " + TypeName<T>::get() + ")",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+			throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
+				+ " (must be " + TypeName<String>::get() + ")",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		
 		return new DataTypeArray(arguments[0]);
 	}
@@ -334,6 +414,24 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		/// Ключ словаря, определяющий "точку зрения".
+		std::string dict_key;
+
+		if (arguments.size() == 2)
+		{
+			const ColumnConstString * key_col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+
+			if (!key_col)
+				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				+ " of second ('point of view') argument of function " + Name::get()
+				+ ". Must be constant string.",
+				ErrorCodes::ILLEGAL_COLUMN);
+
+			dict_key = key_col->getData();
+		}
+
+		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
+
 		if (const ColumnVector<T> * col_from = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<T> * col_values = new ColumnVector<T>;
@@ -348,7 +446,6 @@ public:
 			res_offsets.resize(size);
 			res_values.reserve(size * 4);
 			
-			const Dict & dict = *owned_dict;
 			for (size_t i = 0; i < size; ++i)
 			{
 				T cur = vec_from[i];
@@ -364,7 +461,6 @@ public:
 		{
 			Array res;
 			
-			const Dict & dict = *owned_dict;
 			T cur = col_from->getData();
 			while (cur)
 			{
@@ -402,24 +498,54 @@ struct NameSEHierarchy		{ static const char * get() { return "SEHierarchy"; } };
 struct NameCategoryHierarchy{ static const char * get() { return "categoryHierarchy"; } };
 
 
-typedef FunctionTransformWithDictionary<UInt32,	RegionToCityImpl,	RegionsHierarchy,	NameRegionToCity> 		FunctionRegionToCity;
-typedef FunctionTransformWithDictionary<UInt32,	RegionToAreaImpl,	RegionsHierarchy,	NameRegionToArea> 		FunctionRegionToArea;
-typedef FunctionTransformWithDictionary<UInt32,	RegionToCountryImpl,RegionsHierarchy,	NameRegionToCountry> 	FunctionRegionToCountry;
-typedef FunctionTransformWithDictionary<UInt32,	RegionToContinentImpl,	RegionsHierarchy,	NameRegionToContinent> 		FunctionRegionToContinent;
-typedef FunctionTransformWithDictionary<UInt8,		OSToRootImpl,		TechDataHierarchy,	NameOSToRoot> 			FunctionOSToRoot;
-typedef FunctionTransformWithDictionary<UInt8,		SEToRootImpl,		TechDataHierarchy,	NameSEToRoot>			FunctionSEToRoot;
-typedef FunctionTransformWithDictionary<UInt16,	CategoryToRootImpl,	CategoriesHierarchy,NameCategoryToRoot>	FunctionCategoryToRoot;
-typedef FunctionTransformWithDictionary<UInt16,CategoryToSecondLevelImpl,CategoriesHierarchy,NameCategoryToSecondLevel> FunctionCategoryToSecondLevel;
+typedef FunctionTransformWithDictionary
+	<UInt32, RegionToCityImpl,	RegionsHierarchies, RegionsHierarchyGetter,	NameRegionToCity> FunctionRegionToCity;
 
-typedef FunctionIsInWithDictionary<UInt32,	RegionInImpl,	RegionsHierarchy,	NameRegionIn> 						FunctionRegionIn;
-typedef FunctionIsInWithDictionary<UInt8,	OSInImpl,		TechDataHierarchy,	NameOSIn> 							FunctionOSIn;
-typedef FunctionIsInWithDictionary<UInt8,	SEInImpl,		TechDataHierarchy,	NameSEIn> 							FunctionSEIn;
-typedef FunctionIsInWithDictionary<UInt16,	CategoryInImpl,	CategoriesHierarchy,NameCategoryIn>					FunctionCategoryIn;
+typedef FunctionTransformWithDictionary
+	<UInt32, RegionToAreaImpl,	RegionsHierarchies, RegionsHierarchyGetter,	NameRegionToArea> FunctionRegionToArea;
 
-typedef FunctionHierarchyWithDictionary<UInt32,	RegionHierarchyImpl,	RegionsHierarchy, NameRegionHierarchy>	FunctionRegionHierarchy;
-typedef FunctionHierarchyWithDictionary<UInt8,		OSHierarchyImpl,		TechDataHierarchy, NameOSHierarchy>	FunctionOSHierarchy;
-typedef FunctionHierarchyWithDictionary<UInt8,		SEHierarchyImpl,		TechDataHierarchy, NameSEHierarchy>	FunctionSEHierarchy;
-typedef FunctionHierarchyWithDictionary<UInt16,	CategoryHierarchyImpl,	CategoriesHierarchy, NameCategoryHierarchy>FunctionCategoryHierarchy;
+typedef FunctionTransformWithDictionary
+	<UInt32, RegionToCountryImpl,RegionsHierarchies, RegionsHierarchyGetter,	NameRegionToCountry> FunctionRegionToCountry;
+
+typedef FunctionTransformWithDictionary
+	<UInt32, RegionToContinentImpl, RegionsHierarchies, RegionsHierarchyGetter, NameRegionToContinent> FunctionRegionToContinent;
+
+typedef FunctionTransformWithDictionary
+	<UInt8, OSToRootImpl,		TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>,	NameOSToRoot> FunctionOSToRoot;
+
+typedef FunctionTransformWithDictionary
+	<UInt8, SEToRootImpl,		TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>,	NameSEToRoot> FunctionSEToRoot;
+
+typedef FunctionTransformWithDictionary
+	<UInt16, CategoryToRootImpl,	CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToRoot>	FunctionCategoryToRoot;
+
+typedef FunctionTransformWithDictionary
+	<UInt16, CategoryToSecondLevelImpl, CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToSecondLevel>
+	FunctionCategoryToSecondLevel;
+
+typedef FunctionIsInWithDictionary
+	<UInt32, RegionInImpl, RegionsHierarchies, RegionsHierarchyGetter,	NameRegionIn> FunctionRegionIn;
+
+typedef FunctionIsInWithDictionary
+	<UInt8,	OSInImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn> FunctionOSIn;
+
+typedef FunctionIsInWithDictionary
+	<UInt8,	SEInImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn> FunctionSEIn;
+
+typedef FunctionIsInWithDictionary
+	<UInt16, CategoryInImpl, CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryIn>	FunctionCategoryIn;
+
+typedef FunctionHierarchyWithDictionary
+	<UInt32, RegionHierarchyImpl, RegionsHierarchies, RegionsHierarchyGetter, NameRegionHierarchy> FunctionRegionHierarchy;
+
+typedef FunctionHierarchyWithDictionary
+	<UInt8, OSHierarchyImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy> FunctionOSHierarchy;
+
+typedef FunctionHierarchyWithDictionary
+	<UInt8, SEHierarchyImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy> FunctionSEHierarchy;
+
+typedef FunctionHierarchyWithDictionary
+	<UInt16, CategoryHierarchyImpl,	CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryHierarchy> FunctionCategoryHierarchy;
 
 
 /// Преобразует числовой идентификатор региона в имя на заданном языке, используя словарь.
@@ -478,7 +604,9 @@ public:
 						+ " of the second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		
+
+		const RegionsNames & dict = *owned_dict;
+
 		if (const ColumnVector<UInt32> * col_from = dynamic_cast<const ColumnVector<UInt32> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnString * col_to = new ColumnString;
@@ -486,7 +614,6 @@ public:
 
 			const ColumnVector<UInt32>::Container_t & region_ids = col_from->getData();
 
-			const RegionsNames & dict = *owned_dict;
 			for (size_t i = 0; i < region_ids.size(); ++i)
 			{
 				const DB::StringRef & name_ref = dict.getRegionName(region_ids[i], language);
@@ -496,7 +623,7 @@ public:
 		else if (const ColumnConst<UInt32> * col_from = dynamic_cast<const ColumnConst<UInt32> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			UInt32 region_id = col_from->getData();
-			const DB::StringRef & name_ref = owned_dict->getRegionName(region_id, language);
+			const DB::StringRef & name_ref = dict.getRegionName(region_id, language);
 			
 			block.getByPosition(result).column = new ColumnConstString(col_from->size(), name_ref.toString());
 		}
