@@ -153,14 +153,14 @@ struct IdentityDictionaryGetter
 
 
 /// Преобразует идентификатор, используя словарь.
-template <typename T, typename Transform, typename Dict, typename DictGetter, typename Name>
+template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionTransformWithDictionary : public IFunction
 {
 private:
-	const SharedPtr<Dict> owned_dict;
+	const SharedPtr<typename DictGetter::Src> owned_dict;
 	
 public:
-	FunctionTransformWithDictionary(const SharedPtr<Dict> & owned_dict_)
+	FunctionTransformWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
 		: owned_dict(owned_dict_)
 	{
 		if (!owned_dict)
@@ -241,14 +241,14 @@ public:
 
 
 /// Проверяет принадлежность, используя словарь.
-template <typename T, typename Transform, typename Dict, typename DictGetter, typename Name>
+template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionIsInWithDictionary : public IFunction
 {
 private:
-	const SharedPtr<Dict> owned_dict;
+	const SharedPtr<typename DictGetter::Src> owned_dict;
 
 public:
-	FunctionIsInWithDictionary(const SharedPtr<Dict> & owned_dict_)
+	FunctionIsInWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
 		: owned_dict(owned_dict_)
 	{
 		if (!owned_dict)
@@ -370,14 +370,14 @@ public:
 
 
 /// Получает массив идентификаторов, состоящий из исходного и цепочки родителей.
-template <typename T, typename Transform, typename Dict, typename DictGetter, typename Name>
+template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionHierarchyWithDictionary : public IFunction
 {
 private:
-	const SharedPtr<Dict> owned_dict;
+	const SharedPtr<typename DictGetter::Src> owned_dict;
 	
 public:
-	FunctionHierarchyWithDictionary(const SharedPtr<Dict> & owned_dict_)
+	FunctionHierarchyWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
 	: owned_dict(owned_dict_)
 	{
 		if (!owned_dict)
@@ -499,53 +499,52 @@ struct NameCategoryHierarchy{ static const char * get() { return "categoryHierar
 
 
 typedef FunctionTransformWithDictionary
-	<UInt32, RegionToCityImpl,	RegionsHierarchies, RegionsHierarchyGetter,	NameRegionToCity> FunctionRegionToCity;
+	<UInt32, RegionToCityImpl,	RegionsHierarchyGetter,	NameRegionToCity> FunctionRegionToCity;
 
 typedef FunctionTransformWithDictionary
-	<UInt32, RegionToAreaImpl,	RegionsHierarchies, RegionsHierarchyGetter,	NameRegionToArea> FunctionRegionToArea;
+	<UInt32, RegionToAreaImpl,	RegionsHierarchyGetter,	NameRegionToArea> FunctionRegionToArea;
 
 typedef FunctionTransformWithDictionary
-	<UInt32, RegionToCountryImpl,RegionsHierarchies, RegionsHierarchyGetter,	NameRegionToCountry> FunctionRegionToCountry;
+	<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry> FunctionRegionToCountry;
 
 typedef FunctionTransformWithDictionary
-	<UInt32, RegionToContinentImpl, RegionsHierarchies, RegionsHierarchyGetter, NameRegionToContinent> FunctionRegionToContinent;
+	<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent> FunctionRegionToContinent;
 
 typedef FunctionTransformWithDictionary
-	<UInt8, OSToRootImpl,		TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>,	NameOSToRoot> FunctionOSToRoot;
+	<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot> FunctionOSToRoot;
 
 typedef FunctionTransformWithDictionary
-	<UInt8, SEToRootImpl,		TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>,	NameSEToRoot> FunctionSEToRoot;
+	<UInt8, SEToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEToRoot> FunctionSEToRoot;
 
 typedef FunctionTransformWithDictionary
-	<UInt16, CategoryToRootImpl,	CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToRoot>	FunctionCategoryToRoot;
+	<UInt16, CategoryToRootImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToRoot>	FunctionCategoryToRoot;
 
 typedef FunctionTransformWithDictionary
-	<UInt16, CategoryToSecondLevelImpl, CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToSecondLevel>
-	FunctionCategoryToSecondLevel;
+	<UInt16, CategoryToSecondLevelImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToSecondLevel> FunctionCategoryToSecondLevel;
 
 typedef FunctionIsInWithDictionary
-	<UInt32, RegionInImpl, RegionsHierarchies, RegionsHierarchyGetter,	NameRegionIn> FunctionRegionIn;
+	<UInt32, RegionInImpl, RegionsHierarchyGetter,	NameRegionIn> FunctionRegionIn;
 
 typedef FunctionIsInWithDictionary
-	<UInt8,	OSInImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn> FunctionOSIn;
+	<UInt8,	OSInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn> FunctionOSIn;
 
 typedef FunctionIsInWithDictionary
-	<UInt8,	SEInImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn> FunctionSEIn;
+	<UInt8,	SEInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn> FunctionSEIn;
 
 typedef FunctionIsInWithDictionary
-	<UInt16, CategoryInImpl, CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryIn>	FunctionCategoryIn;
+	<UInt16, CategoryInImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryIn>	FunctionCategoryIn;
 
 typedef FunctionHierarchyWithDictionary
-	<UInt32, RegionHierarchyImpl, RegionsHierarchies, RegionsHierarchyGetter, NameRegionHierarchy> FunctionRegionHierarchy;
+	<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy> FunctionRegionHierarchy;
 
 typedef FunctionHierarchyWithDictionary
-	<UInt8, OSHierarchyImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy> FunctionOSHierarchy;
+	<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy> FunctionOSHierarchy;
 
 typedef FunctionHierarchyWithDictionary
-	<UInt8, SEHierarchyImpl, TechDataHierarchy, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy> FunctionSEHierarchy;
+	<UInt8, SEHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy> FunctionSEHierarchy;
 
 typedef FunctionHierarchyWithDictionary
-	<UInt16, CategoryHierarchyImpl,	CategoriesHierarchy, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryHierarchy> FunctionCategoryHierarchy;
+	<UInt16, CategoryHierarchyImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryHierarchy> FunctionCategoryHierarchy;
 
 
 /// Преобразует числовой идентификатор региона в имя на заданном языке, используя словарь.
