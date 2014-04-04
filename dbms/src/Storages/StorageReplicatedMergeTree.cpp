@@ -31,12 +31,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const MergeTreeSettings & settings_)
 	:
 	context(context_), zookeeper(context.getZooKeeper()),
-	path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), zookeeper_path(zookeeper_path_),
+	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
 	replica_name(replica_name_), is_leader_node(false),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 			index_granularity_,mode_, sign_column_, settings_),
 	reader(data), writer(data), merger(data), fetcher(data),
-	log(&Logger::get("StorageReplicatedMergeTree")),
+	log(&Logger::get("StorageReplicatedMergeTree: " + table_name)),
 	shutdown_called(false)
 {
 	if (!zookeeper_path.empty() && *zookeeper_path.rbegin() == '/')
@@ -337,10 +337,13 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 			priority_queue.push(iterator);
 	}
 
+	size_t count = 0;
+
 	while (!priority_queue.empty())
 	{
 		LogIterator iterator = priority_queue.top();
 		priority_queue.pop();
+		++count;
 
 		LogEntry entry = LogEntry::parse(iterator.entry_str);
 
@@ -353,7 +356,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 		auto results = zookeeper.multi(ops);
 
 		String path_created = dynamic_cast<zkutil::OpResult::Create &>((*results)[0]).getPathCreated();
-		entry.znode_name = path.substr(path.find_last_of('/') + 1);
+		entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 		entry.tagPartsAsCurrentlyMerging(*this);
 		queue.push_back(entry);
 
@@ -361,6 +364,9 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 		if (iterator.readEntry(zookeeper, zookeeper_path))
 			priority_queue.push(iterator);
 	}
+
+	if (count > 0)
+		LOG_DEBUG(log, "Pulled " << count << " entries to queue");
 }
 
 void StorageReplicatedMergeTree::optimizeQueue()
@@ -377,14 +383,25 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 		/// Даже если кусок есть локально, его (в исключительных случаях) может не быть в zookeeper.
 		if (containing_part && zookeeper.exists(replica_path + "/parts/" + containing_part->name))
+		{
+			LOG_DEBUG(log, "Skipping action for part " + entry.new_part_name + " - part already exists");
 			return;
+		}
 	}
 
-	if (entry.type != LogEntry::GET_PART)
+	if (entry.type == LogEntry::GET_PART)
+	{
+		String replica = findActiveReplicaHavingPart(entry.new_part_name);
+		fetchPart(entry.new_part_name, replica);
+	}
+	else if (entry.type == LogEntry::MERGE_PARTS)
+	{
 		throw Exception("Merging is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
-
-	String replica = findActiveReplicaHavingPart(entry.new_part_name);
-	fetchPart(entry.new_part_name, replica);
+	}
+	else
+	{
+		throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+	}
 }
 
 void StorageReplicatedMergeTree::queueUpdatingThread()
@@ -514,6 +531,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 			String merged_name;
 			auto can_merge = std::bind(&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 
+			LOG_TRACE(log, "Selecting parts to merge" << (has_big_merge ? " (only small)" : ""));
+
 			if (merger.selectPartsToMerge(parts, merged_name, 0, false, false, has_big_merge, can_merge) ||
 				merger.selectPartsToMerge(parts, merged_name, 0,  true, false, has_big_merge, can_merge))
 			{
@@ -543,7 +562,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 			break;
 
 		if (!success)
-			std::this_thread::sleep_for(QUEUE_AFTER_WORK_SLEEP);
+			std::this_thread::sleep_for(MERGE_SELECTING_SLEEP);
 	}
 }
 
@@ -561,7 +580,10 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 		String path = zookeeper_path + "/block_numbers/block-" + number_str;
 
 		if (AbandonableLockInZooKeeper::check(path, zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+		{
+			LOG_DEBUG(log, "Can't merge parts " << left->name << " and " << right->name << " because block " << path << " exists");
 			return false;
+		}
 	}
 
 	return true;
@@ -569,6 +591,7 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 
 void StorageReplicatedMergeTree::becomeLeader()
 {
+	LOG_INFO(log, "Became leader");
 	is_leader_node = true;
 	merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
 }
@@ -592,6 +615,8 @@ String StorageReplicatedMergeTree::findActiveReplicaHavingPart(const String & pa
 
 void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_name)
 {
+	LOG_DEBUG(log, "Fetching part " << part_name << " from " << replica_name);
+
 	auto table_lock = lockStructure(true);
 
 	String host;
@@ -621,6 +646,8 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 		zookeeper.getDefaultACL(),
 		zkutil::CreateMode::Persistent));
 	zookeeper.multi(ops);
+
+	LOG_DEBUG(log, "Fetched part");
 }
 
 void StorageReplicatedMergeTree::shutdown()

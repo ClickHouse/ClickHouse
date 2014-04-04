@@ -42,7 +42,7 @@ public:
 		return "Replicated" + data.getModePrefix() + "MergeTree";
 	}
 
-	std::string getTableName() const override { return name; }
+	std::string getTableName() const override { return table_name; }
 	std::string getSignColumnName() const { return data.getSignColumnName(); }
 	bool supportsSampling() const override { return data.supportsSampling(); }
 	bool supportsFinal() const override { return data.supportsFinal(); }
@@ -152,8 +152,15 @@ private:
 
 	typedef std::list<LogEntry> LogEntries;
 
+	typedef std::set<String> StringSet;
+	typedef std::vector<std::thread> Threads;
+
 	Context & context;
 	zkutil::ZooKeeper & zookeeper;
+
+	/// Куски, для которых в очереди есть задание на слияние.
+	StringSet currently_merging;
+	Poco::FastMutex currently_merging_mutex;
 
 	/** "Очередь" того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
 	  * В ZK записи в хронологическом порядке. Здесь записи в том порядке, в котором их лучше выполнять.
@@ -161,8 +168,7 @@ private:
 	LogEntries queue;
 	Poco::FastMutex queue_mutex;
 
-	String path;
-	String name;
+	String table_name;
 	String full_path;
 
 	String zookeeper_path;
@@ -186,8 +192,6 @@ private:
 	ReplicatedMergeTreePartsFetcher fetcher;
 	zkutil::LeaderElectionPtr leader_election;
 
-	typedef std::vector<std::thread> Threads;
-
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
 
@@ -196,12 +200,6 @@ private:
 
 	/// Поток, выбирающий куски для слияния.
 	std::thread merge_selecting_thread;
-
-	typedef std::set<String> StringSet;
-
-	/// Куски, для которых в очереди есть задание на слияние.
-	StringSet currently_merging;
-	Poco::FastMutex currently_merging_mutex;
 
 	Logger * log;
 

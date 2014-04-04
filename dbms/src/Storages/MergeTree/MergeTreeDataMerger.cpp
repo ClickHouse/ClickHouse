@@ -38,8 +38,6 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
 	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge)
 {
-	LOG_DEBUG(log, "Selecting parts to merge");
-
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
@@ -232,10 +230,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
 
 		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
-	}
-	else
-	{
-		LOG_DEBUG(log, "No parts to merge");
 	}
 
 	return found;

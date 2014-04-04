@@ -164,9 +164,14 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 						}
 					}
 
+					LOG_DEBUG(log, "Selecting parts to merge");
+
 					if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
 						!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))
+					{
+						LOG_DEBUG(log, "No parts to merge");
 						break;
+					}
 
 					merging_tagger = new CurrentlyMergingPartsTagger(parts, merger.estimateDiskSpaceForMerge(parts), *this);
 				}

@@ -76,7 +76,6 @@ public:
 		const String & host,
 		int port)
 	{
-		LOG_TRACE(log, "Fetching part " << part_name);
 		ReadBufferFromHTTP::Params params = {
 			std::make_pair("endpoint", "ReplicatedMergeTree:" + replica_path),
 			std::make_pair("part", part_name),
