@@ -20,7 +20,7 @@
 /// То же самое, но для операций слияния. Меньше DEFAULT_BLOCK_SIZE для экономии оперативки (так как читаются все столбцы).
 #define DEFAULT_MERGE_BLOCK_SIZE 								10000
 
-#define DEFAULT_MAX_QUERY_SIZE 									1048576
+#define DEFAULT_MAX_QUERY_SIZE 									65536
 #define SHOW_CHARS_ON_SYNTAX_ERROR 								160L
 #define DEFAULT_MAX_THREADS 									8
 #define DEFAULT_MAX_DISTRIBUTED_CONNECTIONS						1024

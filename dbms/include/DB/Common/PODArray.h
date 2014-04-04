@@ -90,8 +90,6 @@ private:
 		size_t bytes_to_alloc = to_size(n);
 		c_start = c_end = Allocator::allocate(bytes_to_alloc);
 		c_end_of_storage = c_start + bytes_to_alloc;
-
-		//memset(c_start, 0, bytes_to_alloc);
 	}
 
 	void dealloc()
@@ -107,8 +105,6 @@ private:
 
 	void realloc(size_t n)
 	{
-//		std::cerr << "realloc" << std::endl;
-
 		if (c_start == NULL)
 		{
 			alloc(n);
@@ -138,9 +134,7 @@ private:
 			memcpy(c_start, old_c_start, old_c_end_of_storage - old_c_start);
 			Allocator::deallocate(old_c_start, old_c_end_of_storage - old_c_start);
 		}
-		
-		//memset(c_start + (old_c_end_of_storage - old_c_start), 0, bytes_to_alloc - (old_c_end_of_storage - old_c_start));
-				
+
 		c_end = c_start + end_diff;
 		c_end_of_storage = c_start + bytes_to_alloc;
 

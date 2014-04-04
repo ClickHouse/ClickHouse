@@ -1,0 +1,7 @@
+CounterID	UInt32
+StartDate	Date
+UserID	UInt32
+VisitID	UInt32
+Added0	String
+Added1	UInt32
+Added2	UInt32
