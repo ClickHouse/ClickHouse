@@ -5,8 +5,9 @@
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include "MergeTree/ReplicatedMergeTreePartsExchange.h"
+#include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <zkutil/ZooKeeper.h>
+#include <zkutil/LeaderElection.h>
 #include <statdaemons/threadpool.hpp>
 
 namespace DB
@@ -66,6 +67,44 @@ public:
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 
+	struct CurrentlyMergingPartsTagger
+	{
+		Strings parts;
+		StorageReplicatedMergeTree & storage;
+
+		CurrentlyMergingPartsTagger(const Strings & parts_, StorageReplicatedMergeTree & storage_)
+			: parts(parts_), storage(storage_)
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
+			for (const auto & name : parts)
+			{
+				if (storage.currently_merging.count(name))
+					throw Exception("Tagging alreagy tagged part " + name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+			}
+			storage.currently_merging.insert(parts.begin(), parts.end());
+		}
+
+		~CurrentlyMergingPartsTagger()
+		{
+			try
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
+				for (const auto & name : parts)
+				{
+					if (!storage.currently_merging.count(name))
+						throw Exception("Untagging already untagged part " + name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+					storage.currently_merging.erase(name);
+				}
+			}
+			catch (...)
+			{
+				tryLogCurrentException(__PRETTY_FUNCTION__);
+			}
+		}
+	};
+
+	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
+
 	struct LogEntry
 	{
 		enum Type
@@ -79,6 +118,14 @@ private:
 		Type type;
 		String new_part_name;
 		Strings parts_to_merge;
+
+		CurrentlyMergingPartsTaggerPtr currently_merging_tagger;
+
+		void tagPartsAsCurrentlyMerging(StorageReplicatedMergeTree & storage)
+		{
+			if (type == MERGE_PARTS)
+				currently_merging_tagger = new CurrentlyMergingPartsTagger(parts_to_merge, storage);
+		}
 
 		void writeText(WriteBuffer & out) const;
 		void readText(ReadBuffer & in);
@@ -135,7 +182,9 @@ private:
 	MergeTreeData data;
 	MergeTreeDataSelectExecutor reader;
 	MergeTreeDataWriter writer;
+	MergeTreeDataMerger merger;
 	ReplicatedMergeTreePartsFetcher fetcher;
+	zkutil::LeaderElectionPtr leader_election;
 
 	typedef std::vector<std::thread> Threads;
 
@@ -144,6 +193,15 @@ private:
 
 	/// Потоки, выполняющие действия из очереди.
 	Threads queue_threads;
+
+	/// Поток, выбирающий куски для слияния.
+	std::thread merge_selecting_thread;
+
+	typedef std::set<String> StringSet;
+
+	/// Куски, для которых в очереди есть задание на слияние.
+	StringSet currently_merging;
+	Poco::FastMutex currently_merging_mutex;
 
 	Logger * log;
 
@@ -190,7 +248,7 @@ private:
 	  */
 	void checkParts();
 
-	/// Работа с очередью и логом.
+	/// Выполнение заданий из очереди.
 
 	/** Кладет в queue записи из ZooKeeper (/replicas/me/queue/).
 	  */
@@ -217,6 +275,17 @@ private:
 	/** В бесконечном цикле выполняет действия из очереди.
 	  */
 	void queueThread();
+
+	void becomeLeader();
+
+	/// Выбор кусков для слияния.
+
+	/** В бесконечном цикле выбирается куски для слияния и записывает в лог.
+	  */
+	void mergeSelectingThread();
+
+	/// Вызывается во время выбора кусков для слияния.
+	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
 
 	/// Обмен кусками.
 

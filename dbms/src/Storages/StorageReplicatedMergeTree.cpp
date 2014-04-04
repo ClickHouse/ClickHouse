@@ -13,6 +13,7 @@ const auto QUEUE_UPDATE_SLEEP = std::chrono::seconds(5);
 const auto QUEUE_NO_WORK_SLEEP = std::chrono::seconds(5);
 const auto QUEUE_ERROR_SLEEP = std::chrono::seconds(1);
 const auto QUEUE_AFTER_WORK_SLEEP = std::chrono::seconds(0);
+const auto MERGE_SELECTING_SLEEP = std::chrono::seconds(5);
 
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
@@ -31,10 +32,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	:
 	context(context_), zookeeper(context.getZooKeeper()),
 	path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), zookeeper_path(zookeeper_path_),
-	replica_name(replica_name_),
+	replica_name(replica_name_), is_leader_node(false),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 			index_granularity_,mode_, sign_column_, settings_),
-	reader(data), writer(data), fetcher(data),
+	reader(data), writer(data), merger(data), fetcher(data),
 	log(&Logger::get("StorageReplicatedMergeTree")),
 	shutdown_called(false)
 {
@@ -61,6 +62,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	loadQueue();
 	activateReplica();
+
+	leader_election = new zkutil::LeaderElection(zookeeper_path + "/leader_election", zookeeper,
+		std::bind(&StorageReplicatedMergeTree::becomeLeader, this), replica_name);
 
 	queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
 	for (size_t i = 0; i < settings_.replication_threads; ++i)
@@ -126,10 +130,10 @@ void StorageReplicatedMergeTree::createTable()
 
 	zookeeper.create(zookeeper_path + "/metadata", metadata.str(), zkutil::CreateMode::Persistent);
 
-	/// Создадим нужные "директории".
 	zookeeper.create(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent);
 	zookeeper.create(zookeeper_path + "/blocks", "", zkutil::CreateMode::Persistent);
 	zookeeper.create(zookeeper_path + "/block_numbers", "", zkutil::CreateMode::Persistent);
+	zookeeper.create(zookeeper_path + "/leader_election", "", zkutil::CreateMode::Persistent);
 	zookeeper.create(zookeeper_path + "/temp", "", zkutil::CreateMode::Persistent);
 }
 
@@ -264,6 +268,7 @@ void StorageReplicatedMergeTree::loadQueue()
 		String s = zookeeper.get(replica_path + "/queue/" + child);
 		LogEntry entry = LogEntry::parse(s);
 		entry.znode_name = child;
+		entry.tagPartsAsCurrentlyMerging(*this);
 		queue.push_back(entry);
 	}
 }
@@ -349,6 +354,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 
 		String path_created = dynamic_cast<zkutil::OpResult::Create &>((*results)[0]).getPathCreated();
 		entry.znode_name = path.substr(path.find_last_of('/') + 1);
+		entry.tagPartsAsCurrentlyMerging(*this);
 		queue.push_back(entry);
 
 		++iterator.index;
@@ -385,8 +391,16 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 {
 	while (!shutdown_called)
 	{
-		pullLogsToQueue();
-		optimizeQueue();
+		try
+		{
+			pullLogsToQueue();
+			optimizeQueue();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
 		std::this_thread::sleep_for(QUEUE_UPDATE_SLEEP);
 	}
 }
@@ -423,24 +437,9 @@ void StorageReplicatedMergeTree::queueThread()
 
 			success = true;
 		}
-		catch (const Exception & e)
-		{
-			LOG_ERROR(log, "Code: " << e.code() << ". " << e.displayText() << std::endl
-				<< std::endl
-				<< "Stack trace:" << std::endl
-				<< e.getStackTrace().toString());
-		}
-		catch (const Poco::Exception & e)
-		{
-			LOG_ERROR(log, "Poco::Exception: " << e.code() << ". " << e.displayText());
-		}
-		catch (const std::exception & e)
-		{
-			LOG_ERROR(log, "std::exception: " << e.what());
-		}
 		catch (...)
 		{
-			LOG_ERROR(log, "Unknown exception");
+			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 
 		if (shutdown_called)
@@ -460,6 +459,118 @@ void StorageReplicatedMergeTree::queueThread()
 			std::this_thread::sleep_for(QUEUE_ERROR_SLEEP);
 		}
 	}
+}
+
+void StorageReplicatedMergeTree::mergeSelectingThread()
+{
+	pullLogsToQueue();
+
+	while (!shutdown_called && is_leader_node)
+	{
+		size_t merges_queued = 0;
+
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+
+			for (const auto & entry : queue)
+				if (entry.type == LogEntry::MERGE_PARTS)
+					++merges_queued;
+		}
+
+		if (merges_queued >= data.settings.merging_threads)
+		{
+			std::this_thread::sleep_for(MERGE_SELECTING_SLEEP);
+			continue;
+		}
+
+		/// Есть ли активный мердж крупных кусков.
+		bool has_big_merge = false;
+
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
+
+			for (const auto & name : currently_merging)
+			{
+				MergeTreeData::DataPartPtr part = data.getContainingPart(name);
+				if (!part)
+					continue;
+				if (part->name != name)
+					throw Exception("Assertion failed in mergeSelectingThread().", ErrorCodes::LOGICAL_ERROR);
+				if (part->size * data.index_granularity > 25 * 1024 * 1024)
+				{
+					has_big_merge = true;
+					break;
+				}
+			}
+		}
+
+		bool success = false;
+
+		try
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
+
+			MergeTreeData::DataPartsVector parts;
+			String merged_name;
+			auto can_merge = std::bind(&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
+
+			if (merger.selectPartsToMerge(parts, merged_name, 0, false, false, has_big_merge, can_merge) ||
+				merger.selectPartsToMerge(parts, merged_name, 0,  true, false, has_big_merge, can_merge))
+			{
+				LogEntry entry;
+				entry.type = LogEntry::MERGE_PARTS;
+				entry.new_part_name = merged_name;
+
+				for (const auto & part : parts)
+				{
+					entry.parts_to_merge.push_back(part->name);
+				}
+
+				zookeeper.create(replica_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+
+				/// Нужно загрузить эту запись в очередь перед тем, как в следующий раз выбирать куски для слияния.
+				pullLogsToQueue();
+
+				success = true;
+			}
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
+		if (shutdown_called)
+			break;
+
+		if (!success)
+			std::this_thread::sleep_for(QUEUE_AFTER_WORK_SLEEP);
+	}
+}
+
+bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+{
+	if (currently_merging.count(left->name) || currently_merging.count(right->name))
+		return false;
+
+	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
+	for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)
+	{
+		String number_str = toString(number);
+		while (number_str.size() < 10)
+			number_str = '0' + number_str;
+		String path = zookeeper_path + "/block_numbers/block-" + number_str;
+
+		if (AbandonableLockInZooKeeper::check(path, zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+			return false;
+	}
+
+	return true;
+}
+
+void StorageReplicatedMergeTree::becomeLeader()
+{
+	is_leader_node = true;
+	merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
 }
 
 String StorageReplicatedMergeTree::findActiveReplicaHavingPart(const String & part_name)
@@ -516,11 +627,14 @@ void StorageReplicatedMergeTree::shutdown()
 {
 	if (shutdown_called)
 		return;
+	leader_election = nullptr;
 	shutdown_called = true;
 	replica_is_active_node = nullptr;
 	endpoint_holder = nullptr;
 
 	LOG_TRACE(log, "Waiting for threads to finish");
+	if (is_leader_node)
+		merge_selecting_thread.join();
 	queue_updating_thread.join();
 	for (auto & thread : queue_threads)
 		thread.join();

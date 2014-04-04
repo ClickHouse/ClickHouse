@@ -35,7 +35,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 /// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
-bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, size_t available_disk_space,
+bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
 	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge)
 {
 	LOG_DEBUG(log, "Selecting parts to merge");
@@ -43,6 +43,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+
+	if (available_disk_space == 0)
+		available_disk_space = std::numeric_limits<size_t>::max();
 
 	size_t min_max = -1U;
 	size_t min_min = -1U;
@@ -209,12 +212,24 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	{
 		parts.clear();
 
+		DayNum_t left_date = DayNum_t(std::numeric_limits<UInt16>::max());
+		DayNum_t right_date = DayNum_t(std::numeric_limits<UInt16>::min());
+		UInt32 level = 0;
+
 		MergeTreeData::DataParts::iterator it = best_begin;
 		for (int i = 0; i < max_len; ++i)
 		{
 			parts.push_back(*it);
+
+			level = std::max(level, parts[i]->level);
+			left_date = std::min(left_date, parts[i]->left_date);
+			right_date = std::max(right_date, parts[i]->right_date);
+
 			++it;
 		}
+
+		merged_name = MergeTreeData::getPartName(
+			left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
 
 		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
 	}
@@ -228,7 +243,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 
 /// parts должны быть отсортированы.
-String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & parts)
+String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name)
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
@@ -237,25 +252,9 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	for (const auto & it : columns_list)
 		all_column_names.push_back(it.first);
 
-	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
-
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-	new_data_part->left_date = std::numeric_limits<UInt16>::max();
-	new_data_part->right_date = std::numeric_limits<UInt16>::min();
-	new_data_part->left = parts.front()->left;
-	new_data_part->right = parts.back()->right;
-	new_data_part->level = 0;
-	for (size_t i = 0; i < parts.size(); ++i)
-	{
-		new_data_part->level = std::max(new_data_part->level, parts[i]->level);
-		new_data_part->left_date = std::min(new_data_part->left_date, parts[i]->left_date);
-		new_data_part->right_date = std::max(new_data_part->right_date, parts[i]->right_date);
-	}
-	++new_data_part->level;
-	new_data_part->name = MergeTreeData::getPartName(
-		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
-	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
-	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
+	data.parsePartName(merged_name, *new_data_part);
+	new_data_part->name = merged_name;
 
 	/** Читаем из всех кусков, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.

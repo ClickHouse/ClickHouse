@@ -144,7 +144,12 @@ public:
 		: path(path_), zookeeper(zookeeper_)
 	{
 		if (create)
-			zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
+			path = zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
+	}
+
+	std::string getPath() const
+	{
+		return path;
 	}
 
 	static Ptr create(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
