@@ -305,8 +305,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 
 	new_data_part->index.swap(to->getIndex());
 
-	/// В обычном режиме строчки не могут удалиться при мердже.
-	if (0 == to->marksCount() && data.mode == MergeTreeData::Ordinary)
+	/// Для удобства, даже CollapsingSortedBlockInputStream не может выдать ноль строк.
+	if (0 == to->marksCount())
 		throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
 	new_data_part->size = to->marksCount();

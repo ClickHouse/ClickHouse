@@ -32,7 +32,7 @@ public:
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
 
-	/// Сливает куски. Если получившийся кусок оказался пустым, возаращает nullptr.
+	/// Сливает куски.
 	MergeTreeData::DataPartPtr mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.

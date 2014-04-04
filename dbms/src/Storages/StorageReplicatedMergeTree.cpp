@@ -406,21 +406,27 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		}
 		MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name);
 
-		if (part)
+		zkutil::Ops ops;
+		ops.push_back(new zkutil::Op::Create(
+			replica_path + "/parts/" + part->name,
+			"",
+			zookeeper.getDefaultACL(),
+			zkutil::CreateMode::Persistent));
+		ops.push_back(new zkutil::Op::Create(
+			replica_path + "/parts/" + part->name + "/checksums",
+			part->checksums.toString(),
+			zookeeper.getDefaultACL(),
+			zkutil::CreateMode::Persistent));
+
+		for (const auto & part : parts)
 		{
-			zkutil::Ops ops;
-			ops.push_back(new zkutil::Op::Create(
-				replica_path + "/parts/" + part->name,
-				"",
-				zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
-			ops.push_back(new zkutil::Op::Create(
-				replica_path + "/parts/" + part->name + "/checksums",
-				part->checksums.toString(),
-				zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
-			zookeeper.multi(ops);
+			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
+			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
 		}
+
+		zookeeper.multi(ops);
+
+		data.clearOldParts();
 	}
 	else
 	{
@@ -549,32 +555,51 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		try
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
-
 			MergeTreeData::DataPartsVector parts;
-			String merged_name;
-			auto can_merge = std::bind(&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 
-			LOG_TRACE(log, "Selecting parts to merge" << (has_big_merge ? " (only small)" : ""));
-
-			if (merger.selectPartsToMerge(parts, merged_name, 0, false, false, has_big_merge, can_merge) ||
-				merger.selectPartsToMerge(parts, merged_name, 0,  true, false, has_big_merge, can_merge))
 			{
-				LogEntry entry;
-				entry.type = LogEntry::MERGE_PARTS;
-				entry.new_part_name = merged_name;
+				Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
 
-				for (const auto & part : parts)
+				String merged_name;
+				auto can_merge = std::bind(
+					&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
+
+				LOG_TRACE(log, "Selecting parts to merge" << (has_big_merge ? " (only small)" : ""));
+
+				if (merger.selectPartsToMerge(parts, merged_name, 0, false, false, has_big_merge, can_merge) ||
+					merger.selectPartsToMerge(parts, merged_name, 0,  true, false, has_big_merge, can_merge))
 				{
-					entry.parts_to_merge.push_back(part->name);
+					LogEntry entry;
+					entry.type = LogEntry::MERGE_PARTS;
+					entry.new_part_name = merged_name;
+
+					for (const auto & part : parts)
+					{
+						entry.parts_to_merge.push_back(part->name);
+					}
+
+					zookeeper.create(replica_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+
+					success = true;
 				}
+			}
 
-				zookeeper.create(replica_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+			/// Нужно загрузить новую запись в очередь перед тем, как в следующий раз выбирать куски для слияния.
+			///  (чтобы куски пометились как currently_merging).
+			pullLogsToQueue();
 
-				/// Нужно загрузить эту запись в очередь перед тем, как в следующий раз выбирать куски для слияния.
-				pullLogsToQueue();
+			for (size_t i = 0; i + 1 < parts.size(); ++i)
+			{
+				/// Уберем больше не нужные отметки о несуществующих блоках.
+				for (UInt64 number = parts[i]->right + 1; number <= parts[i + 1]->left - 1; ++number)
+				{
+					String number_str = toString(number);
+					while (number_str.size() < 10)
+						number_str = '0' + number_str;
+					String path = zookeeper_path + "/block_numbers/block-" + number_str;
 
-				success = true;
+					zookeeper.tryRemove(path);
+				}
 			}
 		}
 		catch (...)
