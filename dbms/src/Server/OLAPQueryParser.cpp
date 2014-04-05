@@ -180,6 +180,10 @@ QueryParseResult QueryParser::parse(std::istream & s)
 				if (result.sample <= 0 || result.sample > 1.)
 					throw Exception(std::string("Wrong sample = ") + DB::toString(result.sample) + ". Sampling must be in range (0, 1]");
 			}
+			else if (settings_child_nodes->item(i)->nodeName() == "regions_point_of_view")
+			{
+				result.regions_point_of_view = settings_child_nodes->item(i)->innerText();
+			}
 		}
 	}
 		
