@@ -532,7 +532,19 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 
 MarkCachePtr Context::getMarkCache() const
 {
+	/// Исходим из допущения, что функция setMarksCache, если вызывалась, то раньше. Иначе поставьте mutex.
 	return shared->mark_cache;
+}
+
+void Context::resetCaches() const
+{
+	/// Исходим из допущения, что функции setUncompressedCache, setMarkCache, если вызывались, то раньше (при старте сервера). Иначе поставьте mutex.
+
+	if (shared->uncompressed_cache)
+		shared->uncompressed_cache->reset();
+
+	if (shared->mark_cache)
+		shared->mark_cache->reset();
 }
 
 void Context::initClusters()

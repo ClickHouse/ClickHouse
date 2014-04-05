@@ -317,8 +317,7 @@ void MergeTreeData::setPath(const String & new_full_path)
 	Poco::File(full_path).renameTo(new_full_path);
 	full_path = new_full_path;
 
-	context.getUncompressedCache()->reset();
-	context.getMarkCache()->reset();
+	context.resetCaches();
 
 	log = &Logger::get(lastTwoPathComponents(full_path));
 }
@@ -328,8 +327,7 @@ void MergeTreeData::dropAllData()
 	data_parts.clear();
 	all_data_parts.clear();
 
-	context.getUncompressedCache()->reset();
-	context.getMarkCache()->reset();
+	context.resetCaches();
 
 	Poco::File(full_path).remove(true);
 }
@@ -411,6 +409,7 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 		alterColumns(params, columns, context);
 	}
+
 	if (params.type == ASTAlterQuery::DROP)
 	{
 		String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
@@ -424,8 +423,7 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 		}
 		removeColumnFiles(column_name, remove_array_size_files);
 
-		context.getUncompressedCache()->reset();
-		context.getMarkCache()->reset();
+		context.resetCaches();
 	}
 }
 
@@ -571,8 +569,7 @@ void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
 		}
 	}
 
-	context.getUncompressedCache()->reset();
-	context.getMarkCache()->reset();
+	context.resetCaches();
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);

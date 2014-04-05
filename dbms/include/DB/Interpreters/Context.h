@@ -295,6 +295,14 @@ public:
 	void setMarkCache(size_t cache_size_in_bytes);
 	MarkCachePtr getMarkCache() const;
 
+	/** Очистить кэши разжатых блоков и засечек.
+	  * Обычно это делается при переименовании таблиц, изменении типа столбцов, удалении таблицы.
+	  *  - так как кэши привязаны к именам файлов, и становятся некорректными.
+	  *  (при удалении таблицы - нужно, так как на её месте может появиться другая)
+	  * const - потому что изменение кэша не считается существенным.
+	  */
+	void resetCaches() const;
+
 	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);
 
