@@ -219,12 +219,12 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->getProcessList().setMaxSize(config.getInt("max_concurrent_queries", 0));
 
 	/// Размер кэша разжатых блоков. Если нулевой - кэш отключён.
-	size_t uncompressed_cache_size = config.getInt("uncompressed_cache_size", 0);
+	size_t uncompressed_cache_size = parse<size_t>(config.getString("uncompressed_cache_size", "0"));
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
 	/// Размер кэша засечек. Если нулевой - кэш отключён.
-	size_t mark_cache_size = config.getInt("mark_cache_size", 0);
+	size_t mark_cache_size = parse<size_t>(config.getString("mark_cache_size", "0"));
 	if (mark_cache_size)
 		global_context->setMarkCache(mark_cache_size);
 
