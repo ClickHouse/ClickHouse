@@ -225,8 +225,6 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 
 	writeStringBinary(query, *out);
 
-	out->next();
-
 	maybe_compressed_in = NULL;
 	maybe_compressed_out = NULL;
 	block_in = NULL;
@@ -234,14 +232,17 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 
 	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
+	{
 		sendData(Block());
+		out->next();
+	}
 }
 
 
 void Connection::sendCancel()
 {
 	//LOG_TRACE(log, "Sending cancel (" << getServerAddress() << ")");
-	
+
 	writeVarUInt(Protocol::Client::Cancel, *out);
 	out->next();
 }
@@ -271,6 +272,7 @@ void Connection::sendData(const Block & block, const String & name)
 	maybe_compressed_out->next();
 	out->next();
 }
+
 
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
