@@ -34,6 +34,7 @@ void Connection::connect()
 		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
 		socket.setReceiveTimeout(receive_timeout);
 		socket.setSendTimeout(send_timeout);
+		socket.setNoDelay(true);
 
 		in = new ReadBufferFromPocoSocket(socket);
 		out = new WriteBufferFromPocoSocket(socket);

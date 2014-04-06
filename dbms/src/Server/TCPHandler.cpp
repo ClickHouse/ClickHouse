@@ -40,6 +40,7 @@ void TCPHandler::runImpl()
 
 	socket().setReceiveTimeout(global_settings.receive_timeout);
 	socket().setSendTimeout(global_settings.send_timeout);
+	socket().setNoDelay(true);
 	
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
