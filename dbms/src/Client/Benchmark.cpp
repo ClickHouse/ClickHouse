@@ -206,7 +206,7 @@ private:
 
 		size_t rows = 0;
 		size_t bytes = 0;
-		stream.setProgressCallback([&](size_t rows_inc , size_t bytes_inc) { rows += rows_inc; bytes += bytes_inc; });
+		stream.setProgressCallback([&](size_t rows_inc, size_t bytes_inc) { rows += rows_inc; bytes += bytes_inc; });
 
 		stream.readPrefix();
 		while (Block block = stream.read())
