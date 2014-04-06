@@ -205,7 +205,7 @@ private:
 	void execute(ConnectionPool::Entry & connection, Query & query)
 	{
 		Stopwatch watch;
-		RemoteBlockInputStream stream(*connection, query, nullptr);
+		RemoteBlockInputStream stream(connection, query, nullptr);
 
 		size_t rows = 0;
 		size_t bytes = 0;

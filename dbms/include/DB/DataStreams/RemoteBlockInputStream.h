@@ -16,43 +16,12 @@ namespace DB
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
-						QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: connection(connection_), query(query_), stage(stage_),
-		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
-		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
-	{
-		if (settings_)
-		{
-			send_settings = true;
-			settings = *settings_;
-		}
-		else
-			send_settings = false;
-	}
-
-	/// Захватывает владение соединением из пула.
 	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
-		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(*pool_entry), query(query_),
-		stage(stage_), sent_query(false), finished(false), was_cancelled(false),
-		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
-	{
-		if (settings_)
-		{
-			send_settings = true;
-			settings = *settings_;
-		}
-		else
-			send_settings = false;
-	}
-
-	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
-		const Tables & external_tables_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(*pool_entry), query(query_),
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: pool_entry(pool_entry_), connection(&*pool_entry), query(query_),
 		external_tables(external_tables_), stage(stage_), sent_query(false), finished(false),
 		was_cancelled(false),
-		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
+		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection->getServerAddress() + ")"))
 	{
 		if (settings_)
 		{
@@ -91,7 +60,7 @@ public:
 			LOG_TRACE(log, "Cancelling query");
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-			connection.sendCancel();
+			connection->sendCancel();
 			was_cancelled = true;
 		}
 	}
@@ -103,7 +72,7 @@ public:
 		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
 		  */
 		if (sent_query && !finished)
-			connection.disconnect();
+			connection->disconnect();
 	}
 
 protected:
@@ -122,21 +91,21 @@ protected:
 			else
 				res.push_back(std::make_pair(input[0], it->first));
 		}
-		connection.sendExternalTablesData(res);
+		connection->sendExternalTablesData(res);
 	}
 
 	Block readImpl()
 	{
 		if (!sent_query)
 		{
-			connection.sendQuery(query, "", stage, send_settings ? &settings : NULL, true);
+			connection->sendQuery(query, "", stage, send_settings ? &settings : NULL, true);
 			sendExternalTables();
 			sent_query = true;
 		}
 
 		while (true)
 		{
-			Connection::Packet packet = connection.receivePacket();
+			Connection::Packet packet = connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -208,13 +177,13 @@ protected:
 			LOG_TRACE(log, "Cancelling query because enough data has been read");
 
 			was_cancelled = true;
-			connection.sendCancel();
+			connection->sendCancel();
 		}
 
 		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
 		while (true)
 		{
-			Connection::Packet packet = connection.receivePacket();
+			Connection::Packet packet = connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -245,7 +214,7 @@ private:
 	/// Используется, если нужно владеть соединением из пула
 	ConnectionPool::Entry pool_entry;
 	
-	Connection & connection;
+	Connection * connection = nullptr;
 
 	const String query;
 	bool send_settings;

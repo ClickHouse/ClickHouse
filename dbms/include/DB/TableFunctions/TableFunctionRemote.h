@@ -91,7 +91,7 @@ private:
 
 		NamesAndTypesList res;
 
-		BlockInputStreamPtr input = new RemoteBlockInputStream(entry, query, &settings, QueryProcessingStage::Complete);
+		BlockInputStreamPtr input = new RemoteBlockInputStream(entry, query, &settings, Tables(), QueryProcessingStage::Complete);
 		input->readPrefix();
 
 		while (true)
