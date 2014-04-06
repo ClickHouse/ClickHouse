@@ -20,6 +20,10 @@ public:
 	{
 		expected = getName();
 		bool res = parseImpl(pos, end, node, expected);
+
+		if (pos > end)
+			throw Exception("Logical error: pos > end.", ErrorCodes::LOGICAL_ERROR);
+
 		return res;
 	}
 protected:
