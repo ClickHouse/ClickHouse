@@ -45,8 +45,6 @@ public:
 	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	NameAndTypePair getColumn(const String &column_name) const;
-	bool hasColumn(const String &column_name) const;
 
 	bool isRemote() const { return true; }
 	/// Сохранить временные таблицы, чтобы при следующем вызове метода read переслать их на удаленные сервера
@@ -66,8 +64,6 @@ public:
 	/// структура подтаблиц не проверяется
 	void alter(const ASTAlterQuery::Parameters &params);
 
-	Block getBlockWithVirtualColumns();
-
 private:
 	StorageDistributed(
 		const std::string & name_,
@@ -78,19 +74,14 @@ private:
 		const Context & context_,
 		const String & sign_column_name_ = "");
 	
-	/// Создает копию запроса, меняет имена базы данных и таблицы, записавыет значения переменных host и port, если они не пустые.
-	ASTPtr remakeQuery(ASTPtr query, const String & host, size_t port);
+	/// Создает копию запроса, меняет имена базы данных и таблицы.
+	ASTPtr rewriteQuery(ASTPtr query);
 
 	String name;
 	NamesAndTypesListPtr columns;
 	String remote_database;
 	String remote_table;
 	String sign_column_name;
-
-	/// Имя виртуального столбца, куда записывается имя хоста (Например "_host").
-	String _host_column_name;
-	/// Имя виртуального столбца, куда записывается номер порта (Например "_port").
-	String _port_column_name;
 
 	const Context & context;
 
