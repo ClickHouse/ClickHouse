@@ -53,23 +53,23 @@ namespace DB
 class Benchmark
 {
 public:
-	Benchmark(unsigned concurrency_,
+	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_)
-		: concurrency(concurrency_), queue(concurrency), pool(concurrency),
+		: concurrency(concurrency_), delay(delay_), queue(concurrency), pool(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_, data_type_factory)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
 
 		readQueries();
 		run();
-		report();
 	}
 
 private:
 	typedef std::string Query;
 
 	unsigned concurrency;
+	double delay;
 
 	typedef std::vector<Query> Queries;
 	Queries queries;
@@ -129,7 +129,7 @@ private:
 
 			queue.push(queries[i]);
 
-			if (watch.elapsedSeconds() > 1)
+			if (watch.elapsedSeconds() > delay)
 			{
 				report();
 				watch.restart();
@@ -239,8 +239,10 @@ private:
 			<< "MiB/s: " << (total_bytes / total_watch.elapsedSeconds() / 1048576) << "."
 			<< std::endl;
 
-		for (double level = 0; level < 1; level += 0.1)
-			std::cerr << int(level * 100) << "%\t" << sampler.quantileInterpolated(level) << " sec." << std::endl;
+		for (size_t percent = 0; percent <= 100; percent += 10)
+			std::cerr << percent << "%\t" << sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
+
+		sampler.clear();
 	}
 };
 
@@ -257,6 +259,7 @@ int main(int argc, char ** argv)
 		desc.add_options()
 			("help", "produce help message")
 			("concurrency,c", boost::program_options::value<unsigned>()->default_value(1), "number of parallel queries")
+			("delay,d", boost::program_options::value<double>()->default_value(1), "delay between reports in seconds")
 			("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "")
 			("port", boost::program_options::value<UInt16>()->default_value(9000), "")
 			("user", boost::program_options::value<std::string>()->default_value("default"), "")
@@ -276,6 +279,7 @@ int main(int argc, char ** argv)
 
 		Benchmark benchmark(
 			options["concurrency"].as<unsigned>(),
+			options["delay"].as<double>(),
 			options["host"].as<std::string>(),
 			options["port"].as<UInt16>(),
 			options["database"].as<std::string>(),
