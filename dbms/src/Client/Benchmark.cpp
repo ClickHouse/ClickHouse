@@ -63,6 +63,8 @@ public:
 
 		readQueries();
 		run();
+
+		std::cerr << "\nTotal queries executed: " << queries_total << std::endl;
 	}
 
 private:
@@ -82,10 +84,11 @@ private:
 	DataTypeFactory data_type_factory;
 	ConnectionPool connections;
 
-	Stopwatch total_watch;
-	size_t total_queries = 0;
-	size_t total_rows = 0;
-	size_t total_bytes = 0;
+	Stopwatch watch_per_interval;
+	size_t queries_total = 0;
+	size_t queries_per_interval = 0;
+	size_t rows_per_interval = 0;
+	size_t bytes_per_interval = 0;
 	ReservoirSampler<double> sampler {1 << 16};
 	Poco::FastMutex mutex;
 
@@ -118,7 +121,7 @@ private:
 
 		InterruptListener interrupt_listener;
 
-		total_watch.restart();
+		watch_per_interval.restart();
 		Stopwatch watch;
 
 		/// В цикле, кладём все запросы в очередь.
@@ -221,9 +224,10 @@ private:
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-		++total_queries;
-		total_rows += rows;
-		total_bytes += bytes;
+		++queries_total;
+		++queries_per_interval;
+		rows += rows_per_interval;
+		bytes += bytes_per_interval;
 		sampler.insert(seconds);
 	}
 
@@ -234,15 +238,25 @@ private:
 
 		std::cerr
 			<< std::endl
-			<< "QPS: " << (total_queries / total_watch.elapsedSeconds()) << ", "
-			<< "RPS: " << (total_rows / total_watch.elapsedSeconds()) << ", "
-			<< "MiB/s: " << (total_bytes / total_watch.elapsedSeconds() / 1048576) << "."
+			<< "QPS: " << (queries_per_interval / watch_per_interval.elapsedSeconds()) << ", "
+			<< "RPS: " << (rows_per_interval / watch_per_interval.elapsedSeconds()) << ", "
+			<< "MiB/s: " << (bytes_per_interval / watch_per_interval.elapsedSeconds() / 1048576) << "."
 			<< std::endl;
 
 		for (size_t percent = 0; percent <= 100; percent += 10)
 			std::cerr << percent << "%\t" << sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
 
+		resetCounts();
+	}
+
+
+	void resetCounts()
+	{
 		sampler.clear();
+		queries_per_interval = 0;
+		rows_per_interval = 0;
+		bytes_per_interval = 0;
+		watch_per_interval.restart();
 	}
 };
 
