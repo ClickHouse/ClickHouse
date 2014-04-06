@@ -5,8 +5,6 @@
 
 #include <DB/Client/ConnectionPool.h>
 
-#include <boost/bind.hpp>
-
 
 namespace DB
 {
@@ -28,7 +26,7 @@ public:
 	ConnectionPoolWithFailover(ConnectionPools & nested_pools_,
 		LoadBalancing load_balancing,
 		size_t max_tries_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-		size_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD)
+		time_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD)
 	   : nested_pools(nested_pools_.begin(), nested_pools_.end(), decrease_error_period_), max_tries(max_tries_),
 	   log(&Logger::get("ConnectionPoolWithFailover")), default_load_balancing(load_balancing)
 	{
@@ -41,22 +39,33 @@ public:
 		if (settings)
 			load_balancing = settings->load_balancing;
 
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		
+		/// Обновление случайных чисел, а также счётчиков ошибок.
 		nested_pools.update(load_balancing);
-		std::sort(nested_pools.begin(), nested_pools.end(), boost::bind(&PoolWithErrorCount::compare, _1, _2, load_balancing));
+
+		typedef std::vector<PoolWithErrorCount*> PoolPtrs;
+
+		size_t pools_size = nested_pools.size();
+		PoolPtrs pool_ptrs(pools_size);
+		for (size_t i = 0; i < pools_size; ++i)
+			pool_ptrs[i] = &nested_pools[i];
+
+		std::sort(pool_ptrs.begin(), pool_ptrs.end(),
+			[=](const PoolPtrs::value_type & lhs, const PoolPtrs::value_type & rhs)
+			{
+				return PoolWithErrorCount::compare(*lhs, *rhs, load_balancing);
+			});
 
 		std::stringstream fail_messages;
 
 		for (size_t try_no = 0; try_no < max_tries; ++try_no)
 		{
-			for (size_t i = 0, size = nested_pools.size(); i < size; ++i)
+			for (size_t i = 0; i < pools_size; ++i)
 			{
 				std::stringstream fail_message;
 
 				try
 				{
-					Entry res = nested_pools[i].pool->get();
+					Entry res = pool_ptrs[i]->pool->get(settings);
 					res->forceConnected();
 					return res;
 				}
@@ -73,8 +82,8 @@ public:
 
 				fail_messages << fail_message.str() << std::endl;
 
-				++nested_pools[i].random_error_count;
-				++nested_pools[i].nearest_hostname_error_count;
+				__sync_fetch_and_add(&pool_ptrs[i]->random_error_count, 1);
+				__sync_fetch_and_add(&pool_ptrs[i]->nearest_hostname_error_count, 1);
 			}
 		}
 
@@ -82,26 +91,26 @@ public:
 			ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 	}
 
+
 private:
 	struct PoolWithErrorCount
 	{
 		ConnectionPoolPtr pool;
 
-		UInt64 random_error_count;
-		UInt32 random;
+		UInt64 random_error_count = 0;
+		UInt32 random = 0;
 		drand48_data rand_state;
 
 		/// берётся имя локального сервера (Poco::Net::DNS::hostName) и имя хоста из конфига; строки обрезаются до минимальной длины;
 		/// затем считается количество отличающихся позиций
 		/// Пример example01-01-1 и example01-02-2 отличаются в двух позициях.
-		size_t hostname_difference;
-		UInt64 nearest_hostname_error_count;
+		size_t hostname_difference = 0;
+		UInt64 nearest_hostname_error_count = 0;
 
-		PoolWithErrorCount(const ConnectionPoolPtr & pool_)
-			: pool(pool_), random_error_count(0), random(0), nearest_hostname_error_count(0)
+		PoolWithErrorCount(const ConnectionPoolPtr & pool_) : pool(pool_)
 		{
 			/// Инициализация плохая, но это не важно.
-			srand48_r(reinterpret_cast<ptrdiff_t>(this), &rand_state);
+			srand48_r(reinterpret_cast<intptr_t>(this), &rand_state);
 
 			std::string local_hostname = Poco::Net::DNS::hostName();
 
@@ -109,12 +118,10 @@ private:
 			const std::string & host = connection_pool.getHost();
 			hostname_difference = 0;
 			for (size_t i = 0; i < std::min(local_hostname.length(), host.length()); ++i)
-			{
 				if (local_hostname[i] != host[i])
 					++hostname_difference;
-			}
 		}
-		
+
 		void randomize()
 		{
 			long int rand_res;
@@ -126,64 +133,93 @@ private:
 		{
 			if (load_balancing_mode == LoadBalancing::RANDOM)
 			{
-				return lhs.random_error_count < rhs.random_error_count
-					|| (lhs.random_error_count == rhs.random_error_count && lhs.random < rhs.random);
+				return std::tie(lhs.random_error_count, lhs.random)
+					< std::tie(rhs.random_error_count, rhs.random);
 			}
 			else if (load_balancing_mode == LoadBalancing::NEAREST_HOSTNAME)
 			{
-				return lhs.nearest_hostname_error_count < rhs.nearest_hostname_error_count
-					|| (lhs.nearest_hostname_error_count == rhs.nearest_hostname_error_count
-					&& lhs.hostname_difference < rhs.hostname_difference);
+				return std::tie(lhs.nearest_hostname_error_count, lhs.hostname_difference)
+					< std::tie(rhs.nearest_hostname_error_count, rhs.hostname_difference);
 			}
 			else
-				throw Poco::Exception("Unsupported load_balancing_mode: " + toString(static_cast<int>(load_balancing_mode)));
+				throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing_mode)), ErrorCodes::LOGICAL_ERROR);
 		}
 	};
+
 
 	class PoolsWithErrorCount : public std::vector<PoolWithErrorCount>
 	{
 	public:
-		PoolsWithErrorCount(DB::ConnectionPools::iterator first, DB::ConnectionPools::iterator last,
-							size_t decrease_error_period_) :
-							std::vector<PoolWithErrorCount>(first, last), last_get_time(0),
-							decrease_error_period(decrease_error_period_)
+		PoolsWithErrorCount(DB::ConnectionPools::iterator begin_, DB::ConnectionPools::iterator end_,
+							time_t decrease_error_period_)
+			: std::vector<PoolWithErrorCount>(begin_, end_),
+			decrease_error_period(decrease_error_period_)
 		{
 		}
 
 		void update(LoadBalancing load_balancing_mode)
 		{
-			if (load_balancing_mode == LoadBalancing::RANDOM)
+			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
+			switch (load_balancing_mode)
 			{
-				for (PoolsWithErrorCount::iterator it = begin(); it != end(); ++it)
-					it->randomize();
-			}
-			/// Для режима NEAREST_HOSTNAME каждые N секунд уменьшаем количество ошибок в 2 раза
-			if (last_get_time)
-			{
-				time_t delta = time(0) - last_get_time;
-				for (PoolsWithErrorCount::iterator it = begin(); it != end(); ++it)
+				case LoadBalancing::RANDOM:
 				{
-					it->nearest_hostname_error_count = it->nearest_hostname_error_count >> (delta / decrease_error_period);
+					for (PoolsWithErrorCount::iterator it = begin(); it != end(); ++it)
+						it->randomize();
+					/// NOTE Почему бы не делить счётчики ошибок в случае LoadBalancing::RANDOM тоже?
+					break;
 				}
+
+				case LoadBalancing::NEAREST_HOSTNAME:
+				{
+					/// Для режима NEAREST_HOSTNAME каждые N секунд уменьшаем количество ошибок в 2 раза
+					time_t current_time = time(0);
+
+					if (last_decrease_time)
+					{
+						time_t delta = current_time - last_decrease_time;
+
+						if (delta < 0)
+							return;
+
+						/// Каждые decrease_error_period секунд, делим количество ошибок на два.
+						size_t shift_amount = delta / decrease_error_period;
+
+						if (shift_amount > sizeof(UInt64))
+						{
+							last_decrease_time = current_time;
+							for (PoolsWithErrorCount::iterator it = begin(); it != end(); ++it)
+								it->nearest_hostname_error_count = 0;
+						}
+						else if (shift_amount)
+						{
+							last_decrease_time = current_time;
+							for (PoolsWithErrorCount::iterator it = begin(); it != end(); ++it)
+								it->nearest_hostname_error_count >>= shift_amount;
+						}
+					}
+					else
+						last_decrease_time = current_time;
+
+					break;
+				}
+
+				default:
+					throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing_mode)), ErrorCodes::LOGICAL_ERROR);
 			}
-			last_get_time = time(0);
 		}
 
 	private:
-
-		/// время, когда последний раз вызывался update
-		time_t last_get_time;
+		/// Время, когда последний раз уменьшался счётчик ошибок для LoadBalancing::NEAREST_HOSTNAME
+		time_t last_decrease_time = 0;
 		time_t decrease_error_period;
+		Poco::FastMutex mutex;
 	};
 
-	Poco::FastMutex mutex;
-
 	PoolsWithErrorCount nested_pools;
-
 	size_t max_tries;
-
 	Logger * log;
-
 	LoadBalancing default_load_balancing;
 };
 
