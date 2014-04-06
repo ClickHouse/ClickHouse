@@ -364,7 +364,6 @@ private:
 	NamesAndTypesListPtr columns;
 
 	Logger * log;
-	volatile bool shutdown_called;
 
 	/// Регулярное выражение соответсвующее названию директории с кусочками
 	Poco::RegularExpression file_name_regexp;
