@@ -41,7 +41,7 @@ public:
 	std::string getTableName() const { return name; }
 	std::string getSignColumnName() const { return sign_column_name; };
 	bool supportsSampling() const { return true; }
-	bool supportsFinal() const { return !sign_column_name.empty(); }
+	bool supportsFinal() const { return true; }
 	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
