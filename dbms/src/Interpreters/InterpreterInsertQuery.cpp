@@ -84,19 +84,16 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 
 		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
 
-		/// Если данных нет.
-		bool has_remaining_data = remaining_data_istr && !remaining_data_istr->eof();
-			
-		if (!query.data && !has_remaining_data)
-			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
-
 		ConcatReadBuffer::ReadBuffers buffers;
 		ReadBuffer buf1(const_cast<char *>(query.data), query.data ? query.end - query.data : 0, 0);
 
 		if (query.data)
 			buffers.push_back(&buf1);
-		if (has_remaining_data)
-			buffers.push_back(remaining_data_istr);
+		buffers.push_back(remaining_data_istr);
+
+		/** NOTE Нельзя читать из remaining_data_istr до того, как прочтём всё между query.data и query.end.
+		  * - потому что query.data может ссылаться на кусок памяти, использующийся в качестве буфера в remaining_data_istr.
+		  */
 
 		ConcatReadBuffer istr(buffers);
 		Block sample = table->getSampleBlock();
