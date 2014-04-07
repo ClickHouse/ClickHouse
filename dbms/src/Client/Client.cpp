@@ -550,7 +550,7 @@ private:
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
-		block_std_out = NULL;
+		block_std_out = nullptr;
 
 		watch.restart();
 
@@ -614,7 +614,7 @@ private:
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete, NULL, true);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, nullptr, true);
 		sendExternalTables();
 		receiveResult();
 	}
@@ -632,7 +632,7 @@ private:
 		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, NULL, true);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, nullptr, true);
 		sendExternalTables();
 
 		/// Получим структуру таблицы

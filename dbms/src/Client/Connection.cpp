@@ -279,7 +279,10 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
 	/// Если работаем со старым сервером, то никакой информации не отправляем
 	if (server_revision < DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+	{
+		out->next();
 		return;
+	}
 
 	for (size_t i = 0; i < data.size(); ++i)
 	{
