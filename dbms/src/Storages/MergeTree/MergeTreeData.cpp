@@ -687,7 +687,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 	if (increment)
 		part->left = part->right = increment->get(false);
 
-	part->name = getPartName(part->left_date, part->right_date, part->left, part->right, 0);
+	part->name = getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
 	if (data_parts.count(part))
 		throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
@@ -705,7 +705,10 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 	{
 		--it;
 		if (!part->contains(**it))
+		{
+			++it;
 			break;
+		}
 		res.push_back(*it);
 		data_parts.erase(it++); /// Да, ++, а не --.
 	}

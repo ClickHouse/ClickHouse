@@ -317,14 +317,14 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 
 		if (zookeeper.tryGet(replica_path + "/log_pointers/" + replica, index_str))
 		{
-			index = Poco::NumberParser::parseUnsigned64(index_str);
+			index = parse<UInt64>(index_str);
 		}
 		else
 		{
 			/// Если у нас еще нет указателя на лог этой реплики, поставим указатель на первую запись в нем.
 			Strings entries = zookeeper.getChildren(zookeeper_path + "/replicas/" + replica + "/log");
 			std::sort(entries.begin(), entries.end());
-			index = entries.empty() ? 0 : Poco::NumberParser::parseUnsigned64(entries[0].substr(strlen("log-")));
+			index = entries.empty() ? 0 : parse<UInt64>(entries[0].substr(strlen("log-")));
 
 			zookeeper.create(replica_path + "/log_pointers/" + replica, toString(index), zkutil::CreateMode::Persistent);
 		}
@@ -929,9 +929,10 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 	String type_str;
 
 	assertString("format version: 1\n", in);
-	readString(type_str, in);
-	assertString("\nsource replica: ", in);
+	assertString("source replica: ", in);
 	readString(source_replica, in);
+	assertString("\n", in);
+	readString(type_str, in);
 	assertString("\n", in);
 
 	if (type_str == "get")
