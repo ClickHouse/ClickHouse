@@ -613,6 +613,14 @@ void StorageReplicatedMergeTree::queueThread()
 
 			success = true;
 		}
+		catch (Exception & e)
+		{
+			if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
+				/// Если ни у кого нет нужного куска, это нормальная ситуация; не будем писать в лог с уровнем Error.
+				LOG_INFO(log, e.displayText());
+			else
+				tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -644,47 +652,48 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 	while (!shutdown_called && is_leader_node)
 	{
-		size_t merges_queued = 0;
-
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
-
-			for (const auto & entry : queue)
-				if (entry.type == LogEntry::MERGE_PARTS)
-					++merges_queued;
-		}
-
-		if (merges_queued >= data.settings.merging_threads)
-		{
-			std::this_thread::sleep_for(MERGE_SELECTING_SLEEP);
-			continue;
-		}
-
-		/// Есть ли активный мердж крупных кусков.
-		bool has_big_merge = false;
-
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
-
-			for (const auto & name : currently_merging)
-			{
-				MergeTreeData::DataPartPtr part = data.getContainingPart(name);
-				if (!part)
-					continue;
-				if (part->name != name)
-					throw Exception("Assertion failed in mergeSelectingThread().", ErrorCodes::LOGICAL_ERROR);
-				if (part->size * data.index_granularity > 25 * 1024 * 1024)
-				{
-					has_big_merge = true;
-					break;
-				}
-			}
-		}
-
 		bool success = false;
 
 		try
 		{
+			size_t merges_queued = 0;
+
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+
+				for (const auto & entry : queue)
+					if (entry.type == LogEntry::MERGE_PARTS)
+						++merges_queued;
+			}
+
+			if (merges_queued >= data.settings.merging_threads)
+			{
+				std::this_thread::sleep_for(MERGE_SELECTING_SLEEP);
+				continue;
+			}
+
+			/// Есть ли активный мердж крупных кусков.
+			bool has_big_merge = false;
+
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
+
+				for (const auto & name : currently_merging)
+				{
+					MergeTreeData::DataPartPtr part = data.getContainingPart(name);
+					if (!part)
+						continue;
+					if (part->name != name)
+						throw Exception("Assertion failed in mergeSelectingThread(): expected " + name + ", found " + part->name,
+							ErrorCodes::LOGICAL_ERROR);
+					if (part->size * data.index_granularity > 25 * 1024 * 1024)
+					{
+						has_big_merge = true;
+						break;
+					}
+				}
+			}
+
 			MergeTreeData::DataPartsVector parts;
 
 			{
@@ -814,12 +823,6 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, zookeeper_path + "/replicas/" + replica_name, host, port);
 	auto removed_parts = data.renameTempPartAndReplace(part);
 
-	for (const auto & removed_part : removed_parts)
-	{
-		LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
-		ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
-	}
-
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part->name,
@@ -831,6 +834,16 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 		part->checksums.toString(),
 		zookeeper.getDefaultACL(),
 		zkutil::CreateMode::Persistent));
+
+	for (const auto & removed_part : removed_parts)
+	{
+		LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
+		ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + removed_part->name + "/checksums", -1));
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + removed_part->name, -1));
+	}
+
 	zookeeper.multi(ops);
 
 	ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);

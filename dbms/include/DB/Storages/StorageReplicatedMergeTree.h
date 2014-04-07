@@ -124,7 +124,7 @@ private:
 			try
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(storage.queue_mutex);
-				if (!storage.currently_merging.erase(part))
+				if (!storage.future_parts.erase(part))
 					throw Exception("Untagging already untagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 			}
 			catch (...)
