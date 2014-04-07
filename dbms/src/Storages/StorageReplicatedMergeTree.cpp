@@ -369,8 +369,26 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 		LOG_DEBUG(log, "Pulled " << count << " entries to queue");
 }
 
-void StorageReplicatedMergeTree::optimizeQueue()
+bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 {
+	if (entry.type == LogEntry::MERGE_PARTS)
+	{
+		/** Если какая-то из нужных частей сейчас передается или мерджится, подождем окончания этой операции.
+		  * Иначе, даже если всех нужных частей для мерджа нет, нужно попытаться сделать мердж.
+		  * Если каких-то частей не хватает, вместо мерджа будет попытка скачать кусок.
+		  * Такая ситуация возможна, если получение какого-то куска пофейлилось, и его переместили в конец очереди.
+		  */
+		for (const auto & name : entry.parts_to_merge)
+		{
+			if (future_parts.count(name))
+			{
+				LOG_TRACE(log, "Not merging into part " << entry.new_part_name << " yet because part " << name << " is not ready yet.");
+				return false;
+			}
+		}
+	}
+
+	return true;
 }
 
 void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
@@ -384,53 +402,147 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		/// Даже если кусок есть локально, его (в исключительных случаях) может не быть в zookeeper.
 		if (containing_part && zookeeper.exists(replica_path + "/parts/" + containing_part->name))
 		{
-			LOG_DEBUG(log, "Skipping action for part " + entry.new_part_name + " - part already exists");
+			if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
+				LOG_DEBUG(log, "Skipping action for part " + entry.new_part_name + " - part already exists");
 			return;
 		}
 	}
 
+	if (entry.type == LogEntry::GET_PART && entry.source_replica == replica_name)
+		LOG_ERROR(log, "Part " << entry.new_part_name << " from own log doesn't exist. This is a bug.");
+
+	bool do_fetch = false;
+
 	if (entry.type == LogEntry::GET_PART)
 	{
-		String replica = findActiveReplicaHavingPart(entry.new_part_name);
-		fetchPart(entry.new_part_name, replica);
+		do_fetch = true;
 	}
 	else if (entry.type == LogEntry::MERGE_PARTS)
 	{
 		MergeTreeData::DataPartsVector parts;
+		bool have_all_parts = true;;
 		for (const String & name : entry.parts_to_merge)
 		{
 			MergeTreeData::DataPartPtr part = data.getContainingPart(name);
-			if (!part || part->name != name)
-				throw Exception("Part to merge doesn't exist: " + name, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+			if (!part)
+			{
+				have_all_parts = false;
+				break;
+			}
+			if (part->name != name)
+			{
+				LOG_ERROR(log, "Log and parts set look inconsistent: " << name << " is covered by " << part->name
+					<< " but should be merged into " << entry.new_part_name);
+				have_all_parts = false;
+				break;
+			}
 			parts.push_back(part);
 		}
-		MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name);
 
-		zkutil::Ops ops;
-		ops.push_back(new zkutil::Op::Create(
-			replica_path + "/parts/" + part->name,
-			"",
-			zookeeper.getDefaultACL(),
-			zkutil::CreateMode::Persistent));
-		ops.push_back(new zkutil::Op::Create(
-			replica_path + "/parts/" + part->name + "/checksums",
-			part->checksums.toString(),
-			zookeeper.getDefaultACL(),
-			zkutil::CreateMode::Persistent));
-
-		for (const auto & part : parts)
+		if (!have_all_parts)
 		{
-			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
-			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
+			/// Если нет всех нужных кусков, попробуем взять у кого-нибудь уже помердженный кусок.
+			do_fetch = true;
+			LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
 		}
+		else
+		{
+			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name);
 
-		zookeeper.multi(ops);
+			zkutil::Ops ops;
+			ops.push_back(new zkutil::Op::Create(
+				replica_path + "/parts/" + part->name,
+				"",
+				zookeeper.getDefaultACL(),
+				zkutil::CreateMode::Persistent));
+			ops.push_back(new zkutil::Op::Create(
+				replica_path + "/parts/" + part->name + "/checksums",
+				part->checksums.toString(),
+				zookeeper.getDefaultACL(),
+				zkutil::CreateMode::Persistent));
 
-		data.clearOldParts();
+			for (const auto & part : parts)
+			{
+				ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
+				ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
+			}
+
+			zookeeper.multi(ops);
+
+			data.clearOldParts();
+
+			ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
+		}
 	}
 	else
 	{
 		throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+	}
+
+	if (do_fetch)
+	{
+		try
+		{
+			String replica = findActiveReplicaHavingPart(entry.new_part_name);
+			fetchPart(entry.new_part_name, replica);
+
+			if (entry.type == LogEntry::MERGE_PARTS)
+				ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
+		}
+		catch (...)
+		{
+			/** Если не получилось скачать кусок, нужный для какого-то мерджа, лучше не пытаться получить другие куски для этого мерджа,
+			  * а попытаться сразу получить помердженный кусок. Чтобы так получилось, переместим действия для получения остальных кусков
+			  * для этого мерджа в конец очереди.
+			  *
+			  */
+			try
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+
+				/// Найдем действие по объединению этого куска с другими. Запомним других.
+				StringSet parts_for_merge;
+				LogEntries::iterator merge_entry;
+				for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
+				{
+					if (it->type == LogEntry::MERGE_PARTS)
+					{
+						if (std::find(it->parts_to_merge.begin(), it->parts_to_merge.end(), entry.new_part_name)
+							!= it->parts_to_merge.end())
+						{
+							parts_for_merge = StringSet(it->parts_to_merge.begin(), it->parts_to_merge.end());
+							merge_entry = it;
+							break;
+						}
+					}
+				}
+
+				if (!parts_for_merge.empty())
+				{
+					/// Переместим в конец очереди действия, получающие parts_for_merge.
+					for (LogEntries::iterator it = queue.begin(); it != queue.end();)
+					{
+						auto it0 = it;
+						++it;
+
+						if (it0 == merge_entry)
+							break;
+
+						if ((it0->type == LogEntry::MERGE_PARTS || it0->type == LogEntry::GET_PART)
+							&& parts_for_merge.count(it0->new_part_name))
+						{
+							queue.splice(queue.end(), queue, it0, it);
+						}
+					}
+				}
+			}
+			catch (...)
+			{
+				tryLogCurrentException(__PRETTY_FUNCTION__);
+			}
+
+			throw;
+		}
 	}
 }
 
@@ -441,7 +553,6 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		try
 		{
 			pullLogsToQueue();
-			optimizeQueue();
 		}
 		catch (...)
 		{
@@ -457,19 +568,33 @@ void StorageReplicatedMergeTree::queueThread()
 	while (!shutdown_called)
 	{
 		LogEntry entry;
-		bool empty;
+		bool have_work = false;
 
+		try
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
-			empty = queue.empty();
+			bool empty = queue.empty();
 			if (!empty)
 			{
-				entry = queue.front();
-				queue.pop_front();
+				for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
+				{
+					if (shouldExecuteLogEntry(*it))
+					{
+						entry = *it;
+						entry.tagPartAsFuture(*this);
+						queue.erase(it);
+						have_work = true;
+						break;
+					}
+				}
 			}
 		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 
-		if (empty)
+		if (!have_work)
 		{
 			std::this_thread::sleep_for(QUEUE_NO_WORK_SLEEP);
 			continue;
@@ -480,7 +605,11 @@ void StorageReplicatedMergeTree::queueThread()
 		try
 		{
 			executeLogEntry(entry);
-			zookeeper.remove(replica_path + "/queue/" + entry.znode_name);
+
+			auto code = zookeeper.tryRemove(replica_path + "/queue/" + entry.znode_name);
+			if (code != zkutil::ReturnCode::Ok)
+				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
+					<< zkutil::ReturnCode::toString(code) + ". There must be a bug somewhere. Ignoring it.");
 
 			success = true;
 		}
@@ -500,6 +629,7 @@ void StorageReplicatedMergeTree::queueThread()
 		{
 			{
 				/// Добавим действие, которое не получилось выполнить, в конец очереди.
+				entry.future_part_tagger = nullptr;
 				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
 				queue.push_back(entry);
 			}
@@ -571,6 +701,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				{
 					LogEntry entry;
 					entry.type = LogEntry::MERGE_PARTS;
+					entry.source_replica = replica_name;
 					entry.new_part_name = merged_name;
 
 					for (const auto & part : parts)
@@ -681,7 +812,13 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	assertEOF(buf);
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, zookeeper_path + "/replicas/" + replica_name, host, port);
-	data.renameTempPartAndAdd(part, nullptr);
+	auto removed_parts = data.renameTempPartAndReplace(part);
+
+	for (const auto & removed_part : removed_parts)
+	{
+		LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
+		ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+	}
 
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(
@@ -695,6 +832,8 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 		zookeeper.getDefaultACL(),
 		zkutil::CreateMode::Persistent));
 	zookeeper.multi(ops);
+
+	ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
 	LOG_DEBUG(log, "Fetched part");
 }
@@ -762,6 +901,9 @@ void StorageReplicatedMergeTree::drop()
 void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const
 {
 	writeString("format version: 1\n", out);
+	writeString("source replica: ", out);
+	writeString(source_replica, out);
+	writeString("\n", out);
 	switch (type)
 	{
 		case GET_PART:
@@ -788,6 +930,8 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 
 	assertString("format version: 1\n", in);
 	readString(type_str, in);
+	assertString("\nsource replica: ", in);
+	readString(source_replica, in);
 	assertString("\n", in);
 
 	if (type_str == "get")

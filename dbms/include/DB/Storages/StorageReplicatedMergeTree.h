@@ -67,6 +67,7 @@ public:
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 
+	/// Добавляет куски в множество currently_merging.
 	struct CurrentlyMergingPartsTagger
 	{
 		Strings parts;
@@ -105,6 +106,36 @@ private:
 
 	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
 
+	/// Добавляет кусок в множество future_parts.
+	struct FuturePartTagger
+	{
+		String part;
+		StorageReplicatedMergeTree & storage;
+
+		FuturePartTagger(const String & part_, StorageReplicatedMergeTree & storage_)
+			: part(part_), storage(storage_)
+		{
+			if (!storage.future_parts.insert(part).second)
+				throw Exception("Tagging already tagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+		}
+
+		~FuturePartTagger()
+		{
+			try
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(storage.queue_mutex);
+				if (!storage.currently_merging.erase(part))
+					throw Exception("Untagging already untagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+			}
+			catch (...)
+			{
+				tryLogCurrentException(__PRETTY_FUNCTION__);
+			}
+		}
+	};
+
+	typedef Poco::SharedPtr<FuturePartTagger> FuturePartTaggerPtr;
+
 	struct LogEntry
 	{
 		enum Type
@@ -116,15 +147,23 @@ private:
 		String znode_name;
 
 		Type type;
+		String source_replica;
 		String new_part_name;
 		Strings parts_to_merge;
 
 		CurrentlyMergingPartsTaggerPtr currently_merging_tagger;
+		FuturePartTaggerPtr future_part_tagger;
 
 		void tagPartsAsCurrentlyMerging(StorageReplicatedMergeTree & storage)
 		{
 			if (type == MERGE_PARTS)
 				currently_merging_tagger = new CurrentlyMergingPartsTagger(parts_to_merge, storage);
+		}
+
+		void tagPartAsFuture(StorageReplicatedMergeTree & storage)
+		{
+			if (type == MERGE_PARTS || type == GET_PART)
+				future_part_tagger = new FuturePartTagger(new_part_name, storage);
 		}
 
 		void writeText(WriteBuffer & out) const;
@@ -162,11 +201,16 @@ private:
 	StringSet currently_merging;
 	Poco::FastMutex currently_merging_mutex;
 
-	/** "Очередь" того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
-	  * В ZK записи в хронологическом порядке. Здесь записи в том порядке, в котором их лучше выполнять.
+	/** Очередь того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
+	  * В ZK записи в хронологическом порядке. Здесь - не обязательно.
 	  */
 	LogEntries queue;
 	Poco::FastMutex queue_mutex;
+
+	/** Куски, которые появятся в результате действий, выполняемых прямо сейчас фоновыми потоками (этих действий нет в очереди).
+	  * Использовать под залоченным queue_mutex.
+	  */
+	StringSet future_parts;
 
 	String table_name;
 	String full_path;
@@ -256,11 +300,10 @@ private:
 	  */
 	void pullLogsToQueue();
 
-	/** Делает преобразования над очередью:
-	  *  - Если есть MERGE_PARTS кусков, не все из которых у нас есть, заменяем его на GET_PART и
-	  *    убираем GET_PART для всех составляющих его кусков. NOTE: Наверно, это будет плохо работать. Придумать эвристики получше.
+	/** Можно ли сейчас попробовать выполнить это действие. Если нет, нужно оставить его в очереди и попробовать выполнить другое.
+	  * Вызывается под queue_mutex.
 	  */
-	void optimizeQueue();
+	bool shouldExecuteLogEntry(const LogEntry & entry);
 
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  */
@@ -274,11 +317,11 @@ private:
 	  */
 	void queueThread();
 
-	void becomeLeader();
-
 	/// Выбор кусков для слияния.
 
-	/** В бесконечном цикле выбирается куски для слияния и записывает в лог.
+	void becomeLeader();
+
+	/** В бесконечном цикле выбирает куски для слияния и записывает в лог.
 	  */
 	void mergeSelectingThread();
 

@@ -661,23 +661,17 @@ Strings MergeTreeData::tryRestorePart(const String & path, const String & file_n
 	return restored_parts;
 }
 
-void MergeTreeData::replaceParts(DataPartsVector old_parts, DataPartPtr new_part)
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> all_lock(all_data_parts_mutex);
-
-	for (size_t i = 0; i < old_parts.size(); ++i)
-		if (data_parts.end() == data_parts.find(old_parts[i]))
-			throw Exception("Logical error: cannot find data part " + old_parts[i]->name + " in list", ErrorCodes::LOGICAL_ERROR);
-
-	data_parts.insert(new_part);
-	all_data_parts.insert(new_part);
-
-	for (size_t i = 0; i < old_parts.size(); ++i)
-		data_parts.erase(data_parts.find(old_parts[i]));
+	auto removed = renameTempPartAndReplace(part, increment);
+	if (!removed.empty())
+	{
+		LOG_ERROR(log, "Added part " << part->name << + " covers " << toString(removed.size())
+			<< " existing part(s) (including " << removed[0]->name << ")");
+	}
 }
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
+MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment)
 {
 	LOG_TRACE(log, "Renaming.");
 
@@ -686,17 +680,14 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 
 	String old_path = getFullPath() + part->name + "/";
 
-	UInt64 part_id = part->left;
-
-	/** Важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
+	/** Для StorageMergeTree важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
 	  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
 	  *  содержат ещё не добавленный кусок.
 	  */
 	if (increment)
-		part_id = increment->get(false);
+		part->left = part->right = increment->get(false);
 
-	part->left = part->right = part_id;
-	part->name = getPartName(part->left_date, part->right_date, part_id, part_id, 0);
+	part->name = getPartName(part->left_date, part->right_date, part->left, part->right, 0);
 
 	if (data_parts.count(part))
 		throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
@@ -706,8 +697,30 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 	/// Переименовываем кусок.
 	Poco::File(old_path).renameTo(new_path);
 
+	DataPartsVector res;
+	/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
+	DataParts::iterator it = data_parts.lower_bound(part);
+	/// Пойдем влево.
+	while (it != data_parts.begin())
+	{
+		--it;
+		if (!part->contains(**it))
+			break;
+		res.push_back(*it);
+		data_parts.erase(it++); /// Да, ++, а не --.
+	}
+	std::reverse(res.begin(), res.end()); /// Нужно получить куски в порядке возрастания.
+	/// Пойдем вправо.
+	while (it != data_parts.end() && part->contains(**it))
+	{
+		res.push_back(*it);
+		data_parts.erase(it++);
+	}
+
 	data_parts.insert(part);
 	all_data_parts.insert(part);
+
+	return res;
 }
 
 void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)

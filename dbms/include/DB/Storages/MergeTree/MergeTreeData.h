@@ -346,14 +346,16 @@ public:
 	  */
 	DataPartPtr getContainingPart(const String & part_name);
 
-	/** Удаляет куски old_parts и добавляет кусок new_part. Если какого-нибудь из удаляемых кусков нет, бросает исключение.
-	  */
-	void replaceParts(DataPartsVector old_parts, DataPartPtr new_part);
-
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
+	  * Предполагается, что кусок не пересекается с существующими.
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment);
+	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment = nullptr);
+
+	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
+	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
+	  */
+	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr);
 
 	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
 	  * Лучше использовать только когда никто не может читать или писать этот кусок

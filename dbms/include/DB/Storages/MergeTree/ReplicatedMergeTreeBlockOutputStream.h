@@ -45,10 +45,11 @@ public:
 				continue;
 			}
 
-			storage.data.renameTempPartAndAdd(part, nullptr);
+			storage.data.renameTempPartAndAdd(part);
 
 			StorageReplicatedMergeTree::LogEntry log_entry;
 			log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+			log_entry.source_replica = storage.replica_name;
 			log_entry.new_part_name = part->name;
 
 			String checksums_str = part->checksums.toString();

@@ -248,7 +248,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	data.parsePartName(merged_name, *new_data_part);
-	new_data_part->name = merged_name;
+	new_data_part->name = "tmp_" + merged_name;
 
 	/** Читаем из всех кусков, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.
@@ -285,8 +285,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
-	String new_part_tmp_path = data.getFullPath() + "tmp_" + new_data_part->name + "/";
-	String new_part_res_path = data.getFullPath() + new_data_part->name + "/";
+	String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
 	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, data.getColumnsList());
 
@@ -314,15 +313,33 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 
 	if (0 == to->marksCount())
 	{
-		LOG_INFO(log, "All rows have been deleted while merging from " << parts.front()->name << " to " << parts.back()->name);
-		return nullptr;
+		throw Exception("All rows have been deleted while merging from " + parts.front()->name
+			+ " to " + parts.back()->name, ErrorCodes::LOGICAL_ERROR);
 	}
 
-	/// Переименовываем кусок.
-	Poco::File(new_part_tmp_path).renameTo(new_part_res_path);
+	/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
+	auto replaced_parts = data.renameTempPartAndReplace(new_data_part);
 
-	/// Добавляем новый кусок в набор.
-	data.replaceParts(parts, new_data_part);
+	if (new_data_part->name != merged_name)
+		LOG_ERROR(log, "Unexpected part name: " << new_data_part->name << " instead of " << merged_name);
+
+	/// Проверим, что удалились все исходные куски и только они.
+	if (replaced_parts.size() != parts.size())
+	{
+		LOG_ERROR(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
+			<< " instead of " << parts.size());
+	}
+	else
+	{
+		for (size_t i = 0; i < parts.size(); ++i)
+		{
+			if (parts[i]->name != replaced_parts[i]->name)
+			{
+				LOG_ERROR(log, "Unexpected part removed when adding " << new_data_part->name << ": " << replaced_parts[i]->name
+					<< " instead of " << parts[i]->name);
+			}
+		}
+	}
 
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
