@@ -16,12 +16,26 @@ namespace DB
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
+	/// Принимает готовое соединение.
 	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(&*pool_entry), query(query_),
-		external_tables(external_tables_), stage(stage_), sent_query(false), finished(false),
-		was_cancelled(false),
-		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection->getServerAddress() + ")"))
+		: connection(pool_entry_), query(query_),
+		external_tables(external_tables_), stage(stage_)
+	{
+		if (settings_)
+		{
+			send_settings = true;
+			settings = *settings_;
+		}
+		else
+			send_settings = false;
+	}
+
+	/// Принимает пул, из которого нужно будет достать соединение.
+	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_,
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: pool(pool_), query(query_),
+		external_tables(external_tables_), stage(stage_)
 	{
 		if (settings_)
 		{
@@ -57,7 +71,7 @@ public:
 
 		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
-			LOG_TRACE(log, "Cancelling query");
+			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query");
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
 			connection->sendCancel();
@@ -98,7 +112,11 @@ protected:
 	{
 		if (!sent_query)
 		{
-			connection->sendQuery(query, "", stage, send_settings ? &settings : NULL, true);
+			/// Если надо - достаём соединение из пула.
+			if (pool)
+				connection = pool->get(send_settings ? &settings : nullptr);
+
+			connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
 			sendExternalTables();
 			sent_query = true;
 		}
@@ -174,7 +192,7 @@ protected:
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
 		if (!was_cancelled)
 		{
-			LOG_TRACE(log, "Cancelling query because enough data has been read");
+			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query because enough data has been read");
 
 			was_cancelled = true;
 			connection->sendCancel();
@@ -211,10 +229,8 @@ protected:
 	}
 
 private:
-	/// Используется, если нужно владеть соединением из пула
-	ConnectionPool::Entry pool_entry;
-	
-	Connection * connection = nullptr;
+	IConnectionPool * pool = nullptr;
+	ConnectionPool::Entry connection;
 
 	const String query;
 	bool send_settings;
@@ -224,25 +240,25 @@ private:
 	QueryProcessingStage::Enum stage;
 
 	/// Отправили запрос (это делается перед получением первого блока).
-	bool sent_query;
+	bool sent_query = false;
 	
 	/** Получили все данные от сервера, до пакета EndOfStream.
 	  * Если при уничтожении объекта, ещё не все данные считаны,
 	  *  то для того, чтобы не было рассинхронизации, на сервер отправляется просьба прервать выполнение запроса,
 	  *  и после этого считываются все пакеты до EndOfStream.
 	  */
-	bool finished;
+	bool finished = false;
 	
 	/** На сервер была отправлена просьба прервать выполенение запроса, так как данные больше не нужны.
 	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
 	  *  или если на стороне клиента произошло исключение.
 	  */
-	bool was_cancelled;
+	bool was_cancelled = false;
 
 	/// С сервера было получено исключение. В этом случае получать больше пакетов или просить прервать запрос не нужно.
-	bool got_exception_from_server;
+	bool got_exception_from_server = false;
 
-	Logger * log;
+	Logger * log = &Logger::get("RemoteBlockInputStream");
 };
 
 }

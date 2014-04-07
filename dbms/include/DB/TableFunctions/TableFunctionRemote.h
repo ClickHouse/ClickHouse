@@ -86,12 +86,10 @@ private:
 		/// Запрос на описание таблицы
 		String query = "DESC TABLE " + database + "." + table;
 		Settings settings = context.getSettings();
-		/// Отправляем на первый попавшийся сервер
-		auto entry = (*cluster.pools.begin())->get(&settings);
-
 		NamesAndTypesList res;
 
-		BlockInputStreamPtr input = new RemoteBlockInputStream(entry, query, &settings, Tables(), QueryProcessingStage::Complete);
+		/// Отправляем на первый попавшийся шард
+		BlockInputStreamPtr input = new RemoteBlockInputStream(&*cluster.pools.front(), query, &settings, Tables(), QueryProcessingStage::Complete);
 		input->readPrefix();
 
 		while (true)

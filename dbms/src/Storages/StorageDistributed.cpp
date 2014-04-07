@@ -105,19 +105,20 @@ BlockInputStreams StorageDistributed::read(
 	BlockInputStreams res;
 	ASTPtr modified_query_ast = rewriteQuery(query);
 
+	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
 	{
 		String modified_query = selectToString(modified_query_ast);
 
 		res.push_back(new RemoteBlockInputStream(
-			conn_pool->get(&new_settings),
+			conn_pool,
 			modified_query,
 			&new_settings,
 			external_tables,
 			processed_stage));
 	}
 
-	/// Добавляем запросы к локальному ClickHouse
+	/// Добавляем запросы к локальному ClickHouse.
 	if (cluster.getLocalNodesNum() > 0)
 	{
 		DB::Context new_context = context;
