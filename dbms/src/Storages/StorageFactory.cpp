@@ -21,6 +21,7 @@
 #include <DB/Storages/StorageChunks.h>
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Storages/StorageChunkMerger.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
@@ -29,6 +30,15 @@
 namespace DB
 {
 
+static bool endsWith(const std::string & s, const std::string & suffix)
+{
+	return s.size() >= suffix.size() && s.substr(s.size() - suffix.size()) == suffix;
+}
+
+static bool startsWith(const std::string & s, const std::string & prefix)
+{
+	return s.size() >= prefix.size() && s.substr(0, prefix.size()) == prefix;
+}
 
 /** Для StorageMergeTree: достать первичный ключ в виде ASTExpressionList.
   * Он может быть указан в кортеже: (CounterID, Date),
@@ -176,80 +186,120 @@ StoragePtr StorageFactory::get(
 		return StorageDistributed::create(table_name, columns, remote_database, remote_table, cluster_name,
 			context, sign_column_name);
 	}
-	else if (name == "MergeTree" || name == "SummingMergeTree")
+	else if (endsWith(name, "MergeTree"))
 	{
-		/** В качестве аргумента для движка должно быть указано:
+		/** Движки [Replicated][Summing|Collapsing]MergeTree  (6 комбинаций)
+		  * В качестве аргумента для движка должно быть указано:
+		  *  - (для Replicated) Путь к таблице в ZooKeeper
+		  *  - (для Replicated) Имя реплики в ZooKeeper
 		  *  - имя столбца с датой;
-		  *  - имя столбца для семплирования (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x*UINT32_MAX);
-		  *  - выражение для сортировки в скобках;
-		  *  - index_granularity.
-		  * Например: ENGINE = MergeTree(EventDate, intHash32(UniqID), (CounterID, EventDate, intHash32(UniqID), EventTime), 8192).
-		  * 
-		  * SummingMergeTree - вариант, в котором при слиянии делается суммирование всех числовых столбцов кроме PK
-		  *  - для Баннерной Крутилки.
-		  */
-		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
-
-		if (args_func.size() != 1)
-			throw Exception("Storage " + name + " requires 3 or 4 parameters"
-				" - name of column with date, [name of column for sampling], primary key expression, index granularity.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
-
-		if (args.size() != 3 && args.size() != 4)
-			throw Exception("Storage " + name + " requires 3 or 4 parameters"
-				" - name of column with date, [name of column for sampling], primary key expression, index granularity.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t arg_offset = args.size() - 3;
-
-		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
-		UInt64 index_granularity	= safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
-
-		ASTPtr primary_expr_list = extractPrimaryKey(args[arg_offset + 1], name);
-
-		return StorageMergeTree::create(
-			data_path, table_name, columns, context, primary_expr_list, date_column_name, sampling_expression, index_granularity,
-			name == "SummingMergeTree" ? MergeTreeData::Summing : MergeTreeData::Ordinary);
-	}
-	else if (name == "CollapsingMergeTree")
-	{
-		/** В качестве аргумента для движка должно быть указано:
-		  *  - имя столбца с датой;
-		  *  - имя столбца для семплирования (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x*UINT32_MAX);
-		  *  - выражение для сортировки в скобках;
+		  *  - (не обязательно) имя столбца для семплирования (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x*UINT32_MAX);
+		  *  - выражение для сортировки (либо скалярное выражение, либо tuple из нескольких);
 		  *  - index_granularity;
-		  *  - имя столбца, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
-		  * Например: ENGINE = CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
+		  *  - (для Collapsing) имя столбца, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
+		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
 		  */
+
+		String name_part = name.substr(0, name.size() - strlen("MergeTree"));
+
+		bool replicated = startsWith(name_part, "Replicated");
+		if (replicated)
+			name_part = name_part.substr(strlen("Replicated"));
+
+		MergeTreeData::Mode mode = MergeTreeData::Ordinary;
+
+		if (name_part == "Collapsing")
+			mode = MergeTreeData::Collapsing;
+		else if (name_part == "Summing")
+			mode = MergeTreeData::Summing;
+		else if (!name_part.empty())
+			throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);
+
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
-		if (args_func.size() != 1)
-			throw Exception("Storage CollapsingMergeTree requires 4 or 5 parameters"
-				" - name of column with date, [name of column for sampling], primary key expression, index granularity, sign_column.",
+		ASTs args;
+
+		if (args_func.size() == 1)
+			args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+		size_t additional_params = (replicated ? 2 : 0) + (mode == MergeTreeData::Collapsing ? 1 : 0);
+		if (args.size() != additional_params + 3 && args.size() != additional_params + 4)
+		{
+			String params;
+			if (replicated)
+				params += "path in ZooKeeper, replica name, ";
+			params += "name of column with date, [name of column for sampling], primary key expression, index granularity";
+			if (mode == MergeTreeData::Collapsing)
+				params += "sign column";
+			throw Exception("Storage " + name + " requires " + toString(additional_params + 3) + " or "
+				+ toString(additional_params + 4) +" parameters: " + params,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
 
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+		String zookeeper_path;
+		String replica_name;
 
-		if (args.size() != 4 && args.size() != 5)
-			throw Exception("Storage CollapsingMergeTree requires 4 or 5 parameters"
-				" - name of column with date, [name of column for sampling], primary key expression, index granularity, sign_column.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		String date_column_name;
+		ASTPtr primary_expr_list;
+		ASTPtr sampling_expression;
+		UInt64 index_granularity;
 
-		size_t arg_offset = args.size() - 4;
-		
-		String date_column_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		ASTPtr sampling_expression = arg_offset == 0 ? NULL : args[1];
-		UInt64 index_granularity	= safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[arg_offset + 2]).value);
-		String sign_column_name 	= dynamic_cast<ASTIdentifier &>(*args[arg_offset + 3]).name;
+		String sign_column_name;
 
-		ASTPtr primary_expr_list = extractPrimaryKey(args[arg_offset + 1], name);
+		if (replicated)
+		{
+			auto ast = dynamic_cast<ASTLiteral *>(&*args[0]);
+			if (ast && ast->value.getType() == Field::Types::String)
+				zookeeper_path = safeGet<String>(ast->value);
+			else
+				throw Exception("Path in ZooKeeper must be a string literal", ErrorCodes::BAD_ARGUMENTS);
 
-		return StorageMergeTree::create(
-			data_path, table_name, columns, context, primary_expr_list, date_column_name,
-			sampling_expression, index_granularity, MergeTreeData::Collapsing, sign_column_name);
+			ast = dynamic_cast<ASTLiteral *>(&*args[1]);
+			if (ast && ast->value.getType() == Field::Types::String)
+				replica_name = safeGet<String>(ast->value);
+			else
+				throw Exception("Replica name must be a string literal", ErrorCodes::BAD_ARGUMENTS);
+
+			args.erase(args.begin(), args.begin() + 2);
+		}
+
+		if (mode == MergeTreeData::Collapsing)
+		{
+			if (auto ast = dynamic_cast<ASTIdentifier *>(&*args.back()))
+				sign_column_name = ast->name;
+			else
+				throw Exception("Sign column name must be an unquoted string", ErrorCodes::BAD_ARGUMENTS);
+
+			args.pop_back();
+		}
+
+		if (args.size() == 4)
+		{
+			sampling_expression = args[1];
+			args.erase(args.begin() + 1);
+		}
+
+		if (auto ast = dynamic_cast<ASTIdentifier *>(&*args[0]))
+			date_column_name = ast->name;
+		else
+			throw Exception("Date column name must be an unquoted string", ErrorCodes::BAD_ARGUMENTS);
+
+		primary_expr_list = extractPrimaryKey(args[1], name);
+
+		auto ast = dynamic_cast<ASTLiteral *>(&*args[2]);
+		if (ast && ast->value.getType() == Field::Types::UInt64)
+				index_granularity = safeGet<UInt64>(ast->value);
+		else
+			throw Exception("Index granularity must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
+
+		if (replicated)
+			return StorageReplicatedMergeTree::create(zookeeper_path, replica_name, attach, data_path, table_name,
+				columns, context, primary_expr_list, date_column_name,
+				sampling_expression, index_granularity, mode, sign_column_name);
+		else
+			return StorageMergeTree::create(data_path, table_name,
+				columns, context, primary_expr_list, date_column_name,
+				sampling_expression, index_granularity, mode, sign_column_name);
 	}
 	else if (name == "SystemNumbers")
 	{

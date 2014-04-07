@@ -12,10 +12,11 @@ class MergeTreeDataMerger
 public:
 	MergeTreeDataMerger(MergeTreeData & data_) : data(data_), log(&Logger::get("MergeTreeDataMerger")), canceled(false) {}
 
-	typedef boost::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> AllowedMergingPredicate;
+	typedef std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> AllowedMergingPredicate;
 
 	/** Выбирает, какие куски слить. Использует кучу эвристик.
 	  * Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
+	  * Если available_disk_space > 0, выбирает куски так, чтобы места на диске хватило с запасом для их слияния.
 	  *
 	  * can_merge - функция, определяющая, можно ли объединить пару соседних кусков.
 	  *  Эта функция должна координировать слияния со вставками и другими слияниями, обеспечивая, что:
@@ -24,19 +25,20 @@ public:
 	  */
 	bool selectPartsToMerge(
 		MergeTreeData::DataPartsVector & what,
+		String & merged_name,
 		size_t available_disk_space,
 		bool merge_anything_for_old_months,
 		bool aggressive,
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
 
-	/// Сливает куски. Возвращает название нового куска. Если слияние отменили, возвращает пустую строку.
-	String mergeParts(const MergeTreeData::DataPartsVector & parts);
+	/// Сливает куски.
+	MergeTreeData::DataPartPtr mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
-	/** Отменяет все текущие мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро отменят слияние и вернут пустую строку.
+	/** Отменяет все текущие мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
 	  * После этого с этим экземпляром ничего делать нельзя.
 	  */
 	void cancelAll() { canceled = true; }

@@ -1,4 +1,5 @@
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 
@@ -21,6 +22,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	ParserString s_insert("INSERT", true, true);
 	ParserString s_into("INTO", true, true);
 	ParserString s_dot(".");
+	ParserString s_id("ID");
+	ParserString s_eq("=");
+	ParserStringLiteral id_p;
 	ParserString s_values("VALUES", true, true);
 	ParserString s_format("FORMAT", true, true);
 	ParserString s_select("SELECT", true, true);
@@ -34,6 +38,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	ASTPtr columns;
 	ASTPtr format;
 	ASTPtr select;
+	ASTPtr id;
 	/// Данные для вставки
 	const char * data = NULL;
 
@@ -59,6 +64,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 			return false;
 
 		ws.ignore(pos, end);
+	}
+
+	ws.ignore(pos, end);
+
+	if (s_id.ignore(pos, end, expected))
+	{
+		if (!s_eq.ignore(pos, end, expected))
+			return false;
+
+		if (!id_p.parse(pos, end, id, expected))
+			return false;
 	}
 
 	ws.ignore(pos, end);
@@ -120,6 +136,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
 	
 	query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+
+	if (id)
+		query->insert_id = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*id).value);
 
 	if (format)
 		query->format = dynamic_cast<ASTIdentifier &>(*format).name;

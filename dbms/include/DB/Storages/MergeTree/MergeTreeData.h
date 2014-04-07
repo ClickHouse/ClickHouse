@@ -1,13 +1,18 @@
 #pragma once
 
 #include <statdaemons/Increment.h>
-#include <statdaemons/threadpool.hpp>
 
 #include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/Common/escapeForFileName.h>
 #include <Poco/RWLock.h>
+
+
+#define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
+
 
 namespace DB
 {
@@ -76,6 +81,9 @@ struct MergeTreeSettings
 	/// Сколько потоков использовать для объединения кусков.
 	size_t merging_threads = 2;
 
+	/// Сколько потоков использовать для загрузки кусков с других реплик и объединения кусков (для ReplicatedMergeTree).
+	size_t replication_threads = 4;
+
 	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
 	size_t min_rows_for_concurrent_read = 20 * 8192;
 
@@ -85,9 +93,8 @@ struct MergeTreeSettings
 	/// Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их.
 	size_t coarse_index_granularity = 8;
 
-	/** Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется.
-	  * (Чтобы большие запросы не вымывали кэш.)
-	  */
+	/// Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется.
+	/// (Чтобы большие запросы не вымывали кэш.)
 	size_t max_rows_to_use_cache = 1024 * 1024;
 
 	/// Через сколько секунд удалять old_куски.
@@ -125,9 +132,28 @@ public:
 			{
 				return files.empty();
 			}
+
+			String toString() const
+			{
+				String s;
+				{
+					WriteBufferFromString out(s);
+					writeText(out);
+				}
+				return s;
+			}
+
+			static Checksums parse(const String & s)
+			{
+				ReadBufferFromString in(s);
+				Checksums res;
+				res.readText(in);
+				assertEOF(in);
+				return res;
+			}
 		};
 
- 		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
+ 		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0) {}
 
  		MergeTreeData & storage;
 		DayNum_t left_date;
@@ -176,10 +202,11 @@ public:
 			Poco::File(to).remove(true);
 		}
 
-		void renameToOld() const
+		/// Переименовывает кусок, дописав к имени префикс.
+		void renameAddPrefix(const String & prefix) const
 		{
 			String from = storage.full_path + name + "/";
-			String to = storage.full_path + "old_" + name + "/";
+			String to = storage.full_path + prefix + name + "/";
 
 			Poco::File f(from);
 			f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
@@ -216,14 +243,20 @@ public:
 				&& right >= rhs.right;
 		}
 
-		/// Загрузить индекс и вычислить размер.
+		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
 		void loadIndex()
 		{
+			/// Размер - в количестве засечек.
+			if (!size)
+				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(storage.columns->front().first) + ".mrk")
+					.getSize() / MERGE_TREE_MARK_SIZE;
+
 			size_t key_size = storage.sort_descr.size();
 			index.resize(key_size * size);
 
 			String index_path = storage.full_path + name + "/primary.idx";
-			ReadBufferFromFile index_file(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+			ReadBufferFromFile index_file(index_path,
+				std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
 			for (size_t i = 0; i < size; ++i)
 				for (size_t j = 0; j < key_size; ++j)
@@ -297,7 +330,7 @@ public:
 	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
 
 	/// Кладет в DataPart данные из имени кусочка.
-	void parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part);
+	void parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
 
 	std::string getTableName() { return ""; }
 
@@ -309,14 +342,30 @@ public:
 	  */
 	DataParts getDataParts();
 
-	/** Удаляет куски old_parts и добавляет кусок new_part. Если какого-нибудь из удаляемых кусков нет, бросает исключение.
+	/** Возвращает кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
 	  */
-	void replaceParts(DataPartsVector old_parts, DataPartPtr new_part);
+	DataPartPtr getContainingPart(const String & part_name);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
+	  * Предполагается, что кусок не пересекается с существующими.
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment);
+	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment = nullptr);
+
+	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
+	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
+	  */
+	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr);
+
+	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
+	  * Лучше использовать только когда никто не может читать или писать этот кусок
+	  *  (например, при инициализации таблицы).
+	  */
+	void renameAndDetachPart(DataPartPtr part, const String & prefix);
+
+	/** Удаляет кусок из рабочего набора. clearOldParts удалит его файлы, если на него никто не ссылается.
+	  */
+	void removePart(DataPartPtr part);
 
 	/** Удалить неактуальные куски.
 	  */
@@ -352,12 +401,12 @@ public:
 
 	const MergeTreeSettings settings;
 
+	const ASTPtr primary_expr_ast;
+
 private:
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 	Block primary_key_sample;
-
-	ASTPtr primary_expr_ast;
 
 	String full_path;
 

@@ -547,6 +547,41 @@ void Context::resetCaches() const
 		shared->mark_cache->reset();
 }
 
+void Context::setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (shared->zookeeper)
+		throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
+
+	shared->zookeeper = zookeeper;
+}
+
+zkutil::ZooKeeper & Context::getZooKeeper() const
+{
+	if (!shared->zookeeper)
+		throw Exception("No ZooKeeper in Context", ErrorCodes::NO_ZOOKEEPER);
+	return *shared->zookeeper;
+}
+
+
+void Context::setInterserverIOHost(const String & host, int port)
+{
+	shared->interserver_io_host = host;
+	shared->interserver_io_port = port;
+}
+
+String Context::getInterserverIOHost() const
+{
+	return shared->interserver_io_host;
+}
+
+int Context::getInterserverIOPort() const
+{
+	return shared->interserver_io_port;
+}
+
+
 void Context::initClusters()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);

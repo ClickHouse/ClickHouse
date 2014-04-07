@@ -24,8 +24,10 @@
 #include <DB/Interpreters/Dictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Client/ConnectionPool.h>
 #include <statdaemons/ConfigProcessor.h>
+#include <zkutil/ZooKeeper.h>
 
 
 namespace DB
@@ -70,6 +72,11 @@ struct ContextShared
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
+	mutable SharedPtr<zkutil::ZooKeeper> zookeeper;			/// Клиент для ZooKeeper.
+
+	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
+	int interserver_io_port;								///           и порт,
+
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
@@ -86,6 +93,7 @@ struct ContextShared
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
+	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -248,6 +256,13 @@ public:
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 	const Dictionaries & getDictionaries() const;
 
+	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
+
+	/// Как другие серверы могут обратиться к этому.
+	void setInterserverIOHost(const String & host, int port);
+	String getInterserverIOHost() const;
+	int getInterserverIOPort() const;
+
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
 
@@ -290,6 +305,9 @@ public:
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
 	void setUncompressedCache(size_t max_size_in_bytes);
 	UncompressedCachePtr getUncompressedCache() const;
+
+	void setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper);
+	zkutil::ZooKeeper & getZooKeeper() const;
 
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);

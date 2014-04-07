@@ -36,6 +36,8 @@ public:
 	ZooKeeper(const Poco::Util::LayeredConfiguration & config, const std::string & config_name,
 			  WatchFunction * watch = nullptr);
 
+	~ZooKeeper();
+
 	/** Возвращает true, если сессия навсегда завершена.
 	  * Это возможно только если соединение было установлено, а потом разорвалось. Это достаточно редкая ситуация.
 	  * С другой стороны, если, например, указан неправильный сервер или порт, попытки соединения будут продолжаться бесконечно,
@@ -73,7 +75,7 @@ public:
 
 	bool exists(const std::string & path, Stat * stat = nullptr, WatchFuture * watch = nullptr);
 
-	std::string get(const std::string & path, Stat * stat, WatchFuture * watch);
+	std::string get(const std::string & path, Stat * stat = nullptr, WatchFuture * watch = nullptr);
 
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет. В таком случае возвращает false.
@@ -108,19 +110,77 @@ public:
 	OpResultsPtr multi(const Ops & ops);
 
 	/** Бросает исключение только если какая-нибудь операция вернула "неожиданную" ошибку - такую ошибку,
-	  * увидев которую соответствующий метод try* бросил бы исключение. */
+	  *  увидев которую соответствующий метод try* бросил бы исключение. */
 	OpResultsPtr tryMulti(const Ops & ops);
+
+
+	/** Удаляет ноду вместе с поддеревом. Если в это время кто-то добавит иили удалит ноду в поддереве, результат не определен.
+	  */
+	void removeRecursive(const std::string & path);
 
 private:
 	void init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_);
 	friend struct StateWatch;
 
 	zk::ZooKeeper impl;
-	ACLs default_acl;
 	WatchFunction * state_watch;
+
+	Poco::FastMutex mutex;
+	ACLs default_acl;
 	SessionState::type session_state;
 
 	void stateChanged(WatchEvent::type event, SessionState::type state, const std::string& path);
 };
+
+
+/** В конструкторе создает эфемерную ноду, в деструкторе - удаляет.
+  */
+class EphemeralNodeHolder
+{
+public:
+	typedef Poco::SharedPtr<EphemeralNodeHolder> Ptr;
+
+	EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool sequential, const std::string & data)
+		: path(path_), zookeeper(zookeeper_)
+	{
+		if (create)
+			path = zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
+	}
+
+	std::string getPath() const
+	{
+		return path;
+	}
+
+	static Ptr create(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
+	{
+		return new EphemeralNodeHolder(path, zookeeper, true, false, data);
+	}
+
+	static Ptr createSequential(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
+	{
+		return new EphemeralNodeHolder(path, zookeeper, true, true, data);
+	}
+
+	static Ptr existing(const std::string & path, ZooKeeper & zookeeper)
+	{
+		return new EphemeralNodeHolder(path, zookeeper, false, false, "");
+	}
+
+	~EphemeralNodeHolder()
+	{
+		try
+		{
+			zookeeper.tryRemove(path);
+		}
+		catch (KeeperException) {}
+	}
+
+private:
+	std::string path;
+	ZooKeeper & zookeeper;
+};
+
+typedef EphemeralNodeHolder::Ptr EphemeralNodeHolderPtr;
 
 }

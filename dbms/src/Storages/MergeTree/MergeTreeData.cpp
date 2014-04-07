@@ -2,7 +2,6 @@
 #include <Yandex/time2str.h>
 #include <Poco/Ext/ScopedTry.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Common/escapeForFileName.h>
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
@@ -52,11 +51,9 @@ MergeTreeData::MergeTreeData(
 
 	/// инициализируем описание сортировки
 	sort_descr.reserve(primary_expr_ast->children.size());
-	for (ASTs::iterator it = primary_expr_ast->children.begin();
-		it != primary_expr_ast->children.end();
-		++it)
+	for (const ASTPtr & ast : primary_expr_ast->children)
 	{
-		String name = (*it)->getColumnName();
+		String name = ast->getColumnName();
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
 
@@ -122,8 +119,18 @@ String MergeTreeData::getPartName(DayNum_t left_date, DayNum_t right_date, UInt6
 }
 
 
-void MergeTreeData::parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part)
+void MergeTreeData::parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches_p)
 {
+	Poco::RegularExpression::MatchVec match_vec;
+	if (!matches_p)
+	{
+		if (!isPartDirectory(file_name, match_vec))
+			throw Exception("Unexpected part name: " + file_name, ErrorCodes::BAD_DATA_PART_NAME);
+		matches_p = &match_vec;
+	}
+
+	const Poco::RegularExpression::MatchVec & matches = *matches_p;
+
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 	part.left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
@@ -183,7 +190,7 @@ void MergeTreeData::loadDataParts()
 			continue;
 
 		MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-		parsePartName(file_name, matches, *part);
+		parsePartName(file_name, *part, &matches);
 		part->name = file_name;
 
 		/// Для битых кусков, которые могут образовываться после грубого перезапуска сервера, попытаться восстановить куски, из которых они сделаны.
@@ -203,10 +210,6 @@ void MergeTreeData::loadDataParts()
 
 			continue;
 		}
-
-		/// Размер - в количестве засечек.
-		part->size = Poco::File(full_path + file_name + "/" + escapeForFileName(columns->front().first) + ".mrk").getSize()
-			/ MERGE_TREE_MARK_SIZE;
 
 		part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
 
@@ -292,7 +295,7 @@ void MergeTreeData::clearOldParts()
 		{
 			LOG_DEBUG(log, "'Removing' part " << (*it)->name << " (prepending old_ to its name)");
 
-			(*it)->renameToOld();
+			(*it)->renameAddPrefix("old_");
 			all_data_parts.erase(it++);
 		}
 		else
@@ -641,9 +644,8 @@ Strings MergeTreeData::tryRestorePart(const String & path, const String & file_n
 	Poco::RegularExpression::MatchVec matches;
 	Strings restored_parts;
 
-	isPartDirectory(file_name, matches);
 	DataPart broken_part(*this);
-	parsePartName(file_name, matches, broken_part);
+	parsePartName(file_name, broken_part);
 
 	for (int i = static_cast<int>(old_parts.size()) - 1; i >= 0; --i)
 	{
@@ -655,7 +657,7 @@ Strings MergeTreeData::tryRestorePart(const String & path, const String & file_n
 			old_parts.erase(old_parts.begin() + i);
 			continue;
 		}
-		parsePartName(name, matches, old_part);
+		parsePartName(name, old_part, &matches);
 		if (broken_part.contains(old_part))
 		{
 			/// Восстанавливаем все содержащиеся куски. Если некоторые из них содержатся в других, их удалит loadDataParts.
@@ -680,23 +682,17 @@ Strings MergeTreeData::tryRestorePart(const String & path, const String & file_n
 	return restored_parts;
 }
 
-void MergeTreeData::replaceParts(DataPartsVector old_parts, DataPartPtr new_part)
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> all_lock(all_data_parts_mutex);
-
-	for (size_t i = 0; i < old_parts.size(); ++i)
-		if (data_parts.end() == data_parts.find(old_parts[i]))
-			throw Exception("Logical error: cannot find data part " + old_parts[i]->name + " in list", ErrorCodes::LOGICAL_ERROR);
-
-	data_parts.insert(new_part);
-	all_data_parts.insert(new_part);
-
-	for (size_t i = 0; i < old_parts.size(); ++i)
-		data_parts.erase(data_parts.find(old_parts[i]));
+	auto removed = renameTempPartAndReplace(part, increment);
+	if (!removed.empty())
+	{
+		LOG_ERROR(log, "Added part " << part->name << + " covers " << toString(removed.size())
+			<< " existing part(s) (including " << removed[0]->name << ")");
+	}
 }
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
+MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment)
 {
 	LOG_TRACE(log, "Renaming.");
 
@@ -705,25 +701,58 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 
 	String old_path = getFullPath() + part->name + "/";
 
-	UInt64 part_id = part->left;
-
-	/** Важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
+	/** Для StorageMergeTree важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
 	  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
 	  *  содержат ещё не добавленный кусок.
 	  */
 	if (increment)
-		part_id = increment->get(false);
+		part->left = part->right = increment->get(false);
 
-	part->left = part->right = part_id;
-	part->name = getPartName(part->left_date, part->right_date, part_id, part_id, 0);
+	part->name = getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+
+	if (data_parts.count(part))
+		throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
 
 	String new_path = getFullPath() + part->name + "/";
 
 	/// Переименовываем кусок.
 	Poco::File(old_path).renameTo(new_path);
 
+	DataPartsVector res;
+	/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
+	DataParts::iterator it = data_parts.lower_bound(part);
+	/// Пойдем влево.
+	while (it != data_parts.begin())
+	{
+		--it;
+		if (!part->contains(**it))
+		{
+			++it;
+			break;
+		}
+		res.push_back(*it);
+		data_parts.erase(it++); /// Да, ++, а не --.
+	}
+	std::reverse(res.begin(), res.end()); /// Нужно получить куски в порядке возрастания.
+	/// Пойдем вправо.
+	while (it != data_parts.end() && part->contains(**it))
+	{
+		res.push_back(*it);
+		data_parts.erase(it++);
+	}
+
 	data_parts.insert(part);
 	all_data_parts.insert(part);
+
+	return res;
+}
+
+void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	if (!data_parts.erase(part))
+		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
+	part->renameAddPrefix(prefix);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()
@@ -731,6 +760,34 @@ MergeTreeData::DataParts MergeTreeData::getDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
+}
+
+MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_name)
+{
+	MutableDataPartPtr tmp_part(new DataPart(*this));
+	parsePartName(part_name, *tmp_part);
+
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	/// Кусок может покрываться только предыдущим или следующим в data_parts.
+	DataParts::iterator it = data_parts.lower_bound(tmp_part);
+
+	if (it != data_parts.end())
+	{
+		if ((*it)->name == part_name)
+			return *it;
+		if ((*it)->contains(*tmp_part))
+			return *it;
+	}
+
+	if (it != data_parts.begin())
+	{
+		--it;
+		if ((*it)->contains(*tmp_part))
+			return *it;
+	}
+
+	return nullptr;
 }
 
 

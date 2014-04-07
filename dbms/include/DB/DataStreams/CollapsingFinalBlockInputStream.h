@@ -17,7 +17,7 @@ public:
 	CollapsingFinalBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
 									 const String & sign_column_)
 		: description(description_), sign_column(sign_column_),
-		log(&Logger::get("CollapsingSortedBlockInputStream")),
+		log(&Logger::get("CollapsingFinalBlockInputStream")),
 		first(true), count_positive(0), count_negative(0), count_incorrect_data(0), blocks_fetched(0), blocks_output(0)
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());

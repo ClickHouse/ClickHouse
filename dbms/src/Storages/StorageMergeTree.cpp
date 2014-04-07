@@ -145,12 +145,13 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 				/// К концу этого логического блока должен быть вызван деструктор, чтобы затем корректно определить удаленные куски
 				/// Нужно вызывать деструктор под незалоченным currently_merging_mutex.
 				CurrentlyMergingPartsTaggerPtr merging_tagger;
+				String merged_name;
 
 				{
 					Poco::ScopedLock<Poco::FastMutex> lock(currently_merging_mutex);
 
 					MergeTreeData::DataPartsVector parts;
-					auto can_merge = boost::bind(&StorageMergeTree::canMergeParts, this, _1, _2);
+					auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 					bool only_small = false;
 
 					/// Если есть активный мердж крупных кусков, то ограничиваемся мерджем только маленьких частей.
@@ -163,14 +164,19 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 						}
 					}
 
-					if (!merger.selectPartsToMerge(parts, disk_space, false, aggressive, only_small, can_merge) &&
-						!merger.selectPartsToMerge(parts, disk_space,  true, aggressive, only_small, can_merge))
+					LOG_DEBUG(log, "Selecting parts to merge");
+
+					if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
+						!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))
+					{
+						LOG_DEBUG(log, "No parts to merge");
 						break;
+					}
 
 					merging_tagger = new CurrentlyMergingPartsTagger(parts, merger.estimateDiskSpaceForMerge(parts), *this);
 				}
 
-				merger.mergeParts(merging_tagger->parts);
+				merger.mergeParts(merging_tagger->parts, merged_name);
 			}
 
 			if (shutdown_called)

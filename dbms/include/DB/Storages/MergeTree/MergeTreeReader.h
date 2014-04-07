@@ -12,9 +12,6 @@
 #include <DB/Columns/ColumnNested.h>
 
 
-#define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
-
-
 namespace DB
 {
 
