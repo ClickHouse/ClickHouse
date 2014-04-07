@@ -72,6 +72,7 @@ public:
 		bool first = true;
 		std::stringstream ss;
 		
+		ss << "{";
 		for (const Field & f : *ordered_set)
 		{
 			if (!first)
@@ -80,6 +81,7 @@ public:
 				ss << f;
 			first = false;
 		}
+		ss << "}";
 		return ss.str();
 	}
 
