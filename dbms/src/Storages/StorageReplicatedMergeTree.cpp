@@ -469,6 +469,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 			zookeeper.multi(ops);
 
+			parts.clear();
 			data.clearOldParts();
 
 			ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
@@ -631,6 +632,7 @@ void StorageReplicatedMergeTree::queueThread()
 
 		if (success)
 		{
+			entry.currently_merging_tagger = nullptr;
 			std::this_thread::sleep_for(QUEUE_AFTER_WORK_SLEEP);
 		}
 		else
@@ -641,6 +643,7 @@ void StorageReplicatedMergeTree::queueThread()
 				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
 				queue.push_back(entry);
 			}
+			entry.currently_merging_tagger = nullptr;
 			std::this_thread::sleep_for(QUEUE_ERROR_SLEEP);
 		}
 	}
@@ -684,8 +687,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 					if (!part)
 						continue;
 					if (part->name != name)
-						throw Exception("Assertion failed in mergeSelectingThread(): expected " + name + ", found " + part->name,
-							ErrorCodes::LOGICAL_ERROR);
+					{
+						LOG_INFO(log, "currently_merging contains obsolete part " << name << " contained in" << part->name);
+						continue;
+					}
 					if (part->size * data.index_granularity > 25 * 1024 * 1024)
 					{
 						has_big_merge = true;
