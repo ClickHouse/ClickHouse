@@ -500,7 +500,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 void ExpressionAnalyzer::makeExplicitSets(bool create_ordered_set)
 {
-	makeExplicitSetsRecursively(ast, storage->getSampleBlock(), create_ordered_set);
+	if (storage && ast)
+		makeExplicitSetsRecursively(ast, storage->getSampleBlock(), create_ordered_set);
 }
 
 void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block, bool create_ordered_set)
