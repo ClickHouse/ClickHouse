@@ -24,9 +24,12 @@ struct Settings
 	  */
 
 #define APPLY_FOR_SETTINGS(M) \
-	/** Минимальный размер блока, готового для сжатия */ \
+	/** При записи данных, для сжатия выделяется буфер размером max_compress_block_size. При переполнении буфера или если в буфер */ \
+	/** записано данных больше или равно, чем min_compress_block_size, то при очередной засечке, данные так же будут сжиматься */ \
+	/** В результате, для маленьких столбцов (числа 1-8 байт), при index_granularity = 8192, размер блока будет 64 KБ. */ \
+	/** А для больших столбцов (Title - строка ~100 байт), размер блока будет ~819 КБ.  */ \
+	/** За счёт этого, коэффициент сжатия почти не ухудшится.  */ \
 	M(SettingUInt64, min_compress_block_size, DEFAULT_MIN_COMPRESS_BLOCK_SIZE) \
-	/** Максимальный размер блока, пригодного для сжатия */ \
 	M(SettingUInt64, max_compress_block_size, DEFAULT_MAX_COMPRESS_BLOCK_SIZE) \
 	/** Максимальный размер блока для чтения */ \
 	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \

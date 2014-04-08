@@ -15,7 +15,7 @@ namespace DB
 class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
-	IMergedBlockOutputStream(MergeTreeData & storage_) : storage(storage_), index_offset(0)
+	IMergedBlockOutputStream(MergeTreeData & storage_, size_t min_compress_block_size_, size_t max_compress_block_size_) : storage(storage_), index_offset(0), min_compress_block_size(min_compress_block_size_), max_compress_block_size(max_compress_block_size_)
 	{
 	}
 
@@ -23,7 +23,7 @@ protected:
 	typedef std::set<std::string> OffsetColumns;
 	struct ColumnStream
 	{
-		ColumnStream(const String & escaped_column_name_, const String & data_path, const std::string & marks_path, size_t max_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE) :
+		ColumnStream(const String & escaped_column_name_, const String & data_path, const std::string & marks_path, size_t max_compress_block_size = DEFAULT_MAX_COMPRESS_BLOCK_SIZE) :
 			escaped_column_name(escaped_column_name_),
 			plain_file(data_path, max_compress_block_size, O_TRUNC | O_CREAT | O_WRONLY),
 			compressed_buf(plain_file),
@@ -83,7 +83,7 @@ protected:
 				escaped_size_name,
 				path + escaped_size_name + ".bin",
 				path + escaped_size_name + ".mrk",
-				storage.context.getSettings().max_compress_block_size);
+				max_compress_block_size);
 
 			addStream(path, name, *type_arr->getNestedType(), level + 1);
 		}
@@ -92,7 +92,7 @@ protected:
 				escaped_column_name,
 				path + escaped_column_name + ".bin",
 				path + escaped_column_name + ".mrk",
-				storage.context.getSettings().max_compress_block_size);
+				max_compress_block_size);
 	}
 
 
@@ -132,7 +132,7 @@ protected:
 
 					type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
 					/// Уже могло накопиться достаточно данных для сжатия в новый блок.
-					if (stream.compressed.offset() >= storage.context.getSettings().min_compress_block_size)
+					if (stream.compressed.offset() >= min_compress_block_size)
 						stream.compressed.next();
 					else
 						stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
@@ -163,7 +163,7 @@ protected:
 
 				type.serializeBinary(column, stream.compressed, prev_mark, limit);
 				/// Уже могло накопиться достаточно данных для сжатия в новый блок.
-				if (stream.compressed.offset() >= storage.context.getSettings().min_compress_block_size)
+				if (stream.compressed.offset() >= min_compress_block_size)
 					stream.compressed.next();
 				else
 					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
@@ -178,6 +178,9 @@ protected:
 
 	/// Смещение до первой строчки блока, для которой надо записать индекс.
 	size_t index_offset;
+
+	size_t min_compress_block_size;
+	size_t max_compress_block_size;
 };
 
 /** Для записи одного куска. Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
@@ -186,7 +189,7 @@ class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
 public:
 	MergedBlockOutputStream(MergeTreeData & storage_, String part_path_, const NamesAndTypesList & columns_list_)
-		: IMergedBlockOutputStream(storage_), columns_list(columns_list_), part_path(part_path_), marks_count(0)
+		: IMergedBlockOutputStream(storage_, storage_.context.getSettings().min_compress_block_size, storage_.context.getSettings().max_compress_block_size), columns_list(columns_list_), part_path(part_path_), marks_count(0)
 	{
 		Poco::File(part_path).createDirectories();
 		
@@ -305,7 +308,7 @@ class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
 	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_ = false) :
-		IMergedBlockOutputStream(storage_), part_path(part_path_), initialized(false), sync(sync_)
+		IMergedBlockOutputStream(storage_, storage_.context.getSettings().min_compress_block_size, storage_.context.getSettings().max_compress_block_size), part_path(part_path_), initialized(false), sync(sync_)
 	{
 	}
 
