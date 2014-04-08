@@ -48,6 +48,7 @@
 
 #include "InterruptListener.h"
 
+#include <DB/Common/ExternalTable.h>
 
 /** Клиент командной строки СУБД ClickHouse.
   */
@@ -57,130 +58,6 @@ namespace DB
 {
 
 using Poco::SharedPtr;
-
-/// Описание внешней таблицы
-class ExternalTable
-{
-public:
-	std::string file; 		/// Файл с данными или '-' если stdin
-	std::string name; 		/// Имя таблицы
-	std::string format; 	/// Название формата хранения данных
-
-	/// Описание структуры таблицы: (имя столбца, имя типа данных)
-	std::vector<std::pair<std::string, std::string> > structure;
-
-	ReadBuffer *read_buffer;
-	Block sample_block;
-
-	void initReadBuffer()
-	{
-		if (file == "-")
-			read_buffer = new ReadBufferFromIStream(std::cin);
-		else
-			read_buffer = new ReadBufferFromFile(file);
-	}
-
-	void initSampleBlock(const Context &context)
-	{
-		for (size_t i = 0; i < structure.size(); ++i)
-		{
-			ColumnWithNameAndType column;
-			column.name = structure[i].first;
-			column.type = context.getDataTypeFactory().get(structure[i].second);
-			column.column = column.type->createColumn();
-			sample_block.insert(column);
-		}
-	}
-
-	ExternalTableData getData(const Context &context)
-	{
-		initReadBuffer();
-		initSampleBlock(context);
-		ExternalTableData res = std::make_pair(new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
-			format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE, context.getDataTypeFactory())), name);
-		return res;
-	}
-
-	/// Функция для отладочного вывода информации
-	void write()
-	{
-		std::cerr << "file " << file << std::endl;
-		std::cerr << "name " << name << std::endl;
-		std::cerr << "format " << format << std::endl;
-		std::cerr << "structure: \n";
-		for (size_t i = 0; i < structure.size(); ++i)
-			std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
-	}
-
-	/// Извлечение параметров из variables_map, которая строится по командной строке
-	ExternalTable(const boost::program_options::variables_map & external_options)
-	{
-		if (external_options.count("file"))
-			file = external_options["file"].as<std::string>();
-		else
-			throw Exception("--file field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
-
-		if (external_options.count("name"))
-			name = external_options["name"].as<std::string>();
-		else
-			throw Exception("--name field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
-
-		if (external_options.count("format"))
-			format = external_options["format"].as<std::string>();
-		else
-			throw Exception("--format field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
-
-		if (external_options.count("structure"))
-		{
-			std::vector<std::string> temp = external_options["structure"].as<std::vector<std::string>>();
-
-			std::string argument;
-			for (size_t i = 0; i < temp.size(); ++i)
-				argument = argument + temp[i] + " ";
-			std::vector<std::string> vals = split(argument, " ,");
-
-			if (vals.size() & 1)
-				throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
-
-			for (size_t i = 0; i < vals.size(); i += 2)
-				structure.push_back(std::make_pair(vals[i], vals[i+1]));
-		}
-		else if (external_options.count("types"))
-		{
-			std::vector<std::string> temp = external_options["types"].as<std::vector<std::string>>();
-			std::string argument;
-			for (size_t i = 0; i < temp.size(); ++i)
-				argument = argument + temp[i] + " ";
-			std::vector<std::string> vals = split(argument, " ,");
-
-			for (size_t i = 0; i < vals.size(); ++i)
-				structure.push_back(std::make_pair("_" + toString(i + 1), vals[i]));
-		}
-		else
-			throw Exception("Neither --structure nor --types have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
-	}
-
-	static std::vector<std::string> split(const std::string & s, const std::string &d)
-	{
-		std::vector<std::string> res;
-		std::string now;
-		for (size_t i = 0; i < s.size(); ++i)
-		{
-			if (d.find(s[i]) != std::string::npos)
-			{
-				if (!now.empty())
-					res.push_back(now);
-				now = "";
-				continue;
-			}
-			now += s[i];
-		}
-		if (!now.empty())
-			res.push_back(now);
-		return res;
-	}
-};
-
 
 class Client : public Poco::Util::Application
 {

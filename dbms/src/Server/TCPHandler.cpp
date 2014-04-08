@@ -23,6 +23,8 @@
 
 #include <DB/Storages/StorageMemory.h>
 
+#include <DB/Common/ExternalTable.h>
+
 #include "TCPHandler.h"
 
 
