@@ -13,10 +13,20 @@ typedef std::promise<WatchEventInfo> WatchPromise;
 struct WatchWithPromise : public zk::Watch
 {
 	WatchPromise promise;
+	bool notified;
+
+	WatchWithPromise() : notified(false) {}
 
 	void process(WatchEvent::type event, SessionState::type state, const std::string & path)
 	{
+		if (notified)
+		{
+			LOG_WARNING(&Logger::get("WatchWithPromise"), "Ignoring event " << WatchEvent::toString(event) << " with state "
+				<< SessionState::toString(state) << " for path " << path);
+			return;
+		}
 		promise.set_value(WatchEventInfo(event, state, path));
+		notified = true;
 	}
 };
 
