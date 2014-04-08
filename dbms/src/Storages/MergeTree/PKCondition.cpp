@@ -328,7 +328,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 
 bool PKCondition::mayBeTrueAfter(const Field * left_pk)
 {
-	return mayBeTrueInRange(left_pk, NULL, false);
+	return mayBeTrueInRange(left_pk, nullptr, false);
 }
 
 ASTSet * PKCondition::RPNElement::inFunctionToSet()

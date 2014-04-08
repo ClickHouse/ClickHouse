@@ -27,7 +27,7 @@ friend class Singleton<LibrarySingleton>;
 private:
 	LibrarySingleton()
 	{
-		if (mysql_library_init(0, NULL, NULL))
+		if (mysql_library_init(0, nullptr, nullptr))
 			throw Exception("Cannot initialize MySQL library.");
 	}
 

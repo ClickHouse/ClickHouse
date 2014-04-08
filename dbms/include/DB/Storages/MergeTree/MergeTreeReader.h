@@ -58,7 +58,7 @@ public:
 		bool has_missing_columns = false;
 
 		/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-		/// Если append, все значения NULL, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
+		/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
 		OffsetColumns offset_columns;
 
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)

@@ -51,9 +51,9 @@ protected:
 	}
 
 public:
-	ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(NULL, 0), buffers(buffers_), current(buffers.begin()) {}
+	ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin()) {}
 
-	ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(NULL, 0)
+	ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(nullptr, 0)
 	{
 		buffers.push_back(&buf1);
 		buffers.push_back(&buf2);

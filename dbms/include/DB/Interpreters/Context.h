@@ -180,8 +180,8 @@ private:
 	String default_format;				/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
 										/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
 	Tables external_tables;				/// Временные таблицы.
-	Context * session_context = nullptr;	/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
-	Context * global_context = nullptr;		/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
+	Context * session_context = nullptr;	/// Контекст сессии или nullptr, если его нет. (Возможно, равен this.)
+	Context * global_context = nullptr;		/// Глобальный контекст или nullptr, если его нет. (Возможно, равен this.)
 
 public:
 	String getPath() const;
@@ -293,7 +293,7 @@ public:
 	  *  чтобы обновлять и контролировать информацию об общем количестве потраченных на запрос ресурсов.
 	  */
 	void setProcessListElement(ProcessList::Element * elem);
-	/// Может вернуть NULL, если запрос не был вставлен в ProcessList.
+	/// Может вернуть nullptr, если запрос не был вставлен в ProcessList.
 	ProcessList::Element * getProcessListElement();
 
 	/// Список всех запросов.

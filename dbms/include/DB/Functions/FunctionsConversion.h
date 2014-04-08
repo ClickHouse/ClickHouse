@@ -320,7 +320,7 @@ public:
 
 	/** Получить тип результата по типам аргументов и значениям константных аргументов.
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
-	  * Для неконстантных столбцов arguments[i].column=NULL.
+	  * Для неконстантных столбцов arguments[i].column = nullptr.
 	  */
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
 												DataTypePtr & out_return_type,

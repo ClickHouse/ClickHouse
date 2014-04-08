@@ -17,7 +17,7 @@ public:
 	int direction;	/// 1, если ASC, -1, если DESC
 	
 	/** Collator для locale-specific сортировки строк.
-	 * Если NULL, то производится сортировка по байтам.
+	 * Если nullptr, то производится сортировка по байтам.
 	 */
 	Poco::SharedPtr<Collator> collator;
 	

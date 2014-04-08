@@ -118,7 +118,7 @@ public:
 		hints.ai_family = AF_UNSPEC;
 		hints.ai_flags |= AI_V4MAPPED | AI_ALL;
 
-		int ret = getaddrinfo(host.c_str(), NULL, &hints, &ai);
+		int ret = getaddrinfo(host.c_str(), nullptr, &hints, &ai);
 		if (0 != ret)
 			throw Exception("Cannot getaddrinfo: " + std::string(gai_strerror(ret)), ErrorCodes::DNS_ERROR);
 
@@ -175,7 +175,7 @@ public:
 
 		/// Резолвим вручную, потому что в Poco нет такой функциональности.
 		char domain[1024];
-		int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), NULL, 0, NI_NAMEREQD);
+		int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), nullptr, 0, NI_NAMEREQD);
 		if (0 != gai_errno)
 			throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::DNS_ERROR);
 

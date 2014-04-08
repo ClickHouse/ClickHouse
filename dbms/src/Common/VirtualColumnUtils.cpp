@@ -131,7 +131,7 @@ static void extractFunctions(ASTPtr expression, const std::vector<String> & colu
 /// Построить конъюнкцию из заданных функций
 static ASTPtr buildWhereExpression(const ASTs & functions)
 {
-	if (functions.size() == 0) return NULL;
+	if (functions.size() == 0) return nullptr;
 	if (functions.size() == 1) return functions[0];
 	ASTPtr new_query = new ASTFunction();
 	ASTFunction & new_function = dynamic_cast<ASTFunction & >(*new_query);

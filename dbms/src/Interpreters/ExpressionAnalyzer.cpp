@@ -50,7 +50,7 @@ static std::string * getAlias(ASTPtr & ast)
 	}
 	else
 	{
-		return NULL;
+		return nullptr;
 	}
 }
 

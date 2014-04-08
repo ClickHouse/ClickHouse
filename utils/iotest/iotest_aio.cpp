@@ -201,7 +201,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 			
 			/// Получим ответы. Если еще есть что отправлять, получим хотя бы один ответ (после этого пойдем отправлять), иначе дождемся всех ответов.
 			memset(&events[0], 0, buffers_count * sizeof(events[0]));
-			int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], NULL);
+			int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], nullptr);
 			if (evs < 0)
 				throwFromErrno("io_getevents failed");
 			
@@ -223,7 +223,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 // 		if (io_submit(ctx.ctx, 1, &cbs) < 0)
 // 			throwFromErrno("io_submit of fdatasync failed");
 // 		io_event e;
-// 		if (io_getevents(ctx.ctx, 1, 1, &e, NULL) < 0)
+// 		if (io_getevents(ctx.ctx, 1, 1, &e, nullptr) < 0)
 // 			throwFromErrno("io_getevents failed");
 // 		if (e.res < 0)
 // 			throw Poco::Exception("sync failed");

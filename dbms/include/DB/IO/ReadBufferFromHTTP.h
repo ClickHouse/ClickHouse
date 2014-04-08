@@ -38,7 +38,7 @@ public:
 		const Params & params,
 		size_t timeout_ = 0,
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-		: ReadBuffer(NULL, 0), host(host_), port(port_)
+		: ReadBuffer(nullptr, 0), host(host_), port(port_)
 	{
 		std::stringstream uri;
 		uri << "http://" << host << ":" << port << "/";

@@ -412,7 +412,7 @@ private:
 				if (Daemon::instance().isCancelled())
 					throw Poco::Exception("Daemon is cancelled while trying to connect to MySQL server.");
 
-				return NULL;
+				return nullptr;
 			}
 		}
 

@@ -391,7 +391,7 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& e
 		return true;
 	pos = begin;
 
-	expected = "literal: one of NULL, number, single quoted string";
+	expected = "literal: one of nullptr, number, single quoted string";
 	return false;
 }
 

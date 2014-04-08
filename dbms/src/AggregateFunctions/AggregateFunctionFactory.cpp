@@ -46,7 +46,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 	else if (dynamic_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32>;
 	else if (dynamic_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64>;
 	else
-		return NULL;
+		return nullptr;
 }
 
 template<template <typename, typename> class AggregateFunctionTemplate, class Data>
@@ -63,7 +63,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 	else if (dynamic_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32, Data>;
 	else if (dynamic_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64, Data>;
 	else
-		return NULL;
+		return nullptr;
 }
 
 template<template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data>
@@ -80,7 +80,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 	else if (dynamic_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32, Data<Float32> >;
 	else if (dynamic_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64, Data<Float64> >;
 	else
-		return NULL;
+		return nullptr;
 }
 
 

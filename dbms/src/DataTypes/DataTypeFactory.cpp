@@ -57,7 +57,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 	Poco::RegularExpression::MatchVec matches;
 	if (fixed_string_regexp.match(name, 0, matches) && matches.size() == 2)
-		return new DataTypeFixedString(mysqlxx::String(name.data() + matches[1].offset, matches[1].length, NULL).getUInt());
+		return new DataTypeFixedString(mysqlxx::String(name.data() + matches[1].offset, matches[1].length, nullptr).getUInt());
 
 	if (nested_regexp.match(name, 0, matches) && matches.size() == 3)
 	{

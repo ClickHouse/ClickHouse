@@ -29,7 +29,7 @@ public:
 		const Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
-		const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
+		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
 		MergeTreeData::Mode mode_ = MergeTreeData::Ordinary,
 		const String & sign_column_ = "",
@@ -143,7 +143,7 @@ private:
 					const Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,
-					const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
+					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 					size_t index_granularity_,
 					MergeTreeData::Mode mode_,
 					const String & sign_column_,

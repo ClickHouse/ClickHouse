@@ -260,7 +260,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, data,
-			parts[i], ranges, false, NULL, ""), data.getPrimaryExpression()));
+			parts[i], ranges, false, nullptr, ""), data.getPrimaryExpression()));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.

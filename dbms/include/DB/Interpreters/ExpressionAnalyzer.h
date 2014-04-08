@@ -186,7 +186,7 @@ private:
 			
 			for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 			{
-				all_columns.push_back(ColumnWithNameAndType(NULL, it->second, it->first));
+				all_columns.push_back(ColumnWithNameAndType(nullptr, it->second, it->first));
 				new_names.insert(it->first);
 				stack.back().new_columns.insert(it->first);
 			}

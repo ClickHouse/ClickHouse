@@ -155,7 +155,7 @@ private:
 			sigset_t sig_set;
 			if (sigemptyset(&sig_set)
 				|| sigaddset(&sig_set, SIGINT)
-				|| pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
+				|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
 				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
 			Query query;

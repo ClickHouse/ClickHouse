@@ -458,7 +458,7 @@ void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
 		ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, NULL, ""), expr);
+			DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, nullptr, ""), expr);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 		in.readPrefix();
 		out.writePrefix();
