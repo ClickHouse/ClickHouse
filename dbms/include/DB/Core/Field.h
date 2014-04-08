@@ -87,7 +87,6 @@ public:
 	Field()
 		: which(Types::Null)
 	{
-//		std::cerr << "Field()" << std::endl;
 	}
 
 	/** Не смотря на наличие шаблонного конструктора, этот конструктор всё-равно нужен,
@@ -95,13 +94,11 @@ public:
 	  */
 	Field(const Field & rhs)
 	{
-//		std::cerr << this << " Field::Field(const Field &)" << std::endl;
 		create(rhs);
 	}
 
 	Field & operator= (const Field & rhs)
 	{
-//		std::cerr << this << " Field::operator=(const Field &)" << std::endl;
 		destroy();
 		create(rhs);
 		return *this;
@@ -110,7 +107,6 @@ public:
 	template <typename T>
 	Field(const T & rhs)
 	{
-//		std::cerr << this << " Field::Field(" << Types::toString(TypeToEnum<T>::value) << ")" << std::endl;
 		create(rhs);
 	}
 
@@ -140,7 +136,6 @@ public:
 	template <typename T>
 	Field & operator= (const T & rhs)
 	{
-//		std::cerr << this << " Field::operator=(" << Types::toString(TypeToEnum<T>::value) << ")" << std::endl;
 		destroy();
 		create(rhs);
 		return *this;
@@ -148,7 +143,6 @@ public:
 
 	~Field()
 	{
-//		std::cerr << this << " Field::~Field()" << std::endl;
 		destroy();
 	}
 
@@ -285,7 +279,6 @@ private:
 	void create(const T & x)
 	{
 		which = TypeToEnum<T>::value;
-//		std::cerr << this << " Creating " << getTypeName() << std::endl;
 		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
 		new (ptr) T(x);
 	}
@@ -293,13 +286,10 @@ private:
 	void create(const Null & x)
 	{
 		which = Types::Null;
-//		std::cerr << this << " Creating " << getTypeName() << std::endl;
 	}
 
 	void create(const Field & x)
 	{
-//		std::cerr << this << " Creating Field" << std::endl;
-
 		switch (x.which)
 		{
 			case Types::Null: 				create(Null());							break;
@@ -326,8 +316,6 @@ private:
 
 	__attribute__((__always_inline__)) void destroy()
 	{
-//		std::cerr << this << " Destroying " << getTypeName() << std::endl;
-
 		if (which < Types::MIN_NON_POD)
 			return;
 
