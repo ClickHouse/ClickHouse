@@ -22,6 +22,7 @@ public:
 		bool compress = true,
 		size_t timeout = 0,
 		size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
+		: ReadBuffer(nullptr, 0)
 	{
 		ReadBufferFromHTTP::Params params = {
 			std::make_pair("action", "read"),
