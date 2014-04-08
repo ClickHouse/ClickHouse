@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_STOREQUERYRESULT_H
-#define MYSQLXX_STOREQUERYRESULT_H
+#pragma once
 
 #include <vector>
 
@@ -44,5 +43,3 @@ private:
 };
 
 }
-
-#endif

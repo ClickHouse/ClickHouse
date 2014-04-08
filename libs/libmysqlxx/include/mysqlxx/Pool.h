@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_POOL_H
-#define MYSQLXX_POOL_H
+#pragma once
 
 #include <list>
 
@@ -424,5 +423,3 @@ private:
 };
 
 }
-
-#endif

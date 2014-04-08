@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_CONNECTION_H
-#define MYSQLXX_CONNECTION_H
+#pragma once
 
 #include <boost/noncopyable.hpp>
 
@@ -132,5 +131,3 @@ private:
 
 
 }
-
-#endif

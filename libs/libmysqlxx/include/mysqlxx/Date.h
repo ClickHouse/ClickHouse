@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_DATE_H
-#define MYSQLXX_DATE_H
+#pragma once
 
 #include <string.h>
 #include <string>
@@ -174,5 +173,3 @@ inline std::ostream & operator<< (std::ostream & ostr, const Date & date)
 }
 
 }
-
-#endif

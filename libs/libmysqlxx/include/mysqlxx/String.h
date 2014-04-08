@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_STRING_H
-#define MYSQLXX_STRING_H
+#pragma once
 
 #include <string.h>
 #include <stdio.h>
@@ -408,5 +407,3 @@ inline std::ostream & operator<< (std::ostream & ostr, const String & x)
 
 
 }
-
-#endif

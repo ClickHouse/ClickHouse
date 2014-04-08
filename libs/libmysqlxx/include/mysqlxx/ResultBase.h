@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_RESULTBASE_H
-#define MYSQLXX_RESULTBASE_H
+#pragma once
 
 #include <boost/noncopyable.hpp>
 
@@ -44,5 +43,3 @@ protected:
 };
 
 }
-
-#endif

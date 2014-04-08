@@ -1,5 +1,4 @@
-#ifndef DBMS_IO_COPY_DATA_H
-#define DBMS_IO_COPY_DATA_H
+#pragma once
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
@@ -17,5 +16,3 @@ void copyData(ReadBuffer & from, WriteBuffer & to);
 void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes);
 
 }
-
-#endif
