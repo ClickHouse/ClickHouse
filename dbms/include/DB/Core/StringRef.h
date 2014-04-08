@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <functional>
+#include <ostream>
 
 
 namespace DB
@@ -46,6 +47,15 @@ namespace DB
 		return !(lhs == rhs);
 	}
 
+	inline bool operator<(StringRef lhs, StringRef rhs)
+	{
+		int cmp = memcmp(lhs.data, rhs.data, std::min(lhs.size, rhs.size));
+		if (cmp == 0)
+			return lhs.size < rhs.size;
+		else
+			return cmp < 0;
+	}
+
 	struct StringRefHash
 	{
 		inline size_t operator() (StringRef x) const
@@ -70,17 +80,12 @@ namespace DB
 		return true;
 	}
 
-	inline bool operator<(StringRef lhs, StringRef rhs)
-	{
-		return strcmp(lhs.data, rhs.data) < 0 ? true : false;
-	}
-
 	inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
 	{
 		if (str.data)
-			return os << str.toString();
-		else
-			return os;
+			os.write(str.data, str.size);
+
+		return os;
 	}
 }
 
