@@ -227,7 +227,7 @@ void StorageReplicatedMergeTree::checkParts()
 
 	MergeTreeData::DataParts parts = data.getDataParts();
 
-	MergeTreeData::DataPartsVector unexpected_parts;
+	MergeTreeData::DataParts unexpected_parts;
 	for (const auto & part : parts)
 	{
 		if (expected_parts.count(part->name))
@@ -236,25 +236,83 @@ void StorageReplicatedMergeTree::checkParts()
 		}
 		else
 		{
-			unexpected_parts.push_back(part);
+			unexpected_parts.insert(part);
 		}
 	}
 
-	if (!expected_parts.empty())
-		throw Exception("Not found " + toString(expected_parts.size())
-			+ " parts (including " + *expected_parts.begin() + ") in table " + data.getTableName(),
-			ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+	/// Если локально не хватает какого-то куска, но есть покрывающий его кусок, можно заменить в ZK недостающий покрывающим.
+	MergeTreeData::DataPartsVector parts_to_add;
+	for (const String & missing_name : expected_parts)
+	{
+		auto containing = data.getContainingPart(missing_name);
+		if (!containing)
+			throw Exception("Not found " + toString(expected_parts.size())
+				+ " parts (including " + missing_name + ") in table " + data.getTableName(),
+				ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+		if (unexpected_parts.count(containing))
+		{
+			parts_to_add.push_back(containing);
+			unexpected_parts.erase(containing);
+		}
+	}
 
-	if (unexpected_parts.size() > 1)
-		throw Exception("More than one unexpected part (including " + unexpected_parts[0]->name
-			+ ") in table " + data.getTableName(),
+	if (parts_to_add.size() > 2 ||
+		unexpected_parts.size() > 2 ||
+		expected_parts.size() > 20)
+	{
+		throw Exception("The local set of parts of table " + data.getTableName() + " doesn't look like the set of parts in ZooKeeper."
+			"There are " + toString(unexpected_parts.size()) + " unexpected parts, "
+			+ toString(parts_to_add.size()) + " unexpectedly merged parts, "
+			+ toString(expected_parts.size()) + " unexpectedly obsolete parts",
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+	}
 
+	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
+	for (MergeTreeData::DataPartPtr part : parts_to_add)
+	{
+		zkutil::Ops ops;
+		checkPartAndAddToZooKeeper(part, ops);
+		zookeeper.multi(ops);
+	}
+
+	/// Удалим из ZK информацию о кусках, покрытых только что добавленными.
+	for (const String & name : expected_parts)
+	{
+		zkutil::Ops ops;
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/checksums", -1));
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
+		zookeeper.multi(ops);
+	}
+
+	/// Удалим лишние локальные куски.
 	for (MergeTreeData::DataPartPtr part : unexpected_parts)
 	{
 		LOG_ERROR(log, "Unexpected part " << part->name << ". Renaming it to ignored_" + part->name);
 		data.renameAndDetachPart(part, "ignored_");
 	}
+}
+
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops)
+{
+	String another_replica = findReplicaHavingPart(part->name, false);
+	if (!another_replica.empty())
+	{
+		String checksums_str =
+			zookeeper.get(zookeeper_path + "/replicas/" + another_replica + "/parts/" + part->name + "/checksums");
+		auto checksums = MergeTreeData::DataPart::Checksums::parse(checksums_str);
+		checksums.check(part->checksums);
+	}
+
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part->name,
+		"",
+		zookeeper.getDefaultACL(),
+		zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part->name + "/checksums",
+		part->checksums.toString(),
+		zookeeper.getDefaultACL(),
+		zkutil::CreateMode::Persistent));
 }
 
 void StorageReplicatedMergeTree::loadQueue()
@@ -450,16 +508,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name);
 
 			zkutil::Ops ops;
-			ops.push_back(new zkutil::Op::Create(
-				replica_path + "/parts/" + part->name,
-				"",
-				zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
-			ops.push_back(new zkutil::Op::Create(
-				replica_path + "/parts/" + part->name + "/checksums",
-				part->checksums.toString(),
-				zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
+			checkPartAndAddToZooKeeper(part, ops);
 
 			for (const auto & part : parts)
 			{
@@ -484,7 +533,12 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 	{
 		try
 		{
-			String replica = findActiveReplicaHavingPart(entry.new_part_name);
+			String replica = findReplicaHavingPart(entry.new_part_name, true);
+			if (replica.empty())
+			{
+				ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
+				throw Exception("No active replica has part " + entry.new_part_name, ErrorCodes::NO_REPLICA_HAS_PART);
+			}
 			fetchPart(entry.new_part_name, replica);
 
 			if (entry.type == LogEntry::MERGE_PARTS)
@@ -790,7 +844,7 @@ void StorageReplicatedMergeTree::becomeLeader()
 	merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
 }
 
-String StorageReplicatedMergeTree::findActiveReplicaHavingPart(const String & part_name)
+String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
 	Strings replicas = zookeeper.getChildren(zookeeper_path + "/replicas");
 
@@ -800,11 +854,11 @@ String StorageReplicatedMergeTree::findActiveReplicaHavingPart(const String & pa
 	for (const String & replica : replicas)
 	{
 		if (zookeeper.exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name) &&
-			zookeeper.exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+			(!active || zookeeper.exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
 			return replica;
 	}
 
-	throw Exception("No active replica has part " + part_name, ErrorCodes::NO_REPLICA_HAS_PART);
+	return "";
 }
 
 void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_name)
@@ -829,16 +883,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	auto removed_parts = data.renameTempPartAndReplace(part);
 
 	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(
-		replica_path + "/parts/" + part->name,
-		"",
-		zookeeper.getDefaultACL(),
-		zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(
-		replica_path + "/parts/" + part->name + "/checksums",
-		part->checksums.toString(),
-		zookeeper.getDefaultACL(),
-		zkutil::CreateMode::Persistent));
+	checkPartAndAddToZooKeeper(part, ops);
 
 	for (const auto & removed_part : removed_parts)
 	{

@@ -290,6 +290,13 @@ private:
 	  */
 	void checkParts();
 
+	/** Проверить, что чексумма куска совпадает с чексуммой того же куска на какой-нибудь другой реплике.
+	  * Если ни у кого нет такого куска, ничего не проверяет.
+	  * Не очень надежно: если две реплики добавляют кусок почти одновременно, ни одной проверки не произойдет.
+	  * Кладет в ops действия, добавляющие данные о куске в ZooKeeper.
+	  */
+	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops);
+
 	/// Выполнение заданий из очереди.
 
 	/** Кладет в queue записи из ZooKeeper (/replicas/me/queue/).
@@ -330,9 +337,9 @@ private:
 
 	/// Обмен кусками.
 
-	/** Бросает исключение, если куска ни у кого нет.
+	/** Возвращает пустую строку, если куска ни у кого нет.
 	  */
-	String findActiveReplicaHavingPart(const String & part_name);
+	String findReplicaHavingPart(const String & part_name, bool active);
 
 	/** Скачать указанный кусок с указанной реплики.
 	  */

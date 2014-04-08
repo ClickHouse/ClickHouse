@@ -52,8 +52,6 @@ public:
 			log_entry.source_replica = storage.replica_name;
 			log_entry.new_part_name = part->name;
 
-			String checksums_str = part->checksums.toString();
-
 			/// Одновременно добавим информацию о куске во все нужные места в ZooKeeper и снимем block_number_lock.
 			zkutil::Ops ops;
 			if (!block_id.empty())
@@ -65,7 +63,7 @@ public:
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id + "/checksums",
-					checksums_str,
+					part->checksums.toString(),
 					storage.zookeeper.getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
@@ -74,16 +72,7 @@ public:
 					storage.zookeeper.getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 			}
-			ops.push_back(new zkutil::Op::Create(
-				storage.replica_path + "/parts/" + part->name,
-				"",
-				storage.zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
-			ops.push_back(new zkutil::Op::Create(
-				storage.replica_path + "/parts/" + part->name + "/checksums",
-				checksums_str,
-				storage.zookeeper.getDefaultACL(),
-				zkutil::CreateMode::Persistent));
+			storage.checkPartAndAddToZooKeeper(part, ops);
 			ops.push_back(new zkutil::Op::Create(
 				storage.replica_path + "/log/log-",
 				log_entry.toString(),
