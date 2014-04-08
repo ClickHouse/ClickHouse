@@ -38,7 +38,7 @@ public:
 	  */
 	StringPtr query_string;
 
-	IAST() : range(NULL, NULL) {}
+	IAST() {}
 	IAST(StringRange range_) : range(range_) {}
 	virtual ~IAST() {}
 

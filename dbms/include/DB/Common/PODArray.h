@@ -121,14 +121,14 @@ private:
 		{
 			c_start = reinterpret_cast<char *>(::realloc(c_start, bytes_to_alloc));
 
-			if (NULL == c_start)
+			if (nullptr == c_start)
 				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 		}
 		else
 		{
 			c_start = reinterpret_cast<char *>(malloc(bytes_to_alloc));
 
-			if (NULL == c_start)
+			if (nullptr == c_start)
 				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
 			memcpy(c_start, old_c_start, old_c_end_of_storage - old_c_start);

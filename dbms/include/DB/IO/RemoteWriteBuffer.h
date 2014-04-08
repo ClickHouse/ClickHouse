@@ -231,7 +231,7 @@ private:
 			{
 				/// Если в прошлую попытку от сервера не пришло ответа, но файл всё же был переименован.
 				if (i != 0 && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER
-					&& NULL != strstr(e.displayText().data(), "File not found"))
+					&& nullptr != strstr(e.displayText().data(), "File not found"))
 				{
 					LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "File already renamed");
 				}

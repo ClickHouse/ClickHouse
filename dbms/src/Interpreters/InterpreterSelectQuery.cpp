@@ -450,7 +450,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// если таблица не поддерживает сэмплинг получим исключение
 	/// поэтому запросы типа SHOW TABLES работать с включенном default_sample не будут
 	if (!query.sample_size && settings.default_sample != 1)
-		query.sample_size = new ASTLiteral(StringRange(NULL, NULL), Float64(settings.default_sample));
+		query.sample_size = new ASTLiteral(StringRange(), Float64(settings.default_sample));
 
 	if (query.sample_size && (!storage || !storage->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);

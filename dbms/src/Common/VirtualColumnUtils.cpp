@@ -71,7 +71,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*ast);
 	ASTExpressionList & node = dynamic_cast<ASTExpressionList &>(*select.select_expression_list);
 	ASTs & asts = node.children;
-	ASTLiteral * cur = new ASTLiteral(StringRange(NULL, NULL), value);
+	ASTLiteral * cur = new ASTLiteral(StringRange(), value);
 	cur->alias = column_name;
 	ASTPtr column_value = cur;
 	bool is_replaced = false;
@@ -161,7 +161,7 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 	new_select.select_expression_list = new ASTExpressionList();
 	ASTExpressionList & select_list = dynamic_cast<ASTExpressionList & >(*new_select.select_expression_list);
 	for (size_t i = 0; i < columns.size(); ++i)
-		select_list.children.push_back(new ASTIdentifier(StringRange(NULL, NULL), columns[i]));
+		select_list.children.push_back(new ASTIdentifier(StringRange(), columns[i]));
 
 	std::vector<ASTPtr> functions;
 	extractFunctions(select.where_expression, columns, functions);

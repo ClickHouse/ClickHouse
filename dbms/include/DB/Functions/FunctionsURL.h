@@ -167,7 +167,7 @@ struct ExtractPath
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '/')) && pos[1] == '/' && NULL != (pos = strchr(pos + 2, '/')))
+		if (nullptr != (pos = strchr(data, '/')) && pos[1] == '/' && nullptr != (pos = strchr(pos + 2, '/')))
 		{
 			Pos query_string_or_fragment = strpbrk(pos, "?#");
 
@@ -190,7 +190,7 @@ struct ExtractQueryString
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '?')))
+		if (nullptr != (pos = strchr(data, '?')))
 		{
 			Pos fragment = strchr(pos, '#');
 
@@ -213,7 +213,7 @@ struct ExtractFragment
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '#')))
+		if (nullptr != (pos = strchr(data, '#')))
 		{
 			res_data = pos + (without_leading_char ? 1 : 0);
 			res_size = end - res_data;
@@ -234,7 +234,7 @@ struct ExtractQueryStringAndFragment
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '?')))
+		if (nullptr != (pos = strchr(data, '?')))
 		{
 			res_data = pos + (without_leading_char ? 1 : 0);
 			res_size = end - res_data;

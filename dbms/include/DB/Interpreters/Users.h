@@ -52,7 +52,7 @@ public:
 	{
 		const char * pos = strchr(str.c_str(), '/');
 
-		if (NULL == pos)
+		if (nullptr == pos)
 		{
 			construct(Poco::Net::IPAddress(str));
 		}

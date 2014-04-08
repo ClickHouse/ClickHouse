@@ -56,7 +56,7 @@ namespace DB
 
 	struct StringRefZeroTraits
 	{
-		static inline bool check(DB::StringRef x) { return NULL == x.data; }
+		static inline bool check(DB::StringRef x) { return nullptr == x.data; }
 		static inline void set(DB::StringRef & x) { x.data = nullptr; }
 	};
 	

@@ -88,7 +88,7 @@ void executeQuery(
 
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
-	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
@@ -159,7 +159,7 @@ BlockIO executeQuery(
 	
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
-	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(), context.getSettingsRef().replace_running_query);
