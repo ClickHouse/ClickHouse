@@ -24,10 +24,10 @@ protected:
 	ReadBuffer * compressed_in;
 
 	/// Если в буфере compressed_in помещается целый сжатый блок - используем его. Иначе - копируем данные по кусочкам в own_compressed_buffer.
-	PODArray<char> own_compressed_buffer;
-	char * compressed_buffer;
+	PODArray<char> own_compressed_buffer{QUICKLZ_HEADER_SIZE};
+	char * compressed_buffer = nullptr;
 
-	qlz_state_decompress * qlz_state;
+	qlz_state_decompress * qlz_state = nullptr;
 
 	/// Прочитать сжатые данные в compressed_buffer. Достать из их заголовка размер разжатых данных. Проверить чексумму.
 	/// Возвращает количество прочитанных байт.
@@ -90,12 +90,8 @@ protected:
 
 public:
 	/// compressed_in можно инициализировать отложенно, но до первого вызова readCompressedData.
-	CompressedReadBufferBase(ReadBuffer * in = NULL)
-		:
-		compressed_in(in),
-		own_compressed_buffer(QUICKLZ_HEADER_SIZE),
-		compressed_buffer(NULL),
-		qlz_state(NULL)
+	CompressedReadBufferBase(ReadBuffer * in = nullptr)
+		: compressed_in(in)
 	{
 	}
 

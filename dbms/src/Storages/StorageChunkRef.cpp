@@ -76,7 +76,7 @@ const StorageChunks & StorageChunkRef::getSource() const
 	const StoragePtr table_ptr = context.getTable(source_database_name, source_table_name);
 	const StorageChunks * chunks = dynamic_cast<const StorageChunks *>(&*table_ptr);
 
-	if (chunks == NULL)
+	if (chunks == nullptr)
 		throw Exception("Referenced table " + source_table_name + " in database " + source_database_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
 	return *chunks;

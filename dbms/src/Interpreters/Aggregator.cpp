@@ -691,7 +691,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 	if (!final)
 	{
 		/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе. Теперь состояниями владеют ColumnAggregateFunction.
-		data_variants.aggregator = NULL;
+		data_variants.aggregator = nullptr;
 	}
 
 	/// Изменяем размер столбцов-констант в блоке.
@@ -856,7 +856,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
-		current.aggregator = NULL;
+		current.aggregator = nullptr;
 	}
 
 	double elapsed_seconds = watch.elapsedSeconds();

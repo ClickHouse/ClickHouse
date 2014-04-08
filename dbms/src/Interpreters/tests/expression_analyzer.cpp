@@ -39,7 +39,7 @@ int main(int argc, char ** argv)
 		if (parser.parse(pos ,end, root, expected))
 			break;
 		else
-			root = NULL;
+			root = nullptr;
 	}
 	if (!root)
 	{

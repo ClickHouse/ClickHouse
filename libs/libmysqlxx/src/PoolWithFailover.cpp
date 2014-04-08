@@ -38,11 +38,11 @@ PoolWithFailover::Entry PoolWithFailover::Get()
 	Poco::Util::Application & app = Poco::Util::Application::instance();
 
 	/// Если к какой-то реплике не подключились, потому что исчерпан лимит соединений, можно подождать и подключиться к ней.
-	Replica * full_pool = NULL;
+	Replica * full_pool = nullptr;
 
 	for (size_t try_no = 0; try_no < max_tries; ++try_no)
 	{
-		full_pool = NULL;
+		full_pool = nullptr;
 
 		for (ReplicasByPriority::iterator it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
 		{

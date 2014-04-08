@@ -633,7 +633,7 @@ public:
 			return;
 
 		Columns array_columns(arguments.size());
-		const ColumnArray::Offsets_t * offsets = NULL;
+		const ColumnArray::Offsets_t * offsets = nullptr;
 		ConstColumnPlainPtrs data_columns(arguments.size());
 
 		for (size_t i = 0; i < arguments.size(); ++i)

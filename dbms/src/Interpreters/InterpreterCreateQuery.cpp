@@ -227,7 +227,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				
 				/// Для engine VIEW необходимо сохранить сам селект запрос, для остальных - наоборот
 				if (storage_name != "View" && storage_name != "MaterializedView")
-					attach.select = NULL;
+					attach.select = nullptr;
 
 				Poco::FileOutputStream metadata_file(metadata_path);
 				formatAST(attach, metadata_file, 0, false);

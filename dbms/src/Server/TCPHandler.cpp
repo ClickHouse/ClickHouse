@@ -3,7 +3,6 @@
 #include <boost/bind.hpp>
 
 #include <Poco/Net/NetException.h>
-#include <Poco/Ext/ScopedTry.h>
 
 #include <Yandex/Revision.h>
 
@@ -121,7 +120,7 @@ void TCPHandler::runImpl()
 
 			/// Очищаем, так как, получая данные внешних таблиц, мы получили пустой блок.
 			/// А значит, stream помечен как cancelled и читать из него нельзя.
-			state.block_in = NULL;
+			state.block_in = nullptr;
 
 			/// Обрабатываем Query
 			state.io = executeQuery(state.query, query_context, false, state.stage);

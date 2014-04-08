@@ -28,7 +28,7 @@ public:
 	typedef ColumnVector<Offset_t> ColumnOffsets_t;
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
-	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = NULL)
+	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = nullptr)
 		: data(nested_column), offsets(offsets_column)
 	{
 		if (!offsets_column)

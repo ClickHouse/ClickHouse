@@ -257,7 +257,7 @@ public:
 			it->second->addToChecksums(checksums);
 		}
 
-		index_stream = NULL;
+		index_stream = nullptr;
 		column_streams.clear();
 
 		if (marks_count == 0)

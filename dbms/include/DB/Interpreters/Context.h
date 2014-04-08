@@ -165,27 +165,25 @@ class Context
 {
 private:
 	typedef SharedPtr<ContextShared> Shared;
-	Shared shared;
+	Shared shared = new ContextShared;
 
 	String user;						/// Текущий пользователь.
 	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
-	QuotaForIntervalsPtr quota;			/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
+	QuotaForIntervalsPtr quota = new QuotaForIntervals;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
 	String current_database;			/// Текущая БД.
 	String current_query_id;			/// Id текущего запроса.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;					/// Настройки выполнения запроса.
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
-	ProcessList::Element * process_list_elem;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
+	ProcessList::Element * process_list_elem = nullptr;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
 
 	String default_format;				/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
 										/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
 	Tables external_tables;				/// Временные таблицы.
-	Context * session_context;			/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
-	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
+	Context * session_context = nullptr;	/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
+	Context * global_context = nullptr;		/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
 
 public:
-	Context() : shared(new ContextShared), quota(new QuotaForIntervals), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
-
 	String getPath() const;
 	void setPath(const String & path);
 

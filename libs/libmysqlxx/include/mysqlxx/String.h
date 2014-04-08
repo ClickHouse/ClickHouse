@@ -112,7 +112,7 @@ public:
 	/// Является ли NULL.
 	bool isNull() const
 	{
-		return m_data == NULL;
+		return m_data == nullptr;
 	}
 
 	/// Для совместимости (используйте вместо этого метод isNull())

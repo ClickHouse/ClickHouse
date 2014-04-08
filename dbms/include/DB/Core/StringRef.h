@@ -14,13 +14,13 @@ namespace DB
 	/// Штука, чтобы не создавать строки для поиска подстроки в хэш таблице.
 	struct StringRef
 	{
-		const char * data;
-		size_t size;
+		const char * data = nullptr;
+		size_t size = 0;
 
 		StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 		StringRef(const unsigned char * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
 		StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
-		StringRef() : data(NULL), size(0) {}
+		StringRef() {}
 
 		std::string toString() const { return std::string(data, size); }
 	};
@@ -57,7 +57,7 @@ namespace DB
 	struct StringRefZeroTraits
 	{
 		static inline bool check(DB::StringRef x) { return NULL == x.data; }
-		static inline void set(DB::StringRef & x) { x.data = NULL; }
+		static inline void set(DB::StringRef & x) { x.data = nullptr; }
 	};
 	
 	inline bool operator==(StringRef lhs, const char * rhs)

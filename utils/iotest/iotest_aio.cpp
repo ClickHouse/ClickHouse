@@ -60,10 +60,10 @@ enum Mode
 
 struct AlignedBuffer
 {
-	int size;
-	char * data;
+	int size = 0;
+	char * data = nullptr;
 	
-	AlignedBuffer() : size(0), data(NULL) {}
+	AlignedBuffer() {}
 	
 	void init(int size_)
 	{
@@ -79,7 +79,7 @@ struct AlignedBuffer
 	{
 		if (data)
 			free(data);
-		data = NULL;
+		data = nullptr;
 		size = 0;
 	}
 	

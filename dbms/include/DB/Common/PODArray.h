@@ -83,7 +83,7 @@ private:
 	{
 		if (n == 0)
 		{
-			c_start = c_end = c_end_of_storage = NULL;
+			c_start = c_end = c_end_of_storage = nullptr;
 			return;
 		}
 		
@@ -94,7 +94,7 @@ private:
 
 	void dealloc()
 	{
-		if (c_start == NULL)
+		if (c_start == nullptr)
 			return;
 		
 		if (use_libc_realloc)
@@ -105,7 +105,7 @@ private:
 
 	void realloc(size_t n)
 	{
-		if (c_start == NULL)
+		if (c_start == nullptr)
 		{
 			alloc(n);
 			return;

@@ -342,7 +342,7 @@ int Server::main(const std::vector<std::string> & args)
 	
 		LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
 
-		users_config_reloader = NULL;
+		users_config_reloader = nullptr;
 
 		is_cancelled = true;
 
@@ -365,7 +365,7 @@ int Server::main(const std::vector<std::string> & args)
 	/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
 	  * В этот момент никто больше не должен владеть shared-частью контекста.
 	  */
-	global_context = NULL;
+	global_context = nullptr;
 
 	LOG_DEBUG(log, "Destroyed global context.");
 	

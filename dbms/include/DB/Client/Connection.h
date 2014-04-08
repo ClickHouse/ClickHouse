@@ -85,7 +85,7 @@ public:
 
 	/// Если последний флаг true, то затем необходимо вызвать sendExternalTablesData
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
-		const Settings * settings = NULL, bool with_pending_data = false);
+		const Settings * settings = nullptr, bool with_pending_data = false);
 	
 	void sendCancel();
 	/// Отправить блок данных, на сервере сохранить во временную таблицу name

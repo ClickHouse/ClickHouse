@@ -86,7 +86,7 @@ protected:
 	BlockInputStreams children;
 
 private:
-	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = NULL);
+	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = nullptr);
 
 	size_t checkDepthImpl(size_t max_depth, size_t level) const;
 

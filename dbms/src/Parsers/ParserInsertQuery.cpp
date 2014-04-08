@@ -40,7 +40,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	ASTPtr select;
 	ASTPtr id;
 	/// Данные для вставки
-	const char * data = NULL;
+	const char * data = nullptr;
 
 	ws.ignore(pos, end);
 

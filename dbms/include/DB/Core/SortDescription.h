@@ -20,10 +20,10 @@ struct SortColumnDescription
 	int direction;							/// 1 - по возрастанию, -1 - по убыванию.
 	Poco::SharedPtr<Collator> collator;	/// Collator для locale-specific сортировки строк
 
-	SortColumnDescription(size_t column_number_, int direction_, const Poco::SharedPtr<Collator> & collator_ = NULL)
+	SortColumnDescription(size_t column_number_, int direction_, const Poco::SharedPtr<Collator> & collator_ = nullptr)
 		: column_number(column_number_), direction(direction_), collator(collator_) {}
 
-	SortColumnDescription(String column_name_, int direction_, const Poco::SharedPtr<Collator> & collator_ = NULL)
+	SortColumnDescription(String column_name_, int direction_, const Poco::SharedPtr<Collator> & collator_ = nullptr)
 		: column_name(column_name_), column_number(0), direction(direction_), collator(collator_) {}
 
 	/// Для IBlockInputStream.

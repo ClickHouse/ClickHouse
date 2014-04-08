@@ -21,11 +21,11 @@ public:
 	/// Идентификатор запроса INSERT. Используется при репликации.
 	String insert_id;
 	/// Данные для вставки
-	const char * data;
-	const char * end;
+	const char * data = nullptr;
+	const char * end = nullptr;
 
 	ASTInsertQuery() {}
-	ASTInsertQuery(StringRange range_) : IAST(range_), data(NULL), end(NULL) {}
+	ASTInsertQuery(StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "InsertQuery_" + database + "_" + table; };

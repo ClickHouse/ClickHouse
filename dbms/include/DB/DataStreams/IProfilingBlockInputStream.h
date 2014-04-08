@@ -20,27 +20,21 @@ namespace DB
 /// Информация для профайлинга.
 struct BlockStreamProfileInfo
 {
-	bool started;
+	bool started = false;
 	Stopwatch work_stopwatch;	/// Время вычислений (выполнения функции read())
 	Stopwatch total_stopwatch;	/// Время с учётом ожидания
 	
 	String stream_name;			/// Короткое имя потока, для которого собирается информация
 
-	size_t rows;
-	size_t blocks;
-	size_t bytes;
+	size_t rows = 0;
+	size_t blocks = 0;
+	size_t bytes = 0;
 
 	/// Информация о вложенных потоках - для выделения чистого времени работы.
 	typedef std::vector<const BlockStreamProfileInfo *> BlockStreamProfileInfos;
 	BlockStreamProfileInfos nested_infos;
 
 	String column_names;
-
-	BlockStreamProfileInfo() :
-		started(false), rows(0), blocks(0), bytes(0),
-		applied_limit(false), rows_before_limit(0), calculated_rows_before_limit(false)
-	{
-	}
 
 	/// Собрать BlockStreamProfileInfo для ближайших в дереве источников с именем name. Пример; собрать все info для PartialSorting stream-ов.
 	void collectInfosForStreamsWithName(const String & name, BlockStreamProfileInfos & res) const;
@@ -64,9 +58,9 @@ private:
 	void calculateRowsBeforeLimit() const;
 	
 	/// Для этих полей сделаем accessor'ы, т.к. их необходимо предварительно вычислять.
-	mutable bool applied_limit;					/// Применялся ли LIMIT
-	mutable size_t rows_before_limit;			
-	mutable bool calculated_rows_before_limit;	/// Вычислялось ли поле rows_before_limit
+	mutable bool applied_limit = false;					/// Применялся ли LIMIT
+	mutable size_t rows_before_limit = 0;
+	mutable bool calculated_rows_before_limit = false;	/// Вычислялось ли поле rows_before_limit
 };
 
 
@@ -78,10 +72,6 @@ private:
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	IProfilingBlockInputStream()
-		: is_cancelled(false), process_list_elem(NULL),
-		enabled_extremes(false), quota(NULL), prev_elapsed(0) {}
-	
 	Block read();
 
 	/** Реализация по-умолчанию вызывает рекурсивно readSuffix() у всех детей, а затем readSuffixImpl() у себя.
@@ -205,11 +195,11 @@ public:
 
 protected:
 	BlockStreamProfileInfo info;
-	volatile bool is_cancelled;
+	volatile bool is_cancelled = false;
 	ProgressCallback progress_callback;
-	ProcessList::Element * process_list_elem;
+	ProcessList::Element * process_list_elem = nullptr;
 
-	bool enabled_extremes;
+	bool enabled_extremes = false;
 
 	/// Дополнительная информация, которая может образоваться в процессе работы.
 
@@ -222,8 +212,8 @@ protected:
 	
 	LocalLimits limits;
 
-	QuotaForIntervals * quota;	/// Если NULL - квота не используется.
-	double prev_elapsed;
+	QuotaForIntervals * quota = nullptr;	/// Если nullptr - квота не используется.
+	double prev_elapsed = 0;
 
 	/// Наследники должны реализовать эту функцию.
 	virtual Block readImpl() = 0;

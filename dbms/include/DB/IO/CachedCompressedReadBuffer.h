@@ -67,7 +67,7 @@ private:
 
 		if (owned_cell->data.m_size == 0)
 		{
-			owned_cell = NULL;
+			owned_cell = nullptr;
 			return false;
 		}
 

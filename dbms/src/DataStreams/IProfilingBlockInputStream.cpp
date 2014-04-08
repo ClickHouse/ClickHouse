@@ -211,7 +211,7 @@ Block IProfilingBlockInputStream::read()
 			return res;
 		}
 
-		if (quota != NULL)
+		if (quota != nullptr)
 			checkQuota(res);
 	}
 	else
@@ -398,7 +398,7 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 					ErrorCodes::TOO_SLOW);
 			}
 
-			if (quota != NULL && limits.mode == LIMITS_TOTAL)
+			if (quota != nullptr && limits.mode == LIMITS_TOTAL)
 			{
 				quota->checkAndAddReadRowsBytes(time(0), rows, bytes);
 			}

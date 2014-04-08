@@ -231,7 +231,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& 
 	if (open.ignore(pos, end, expected))
 	{
 		expr_list_params = expr_list_args;
-		expr_list_args = NULL;
+		expr_list_args = nullptr;
 		
 		ws.ignore(pos, end);
 		contents.parse(pos, end, expr_list_args, expected);
@@ -521,7 +521,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, const ch
 	
 	ws.ignore(pos, end);
 	
-	Poco::SharedPtr<Collator> collator = NULL;
+	Poco::SharedPtr<Collator> collator = nullptr;
 	if (collate.ignore(pos, end))
 	{
 		ws.ignore(pos, end);

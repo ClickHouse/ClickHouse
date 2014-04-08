@@ -72,8 +72,8 @@ void Connection::disconnect()
 	//LOG_TRACE(log, "Disconnecting (" << getServerAddress() << ")");
 	
 	socket.close();
-	in = NULL;
-	out = NULL;
+	in = nullptr;
+	out = nullptr;
 	connected = false;
 }
 
@@ -156,7 +156,7 @@ void Connection::forceConnected()
 
 bool Connection::ping()
 {
-	//LOG_TRACE(log, "Ping (" << getServerAddress() << ")");
+	LOG_TRACE(log, "Ping (" << getServerAddress() << ")");
 	
 	try
 	{
@@ -226,10 +226,10 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 
 	writeStringBinary(query, *out);
 
-	maybe_compressed_in = NULL;
-	maybe_compressed_out = NULL;
-	block_in = NULL;
-	block_out = NULL;
+	maybe_compressed_in = nullptr;
+	maybe_compressed_out = nullptr;
+	block_in = nullptr;
+	block_out = nullptr;
 
 	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)

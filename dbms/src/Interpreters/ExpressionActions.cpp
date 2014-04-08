@@ -127,7 +127,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
 			if (!col.column->isConst())
 			{
-				col.column = NULL;
+				col.column = nullptr;
 			}
 		}
 		else
@@ -144,7 +144,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			if (!array_type)
 				throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 			current.type = array_type->getNestedType();
-			current.column = NULL;
+			current.column = nullptr;
 		}
 	}
 	else if (type == ADD_COLUMN)

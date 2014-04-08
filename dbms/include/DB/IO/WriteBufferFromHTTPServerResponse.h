@@ -24,7 +24,7 @@ class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer
 {
 private:
 	Poco::Net::HTTPServerResponse & response;
-	std::ostream * ostr;
+	std::ostream * ostr = nullptr;
 
 	void nextImpl()
 	{
@@ -43,7 +43,7 @@ private:
 
 public:
 	WriteBufferFromHTTPServerResponse(Poco::Net::HTTPServerResponse & response_, size_t size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(size), response(response_), ostr(NULL) {}
+		: BufferWithOwnMemory<WriteBuffer>(size), response(response_) {}
 
 	/** Если данные ещё не были отправлены - отправить хотя бы HTTP заголовки.
 	  * Используйте эту функцию после того, как данные, возможно, были отправлены,

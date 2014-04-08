@@ -69,7 +69,7 @@ int main(int argc, char ** argv)
 
 			block.insert(column2);
 
-			SharedPtr<IBlockOutputStream> out = table->write(NULL);
+			SharedPtr<IBlockOutputStream> out = table->write(nullptr);
 			out->write(block);
 		}
 	

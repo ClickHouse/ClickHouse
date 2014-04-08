@@ -144,7 +144,7 @@ private:
 				--ptr->refcount;
 				if (!ptr->refcount)
 					delete ptr;
-				ptr = NULL;
+				ptr = nullptr;
 			}
 		}
 		
@@ -168,7 +168,7 @@ private:
 					else
 						ptr->output_blocks->push_back(ptr);
 				}
-				ptr = NULL;
+				ptr = nullptr;
 			}
 		}
 	};

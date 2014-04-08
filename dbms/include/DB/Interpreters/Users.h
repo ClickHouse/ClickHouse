@@ -111,7 +111,7 @@ public:
 		Poco::Net::IPAddress addr_v6 = toIPv6(addr);
 
 		/// Резолвим вручную, потому что в Poco не используется флаг AI_ALL, а он важен.
-		addrinfo * ai = NULL;
+		addrinfo * ai = nullptr;
 
 		addrinfo hints;
 		memset(&hints, 0, sizeof(hints));
@@ -124,7 +124,7 @@ public:
 
 		try
 		{
-			for (; ai != NULL; ai = ai->ai_next)
+			for (; ai != nullptr; ai = ai->ai_next)
 			{
 				if (ai->ai_addrlen && ai->ai_addr)
 				{
