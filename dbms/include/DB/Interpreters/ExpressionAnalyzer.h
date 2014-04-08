@@ -102,7 +102,7 @@ public:
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
 
-	/// ordered_set нужен если в In используется Primary Key
+	/// ordered_set нужен если в In используется индекс
 	void makeExplicitSets(bool create_ordered_set);
 private:
 	typedef std::set<String> NamesSet;

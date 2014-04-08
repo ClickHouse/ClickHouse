@@ -120,7 +120,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 			res.insert(key);
 
 			if(create_ordered_set)
-				ordered_set->push_back(column[i]);
+				ordered_set_elements->push_back(column[i]);
 		}
 	}
 	else if (type == KEY_STRING)
@@ -147,7 +147,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 					it->data = string_pool.insert(ref.data, ref.size);
 
 				if(create_ordered_set)
-					ordered_set->push_back(std::string(ref.data, ref.size));
+					ordered_set_elements->push_back(std::string(ref.data, ref.size));
 			}
 		}
 		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -169,7 +169,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 					it->data = string_pool.insert(ref.data, ref.size);
 
 				if(create_ordered_set)
-					ordered_set->push_back(std::string(ref.data, ref.size));
+					ordered_set_elements->push_back(std::string(ref.data, ref.size));
 			}
 		}
 		else
@@ -256,12 +256,12 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 	}
 
 	if (create_ordered_set)
-		ordered_set = OrderedSetPtr(new std::vector<Field>());
+		ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
 
 	insertFromBlock(block, create_ordered_set);
 
 	if (create_ordered_set)
-		std::sort(ordered_set->begin(), ordered_set->end());
+		std::sort(ordered_set_elements->begin(), ordered_set_elements->end());
 }
 
 
@@ -544,10 +544,10 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 
 BoolMask Set::mayBeTrueInRange(const Range & range)
 {
-	if (!ordered_set)
+	if (!ordered_set_elements)
 		throw DB::Exception("Ordered set in not created.");
 	
-	if (ordered_set->empty())
+	if (ordered_set_elements->empty())
 		return BoolMask(false, true);
 
 	const Field & left = range.left;
@@ -559,7 +559,7 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 	/// Если во всем диапазоне одинаковый ключ и он есть в Set, то выбираем блок для in и не выбираем для notIn
 	if (range.left_bounded && range.right_bounded && range.right_included && range.left_included && left == right)
 	{
-		if (std::find(ordered_set->begin(), ordered_set->end(), left) != ordered_set->end())
+		if (std::find(ordered_set_elements->begin(), ordered_set_elements->end(), left) != ordered_set_elements->end())
 		{
 			can_be_false = false;
 			can_be_true = true;
@@ -572,23 +572,23 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 	}
 	else
 	{
-		auto left_it = range.left_bounded ? std::lower_bound(ordered_set->begin(), ordered_set->end(), left) : ordered_set->begin();
-		if (range.left_bounded && !range.left_included && left_it != ordered_set->end() && *left_it == left)
+		auto left_it = range.left_bounded ? std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left) : ordered_set_elements->begin();
+		if (range.left_bounded && !range.left_included && left_it != ordered_set_elements->end() && *left_it == left)
 			++left_it;
 
 		/// если весь диапазон, правее in
-		if (left_it == ordered_set->end())
+		if (left_it == ordered_set_elements->end())
 		{
 			can_be_true = false;
 		}
 		else
 		{
-			auto right_it = range.right_bounded ? std::upper_bound(ordered_set->begin(), ordered_set->end(), right) : ordered_set->end();
-			if (range.right_bounded && !range.right_included && right_it != ordered_set->begin() && *(right_it--) == right)
+			auto right_it = range.right_bounded ? std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right) : ordered_set_elements->end();
+			if (range.right_bounded && !range.right_included && right_it != ordered_set_elements->begin() && *(right_it--) == right)
 				--right_it;
 
 			/// весь диапазон, левее in
-			if (right_it == ordered_set->begin())
+			if (right_it == ordered_set_elements->begin())
 			{
 				can_be_true = false;
 			}
