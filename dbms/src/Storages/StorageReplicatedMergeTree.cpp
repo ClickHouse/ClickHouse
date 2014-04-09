@@ -225,7 +225,7 @@ void StorageReplicatedMergeTree::checkParts()
 	Strings expected_parts_vec = zookeeper.getChildren(replica_path + "/parts");
 	NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
-	MergeTreeData::DataParts parts = data.getDataParts();
+	MergeTreeData::DataParts parts = data.getAllDataParts();
 
 	MergeTreeData::DataParts unexpected_parts;
 	for (const auto & part : parts)
@@ -249,6 +249,7 @@ void StorageReplicatedMergeTree::checkParts()
 			throw Exception("Not found " + toString(expected_parts.size())
 				+ " parts (including " + missing_name + ") in table " + data.getTableName(),
 				ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+		LOG_ERROR(log, "Ignoring missing local part " << missing_name << " because part " << containing->name << " exists");
 		if (unexpected_parts.count(containing))
 		{
 			parts_to_add.push_back(containing);
@@ -261,7 +262,7 @@ void StorageReplicatedMergeTree::checkParts()
 		expected_parts.size() > 20)
 	{
 		throw Exception("The local set of parts of table " + data.getTableName() + " doesn't look like the set of parts in ZooKeeper."
-			"There are " + toString(unexpected_parts.size()) + " unexpected parts, "
+			" There are " + toString(unexpected_parts.size()) + " unexpected parts, "
 			+ toString(parts_to_add.size()) + " unexpectedly merged parts, "
 			+ toString(expected_parts.size()) + " unexpectedly obsolete parts",
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
@@ -270,6 +271,7 @@ void StorageReplicatedMergeTree::checkParts()
 	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
 	for (MergeTreeData::DataPartPtr part : parts_to_add)
 	{
+		LOG_ERROR(log, "Adding unexpected local part to ZooKeeper: " << part->name);
 		zkutil::Ops ops;
 		checkPartAndAddToZooKeeper(part, ops);
 		zookeeper.multi(ops);
