@@ -99,9 +99,9 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		/// Удаляем уже нененужные параметры из хранилища, чтобы впоследствии не перепутать их с натройками контекста и параметрами запроса.
 		for (const auto & it : handler.names)
 		{
-			params.erase("format" + it);
-			params.erase("types" + it);
-			params.erase("structure" + it);
+			params.erase(it + "_format");
+			params.erase(it + "_types");
+			params.erase(it + "_structure");
 		}
 	}
 	else

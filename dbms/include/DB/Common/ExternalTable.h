@@ -200,14 +200,14 @@ public:
 
 		/// Получаем параметры
 		name = content.get("name", "_data");
-		format = params.get("format" + name, "TabSeparated");
+		format = params.get(name + "_format", "TabSeparated");
 
-		if (params.has("structure" + name))
-			parseStructureFromStructureField(params.get("structure" + name));
-		else if (params.has("types" + name))
-			parseStructureFromTypesField(params.get("types" + name));
+		if (params.has(name + "_structure"))
+			parseStructureFromStructureField(params.get(name + "_structure"));
+		else if (params.has(name + "_types"))
+			parseStructureFromTypesField(params.get(name + "_types"));
 		else
-			throw Exception("Neither structure nor types have not been provided for external table " + name + ". Use fields structure" + name + " or types" + name + " to do so.", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception("Neither structure nor types have not been provided for external table " + name + ". Use fields " + name + "_structure or " + name + "_types to do so.", ErrorCodes::BAD_ARGUMENTS);
 
 		ExternalTableData data = getData(context);
 
