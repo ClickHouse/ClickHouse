@@ -500,7 +500,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 void ExpressionAnalyzer::makeExplicitSets(bool create_ordered_set)
 {
-	if (storage && ast)
+	if (storage && ast && dynamic_cast<StorageMergeTree *>(storage.get()))
 		makeExplicitSetsRecursively(ast, storage->getSampleBlock(), create_ordered_set);
 }
 
@@ -516,7 +516,18 @@ void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block 
 		ASTPtr & arg = args.children[1];
 
 		if (!dynamic_cast<ASTSet *>(&*arg) && !dynamic_cast<ASTSubquery *>(&*arg))
-			makeExplicitSet(func, sample_block, create_ordered_set);
+		{
+			try
+			{
+				makeExplicitSet(func, sample_block, create_ordered_set);
+			}
+			catch (const DB::Exception & e)
+			{
+				/// в sample_block нет колонок, которые добаляет getActions
+				if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
+					throw;
+			}
+		}
 	}
 }
 
