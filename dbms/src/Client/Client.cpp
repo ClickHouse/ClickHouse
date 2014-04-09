@@ -871,6 +871,7 @@ public:
 			("multiquery,n",													"multiquery")
 		;
 
+
 		/// Перечисляем опции командной строки относящиеся к внешним таблицам
 		boost::program_options::options_description external_description("Main options");
 		external_description.add_options()
@@ -881,24 +882,38 @@ public:
 			("types", 		boost::program_options::value<std::vector<std::string>> ()->multitoken(), "types")
 		;
 
-		std::vector<int> positions;
-
-		positions.push_back(0);
-		for (int i = 1; i < argc; ++i)
-			if (strcmp(argv[i], "--external") == 0)
-				positions.push_back(i);
-		positions.push_back(argc);
-
 		/// Парсим основные опции командной строки
 		boost::program_options::variables_map options;
-		boost::program_options::store(boost::program_options::parse_command_line(positions[1] - positions[0], argv, main_description), options);
+
+		boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(argc, argv).options(main_description).allow_unregistered().run();
+
+		boost::program_options::store(parsed, options);
+
+		std::vector<std::string> to_pass_further = boost::program_options::collect_unrecognized(parsed.options, boost::program_options::include_positional);
+
+		char newargc = to_pass_further.size() + 1;
+		char *new_argv[newargc];
+		for (size_t i = 0; i < to_pass_further.size(); ++i)
+		{
+			new_argv[i+1] = new char[to_pass_further[i].size() + 1];
+			std::strcpy(new_argv[i+1], to_pass_further[i].c_str());
+		}
+
+		std::vector<int> positions;
+		positions.push_back(0);
+		for (int i = 1; i < newargc; ++i)
+			if (strcmp(new_argv[i], "--external") == 0)
+				positions.push_back(i);
+		positions.push_back(newargc);
+
+		size_t cnt = positions.size();
 
 		size_t stdin_count = 0;
-		for (size_t i = 1; i + 1 < positions.size(); ++i)
+		for (size_t i = 1; i < cnt-1; ++i)
 		{
 			boost::program_options::variables_map external_options;
 			boost::program_options::store(boost::program_options::parse_command_line(
-				positions[i+1] - positions[i], &argv[positions[i]], external_description), external_options);
+				positions[i+1] - positions[i], &new_argv[positions[i]], external_description), external_options);
 			try
 			{
 				external_tables.push_back(ExternalTable(external_options));
