@@ -97,7 +97,7 @@ struct MergeTreeSettings
 	/// (Чтобы большие запросы не вымывали кэш.)
 	size_t max_rows_to_use_cache = 1024 * 1024;
 
-	/// Через сколько секунд удалять old_куски.
+	/// Через сколько секунд удалять ненужные куски.
 	time_t old_parts_lifetime = 5 * 60;
 };
 
@@ -153,7 +153,7 @@ public:
 			}
 		};
 
- 		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0) {}
+ 		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0), remove_time(0) {}
 
  		MergeTreeData & storage;
 		DayNum_t left_date;
@@ -167,6 +167,7 @@ public:
 		size_t size;	/// в количестве засечек.
 		size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано
 		time_t modification_time;
+		mutable time_t remove_time; /// Когда кусок убрали из рабочего набора.
 
 		DayNum_t left_month;
 		DayNum_t right_month;
@@ -193,7 +194,7 @@ public:
 			return res;
 		}
 
-		void remove()
+		void remove() const
 		{
 			String from = storage.full_path + name + "/";
 			String to = storage.full_path + "tmp2_" + name + "/";
@@ -343,8 +344,9 @@ public:
 	DataParts getDataParts();
 
 	/** Возвращает кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
+	  * Если including_inactive, просматриваются также неактивные куски (all_data_parts).
 	  */
-	DataPartPtr getContainingPart(const String & part_name);
+	DataPartPtr getContainingPart(const String & part_name, bool including_inactive = false);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
@@ -367,9 +369,9 @@ public:
 	  */
 	void removePart(DataPartPtr part);
 
-	/** Удалить неактуальные куски.
+	/** Удалить неактуальные куски. Возвращает имена удаленных кусков.
 	  */
-	void clearOldParts();
+	Strings clearOldParts();
 
 	/** После вызова dropAllData больше ничего вызывать нельзя.
 	  * Удаляет директорию с данными и сбрасывает кеши разжатых блоков и засечек.
@@ -435,10 +437,6 @@ private:
 
 	/// Определить, не битые ли данные в директории. Проверяет индекс и засечеки, но не сами данные.
 	bool isBrokenPart(const String & path);
-
-	/// Найти самые большие old_куски, из которых получен этот кусок.
-	/// Переименовать их, убрав префикс old_ и вернуть их имена.
-	Strings tryRestorePart(const String & path, const String & file_name, Strings & old_parts);
 
 	void createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column);
 };

@@ -315,6 +315,24 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 		zkutil::CreateMode::Persistent));
 }
 
+void StorageReplicatedMergeTree::clearOldParts()
+{
+	Strings parts = data.clearOldParts();
+
+	for (const String & name : parts)
+	{
+		zkutil::Ops ops;
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/checksums", -1));
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
+		zkutil::ReturnCode::type code = zookeeper.tryMulti(ops);
+		if (code != zkutil::ReturnCode::Ok)
+			LOG_WARNING(log, "Couldn't remove part " << name << " from ZooKeeper: " << zkutil::ReturnCode::toString(code));
+	}
+
+	if (!parts.empty())
+		LOG_DEBUG(log, "Removed " << parts.size() << " old parts");
+}
+
 void StorageReplicatedMergeTree::loadQueue()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
@@ -510,16 +528,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
 
-			for (const auto & part : parts)
-			{
-				ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
-				ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
-			}
-
 			zookeeper.multi(ops);
-
-			parts.clear();
-			data.clearOldParts();
 
 			ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 		}
@@ -608,6 +617,8 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		try
 		{
 			pullLogsToQueue();
+
+			clearOldParts();
 		}
 		catch (...)
 		{
@@ -762,8 +773,6 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				auto can_merge = std::bind(
 					&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 
-				LOG_TRACE(log, "Selecting parts to merge" << (has_big_merge ? " (only small)" : ""));
-
 				if (merger.selectPartsToMerge(parts, merged_name, 0, false, false, has_big_merge, can_merge) ||
 					merger.selectPartsToMerge(parts, merged_name, 0,  true, false, has_big_merge, can_merge))
 				{
@@ -885,16 +894,13 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	zkutil::Ops ops;
 	checkPartAndAddToZooKeeper(part, ops);
 
+	zookeeper.multi(ops);
+
 	for (const auto & removed_part : removed_parts)
 	{
 		LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
 		ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
-
-		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + removed_part->name + "/checksums", -1));
-		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + removed_part->name, -1));
 	}
-
-	zookeeper.multi(ops);
 
 	ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 

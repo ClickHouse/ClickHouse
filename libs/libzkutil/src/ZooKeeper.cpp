@@ -274,43 +274,20 @@ OpResultsPtr ZooKeeper::multi(const Ops & ops)
 	return res;
 }
 
-OpResultsPtr ZooKeeper::tryMulti(const Ops & ops)
+ReturnCode::type ZooKeeper::tryMulti(const Ops & ops, OpResultsPtr * out_results)
 {
-	OpResultsPtr res = std::make_shared<OpResults>();
-	CHECKED(impl.multi(ops, *res));
-	for (size_t i = 0; i < res->size(); ++i)
-	{
-		ReturnCode::type code = (*res)[i].getReturnCode();
-
-		if (code != ReturnCode::Ok)
-		{
-			bool ok = false;
-			switch (ops[i].getType())
-			{
-				case zk::OpCode::Create:
-					ok |= code == ReturnCode::NoNode;
-					ok |= code == ReturnCode::NodeExists;
-					ok |= code == ReturnCode::NoChildrenForEphemerals;
-					break;
-				case zk::OpCode::Remove:
-					ok |= code == ReturnCode::NoNode;
-					ok |= code == ReturnCode::BadVersion;
-					ok |= code == ReturnCode::NotEmpty;
-					break;
-				case zk::OpCode::SetData:
-				case zk::OpCode::Check:
-					ok |= code == ReturnCode::NoNode;
-					ok |= code == ReturnCode::BadVersion;
-					break;
-				default:
-					throw KeeperException("Unexpected op type");
-			}
-
-			if (!ok)
-				throw KeeperException(code);
-		}
-	}
-	return res;
+	OpResultsPtr results = std::make_shared<OpResults>();
+	ReturnCode::type code = impl.multi(ops, *results);
+	if (out_results)
+		*out_results = results;
+	if (code != ReturnCode::Ok &&
+		code != ReturnCode::NoNode &&
+		code != ReturnCode::NodeExists &&
+		code != ReturnCode::NoChildrenForEphemerals &&
+		code != ReturnCode::BadVersion &&
+		code != ReturnCode::NotEmpty)
+			throw KeeperException(code);
+	return code;
 }
 
 void ZooKeeper::removeRecursive(const std::string & path)

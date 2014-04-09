@@ -57,7 +57,7 @@ private:
 
 	MergeTreeData::DataPartPtr findPart(const String & name)
 	{
-		MergeTreeData::DataPartPtr part = data.getContainingPart(name);
+		MergeTreeData::DataPartPtr part = data.getContainingPart(name, true);
 		if (part && part->name == name)
 			return part;
 		throw Exception("No part " + name + " in table");

@@ -26,6 +26,8 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & name_, N
 	merge_threads = new boost::threadpool::pool(data.settings.merging_threads);
 
 	increment.fixIfBroken(data.getMaxDataPartIndex());
+
+	data.clearOldParts();
 }
 
 StoragePtr StorageMergeTree::create(
@@ -137,6 +139,7 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 			auto structure_lock = lockStructure(false);
 
 			/// Удаляем старые куски. На случай, если в слиянии что-то сломано, и из следующего блока вылетит исключение.
+			LOG_TRACE(log, "Clearing old parts");
 			data.clearOldParts();
 
 			size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
@@ -183,6 +186,7 @@ void StorageMergeTree::mergeThread(bool while_can, bool aggressive)
 				break;
 
 			/// Удаляем куски, которые мы только что сливали.
+			LOG_TRACE(log, "Clearing old parts");
 			data.clearOldParts();
 
 			if (!while_can)
