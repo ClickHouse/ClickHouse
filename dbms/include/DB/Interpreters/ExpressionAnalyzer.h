@@ -102,8 +102,9 @@ public:
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
 
+	/// Создаем какие сможем Set из секции In для использования индекса по ним
 	/// ordered_set нужен если в In используется индекс
-	void makeExplicitSets(bool create_ordered_set);
+	void makeExplicitSetsForIndex(bool create_ordered_set);
 private:
 	typedef std::set<String> NamesSet;
 	

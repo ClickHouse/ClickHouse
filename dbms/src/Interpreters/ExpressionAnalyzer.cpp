@@ -24,6 +24,7 @@
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageMemory.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 
 #include <DB/DataStreams/copyData.h>
 
@@ -498,9 +499,12 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	finished_asts[initial_ast] = ast;
 }
 
-void ExpressionAnalyzer::makeExplicitSets(bool create_ordered_set)
+void ExpressionAnalyzer::makeExplicitSetsForIndex(bool create_ordered_set)
 {
-	if (storage && ast && dynamic_cast<StorageMergeTree *>(storage.get()))
+	/// Для Remote, Distributed таблиц Set создавать не надо. Так как для передачи его все равно придется приобразовывать в текст
+	/// в formatAST, а использоваться он не будет
+	if (storage && ast &&
+		(dynamic_cast<StorageMergeTree *>(storage.get()) || dynamic_cast<StorageReplicatedMergeTree *>(storage.get())))
 		makeExplicitSetsRecursively(ast, storage->getSampleBlock(), create_ordered_set);
 }
 
