@@ -162,13 +162,13 @@ void TCPHandler::runImpl()
 			  */
 			LOG_ERROR(log, "Poco::Net::NetException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
-			exception = new Exception(e.displayText(), e.code());
+			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const Poco::Exception & e)
 		{
 			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
-			exception = new Exception(e.displayText(), e.code());
+			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const std::exception & e)
 		{
