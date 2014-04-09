@@ -519,7 +519,7 @@ void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block 
 		IAST & args = *func->arguments;
 		ASTPtr & arg = args.children[1];
 
-		if (!dynamic_cast<ASTSet *>(&*arg) && !dynamic_cast<ASTSubquery *>(&*arg))
+		if (!dynamic_cast<ASTSet *>(&*arg) && !dynamic_cast<ASTSubquery *>(&*arg) && !dynamic_cast<ASTIdentifier *>(&*arg))
 		{
 			try
 			{
