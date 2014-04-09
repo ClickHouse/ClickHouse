@@ -160,7 +160,8 @@ private:
 				std::cerr << "Stack trace:" << std::endl
 					<< e.getStackTrace().toString();
 			
-			return e.code();
+			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
+			return e.code() ? e.code() : -1;
 		}
 		catch (const Poco::Exception & e)
 		{
