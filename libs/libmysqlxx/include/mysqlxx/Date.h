@@ -163,6 +163,14 @@ public:
 	{
 		return !(*this == other);
 	}
+
+	std::string toString()
+	{
+		std::stringstream ss;
+		ss << year() << '-' << (month() / 10) << (month() % 10)
+			<< '-' << (day() / 10) << (day() % 10);
+		return ss.str();
+	}
 };
 
 inline std::ostream & operator<< (std::ostream & ostr, const Date & date)
