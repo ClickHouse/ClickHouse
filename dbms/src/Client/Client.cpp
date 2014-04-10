@@ -84,6 +84,7 @@ private:
 	size_t insert_format_max_block_size; /// Максимальный размер блока при чтении данных INSERT-а.
 
 	Context context;
+	Settings settings;
 
 	/// Чтение из stdin для batch режима
 	ReadBufferFromFileDescriptor std_in;
@@ -492,7 +493,7 @@ private:
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete, nullptr, true);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, &settings, true);
 		sendExternalTables();
 		receiveResult();
 	}
@@ -510,7 +511,7 @@ private:
 		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, nullptr, true);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &settings, true);
 		sendExternalTables();
 
 		/// Получим структуру таблицы
@@ -858,20 +859,25 @@ public:
 		/// Останавливаем внутреннюю обработку командной строки
 		stopOptionsProcessing();
 
-		/// Перечисляем основные опции командной строки относящиеся к функциональности клиента
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+
+		/// Перечисляем основные опции командной строки относящиеся к функциональности клиента,
+		/// а так же все параметры из Settings
 		boost::program_options::options_description main_description("Main options");
 		main_description.add_options()
-			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file")
-			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "host")
-			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "port")
+			("help", "produce help message")
+			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file path")
+			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "server host")
+			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<int> (), 			"user")
 			("password,p", 		boost::program_options::value<int> (), 			"password")
 			("query,q", 		boost::program_options::value<std::string> (), 	"query")
 			("database,d", 		boost::program_options::value<std::string> (), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
+			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 		;
-
+#undef DECLARE_SETTING
 
 		/// Перечисляем опции командной строки относящиеся к внешним таблицам
 		boost::program_options::options_description external_description("Main options");
@@ -884,14 +890,19 @@ public:
 		;
 
 		/// Парсим основные опции командной строки
-		boost::program_options::variables_map options;
-
 		boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(argc, argv).options(main_description).allow_unregistered().run();
-
+		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
 
+		if (options.count("help")) {
+			std::cout << main_description << "\n";
+			std::cout << "External tables ";
+			std::cout << external_description << "\n";
+			exit(0);
+		}
 		std::vector<std::string> to_pass_further = boost::program_options::collect_unrecognized(parsed.options, boost::program_options::include_positional);
 
+		/// Опции командной строки, составленные только из нераспаршеых аргументов.
 		char newargc = to_pass_further.size() + 1;
 		char *new_argv[newargc];
 		for (size_t i = 0; i < to_pass_further.size(); ++i)
@@ -900,6 +911,7 @@ public:
 			std::strcpy(new_argv[i+1], to_pass_further[i].c_str());
 		}
 
+		/// Разбиваем на интервалы внешних таблиц.
 		std::vector<int> positions;
 		positions.push_back(0);
 		for (int i = 1; i < newargc; ++i)
@@ -931,6 +943,13 @@ public:
 				exit(e.code());
 			}
 		}
+
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+		if (options.count(#NAME)) \
+			settings.set(#NAME, options[#NAME].as<std::string>());
+
+		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
 
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
