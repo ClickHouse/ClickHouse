@@ -860,6 +860,7 @@ public:
 		stopOptionsProcessing();
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
 		/// Перечисляем основные опции командной строки относящиеся к функциональности клиента,
 		/// а так же все параметры из Settings
@@ -876,11 +877,13 @@ public:
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
+			APPLY_FOR_LIMITS(DECLARE_LIMIT)
 		;
 #undef DECLARE_SETTING
+#undef DECLARE_LIMIT
 
 		/// Перечисляем опции командной строки относящиеся к внешним таблицам
-		boost::program_options::options_description external_description("Main options");
+		boost::program_options::options_description external_description("External tables options");
 		external_description.add_options()
 			("file", 		boost::program_options::value<std::string> (), 	"data file or - for stdin")
 			("name", 		boost::program_options::value<std::string> ()->default_value("_data"), "name of the table")
@@ -896,7 +899,6 @@ public:
 
 		if (options.count("help")) {
 			std::cout << main_description << "\n";
-			std::cout << "External tables ";
 			std::cout << external_description << "\n";
 			exit(0);
 		}
@@ -947,9 +949,14 @@ public:
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (options.count(#NAME)) \
 			settings.set(#NAME, options[#NAME].as<std::string>());
-
 		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
+
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+		if (options.count(#NAME)) \
+			settings.limits.trySet(#NAME, options[#NAME].as<std::string>());
+		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
+#undef EXTRACT_LIMIT
 
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
