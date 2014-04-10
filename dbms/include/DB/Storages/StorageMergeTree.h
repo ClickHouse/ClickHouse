@@ -77,6 +77,8 @@ public:
 	void prepareAlterModify(const ASTAlterQuery::Parameters & params);
 	void commitAlterModify(const ASTAlterQuery::Parameters & params);
 
+	bool supportIndexforIn() { return true; }
+
 private:
 	String path;
 	String name;

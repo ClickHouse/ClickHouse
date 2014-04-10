@@ -260,6 +260,9 @@ public:
 
 	bool is_dropped;
 
+	/// Поддерживается ли индекс в секции In
+	virtual bool supportIndexforIn() { return false; };
+
 protected:
 	IStorage() : is_dropped(false) {}
 

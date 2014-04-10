@@ -64,6 +64,8 @@ public:
 	  */
 	void drop() override;
 
+	bool supportIndexforIn() { return true; }
+	
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 

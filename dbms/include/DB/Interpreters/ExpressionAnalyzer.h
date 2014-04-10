@@ -103,8 +103,7 @@ public:
 	Tables external_tables;
 
 	/// Создаем какие сможем Set из секции In для использования индекса по ним
-	/// ordered_set нужен если в In используется индекс
-	void makeExplicitSetsForIndex(bool create_ordered_set);
+	void makeSetsForIndex();
 private:
 	typedef std::set<String> NamesSet;
 	
@@ -319,7 +318,7 @@ private:
 	void assertArrayJoin();
 
 	void makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set);
-	void makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block, bool create_ordered_set);
+	void makeSetsForIndexRecursively(ASTPtr & node, const Block & sample_block);
 };
 
 }

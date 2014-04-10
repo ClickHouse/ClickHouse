@@ -499,19 +499,16 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	finished_asts[initial_ast] = ast;
 }
 
-void ExpressionAnalyzer::makeExplicitSetsForIndex(bool create_ordered_set)
+void ExpressionAnalyzer::makeSetsForIndex()
 {
-	/// Для Remote, Distributed таблиц Set создавать не надо. Так как для передачи его все равно придется приобразовывать в текст
-	/// в formatAST, а использоваться он не будет
-	if (storage && ast &&
-		(dynamic_cast<StorageMergeTree *>(storage.get()) || dynamic_cast<StorageReplicatedMergeTree *>(storage.get())))
-		makeExplicitSetsRecursively(ast, storage->getSampleBlock(), create_ordered_set);
+	if (storage && ast && storage->supportIndexforIn())
+		makeSetsForIndexRecursively(ast, storage->getSampleBlock());
 }
 
-void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block & sample_block, bool create_ordered_set)
+void ExpressionAnalyzer::makeSetsForIndexRecursively(ASTPtr & node, const Block & sample_block)
 {
 	for (auto & child : node->children)
-		makeExplicitSetsRecursively(child, sample_block, create_ordered_set);
+		makeSetsForIndexRecursively(child, sample_block);
 
 	ASTFunction * func = dynamic_cast<ASTFunction *>(node.get());
 	if (func && func->kind == ASTFunction::FUNCTION && (func->name == "in" || func->name == "notIn"))
@@ -523,7 +520,7 @@ void ExpressionAnalyzer::makeExplicitSetsRecursively(ASTPtr & node, const Block 
 		{
 			try
 			{
-				makeExplicitSet(func, sample_block, create_ordered_set);
+				makeExplicitSet(func, sample_block, true);
 			}
 			catch (const DB::Exception & e)
 			{
