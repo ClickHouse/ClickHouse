@@ -70,7 +70,10 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(AlterQuery)
 	DISPATCH(ShowProcesslistQuery)
 	else
-		throw Exception("Unknown element in AST: " + ast.getID() + " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'",
+		throw Exception("Unknown element in AST: " + ast.getID()
+			+ ((ast.range.first && (ast.range.second > ast.range.first))
+				? " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'"
+				: ""),
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 	
 #undef DISPATCH
