@@ -84,7 +84,6 @@ private:
 	size_t insert_format_max_block_size; /// Максимальный размер блока при чтении данных INSERT-а.
 
 	Context context;
-	Settings settings;
 
 	/// Чтение из stdin для batch режима
 	ReadBufferFromFileDescriptor std_in;
@@ -493,7 +492,7 @@ private:
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete, &settings, true);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, new Settings(context.getSettings()), true);
 		sendExternalTables();
 		receiveResult();
 	}
@@ -511,7 +510,7 @@ private:
 		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &settings, true);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, new Settings(context.getSettings()), true);
 		sendExternalTables();
 
 		/// Получим структуру таблицы
@@ -946,6 +945,8 @@ public:
 			}
 		}
 
+		Settings settings;
+
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (options.count(#NAME)) \
 			settings.set(#NAME, options[#NAME].as<std::string>());
@@ -958,6 +959,7 @@ public:
 		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
 #undef EXTRACT_LIMIT
 
+		context.setSettings(settings);
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
 			config().setString("config-file", options["config-file"].as<std::string>());
