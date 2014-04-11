@@ -100,6 +100,13 @@ struct MergeTreeSettings
 
 	/// Через сколько секунд удалять ненужные куски.
 	time_t old_parts_lifetime = 5 * 60;
+
+	/// Если в таблице хотя бы столько активных кусков, искусственно замедлять вставки в таблицу.
+	size_t parts_to_delay_insert = 150;
+
+	/// Если в таблице parts_to_delay_insert + k кусков, спать insert_delay_step^k миллисекунд перед вставкой каждого блока.
+	/// Таким образом, скорость вставок автоматически замедлится примерно до скорости слияний.
+	double insert_delay_step = 1.1;
 };
 
 class MergeTreeData : public ITableDeclaration
@@ -344,6 +351,7 @@ public:
 	  */
 	DataParts getDataParts();
 	DataParts getAllDataParts();
+	size_t getDataPartsCount();
 
 	/** Возвращает кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
 	  * Если including_inactive, просматриваются также неактивные куски (all_data_parts).

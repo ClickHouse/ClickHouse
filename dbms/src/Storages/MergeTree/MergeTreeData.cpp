@@ -755,6 +755,13 @@ MergeTreeData::DataParts MergeTreeData::getAllDataParts()
 	return all_data_parts;
 }
 
+size_t MergeTreeData::getDataPartsCount()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	return data_parts.size();
+}
+
 MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_name, bool including_inactive)
 {
 	MutableDataPartPtr tmp_part(new DataPart(*this));
