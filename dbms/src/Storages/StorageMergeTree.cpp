@@ -86,8 +86,7 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
 
 void StorageMergeTree::drop()
 {
-	merger.cancelAll();
-	merge_pool.removeTask(merge_task_handle);
+	shutdown();
 	data.dropAllData();
 }
 
