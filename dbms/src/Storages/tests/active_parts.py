@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# coding=UTF-8
 
 # Выводит список активных кусков - кусков, не покрытых никаким другим куском.
 # Использование: `ls /opt/clickhouse/data/merge/visits | active_parts.py`
@@ -29,4 +30,3 @@ for m in parts:
                                 break
                 else:
                         print s1
-

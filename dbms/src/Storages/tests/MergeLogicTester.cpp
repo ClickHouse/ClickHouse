@@ -94,12 +94,18 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 		if ((*it)->currently_merging && (*it)->size * index_granularity > 25 * 1024 * 1024)
 			cur_max_rows_to_merge_parts = settings.max_rows_to_merge_parts_second;
 
+	/// Найдем суммарный размер еще не пройденных кусков (то есть всех).
+	size_t size_of_remaining_parts = 0;
+	for (const auto & part : data_parts)
+		size_of_remaining_parts += part->size;
+
 	/// Левый конец отрезка.
 	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
 	{
 		const DataPtr & first_part = *it;
 
 		max_count_from_left = std::max(0, max_count_from_left - 1);
+		size_of_remaining_parts -= first_part->size;
 
 		/// Кусок не занят и достаточно мал.
 		if (first_part->currently_merging ||
@@ -143,16 +149,12 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 			if (cur_max * index_granularity * 150 > 1024*1024*1024 && cur_age_in_sec < 6*3600)
 				min_len = 3;
 
-			/// Равен 0.5 если возраст порядка 0, равен 5 если возраст около месяца.
-			double time_ratio_modifier = 0.5 + 9 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
+			/// Размер кусков после текущих, делить на максимальный из текущих кусков. Чем меньше, тем новее текущие куски.
+			size_t oldness_coef = (size_of_remaining_parts + first_part->size - cur_sum + 0.0) / cur_max;
 
-			/// Двоичный логарифм суммарного размера кусочков
-			double log_cur_sum = std::log(cur_sum) / std::log(2);
-			/// Равен ~2 если куски маленькие, уменьшается до 0.5 с увеличением суммарного размера до 2^25.
-			double size_ratio_modifier = std::max(0.5, 2 - 3 * (log_cur_sum) / (25 + log_cur_sum));
-
-			/// Объединяем все в одну константу, но не меньшую единицы
-			double ratio = std::max(1., time_ratio_modifier * size_ratio_modifier * 5);
+			/// Эвристика: если после этой группы кусков еще накопилось мало строк, не будем соглашаться на плохо
+			///  сбалансированные слияния, расчитывая, что после будущих вставок данных появятся более привлекательные слияния.
+			double ratio = (oldness_coef + 1) * settings.size_ratio_coefficient_to_merge_parts;
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len &&
