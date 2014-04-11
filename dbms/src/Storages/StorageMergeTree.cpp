@@ -172,7 +172,20 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & context)
 {
 	if (shutdown_called)
 		return false;
-	return merge(false, &context);
+	try
+	{
+		return merge(false, &context);
+	}
+	catch (Exception & e)
+	{
+		if (e.code() == ErrorCodes::ABORTED)
+		{
+			LOG_INFO(log, "Merge cancelled");
+			return false;
+		}
+
+		throw;
+	}
 }
 
 
