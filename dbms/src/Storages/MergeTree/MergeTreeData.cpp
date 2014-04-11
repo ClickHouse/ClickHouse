@@ -319,7 +319,6 @@ Strings MergeTreeData::clearOldParts()
 	/// Если метод уже вызван из другого потока (или если all_data_parts прямо сейчас меняют), то можно ничего не делать.
 	if (!lock.lock(&all_data_parts_mutex))
 	{
-		LOG_TRACE(log, "Already clearing or modifying old parts");
 		return res;
 	}
 

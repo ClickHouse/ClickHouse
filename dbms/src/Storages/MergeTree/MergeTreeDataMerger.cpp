@@ -86,7 +86,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		/// Кусок достаточно мал или слияние "агрессивное".
 		if (first_part->size * data.index_granularity > cur_max_rows_to_merge_parts
 			&& !aggressive)
+		{
 			continue;
+		}
 
 		/// Кусок в одном месяце.
 		if (first_part->left_month != first_part->right_month)
@@ -131,7 +133,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			if (!can_merge(prev_part, last_part) ||
 				last_part->left_month != last_part->right_month ||
 				last_part->left_month != month)
+			{
 				break;
+			}
 
 			/// Кусок достаточно мал или слияние "агрессивное".
 			if (last_part->size * data.index_granularity > cur_max_rows_to_merge_parts
@@ -160,11 +164,11 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			if (cur_max * data.index_granularity * 150 > 1024*1024*1024 && cur_age_in_sec < 6*3600)
 				min_len = 3;
 
-			/// Сколько строк есть в кусках после текущих, делить на максимальный из текущих кусков. Чем меньше, тем новее текущие куски.
-			size_t oldness_coef = (size_of_remaining_parts + first_part->size - cur_total_size + 0.0) / cur_max;
+			/// Размер кусков после текущих, делить на максимальный из текущих кусков. Чем меньше, тем новее текущие куски.
+			size_t oldness_coef = (size_of_remaining_parts + first_part->size - cur_sum + 0.0) / cur_max;
 
 			/// Эвристика: если после этой группы кусков еще накопилось мало строк, не будем соглашаться на плохо
-			///  сбалансированное слияния, расчитывая, что после будущих вставок данных появятся более привлекательные слияния.
+			///  сбалансированные слияния, расчитывая, что после будущих вставок данных появятся более привлекательные слияния.
 			double ratio = (oldness_coef + 1) * data.settings.size_ratio_coefficient_to_merge_parts;
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
@@ -231,7 +235,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		merged_name = MergeTreeData::getPartName(
 			left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
 
-		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name
+			<< (only_small ? " (only small)" : ""));
 	}
 
 	return found;

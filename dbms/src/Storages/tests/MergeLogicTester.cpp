@@ -152,7 +152,7 @@ bool selectPartsToMerge(std::vector<DataPtr> & parts)
 			double size_ratio_modifier = std::max(0.5, 2 - 3 * (log_cur_sum) / (25 + log_cur_sum));
 
 			/// Объединяем все в одну константу, но не меньшую единицы
-			double ratio = std::max(1., time_ratio_modifier * size_ratio_modifier * settings.max_size_ratio_to_merge_parts);
+			double ratio = std::max(1., time_ratio_modifier * size_ratio_modifier * 5);
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len &&

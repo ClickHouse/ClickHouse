@@ -5,7 +5,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
-#include <statdaemons/threadpool.hpp>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 
 namespace DB
 {
@@ -65,8 +65,7 @@ public:
 	  */
 	bool optimize()
 	{
-		merge(1, false, true);
-		return true;
+		return merge(true);
 	}
 
 	void drop() override;
@@ -97,7 +96,8 @@ private:
 
 	volatile bool shutdown_called;
 
-	Poco::SharedPtr<boost::threadpool::pool> merge_threads;
+	static BackgroundProcessingPool merge_pool;
+	BackgroundProcessingPool::TaskHandle merge_task_handle;
 
 	/// Пока существует, помечает части как currently_merging и держит резерв места.
 	/// Вероятно, что части будут помечены заранее.
@@ -151,18 +151,13 @@ private:
 					const String & sign_column_,
 					const MergeTreeSettings & settings_);
 
-	
-
-	/** Определяет, какие куски нужно объединять, и запускает их слияние в отдельном потоке. Если iterations = 0, объединяет, пока это возможно.
-	  * Если aggressive - выбрать куски не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
+	/** Определяет, какие куски нужно объединять, и объединяет их.
+	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
+	  * Возвращает, получилось ли что-нибудь объединить.
 	  */
-	void merge(size_t iterations = 1, bool async = true, bool aggressive = false);
+	bool merge(bool aggressive = false, BackgroundProcessingPool::Context * context = nullptr);
 
-	/// Если while_can, объединяет в цикле, пока можно; иначе выбирает и объединяет только одну пару кусков.
-	void mergeThread(bool while_can, bool aggressive);
-
-	/// Дождаться, пока фоновые потоки закончат слияния.
-	void joinMergeThreads();
+	bool mergeTask(BackgroundProcessingPool::Context & context);
 
 	/// Вызывается во время выбора кусков для слияния.
 	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
