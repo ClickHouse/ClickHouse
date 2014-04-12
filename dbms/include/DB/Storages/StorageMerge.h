@@ -29,6 +29,9 @@ public:
 	std::string getTableName() const { return name; }
 	bool supportsSampling() const { return true; }
 
+	/// Проверка откладывается до метода read. Там проверяется поддержка PREWHERE у использующихся таблиц.
+	bool supportsPrewhere() const { return true; }
+
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 	NameAndTypePair getColumn(const String &column_name) const;
 	bool hasColumn(const String &column_name) const;

@@ -456,10 +456,10 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 	
 	if (query.final && (!storage || !storage->supportsFinal()))
-		throw Exception("Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 	
 	if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
-		throw Exception("Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
 	/** При распределённой обработке запроса, в потоках почти не делается вычислений,
 	  *  а делается ожидание и получение данных с удалённых серверов.

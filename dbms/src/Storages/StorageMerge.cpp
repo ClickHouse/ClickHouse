@@ -72,13 +72,17 @@ BlockInputStreams StorageMerge::read(
 		getSelectedTables(selected_tables);
 	}
 
+	/// Если в запросе используется PREWHERE, надо убедиться, что все таблицы это поддерживают.
+	if (dynamic_cast<const ASTSelectQuery &>(*query).prewhere_expression)
+		for (const auto & table : selected_tables)
+			if (!table->supportsPrewhere())
+				throw Exception("Storage " + table->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
+
 	TableLocks table_locks;
 
 	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
-	for (auto table : selected_tables)
-	{
+	for (auto & table : selected_tables)
 		table_locks.push_back(table->lockStructure(false));
-	}
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
 	BlockInputStreamPtr virtual_columns;
@@ -92,10 +96,10 @@ BlockInputStreams StorageMerge::read(
 	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 
-	for (size_t i = 0; i < selected_tables.size(); ++i)
+	for (size_t i = 0, size = selected_tables.size(); i < size; ++i)
 	{
 		StoragePtr table = selected_tables[i];
-		auto table_lock = table_locks[i];
+		auto & table_lock = table_locks[i];
 
 		if (!all_inclusive && values.find(table->getTableName()) == values.end())
 			continue;
@@ -114,12 +118,10 @@ BlockInputStreams StorageMerge::read(
 			settings,
 			tmp_processed_stage,
 			max_block_size,
-			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
+			size > threads ? 1 : (threads / size));
 
 		for (auto & stream : source_streams)
-		{
 			stream->addTableLock(table_lock);
-		}
 
 		for (auto & virtual_column : virt_column_names)
 		{
