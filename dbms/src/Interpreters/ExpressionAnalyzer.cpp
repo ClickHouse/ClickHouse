@@ -501,7 +501,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 void ExpressionAnalyzer::makeSetsForIndex()
 {
-	if (storage && ast && storage->supportIndexforIn())
+	if (storage && ast && storage->supportsIndexForIn())
 		makeSetsForIndexRecursively(ast, storage->getSampleBlock());
 }
 
