@@ -353,10 +353,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception("Syntax error while parsing query from file " + metadata_path + ": failed at position "
-			+ toString(pos - begin) + ": "
-			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + metadata_path),
 			DB::ErrorCodes::SYNTAX_ERROR);
 
 	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);

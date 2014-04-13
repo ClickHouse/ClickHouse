@@ -534,18 +534,12 @@ private:
 		/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 		if (!parse_res || (pos != end && *pos != ';'))
 		{
-			std::stringstream message;
-
-			message << "Syntax error: failed at position "
-				<< (pos - begin) << ": "
-				<< std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-				<< ", expected " << (parse_res ? "end of query" : expected) << "."
-				<< std::endl << std::endl;
+			std::string message = getSyntaxErrorMessage(parse_res, begin, end, pos, expected);
 
 			if (is_interactive)
-				std::cerr << message.str();
+				std::cerr << message << std::endl << std::endl;
 			else
-				throw Exception(message.str(), ErrorCodes::SYNTAX_ERROR);
+				throw Exception(message, ErrorCodes::SYNTAX_ERROR);
 
 			return nullptr;
 		}

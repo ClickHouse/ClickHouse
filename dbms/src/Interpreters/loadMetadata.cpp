@@ -33,10 +33,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception("Syntax error while executing query from file " + file_name + ": failed at position "
-			+ toString(pos - begin) + ": "
-			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + file_name),
 			DB::ErrorCodes::SYNTAX_ERROR);
 
 	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);
@@ -46,7 +43,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 	InterpreterCreateQuery interpreter(ast, context);
 	interpreter.execute(true);
 }
-	
+
 
 void loadMetadata(Context & context)
 {

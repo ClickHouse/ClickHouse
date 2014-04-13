@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 
+#include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
 #include <DB/Parsers/IAST.h>
 
@@ -29,7 +30,7 @@ public:
 	  * в expected записать, что ожидалось в максимальной позиции,
 	  *  до которой удалось распарсить, если парсинг был неуспешным,
 	  *  или что парсит этот парсер, если парсинг был успешным.
-	  * Везде предполагается, что строка, в которую входит диапазон [begin, end) 0-terminated.
+	  * Строка, в которую входит диапазон [begin, end) может быть не 0-terminated.
 	  */
 	virtual bool parse(Pos & pos, Pos end, ASTPtr & node, const char *& expected) = 0;
 
@@ -64,5 +65,61 @@ public:
 };
 
 typedef std::unique_ptr<IParser> ParserPtr;
+
+
+/** Из позиции в (возможно многострочном) запросе получить номер строки и номер столбца в строке.
+  * Используется в сообщении об ошибках.
+  */
+inline std::pair<size_t, size_t> getLineAndCol(IParser::Pos begin, IParser::Pos pos)
+{
+	size_t line = 0;
+
+	IParser::Pos nl;
+	while (nullptr != (nl = reinterpret_cast<IParser::Pos>(memchr(begin, '\n', pos - begin))))
+	{
+		++line;
+		begin = nl + 1;
+	}
+
+	/// Нумеруются с единицы.
+	return { line + 1, pos - begin + 1 };
+}
+
+
+/** Получить сообщение о синтаксической ошибке.
+  */
+inline std::string getSyntaxErrorMessage(
+	bool parse_res,							/// false, если не удалось распарсить; true, если удалось, но не до конца строки или точки с запятой.
+	IParser::Pos begin,
+	IParser::Pos end,
+	IParser::Pos pos,
+	const char * expected,
+	const std::string & description = "")
+{
+	std::stringstream message;
+
+	message << "Syntax error ";
+
+	if (!description.empty())
+		message << "(" << description << ")";
+
+	message << ": failed at position " << (pos - begin + 1);
+
+	/// Если запрос многострочный.
+	IParser::Pos nl = reinterpret_cast<IParser::Pos>(memchr(begin, '\n', end - begin));
+	if (nullptr != nl && nl + 1 != end)
+	{
+		size_t line = 0;
+		size_t col = 0;
+		std::tie(line, col) = getLineAndCol(begin, pos);
+
+		message << " (line " << line << ", col " << col << ")";
+	}
+
+	message << ": " << std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
+		<< ", expected " << (parse_res ? "end of query" : expected) << ".";
+
+	return message.str();
+}
 
 }

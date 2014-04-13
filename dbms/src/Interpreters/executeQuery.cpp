@@ -68,10 +68,7 @@ void executeQuery(
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception("Syntax error: failed at position "
-			+ toString(pos - begin) + ": "
-			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected),
 			ErrorCodes::SYNTAX_ERROR);
 
 	/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
@@ -141,10 +138,7 @@ BlockIO executeQuery(
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception("Syntax error: failed at position "
-			+ toString(pos - begin) + ": "
-			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected),
 			ErrorCodes::SYNTAX_ERROR);
 
 	/// Проверка ограничений.
