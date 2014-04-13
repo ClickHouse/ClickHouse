@@ -47,8 +47,6 @@ public:
 	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 	
-	void getSelectedTables(StorageVector & selected_tables);
-
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
 	void alter(const ASTAlterQuery::Parameters & params);
@@ -70,6 +68,8 @@ private:
 		const String & source_database_,
 		const String & table_name_regexp_,
 		const Context & context_);
+
+	void getSelectedTables(StorageVector & selected_tables) const;
 };
 
 }

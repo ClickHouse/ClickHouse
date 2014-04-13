@@ -61,16 +61,10 @@ BlockInputStreams StorageMerge::read(
 	processed_stage = QueryProcessingStage::Complete;
 	QueryProcessingStage::Enum tmp_processed_stage = QueryProcessingStage::Complete;
 
-	/// Список таблиц могут менять в другом потоке.
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-		context.assertDatabaseExists(source_database);
-		
-		/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
-		  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
-		  */
-		getSelectedTables(selected_tables);
-	}
+	/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
+	  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
+	  */
+	getSelectedTables(selected_tables);
 
 	/// Если в запросе используется PREWHERE, надо убедиться, что все таблицы это поддерживают.
 	if (dynamic_cast<const ASTSelectQuery &>(*query).prewhere_expression)
@@ -159,12 +153,16 @@ Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & s
 	return res;
 }
 
-void StorageMerge::getSelectedTables(StorageVector & selected_tables)
+void StorageMerge::getSelectedTables(StorageVector & selected_tables) const
 {
+	/// Список таблиц могут менять в другом потоке.
+	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	context.assertDatabaseExists(source_database);
+
 	const Tables & tables = context.getDatabases().at(source_database);
-	for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
-		if (it->second.get() != this && table_name_regexp.match(it->first))
-			selected_tables.push_back(it->second);
+	for (const auto & name_table_pair : tables)
+		if (name_table_pair.second.get() != this && table_name_regexp.match(name_table_pair.first))
+			selected_tables.push_back(name_table_pair.second);
 }
 
 
