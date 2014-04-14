@@ -125,26 +125,15 @@ public:
 		{
 			struct Checksum
 			{
-				size_t file_size;
-				uint128 file_hash;
-
-				bool is_compressed = false;
-				size_t uncompressed_size;
-				uint128 uncompressed_hash;
-
-				void checkEqual(const Checksum & rhs, bool have_uncompressed, const String & name) const;
-				void checkSize(const String & path) const;
+				size_t size;
+				uint128 hash;
 			};
 
 			typedef std::map<String, Checksum> FileChecksums;
 			FileChecksums files;
 
 			/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
-			/// Если have_uncompressed, для сжатых файлов сравнивает чексуммы разжатых данных. Иначе сравнивает только чексуммы файлов.
-			void checkEqual(const Checksums & rhs, bool have_uncompressed) const;
-
-			/// Проверяет, что в директории есть все нужные файлы правильных размеров. Не проверяет чексуммы.
-			void checkSizes(const String & path) const;
+			void check(const Checksums & rhs) const;
 
 			/// Сериализует и десериализует в человекочитаемом виде.
 			void readText(ReadBuffer & in);

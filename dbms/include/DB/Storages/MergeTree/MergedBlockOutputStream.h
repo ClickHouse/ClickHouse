@@ -26,19 +26,15 @@ protected:
 		ColumnStream(const String & escaped_column_name_, const String & data_path, const std::string & marks_path, size_t max_compress_block_size = DEFAULT_MAX_COMPRESS_BLOCK_SIZE) :
 			escaped_column_name(escaped_column_name_),
 			plain_file(data_path, max_compress_block_size, O_TRUNC | O_CREAT | O_WRONLY),
-			plain_hashing(plain_file), compressed_buf(plain_hashing), compressed(compressed_buf),
-			marks_file(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file) {}
+			compressed_buf(plain_file),
+			marks_file(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY),
+			compressed(compressed_buf), marks(marks_file) {}
 
 		String escaped_column_name;
-
-		/// compressed -> compressed_buf -> plain_hashing -> plain_file
 		WriteBufferFromFile plain_file;
-		HashingWriteBuffer plain_hashing;
 		CompressedWriteBuffer compressed_buf;
-		HashingWriteBuffer compressed;
-
-		/// marks -> marks_file
 		WriteBufferFromFile marks_file;
+		HashingWriteBuffer compressed;
 		HashingWriteBuffer marks;
 
 		void finalize()
@@ -58,15 +54,10 @@ protected:
 		{
 			if (name == "")
 				name = escaped_column_name;
-
-			checksums.files[name + ".bin"].is_compressed = true;
-			checksums.files[name + ".bin"].uncompressed_size = compressed.count();
-			checksums.files[name + ".bin"].uncompressed_hash = compressed.getHash();
-			checksums.files[name + ".bin"].file_size = plain_hashing.count();
-			checksums.files[name + ".bin"].file_hash = plain_hashing.getHash();
-
-			checksums.files[name + ".mrk"].file_size = marks.count();
-			checksums.files[name + ".mrk"].file_hash = marks.getHash();
+			checksums.files[name + ".bin"].size = compressed.count();
+			checksums.files[name + ".bin"].hash = compressed.getHash();
+			checksums.files[name + ".mrk"].size = marks.count();
+			checksums.files[name + ".mrk"].hash = marks.getHash();
 		}
 	};
 
@@ -135,7 +126,7 @@ protected:
 					else
 					{
 						limit = storage.index_granularity;
-						writeIntBinary(stream.plain_hashing.count(), stream.marks);
+						writeIntBinary(stream.plain_file.count(), stream.marks);
 						writeIntBinary(stream.compressed.offset(), stream.marks);
 					}
 
@@ -166,7 +157,7 @@ protected:
 				else
 				{
 					limit = storage.index_granularity;
-					writeIntBinary(stream.plain_hashing.count(), stream.marks);
+					writeIntBinary(stream.plain_file.count(), stream.marks);
 					writeIntBinary(stream.compressed.offset(), stream.marks);
 				}
 
@@ -260,8 +251,8 @@ public:
 		MergeTreeData::DataPart::Checksums checksums;
 
 		index_stream->next();
-		checksums.files["primary.idx"].file_size = index_stream->count();
-		checksums.files["primary.idx"].file_hash = index_stream->getHash();
+		checksums.files["primary.idx"].size = index_stream->count();
+		checksums.files["primary.idx"].hash = index_stream->getHash();
 
 		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
 		{

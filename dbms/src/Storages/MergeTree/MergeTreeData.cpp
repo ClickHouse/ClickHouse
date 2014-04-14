@@ -427,7 +427,7 @@ static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesLis
 }
 
 /// одинаковыми считаются имена, вида "name.*"
-static bool namesWithDotEqual(const String & name_with_dot, const NameAndTypePair & name_type)
+static bool namesWithDotEqual(const String & name_with_dot, const DB::NameAndTypePair & name_type)
 {
 	return (name_with_dot == name_type.first.substr(0, name_with_dot.length()));
 }
@@ -492,7 +492,7 @@ void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 
 		try
 		{
-			while(Block b = in.read())
+			while(DB::Block b = in.read())
 				out.write(b);
 
 			in.readSuffix();
@@ -793,36 +793,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_
 }
 
 
-void MergeTreeData::DataPart::Checksums::Checksum::checkEqual(const Checksum & rhs, bool have_uncompressed, const String & name) const
-{
-	if (is_compressed && have_uncompressed)
-	{
-		if (!rhs.is_compressed)
-			throw Exception("No uncompressed checksum for file " + name, ErrorCodes::CHECKSUM_DOESNT_MATCH);
-		if (rhs.uncompressed_size != uncompressed_size)
-			throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-		if (rhs.uncompressed_hash != uncompressed_hash)
-			throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
-		return;
-	}
-	if (rhs.file_size != file_size)
-		throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-	if (rhs.file_hash != file_hash)
-		throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
-}
-
-void MergeTreeData::DataPart::Checksums::Checksum::checkSize(const String & path) const
-{
-	Poco::File file(path);
-	if (!file.exists())
-		throw Exception(path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-	size_t size = file.getSize();
-	if (size != file_size)
-		throw Exception(path + " has unexpected size: " + DB::toString(size) + " instead of " + DB::toString(file_size),
-			ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-}
-
-void MergeTreeData::DataPart::Checksums::checkEqual(const Checksums & rhs, bool have_uncompressed) const
+void MergeTreeData::DataPart::Checksums::check(const Checksums & rhs) const
 {
 	for (const auto & it : rhs.files)
 	{
@@ -840,16 +811,14 @@ void MergeTreeData::DataPart::Checksums::checkEqual(const Checksums & rhs, bool 
 		if (jt == rhs.files.end())
 			throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-		it.second.checkEqual(jt->second, have_uncompressed, name);
-	}
-}
+		const Checksum & expected = it.second;
+		const Checksum & found = jt->second;
 
-void MergeTreeData::DataPart::Checksums::checkSizes(const String & path) const
-{
-	for (const auto & it : files)
-	{
-		const String & name = it.first;
-		it.second.checkSize(path + name);
+		if (expected.size != found.size)
+			throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+		if (expected.hash != found.hash)
+			throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 	}
 }
 
@@ -858,12 +827,7 @@ void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 	files.clear();
 	size_t count;
 
-	DB::assertString("checksums format version: ", in);
-	int format_version;
-	DB::readText(format_version, in);
-	if (format_version < 1 || format_version > 2)
-		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
-	DB::assertString("\n",in);
+	DB::assertString("checksums format version: 1\n", in);
 	DB::readText(count, in);
 	DB::assertString(" files:\n", in);
 
@@ -874,27 +838,12 @@ void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 
 		DB::readString(name, in);
 		DB::assertString("\n\tsize: ", in);
-		DB::readText(sum.file_size, in);
+		DB::readText(sum.size, in);
 		DB::assertString("\n\thash: ", in);
-		DB::readText(sum.file_hash.first, in);
+		DB::readText(sum.hash.first, in);
 		DB::assertString(" ", in);
-		DB::readText(sum.file_hash.second, in);
+		DB::readText(sum.hash.second, in);
 		DB::assertString("\n", in);
-		if (format_version == 2)
-		{
-			DB::assertString("\tcompressed: ", in);
-			DB::readText(sum.is_compressed, in);
-			if (sum.is_compressed)
-			{
-				DB::assertString("\n\tuncompressed size: ", in);
-				DB::readText(sum.uncompressed_size, in);
-				DB::assertString("\n\tuncompressed hash: ", in);
-				DB::readText(sum.uncompressed_hash.first, in);
-				DB::assertString(" ", in);
-				DB::readText(sum.uncompressed_hash.second, in);
-			}
-			DB::assertString("\n", in);
-		}
 
 		files.insert(std::make_pair(name, sum));
 	}
@@ -902,34 +851,20 @@ void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 
 void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
 {
-	DB::writeString("checksums format version: 2\n", out);
+	DB::writeString("checksums format version: 1\n", out);
 	DB::writeText(files.size(), out);
 	DB::writeString(" files:\n", out);
 
 	for (const auto & it : files)
 	{
-		const String & name = it.first;
-		const Checksum & sum = it.second;
-		DB::writeString(name, out);
+		DB::writeString(it.first, out);
 		DB::writeString("\n\tsize: ", out);
-		DB::writeText(sum.file_size, out);
+		DB::writeText(it.second.size, out);
 		DB::writeString("\n\thash: ", out);
-		DB::writeText(sum.file_hash.first, out);
+		DB::writeText(it.second.hash.first, out);
 		DB::writeString(" ", out);
-		DB::writeText(sum.file_hash.second, out);
-		DB::writeString("\n\tcompressed: ", out);
-		DB::writeText(sum.is_compressed, out);
+		DB::writeText(it.second.hash.second, out);
 		DB::writeString("\n", out);
-		if (sum.is_compressed)
-		{
-			DB::writeString("\tuncompressed size: ", out);
-			DB::writeText(sum.uncompressed_size, out);
-			DB::writeString("\n\tuncompressed hash: ", out);
-			DB::writeText(sum.uncompressed_hash.first, out);
-			DB::writeString(" ", out);
-			DB::writeText(sum.uncompressed_hash.second, out);
-			DB::writeString("\n", out);
-		}
 	}
 }
 
