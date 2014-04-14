@@ -94,6 +94,7 @@ struct ContextShared
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
+	String default_replica_name;							/// Имя реплики из конфига.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -234,6 +235,10 @@ public:
 
 	String getDefaultFormat() const;	/// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
 	void setDefaultFormat(const String & name);
+
+	/// Имя этой реплики из конфига.
+	String getDefaultReplicaName() const;
+	void setDefaultReplicaName(const String & name);
 
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);

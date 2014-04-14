@@ -448,6 +448,17 @@ void Context::setDefaultFormat(const String & name)
 	default_format = name;
 }
 
+String Context::getDefaultReplicaName() const
+{
+	return shared->default_replica_name;
+}
+
+void Context::setDefaultReplicaName(const String & name)
+{
+	/// Полагаемся, что это присваивание происходит один раз при старте сервера. Если это не так, нужно использовать мьютекс.
+	shared->default_replica_name = name;
+}
+
 
 Context & Context::getSessionContext()
 {

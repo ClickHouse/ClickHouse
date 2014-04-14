@@ -227,7 +227,7 @@ StoragePtr StorageFactory::get(
 		{
 			String params;
 			if (replicated)
-				params += "path in ZooKeeper, replica name, ";
+				params += "path in ZooKeeper, replica name or '', ";
 			params += "name of column with date, [name of column for sampling], primary key expression, index granularity";
 			if (mode == MergeTreeData::Collapsing)
 				params += "sign column";
@@ -259,6 +259,13 @@ StoragePtr StorageFactory::get(
 				replica_name = safeGet<String>(ast->value);
 			else
 				throw Exception("Replica name must be a string literal", ErrorCodes::BAD_ARGUMENTS);
+
+			if (replica_name.empty())
+			{
+				replica_name = context.getDefaultReplicaName();
+				if (replica_name.empty())
+					throw Exception("No replica name in config", ErrorCodes::NO_REPLICA_NAME_GIVEN);
+			}
 
 			args.erase(args.begin(), args.begin() + 2);
 		}
