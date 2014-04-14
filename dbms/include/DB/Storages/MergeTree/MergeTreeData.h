@@ -107,6 +107,9 @@ struct MergeTreeSettings
 	/// Если в таблице parts_to_delay_insert + k кусков, спать insert_delay_step^k миллисекунд перед вставкой каждого блока.
 	/// Таким образом, скорость вставок автоматически замедлится примерно до скорости слияний.
 	double insert_delay_step = 1.1;
+
+	/// Для скольки блоков, вставленных с непустым insert ID, хранить хеши в ZooKeeper.
+	size_t replicated_deduplication_window = 10000;
 };
 
 class MergeTreeData : public ITableDeclaration

@@ -227,7 +227,7 @@ private:
 
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
-	bool is_leader_node;
+	bool is_leader_node = false;
 
 	InterserverIOEndpointHolderPtr endpoint_holder;
 
@@ -247,9 +247,13 @@ private:
 	/// Поток, выбирающий куски для слияния.
 	std::thread merge_selecting_thread;
 
+	/// Когда последний раз выбрасывали старые данные из ZooKeeper.
+	time_t clear_old_blocks_time = 0;
+	time_t clear_old_logs_time = 0;
+
 	Logger * log;
 
-	volatile bool shutdown_called;
+	volatile bool shutdown_called = false;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
@@ -301,6 +305,12 @@ private:
 	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops);
 
 	void clearOldParts();
+
+	/// Удалить из ZooKeeper старые записи в логе.
+	void clearOldLogs();
+
+	/// Удалить из ZooKeeper старые хеши блоков. Это делает ведущая реплика.
+	void clearOldBlocks();
 
 	/// Выполнение заданий из очереди.
 

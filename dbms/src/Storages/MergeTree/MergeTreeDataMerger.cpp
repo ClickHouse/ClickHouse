@@ -66,9 +66,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		cur_max_rows_to_merge_parts *= data.settings.merge_parts_at_night_inc;
 
 	if (only_small)
-	{
 		cur_max_rows_to_merge_parts = data.settings.max_rows_to_merge_parts_second;
-	}
 
 	/// Найдем суммарный размер еще не пройденных кусков (то есть всех).
 	size_t size_of_remaining_parts = 0;

@@ -32,12 +32,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	:
 	context(context_), zookeeper(context.getZooKeeper()),
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
-	replica_name(replica_name_), is_leader_node(false),
+	replica_name(replica_name_),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 			index_granularity_,mode_, sign_column_, settings_),
 	reader(data), writer(data), merger(data), fetcher(data),
-	log(&Logger::get("StorageReplicatedMergeTree: " + table_name)),
-	shutdown_called(false)
+	log(&Logger::get("StorageReplicatedMergeTree: " + table_name))
 {
 	if (!zookeeper_path.empty() && *zookeeper_path.rbegin() == '/')
 		zookeeper_path.erase(zookeeper_path.end() - 1);
@@ -335,6 +334,65 @@ void StorageReplicatedMergeTree::clearOldParts()
 		LOG_DEBUG(log, "Removed " << parts.size() << " old parts");
 }
 
+void StorageReplicatedMergeTree::clearOldLogs()
+{
+	Strings replicas = zookeeper.getChildren(zookeeper_path + "/replicas");
+	UInt64 min_pointer = std::numeric_limits<UInt64>::max();
+	for (const String & replica : replicas)
+	{
+		String pointer;
+		if (!zookeeper.tryGet(zookeeper_path + "/replicas/" + replica + "/log_pointers/" + replica_name, pointer))
+			return;
+		min_pointer = std::min(min_pointer, parse<UInt64>(pointer));
+	}
+
+	Strings entries = zookeeper.getChildren(replica_path + "/log");
+	std::sort(entries.begin(), entries.end());
+	size_t removed = 0;
+
+	for (const String & entry : entries)
+	{
+		UInt64 index = parse<UInt64>(entry.substr(strlen("log-")));
+		if (index >= min_pointer)
+			break;
+		zookeeper.remove(replica_path + "/log/" + entry);
+		++removed;
+	}
+
+	if (removed > 0)
+		LOG_DEBUG(log, "Removed " << removed << " old log entries");
+}
+
+void StorageReplicatedMergeTree::clearOldBlocks()
+{
+	zkutil::Stat stat;
+	if (!zookeeper.exists(zookeeper_path + "/blocks", &stat))
+		throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+	/// Чтобы делать "асимптотически" меньше запросов exists, будем ждать, пока накопятся в 1.1 раза больше блоков, чем нужно.
+	if (static_cast<double>(stat.getnumChildren()) < data.settings.replicated_deduplication_window * 1.1)
+		return;
+
+	Strings blocks = zookeeper.getChildren(zookeeper_path + "/blocks");
+
+	std::vector<std::pair<Int64, String> > timed_blocks;
+
+	for (const String & block : blocks)
+	{
+		zkutil::Stat stat;
+		zookeeper.exists(zookeeper_path + "/blocks/" + block, &stat);
+		timed_blocks.push_back(std::make_pair(stat.getczxid(), block));
+	}
+
+	std::sort(timed_blocks.begin(), timed_blocks.end());
+	for (size_t i = data.settings.replicated_deduplication_window; i <  timed_blocks.size(); ++i)
+	{
+		zookeeper.remove(zookeeper_path + "/blocks/" + timed_blocks[i].second);
+	}
+
+	LOG_TRACE(log, "Cleared " << blocks.size() - data.settings.replicated_deduplication_window << " old blocks from ZooKeeper");
+}
+
 void StorageReplicatedMergeTree::loadQueue()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
@@ -621,6 +679,13 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 			pullLogsToQueue();
 
 			clearOldParts();
+
+			/// Каждую минуту выбрасываем ненужные записи из лога.
+			if (time(0) - clear_old_logs_time > 60)
+			{
+				clear_old_logs_time = time(0);
+				clearOldLogs();
+			}
 		}
 		catch (...)
 		{
@@ -819,6 +884,13 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		if (shutdown_called)
 			break;
+
+		/// Каждую минуту выбрасываем старые блоки.
+		if (time(0) - clear_old_blocks_time > 60)
+		{
+			clear_old_blocks_time = time(0);
+			clearOldBlocks();
+		}
 
 		if (!success)
 			std::this_thread::sleep_for(MERGE_SELECTING_SLEEP);

@@ -33,7 +33,7 @@ public:
 			if (!block_id.empty() && storage.zookeeper.tryGet(
 				storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
 			{
-				LOG_INFO(log, "Block with this ID already exists; ignoring it");
+				LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it");
 
 				/// Блок с таким ID уже когда-то вставляли. Проверим чексуммы и не будем его вставлять.
 				auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
