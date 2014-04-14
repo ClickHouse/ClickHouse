@@ -298,10 +298,12 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 	String another_replica = findReplicaHavingPart(part->name, false);
 	if (!another_replica.empty())
 	{
-		String checksums_str =
-			zookeeper.get(zookeeper_path + "/replicas/" + another_replica + "/parts/" + part->name + "/checksums");
-		auto checksums = MergeTreeData::DataPart::Checksums::parse(checksums_str);
-		checksums.check(part->checksums);
+		String checksums_str;
+		if (zookeeper.tryGet(zookeeper_path + "/replicas/" + another_replica + "/parts/" + part->name + "/checksums", checksums_str))
+		{
+			auto checksums = MergeTreeData::DataPart::Checksums::parse(checksums_str);
+			checksums.checkEqual(part->checksums, true);
+		}
 	}
 
 	ops.push_back(new zkutil::Op::Create(
