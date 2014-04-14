@@ -246,9 +246,10 @@ private:
 
 	/// Поток, выбирающий куски для слияния.
 	std::thread merge_selecting_thread;
+	/// Поток, удаляющий информацию о старых блоках из ZooKeeper.
+	std::thread clear_old_blocks_thread;
 
-	/// Когда последний раз выбрасывали старые данные из ZooKeeper.
-	time_t clear_old_blocks_time = 0;
+	/// Когда последний раз выбрасывали старые логи из ZooKeeper.
 	time_t clear_old_logs_time = 0;
 
 	Logger * log;
@@ -346,6 +347,10 @@ private:
 	/** В бесконечном цикле выбирает куски для слияния и записывает в лог.
 	  */
 	void mergeSelectingThread();
+
+	/** В бесконечном цикле вызывает clearOldBlocks.
+	  */
+	void clearOldBlocksThread();
 
 	/// Вызывается во время выбора кусков для слияния.
 	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
