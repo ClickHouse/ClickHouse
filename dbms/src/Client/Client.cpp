@@ -505,7 +505,7 @@ private:
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete, new Settings(context.getSettings()), true);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
 		sendExternalTables();
 		receiveResult();
 	}
@@ -523,7 +523,7 @@ private:
 		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, new Settings(context.getSettings()), true);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
 		sendExternalTables();
 
 		/// Получим структуру таблицы
