@@ -101,7 +101,8 @@ struct Settings
 	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
-	void deserialize(ReadBuffer & buf);
+	/// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
+	void deserialize(ReadBuffer & buf, bool check_readonly = false);
 
 	/// Записать изменённые настройки в буфер. (Например, для отправки на удалённый сервер.)
 	void serialize(WriteBuffer & buf) const;

@@ -530,7 +530,7 @@ void TCPHandler::receiveQuery()
 	/// Настройки на отдельный запрос.
 	if (client_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
 	{
-		query_context.getSettingsRef().deserialize(*in);
+		query_context.getSettingsRef().deserialize(*in, true);
 	}
 
 	readVarUInt(stage, *in);

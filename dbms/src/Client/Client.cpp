@@ -140,6 +140,19 @@ private:
 			loadConfiguration(home_path + "/.clickhouse-client/config.xml");
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
+
+		/// settings и limits могли так же быть указаны в кофигурационном файле, но уже записанные настройки имеют больший приоритет.
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+		if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
+			context.setSetting(#NAME, config().getString(#NAME));
+		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
+
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+		if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
+			context.setSetting(#NAME, config().getString(#NAME));
+		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
+#undef EXTRACT_LIMIT
 	}
 
 
@@ -890,14 +903,16 @@ public:
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
 
+		/// Демонстрация help message
 		if (options.count("help")) {
 			std::cout << main_description << "\n";
 			std::cout << external_description << "\n";
 			exit(0);
 		}
+
 		std::vector<std::string> to_pass_further = boost::program_options::collect_unrecognized(parsed.options, boost::program_options::include_positional);
 
-		/// Опции командной строки, составленные только из нераспаршеых аргументов.
+		/// Опции командной строки, составленные только из аргументов, не перечисленных в main_description.
 		char newargc = to_pass_further.size() + 1;
 		char *new_argv[newargc];
 		for (size_t i = 0; i < to_pass_further.size(); ++i)
@@ -939,21 +954,19 @@ public:
 			}
 		}
 
-		Settings settings;
-
+		/// Извлекаем settings and limits из полученных options
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (options.count(#NAME)) \
-			settings.set(#NAME, options[#NAME].as<std::string>());
+			context.setSetting(#NAME, options[#NAME].as<std::string>());
 		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
 #define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
 		if (options.count(#NAME)) \
-			settings.limits.trySet(#NAME, options[#NAME].as<std::string>());
+			context.setSetting(#NAME, options[#NAME].as<std::string>());
 		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
 #undef EXTRACT_LIMIT
 
-		context.setSettings(settings);
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
 			config().setString("config-file", options["config-file"].as<std::string>());
