@@ -1,3 +1,5 @@
+#include <sys/resource.h>
+
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -199,7 +201,28 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 int Server::main(const std::vector<std::string> & args)
 {
 	Logger * log = &logger();
-	
+
+	/// Попробуем повысить ограничение на число открытых файлов.
+	{
+		rlimit rlim;
+		if (getrlimit(RLIMIT_NOFILE, &rlim))
+			throw Poco::Exception("Cannot getrlimit");
+
+		if (rlim.rlim_cur == rlim.rlim_max)
+		{
+			LOG_DEBUG(log, "rlimit on number of file descriptors is " << rlim.rlim_cur);
+		}
+		else
+		{
+			rlim_t old = rlim.rlim_cur;
+			rlim.rlim_cur = rlim.rlim_max;
+			if (setrlimit(RLIMIT_NOFILE, &rlim))
+				throw Poco::Exception("Cannot setrlimit");
+
+			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ")");
+		}
+	}
+
 	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 	LOG_DEBUG(log, "Initializing DateLUT.");
 	DateLUTSingleton::instance();
