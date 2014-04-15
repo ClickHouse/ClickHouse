@@ -17,9 +17,7 @@ namespace DB
 {
 
 /** Функции преобразования типов.
-  *
-  * Бывают двух видов:
-  * - toType - преобразование "естественным образом"; TODO: преобразования из/в FixedString.
+  * toType - преобразование "естественным образом";
   */
 
 
@@ -229,7 +227,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 				parseImpl<ToDataType>(vec_to[i], read_buffer);
 				readChar(zero, read_buffer);
 				if (zero != 0)
-					throw Exception("Cannot parse number from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
 			}
 		}
 		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
@@ -247,7 +245,6 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 	}
 };
 
-
 /** Если типы совпадают - просто скопируем ссылку на столбец.
   */
 template <typename Name>
@@ -259,6 +256,110 @@ struct ConvertImpl<DataTypeString, DataTypeString, Name>
 	}
 };
 
+
+/** Преобразование из FixedString.
+  */
+template <typename ToDataType, typename Name>
+struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
+{
+	typedef typename ToDataType::FieldType ToFieldType;
+
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnFixedString * col_from = dynamic_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			block.getByPosition(result).column = col_to;
+
+			const ColumnFixedString::Chars_t & data_from = col_from->getChars();
+			size_t n = col_from->getN();
+			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+			size_t size = col_from->size();
+			vec_to.resize(size);
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				char * begin = const_cast<char *>(reinterpret_cast<const char *>(&data_from[i * n]));
+				char * end = begin + n;
+				ReadBuffer read_buffer(begin, n, 0);
+				parseImpl<ToDataType>(vec_to[i], read_buffer);
+
+				if (!read_buffer.eof())
+				{
+					while (read_buffer.position() < end && *read_buffer.position() == 0)
+						++read_buffer.position();
+
+					if (read_buffer.position() < end)
+						throw Exception("Cannot parse from fixed string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+				}
+			}
+		}
+		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ConvertImpl<DataTypeString, ToDataType, Name>::execute(block, arguments, result);
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + Name::get(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+/** Преобразование из FixedString в String.
+  * При этом, вырезаются последовательности нулевых байт с конца строк.
+  */
+template <typename Name>
+struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
+{
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnFixedString * col_from = dynamic_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnString * col_to = new ColumnString;
+			block.getByPosition(result).column = col_to;
+
+			const ColumnFixedString::Chars_t & data_from = col_from->getChars();
+			ColumnString::Chars_t & data_to = col_to->getChars();
+			ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+			size_t size = col_from->size();
+			size_t n = col_from->getN();
+			data_to.resize(size * (n + 1));		/// + 1 - нулевой байт
+			offsets_to.resize(size);
+
+			size_t offset_from = 0;
+			size_t offset_to = 0;
+			for (size_t i = 0; i < size; ++i)
+			{
+				size_t bytes_to_copy = n;
+				while (bytes_to_copy > 0 && data_from[offset_from + bytes_to_copy - 1] == 0)
+					--bytes_to_copy;
+
+				memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
+				offset_from += n;
+				offset_to += bytes_to_copy;
+				data_to[offset_to] = 0;
+				++offset_to;
+				offsets_to[i] = offset_to;
+			}
+
+			data_to.resize(offset_to);
+		}
+		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			const String & s = col_from->getData();
+
+			size_t bytes_to_copy = s.size();
+			while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
+				--bytes_to_copy;
+
+			block.getByPosition(result).column = new ColumnConstString(col_from->size(), s.substr(0, bytes_to_copy));
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + Name::get(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
 
 
 template <typename ToDataType, typename Name>
@@ -300,6 +401,7 @@ public:
 		else if (dynamic_cast<const DataTypeDate *		>(from_type)) ConvertImpl<DataTypeDate, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (dynamic_cast<const DataTypeDateTime *	>(from_type)) ConvertImpl<DataTypeDateTime,	ToDataType, Name>::execute(block, arguments, result);
 		else if (dynamic_cast<const DataTypeString *	>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (dynamic_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -320,7 +422,7 @@ public:
 
 	/** Получить тип результата по типам аргументов и значениям константных аргументов.
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
-	  * Для неконстантных столбцов arguments[i].column=NULL.
+	  * Для неконстантных столбцов arguments[i].column = nullptr.
 	  */
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
 												DataTypePtr & out_return_type,

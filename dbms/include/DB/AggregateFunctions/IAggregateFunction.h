@@ -39,9 +39,10 @@ public:
 	  * Если параметры не предусмотрены или переданные параметры недопустимы - кинуть исключение.
 	  * Если параметры есть - необходимо вызывать перед остальными вызовами, иначе - не вызывать.
 	  */
-	virtual void setParameters(const Row & params)
+	virtual void setParameters(const Array & params)
 	{
-		throw Exception("Aggregate function " + getName() + " doesn't allow parameters.", ErrorCodes::AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS);
+		throw Exception("Aggregate function " + getName() + " doesn't allow parameters.",
+			ErrorCodes::AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS);
 	}
 
 	/// Получить тип результата.

@@ -19,7 +19,7 @@ QueryConverter::QueryConverter(Poco::Util::AbstractConfiguration & config)
 	attribute_metadatas = GetOLAPAttributeMetadata();
 }
 
-static std::string FirstWord(std::string s)
+static std::string firstWord(std::string s)
 {
 	for (size_t i = 0; i < s.length(); ++i)
 	{
@@ -32,8 +32,18 @@ static std::string FirstWord(std::string s)
 	return s;
 }
 
-void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query, Context & inout_context, std::string & out_query)
+void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query, Context & inout_context, std::string & out_query) const
 {
+	/// Пустая строка, или строка вида ", 'ua'".
+	std::string regions_point_of_view_formatted;
+
+	if (!query.regions_point_of_view.empty())
+	{
+		std::stringstream tmp;
+		tmp << ", " << mysqlxx::quote << query.regions_point_of_view;
+		regions_point_of_view_formatted = tmp.str();
+	}
+
 	/// Проверим, умеем ли мы выполнять такой запрос.
 	if (query.format != FORMAT_TAB)
 		throw Exception("Only tab-separated output format is supported", ErrorCodes::UNSUPPORTED_PARAMETER);
@@ -75,22 +85,22 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	for (size_t i = 0; i < query.key_attributes.size(); ++i)
 	{
 		const QueryParseResult::KeyAttribute & key = query.key_attributes[i];
-		std::string s = convertAttributeFormatted(key.attribute, key.parameter);
+		std::string s = convertAttributeFormatted(key.attribute, key.parameter, regions_point_of_view_formatted);
 		
 		if (i > 0)
 			out_query += ", ";
-		out_query += s + " AS _" + FirstWord(key.attribute) + (key.parameter ? "_" + toString(key.parameter) : "");
+		out_query += s + " AS _" + firstWord(key.attribute) + (key.parameter ? "_" + toString(key.parameter) : "");
 		selected_expressions.push_back(s);
 	}
 	
 	for (size_t i = 0; i < query.aggregates.size(); ++i)
 	{
 		const QueryParseResult::Aggregate & aggregate = query.aggregates[i];
-		std::string s = convertAggregateFunction(aggregate.attribute, aggregate.parameter, aggregate.function, query);
+		std::string s = convertAggregateFunction(aggregate.attribute, aggregate.parameter, aggregate.function, query, regions_point_of_view_formatted);
 		
 		if (query.key_attributes.size() + i > 0)
 			out_query += ", ";
-		out_query += s + " AS _" + FirstWord(aggregate.function) + "_" + FirstWord(aggregate.attribute) + (aggregate.parameter ? "_" + toString(aggregate.parameter) : "");
+		out_query += s + " AS _" + firstWord(aggregate.function) + "_" + firstWord(aggregate.attribute) + (aggregate.parameter ? "_" + toString(aggregate.parameter) : "");
 		selected_expressions.push_back(s);
 	}
 	
@@ -115,7 +125,8 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 	for (size_t i = 0; i < query.where_conditions.size(); ++i)
 	{
 		const QueryParseResult::WhereCondition & condition = query.where_conditions[i];
-		out_query += " AND " + convertCondition(condition.attribute, condition.parameter, condition.relation, condition.rhs);
+		out_query += " AND " + convertCondition(
+			condition.attribute, condition.parameter, condition.relation, condition.rhs, regions_point_of_view_formatted);
 	}
 	
 	/// Группировка.
@@ -153,17 +164,24 @@ void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query,
 		out_query += " LIMIT " + toString(query.limit);
 }
 
-std::string QueryConverter::convertAttributeFormatted(const std::string & attribute, unsigned parameter)
+std::string QueryConverter::convertAttributeFormatted(const std::string & attribute, unsigned parameter,
+													  const std::string & regions_point_of_view_formatted) const
 {
 	if (formatted_attribute_map.count(attribute))
-		return Poco::format(formatted_attribute_map[attribute], parameter);
+		return Poco::format(formatted_attribute_map.at(attribute), parameter);
 	
+	/** Для атрибутов по регионам, выражение содержит подстановку %s,
+	  *  куда должна быть подставлена regions_point_of_view_formatted.
+	  */
+	if (regions_attributes_set.count(attribute))
+		return Poco::format(numeric_attribute_map.at(attribute), regions_point_of_view_formatted);
+
 	if (numeric_attribute_map.count(attribute))
 	{
-		std::string numeric = Poco::format(numeric_attribute_map[attribute], parameter);
+		std::string numeric = Poco::format(numeric_attribute_map.at(attribute), parameter);
 		
 		if (formatting_aggregated_attribute_map.count(attribute))
-			return Poco::format(formatting_aggregated_attribute_map[attribute], std::string("(") + numeric + ")");
+			return Poco::format(formatting_aggregated_attribute_map.at(attribute), std::string("(") + numeric + ")");
 		else
 			return numeric;
 	}
@@ -171,10 +189,17 @@ std::string QueryConverter::convertAttributeFormatted(const std::string & attrib
 	throw Exception("Unknown attribute: " + attribute, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
-std::string QueryConverter::convertAttributeNumeric(const std::string & attribute, unsigned parameter)
+std::string QueryConverter::convertAttributeNumeric(const std::string & attribute, unsigned parameter,
+													const std::string & regions_point_of_view_formatted) const
 {
+	/** Для атрибутов по регионам, выражение содержит подстановку %s,
+	  *  куда должна быть подставлена regions_point_of_view_formatted.
+	  */
+	if (regions_attributes_set.count(attribute))
+		return Poco::format(numeric_attribute_map.at(attribute), regions_point_of_view_formatted);
+
 	if (numeric_attribute_map.count(attribute))
-		return Poco::format(numeric_attribute_map[attribute], parameter);
+		return Poco::format(numeric_attribute_map.at(attribute), parameter);
 	
 	throw Exception("Unknown attribute: " + attribute, ErrorCodes::UNKNOWN_IDENTIFIER);
 }
@@ -185,7 +210,7 @@ static bool StartsWith(const std::string & str, const std::string & prefix)
 }
 
 std::string QueryConverter::convertAggregateFunction(const std::string & attribute, unsigned parameter, const std::string & name,
-													const QueryParseResult & query)
+													const QueryParseResult & query, const std::string & regions_point_of_view_formatted) const
 {
 	bool float_value = false;
 
@@ -201,7 +226,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 			return "sum(Sign)";
 	}
 	
-	std::string numeric = convertAttributeNumeric(attribute, parameter);
+	std::string numeric = convertAttributeNumeric(attribute, parameter, regions_point_of_view_formatted);
 	
 	if (name == "uniq" ||
 		name == "uniq_sort" ||
@@ -247,7 +272,7 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	std::string format;
 	if (formatting_aggregated_attribute_map.count(attribute))
 	{
-		format = formatting_aggregated_attribute_map[attribute];
+		format = formatting_aggregated_attribute_map.at(attribute);
 		trivial_format = false;
 	}
 	else
@@ -305,16 +330,21 @@ std::string QueryConverter::convertAggregateFunction(const std::string & attribu
 	return Poco::format(format, std::string() + (need_cast ? "toInt64" : "") + "(" + s + ")");
 }
 
-std::string QueryConverter::convertConstant(const std::string & attribute, const std::string & value)
+std::string QueryConverter::convertConstant(const std::string & attribute, const std::string & value) const
 {
 	if (!attribute_metadatas.count(attribute))
 		throw Exception("Unknown attribute " + attribute, ErrorCodes::UNKNOWN_IDENTIFIER);
-	return toString(attribute_metadatas[attribute]->parse(value));
+	return toString(attribute_metadatas.at(attribute)->parse(value));
 }
 
-std::string QueryConverter::convertCondition(const std::string & attribute, unsigned parameter, const std::string & name, const std::string & rhs)
+std::string QueryConverter::convertCondition(
+	const std::string & attribute,
+	unsigned parameter,
+	const std::string & name,
+	const std::string & rhs,
+	const std::string & regions_point_of_view_formatted) const
 {
-	std::string value = convertAttributeNumeric(attribute, parameter);
+	std::string value = convertAttributeNumeric(attribute, parameter, regions_point_of_view_formatted);
 	std::string constant = convertConstant(attribute, rhs);
 	
 	if (name == "equals")
@@ -330,9 +360,9 @@ std::string QueryConverter::convertCondition(const std::string & attribute, unsi
 	if (name == "greater_or_equals")
 		return "(" + value + ")" + " >= " + constant;
 	if (name == "region_in")
-		return "regionIn(" + value + ", toUInt32(" + constant + "))";
+		return "regionIn(" + value + ", toUInt32(" + constant + ")" + regions_point_of_view_formatted + ")";
 	if (name == "region_not_in")
-		return "NOT regionIn(" + value + ", toUInt32(" + constant + "))";
+		return "NOT regionIn(" + value + ", toUInt32(" + constant + ")" + regions_point_of_view_formatted + ")";
 	if (name == "os_in")
 		return "OSIn(" + value + ", " + constant + ")";
 	if (name == "os_not_in")
@@ -356,7 +386,7 @@ std::string QueryConverter::convertCondition(const std::string & attribute, unsi
 	throw Exception("Unknown relation " + name, ErrorCodes::UNKNOWN_RELATION);
 }
 
-std::string QueryConverter::convertSortDirection(const std::string & direction)
+std::string QueryConverter::convertSortDirection(const std::string & direction) const
 {
 	if (direction == "descending")
 		return "DESC";
@@ -364,7 +394,7 @@ std::string QueryConverter::convertSortDirection(const std::string & direction)
 		return "ASC";
 }
 
-std::string QueryConverter::convertDateRange(time_t date_first, time_t date_last)
+std::string QueryConverter::convertDateRange(time_t date_first, time_t date_last) const
 {
 	std::string first_str;
 	std::string last_str;
@@ -377,12 +407,12 @@ std::string QueryConverter::convertDateRange(time_t date_first, time_t date_last
 	return "StartDate >= toDate('" + first_str + "') AND StartDate <= toDate('" + last_str + "')";
 }
 
-std::string QueryConverter::convertCounterID(CounterID_t CounterID)
+std::string QueryConverter::convertCounterID(CounterID_t CounterID) const
 {
 	return "CounterID == " + toString(CounterID);
 }
 
-std::string QueryConverter::getTableName(CounterID_t CounterID, bool local)
+std::string QueryConverter::getTableName(CounterID_t CounterID, bool local) const
 {
 	if (CounterID == 0 && !local)
 		return table_for_all_counters;
@@ -390,7 +420,7 @@ std::string QueryConverter::getTableName(CounterID_t CounterID, bool local)
 		return table_for_single_counter;
 }
 
-std::string QueryConverter::getHavingSection()
+std::string QueryConverter::getHavingSection() const
 {
 	return "HAVING sum(Sign) > 0";
 }
@@ -449,16 +479,16 @@ void QueryConverter::fillNumericAttributeMap()
 	M("StartURLHash",         "NormalizedStartURLHash")
 	M("StartURLDomainHash",   "StartURLDomainHash")
 	M("RegionID",             "RegionID")
-	M("RegionCity",           "regionToCity(RegionID)")
-	M("RegionArea",           "regionToArea(RegionID)")
-	M("RegionCountry",        "regionToCountry(RegionID)")
-	M("URLRegionID",          "URLRegions[0]")
-	M("URLRegionCity",        "regionToCity(URLRegions[0])")
-	M("URLRegionArea",        "regionToArea(URLRegions[0])")
-	M("URLRegionCountry",     "regionToCountry(URLRegions[0])")
-	M("URLCategoryID",        "URLCategories[0]")
-	M("URLCategoryMostAncestor", "categoryToRoot(URLCategories[0])")
-	M("URLCategorySecondLevel",  "categoryToSecondLevel(URLCategories[0])")
+	M("RegionCity",           "regionToCity(RegionID%s)")
+	M("RegionArea",           "regionToArea(RegionID%s)")
+	M("RegionCountry",        "regionToCountry(RegionID%s)")
+	M("URLRegionID",          "URLRegions[1]")
+	M("URLRegionCity",        "regionToCity(URLRegions[1]%s)")
+	M("URLRegionArea",        "regionToArea(URLRegions[1]%s)")
+	M("URLRegionCountry",     "regionToCountry(URLRegions[1]%s)")
+	M("URLCategoryID",        "URLCategories[1]")
+	M("URLCategoryMostAncestor", "categoryToRoot(URLCategories[1])")
+	M("URLCategorySecondLevel",  "categoryToSecondLevel(URLCategories[1])")
 	M("TraficSourceID",       "TraficSourceID")
 	M("IsNewUser",            "intDiv(toUInt32(FirstVisit), 1800) == intDiv(toUInt32(StartTime), 1800)")
 	M("UserNewness",          "intDiv(toUInt64(StartTime)-toUInt64(FirstVisit), 86400)")
@@ -547,17 +577,17 @@ void QueryConverter::fillNumericAttributeMap()
 	M("UserAgentMajor",       "UserAgent * 256 + UserAgentMajor")
 	
 	M("UserAgentID",          "UserAgent")
-	M("ClickGoodEvent",       "Clicks.GoodEvent[1]")
-	M("ClickPriorityID",      "Clicks.PriorityID[1]")
-	M("ClickBannerID",        "Clicks.BannerID[1]")
-	M("ClickPageID",          "Clicks.PageID[1]")
-	M("ClickPlaceID",         "Clicks.PlaceID[1]")
-	M("ClickTypeID",          "Clicks.TypeID[1]")
-	M("ClickResourceID",      "Clicks.ResourceID[1]")
-	M("ClickDomainID",        "Clicks.DomainID[1]")
-	M("ClickCost",            "Clicks.Cost[1]")
-	M("ClickURLHash",         "Clicks.URLHash[1]")
-	M("ClickOrderID",         "Clicks.OrderID[1]")
+	M("ClickGoodEvent",       "ClicksGoodEvent")
+	M("ClickPriorityID",      "ClicksPriorityID")
+	M("ClickBannerID",        "ClicksBannerID")
+	M("ClickPageID",          "ClicksPageID")
+	M("ClickPlaceID",         "ClicksPlaceID")
+	M("ClickTypeID",          "ClicksTypeID")
+	M("ClickResourceID",      "ClicksResourceID")
+	M("ClickDomainID",        "ClicksDomainID")
+	M("ClickCost",            "ClicksCost")
+	M("ClickURLHash",         "ClicksURLHash")
+	M("ClickOrderID",         "ClicksOrderID")
 	M("GoalReachesAny",       "GoalReachesAny")
 	M("GoalReachesDepth",     "GoalReachesDepth")
 	M("GoalReachesURL",       "GoalReachesURL")

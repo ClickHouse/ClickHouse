@@ -100,6 +100,9 @@ struct QueryParseResult
 	std::vector<Aggregate> aggregates;
 	std::vector<WhereCondition> where_conditions;
 	std::vector<SortColumn> sort_columns;
+
+	/// Какую иерархию регионов использовать.
+	std::string regions_point_of_view;
 };
 
 

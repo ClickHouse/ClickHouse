@@ -67,7 +67,7 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 	{
 		Pos begin = pos;
-		while (*pos == ' ' || *pos == '\t' || (allow_newlines && *pos == '\n') || *pos == '\r' || *pos == '\f')
+		while (pos < end && (*pos == ' ' || *pos == '\t' || (allow_newlines && *pos == '\n') || *pos == '\r' || *pos == '\f'))
 			++pos;
 
 		return pos != begin;

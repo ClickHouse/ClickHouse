@@ -81,10 +81,7 @@ void InterpreterRenameQuery::execute()
 
 			/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 			if (!parse_res || (pos != end && *pos != ';'))
-				throw Exception("Syntax error in file " + from_metadata_path + ": failed at position "
-					+ toString(pos - create_query.data()) + ": "
-					+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-					+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+				throw Exception(getSyntaxErrorMessage(parse_res, create_query.data(), end, pos, expected, "in file " + from_metadata_path),
 					ErrorCodes::SYNTAX_ERROR);
 
 			dynamic_cast<ASTCreateQuery &>(*ast).table = to_table_name;

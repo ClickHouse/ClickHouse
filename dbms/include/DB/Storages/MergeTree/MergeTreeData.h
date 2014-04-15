@@ -1,13 +1,18 @@
 #pragma once
 
 #include <statdaemons/Increment.h>
-#include <statdaemons/threadpool.hpp>
 
 #include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/Common/escapeForFileName.h>
 #include <Poco/RWLock.h>
+
+
+#define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
+
 
 namespace DB
 {
@@ -33,6 +38,7 @@ namespace DB
   * Структура файлов:
   *  / min-date _ max-date _ min-id _ max-id _ level / - директория с куском.
   * Внутри директории с куском:
+  *  checksums.txt - список файлов с их размерами и контрольными суммами.
   *  primary.idx - индексный файл.
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
@@ -54,13 +60,12 @@ namespace DB
 
 struct MergeTreeSettings
 {
-	/// Набор кусков разрешено объединить, если среди них максимальный размер не более чем во столько раз больше суммы остальных.
-	double max_size_ratio_to_merge_parts = 5;
+	/// Опеределяет, насколько разбалансированные объединения мы готовы делать.
+	/// Чем больше, тем более разбалансированные. Желательно, чтобы было больше, чем 1/max_parts_to_merge_at_once.
+	double size_ratio_coefficient_to_merge_parts = 0.25;
 
 	/// Сколько за раз сливать кусков.
-	/// Трудоемкость выбора кусков O(N * max_parts_to_merge_at_once), так что не следует делать это число слишком большим.
-	/// С другой стороны, чтобы слияния точно не могли зайти в тупик, нужно хотя бы
-	/// log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts).
+	/// Трудоемкость выбора кусков O(N * max_parts_to_merge_at_once).
 	size_t max_parts_to_merge_at_once = 10;
 
 	/// Куски настолько большого размера в основном потоке объединять нельзя вообще.
@@ -72,8 +77,13 @@ struct MergeTreeSettings
 	/// Во столько раз ночью увеличиваем коэффициент.
 	size_t merge_parts_at_night_inc = 10;
 
-	/// Сколько потоков использовать для объединения кусков.
-	size_t merging_threads = 2;
+	/// Сколько потоков использовать для объединения кусков (для MergeTree).
+	/// Пул потоков общий на весь сервер.
+	size_t merging_threads = 6;
+
+	/// Сколько потоков использовать для загрузки кусков с других реплик и объединения кусков (для ReplicatedMergeTree).
+	/// Пул потоков на каждую таблицу свой.
+	size_t replication_threads = 4;
 
 	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
 	size_t min_rows_for_concurrent_read = 20 * 8192;
@@ -84,13 +94,22 @@ struct MergeTreeSettings
 	/// Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их.
 	size_t coarse_index_granularity = 8;
 
-	/** Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется.
-	  * (Чтобы большие запросы не вымывали кэш.)
-	  */
+	/// Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется.
+	/// (Чтобы большие запросы не вымывали кэш.)
 	size_t max_rows_to_use_cache = 1024 * 1024;
 
-	/// Через сколько секунд удалять old_куски.
+	/// Через сколько секунд удалять ненужные куски.
 	time_t old_parts_lifetime = 5 * 60;
+
+	/// Если в таблице хотя бы столько активных кусков, искусственно замедлять вставки в таблицу.
+	size_t parts_to_delay_insert = 150;
+
+	/// Если в таблице parts_to_delay_insert + k кусков, спать insert_delay_step^k миллисекунд перед вставкой каждого блока.
+	/// Таким образом, скорость вставок автоматически замедлится примерно до скорости слияний.
+	double insert_delay_step = 1.1;
+
+	/// Для скольки блоков, вставленных с непустым insert ID, хранить хеши в ZooKeeper.
+	size_t replicated_deduplication_window = 10000;
 };
 
 class MergeTreeData : public ITableDeclaration
@@ -99,7 +118,53 @@ public:
 	/// Описание куска с данными.
 	struct DataPart
 	{
- 		DataPart(MergeTreeData & storage_) : storage(storage_), size_in_bytes(0) {}
+		/** Контрольные суммы всех не временных файлов.
+		  * Для сжатых файлов хранятся чексумма и размер разжатых данных, чтобы не зависеть от способа сжатия.
+		  */
+		struct Checksums
+		{
+			struct Checksum
+			{
+				size_t size;
+				uint128 hash;
+			};
+
+			typedef std::map<String, Checksum> FileChecksums;
+			FileChecksums files;
+
+			/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
+			void check(const Checksums & rhs) const;
+
+			/// Сериализует и десериализует в человекочитаемом виде.
+			void readText(ReadBuffer & in);
+			void writeText(WriteBuffer & out) const;
+
+			bool empty() const
+			{
+				return files.empty();
+			}
+
+			String toString() const
+			{
+				String s;
+				{
+					WriteBufferFromString out(s);
+					writeText(out);
+				}
+				return s;
+			}
+
+			static Checksums parse(const String & s)
+			{
+				ReadBufferFromString in(s);
+				Checksums res;
+				res.readText(in);
+				assertEOF(in);
+				return res;
+			}
+		};
+
+ 		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0), remove_time(0) {}
 
  		MergeTreeData & storage;
 		DayNum_t left_date;
@@ -113,6 +178,7 @@ public:
 		size_t size;	/// в количестве засечек.
 		size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано
 		time_t modification_time;
+		mutable time_t remove_time; /// Когда кусок убрали из рабочего набора.
 
 		DayNum_t left_month;
 		DayNum_t right_month;
@@ -120,6 +186,8 @@ public:
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
 		Index index;
+
+		Checksums checksums;
 
 		/// NOTE можно загружать засечки тоже в оперативку
 
@@ -137,7 +205,7 @@ public:
 			return res;
 		}
 
-		void remove()
+		void remove() const
 		{
 			String from = storage.full_path + name + "/";
 			String to = storage.full_path + "tmp2_" + name + "/";
@@ -146,10 +214,11 @@ public:
 			Poco::File(to).remove(true);
 		}
 
-		void renameToOld() const
+		/// Переименовывает кусок, дописав к имени префикс.
+		void renameAddPrefix(const String & prefix) const
 		{
 			String from = storage.full_path + name + "/";
-			String to = storage.full_path + "old_" + name + "/";
+			String to = storage.full_path + prefix + name + "/";
 
 			Poco::File f(from);
 			f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
@@ -186,14 +255,20 @@ public:
 				&& right >= rhs.right;
 		}
 
-		/// Загрузить индекс и вычислить размер.
+		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
 		void loadIndex()
 		{
+			/// Размер - в количестве засечек.
+			if (!size)
+				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(storage.columns->front().first) + ".mrk")
+					.getSize() / MERGE_TREE_MARK_SIZE;
+
 			size_t key_size = storage.sort_descr.size();
 			index.resize(key_size * size);
 
 			String index_path = storage.full_path + name + "/primary.idx";
-			ReadBufferFromFile index_file(index_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+			ReadBufferFromFile index_file(index_path,
+				std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
 			for (size_t i = 0; i < size; ++i)
 				for (size_t j = 0; j < key_size; ++j)
@@ -203,6 +278,18 @@ public:
 				throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 
 			size_in_bytes = calcTotalSize(storage.full_path + name + "/");
+		}
+
+		/// Прочитать контрольные суммы, если есть.
+		bool loadChecksums()
+		{
+			String path = storage.full_path + name + "/checksums.txt";
+			if (!Poco::File(path).exists())
+				return false;
+			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+			checksums.readText(file);
+			assertEOF(file);
+			return true;
 		}
 	};
 
@@ -234,7 +321,7 @@ public:
 					const Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,
-					const ASTPtr & sampling_expression_, /// NULL, если семплирование не поддерживается.
+					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 					size_t index_granularity_,
 					Mode mode_,
 					const String & sign_column_,
@@ -255,7 +342,7 @@ public:
 	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
 
 	/// Кладет в DataPart данные из имени кусочка.
-	void parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part);
+	void parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
 
 	std::string getTableName() { return ""; }
 
@@ -266,19 +353,38 @@ public:
 	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
 	  */
 	DataParts getDataParts();
+	DataParts getAllDataParts();
+	size_t getDataPartsCount();
 
-	/** Удаляет куски old_parts и добавляет кусок new_part. Если какого-нибудь из удаляемых кусков нет, бросает исключение.
+	/** Возвращает кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
+	  * Если including_inactive, просматриваются также неактивные куски (all_data_parts).
 	  */
-	void replaceParts(DataPartsVector old_parts, DataPartPtr new_part);
+	DataPartPtr getContainingPart(const String & part_name, bool including_inactive = false);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
+	  * Предполагается, что кусок не пересекается с существующими.
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment);
+	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment = nullptr);
 
-	/** Удалить неактуальные куски.
+	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
+	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
 	  */
-	void clearOldParts();
+	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr);
+
+	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
+	  * Лучше использовать только когда никто не может читать или писать этот кусок
+	  *  (например, при инициализации таблицы).
+	  */
+	void renameAndDetachPart(DataPartPtr part, const String & prefix);
+
+	/** Удаляет кусок из рабочего набора. clearOldParts удалит его файлы, если на него никто не ссылается.
+	  */
+	void removePart(DataPartPtr part);
+
+	/** Удалить неактуальные куски. Возвращает имена удаленных кусков.
+	  */
+	Strings clearOldParts();
 
 	/** После вызова dropAllData больше ничего вызывать нельзя.
 	  * Удаляет директорию с данными и сбрасывает кеши разжатых блоков и засечек.
@@ -310,19 +416,18 @@ public:
 
 	const MergeTreeSettings settings;
 
+	const ASTPtr primary_expr_ast;
+
 private:
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 	Block primary_key_sample;
-
-	ASTPtr primary_expr_ast;
 
 	String full_path;
 
 	NamesAndTypesListPtr columns;
 
 	Logger * log;
-	volatile bool shutdown_called;
 
 	/// Регулярное выражение соответсвующее названию директории с кусочками
 	Poco::RegularExpression file_name_regexp;
@@ -341,14 +446,10 @@ private:
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
 
-	void removeColumnFiles(String column_name);
+	void removeColumnFiles(String column_name, bool remove_array_size_files);
 
 	/// Определить, не битые ли данные в директории. Проверяет индекс и засечеки, но не сами данные.
 	bool isBrokenPart(const String & path);
-
-	/// Найти самые большие old_куски, из которых получен этот кусок.
-	/// Переименовать их, убрав префикс old_ и вернуть их имена.
-	Strings tryRestorePart(const String & path, const String & file_name, Strings & old_parts);
 
 	void createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column);
 };

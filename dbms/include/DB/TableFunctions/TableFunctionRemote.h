@@ -29,30 +29,40 @@ public:
 	{
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*ast_function).children;
 
+		const char * err = "Storage Distributed requires 2 to 5 parameters"
+				" - name of configuration section with list of remote servers, name of remote database {,|.} name of remote table, "
+				"[username, password].";
+
 		if (args_func.size() != 1)
-			throw Exception("Storage Distributed requires 3 or 5 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table, "
-				"[username, password].",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		if (args.size() != 3 && args.size() != 5)
-			throw Exception("Storage Distributed requires 3 or 5 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table, "
-				"[username, password].",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		if (args.size() < 2 || args.size() > 5)
+			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String descripton	 	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[0]).value);
 		String remote_database 	= dynamic_cast<ASTIdentifier &>(*args[1]).name;
-		String remote_table 	= dynamic_cast<ASTIdentifier &>(*args[2]).name;
-		String username = args.size() == 5 ? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[3]).value) : "default";
-		String password = args.size() == 5 ? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[4]).value) : "";
+		String remote_table 	= args.size() % 2 ? dynamic_cast<ASTIdentifier &>(*args[2]).name : "";
+		String username = args.size() >= 4
+			? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[args.size() - 2]).value) : "default";
+		String password = args.size() >= 4
+			? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[args.size() - 1]).value) : "";
+
+		if (remote_table.empty())
+		{
+			size_t dot = remote_database.find('.');
+			if (dot == String::npos)
+				throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			remote_table = remote_database.substr(dot + 1);
+			remote_database = remote_database.substr(0, dot);
+		}
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на эти Identifier.
-		/// Нам необходимо их пометить как имя базы данных и таблицы посколку по умолчанию стоит значение column
+		/// Нам необходимо их пометить как имя базы данных и таблицы поскольку по умолчанию стоит значение column
 		dynamic_cast<ASTIdentifier &>(*args[1]).kind = ASTIdentifier::Database;
-		dynamic_cast<ASTIdentifier &>(*args[2]).kind = ASTIdentifier::Table;
+		if (args.size() % 2)
+			dynamic_cast<ASTIdentifier &>(*args[2]).kind = ASTIdentifier::Table;
 
 		std::vector <std::vector< String> > names;
 		std::vector<String> shards = parseDescription(descripton, 0, descripton.size(), ',');
@@ -76,12 +86,10 @@ private:
 		/// Запрос на описание таблицы
 		String query = "DESC TABLE " + database + "." + table;
 		Settings settings = context.getSettings();
-		/// Отправляем на первый попавшийся сервер
-		auto entry = (*cluster.pools.begin())->get(&settings);
-
 		NamesAndTypesList res;
 
-		BlockInputStreamPtr input = new RemoteBlockInputStream(entry, query, &settings, QueryProcessingStage::Complete);
+		/// Отправляем на первый попавшийся шард
+		BlockInputStreamPtr input = new RemoteBlockInputStream(&*cluster.pools.front(), query, &settings, Tables(), QueryProcessingStage::Complete);
 		input->readPrefix();
 
 		while (true)

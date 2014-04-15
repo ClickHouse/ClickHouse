@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_POOL_H
-#define MYSQLXX_POOL_H
+#pragma once
 
 #include <list>
 
@@ -54,7 +53,7 @@ public:
 	class Entry
 	{
 	public:
-		Entry() : data(NULL), pool(NULL) {}
+		Entry() {}
 
 		Entry(const Entry & src)
 			: data(src.data), pool(src.pool)
@@ -80,12 +79,12 @@ public:
 
 		bool isNull() const
 		{
-			return data == NULL;
+			return data == nullptr;
 		}
 
 		operator mysqlxx::Connection & ()
 		{
-			if (data == NULL)
+			if (data == nullptr)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			forceConnected();
 			return data->conn;
@@ -93,7 +92,7 @@ public:
 
 		operator const mysqlxx::Connection & () const
 		{
-			if (data == NULL)
+			if (data == nullptr)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			forceConnected();
 			return data->conn;
@@ -101,7 +100,7 @@ public:
 
 		const mysqlxx::Connection * operator->() const
 		{
-			if (data == NULL)
+			if (data == nullptr)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			forceConnected();
 			return &data->conn;
@@ -109,7 +108,7 @@ public:
 
 		mysqlxx::Connection * operator->()
 		{
-			if (data == NULL)
+			if (data == nullptr)
 				throw Poco::RuntimeException("Tried to access NULL database connection.");
 			forceConnected();
 			return &data->conn;
@@ -132,9 +131,9 @@ public:
 
 	private:
 		/** Указатель на соединение. */
-		Connection * data;
+		Connection * data = nullptr;
 		/** Указатель на пул, которому мы принадлежим. */
-		Pool * pool;
+		Pool * pool = nullptr;
 
 		/** Переподключается к базе данных в случае необходимости. Если не удалось - подождать и попробовать снова. */
 		void forceConnected() const
@@ -198,7 +197,7 @@ public:
 	Pool(const std::string & config_name,
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
 		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-		 const char * parent_config_name_ = NULL)
+		 const char * parent_config_name_ = nullptr)
 		: default_connections(default_connections_), max_connections(max_connections_),
 		initialized(false), was_successful(false)
 	{
@@ -413,7 +412,7 @@ private:
 				if (Daemon::instance().isCancelled())
 					throw Poco::Exception("Daemon is cancelled while trying to connect to MySQL server.");
 
-				return NULL;
+				return nullptr;
 			}
 		}
 
@@ -424,5 +423,3 @@ private:
 };
 
 }
-
-#endif

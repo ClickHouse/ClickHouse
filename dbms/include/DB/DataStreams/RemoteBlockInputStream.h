@@ -15,51 +15,40 @@ namespace DB
   */
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
+private:
+	void init(const Settings * settings_)
+	{
+		if (settings_)
+		{
+			send_settings = true;
+			settings = *settings_;
+		}
+		else
+			send_settings = false;
+	}
 public:
+	/// Принимает готовое соединение.
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
-						QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: connection(connection_), query(query_), stage(stage_),
-		sent_query(false), finished(false), was_cancelled(false), got_exception_from_server(false),
-		log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: connection(&connection_), query(query_), external_tables(external_tables_), stage(stage_)
 	{
-		if (settings_)
-		{
-			send_settings = true;
-			settings = *settings_;
-		}
-		else
-			send_settings = false;
+		init(settings_);
 	}
 
-	/// Захватывает владение соединением из пула.
-	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
-		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(*pool_entry), query(query_),
-		stage(stage_), sent_query(false), finished(false), was_cancelled(false),
-		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
+	/// Принимает готовое соединение. Захватывает владение соединением из пула.
+	RemoteBlockInputStream(ConnectionPool::Entry & pool_entry_, const String & query_, const Settings * settings_,
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: pool_entry(pool_entry_), connection(&*pool_entry_), query(query_), external_tables(external_tables_), stage(stage_)
 	{
-		if (settings_)
-		{
-			send_settings = true;
-			settings = *settings_;
-		}
-		else
-			send_settings = false;
+		init(settings_);
 	}
 
-	RemoteBlockInputStream(ConnectionPool::Entry pool_entry_, const String & query_, const Settings * settings_,
-		const String & _host_column_, const String & _port_column_, QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(*pool_entry), query(query_), _host_column(_host_column_),
-		_port_column(_port_column_), stage(stage_), sent_query(false), finished(false), was_cancelled(false),
-		got_exception_from_server(false), log(&Logger::get("RemoteBlockInputStream (" + connection.getServerAddress() + ")"))
+	/// Принимает пул, из которого нужно будет достать соединение.
+	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_,
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
+		: pool(pool_), query(query_), external_tables(external_tables_), stage(stage_)
 	{
-		if (settings_)
-		{
-			send_settings = true;
-			settings = *settings_;
-		}
-		else
-			send_settings = false;
+		init(settings_);
 	}
 
 
@@ -87,10 +76,10 @@ public:
 
 		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
-			LOG_TRACE(log, "Cancelling query");
+			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query");
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-			connection.sendCancel();
+			connection->sendCancel();
 			was_cancelled = true;
 		}
 	}
@@ -102,47 +91,54 @@ public:
 		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
 		  */
 		if (sent_query && !finished)
-			connection.disconnect();
+			connection->disconnect();
 	}
 
 protected:
-	void populateBlock(Block & res)
+	/// Отправить на удаленные сервера все временные таблицы
+	void sendExternalTables()
 	{
-		if (!_host_column.empty() && !res.has(_host_column))
+		ExternalTablesData res;
+		Tables::const_iterator it;
+		for (it = external_tables.begin(); it != external_tables.end(); it ++)
 		{
-			ColumnPtr column_ptr = ColumnConst<String>(res.rows(), connection.getHost(), new DataTypeString).convertToFullColumn();
-			ColumnWithNameAndType column(column_ptr, new DataTypeString, _host_column);
-			res.insert(column);
+			StoragePtr cur = it->second;
+			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
+			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), settings, stage, DEFAULT_BLOCK_SIZE, 1);
+			if (input.size() == 0)
+				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), it->first));
+			else
+				res.push_back(std::make_pair(input[0], it->first));
 		}
-		if (!_port_column.empty() && !res.has(_port_column))
-		{
-			ColumnPtr column_ptr = ColumnConst<UInt16>(res.rows(), connection.getPort(), new DataTypeUInt16).convertToFullColumn();
-			ColumnWithNameAndType column(column_ptr, new DataTypeUInt16, _port_column);
-			res.insert(column);
-		}
+		connection->sendExternalTablesData(res);
 	}
 
 	Block readImpl()
 	{
 		if (!sent_query)
 		{
-			connection.sendQuery(query, "", stage, send_settings ? &settings : NULL);
+			/// Если надо - достаём соединение из пула.
+			if (pool)
+			{
+				pool_entry = pool->get(send_settings ? &settings : nullptr);
+				connection = &*pool_entry;
+			}
+
+			connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
+			sendExternalTables();
 			sent_query = true;
 		}
 
 		while (true)
 		{
-			Connection::Packet packet = connection.receivePacket();
+			Connection::Packet packet = connection->receivePacket();
 
 			switch (packet.type)
 			{
 				case Protocol::Server::Data:
 					/// Если блок не пуст и не является заголовочным блоком
 					if (packet.block && packet.block.rows() > 0)
-					{
-						populateBlock(packet.block);
 						return packet.block;
-					}
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
 				case Protocol::Server::Exception:
@@ -204,16 +200,16 @@ protected:
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
 		if (!was_cancelled)
 		{
-			LOG_TRACE(log, "Cancelling query because enough data has been read");
+			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query because enough data has been read");
 
 			was_cancelled = true;
-			connection.sendCancel();
+			connection->sendCancel();
 		}
 
 		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
 		while (true)
 		{
-			Connection::Packet packet = connection.receivePacket();
+			Connection::Packet packet = connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -241,40 +237,37 @@ protected:
 	}
 
 private:
-	/// Используется, если нужно владеть соединением из пула
+	IConnectionPool * pool = nullptr;
 	ConnectionPool::Entry pool_entry;
-	
-	Connection & connection;
+	Connection * connection = nullptr;
 
 	const String query;
 	bool send_settings;
 	Settings settings;
-	/// Имя столбца, куда записать имя хоста (Например "_host"). Пустая строка, если записывать не надо.
-	String _host_column;
-	/// Имя столбца, куда записать номер порта (Например "_port"). Пустая строка, если записывать не надо.
-	String _port_column;
+	/// Временные таблицы, которые необходимо переслать на удаленные сервера.
+	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 
 	/// Отправили запрос (это делается перед получением первого блока).
-	bool sent_query;
+	bool sent_query = false;
 	
 	/** Получили все данные от сервера, до пакета EndOfStream.
 	  * Если при уничтожении объекта, ещё не все данные считаны,
 	  *  то для того, чтобы не было рассинхронизации, на сервер отправляется просьба прервать выполнение запроса,
 	  *  и после этого считываются все пакеты до EndOfStream.
 	  */
-	bool finished;
+	bool finished = false;
 	
 	/** На сервер была отправлена просьба прервать выполенение запроса, так как данные больше не нужны.
 	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
 	  *  или если на стороне клиента произошло исключение.
 	  */
-	bool was_cancelled;
+	bool was_cancelled = false;
 
 	/// С сервера было получено исключение. В этом случае получать больше пакетов или просить прервать запрос не нужно.
-	bool got_exception_from_server;
+	bool got_exception_from_server = false;
 
-	Logger * log;
+	Logger * log = &Logger::get("RemoteBlockInputStream");
 };
 
 }

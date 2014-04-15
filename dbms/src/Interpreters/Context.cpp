@@ -161,27 +161,80 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 }
 
 
+Tables Context::getExternalTables() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	Tables res = external_tables;
+	if (session_context && session_context != this)
+	{
+		Tables buf = session_context->getExternalTables();
+		res.insert(buf.begin(), buf.end());
+	}
+	else if (global_context && global_context != this)
+	{
+		Tables buf = global_context->getExternalTables();
+		res.insert(buf.begin(), buf.end());
+	}
+	return res;
+}
+
+
+StoragePtr Context::tryGetExternalTable(const String & table_name) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	Tables::const_iterator jt;
+	if (external_tables.end() == (jt = external_tables.find(table_name)))
+		return StoragePtr();
+
+	return jt->second;
+}
+
+
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
+	Databases::const_iterator it;
+	Tables::const_iterator jt;
+
+	if (database_name.empty())
+	{
+		StoragePtr res;
+		if (res = tryGetExternalTable(table_name))
+			return res;
+		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
+			return res;
+		if (global_context && (res = global_context->tryGetExternalTable(table_name)))
+			return res;
+	}
 	String db = database_name.empty() ? current_database : database_name;
 
-	Databases::const_iterator it;
 	if (shared->databases.end() == (it = shared->databases.find(db)))
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-	Tables::const_iterator jt;
 	if (it->second.end() == (jt = it->second.find(table_name)))
 		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
 	return jt->second;
 }
 
+
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	
+
+	if (database_name.empty())
+	{
+		StoragePtr res;
+		if (res = tryGetExternalTable(table_name))
+			return res;
+		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
+			return res;
+		if (global_context && (res = global_context->tryGetExternalTable(table_name)))
+			return res;
+	}
 	String db = database_name.empty() ? current_database : database_name;
 	
 	Databases::const_iterator it;
@@ -193,6 +246,14 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 		return StoragePtr();
 	
 	return jt->second;
+}
+
+
+void Context::addExternalTable(const String & table_name, StoragePtr storage)
+{
+	if (external_tables.end() != external_tables.find(table_name))
+		throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+	external_tables[table_name] = storage;
 }
 
 
@@ -292,10 +353,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception("Syntax error while parsing query from file " + metadata_path + ": failed at position "
-			+ toString(pos - begin) + ": "
-			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + metadata_path),
 			DB::ErrorCodes::SYNTAX_ERROR);
 
 	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);
@@ -390,6 +448,17 @@ void Context::setDefaultFormat(const String & name)
 	default_format = name;
 }
 
+String Context::getDefaultReplicaName() const
+{
+	return shared->default_replica_name;
+}
+
+void Context::setDefaultReplicaName(const String & name)
+{
+	/// Полагаемся, что это присваивание происходит один раз при старте сервера. Если это не так, нужно использовать мьютекс.
+	shared->default_replica_name = name;
+}
+
 
 Context & Context::getSessionContext()
 {
@@ -442,14 +511,14 @@ ProcessList::Element * Context::getProcessListElement()
 }
 
 
-void Context::setUncompressedCache(size_t cache_size_in_cells)
+void Context::setUncompressedCache(size_t max_size_in_bytes)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	if (shared->uncompressed_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->uncompressed_cache = new UncompressedCache(cache_size_in_cells);
+	shared->uncompressed_cache = new UncompressedCache(max_size_in_bytes);
 }
 
 
@@ -471,8 +540,55 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 
 MarkCachePtr Context::getMarkCache() const
 {
+	/// Исходим из допущения, что функция setMarksCache, если вызывалась, то раньше. Иначе поставьте mutex.
 	return shared->mark_cache;
 }
+
+void Context::resetCaches() const
+{
+	/// Исходим из допущения, что функции setUncompressedCache, setMarkCache, если вызывались, то раньше (при старте сервера). Иначе поставьте mutex.
+
+	if (shared->uncompressed_cache)
+		shared->uncompressed_cache->reset();
+
+	if (shared->mark_cache)
+		shared->mark_cache->reset();
+}
+
+void Context::setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (shared->zookeeper)
+		throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
+
+	shared->zookeeper = zookeeper;
+}
+
+zkutil::ZooKeeper & Context::getZooKeeper() const
+{
+	if (!shared->zookeeper)
+		throw Exception("No ZooKeeper in Context", ErrorCodes::NO_ZOOKEEPER);
+	return *shared->zookeeper;
+}
+
+
+void Context::setInterserverIOHost(const String & host, int port)
+{
+	shared->interserver_io_host = host;
+	shared->interserver_io_port = port;
+}
+
+String Context::getInterserverIOHost() const
+{
+	return shared->interserver_io_host;
+}
+
+int Context::getInterserverIOPort() const
+{
+	return shared->interserver_io_port;
+}
+
 
 void Context::initClusters()
 {

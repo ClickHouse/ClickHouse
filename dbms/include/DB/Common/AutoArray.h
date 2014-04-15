@@ -20,7 +20,7 @@ namespace DB
   * sizeof равен размеру одного указателя.
   *
   * Не exception-safe.
-  * Копирование и присваивание разрушающее: исходный объект становится пустым.
+  * Копирование не поддерживается. Перемещение опустошает исходный объект.
   * То есть, использовать этот массив во многих случаях неудобно.
   *
   * Предназначен для ситуаций, в которых создаётся много массивов одинакового небольшого размера,
@@ -82,24 +82,24 @@ public:
 		init(size_, dont_init_elems);
 	}
 
-	/** Разрушающее копирование.
+	/** Премещение.
 	  */
-    AutoArray(const AutoArray & src)
+    AutoArray(AutoArray && src)
 	{
-		//std::cerr << this << " AutoArray(const AutoArray & src)" << std::endl;
-
+		if (this == &src)
+			return;
 		setEmpty();
 		data = src.data;
-		const_cast<AutoArray<T> &>(src).setEmpty();
+		src.setEmpty();
 	}
 
-	AutoArray & operator= (const AutoArray & src)
+	AutoArray & operator= (AutoArray && src)
 	{
-		//std::cerr << this << " operator=(const AutoArray & src)" << std::endl;
-
+		if (this == &src)
+			return *this;
 		uninit();
 		data = src.data;
-		const_cast<AutoArray<T> &>(src).setEmpty();
+		src.setEmpty();
 
 		return *this;
 	}

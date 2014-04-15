@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_USEQUERYRESULT_H
-#define MYSQLXX_USEQUERYRESULT_H
+#pragma once
 
 #include <mysqlxx/ResultBase.h>
 #include <mysqlxx/Row.h>
@@ -36,5 +35,3 @@ public:
 };
 
 }
-
-#endif

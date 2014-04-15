@@ -430,7 +430,7 @@ public:
 			NameSet argument_names;
 			
 			ColumnPtr column_first_array_ptr;
-			const ColumnArray * column_first_array = NULL;
+			const ColumnArray * column_first_array = nullptr;
 			
 			/// Положим в блок аргументы выражения.
 			

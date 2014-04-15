@@ -90,7 +90,7 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 				insertCurrentRow(merged_columns);
 			}
 
-			current_key = next_key;
+			current_key = std::move(next_key);
 			next_key.resize(description.size());
 
 			setRow(current_row, current);

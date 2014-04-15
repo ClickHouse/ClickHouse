@@ -52,7 +52,7 @@ public:
 	{
 		const char * pos = strchr(str.c_str(), '/');
 
-		if (NULL == pos)
+		if (nullptr == pos)
 		{
 			construct(Poco::Net::IPAddress(str));
 		}
@@ -111,20 +111,20 @@ public:
 		Poco::Net::IPAddress addr_v6 = toIPv6(addr);
 
 		/// Резолвим вручную, потому что в Poco не используется флаг AI_ALL, а он важен.
-		addrinfo * ai = NULL;
+		addrinfo * ai = nullptr;
 
 		addrinfo hints;
 		memset(&hints, 0, sizeof(hints));
 		hints.ai_family = AF_UNSPEC;
 		hints.ai_flags |= AI_V4MAPPED | AI_ALL;
 
-		int ret = getaddrinfo(host.c_str(), NULL, &hints, &ai);
+		int ret = getaddrinfo(host.c_str(), nullptr, &hints, &ai);
 		if (0 != ret)
 			throw Exception("Cannot getaddrinfo: " + std::string(gai_strerror(ret)), ErrorCodes::DNS_ERROR);
 
 		try
 		{
-			for (; ai != NULL; ai = ai->ai_next)
+			for (; ai != nullptr; ai = ai->ai_next)
 			{
 				if (ai->ai_addrlen && ai->ai_addr)
 				{
@@ -175,7 +175,7 @@ public:
 
 		/// Резолвим вручную, потому что в Poco нет такой функциональности.
 		char domain[1024];
-		int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), NULL, 0, NI_NAMEREQD);
+		int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), nullptr, 0, NI_NAMEREQD);
 		if (0 != gai_errno)
 			throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::DNS_ERROR);
 

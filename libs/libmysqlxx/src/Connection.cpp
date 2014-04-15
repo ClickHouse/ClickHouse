@@ -63,10 +63,10 @@ void Connection::connect(const char* db,
 	/** Включаем возможность использовать запрос LOAD DATA LOCAL INFILE с серверами,
 	  *  которые были скомпилированы без опции --enable-local-infile.
 	  */
-	if (mysql_options(&driver, MYSQL_OPT_LOCAL_INFILE, NULL))
+	if (mysql_options(&driver, MYSQL_OPT_LOCAL_INFILE, nullptr))
 		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
-	if (!mysql_real_connect(&driver, server, user, password, db, port, NULL, driver.client_flag))
+	if (!mysql_real_connect(&driver, server, user, password, db, port, nullptr, driver.client_flag))
 		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
 	/// Установим кодировки по-умолчанию - UTF-8.

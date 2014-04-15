@@ -5,7 +5,7 @@
 # Результаты сравниваются с эталонами.
 
 QUERIES_DIR="./queries"
-CLIENT_PROGRAM="curl -sS http://localhost:8123/ --data-binary @-"
+CLIENT_PROGRAM="clickhouse-client -n"
 
 
 COLOR_RESET="\033[0m"
@@ -20,6 +20,15 @@ MSG_OK="${COLOR_WHITE}[ ${COLOR_OK}OK${COLOR_WHITE} ]${COLOR_RESET}"
 MSG_GENERATED="${COLOR_WHITE}[ ${COLOR_UNKNOWN}GENERATED${COLOR_WHITE} ]${COLOR_RESET}"
 
 ERRORS=0
+
+
+if [ "$1" == "--generate" ]; then
+	GENERATE=1
+	shift
+else
+	GENERATE=0
+fi
+
 
 for dir in $(ls $QUERIES_DIR)
 do
@@ -68,11 +77,11 @@ do
 			cat $result_file
 		elif [ ! -e "$reference_file" ]; then
 			# надо сгенерировать эталонный результат
-			if [ "$1" == "--generate" ]; then
+			if [[ $GENERATE -eq 1 && ( -z "$1" || "$@" =~ "$test_name") ]]; then
 				cp $result_file $reference_file
 				echo -e "$MSG_GENERATED - no reference file"
 			else
-				echo -e "$MSG_UNKNOWN - no reference file (use --generate to create)"
+				echo -e "$MSG_UNKNOWN - no reference file (use --generate [test_name]... to create)"
 			fi
 		else
 			diff $reference_file $result_file > $diff_file

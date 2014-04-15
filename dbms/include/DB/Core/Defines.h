@@ -13,12 +13,19 @@
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC						300
 #define DBMS_DEFAULT_POLL_INTERVAL 								10
 
+/// При записи данных, для сжатия выделяется буфер размером max_compress_block_size. При переполнении буфера или если в буфер
+/// записано данных больше или равно, чем min_compress_block_size, то при очередной засечке, данные так же будут сжиматься
+/// В результате, для маленьких столбцов (числа 1-8 байт), при index_granularity = 8192, размер блока будет 64 KБ.
+/// А для больших столбцов (Title - строка ~100 байт), размер блока будет ~819 КБ. За счёт этого, коэффициент сжатия почти не ухудшится.
+#define DEFAULT_MIN_COMPRESS_BLOCK_SIZE							65536
+#define DEFAULT_MAX_COMPRESS_BLOCK_SIZE 						1048576
+
 /// Какими блоками по-умолчанию читаются и пишутся данные (в числе строк).
 #define DEFAULT_BLOCK_SIZE 										1048576
 /// То же самое, но для операций слияния. Меньше DEFAULT_BLOCK_SIZE для экономии оперативки (так как читаются все столбцы).
 #define DEFAULT_MERGE_BLOCK_SIZE 								10000
 
-#define DEFAULT_MAX_QUERY_SIZE 									1048576
+#define DEFAULT_MAX_QUERY_SIZE 									65536
 #define SHOW_CHARS_ON_SYNTAX_ERROR 								160L
 #define DEFAULT_MAX_THREADS 									8
 #define DEFAULT_MAX_DISTRIBUTED_CONNECTIONS						1024
@@ -40,3 +47,4 @@
 #define DBMS_MIN_REVISION_WITH_USER_PASSWORD					34482
 #define DBMS_MIN_REVISION_WITH_TOTALS_EXTREMES					35265
 #define DBMS_MIN_REVISION_WITH_STRING_QUERY_ID					39002
+#define DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES					50264

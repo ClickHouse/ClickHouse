@@ -87,7 +87,7 @@ protected:
 
 	/// Эти методы используются в Collapsing/Summing SortedBlockInputStream-ах.
 
-	/// Сохранить строчку, на которую указывает cursor в row.
+	/// Сохранить строчку, на которую указывает cursor, в row.
 	template<class TSortCursor>
 	void setRow(Row & row, TSortCursor & cursor)
 	{

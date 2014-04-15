@@ -53,7 +53,6 @@ public:
 	Names getRequiredColumns();
 
 	/** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
-	  * Выполняют подзапросы в соответствующих частях запроса.
 	  *
 	  * Пример использования:
 	  *   ExpressionActionsChain chain;
@@ -62,20 +61,25 @@ public:
 	  *   analyzer.appendSelect(chain);
 	  *   analyzer.appendOrderBy(chain);
 	  *   chain.finalize();
+	  *
+	  * Если указано only_types=true, не выполняет подзапросы в соответствующих частях запроса. Полученные таким
+	  *  образом действия не следует выполнять, они нужны только чтобы получить список столбцов с их типами.
 	  */
 	
+	void processGlobalOperations();
+
 	/// До агрегации:
-	bool appendArrayJoin(ExpressionActionsChain & chain);
-	bool appendWhere(ExpressionActionsChain & chain);
-	bool appendGroupBy(ExpressionActionsChain & chain);
-	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain);
+	bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
+	bool appendWhere(ExpressionActionsChain & chain, bool only_types);
+	bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
+	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 	
 	/// После агрегации:
-	bool appendHaving(ExpressionActionsChain & chain);
-	void appendSelect(ExpressionActionsChain & chain);
-	bool appendOrderBy(ExpressionActionsChain & chain);
+	bool appendHaving(ExpressionActionsChain & chain, bool only_types);
+	void appendSelect(ExpressionActionsChain & chain, bool only_types);
+	bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
 	/// Удаляет все столбцы кроме выбираемых SELECT, упорядочивает оставшиеся столбцы и переименовывает их в алиасы.
-	void appendProjectResult(ExpressionActionsChain & chain);
+	void appendProjectResult(ExpressionActionsChain & chain, bool only_types);
 	
 	/// Если ast не запрос SELECT, просто получает все действия для вычисления выражения.
 	/// Если project_result, в выходном блоке останутся только вычисленные значения в нужном порядке, переименованные в алиасы.
@@ -95,6 +99,11 @@ public:
 	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
 	Block getSelectSampleBlock();
 
+	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
+	Tables external_tables;
+
+	/// Создаем какие сможем Set из секции In для использования индекса по ним
+	void makeSetsForIndex();
 private:
 	typedef std::set<String> NamesSet;
 	
@@ -109,9 +118,7 @@ private:
 	
 	/// Исходные столбцы.
 	NamesAndTypesList columns;
-	/// Столбцы после ARRAY JOIN. Если нет ARRAY JOIN, совпадает с columns.
-	NamesAndTypesList columns_after_array_join;
-	/// Столбцы после агрегации. Если нет агрегации, совпадает с columns_after_array_join.
+	/// Столбцы после ARRAY JOIN и/или агрегации.
 	NamesAndTypesList aggregated_columns;
 
 	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
@@ -124,7 +131,6 @@ private:
 	AggregateDescriptions aggregate_descriptions;
 
 	std::map<std::string, SetPtr> sets_with_subqueries;
-	
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
 	
@@ -180,7 +186,7 @@ private:
 			
 			for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 			{
-				all_columns.push_back(ColumnWithNameAndType(NULL, it->second, it->first));
+				all_columns.push_back(ColumnWithNameAndType(nullptr, it->second, it->first));
 				new_names.insert(it->first);
 				stack.back().new_columns.insert(it->first);
 			}
@@ -257,10 +263,17 @@ private:
 	  */
 	void normalizeTree();
 	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, bool in_sign_rewritten);
-	
+
+	/// Обходит запрос и сохраняет найденные глобальные функции (например GLOBAL IN)
+	void findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes);
+	void findExternalTables(ASTPtr & ast);
+
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
-	
+	/// Выполнить подзапрос в секции GLOBAL IN и запомнить результат во временную таблицу типа memory
+	/// Все новые временные таблицы хранятся в переменной external_tables
+	void addExternalStorage(ASTFunction * node, size_t & name_id);
+
 	void getArrayJoinedColumns();
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
 	void addMultipleArrayJoinAction(ExpressionActions & actions);
@@ -269,7 +282,7 @@ private:
 	
 	void getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions);
 	
-	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions);
+	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions, bool no_subqueries);
 	
 	/// Добавить агрегатные функции в aggregate_descriptions.
 	/// Установить has_aggregation=true, если есть хоть одна агрегатная функция.
@@ -303,6 +316,9 @@ private:
 	void assertSelect();
 	void assertAggregation();
 	void assertArrayJoin();
+
+	void makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set);
+	void makeSetsForIndexRecursively(ASTPtr & node, const Block & sample_block);
 };
 
 }

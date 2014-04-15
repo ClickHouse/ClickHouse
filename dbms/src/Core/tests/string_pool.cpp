@@ -61,7 +61,7 @@ int main(int argc, char ** argv)
 	{
 		DB::Arena pool;
 		Stopwatch watch;
-		const char * res = NULL;
+		const char * res = nullptr;
 
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
 		{

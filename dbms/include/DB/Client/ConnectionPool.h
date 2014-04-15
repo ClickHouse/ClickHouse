@@ -87,7 +87,7 @@ class IConnectionPool : private boost::noncopyable
 {
 public:
 	typedef detail::ConnectionPoolEntry Entry;
-	virtual Entry get(Settings * settings = NULL) = 0;
+	virtual Entry get(Settings * settings = nullptr) = 0;
 	virtual ~IConnectionPool() {}
 };
 
@@ -122,7 +122,7 @@ public:
 
 
 	/** Выделяет соединение для работы. */
-	Entry get(Settings * settings = NULL)
+	Entry get(Settings * settings = nullptr)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
@@ -136,7 +136,11 @@ public:
 				return Entry(allocConnection());
 
 			LOG_INFO(log, "No free connections in pool. Waiting.");
-			available.wait(mutex);
+
+			if (settings)
+				available.wait(mutex, settings->queue_max_wait_ms.totalMilliseconds());
+			else
+				available.wait(mutex);
 		}
 	}
 

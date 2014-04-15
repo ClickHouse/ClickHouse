@@ -41,7 +41,7 @@ public:
 		
 		timespec timeout = { 0, 0 };
 		
-		if (-1 == sigtimedwait(&sig_set, NULL, &timeout))
+		if (-1 == sigtimedwait(&sig_set, nullptr, &timeout))
 		{
 			if (errno == EAGAIN)
 				return false;
@@ -56,7 +56,7 @@ public:
 	{
 		if (!active)
 		{
-			if (pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
+			if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
 				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
 			active = true;
@@ -68,7 +68,7 @@ public:
 	{
 		if (active)
 		{
-			if (pthread_sigmask(SIG_UNBLOCK, &sig_set, NULL))
+			if (pthread_sigmask(SIG_UNBLOCK, &sig_set, nullptr))
 				throwFromErrno("Cannot unblock signal.", ErrorCodes::CANNOT_UNBLOCK_SIGNAL);
 
 			active = false;

@@ -72,7 +72,7 @@ protected:
 
 public:
 	ChunkedReadBuffer(ReadBuffer & in_, UInt64 assert_query_id_)
-		: ReadBuffer(NULL, 0), in(in_), all_read(false), read_in_chunk(0), chunk_size(0), assert_query_id(assert_query_id_) {}
+		: ReadBuffer(nullptr, 0), in(in_), all_read(false), read_in_chunk(0), chunk_size(0), assert_query_id(assert_query_id_) {}
 };
 
 

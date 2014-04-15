@@ -17,7 +17,7 @@ private:
 	
 public:
 	/// Некоторые типы могут быть еще не известны.
-	DataTypeExpression(DataTypes argument_types_ = DataTypes(), DataTypePtr return_type_ = NULL)
+	DataTypeExpression(DataTypes argument_types_ = DataTypes(), DataTypePtr return_type_ = nullptr)
 		: argument_types(argument_types_), return_type(return_type_) {}
 	
 	std::string getName() const

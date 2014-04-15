@@ -61,24 +61,22 @@ BlockInputStreams StorageMerge::read(
 	processed_stage = QueryProcessingStage::Complete;
 	QueryProcessingStage::Enum tmp_processed_stage = QueryProcessingStage::Complete;
 
-	/// Список таблиц могут менять в другом потоке.
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-		context.assertDatabaseExists(source_database);
-		
-		/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
-		  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
-		  */
-		getSelectedTables(selected_tables);
-	}
+	/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
+	  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
+	  */
+	getSelectedTables(selected_tables);
+
+	/// Если в запросе используется PREWHERE, надо убедиться, что все таблицы это поддерживают.
+	if (dynamic_cast<const ASTSelectQuery &>(*query).prewhere_expression)
+		for (const auto & table : selected_tables)
+			if (!table->supportsPrewhere())
+				throw Exception("Storage " + table->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
 	TableLocks table_locks;
 
 	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
-	for (auto table : selected_tables)
-	{
+	for (auto & table : selected_tables)
 		table_locks.push_back(table->lockStructure(false));
-	}
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
 	BlockInputStreamPtr virtual_columns;
@@ -92,10 +90,10 @@ BlockInputStreams StorageMerge::read(
 	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 
-	for (size_t i = 0; i < selected_tables.size(); ++i)
+	for (size_t i = 0, size = selected_tables.size(); i < size; ++i)
 	{
 		StoragePtr table = selected_tables[i];
-		auto table_lock = table_locks[i];
+		auto & table_lock = table_locks[i];
 
 		if (!all_inclusive && values.find(table->getTableName()) == values.end())
 			continue;
@@ -114,12 +112,10 @@ BlockInputStreams StorageMerge::read(
 			settings,
 			tmp_processed_stage,
 			max_block_size,
-			selected_tables.size() > threads ? 1 : (threads / selected_tables.size()));
+			size > threads ? 1 : (threads / size));
 
 		for (auto & stream : source_streams)
-		{
 			stream->addTableLock(table_lock);
-		}
 
 		for (auto & virtual_column : virt_column_names)
 		{
@@ -157,12 +153,16 @@ Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & s
 	return res;
 }
 
-void StorageMerge::getSelectedTables(StorageVector & selected_tables)
+void StorageMerge::getSelectedTables(StorageVector & selected_tables) const
 {
+	/// Список таблиц могут менять в другом потоке.
+	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	context.assertDatabaseExists(source_database);
+
 	const Tables & tables = context.getDatabases().at(source_database);
-	for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
-		if (it->second.get() != this && table_name_regexp.match(it->first))
-			selected_tables.push_back(it->second);
+	for (const auto & name_table_pair : tables)
+		if (name_table_pair.second.get() != this && table_name_regexp.match(name_table_pair.first))
+			selected_tables.push_back(name_table_pair.second);
 }
 
 

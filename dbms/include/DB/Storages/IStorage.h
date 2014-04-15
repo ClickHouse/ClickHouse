@@ -27,6 +27,11 @@ typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
 typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
 
 
+class IStorage;
+
+typedef std::shared_ptr<IStorage> StoragePtr;
+
+
 /** Хранилище. Отвечает за:
   * - хранение данных таблицы;
   * - определение, в каком файле (или не файле) хранятся данные;
@@ -44,6 +49,11 @@ public:
 	  */
 	virtual bool isRemote() const { return false; }
 
+	virtual void storeExternalTables(const std::map<String, StoragePtr> & tables_)
+	{
+		throw Exception("Method storeExternalTables is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/** Возвращает true, если хранилище поддерживает запросы с секцией SAMPLE.
 	 */
 	virtual bool supportsSampling() const { return false; }
@@ -59,7 +69,7 @@ public:
 	/** Не дает изменять описание таблицы (в том числе переименовывать и удалять таблицу).
 	  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать такой лок на все ее время.
 	  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
-	  * (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
+	  *  (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
 	  * NOTE: Это лок на "чтение" описания таблицы. Чтобы изменить описание таблицы, нужно взять TableStructureWriteLock.
 	  */
 	class TableStructureReadLock
@@ -67,13 +77,15 @@ public:
 	private:
 		friend class IStorage;
 
+		StoragePtr storage;
 		/// Порядок важен.
 		Poco::SharedPtr<Poco::ScopedReadRWLock> data_lock;
 		Poco::SharedPtr<Poco::ScopedReadRWLock> structure_lock;
 
-		TableStructureReadLock(IStorage & storage, bool lock_structure, bool lock_data)
-		:	     data_lock(lock_data      ? new Poco::ScopedReadRWLock(storage.     data_lock) : nullptr),
-			structure_lock(lock_structure ? new Poco::ScopedReadRWLock(storage.structure_lock) : nullptr) {}
+		TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data)
+		:	storage(storage_),
+		         data_lock(lock_data      ? new Poco::ScopedReadRWLock(storage->     data_lock) : nullptr),
+			structure_lock(lock_structure ? new Poco::ScopedReadRWLock(storage->structure_lock) : nullptr) {}
 	};
 
 	typedef Poco::SharedPtr<TableStructureReadLock> TableStructureReadLockPtr;
@@ -88,7 +100,7 @@ public:
 	  */
 	TableStructureReadLockPtr lockStructure(bool will_modify_data)
 	{
-		TableStructureReadLockPtr res = new TableStructureReadLock(*this, true, will_modify_data);
+		TableStructureReadLockPtr res = new TableStructureReadLock(thisPtr(), true, will_modify_data);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -248,6 +260,9 @@ public:
 
 	bool is_dropped;
 
+	/// Поддерживается ли индекс в секции IN
+	virtual bool supportsIndexForIn() const { return false; };
+
 protected:
 	IStorage() : is_dropped(false) {}
 
@@ -277,7 +292,6 @@ private:
 	mutable Poco::RWLock structure_lock;
 };
 
-typedef std::shared_ptr<IStorage> StoragePtr;
 typedef std::vector<StoragePtr> StorageVector;
 typedef IStorage::TableStructureReadLocks TableLocks;
 

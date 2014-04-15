@@ -85,7 +85,7 @@ Block LogBlockInputStream::readImpl()
 		if (mark_number > 0)
 			current_row += marks[mark_number-1].rows;
 		while (current_mark < marks.size() && marks[current_mark].rows <= current_row)
-			current_mark ++;
+			++current_mark;
 
 		current_table = storage.getTableFromMark(current_mark);
 		current_table.second = std::min(current_table.second, marks.size() - 1);
@@ -293,21 +293,21 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.insert(std::make_pair(size_name, new Stream(
-				storage.files[size_name].data_file.path())));
+				storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name] = new Stream(storage.files[size_name].data_file.path());
+		streams[size_name] = new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size);
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
-		streams[name] = new Stream(storage.files[name].data_file.path());
+		streams[name] = new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size);
 }
 
 
@@ -402,8 +402,8 @@ void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 }
 
 
-StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_)
-	: path(path_), name(name_), columns(columns_), loaded_marks(false)
+StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
+	: path(path_), name(name_), columns(columns_), loaded_marks(false), max_compress_block_size(max_compress_block_size_)
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -417,9 +417,9 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
-StoragePtr StorageLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_)
+StoragePtr StorageLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
 {
-	return (new StorageLog(path_, name_, columns_))->thisPtr();
+	return (new StorageLog(path_, name_, columns_, max_compress_block_size_))->thisPtr();
 }
 
 

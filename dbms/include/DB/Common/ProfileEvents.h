@@ -27,6 +27,12 @@
 	M(MarkCacheHits, 					"Mark cache hits") \
 	M(MarkCacheMisses, 					"Mark cache misses") \
 	\
+	M(ReplicatedPartFetches, 			"Replicated part fetches") \
+	M(ReplicatedPartFailedFetches,		"Replicated part fetches failed") \
+	M(ObsoleteReplicatedParts,			"Replicated parts rendered obsolete by fetches") \
+	M(ReplicatedPartMerges,				"Replicated part merges") \
+	M(ReplicatedPartFetchesOfMerged,	"Replicated part merges replaced with fetches") \
+	\
 	M(END, "")
 
 namespace ProfileEvents

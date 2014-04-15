@@ -1,6 +1,9 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Columns/ColumnSet.h>
+#include <DB/Columns/ColumnTuple.h>
+#include <DB/Parsers/ASTSet.h>
 
 namespace DB
 {
@@ -114,7 +117,7 @@ void PKCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 
 bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
-	/// Фнукции < > = != <= >=, у которых один агрумент константа, другой - один из столбцов первичного ключа.
+	/// Фнукции < > = != <= >= in , у которых один агрумент константа, другой - один из столбцов первичного ключа.
 	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
 	{
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
@@ -126,6 +129,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		bool inverted;
 		size_t column;
 		Field value;
+
 		if (pk_columns.count(args[0]->getColumnName()) && getConstant(args[1], block_with_constants, value))
 		{
 			inverted = false;
@@ -135,6 +139,11 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		{
 			inverted = true;
 			column = pk_columns[args[1]->getColumnName()];
+		}
+		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<ASTSet *>(args[1].get()))
+		{
+			inverted = false;
+			column = pk_columns[args[0]->getColumnName()];
 		}
 		else
 			return false;
@@ -172,6 +181,11 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			out.range = Range::createRightBounded(value, true);
 		else if (func->name == "greaterOrEquals")
 			out.range = Range::createLeftBounded(value, true);
+		else if (func->name == "in" || func->name == "notIn")
+		{
+			out.function = func->name == "in" ? RPNElement::FUNCTION_IN_SET : RPNElement::FUNCTION_NOT_IN_SET;
+			out.in_function = node;
+		}
 		else
 			return false;
 		
@@ -218,29 +232,6 @@ String PKCondition::toString()
 	return res;
 }
 
-/// Множество значений булевой переменной. То есть два булевых значения: может ли быть true, может ли быть false.
-struct BoolMask
-{
-	bool can_be_true;
-	bool can_be_false;
-	
-	BoolMask() {}
-	BoolMask(bool can_be_true_, bool can_be_false_) : can_be_true(can_be_true_), can_be_false(can_be_false_) {}
-	
-	BoolMask operator &(const BoolMask & m)
-	{
-		return BoolMask(can_be_true && m.can_be_true, can_be_false || m.can_be_false);
-	}
-	BoolMask operator |(const BoolMask & m)
-	{
-		return BoolMask(can_be_true || m.can_be_true, can_be_false && m.can_be_false);
-	}
-	BoolMask operator !()
-	{
-		return BoolMask(can_be_false, can_be_true);
-	}
-};
-
 bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded)
 {
 	/// Найдем диапазоны элементов ключа.
@@ -284,6 +275,24 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 			if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
 				rpn_stack.back() = !rpn_stack.back();
 		}
+		else if (element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+		{
+			ASTFunction * in_func = dynamic_cast<ASTFunction *>(element.in_function.get());
+			ASTs & args = dynamic_cast<ASTExpressionList &>(*in_func->arguments).children;
+			ASTSet * ast_set = dynamic_cast<ASTSet *>(args[1].get());
+			if (in_func && ast_set)
+			{
+				const Range & key_range = key_ranges[element.key_column];
+
+				rpn_stack.push_back(ast_set->set->mayBeTrueInRange(key_range));
+				if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+					rpn_stack.back() = !rpn_stack.back();
+			}
+			else
+			{
+				throw DB::Exception("Set for IN is not created yet!");
+			}
+		}
 		else if (element.function == RPNElement::FUNCTION_NOT)
 		{
 			rpn_stack.back() = !rpn_stack.back();
@@ -319,7 +328,46 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 
 bool PKCondition::mayBeTrueAfter(const Field * left_pk)
 {
-	return mayBeTrueInRange(left_pk, NULL, false);
+	return mayBeTrueInRange(left_pk, nullptr, false);
 }
 
+ASTSet * PKCondition::RPNElement::inFunctionToSet()
+{
+	ASTFunction * in_func = dynamic_cast<ASTFunction *>(in_function.get());
+	if (!in_func)
+		return nullptr;
+	ASTs & args = dynamic_cast<ASTExpressionList &>(*in_func->arguments).children;
+	ASTSet * ast_set = dynamic_cast<ASTSet *>(args[1].get());
+	return ast_set;
+}
+
+String PKCondition::RPNElement::toString()
+{
+	std::ostringstream ss;
+	switch (function)
+	{
+		case FUNCTION_AND:
+			return "and";
+		case FUNCTION_OR:
+			return "or";
+		case FUNCTION_NOT:
+			return "not";
+		case FUNCTION_UNKNOWN:
+			return "unknown";
+		case FUNCTION_NOT_IN_SET:
+		case FUNCTION_IN_SET:
+		{
+			ss << "(column " << key_column << (function == FUNCTION_IN_SET ? " in " : " notIn ") << inFunctionToSet()->set->describe() << ")";
+			return ss.str();
+		}
+		case FUNCTION_IN_RANGE:
+		case FUNCTION_NOT_IN_RANGE:
+		{
+			ss << "(column " << key_column << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString() << ")";
+			return ss.str();
+		}
+		default:
+			return "ERROR";
+	}
+}
 }

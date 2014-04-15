@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_TRANSACTION_H
-#define MYSQLXX_TRANSACTION_H
+#pragma once
 
 #include <boost/noncopyable.hpp>
 
@@ -46,5 +45,3 @@ private:
 
 
 }
-
-#endif

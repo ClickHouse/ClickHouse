@@ -1,5 +1,4 @@
-#ifndef Ext_Foundation_PatternFormatter_INCLUDED
-#define Ext_Foundation_PatternFormatter_INCLUDED
+#pragma once
 
 #include <Poco/PatternFormatter.h>
 
@@ -19,5 +18,3 @@ public:
 };
 
 }
-
-#endif

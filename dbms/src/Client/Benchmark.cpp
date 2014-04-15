@@ -53,23 +53,25 @@ namespace DB
 class Benchmark
 {
 public:
-	Benchmark(unsigned concurrency_,
+	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_)
-		: concurrency(concurrency_), queue(concurrency), pool(concurrency),
+		: concurrency(concurrency_), delay(delay_), queue(concurrency), pool(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_, data_type_factory)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
 
 		readQueries();
 		run();
-		report();
+
+		std::cerr << "\nTotal queries executed: " << queries_total << std::endl;
 	}
 
 private:
 	typedef std::string Query;
 
 	unsigned concurrency;
+	double delay;
 
 	typedef std::vector<Query> Queries;
 	Queries queries;
@@ -82,10 +84,11 @@ private:
 	DataTypeFactory data_type_factory;
 	ConnectionPool connections;
 
-	Stopwatch total_watch;
-	size_t total_queries = 0;
-	size_t total_rows = 0;
-	size_t total_bytes = 0;
+	Stopwatch watch_per_interval;
+	size_t queries_total = 0;
+	size_t queries_per_interval = 0;
+	size_t rows_per_interval = 0;
+	size_t bytes_per_interval = 0;
 	ReservoirSampler<double> sampler {1 << 16};
 	Poco::FastMutex mutex;
 
@@ -118,7 +121,7 @@ private:
 
 		InterruptListener interrupt_listener;
 
-		total_watch.restart();
+		watch_per_interval.restart();
 		Stopwatch watch;
 
 		/// В цикле, кладём все запросы в очередь.
@@ -129,7 +132,7 @@ private:
 
 			queue.push(queries[i]);
 
-			if (watch.elapsedSeconds() > 1)
+			if (watch.elapsedSeconds() > delay)
 			{
 				report();
 				watch.restart();
@@ -152,7 +155,7 @@ private:
 			sigset_t sig_set;
 			if (sigemptyset(&sig_set)
 				|| sigaddset(&sig_set, SIGINT)
-				|| pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
+				|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
 				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
 			Query query;
@@ -202,11 +205,11 @@ private:
 	void execute(ConnectionPool::Entry & connection, Query & query)
 	{
 		Stopwatch watch;
-		RemoteBlockInputStream stream(*connection, query, nullptr);
+		RemoteBlockInputStream stream(connection, query, nullptr);
 
 		size_t rows = 0;
 		size_t bytes = 0;
-		stream.setProgressCallback([&](size_t rows_inc , size_t bytes_inc) { rows += rows_inc; bytes += bytes_inc; });
+		stream.setProgressCallback([&](size_t rows_inc, size_t bytes_inc) { rows += rows_inc; bytes += bytes_inc; });
 
 		stream.readPrefix();
 		while (Block block = stream.read())
@@ -221,9 +224,10 @@ private:
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-		++total_queries;
-		total_rows += rows;
-		total_bytes += bytes;
+		++queries_total;
+		++queries_per_interval;
+		rows += rows_per_interval;
+		bytes += bytes_per_interval;
 		sampler.insert(seconds);
 	}
 
@@ -234,13 +238,25 @@ private:
 
 		std::cerr
 			<< std::endl
-			<< "QPS: " << (total_queries / total_watch.elapsedSeconds()) << ", "
-			<< "RPS: " << (total_rows / total_watch.elapsedSeconds()) << ", "
-			<< "MiB/s: " << (total_bytes / total_watch.elapsedSeconds() / 1048576) << "."
+			<< "QPS: " << (queries_per_interval / watch_per_interval.elapsedSeconds()) << ", "
+			<< "RPS: " << (rows_per_interval / watch_per_interval.elapsedSeconds()) << ", "
+			<< "MiB/s: " << (bytes_per_interval / watch_per_interval.elapsedSeconds() / 1048576) << "."
 			<< std::endl;
 
-		for (double level = 0; level < 1; level += 0.1)
-			std::cerr << int(level * 100) << "%\t" << sampler.quantileInterpolated(level) << " sec." << std::endl;
+		for (size_t percent = 0; percent <= 100; percent += 10)
+			std::cerr << percent << "%\t" << sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
+
+		resetCounts();
+	}
+
+
+	void resetCounts()
+	{
+		sampler.clear();
+		queries_per_interval = 0;
+		rows_per_interval = 0;
+		bytes_per_interval = 0;
+		watch_per_interval.restart();
 	}
 };
 
@@ -257,6 +273,7 @@ int main(int argc, char ** argv)
 		desc.add_options()
 			("help", "produce help message")
 			("concurrency,c", boost::program_options::value<unsigned>()->default_value(1), "number of parallel queries")
+			("delay,d", boost::program_options::value<double>()->default_value(1), "delay between reports in seconds")
 			("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "")
 			("port", boost::program_options::value<UInt16>()->default_value(9000), "")
 			("user", boost::program_options::value<std::string>()->default_value("default"), "")
@@ -276,6 +293,7 @@ int main(int argc, char ** argv)
 
 		Benchmark benchmark(
 			options["concurrency"].as<unsigned>(),
+			options["delay"].as<double>(),
 			options["host"].as<std::string>(),
 			options["port"].as<UInt16>(),
 			options["database"].as<std::string>(),

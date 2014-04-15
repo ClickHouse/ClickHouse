@@ -25,6 +25,10 @@ public:
 	  */
 	virtual const NamesAndTypesList & getColumnsList() const = 0;
 
+	/** Получить список имён столбцов таблицы, только невиртуальные.
+	  */
+	virtual Names getColumnNamesList() const;
+
 	/** Получить описание реального (невиртуального) столбца по его имени.
 	  */
 	virtual NameAndTypePair getRealColumn(const String & column_name) const;

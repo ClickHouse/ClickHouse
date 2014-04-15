@@ -2,13 +2,13 @@
 #include <Yandex/time2str.h>
 #include <Poco/Ext/ScopedTry.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Common/escapeForFileName.h>
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
+#include <DB/DataStreams/copyData.h>
 
 
 
@@ -51,11 +51,9 @@ MergeTreeData::MergeTreeData(
 
 	/// инициализируем описание сортировки
 	sort_descr.reserve(primary_expr_ast->children.size());
-	for (ASTs::iterator it = primary_expr_ast->children.begin();
-		it != primary_expr_ast->children.end();
-		++it)
+	for (const ASTPtr & ast : primary_expr_ast->children)
 	{
-		String name = (*it)->getColumnName();
+		String name = ast->getColumnName();
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
 
@@ -65,7 +63,6 @@ MergeTreeData::MergeTreeData(
 	primary_key_sample = projected_expr->getSampleBlock();
 
 	loadDataParts();
-	clearOldParts();
 }
 
 UInt64 MergeTreeData::getMaxDataPartIndex()
@@ -121,8 +118,18 @@ String MergeTreeData::getPartName(DayNum_t left_date, DayNum_t right_date, UInt6
 }
 
 
-void MergeTreeData::parsePartName(const String & file_name, const Poco::RegularExpression::MatchVec & matches, DataPart & part)
+void MergeTreeData::parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches_p)
 {
+	Poco::RegularExpression::MatchVec match_vec;
+	if (!matches_p)
+	{
+		if (!isPartDirectory(file_name, match_vec))
+			throw Exception("Unexpected part name: " + file_name, ErrorCodes::BAD_DATA_PART_NAME);
+		matches_p = &match_vec;
+	}
+
+	const Poco::RegularExpression::MatchVec & matches = *matches_p;
+
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
 	part.left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
@@ -145,13 +152,14 @@ void MergeTreeData::loadDataParts()
 
 	data_parts.clear();
 
-	Strings part_file_names;
-	Strings old_file_names;
+	Strings all_file_names;
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-	{
-		String file_name = it.name();
+		all_file_names.push_back(it.name());
 
+	Strings part_file_names;
+	for (const String & file_name : all_file_names)
+	{
 		/// Удаляем временные директории старше суток.
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
 		{
@@ -167,25 +175,29 @@ void MergeTreeData::loadDataParts()
 		}
 
 		if (0 == file_name.compare(0, strlen("old_"), "old_"))
-			old_file_names.push_back(file_name);
+		{
+			String new_file_name = file_name.substr(strlen("old_"));
+			LOG_WARNING(log, "Renaming " << file_name << " to " << new_file_name << " for compatibility reasons");
+			Poco::File(full_path + file_name).renameTo(full_path + new_file_name);
+			part_file_names.push_back(new_file_name);
+		}
 		else
+		{
 			part_file_names.push_back(file_name);
+		}
 	}
 
 	Poco::RegularExpression::MatchVec matches;
-	while (!part_file_names.empty())
+	for (const String & file_name : part_file_names)
 	{
-		String file_name = part_file_names.back();
-		part_file_names.pop_back();
-
 		if (!isPartDirectory(file_name, matches))
 			continue;
 
 		MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-		parsePartName(file_name, matches, *part);
+		parsePartName(file_name, *part, &matches);
 		part->name = file_name;
 
-		/// Для битых кусков, которые могут образовываться после грубого перезапуска сервера, попытаться восстановить куски, из которых они сделаны.
+		/// Игнорируем и, возможно, удаляем битые куски, которые могут образовываться после грубого перезапуска сервера.
 		if (isBrokenPart(full_path + file_name))
 		{
 			if (part->level == 0)
@@ -196,22 +208,48 @@ void MergeTreeData::loadDataParts()
 			}
 			else
 			{
-				Strings new_parts = tryRestorePart(full_path, file_name, old_file_names);
-				part_file_names.insert(part_file_names.begin(), new_parts.begin(), new_parts.end());
+				/// Посмотрим, сколько кусков покрыты битым. Если хотя бы два, предполагаем, что битый кусок образован их
+				///  слиянием, и мы ничего не потеряем, если его удалим.
+				int contained_parts = 0;
+
+				LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
+
+				for (const String & contained_name : part_file_names)
+				{
+					if (contained_name == file_name)
+						continue;
+					if (!isPartDirectory(contained_name, matches))
+						continue;
+					DataPart contained_part(*this);
+					parsePartName(contained_name, contained_part, &matches);
+					if (part->contains(contained_part))
+					{
+						LOG_ERROR(log, "Found part " << full_path + contained_name);
+						++contained_parts;
+					}
+				}
+
+				if (contained_parts >= 2)
+				{
+					LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because it covers at least 2 other parts");
+					Poco::File(full_path + file_name).remove(true);
+				}
+				else
+				{
+					LOG_ERROR(log, "Not removing broken part " << full_path + file_name
+						<< " because it covers less than 2 parts. You need to resolve this manually");
+				}
 			}
 
 			continue;
 		}
-
-		/// Размер - в количестве засечек.
-		part->size = Poco::File(full_path + file_name + "/" + escapeForFileName(columns->front().first) + ".mrk").getSize()
-			/ MERGE_TREE_MARK_SIZE;
 
 		part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
 
 		try
 		{
 			part->loadIndex();
+			part->loadChecksums();
 		}
 		catch (...)
 		{
@@ -249,14 +287,16 @@ void MergeTreeData::loadDataParts()
 
 			if ((*curr_jt)->contains(**prev_jt))
 			{
-				LOG_WARNING(log, "Part " << (*curr_jt)->name << " contains " << (*prev_jt)->name);
+				LOG_INFO(log, "Part " << (*curr_jt)->name << " contains " << (*prev_jt)->name);
+				(*prev_jt)->remove_time = time(0);
 				data_parts.erase(prev_jt);
 				prev_jt = curr_jt;
 				++curr_jt;
 			}
 			else if ((*prev_jt)->contains(**curr_jt))
 			{
-				LOG_WARNING(log, "Part " << (*prev_jt)->name << " contains " << (*curr_jt)->name);
+				LOG_INFO(log, "Part " << (*prev_jt)->name << " contains " << (*curr_jt)->name);
+				(*curr_jt)->remove_time = time(0);
 				data_parts.erase(curr_jt++);
 			}
 			else
@@ -271,43 +311,35 @@ void MergeTreeData::loadDataParts()
 }
 
 
-void MergeTreeData::clearOldParts()
+Strings MergeTreeData::clearOldParts()
 {
 	Poco::ScopedTry<Poco::FastMutex> lock;
+	Strings res;
 
 	/// Если метод уже вызван из другого потока (или если all_data_parts прямо сейчас меняют), то можно ничего не делать.
 	if (!lock.lock(&all_data_parts_mutex))
 	{
-		LOG_TRACE(log, "Already clearing or modifying old parts");
-		return;
+		return res;
 	}
 
-	LOG_TRACE(log, "Clearing old parts");
+	time_t now = time(0);
 	for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
 	{
 		int ref_count = it->use_count();
-		if (ref_count == 1)		/// После этого ref_count не может увеличиться.
+		if (ref_count == 1 && /// После этого ref_count не может увеличиться.
+			(*it)->remove_time + settings.old_parts_lifetime < now)
 		{
-			LOG_DEBUG(log, "'Removing' part " << (*it)->name << " (prepending old_ to its name)");
+			LOG_DEBUG(log, "Removing part " << (*it)->name);
 
-			(*it)->renameToOld();
+			res.push_back((*it)->name);
+			(*it)->remove();
 			all_data_parts.erase(it++);
 		}
 		else
 			++it;
 	}
 
-	/// Удалим старые old_ куски.
-	Poco::DirectoryIterator end;
-	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-	{
-		if (0 != it.name().compare(0, strlen("old_"), "old_"))
-			continue;
-		if (it->isDirectory() && it->getLastModified().epochTime() + settings.old_parts_lifetime < time(0))
-		{
-			it->remove(true);
-		}
-	}
+	return res;
 }
 
 void MergeTreeData::setPath(const String & new_full_path)
@@ -315,8 +347,7 @@ void MergeTreeData::setPath(const String & new_full_path)
 	Poco::File(full_path).renameTo(new_full_path);
 	full_path = new_full_path;
 
-	context.getUncompressedCache()->reset();
-	context.getMarkCache()->reset();
+	context.resetCaches();
 
 	log = &Logger::get(lastTwoPathComponents(full_path));
 }
@@ -326,16 +357,25 @@ void MergeTreeData::dropAllData()
 	data_parts.clear();
 	all_data_parts.clear();
 
-	context.getUncompressedCache()->reset();
-	context.getMarkCache()->reset();
+	context.resetCaches();
 
 	Poco::File(full_path).remove(true);
 }
 
-void MergeTreeData::removeColumnFiles(String column_name)
+void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size_files)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	size_t dot_pos = column_name.find('.');
+	if (dot_pos != std::string::npos)
+	{
+		std::string nested_column = column_name.substr(0, dot_pos);
+		column_name = nested_column + "%2E" + column_name.substr(dot_pos + 1);
+
+		if (remove_array_size_files)
+			column_name = std::string("(?:") + nested_column + "|" + column_name + ")";
+	}
 
 	/// Регэксп выбирает файлы столбца для удаления
 	Poco::RegularExpression re(column_name + "(?:(?:\\.|\\%2E).+){0,1}" +"(?:\\.mrk|\\.bin|\\.size\\d+\\.bin|\\.size\\d+\\.mrk)");
@@ -365,26 +405,15 @@ void MergeTreeData::removeColumnFiles(String column_name)
 
 void MergeTreeData::createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column)
 {
-	ASTFunction * function = new ASTFunction;
-	ASTPtr function_ptr = function;
+	Names out_names;
+	out_expression = new ExpressionActions(
+		NamesAndTypesList(1, NameAndTypePair(in_column_name, getDataTypeByName(in_column_name))), context.getSettingsRef());
 
-	ASTExpressionList * arguments = new ASTExpressionList;
-	ASTPtr arguments_ptr = arguments;
+	FunctionPtr function = context.getFunctionFactory().get("to" + out_type, context);
+	out_expression->add(ExpressionActions::Action::applyFunction(function, Names(1, in_column_name)), out_names);
+	out_expression->add(ExpressionActions::Action::removeColumn(in_column_name));
 
-	function->name = "to" + out_type;
-	function->arguments = arguments_ptr;
-	function->children.push_back(arguments_ptr);
-
-	ASTIdentifier * in_column = new ASTIdentifier;
-	ASTPtr in_column_ptr = in_column;
-
-	arguments->children.push_back(in_column_ptr);
-
-	in_column->name = in_column_name;
-	in_column->kind = ASTIdentifier::Column;
-
-	out_expression = ExpressionAnalyzer(function_ptr, context, *columns).getActions(false);
-	out_column = function->getColumnName();
+	out_column = out_names[0];
 }
 
 static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesList & columns)
@@ -397,6 +426,12 @@ static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesLis
 	throw Exception("No column " + name + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
+/// одинаковыми считаются имена, вида "name.*"
+static bool namesWithDotEqual(const String & name_with_dot, const DB::NameAndTypePair & name_type)
+{
+	return (name_with_dot == name_type.first.substr(0, name_with_dot.length()));
+}
+
 void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 {
 	{
@@ -404,13 +439,21 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 		alterColumns(params, columns, context);
 	}
+
 	if (params.type == ASTAlterQuery::DROP)
 	{
 		String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
-		removeColumnFiles(column_name);
 
-		context.getUncompressedCache()->reset();
-		context.getMarkCache()->reset();
+		/// Если нет колонок вида nested_name.*, то удалим столбцы размера массивов
+		bool remove_array_size_files = false;
+		size_t dot_pos = column_name.find('.');
+		if (dot_pos != std::string::npos)
+		{
+			remove_array_size_files = (columns->end() == std::find_if(columns->begin(), columns->end(), boost::bind(namesWithDotEqual, column_name.substr(0, dot_pos), _1)));
+		}
+		removeColumnFiles(column_name, remove_array_size_files);
+
+		context.resetCaches();
 	}
 }
 
@@ -442,20 +485,31 @@ void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
 		ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, NULL, ""), expr);
+			DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, nullptr, ""), expr);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
+		in.readPrefix();
 		out.writePrefix();
 
 		try
 		{
 			while(DB::Block b = in.read())
-			{
-				/// оставляем только столбец с результатом
-				b.erase(0);
 				out.write(b);
+
+			in.readSuffix();
+			DataPart::Checksums add_checksums = out.writeSuffixAndGetChecksums();
+
+			/// Запишем обновленные контрольные суммы во временный файл.
+			if (!part->checksums.empty())
+			{
+				DataPart::Checksums new_checksums = part->checksums;
+				std::string escaped_name = escapeForFileName(name_type.name);
+				std::string escaped_out_column = escapeForFileName(out_column);
+				new_checksums.files[escaped_name  + ".bin"] = add_checksums.files[escaped_out_column + ".bin"];
+				new_checksums.files[escaped_name  + ".mrk"] = add_checksums.files[escaped_out_column + ".mrk"];
+
+				WriteBufferFromFile checksums_file(full_path + part->name + '/' + escaped_out_column + ".checksums.txt", 1024);
+				new_checksums.writeText(checksums_file);
 			}
-			LOG_TRACE(log, "Write Suffix");
-			out.writeSuffix();
 		}
 		catch (const Exception & e)
 		{
@@ -485,45 +539,67 @@ void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
 	/// переименовываем старые столбцы, добавляя расширение .old
 	for (DataPartPtr & part : parts)
 	{
-		std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		std::string part_path = full_path + part->name + '/';
+		std::string path = part_path + escapeForFileName(name_type.name);
 		if (Poco::File(path + ".bin").exists())
 		{
 			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
 			Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
 			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
 			Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
+
+			if (Poco::File(part_path + "checksums.txt").exists())
+			{
+				LOG_TRACE(log, "Renaming " << part_path + "checksums.txt" << " to " << part_path + "checksums.txt" + ".old");
+				Poco::File(part_path + "checksums.txt").renameTo(part_path + "checksums.txt" + ".old");
+			}
 		}
 	}
 
 	/// переименовываем временные столбцы
 	for (DataPartPtr & part : parts)
 	{
-		std::string path = full_path + part->name + '/' + escapeForFileName(out_column);
-		std::string new_path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		std::string part_path = full_path + part->name + '/';
+		std::string name = escapeForFileName(out_column);
+		std::string new_name = escapeForFileName(name_type.name);
+		std::string path = part_path + name;
+		std::string new_path = part_path + new_name;
 		if (Poco::File(path + ".bin").exists())
 		{
 			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
 			Poco::File(path + ".bin").renameTo(new_path + ".bin");
 			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
 			Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
+
+			if (Poco::File(path + ".checksums.txt").exists())
+			{
+				LOG_TRACE(log, "Renaming " << path + ".checksums.txt" << " to " << part_path + ".checksums.txt");
+				Poco::File(path + ".checksums.txt").renameTo(part_path + "checksums.txt");
+			}
 		}
 	}
 
 	// удаляем старые столбцы
 	for (DataPartPtr & part : parts)
 	{
-		std::string path = full_path + part->name + '/' + escapeForFileName(name_type.name);
+		std::string part_path = full_path + part->name + '/';
+		std::string path = part_path + escapeForFileName(name_type.name);
 		if (Poco::File(path + ".bin" + ".old").exists())
 		{
 			LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
 			Poco::File(path + ".bin" + ".old").remove();
 			LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
 			Poco::File(path + ".mrk" + ".old").remove();
+
+			if (Poco::File(part_path + "checksums.txt" + ".old").exists())
+			{
+				LOG_TRACE(log, "Removing old checksums " << part_path + "checksums.txt" + ".old");
+				Poco::File(part_path + "checksums.txt" + ".old").remove();
+			}
 		}
 	}
 
-	context.getUncompressedCache()->reset();
-	context.getMarkCache()->reset();
+	context.resetCaches();
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
@@ -588,69 +664,17 @@ bool MergeTreeData::isBrokenPart(const String & path)
 	return false;
 }
 
-Strings MergeTreeData::tryRestorePart(const String & path, const String & file_name, Strings & old_parts)
-{
-	LOG_ERROR(log, "Restoring all old_ parts covered by " << file_name);
-
-	Poco::RegularExpression::MatchVec matches;
-	Strings restored_parts;
-
-	isPartDirectory(file_name, matches);
-	DataPart broken_part(*this);
-	parsePartName(file_name, matches, broken_part);
-
-	for (int i = static_cast<int>(old_parts.size()) - 1; i >= 0; --i)
-	{
-		DataPart old_part(*this);
-		String name = old_parts[i].substr(strlen("old_"));
-		if (!isPartDirectory(name, matches))
-		{
-			LOG_ERROR(log, "Strange file name: " << path + old_parts[i] << "; ignoring");
-			old_parts.erase(old_parts.begin() + i);
-			continue;
-		}
-		parsePartName(name, matches, old_part);
-		if (broken_part.contains(old_part))
-		{
-			/// Восстанавливаем все содержащиеся куски. Если некоторые из них содержатся в других, их удалит loadDataParts.
-			LOG_ERROR(log, "Restoring part " << path + old_parts[i]);
-			Poco::File(path + old_parts[i]).renameTo(path + name);
-			old_parts.erase(old_parts.begin() + i);
-			restored_parts.push_back(name);
-		}
-	}
-
-	if (restored_parts.size() >= 2)
-	{
-		LOG_ERROR(log, "Removing broken part " << path + file_name << " because at least 2 old_ parts were restored in its place");
-		Poco::File(path + file_name).remove(true);
-	}
-	else
-	{
-		LOG_ERROR(log, "Not removing broken part " << path + file_name
-			<< " because less than 2 old_ parts were restored in its place. You need to resolve this manually");
-	}
-
-	return restored_parts;
-}
-
-void MergeTreeData::replaceParts(DataPartsVector old_parts, DataPartPtr new_part)
-{
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> all_lock(all_data_parts_mutex);
-
-	for (size_t i = 0; i < old_parts.size(); ++i)
-		if (data_parts.end() == data_parts.find(old_parts[i]))
-			throw Exception("Logical error: cannot find data part " + old_parts[i]->name + " in list", ErrorCodes::LOGICAL_ERROR);
-
-	data_parts.insert(new_part);
-	all_data_parts.insert(new_part);
-
-	for (size_t i = 0; i < old_parts.size(); ++i)
-		data_parts.erase(data_parts.find(old_parts[i]));
-}
-
 void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
+{
+	auto removed = renameTempPartAndReplace(part, increment);
+	if (!removed.empty())
+	{
+		LOG_ERROR(log, "Added part " << part->name << + " covers " << toString(removed.size())
+			<< " existing part(s) (including " << removed[0]->name << ")");
+	}
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment)
 {
 	LOG_TRACE(log, "Renaming.");
 
@@ -659,25 +683,62 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 
 	String old_path = getFullPath() + part->name + "/";
 
-	UInt64 part_id = part->left;
-
-	/** Важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
+	/** Для StorageMergeTree важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
 	  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
 	  *  содержат ещё не добавленный кусок.
 	  */
 	if (increment)
-		part_id = increment->get(false);
+		part->left = part->right = increment->get(false);
 
-	part->left = part->right = part_id;
-	part->name = getPartName(part->left_date, part->right_date, part_id, part_id, 0);
+	part->name = getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+
+	if (data_parts.count(part))
+		throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
 
 	String new_path = getFullPath() + part->name + "/";
 
 	/// Переименовываем кусок.
 	Poco::File(old_path).renameTo(new_path);
 
+	DataPartsVector res;
+	/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
+	DataParts::iterator it = data_parts.lower_bound(part);
+	/// Пойдем влево.
+	while (it != data_parts.begin())
+	{
+		--it;
+		if (!part->contains(**it))
+		{
+			++it;
+			break;
+		}
+		res.push_back(*it);
+		(*it)->remove_time = time(0);
+		data_parts.erase(it++); /// Да, ++, а не --.
+	}
+	std::reverse(res.begin(), res.end()); /// Нужно получить куски в порядке возрастания.
+	/// Пойдем вправо.
+	while (it != data_parts.end() && part->contains(**it))
+	{
+		res.push_back(*it);
+		(*it)->remove_time = time(0);
+		data_parts.erase(it++);
+	}
+
 	data_parts.insert(part);
 	all_data_parts.insert(part);
+
+	return res;
+}
+
+void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	if (!all_data_parts.erase(part))
+		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
+	data_parts.erase(part);
+	part->renameAddPrefix(prefix);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()
@@ -685,6 +746,126 @@ MergeTreeData::DataParts MergeTreeData::getDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
+}
+
+MergeTreeData::DataParts MergeTreeData::getAllDataParts()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+
+	return all_data_parts;
+}
+
+size_t MergeTreeData::getDataPartsCount()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	return data_parts.size();
+}
+
+MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_name, bool including_inactive)
+{
+	MutableDataPartPtr tmp_part(new DataPart(*this));
+	parsePartName(part_name, *tmp_part);
+
+	Poco::ScopedLock<Poco::FastMutex> lock(including_inactive ? all_data_parts_mutex : data_parts_mutex);
+
+	DataParts & parts = including_inactive ? all_data_parts : data_parts;
+
+	/// Кусок может покрываться только предыдущим или следующим в data_parts.
+	DataParts::iterator it = parts.lower_bound(tmp_part);
+
+	if (it != parts.end())
+	{
+		if ((*it)->name == part_name)
+			return *it;
+		if ((*it)->contains(*tmp_part))
+			return *it;
+	}
+
+	if (it != parts.begin())
+	{
+		--it;
+		if ((*it)->contains(*tmp_part))
+			return *it;
+	}
+
+	return nullptr;
+}
+
+
+void MergeTreeData::DataPart::Checksums::check(const Checksums & rhs) const
+{
+	for (const auto & it : rhs.files)
+	{
+		const String & name = it.first;
+
+		if (!files.count(name))
+			throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
+	}
+
+	for (const auto & it : files)
+	{
+		const String & name = it.first;
+
+		auto jt = rhs.files.find(name);
+		if (jt == rhs.files.end())
+			throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
+
+		const Checksum & expected = it.second;
+		const Checksum & found = jt->second;
+
+		if (expected.size != found.size)
+			throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+		if (expected.hash != found.hash)
+			throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+	}
+}
+
+void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
+{
+	files.clear();
+	size_t count;
+
+	DB::assertString("checksums format version: 1\n", in);
+	DB::readText(count, in);
+	DB::assertString(" files:\n", in);
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		String name;
+		Checksum sum;
+
+		DB::readString(name, in);
+		DB::assertString("\n\tsize: ", in);
+		DB::readText(sum.size, in);
+		DB::assertString("\n\thash: ", in);
+		DB::readText(sum.hash.first, in);
+		DB::assertString(" ", in);
+		DB::readText(sum.hash.second, in);
+		DB::assertString("\n", in);
+
+		files.insert(std::make_pair(name, sum));
+	}
+}
+
+void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
+{
+	DB::writeString("checksums format version: 1\n", out);
+	DB::writeText(files.size(), out);
+	DB::writeString(" files:\n", out);
+
+	for (const auto & it : files)
+	{
+		DB::writeString(it.first, out);
+		DB::writeString("\n\tsize: ", out);
+		DB::writeText(it.second.size, out);
+		DB::writeString("\n\thash: ", out);
+		DB::writeText(it.second.hash.first, out);
+		DB::writeString(" ", out);
+		DB::writeText(it.second.hash.second, out);
+		DB::writeString("\n", out);
+	}
 }
 
 }

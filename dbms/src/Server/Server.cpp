@@ -14,6 +14,7 @@
 
 #include "Server.h"
 #include "HTTPHandler.h"
+#include "InterserverIOHTTPHandler.h"
 #include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
 
@@ -212,6 +213,26 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(config.getString("path"));
 
+	if (config.has("zookeeper"))
+		global_context->setZooKeeper(new zkutil::ZooKeeper(config, "zookeeper"));
+
+	if (config.has("interserver_http_port"))
+	{
+		String this_host;
+		if (config.has("interserver_http_host"))
+			this_host = config.getString("interserver_http_host");
+		else
+			this_host = Poco::Net::DNS::hostName();
+
+		String port_str = config.getString("interserver_http_port");
+		int port = parse<int>(port_str);
+
+		global_context->setInterserverIOHost(this_host, port);
+	}
+
+	if (config.has("replica_name"))
+		global_context->setDefaultReplicaName(config.getString("replica_name"));
+
 	std::string users_config_path = config.getString("users_config", config.getString("config-file", "config.xml"));
 	users_config_reloader = new UsersConfigReloader(users_config_path, global_context);
 
@@ -219,12 +240,12 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->getProcessList().setMaxSize(config.getInt("max_concurrent_queries", 0));
 
 	/// Размер кэша разжатых блоков. Если нулевой - кэш отключён.
-	size_t uncompressed_cache_size = config.getInt("uncompressed_cache_size", 0);
+	size_t uncompressed_cache_size = parse<size_t>(config.getString("uncompressed_cache_size", "0"));
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
 	/// Размер кэша засечек. Если нулевой - кэш отключён.
-	size_t mark_cache_size = config.getInt("mark_cache_size", 0);
+	size_t mark_cache_size = parse<size_t>(config.getString("mark_cache_size", "0"));
 	if (mark_cache_size)
 		global_context->setMarkCache(mark_cache_size);
 
@@ -253,7 +274,7 @@ int Server::main(const std::vector<std::string> & args)
 		Poco::Timespan keep_alive_timeout(config.getInt("keep_alive_timeout", 10), 0);
 
 		Poco::ThreadPool server_pool(3, config.getInt("max_connections", 1024));
-		Poco::Net::HTTPServerParams * http_params = new Poco::Net::HTTPServerParams;
+		Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
 		http_params->setTimeout(settings.receive_timeout);
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
@@ -277,16 +298,29 @@ int Server::main(const std::vector<std::string> & args)
 			tcp_socket,
 			new Poco::Net::TCPServerParams);
 
+		/// Interserver IO HTTP
+		Poco::SharedPtr<Poco::Net::HTTPServer> interserver_io_http_server;
+		if (config.has("interserver_http_port"))
+		{
+			String port_str = config.getString("interserver_http_port");
+
+			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress("[::]:"
+				+ port_str));
+			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
+			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
+			interserver_io_http_server = new Poco::Net::HTTPServer(
+				new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+				server_pool,
+				interserver_io_http_socket,
+				http_params);
+		}
+
 		/// OLAP HTTP
 		Poco::SharedPtr<Poco::Net::HTTPServer> olap_http_server;
 		if (use_olap_server)
 		{
 			olap_parser = new OLAP::QueryParser();
 			olap_converter = new OLAP::QueryConverter(config);
-
-			Poco::Net::HTTPServerParams * olap_http_params = new Poco::Net::HTTPServerParams;
-			olap_http_params->setTimeout(settings.receive_timeout);
-			olap_http_params->setKeepAliveTimeout(keep_alive_timeout);
 
 			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("olap_http_port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
@@ -295,12 +329,14 @@ int Server::main(const std::vector<std::string> & args)
 				new HTTPRequestHandlerFactory<OLAPHTTPHandler>(*this, "OLAPHTTPHandler-factory"),
 				server_pool,
 				olap_http_socket,
-				olap_http_params);
+				http_params);
 		}
 
 		http_server.start();
 		tcp_server.start();
-		if (use_olap_server)
+		if (interserver_io_http_server)
+			interserver_io_http_server->start();
+		if (olap_http_server)
 			olap_http_server->start();
 
 		LOG_INFO(log, "Ready for connections.");
@@ -309,7 +345,7 @@ int Server::main(const std::vector<std::string> & args)
 	
 		LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
 
-		users_config_reloader = NULL;
+		users_config_reloader = nullptr;
 
 		is_cancelled = true;
 
@@ -332,7 +368,7 @@ int Server::main(const std::vector<std::string> & args)
 	/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
 	  * В этот момент никто больше не должен владеть shared-частью контекста.
 	  */
-	global_context = NULL;
+	global_context = nullptr;
 
 	LOG_DEBUG(log, "Destroyed global context.");
 	

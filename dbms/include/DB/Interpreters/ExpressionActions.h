@@ -139,7 +139,7 @@ public:
 	{
 		for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 		{
-			sample_block.insert(ColumnWithNameAndType(NULL, it->second, it->first));
+			sample_block.insert(ColumnWithNameAndType(nullptr, it->second, it->first));
 		}
 	}
 	
@@ -237,7 +237,7 @@ struct ExpressionActionsChain
 		ExpressionActionsPtr actions;
 		Names required_output;
 		
-		Step(ExpressionActionsPtr actions_ = NULL, Names required_output_ = Names())
+		Step(ExpressionActionsPtr actions_ = nullptr, Names required_output_ = Names())
 			: actions(actions_), required_output(required_output_) {}
 	};
 	

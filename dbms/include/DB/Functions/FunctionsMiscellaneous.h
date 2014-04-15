@@ -285,14 +285,18 @@ class FunctionIn : public IFunction
 {
 private:
 	bool negative;
+	bool global;
 	
 public:
-	FunctionIn(bool negative_ = false) : negative(negative_) {}
+	FunctionIn(bool negative_ = false, bool global_ = false) : negative(negative_), global(global_) {}
 	
 	/// Получить имя функции.
 	String getName() const
 	{
-		return negative ? "notIn" : "in";
+		if (global)
+			return negative ? "globalNotIn" : "globalIn";
+		else
+			return negative ? "notIn" : "in";
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

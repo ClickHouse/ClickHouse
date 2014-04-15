@@ -27,6 +27,7 @@ namespace DB
 struct AggregateDescription
 {
 	AggregateFunctionPtr function;
+	Array parameters;		/// Параметры (параметрической) агрегатной функции.
 	ColumnNumbers arguments;
 	Names argument_names;	/// Используются, если arguments не заданы.
 	String column_name;		/// Какое имя использовать для столбца со значениями агрегатной функции
@@ -59,7 +60,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	  * - если при агрегации, до вызова Aggregator::convertToBlock вылетело исключение, то состояния агрегатных функций всё-равно должны быть уничтожены,
 	  *   иначе для сложных состояний (наприемер, AggregateFunctionUniq), будут утечки памяти;
 	  * - чтобы, в этом случае, уничтожить состояния, в деструкторе вызывается метод Aggregator::destroyAggregateStates,
-	  *   но только если переменная aggregator (см. ниже) не NULL;
+	  *   но только если переменная aggregator (см. ниже) не nullptr;
 	  * - то есть, пока вы не передали владение состояниями агрегатных функций в ColumnAggregateFunction, установите переменную aggregator,
 	  *   чтобы при возникновении исключения, состояния были корректно уничтожены.
 	  *
@@ -67,7 +68,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	  * Но это вряд ли можно просто сделать, так как в этот же пул планируется класть строки переменной длины.
 	  * В этом случае, пул не сможет знать, по каким смещениям хранятся объекты.
 	  */
-	Aggregator * aggregator;
+	Aggregator * aggregator = nullptr;
 	
 	/// Пулы для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
 	Arenas aggregates_pools;
@@ -75,7 +76,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 	/** Специализация для случая, когда ключи отсутствуют, и для ключей, не попавших в max_rows_to_group_by.
 	  */
-	AggregatedDataWithoutKey without_key;
+	AggregatedDataWithoutKey without_key = nullptr;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	/// auto_ptr - для ленивой инициализации (так как иначе HashMap в конструкторе выделяет и зануляет слишком много памяти).
@@ -106,9 +107,9 @@ struct AggregatedDataVariants : private boost::noncopyable
 		KEYS_128	= 4,
 		HASHED		= 5,
 	};
-	Type type;
+	Type type = EMPTY;
 
-	AggregatedDataVariants() : aggregator(NULL), aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()), without_key(NULL), type(EMPTY) {}
+	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()) {}
 	bool empty() const { return type == EMPTY; }
 
 	~AggregatedDataVariants();
@@ -137,10 +138,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 		{
 			case EMPTY:			return 0;
 			case WITHOUT_KEY:	return 1;
-			case KEY_64:		return key64->size() 		+ (without_key != NULL);
-			case KEY_STRING:	return key_string->size() 	+ (without_key != NULL);
-			case KEYS_128:		return keys128->size() 		+ (without_key != NULL);
-			case HASHED:		return hashed->size() 		+ (without_key != NULL);
+			case KEY_64:		return key64->size() 		+ (without_key != nullptr);
+			case KEY_STRING:	return key_string->size() 	+ (without_key != nullptr);
+			case KEYS_128:		return keys128->size() 		+ (without_key != nullptr);
+			case HASHED:		return hashed->size() 		+ (without_key != nullptr);
 
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);

@@ -67,7 +67,7 @@ private:
 
 		if (owned_cell->data.m_size == 0)
 		{
-			owned_cell = NULL;
+			owned_cell = nullptr;
 			return false;
 		}
 
@@ -80,7 +80,7 @@ private:
 
 public:
 	CachedCompressedReadBuffer(const std::string & path_, UncompressedCache * cache_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-		: ReadBuffer(NULL, 0), path(path_), cache(cache_), buf_size(buf_size_), file_pos(0)
+		: ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_), file_pos(0)
 	{
 	}
 

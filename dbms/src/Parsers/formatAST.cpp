@@ -70,7 +70,10 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(AlterQuery)
 	DISPATCH(ShowProcesslistQuery)
 	else
-		throw Exception("Unknown element in AST: " + ast.getID() + " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'",
+		throw Exception("Unknown element in AST: " + ast.getID()
+			+ ((ast.range.first && (ast.range.second > ast.range.first))
+				? " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'"
+				: ""),
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 	
 #undef DISPATCH
@@ -248,7 +251,7 @@ void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bo
 		if (ast.is_materialized_view)
 			what = "MATERIALIZED VIEW";
 
-		s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH " : "CREATE ") << what << " " << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
+		s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH " : "CREATE ") << (ast.is_temporary ? "TEMPORARY " : "") << what << " " << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 	}
 
@@ -409,6 +412,10 @@ void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bo
 	s << (hilite ? hilite_keyword : "") << "INSERT INTO " << (hilite ? hilite_none : "")
 		<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
 
+	if (!ast.insert_id.empty())
+		s << (hilite ? hilite_keyword : "") << " ID = " << (hilite ? hilite_none : "")
+			<< mysqlxx::quote << ast.insert_id;
+
 	if (ast.columns)
 	{
 		s << " (";
@@ -498,6 +505,8 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 				"notLike",			" NOT LIKE ",
 				"in",				" IN ",
 				"notIn",			" NOT IN ",
+				"globalIn",			" GLOBAL IN ",
+				"globalNotIn",		" GLOBAL NOT IN ",
 				nullptr
 			};
 

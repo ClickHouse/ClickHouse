@@ -51,7 +51,7 @@ public:
 		const std::string & tmp_path_ = "", const std::string & if_exists_ = "remove",
 		bool decompress_ = false, size_t timeout_ = 0, unsigned connection_retries_ = 3,
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-		: WriteBuffer(NULL, 0), host(host_), port(port_), path(path_),
+		: WriteBuffer(nullptr, 0), host(host_), port(port_), path(path_),
 		tmp_path(tmp_path_), if_exists(if_exists_),
 		decompress(decompress_), connection_retries(connection_retries_), finalized(false)
 	{
@@ -231,7 +231,7 @@ private:
 			{
 				/// Если в прошлую попытку от сервера не пришло ответа, но файл всё же был переименован.
 				if (i != 0 && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER
-					&& NULL != strstr(e.displayText().data(), "File not found"))
+					&& nullptr != strstr(e.displayText().data(), "File not found"))
 				{
 					LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "File already renamed");
 				}

@@ -238,14 +238,13 @@ public:
 class ExtractAllImpl
 {
 private:
-	const OptimizedRegularExpression *re;
+	const OptimizedRegularExpression * re = nullptr;
 	OptimizedRegularExpression::MatchVec matches;
 	size_t capture;
 
 	Pos pos;
 	Pos end;
 public:
-	ExtractAllImpl():re(NULL) { }
 	/// Получить имя функции.
 	static String getName() { return "extractAll"; }
 
@@ -346,8 +345,8 @@ public:
 			res_strings_offsets.reserve(src_offsets.size() * 5);	/// Константа 5 - наугад.
 			res_strings_chars.reserve(src_chars.size());
 
-			Pos token_begin = NULL;
-			Pos token_end = NULL;
+			Pos token_begin = nullptr;
+			Pos token_end = nullptr;
 
 			size_t size = src_offsets.size();
 			ColumnString::Offset_t current_src_offset = 0;
@@ -387,8 +386,8 @@ public:
 			Array dst;
 
 			generator.set(src.data(), src.data() + src.size());
-			Pos token_begin = NULL;
-			Pos token_end = NULL;
+			Pos token_begin = nullptr;
+			Pos token_end = nullptr;
 
 			while (generator.get(token_begin, token_end))
 				dst.push_back(String(token_begin, token_end - token_begin));

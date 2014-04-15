@@ -41,6 +41,7 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 			/// Если все строки во входных потоках схлопнулись, мы все равно хотим выдать хоть один блок в результат.
 			if (last_in_stream && merged_rows == 0 && !blocks_written)
 			{
+				LOG_INFO(log, "All rows collapsed");
 				++merged_rows;
 				for (size_t i = 0; i < num_columns; ++i)
 					merged_columns[i]->insert(last_positive[i]);
@@ -129,7 +130,7 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 			/// Запишем данные для предыдущего визита.
 			insertRows(merged_columns, merged_rows);
 
-			current_key = next_key;
+			current_key = std::move(next_key);
 			next_key.resize(description.size());
 			
 			count_negative = 0;

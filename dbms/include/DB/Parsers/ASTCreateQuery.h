@@ -18,6 +18,7 @@ public:
 	bool is_view;
 	bool is_materialized_view;
 	bool is_populate;
+	bool is_temporary;
 	String database;
 	String table;
 	ASTPtr columns;
@@ -27,8 +28,8 @@ public:
 	String as_table;
 	ASTPtr select;
 
-	ASTCreateQuery() : attach(false), if_not_exists(false), is_view(false), is_materialized_view(false), is_populate(false) {}
-	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false), if_not_exists(false), is_view(false), is_materialized_view(false),is_populate(false) {}
+	ASTCreateQuery() : attach(false), if_not_exists(false), is_view(false), is_materialized_view(false), is_populate(false), is_temporary(false) {}
+	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false), if_not_exists(false), is_view(false), is_materialized_view(false), is_populate(false), is_temporary(false) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };

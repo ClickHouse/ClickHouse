@@ -35,14 +35,15 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 /// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
-bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, size_t available_disk_space,
+bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
 	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge)
 {
-	LOG_DEBUG(log, "Selecting parts to merge");
-
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+
+	if (available_disk_space == 0)
+		available_disk_space = std::numeric_limits<size_t>::max();
 
 	size_t min_max = -1U;
 	size_t min_min = -1U;
@@ -65,9 +66,12 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		cur_max_rows_to_merge_parts *= data.settings.merge_parts_at_night_inc;
 
 	if (only_small)
-	{
 		cur_max_rows_to_merge_parts = data.settings.max_rows_to_merge_parts_second;
-	}
+
+	/// Найдем суммарный размер еще не пройденных кусков (то есть всех).
+	size_t size_of_remaining_parts = 0;
+	for (const auto & part : data_parts)
+		size_of_remaining_parts += part->size;
 
 	/// Левый конец отрезка.
 	for (MergeTreeData::DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
@@ -75,11 +79,14 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		const MergeTreeData::DataPartPtr & first_part = *it;
 
 		max_count_from_left = std::max(0, max_count_from_left - 1);
+		size_of_remaining_parts -= first_part->size;
 
 		/// Кусок достаточно мал или слияние "агрессивное".
 		if (first_part->size * data.index_granularity > cur_max_rows_to_merge_parts
 			&& !aggressive)
+		{
 			continue;
+		}
 
 		/// Кусок в одном месяце.
 		if (first_part->left_month != first_part->right_month)
@@ -124,7 +131,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			if (!can_merge(prev_part, last_part) ||
 				last_part->left_month != last_part->right_month ||
 				last_part->left_month != month)
+			{
 				break;
+			}
 
 			/// Кусок достаточно мал или слияние "агрессивное".
 			if (last_part->size * data.index_granularity > cur_max_rows_to_merge_parts
@@ -153,22 +162,18 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			if (cur_max * data.index_granularity * 150 > 1024*1024*1024 && cur_age_in_sec < 6*3600)
 				min_len = 3;
 
-			/// Равен 0.5 если возраст порядка 0, равен 5 если возраст около месяца.
-			double time_ratio_modifier = 0.5 + 9 * static_cast<double>(cur_age_in_sec) / (3600*24*30 + cur_age_in_sec);
+			/// Размер кусков после текущих, делить на максимальный из текущих кусков. Чем меньше, тем новее текущие куски.
+			size_t oldness_coef = (size_of_remaining_parts + first_part->size - cur_sum + 0.0) / cur_max;
 
-			/// Двоичный логарифм суммарного размера кусочков
-			double log_cur_sum = std::log(cur_sum * data.index_granularity) / std::log(2);
-			/// Равен ~2 если куски маленькие, уменьшается до 0.5 с увеличением суммарного размера до 2^25.
-			double size_ratio_modifier = std::max(0.25, 2 - 3 * (log_cur_sum) / (25 + log_cur_sum));
-
-			/// Объединяем все в одну константу
-			double ratio = std::max(0.5, time_ratio_modifier * size_ratio_modifier * data.settings.max_size_ratio_to_merge_parts);
+			/// Эвристика: если после этой группы кусков еще накопилось мало строк, не будем соглашаться на плохо
+			///  сбалансированные слияния, расчитывая, что после будущих вставок данных появятся более привлекательные слияния.
+			double ratio = (oldness_coef + 1) * data.settings.size_ratio_coefficient_to_merge_parts;
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len
 				&& (static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio
-					/// За старый месяц объединяем что угодно, если разрешено и если этому хотя бы 15 дней
-					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*15)
+					/// За старый месяц объединяем что угодно, если разрешено и если этому куску хотя бы 5 дней
+					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*5)
 					/// Если слияние "агрессивное", то сливаем что угодно
 					|| aggressive))
 			{
@@ -209,18 +214,27 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	{
 		parts.clear();
 
+		DayNum_t left_date = DayNum_t(std::numeric_limits<UInt16>::max());
+		DayNum_t right_date = DayNum_t(std::numeric_limits<UInt16>::min());
+		UInt32 level = 0;
+
 		MergeTreeData::DataParts::iterator it = best_begin;
 		for (int i = 0; i < max_len; ++i)
 		{
 			parts.push_back(*it);
+
+			level = std::max(level, parts[i]->level);
+			left_date = std::min(left_date, parts[i]->left_date);
+			right_date = std::max(right_date, parts[i]->right_date);
+
 			++it;
 		}
 
-		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
-	}
-	else
-	{
-		LOG_DEBUG(log, "No parts to merge");
+		merged_name = MergeTreeData::getPartName(
+			left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
+
+		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name
+			<< (only_small ? " (only small)" : ""));
 	}
 
 	return found;
@@ -228,7 +242,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 
 /// parts должны быть отсортированы.
-String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & parts)
+MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name)
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
@@ -237,25 +251,9 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 	for (const auto & it : columns_list)
 		all_column_names.push_back(it.first);
 
-	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
-
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-	new_data_part->left_date = std::numeric_limits<UInt16>::max();
-	new_data_part->right_date = std::numeric_limits<UInt16>::min();
-	new_data_part->left = parts.front()->left;
-	new_data_part->right = parts.back()->right;
-	new_data_part->level = 0;
-	for (size_t i = 0; i < parts.size(); ++i)
-	{
-		new_data_part->level = std::max(new_data_part->level, parts[i]->level);
-		new_data_part->left_date = std::min(new_data_part->left_date, parts[i]->left_date);
-		new_data_part->right_date = std::max(new_data_part->right_date, parts[i]->right_date);
-	}
-	++new_data_part->level;
-	new_data_part->name = MergeTreeData::getPartName(
-		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
-	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
-	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
+	data.parsePartName(merged_name, *new_data_part);
+	new_data_part->name = "tmp_" + merged_name;
 
 	/** Читаем из всех кусков, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.
@@ -267,7 +265,7 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, data,
-			parts[i], ranges, false, NULL, ""), data.getPrimaryExpression()));
+			parts[i], ranges, false, nullptr, ""), data.getPrimaryExpression()));
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
@@ -292,8 +290,9 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
-	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data,
-		new_data_part->left_date, new_data_part->right_date, new_data_part->left, new_data_part->right, new_data_part->level);
+	String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
+
+	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, data.getColumnsList());
 
 	merged_stream->readPrefix();
 	to->writePrefix();
@@ -303,16 +302,15 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 		to->write(block);
 
 	if (canceled)
-	{
-		LOG_INFO(log, "Canceled merging parts.");
-		return "";
-	}
+		throw Exception("Canceled merging parts", ErrorCodes::ABORTED);
 
 	merged_stream->readSuffix();
-	to->writeSuffix();
+	new_data_part->checksums = to->writeSuffixAndGetChecksums();
 
-	/// В обычном режиме строчки не могут удалиться при мердже.
-	if (0 == to->marksCount() && data.mode == MergeTreeData::Ordinary)
+	new_data_part->index.swap(to->getIndex());
+
+	/// Для удобства, даже CollapsingSortedBlockInputStream не может выдать ноль строк.
+	if (0 == to->marksCount())
 		throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
 	new_data_part->size = to->marksCount();
@@ -320,19 +318,37 @@ String MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & pa
 
 	if (0 == to->marksCount())
 	{
-		LOG_INFO(log, "All rows have been deleted while merging from " << parts.front()->name << " to " << parts.back()->name);
-		return "";
+		throw Exception("All rows have been deleted while merging from " + parts.front()->name
+			+ " to " + parts.back()->name, ErrorCodes::LOGICAL_ERROR);
 	}
 
-	/// NOTE Только что записанный индекс заново считывается с диска. Можно было бы формировать его сразу при записи.
-	new_data_part->loadIndex();
+	/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
+	auto replaced_parts = data.renameTempPartAndReplace(new_data_part);
 
-	/// Добавляем новый кусок в набор.
-	data.replaceParts(parts, new_data_part);
+	if (new_data_part->name != merged_name)
+		LOG_ERROR(log, "Unexpected part name: " << new_data_part->name << " instead of " << merged_name);
+
+	/// Проверим, что удалились все исходные куски и только они.
+	if (replaced_parts.size() != parts.size())
+	{
+		LOG_ERROR(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
+			<< " instead of " << parts.size());
+	}
+	else
+	{
+		for (size_t i = 0; i < parts.size(); ++i)
+		{
+			if (parts[i]->name != replaced_parts[i]->name)
+			{
+				LOG_ERROR(log, "Unexpected part removed when adding " << new_data_part->name << ": " << replaced_parts[i]->name
+					<< " instead of " << parts[i]->name);
+			}
+		}
+	}
 
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
 
-	return new_data_part->name;
+	return new_data_part;
 }
 
 size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts)

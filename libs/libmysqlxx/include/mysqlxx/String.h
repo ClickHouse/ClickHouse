@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_STRING_H
-#define MYSQLXX_STRING_H
+#pragma once
 
 #include <string.h>
 #include <stdio.h>
@@ -38,7 +37,7 @@ class ResultBase;
   *   к использованию, так как неудобен (часто возникают неоднозначности).
   *
   * При ошибке парсинга, выкидывается исключение.
-  * При попытке достать значение, которое равно NULL, выкидывается исключение
+  * При попытке достать значение, которое равно nullptr, выкидывается исключение
   * - используйте метод isNull() для проверки.
   *
   * Во всех распространённых системах, time_t - это всего лишь typedef от Int64 или Int32.
@@ -113,7 +112,7 @@ public:
 	/// Является ли NULL.
 	bool isNull() const
 	{
-		return m_data == NULL;
+		return m_data == nullptr;
 	}
 
 	/// Для совместимости (используйте вместо этого метод isNull())
@@ -408,5 +407,3 @@ inline std::ostream & operator<< (std::ostream & ostr, const String & x)
 
 
 }
-
-#endif

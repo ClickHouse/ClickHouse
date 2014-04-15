@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_NULL_H
-#define MYSQLXX_NULL_H
+#pragma once
 
 #include <mysqlxx/Exception.h>
 
@@ -84,5 +83,3 @@ public:
 
 
 }
-
-#endif
