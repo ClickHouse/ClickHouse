@@ -19,7 +19,7 @@ public:
 	  */
 	LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
 		: path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_),
-		shutdown(false), log(&Logger::get("LeaderElection"))
+		shutdown(false), state(WAITING_LEADERSHIP), log(&Logger::get("LeaderElection"))
 	{
 		node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
@@ -27,6 +27,38 @@ public:
 		node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
 		thread = std::thread(&LeaderElection::threadFunction, this);
+	}
+
+	enum State
+	{
+		WAITING_LEADERSHIP,
+		LEADER,
+		LEADERSHIP_LOST
+	};
+
+	/// если возвращает LEADER, то еще sessionTimeoutMs мы будем лидером, даже если порвется соединение с zookeeper
+	State state()
+	{
+		if (state == LEADER)
+		{
+			try
+			{
+				/// возможно, если сессия разорвалась и заново был вызван init
+				if (!zookeeper.exists(node->getPath()))
+				{
+					LOG_WARNING(log, "Leadership lost. Node " << node->getPath() << " doesn't exist.");
+					state = LEADERSHIP_LOST;
+				}
+			}
+			catch (const KeeperException & e)
+			{
+				LOG_WARNING(log, "Leadership lost. e.message() = " << e.message());
+				state = LEADERSHIP_LOST;
+			}
+		}
+
+		return state;
+
 	}
 
 	~LeaderElection()
@@ -47,6 +79,8 @@ private:
 	std::thread thread;
 	volatile bool shutdown;
 
+	State state;
+
 	Logger * log;
 
 	void threadFunction()
@@ -63,6 +97,7 @@ private:
 
 				if (it == children.begin())
 				{
+					state = LEADER;
 					handler();
 					return;
 				}
