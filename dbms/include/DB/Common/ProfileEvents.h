@@ -19,6 +19,7 @@
 	M(CompressedReadBufferBytes, 		"Read decompressed bytes") \
 	M(UncompressedCacheHits, 			"Uncompressed cache hits") \
 	M(UncompressedCacheMisses, 			"Uncompressed cache misses") \
+	M(UncompressedCacheWeightLost,		"Uncompressed cache weight lost") \
 	M(IOBufferAllocs, 					"IO buffers allocations") \
 	M(IOBufferAllocBytes, 				"IO buffers allocated bytes") \
 	M(ArenaAllocChunks, 				"Arena allocated chunks") \

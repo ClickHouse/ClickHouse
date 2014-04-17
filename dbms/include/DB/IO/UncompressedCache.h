@@ -61,6 +61,13 @@ public:
 
 		return res;
 	}
+
+	void set(const Key & key, MappedPtr mapped)
+	{
+		Base::set(key, mapped);
+		ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, current_weight_lost);
+		current_weight_lost = 0;
+	}
 };
 
 typedef Poco::SharedPtr<UncompressedCache> UncompressedCachePtr;
