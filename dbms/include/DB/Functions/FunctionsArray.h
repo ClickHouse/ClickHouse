@@ -189,7 +189,8 @@ public:
 template <typename T>
 struct ArrayElementNumImpl
 {
-	/** Если negative = false - передаётся индекс с начала массива, начиная с нуля.
+	/** Процедура для константного идекса
+	  * Если negative = false - передаётся индекс с начала массива, начиная с нуля.
 	  * Если negative = true - передаётся индекс с конца массива, начиная с нуля.
 	  */
 	template <bool negative>
@@ -215,6 +216,9 @@ struct ArrayElementNumImpl
 		}
 	}
 
+	/** Процедура для неконстантного идекса
+	  * index_type - тип данных идекса
+	  */
 	template <typename index_type>
 	static void vector(
 		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
@@ -232,9 +236,7 @@ struct ArrayElementNumImpl
 			if (index[i].getType() == Field::Types::UInt64)
 			{
 				UInt64 cur_id = safeGet<UInt64>(index[i]);
-				if (cur_id == 0)
-					throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
-				else if (cur_id <= array_size)
+				if (cur_id > 0 && cur_id <= array_size)
 					result[i] = data[current_offset + cur_id - 1];
 				else
 					result[i] = T();
@@ -242,9 +244,7 @@ struct ArrayElementNumImpl
 			else if (index[i].getType() == Field::Types::Int64)
 			{
 				Int64 cur_id = safeGet<Int64>(index[i]);
-				if (cur_id == 0)
-					throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
-				else if (cur_id > 0 && cur_id <= array_size)
+				if (cur_id > 0 && cur_id <= array_size)
 					result[i] = data[current_offset + cur_id - 1];
 				else if (cur_id < 0 && -cur_id <= array_size)
 					result[i] = data[offsets[i] + cur_id];
@@ -261,6 +261,10 @@ struct ArrayElementNumImpl
 
 struct ArrayElementStringImpl
 {
+	/** Процедура для константного идекса
+	  * Если negative = false - передаётся индекс с начала массива, начиная с нуля.
+	  * Если negative = true - передаётся индекс с конца массива, начиная с нуля.
+	  */
 	template <bool negative>
 	static void vectorConst(
 		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
@@ -305,6 +309,9 @@ struct ArrayElementStringImpl
 		}
 	}
 
+	/** Процедура для неконстантного идекса
+	  * index_type - тип данных идекса
+	  */
 	template <typename index_type>
 	static void vector(
 		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
@@ -325,10 +332,10 @@ struct ArrayElementStringImpl
 			if (index[i].getType() == Field::Types::UInt64)
 			{
 				UInt64 cur_id = safeGet<UInt64>(index[i]);
-				if (cur_id == 0)
-					adjusted_index = array_size; /// Индекс не вписывается в рамки массива, заменяем заведомо слишком большим
-				else
+				if (cur_id > 0 && cur_id <= array_size)
 					adjusted_index = cur_id - 1;
+				else
+					adjusted_index = array_size; /// Индекс не вписывается в рамки массива, заменяем заведомо слишком большим
 			}
 			else if (index[i].getType() == Field::Types::Int64)
 			{
@@ -577,7 +584,6 @@ private:
 
 		return true;
 	}
-
 public:
 	/// Получить имя функции.
 	String getName() const
