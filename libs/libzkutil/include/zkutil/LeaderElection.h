@@ -37,7 +37,7 @@ public:
 	};
 
 	/// если возвращает LEADER, то еще sessionTimeoutMs мы будем лидером, даже если порвется соединение с zookeeper
-	State state()
+	State getState()
 	{
 		if (state == LEADER)
 		{
