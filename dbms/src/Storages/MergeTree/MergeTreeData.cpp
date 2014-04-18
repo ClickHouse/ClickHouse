@@ -162,17 +162,7 @@ void MergeTreeData::loadDataParts()
 	{
 		/// Удаляем временные директории старше суток.
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
-		{
-			Poco::File tmp_dir(full_path + file_name);
-
-			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
-			{
-				LOG_WARNING(log, "Removing temporary directory " << full_path << file_name);
-				Poco::File(full_path + file_name).remove(true);
-			}
-
 			continue;
-		}
 
 		if (0 == file_name.compare(0, strlen("old_"), "old_"))
 		{
@@ -337,6 +327,28 @@ Strings MergeTreeData::clearOldParts()
 		}
 		else
 			++it;
+	}
+
+	/// Удаляем временные директории старше суток.
+	Strings all_file_names;
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+		all_file_names.push_back(it.name());
+
+	for (const String & file_name : all_file_names)
+	{
+		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
+		{
+			Poco::File tmp_dir(full_path + file_name);
+
+			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
+			{
+				LOG_WARNING(log, "Removing temporary directory " << full_path << file_name);
+				Poco::File(full_path + file_name).remove(true);
+			}
+
+			continue;
+		}
 	}
 
 	return res;
