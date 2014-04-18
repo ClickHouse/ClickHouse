@@ -8,6 +8,7 @@ cd ${CMAKE_CURRENT_SOURCE_DIR};
 if (git rev-parse --is-inside-work-tree &> /dev/null)
 then
 	# GIT
+	git fetch --tags;
 	( git describe --tags || echo 1 ) | cut -d "-" -f 1 >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
 else
 	#SVN
