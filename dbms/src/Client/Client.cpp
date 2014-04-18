@@ -465,6 +465,24 @@ private:
 		written_progress_chars = 0;
 		written_first_block = false;
 
+		const ASTSetQuery * set_query = dynamic_cast<const ASTSetQuery *>(&*parsed_query);
+		if (set_query)
+		{
+			/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
+			for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+				context.setSetting(it->name, it->value);
+		}
+
+		const ASTUseQuery * use_query = dynamic_cast<const ASTUseQuery *>(&*parsed_query);
+		if (use_query)
+		{
+			const String & new_database = use_query->database;
+			/// Если клиент инициирует пересоединение, он берет настройки из конфига
+			config().setString("database", new_database);
+			/// Если connection инициирует пересоединение, он использует свою переменную
+			connection->setDefaultDatabase(new_database);
+		}
+
 		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
 		const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
 

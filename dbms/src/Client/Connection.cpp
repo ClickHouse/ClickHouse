@@ -128,6 +128,12 @@ void Connection::receiveHello()
 }
 
 
+void Connection::setDefaultDatabase(const String & database)
+{
+	default_database = database;
+}
+
+
 void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision)
 {
 	if (!connected)
