@@ -299,8 +299,8 @@ public:
 			if (!Poco::File(path).exists())
 				return false;
 			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-			checksums.readText(file);
-			assertEOF(file);
+			if (checksums.readText(file))
+				assertEOF(file);
 			return true;
 		}
 	};

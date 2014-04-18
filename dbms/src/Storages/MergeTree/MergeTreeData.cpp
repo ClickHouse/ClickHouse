@@ -877,7 +877,7 @@ bool MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
 	if (format_version == 1)
 		return false;
-	DB::assertString("\n",in);
+	DB::assertString("\n", in);
 	DB::readText(count, in);
 	DB::assertString(" files:\n", in);
 
