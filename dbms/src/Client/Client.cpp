@@ -93,6 +93,8 @@ private:
 	BlockOutputStreamPtr block_std_out;
 
 	String home_path;
+
+	String current_profile;
 	
 	/// Путь к файлу истории команд.
 	String history_file;
@@ -470,7 +472,12 @@ private:
 		{
 			/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
 			for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
-				context.setSetting(it->name, it->value);
+			{
+				if (it->name ==	"profile")
+					current_profile = it->value;
+				else
+					context.setSetting(it->name, it->value);
+			}
 		}
 
 		const ASTUseQuery * use_query = dynamic_cast<const ASTUseQuery *>(&*parsed_query);
