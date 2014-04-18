@@ -303,6 +303,52 @@ public:
 				assertEOF(file);
 			return true;
 		}
+
+		void checkNotBroken()
+		{
+			String path = storage.full_path + name;
+
+			if (!checksums.empty())
+			{
+				checksums.checkSizes(path + "/");
+			}
+			else
+			{
+				/// Проверяем, что первичный ключ непуст.
+
+				Poco::File index_file(path + "/primary.idx");
+
+				if (!index_file.exists() || index_file.getSize() == 0)
+					throw Exception("Part " + path + " is broken: primary key is empty.", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+				/// Проверяем, что все засечки непусты и имеют одинаковый размер.
+
+				ssize_t marks_size = -1;
+				for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+				{
+					Poco::File marks_file(path + "/" + escapeForFileName(it->first) + ".mrk");
+
+					/// При добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
+					if (!marks_file.exists())
+						continue;
+
+					if (marks_size == -1)
+					{
+						marks_size = marks_file.getSize();
+
+						if (0 == marks_size)
+							throw Exception("Part " + path + " is broken: " + marks_file.path() + " is empty.",
+								ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+					}
+					else
+					{
+						if (static_cast<ssize_t>(marks_file.getSize()) != marks_size)
+							throw Exception("Part " + path + " is broken: marks have different sizes.",
+								ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+					}
+				}
+			}
+		}
 	};
 
 	typedef std::shared_ptr<DataPart> MutableDataPartPtr;
