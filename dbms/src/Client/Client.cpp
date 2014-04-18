@@ -474,7 +474,7 @@ private:
 			for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
 			{
 				if (it->name ==	"profile")
-					current_profile = it->value;
+					current_profile = it->value.safeGet<String>();
 				else
 					context.setSetting(it->name, it->value);
 			}
