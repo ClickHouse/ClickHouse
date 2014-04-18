@@ -147,7 +147,7 @@ public:
 			void checkSizes(const String & path) const;
 
 			/// Сериализует и десериализует в человекочитаемом виде.
-			void readText(ReadBuffer & in);
+			bool readText(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
 			void writeText(WriteBuffer & out) const;
 
 			bool empty() const
@@ -169,7 +169,8 @@ public:
 			{
 				ReadBufferFromString in(s);
 				Checksums res;
-				res.readText(in);
+				if (!res.readText(in))
+					throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
 				assertEOF(in);
 				return res;
 			}

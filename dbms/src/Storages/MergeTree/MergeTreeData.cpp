@@ -853,7 +853,7 @@ void MergeTreeData::DataPart::Checksums::checkSizes(const String & path) const
 	}
 }
 
-void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
+bool MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 {
 	files.clear();
 	size_t count;
@@ -863,6 +863,8 @@ void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 	DB::readText(format_version, in);
 	if (format_version < 1 || format_version > 2)
 		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+	if (format_version == 1)
+		return false;
 	DB::assertString("\n",in);
 	DB::readText(count, in);
 	DB::assertString(" files:\n", in);
@@ -879,25 +881,23 @@ void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 		DB::readText(sum.file_hash.first, in);
 		DB::assertString(" ", in);
 		DB::readText(sum.file_hash.second, in);
-		DB::assertString("\n", in);
-		if (format_version == 2)
+		DB::assertString("\n\tcompressed: ", in);
+		DB::readText(sum.is_compressed, in);
+		if (sum.is_compressed)
 		{
-			DB::assertString("\tcompressed: ", in);
-			DB::readText(sum.is_compressed, in);
-			if (sum.is_compressed)
-			{
-				DB::assertString("\n\tuncompressed size: ", in);
-				DB::readText(sum.uncompressed_size, in);
-				DB::assertString("\n\tuncompressed hash: ", in);
-				DB::readText(sum.uncompressed_hash.first, in);
-				DB::assertString(" ", in);
-				DB::readText(sum.uncompressed_hash.second, in);
-			}
-			DB::assertString("\n", in);
+			DB::assertString("\n\tuncompressed size: ", in);
+			DB::readText(sum.uncompressed_size, in);
+			DB::assertString("\n\tuncompressed hash: ", in);
+			DB::readText(sum.uncompressed_hash.first, in);
+			DB::assertString(" ", in);
+			DB::readText(sum.uncompressed_hash.second, in);
 		}
+		DB::assertString("\n", in);
 
 		files.insert(std::make_pair(name, sum));
 	}
+
+	return true;
 }
 
 void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
