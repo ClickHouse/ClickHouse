@@ -559,7 +559,7 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 	/// Если во всем диапазоне одинаковый ключ и он есть в Set, то выбираем блок для in и не выбираем для notIn
 	if (range.left_bounded && range.right_bounded && range.right_included && range.left_included && left == right)
 	{
-		if (std::find(ordered_set_elements->begin(), ordered_set_elements->end(), left) != ordered_set_elements->end())
+		if (std::binary_search(ordered_set_elements->begin(), ordered_set_elements->end(), left))
 		{
 			can_be_false = false;
 			can_be_true = true;
