@@ -901,8 +901,8 @@ public:
 			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file path")
 			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "server host")
 			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "server port")
-			("user,u", 			boost::program_options::value<int> (), 			"user")
-			("password,p", 		boost::program_options::value<int> (), 			"password")
+			("user,u", 			boost::program_options::value<std::string> (),	"user")
+			("password,p", 		boost::program_options::value<std::string> (),	"password")
 			("query,q", 		boost::program_options::value<std::string> (), 	"query")
 			("database,d", 		boost::program_options::value<std::string> (), 	"database")
 			("multiline,m",														"multiline")
@@ -1005,9 +1005,9 @@ public:
 		if (options.count("port"))
 			config().setInt("port", options["port"].as<int>());
 		if (options.count("user"))
-			config().setInt("user", options["user"].as<int>());
+			config().setString("user", options["user"].as<std::string>());
 		if (options.count("password"))
-			config().setInt("password", options["password"].as<int>());
+			config().setString("password", options["password"].as<std::string>());
 
 		if (options.count("multiline"))
 			config().setBool("multiline", true);
