@@ -3,7 +3,8 @@
 #include <Yandex/logger_useful.h>
 
 
-#define CHECKED(x) { ReturnCode::type code = x; if (code != ReturnCode::Ok) throw KeeperException(code); }
+#define CHECKED(x, path) { ReturnCode::type code = x; if (code != ReturnCode::Ok) throw KeeperException(code, path); }
+#define CHECKED_WITHOUT_PATH(x) { ReturnCode::type code = x; if (code != ReturnCode::Ok) throw KeeperException(code); }
 
 namespace zkutil
 {
@@ -58,7 +59,7 @@ void ZooKeeper::init(const std::string & hosts, int32_t sessionTimeoutMs, WatchF
 {
 	state_watch = watch_;
 
-	CHECKED(impl.init(hosts, sessionTimeoutMs, boost::make_shared<StateWatch>(this)));
+	CHECKED_WITHOUT_PATH(impl.init(hosts, sessionTimeoutMs, boost::make_shared<StateWatch>(this)));
 
 	ACL perm;
 	perm.getid().getscheme() = "world";
@@ -74,7 +75,7 @@ ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchF
 
 struct ZooKeeperArgs
 {
-	ZooKeeperArgs(const Poco::Util::LayeredConfiguration & config, const std::string & config_name)
+	ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_name, keys);
@@ -101,7 +102,7 @@ struct ZooKeeperArgs
 	size_t session_timeout_ms;
 };
 
-ZooKeeper::ZooKeeper(const Poco::Util::LayeredConfiguration & config, const std::string & config_name,
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
 			  WatchFunction * watch)
 {
 	ZooKeeperArgs args(config, config_name);
@@ -143,7 +144,7 @@ Strings ZooKeeper::getChildren(
 {
 	Stat s;
 	Strings res;
-	CHECKED(impl.getChildren(path, watchForFuture(watch), res, s));
+	CHECKED(impl.getChildren(path, watchForFuture(watch), res, s), path);
 	if (stat)
 		*stat = s;
 	return res;
@@ -156,7 +157,7 @@ bool ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 	ReturnCode::type code = impl.getChildren(path, watchForFuture(watch), res, s);
 	if (!(	code == ReturnCode::Ok ||
 			code == ReturnCode::NoNode))
-		throw KeeperException(code);
+		throw KeeperException(code, path);
 	if (code == ReturnCode::NoNode)
 		return false;
 	if (stat)
@@ -169,7 +170,7 @@ std::string ZooKeeper::create(const std::string & path, const std::string & data
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
 	std::string res;
-	CHECKED(impl.create(path, data, default_acl, mode, res));
+	CHECKED(impl.create(path, data, default_acl, mode, res), path);
 	return res;
 }
 
@@ -182,13 +183,13 @@ ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::strin
 			code == ReturnCode::NoNode ||
 			code == ReturnCode::NodeExists ||
 			code == ReturnCode::NoChildrenForEphemerals))
-		throw KeeperException(code);
+		throw KeeperException(code, path);
 	return code;
 }
 
 void ZooKeeper::remove(const std::string & path, int32_t version)
 {
-	CHECKED(impl.remove(path, version));
+	CHECKED(impl.remove(path, version), path);
 }
 
 ReturnCode::type ZooKeeper::tryRemove(const std::string & path, int32_t version)
@@ -198,7 +199,7 @@ ReturnCode::type ZooKeeper::tryRemove(const std::string & path, int32_t version)
 			code == ReturnCode::NoNode ||
 			code == ReturnCode::BadVersion ||
 			code == ReturnCode::NotEmpty))
-		throw KeeperException(code);
+		throw KeeperException(code, path);
 	return code;
 }
 
@@ -208,7 +209,7 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat, WatchFuture * watc
 	ReturnCode::type code = impl.exists(path, watchForFuture(watch), s);
 	if (!(	code == ReturnCode::Ok ||
 			code == ReturnCode::NoNode))
-		throw KeeperException(code);
+		throw KeeperException(code, path);
 	if (code == ReturnCode::NoNode)
 		return false;
 	if (stat)
@@ -220,7 +221,7 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, WatchFuture * 
 {
 	std::string res;
 	Stat s;
-	CHECKED(impl.get(path, watchForFuture(watch), res, s));
+	CHECKED(impl.get(path, watchForFuture(watch), res, s), path);
 	if (stat)
 		*stat = s;
 	return res;
@@ -232,7 +233,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat,
 	ReturnCode::type code = impl.get(path, watchForFuture(watch), res, s);
 	if (!(	code == ReturnCode::Ok ||
 			code == ReturnCode::NoNode))
-		throw KeeperException(code);
+		throw KeeperException(code, path);
 	if (code == ReturnCode::NoNode)
 		return false;
 	if (stat)
@@ -243,7 +244,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat,
 void ZooKeeper::set(const std::string & path, const std::string & data, int32_t version, Stat * stat)
 {
 	Stat s;
-	CHECKED(impl.set(path, data, version, s));
+	CHECKED(impl.set(path, data, version, s), path);
 	if (stat)
 		*stat = s;
 }
@@ -256,7 +257,7 @@ ReturnCode::type ZooKeeper::trySet(const std::string & path, const std::string &
 	if (!(	code == ReturnCode::Ok ||
 			code == ReturnCode::NoNode ||
 			code == ReturnCode::BadVersion))
-		throw KeeperException(code);
+		throw KeeperException(code, path);
 	if (stat)
 		*stat = s;
 	return code;
@@ -265,7 +266,7 @@ ReturnCode::type ZooKeeper::trySet(const std::string & path, const std::string &
 OpResultsPtr ZooKeeper::multi(const Ops & ops)
 {
 	OpResultsPtr res = std::make_shared<OpResults>();
-	CHECKED(impl.multi(ops, *res));
+	CHECKED_WITHOUT_PATH(impl.multi(ops, *res));
 	for (size_t i = 0; i < res->size(); ++i)
 	{
 		if ((*res)[i].getReturnCode() != ReturnCode::Ok)
@@ -300,7 +301,7 @@ void ZooKeeper::removeRecursive(const std::string & path)
 
 void ZooKeeper::close()
 {
-	CHECKED(impl.close());
+	CHECKED_WITHOUT_PATH(impl.close());
 }
 
 ZooKeeper::~ZooKeeper()

@@ -93,6 +93,8 @@ private:
 	BlockOutputStreamPtr block_std_out;
 
 	String home_path;
+
+	String current_profile;
 	
 	/// Путь к файлу истории команд.
 	String history_file;
@@ -464,6 +466,29 @@ private:
 		bytes_read_on_server = 0;
 		written_progress_chars = 0;
 		written_first_block = false;
+
+		const ASTSetQuery * set_query = dynamic_cast<const ASTSetQuery *>(&*parsed_query);
+		if (set_query)
+		{
+			/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
+			for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+			{
+				if (it->name ==	"profile")
+					current_profile = it->value.safeGet<String>();
+				else
+					context.setSetting(it->name, it->value);
+			}
+		}
+
+		const ASTUseQuery * use_query = dynamic_cast<const ASTUseQuery *>(&*parsed_query);
+		if (use_query)
+		{
+			const String & new_database = use_query->database;
+			/// Если клиент инициирует пересоединение, он берет настройки из конфига
+			config().setString("database", new_database);
+			/// Если connection инициирует пересоединение, он использует свою переменную
+			connection->setDefaultDatabase(new_database);
+		}
 
 		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
 		const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -876,8 +901,8 @@ public:
 			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file path")
 			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "server host")
 			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "server port")
-			("user,u", 			boost::program_options::value<int> (), 			"user")
-			("password,p", 		boost::program_options::value<int> (), 			"password")
+			("user,u", 			boost::program_options::value<std::string> (),	"user")
+			("password,p", 		boost::program_options::value<std::string> (),	"password")
 			("query,q", 		boost::program_options::value<std::string> (), 	"query")
 			("database,d", 		boost::program_options::value<std::string> (), 	"database")
 			("multiline,m",														"multiline")
@@ -980,9 +1005,9 @@ public:
 		if (options.count("port"))
 			config().setInt("port", options["port"].as<int>());
 		if (options.count("user"))
-			config().setInt("user", options["user"].as<int>());
+			config().setString("user", options["user"].as<std::string>());
 		if (options.count("password"))
-			config().setInt("password", options["password"].as<int>());
+			config().setString("password", options["password"].as<std::string>());
 
 		if (options.count("multiline"))
 			config().setBool("multiline", true);

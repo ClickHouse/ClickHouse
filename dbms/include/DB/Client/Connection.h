@@ -78,6 +78,9 @@ public:
 		Packet() : type(Protocol::Server::Hello) {}
 	};
 
+	/// Изменить базу данных по умолчанию. Изменения начинают использоваться только при следующем переподключении.
+	void setDefaultDatabase(const String & database);
+
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
 	/// Адрес сервера - для сообщений в логе и в эксепшенах.

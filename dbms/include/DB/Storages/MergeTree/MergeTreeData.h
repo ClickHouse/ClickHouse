@@ -125,18 +125,29 @@ public:
 		{
 			struct Checksum
 			{
-				size_t size;
-				uint128 hash;
+				size_t file_size;
+				uint128 file_hash;
+
+				bool is_compressed = false;
+				size_t uncompressed_size;
+				uint128 uncompressed_hash;
+
+				void checkEqual(const Checksum & rhs, bool have_uncompressed, const String & name) const;
+				void checkSize(const String & path) const;
 			};
 
 			typedef std::map<String, Checksum> FileChecksums;
 			FileChecksums files;
 
 			/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
-			void check(const Checksums & rhs) const;
+			/// Если have_uncompressed, для сжатых файлов сравнивает чексуммы разжатых данных. Иначе сравнивает только чексуммы файлов.
+			void checkEqual(const Checksums & rhs, bool have_uncompressed) const;
+
+			/// Проверяет, что в директории есть все нужные файлы правильных размеров. Не проверяет чексуммы.
+			void checkSizes(const String & path) const;
 
 			/// Сериализует и десериализует в человекочитаемом виде.
-			void readText(ReadBuffer & in);
+			bool readText(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
 			void writeText(WriteBuffer & out) const;
 
 			bool empty() const
@@ -158,7 +169,8 @@ public:
 			{
 				ReadBufferFromString in(s);
 				Checksums res;
-				res.readText(in);
+				if (!res.readText(in))
+					throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
 				assertEOF(in);
 				return res;
 			}
@@ -287,9 +299,55 @@ public:
 			if (!Poco::File(path).exists())
 				return false;
 			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-			checksums.readText(file);
-			assertEOF(file);
+			if (checksums.readText(file))
+				assertEOF(file);
 			return true;
+		}
+
+		void checkNotBroken()
+		{
+			String path = storage.full_path + name;
+
+			if (!checksums.empty())
+			{
+				checksums.checkSizes(path + "/");
+			}
+			else
+			{
+				/// Проверяем, что первичный ключ непуст.
+
+				Poco::File index_file(path + "/primary.idx");
+
+				if (!index_file.exists() || index_file.getSize() == 0)
+					throw Exception("Part " + path + " is broken: primary key is empty.", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+				/// Проверяем, что все засечки непусты и имеют одинаковый размер.
+
+				ssize_t marks_size = -1;
+				for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+				{
+					Poco::File marks_file(path + "/" + escapeForFileName(it->first) + ".mrk");
+
+					/// При добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
+					if (!marks_file.exists())
+						continue;
+
+					if (marks_size == -1)
+					{
+						marks_size = marks_file.getSize();
+
+						if (0 == marks_size)
+							throw Exception("Part " + path + " is broken: " + marks_file.path() + " is empty.",
+								ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+					}
+					else
+					{
+						if (static_cast<ssize_t>(marks_file.getSize()) != marks_size)
+							throw Exception("Part " + path + " is broken: marks have different sizes.",
+								ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+					}
+				}
+			}
 		}
 	};
 

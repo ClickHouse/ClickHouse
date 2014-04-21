@@ -162,17 +162,7 @@ void MergeTreeData::loadDataParts()
 	{
 		/// Удаляем временные директории старше суток.
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
-		{
-			Poco::File tmp_dir(full_path + file_name);
-
-			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
-			{
-				LOG_WARNING(log, "Removing temporary directory " << full_path << file_name);
-				Poco::File(full_path + file_name).remove(true);
-			}
-
 			continue;
-		}
 
 		if (0 == file_name.compare(0, strlen("old_"), "old_"))
 		{
@@ -187,6 +177,8 @@ void MergeTreeData::loadDataParts()
 		}
 	}
 
+	DataPartsVector broken_parts_to_remove;
+
 	Poco::RegularExpression::MatchVec matches;
 	for (const String & file_name : part_file_names)
 	{
@@ -197,14 +189,28 @@ void MergeTreeData::loadDataParts()
 		parsePartName(file_name, *part, &matches);
 		part->name = file_name;
 
+		bool broken = false;
+
+		try
+		{
+			part->loadIndex();
+			part->loadChecksums();
+			part->checkNotBroken();
+		}
+		catch (...)
+		{
+			broken = true;
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+
 		/// Игнорируем и, возможно, удаляем битые куски, которые могут образовываться после грубого перезапуска сервера.
-		if (isBrokenPart(full_path + file_name))
+		if (broken)
 		{
 			if (part->level == 0)
 			{
 				/// Восстановить куски нулевого уровня невозможно.
 				LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because is't impossible to repair.");
-				part->remove();
+				broken_parts_to_remove.push_back(part);
 			}
 			else
 			{
@@ -232,7 +238,7 @@ void MergeTreeData::loadDataParts()
 				if (contained_parts >= 2)
 				{
 					LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because it covers at least 2 other parts");
-					Poco::File(full_path + file_name).remove(true);
+					broken_parts_to_remove.push_back(part);
 				}
 				else
 				{
@@ -246,20 +252,15 @@ void MergeTreeData::loadDataParts()
 
 		part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
 
-		try
-		{
-			part->loadIndex();
-			part->loadChecksums();
-		}
-		catch (...)
-		{
-			/// Не будем вставлять в набор кусок с битым индексом. Пропустим кусок и позволим серверу запуститься.
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-			continue;
-		}
-
 		data_parts.insert(part);
 	}
+
+	if (broken_parts_to_remove.size() > 2)
+		throw Exception("Suspiciously many (" + toString(broken_parts_to_remove.size()) + ") broken parts to remove.",
+			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+
+	for (const auto & part : broken_parts_to_remove)
+		part->remove();
 
 	all_data_parts = data_parts;
 
@@ -337,6 +338,28 @@ Strings MergeTreeData::clearOldParts()
 		}
 		else
 			++it;
+	}
+
+	/// Удаляем временные директории старше суток.
+	Strings all_file_names;
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+		all_file_names.push_back(it.name());
+
+	for (const String & file_name : all_file_names)
+	{
+		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
+		{
+			Poco::File tmp_dir(full_path + file_name);
+
+			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
+			{
+				LOG_WARNING(log, "Removing temporary directory " << full_path << file_name);
+				Poco::File(full_path + file_name).remove(true);
+			}
+
+			continue;
+		}
 	}
 
 	return res;
@@ -427,7 +450,7 @@ static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesLis
 }
 
 /// одинаковыми считаются имена, вида "name.*"
-static bool namesWithDotEqual(const String & name_with_dot, const DB::NameAndTypePair & name_type)
+static bool namesWithDotEqual(const String & name_with_dot, const NameAndTypePair & name_type)
 {
 	return (name_with_dot == name_type.first.substr(0, name_with_dot.length()));
 }
@@ -492,7 +515,7 @@ void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 
 		try
 		{
-			while(DB::Block b = in.read())
+			while(Block b = in.read())
 				out.write(b);
 
 			in.readSuffix();
@@ -614,55 +637,6 @@ bool MergeTreeData::isPartDirectory(const String & dir_name, Poco::RegularExpres
 	return (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
 }
 
-
-bool MergeTreeData::isBrokenPart(const String & path)
-{
-	/// Проверяем, что первичный ключ непуст.
-
-	Poco::File index_file(path + "/primary.idx");
-
-	if (!index_file.exists() || index_file.getSize() == 0)
-	{
-		LOG_ERROR(log, "Part " << path << " is broken: primary key is empty.");
-
-		return true;
-	}
-
-	/// Проверяем, что все засечки непусты и имеют одинаковый размер.
-
-	ssize_t marks_size = -1;
-	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-	{
-		Poco::File marks_file(path + "/" + escapeForFileName(it->first) + ".mrk");
-
-		/// при добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
-		if (!marks_file.exists())
-			continue;
-
-		if (marks_size == -1)
-		{
-			marks_size = marks_file.getSize();
-
-			if (0 == marks_size)
-			{
-				LOG_ERROR(log, "Part " << path << " is broken: " << marks_file.path() << " is empty.");
-
-				return true;
-			}
-		}
-		else
-		{
-			if (static_cast<ssize_t>(marks_file.getSize()) != marks_size)
-			{
-				LOG_ERROR(log, "Part " << path << " is broken: marks have different sizes.");
-
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
 
 void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
 {
@@ -793,7 +767,36 @@ MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_
 }
 
 
-void MergeTreeData::DataPart::Checksums::check(const Checksums & rhs) const
+void MergeTreeData::DataPart::Checksums::Checksum::checkEqual(const Checksum & rhs, bool have_uncompressed, const String & name) const
+{
+	if (is_compressed && have_uncompressed)
+	{
+		if (!rhs.is_compressed)
+			throw Exception("No uncompressed checksum for file " + name, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+		if (rhs.uncompressed_size != uncompressed_size)
+			throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+		if (rhs.uncompressed_hash != uncompressed_hash)
+			throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+		return;
+	}
+	if (rhs.file_size != file_size)
+		throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+	if (rhs.file_hash != file_hash)
+		throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+}
+
+void MergeTreeData::DataPart::Checksums::Checksum::checkSize(const String & path) const
+{
+	Poco::File file(path);
+	if (!file.exists())
+		throw Exception(path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+	size_t size = file.getSize();
+	if (size != file_size)
+		throw Exception(path + " has unexpected size: " + DB::toString(size) + " instead of " + DB::toString(file_size),
+			ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+}
+
+void MergeTreeData::DataPart::Checksums::checkEqual(const Checksums & rhs, bool have_uncompressed) const
 {
 	for (const auto & it : rhs.files)
 	{
@@ -811,23 +814,32 @@ void MergeTreeData::DataPart::Checksums::check(const Checksums & rhs) const
 		if (jt == rhs.files.end())
 			throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-		const Checksum & expected = it.second;
-		const Checksum & found = jt->second;
-
-		if (expected.size != found.size)
-			throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-
-		if (expected.hash != found.hash)
-			throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+		it.second.checkEqual(jt->second, have_uncompressed, name);
 	}
 }
 
-void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
+void MergeTreeData::DataPart::Checksums::checkSizes(const String & path) const
+{
+	for (const auto & it : files)
+	{
+		const String & name = it.first;
+		it.second.checkSize(path + name);
+	}
+}
+
+bool MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 {
 	files.clear();
 	size_t count;
 
-	DB::assertString("checksums format version: 1\n", in);
+	DB::assertString("checksums format version: ", in);
+	int format_version;
+	DB::readText(format_version, in);
+	if (format_version < 1 || format_version > 2)
+		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+	if (format_version == 1)
+		return false;
+	DB::assertString("\n", in);
 	DB::readText(count, in);
 	DB::assertString(" files:\n", in);
 
@@ -838,33 +850,60 @@ void MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 
 		DB::readString(name, in);
 		DB::assertString("\n\tsize: ", in);
-		DB::readText(sum.size, in);
+		DB::readText(sum.file_size, in);
 		DB::assertString("\n\thash: ", in);
-		DB::readText(sum.hash.first, in);
+		DB::readText(sum.file_hash.first, in);
 		DB::assertString(" ", in);
-		DB::readText(sum.hash.second, in);
+		DB::readText(sum.file_hash.second, in);
+		DB::assertString("\n\tcompressed: ", in);
+		DB::readText(sum.is_compressed, in);
+		if (sum.is_compressed)
+		{
+			DB::assertString("\n\tuncompressed size: ", in);
+			DB::readText(sum.uncompressed_size, in);
+			DB::assertString("\n\tuncompressed hash: ", in);
+			DB::readText(sum.uncompressed_hash.first, in);
+			DB::assertString(" ", in);
+			DB::readText(sum.uncompressed_hash.second, in);
+		}
 		DB::assertString("\n", in);
 
 		files.insert(std::make_pair(name, sum));
 	}
+
+	return true;
 }
 
 void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
 {
-	DB::writeString("checksums format version: 1\n", out);
+	DB::writeString("checksums format version: 2\n", out);
 	DB::writeText(files.size(), out);
 	DB::writeString(" files:\n", out);
 
 	for (const auto & it : files)
 	{
-		DB::writeString(it.first, out);
+		const String & name = it.first;
+		const Checksum & sum = it.second;
+		DB::writeString(name, out);
 		DB::writeString("\n\tsize: ", out);
-		DB::writeText(it.second.size, out);
+		DB::writeText(sum.file_size, out);
 		DB::writeString("\n\thash: ", out);
-		DB::writeText(it.second.hash.first, out);
+		DB::writeText(sum.file_hash.first, out);
 		DB::writeString(" ", out);
-		DB::writeText(it.second.hash.second, out);
+		DB::writeText(sum.file_hash.second, out);
+		DB::writeString("\n\tcompressed: ", out);
+		DB::writeText(sum.is_compressed, out);
 		DB::writeString("\n", out);
+		if (sum.is_compressed)
+		{
+			DB::writeString("\tuncompressed size: ", out);
+			DB::writeText(sum.uncompressed_size, out);
+			DB::writeString("\n\tuncompressed hash: ", out);
+			DB::writeText(sum.uncompressed_hash.first, out);
+			DB::writeString(" ", out);
+			DB::writeText(sum.uncompressed_hash.second, out);
+			DB::writeString("\n", out);
+		}
 	}
 }
 

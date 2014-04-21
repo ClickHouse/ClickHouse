@@ -37,7 +37,7 @@ public:
 
 				/// Блок с таким ID уже когда-то вставляли. Проверим чексуммы и не будем его вставлять.
 				auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
-				expected_checksums.check(part->checksums);
+				expected_checksums.checkEqual(part->checksums, true);
 
 				part->remove();
 
