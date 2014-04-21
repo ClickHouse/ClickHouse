@@ -19,6 +19,28 @@ static void finalize(Block & block)
 	}
 }
 
+
+const Block & TotalsHavingBlockInputStream::getTotals()
+{
+	if (!totals)
+	{
+		/** Если totals_mode == AFTER_HAVING_AUTO, нужно решить, добавлять ли в TOTALS агрегаты для строк,
+		  *  не прошедших max_rows_to_group_by.
+		  */
+		if (overflow_aggregates && static_cast<float>(passed_keys) / total_keys >= auto_include_threshold)
+			addToTotals(current_totals, overflow_aggregates, nullptr);
+
+		finalize(current_totals);
+		totals = current_totals;
+	}
+
+	if (totals && expression)
+		expression->execute(totals);
+
+	return totals;
+}
+
+
 Block TotalsHavingBlockInputStream::readImpl()
 {
 	Block finalized;
@@ -29,16 +51,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 		block = children[0]->read();
 
 		if (!block)
-		{
-			/** Если totals_mode==AFTER_HAVING_AUTO, нужно решить, добавлять ли в TOTALS агрегаты для строк,
-			  *  не прошедших max_rows_to_group_by.
-			  */
-			if (overflow_aggregates && static_cast<float>(passed_keys) / total_keys >= auto_include_threshold)
-				addToTotals(current_totals, overflow_aggregates, nullptr);
-			finalize(current_totals);
-			totals = current_totals;
 			return finalized;
-		}
 
 		finalized = block;
 		finalize(finalized);
@@ -47,8 +60,8 @@ Block TotalsHavingBlockInputStream::readImpl()
 
 		if (filter_column_name.empty() || totals_mode == TotalsMode::BEFORE_HAVING)
 		{
-			/** Включая особую нулевую строку, если overflow_row=true.
-			  * Предполагается, что если totals_mode=AFTER_HAVING_EXCLUSIVE, нам эту строку не дадут.
+			/** Включая особую нулевую строку, если overflow_row == true.
+			  * Предполагается, что если totals_mode == AFTER_HAVING_EXCLUSIVE, нам эту строку не дадут.
 			  */
 			addToTotals(current_totals, block, nullptr);
 		}
@@ -126,8 +139,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 	}
 }
 
-void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, const IColumn::Filter * filter,
-												size_t rows)
+void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, const IColumn::Filter * filter, size_t rows)
 {
 	bool init = !totals;
 
@@ -137,9 +149,8 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		ColumnWithNameAndType & current = block.getByPosition(i);
-		ColumnAggregateFunction * column =
-			dynamic_cast<ColumnAggregateFunction *>(&*current.column);
+		const ColumnWithNameAndType & current = block.getByPosition(i);
+		const ColumnAggregateFunction * column = dynamic_cast<const ColumnAggregateFunction *>(&*current.column);
 
 		if (!column)
 		{
@@ -176,23 +187,19 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 			data = target->getData()[0];
 		}
 
-		ColumnAggregateFunction::Container_t & vec = column->getData();
+		const ColumnAggregateFunction::Container_t & vec = column->getData();
 		size_t size = std::min(vec.size(), rows);
 
 		if (filter)
 		{
 			for (size_t j = 0; j < size; ++j)
-			{
 				if ((*filter)[j])
 					function->merge(data, vec[j]);
-			}
 		}
 		else
 		{
 			for (size_t j = 0; j < size; ++j)
-			{
 				function->merge(data, vec[j]);
-			}
 		}
 	}
 }
