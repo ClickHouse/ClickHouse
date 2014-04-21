@@ -39,10 +39,8 @@ public:
 		func = func_;
 	}
 
-	AggregateFunctionPtr getAggregateFunction()
-	{
-		return func;
-	}
+	AggregateFunctionPtr getAggregateFunction() { return func; }
+	AggregateFunctionPtr getAggregateFunction() const { return func; }
 
 	/// Захватить владение ареной.
 	void addArena(ArenaPtr arena_)

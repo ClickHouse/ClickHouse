@@ -38,13 +38,7 @@ public:
 		return res.str();
 	}
 
-	const Block & getTotals()
-	{
-		if (totals && expression)
-			expression->execute(totals);
-
-		return totals;
-	}
+	const Block & getTotals();
 
 protected:
 	Block readImpl();
