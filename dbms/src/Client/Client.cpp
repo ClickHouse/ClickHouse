@@ -899,10 +899,10 @@ public:
 		main_description.add_options()
 			("help", "produce help message")
 			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file path")
-			("host,h", 			boost::program_options::value<std::string> ()->default_value("localhost"), "server host")
-			("port,p", 			boost::program_options::value<int> ()->default_value(9000), "server port")
+			("host,h", 			boost::program_options::value<std::string> ()->implicit_value("")->default_value("localhost"), "server host")
+			("port", 			boost::program_options::value<int> ()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<std::string> (),	"user")
-			("password,p", 		boost::program_options::value<std::string> (),	"password")
+			("password", 		boost::program_options::value<std::string> (),	"password")
 			("query,q", 		boost::program_options::value<std::string> (), 	"query")
 			("database,d", 		boost::program_options::value<std::string> (), 	"database")
 			("multiline,m",														"multiline")
@@ -929,7 +929,9 @@ public:
 		boost::program_options::store(parsed, options);
 
 		/// Демонстрация help message
-		if (options.count("help")) {
+		if (options.count("help")
+			|| (options.count("host") && (options["host"].as<std::string>().empty() || options["host"].as<std::string>() == "elp")))
+		{
 			std::cout << main_description << "\n";
 			std::cout << external_description << "\n";
 			exit(0);
@@ -939,12 +941,11 @@ public:
 
 		/// Опции командной строки, составленные только из аргументов, не перечисленных в main_description.
 		char newargc = to_pass_further.size() + 1;
-		char *new_argv[newargc];
+		const char * new_argv[newargc];
+
+		new_argv[0] = "";
 		for (size_t i = 0; i < to_pass_further.size(); ++i)
-		{
-			new_argv[i+1] = new char[to_pass_further[i].size() + 1];
-			std::strcpy(new_argv[i+1], to_pass_further[i].c_str());
-		}
+			new_argv[i + 1] = to_pass_further[i].c_str();
 
 		/// Разбиваем на интервалы внешних таблиц.
 		std::vector<int> positions;
@@ -957,11 +958,12 @@ public:
 		size_t cnt = positions.size();
 
 		size_t stdin_count = 0;
-		for (size_t i = 1; i < cnt-1; ++i)
+		for (size_t i = 1; i + 1 < cnt; ++i)
 		{
 			boost::program_options::variables_map external_options;
 			boost::program_options::store(boost::program_options::parse_command_line(
-				positions[i+1] - positions[i], &new_argv[positions[i]], external_description), external_options);
+				positions[i + 1] - positions[i], &new_argv[positions[i]], external_description), external_options);
+
 			try
 			{
 				external_tables.push_back(ExternalTable(external_options));
@@ -974,7 +976,7 @@ public:
 			{
 				std::string text = e.displayText();
 				std::cerr << "Code: " << e.code() << ". " << text << std::endl;
-				std::cerr << "Table #" << i << std::endl << std::endl;
+				std::cerr << "Table №" << i << std::endl << std::endl;
 				exit(e.code());
 			}
 		}
