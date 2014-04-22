@@ -28,7 +28,8 @@ public:
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
-		if (prewhere_actions){
+		if (prewhere_actions)
+		{
 			pre_column_names = prewhere_actions->getRequiredColumns();
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
@@ -132,9 +133,9 @@ protected:
 						return res;
 					}
 
-					for (size_t i = 0; i < ranges_to_read.size(); ++i){
+					for (size_t i = 0; i < ranges_to_read.size(); ++i)
+					{
 						const MarkRange & range = ranges_to_read[i];
-
 						reader->readRange(range.begin, range.end, res);
 					}
 
@@ -150,7 +151,8 @@ protected:
 					/// Прочитаем в нужных отрезках остальные столбцы и составим для них свой фильтр.
 					size_t pre_filter_pos = 0;
 					size_t post_filter_pos = 0;
-					for (size_t i = 0; i < ranges_to_read.size(); ++i){
+					for (size_t i = 0; i < ranges_to_read.size(); ++i)
+					{
 						const MarkRange & range = ranges_to_read[i];
 
 						size_t begin = range.begin;
