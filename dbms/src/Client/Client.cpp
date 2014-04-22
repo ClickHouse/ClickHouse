@@ -116,7 +116,7 @@ private:
 	bool written_first_block;
 
 	/// Информация о внешних таблицах
-	std::vector<ExternalTable> external_tables;
+	std::list<ExternalTable> external_tables;
 
 
 	void initialize(Poco::Util::Application & self)
@@ -521,8 +521,9 @@ private:
 			throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
 		std::vector<ExternalTableData> data;
-		for (size_t i = 0; i < external_tables.size(); ++i)
-			data.push_back(external_tables[i].getData(context));
+		for (auto & table : external_tables)
+			data.emplace_back(table.getData(context));
+
 		connection->sendExternalTablesData(data);
 	}
 
@@ -898,13 +899,13 @@ public:
 		boost::program_options::options_description main_description("Main options");
 		main_description.add_options()
 			("help", "produce help message")
-			("config-file,c", 	boost::program_options::value<std::string> (), 	"config-file path")
-			("host,h", 			boost::program_options::value<std::string> ()->implicit_value("")->default_value("localhost"), "server host")
-			("port", 			boost::program_options::value<int> ()->default_value(9000), "server port")
-			("user,u", 			boost::program_options::value<std::string> (),	"user")
-			("password", 		boost::program_options::value<std::string> (),	"password")
-			("query,q", 		boost::program_options::value<std::string> (), 	"query")
-			("database,d", 		boost::program_options::value<std::string> (), 	"database")
+			("config-file,c", 	boost::program_options::value<std::string>(), 	"config-file path")
+			("host,h", 			boost::program_options::value<std::string>()->implicit_value("")->default_value("localhost"), "server host")
+			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
+			("user,u", 			boost::program_options::value<std::string>(),	"user")
+			("password", 		boost::program_options::value<std::string>(),	"password")
+			("query,q", 		boost::program_options::value<std::string>(), 	"query")
+			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -916,11 +917,11 @@ public:
 		/// Перечисляем опции командной строки относящиеся к внешним таблицам
 		boost::program_options::options_description external_description("External tables options");
 		external_description.add_options()
-			("file", 		boost::program_options::value<std::string> (), 	"data file or - for stdin")
-			("name", 		boost::program_options::value<std::string> ()->default_value("_data"), "name of the table")
-			("format", 		boost::program_options::value<std::string> ()->default_value("TabSeparated"), "data format")
-			("structure", 	boost::program_options::value<std::vector<std::string>> ()->multitoken(), "structure")
-			("types", 		boost::program_options::value<std::vector<std::string>> ()->multitoken(), "types")
+			("file", 		boost::program_options::value<std::string>(), 	"data file or - for stdin")
+			("name", 		boost::program_options::value<std::string>()->default_value("_data"), "name of the table")
+			("format", 		boost::program_options::value<std::string>()->default_value("TabSeparated"), "data format")
+			("structure", 	boost::program_options::value<std::string>(), "structure")
+			("types", 		boost::program_options::value<std::string>(), "types")
 		;
 
 		/// Парсим основные опции командной строки
@@ -966,7 +967,7 @@ public:
 
 			try
 			{
-				external_tables.push_back(ExternalTable(external_options));
+				external_tables.emplace_back(external_options);
 				if (external_tables.back().file == "-")
 					++stdin_count;
 				if (stdin_count > 1)
