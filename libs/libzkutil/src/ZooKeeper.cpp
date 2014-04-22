@@ -118,6 +118,12 @@ void ZooKeeper::stateChanged(WatchEvent::type event, SessionState::type state, c
 		(*state_watch)(event, state, path);
 }
 
+void ZooKeeper::checkNotExpired()
+{
+	if (disconnected())
+		throw KeeperException(ReturnCode::SessionExpired);
+}
+
 bool ZooKeeper::disconnected()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
@@ -142,6 +148,7 @@ ACLs ZooKeeper::getDefaultACL()
 Strings ZooKeeper::getChildren(
 	const std::string & path, Stat * stat, WatchFuture * watch)
 {
+	checkNotExpired();
 	Stat s;
 	Strings res;
 	CHECKED(impl.getChildren(path, watchForFuture(watch), res, s), path);
@@ -153,6 +160,7 @@ Strings ZooKeeper::getChildren(
 bool ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 								Stat * stat, WatchFuture * watch)
 {
+	checkNotExpired();
 	Stat s;
 	ReturnCode::type code = impl.getChildren(path, watchForFuture(watch), res, s);
 	if (!(	code == ReturnCode::Ok ||
@@ -167,18 +175,18 @@ bool ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 
 std::string ZooKeeper::create(const std::string & path, const std::string & data, CreateMode::type mode)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	checkNotExpired();
 
 	std::string res;
-	CHECKED(impl.create(path, data, default_acl, mode, res), path);
+	CHECKED(impl.create(path, data, getDefaultACL(), mode, res), path);
 	return res;
 }
 
 ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::string & data, CreateMode::type mode, std::string & pathCreated)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	checkNotExpired();
 
-	ReturnCode::type code = impl.create(path, data, default_acl, mode, pathCreated);
+	ReturnCode::type code = impl.create(path, data, getDefaultACL(), mode, pathCreated);
 	if (!(	code == ReturnCode::Ok ||
 			code == ReturnCode::NoNode ||
 			code == ReturnCode::NodeExists ||
@@ -189,11 +197,13 @@ ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::strin
 
 void ZooKeeper::remove(const std::string & path, int32_t version)
 {
+	checkNotExpired();
 	CHECKED(impl.remove(path, version), path);
 }
 
 ReturnCode::type ZooKeeper::tryRemove(const std::string & path, int32_t version)
 {
+	checkNotExpired();
 	ReturnCode::type code = impl.remove(path, version);
 	if (!(	code == ReturnCode::Ok ||
 			code == ReturnCode::NoNode ||
@@ -205,6 +215,7 @@ ReturnCode::type ZooKeeper::tryRemove(const std::string & path, int32_t version)
 
 bool ZooKeeper::exists(const std::string & path, Stat * stat, WatchFuture * watch)
 {
+	checkNotExpired();
 	Stat s;
 	ReturnCode::type code = impl.exists(path, watchForFuture(watch), s);
 	if (!(	code == ReturnCode::Ok ||
@@ -219,6 +230,7 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat, WatchFuture * watc
 
 std::string ZooKeeper::get(const std::string & path, Stat * stat, WatchFuture * watch)
 {
+	checkNotExpired();
 	std::string res;
 	Stat s;
 	CHECKED(impl.get(path, watchForFuture(watch), res, s), path);
@@ -229,6 +241,7 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, WatchFuture * 
 
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat, WatchFuture * watch)
 {
+	checkNotExpired();
 	Stat s;
 	ReturnCode::type code = impl.get(path, watchForFuture(watch), res, s);
 	if (!(	code == ReturnCode::Ok ||
@@ -243,6 +256,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat,
 
 void ZooKeeper::set(const std::string & path, const std::string & data, int32_t version, Stat * stat)
 {
+	checkNotExpired();
 	Stat s;
 	CHECKED(impl.set(path, data, version, s), path);
 	if (stat)
@@ -252,6 +266,7 @@ void ZooKeeper::set(const std::string & path, const std::string & data, int32_t 
 ReturnCode::type ZooKeeper::trySet(const std::string & path, const std::string & data,
 									int32_t version, Stat * stat)
 {
+	checkNotExpired();
 	Stat s;
 	ReturnCode::type code = impl.set(path, data, version, s);
 	if (!(	code == ReturnCode::Ok ||
@@ -265,6 +280,7 @@ ReturnCode::type ZooKeeper::trySet(const std::string & path, const std::string &
 
 OpResultsPtr ZooKeeper::multi(const Ops & ops)
 {
+	checkNotExpired();
 	OpResultsPtr res = std::make_shared<OpResults>();
 	CHECKED_WITHOUT_PATH(impl.multi(ops, *res));
 	for (size_t i = 0; i < res->size(); ++i)
@@ -277,6 +293,7 @@ OpResultsPtr ZooKeeper::multi(const Ops & ops)
 
 ReturnCode::type ZooKeeper::tryMulti(const Ops & ops, OpResultsPtr * out_results)
 {
+	checkNotExpired();
 	OpResultsPtr results = std::make_shared<OpResults>();
 	ReturnCode::type code = impl.multi(ops, *results);
 	if (out_results)

@@ -130,6 +130,12 @@ private:
 	SessionState::type session_state;
 
 	void stateChanged(WatchEvent::type event, SessionState::type state, const std::string& path);
+
+	/** Бросает исключение, если сессия истекла. Почему-то zkcpp этого не делает, а вместо этого виснет (смотри zkcpp_expiration_test).
+	  * Не очень надежно: возможно, вызов к zkcpp все же может повиснуть, если между проверкой и вызовом состояние успеет поменяться.
+	  * Если это окажется проблемой, возможно, стоит избавиться от zkcpp.
+	  */
+	void checkNotExpired();
 };
 
 
