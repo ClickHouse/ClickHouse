@@ -34,6 +34,7 @@ public:
 		const String & sign_column_ = "",
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
+	void startup();
 	void shutdown();
 	~StorageReplicatedMergeTree();
 
