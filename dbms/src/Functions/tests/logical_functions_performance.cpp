@@ -44,7 +44,8 @@ struct AssociativeOperationImpl
 	/// Выбрасывает N последних столбцов из in (если их меньше, то все) и кладет в result их комбинацию.
 	static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
 	{
-		if (N > in.size()){
+		if (N > in.size())
+		{
 			AssociativeOperationImpl<Op, N - 1>::execute(in, result);
 			return;
 		}
