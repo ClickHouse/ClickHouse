@@ -263,7 +263,7 @@ private:
 		}
 	};
 
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
 	String path;
 	FileStreams streams;
@@ -293,13 +293,13 @@ private:
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 			if (!streams.count(size_name))
-				streams.insert(std::make_pair(size_name, new Stream(
+				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
 					path + escaped_size_name, uncompressed_cache, mark_cache)));
 
 			addStream(name, *type_arr->getNestedType(), level + 1);
 		}
 		else
-			streams[name] = new Stream(path + escaped_column_name, uncompressed_cache, mark_cache);
+			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache));
 	}
 
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,

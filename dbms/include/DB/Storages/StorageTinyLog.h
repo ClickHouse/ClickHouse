@@ -48,7 +48,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -83,7 +83,7 @@ private:
 		}
 	};
 
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
 	
 	typedef std::set<std::string> OffsetColumns;
