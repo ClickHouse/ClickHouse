@@ -70,7 +70,7 @@ protected:
 		}
 	};
 
-	typedef std::map<String, SharedPtr<ColumnStream> > ColumnStreams;
+	typedef std::map<String, std::unique_ptr<ColumnStream> > ColumnStreams;
 
 	void addStream(const String & path, const String & name, const IDataType & type, size_t level = 0, String filename = "")
 	{
@@ -88,20 +88,20 @@ protected:
 			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
-			column_streams[size_name] = new ColumnStream(
+			column_streams[size_name].reset(new ColumnStream(
 				escaped_size_name,
 				path + escaped_size_name + ".bin",
 				path + escaped_size_name + ".mrk",
-				max_compress_block_size);
+				max_compress_block_size));
 
 			addStream(path, name, *type_arr->getNestedType(), level + 1);
 		}
 		else
-			column_streams[name] = new ColumnStream(
+			column_streams[name].reset(new ColumnStream(
 				escaped_column_name,
 				path + escaped_column_name + ".bin",
 				path + escaped_column_name + ".mrk",
-				max_compress_block_size);
+				max_compress_block_size));
 	}
 
 

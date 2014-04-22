@@ -116,21 +116,21 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
-			streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path())));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name] = new Stream(storage.files[size_name].data_file.path());
+		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path()));
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
-		streams[name] = new Stream(storage.files[name].data_file.path());
+		streams[name].reset(new Stream(storage.files[name].data_file.path()));
 }
 
 
@@ -200,21 +200,21 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
-			streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
+			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
 		
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name] = new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size);
+		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size));
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
-		streams[name] = new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size);
+		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
 }
 
 
