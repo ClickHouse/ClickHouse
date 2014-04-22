@@ -48,12 +48,6 @@ int main(int argc, char ** argv)
 
 		while (char * line = readline(":3 "))
 		{
-			if (zk.disconnected())
-			{
-				std::cerr << "Disconnected" << std::endl;
-				break;
-			}
-
 			try
 			{
 				std::stringstream ss(line);
