@@ -2,6 +2,10 @@
 
 namespace zk = org::apache::zookeeper;
 
+/** Проверяет, правда ли, что вызовы в zkcpp при просроченной сессии блокируются навсегда.
+  * Разорвать сессию можно, например, так: `./nozk.sh && sleep 6s && ./yeszk.sh`
+  */
+
 void stateChanged(zk::WatchEvent::type event, zk::SessionState::type state, const std::string & path)
 {
 	std::cout << "state changed; event: " << zk::WatchEvent::toString(event) << ", state: " << zk::SessionState::toString(state)
@@ -29,7 +33,7 @@ int main()
 	std::cin >> unused;
 
 	children.clear();
-	std::cout << "will getChildren" << std::endl;
+	std::cout << "will getChildren (this call will block forever, which seems to be zkcpp issue)" << std::endl;
 	ret = zookeeper.getChildren("/", nullptr, children, stat);
 
 	std::cout << "getChildren returned " << zk::ReturnCode::toString(ret) << std::endl;
