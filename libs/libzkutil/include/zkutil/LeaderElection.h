@@ -103,7 +103,7 @@ private:
 				}
 
 				WatchFuture future;
-				if (zookeeper.exists(*(it - 1), nullptr, &future))
+				if (zookeeper.exists(path + "/" + *(it - 1), nullptr, &future))
 				{
 					while (!shutdown)
 						if (future.wait_for(std::chrono::seconds(2)) != std::future_status::timeout)
