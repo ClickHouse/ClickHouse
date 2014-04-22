@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string.hpp>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/copyData.h>
@@ -27,7 +28,7 @@ public:
 	/// Описание структуры таблицы: (имя столбца, имя типа данных)
 	std::vector<std::pair<std::string, std::string> > structure;
 
-	ReadBuffer *read_buffer;
+	std::unique_ptr<ReadBuffer> read_buffer;
 	Block sample_block;
 
 	virtual ~BaseExternalTable() {};
@@ -36,7 +37,7 @@ public:
 	virtual void initReadBuffer() {};
 
 	/// Инициализировать sample_block по структуре таблицы сохраненной в structure
-	virtual void initSampleBlock(const Context &context)
+	virtual void initSampleBlock(const Context & context)
 	{
 		for (size_t i = 0; i < structure.size(); ++i)
 		{
@@ -49,7 +50,7 @@ public:
 	}
 
 	/// Получить данные таблицы - пару (поток с содержимым таблицы, имя таблицы)
-	virtual ExternalTableData getData(const Context &context)
+	virtual ExternalTableData getData(const Context & context)
 	{
 		initReadBuffer();
 		initSampleBlock(context);
@@ -67,7 +68,7 @@ protected:
 		format = "";
 		structure.clear();
 		sample_block = Block();
-		read_buffer = NULL;
+		read_buffer.reset();
 	}
 
 	/// Функция для отладочного вывода информации
@@ -81,23 +82,10 @@ protected:
 			std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
 	}
 
-	static std::vector<std::string> split(const std::string & s, const std::string &d)
+	static std::vector<std::string> split(const std::string & s, const std::string & d)
 	{
 		std::vector<std::string> res;
-		std::string now;
-		for (size_t i = 0; i < s.size(); ++i)
-		{
-			if (d.find(s[i]) != std::string::npos)
-			{
-				if (!now.empty())
-					res.push_back(now);
-				now = "";
-				continue;
-			}
-			now += s[i];
-		}
-		if (!now.empty())
-			res.push_back(now);
+		boost::split(res, s, boost::algorithm::is_any_of(d), boost::algorithm::token_compress_on);
 		return res;
 	}
 
@@ -110,7 +98,7 @@ protected:
 			throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
 
 		for (size_t i = 0; i < vals.size(); i += 2)
-			structure.push_back(std::make_pair(vals[i], vals[i+1]));
+			structure.emplace_back(vals[i], vals[i + 1]);
 	}
 
 	/// Построить вектор structure по текстовому полю types
@@ -119,7 +107,7 @@ protected:
 		std::vector<std::string> vals = split(argument, " ,");
 
 		for (size_t i = 0; i < vals.size(); ++i)
-			structure.push_back(std::make_pair("_" + toString(i + 1), vals[i]));
+			structure.emplace_back("_" + toString(i + 1), vals[i]);
 	}
 };
 
@@ -131,9 +119,9 @@ public:
 	void initReadBuffer()
 	{
 		if (file == "-")
-			read_buffer = new ReadBufferFromIStream(std::cin);
+			read_buffer.reset(new ReadBufferFromFileDescriptor(STDIN_FILENO));
 		else
-			read_buffer = new ReadBufferFromFile(file);
+			read_buffer.reset(new ReadBufferFromFile(file));
 	}
 
 	/// Извлечение параметров из variables_map, которая строится по командной строке клиента
@@ -155,24 +143,9 @@ public:
 			throw Exception("--format field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
 
 		if (external_options.count("structure"))
-		{
-			std::vector<std::string> temp = external_options["structure"].as<std::vector<std::string>>();
-
-			std::string argument;
-			for (size_t i = 0; i < temp.size(); ++i)
-				argument = argument + temp[i] + " ";
-
-			parseStructureFromStructureField(argument);
-
-		}
+			parseStructureFromStructureField(external_options["structure"].as<std::string>());
 		else if (external_options.count("types"))
-		{
-			std::vector<std::string> temp = external_options["types"].as<std::vector<std::string>>();
-			std::string argument;
-			for (size_t i = 0; i < temp.size(); ++i)
-				argument = argument + temp[i] + " ";
-			parseStructureFromTypesField(argument);
-		}
+			parseStructureFromTypesField(external_options["types"].as<std::string>());
 		else
 			throw Exception("Neither --structure nor --types have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
 	}
@@ -191,7 +164,7 @@ public:
 	void handlePart(const Poco::Net::MessageHeader& header, std::istream& stream)
 	{
 		/// Буфер инициализируется здесь, а не в виртуальной функции initReadBuffer
-		read_buffer = new ReadBufferFromIStream(stream);
+		read_buffer.reset(new ReadBufferFromIStream(stream));
 
 		/// Извлекаем коллекцию параметров из MessageHeader
 		Poco::Net::NameValueCollection content;
