@@ -135,16 +135,19 @@ protected:
 					else
 					{
 						limit = storage.index_granularity;
+
+						/// Уже могло накопиться достаточно данных для сжатия в новый блок.
+						if (stream.compressed.offset() >= min_compress_block_size)
+							stream.compressed.next();
+
 						writeIntBinary(stream.plain_hashing.count(), stream.marks);
 						writeIntBinary(stream.compressed.offset(), stream.marks);
 					}
 
 					type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
-					/// Уже могло накопиться достаточно данных для сжатия в новый блок.
-					if (stream.compressed.offset() >= min_compress_block_size)
-						stream.compressed.next();
-					else
-						stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+
+					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+
 					prev_mark += limit;
 				}
 			}
@@ -166,16 +169,19 @@ protected:
 				else
 				{
 					limit = storage.index_granularity;
+
+					/// Уже могло накопиться достаточно данных для сжатия в новый блок.
+					if (stream.compressed.offset() >= min_compress_block_size)
+						stream.compressed.next();
+
 					writeIntBinary(stream.plain_hashing.count(), stream.marks);
 					writeIntBinary(stream.compressed.offset(), stream.marks);
 				}
 
 				type.serializeBinary(column, stream.compressed, prev_mark, limit);
-				/// Уже могло накопиться достаточно данных для сжатия в новый блок.
-				if (stream.compressed.offset() >= min_compress_block_size)
-					stream.compressed.next();
-				else
-					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+
+				stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+
 				prev_mark += limit;
 			}
 		}
