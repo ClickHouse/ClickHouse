@@ -211,6 +211,8 @@ bool ExpressionAnalyzer::needSignRewrite()
 			return merge_tree->getName() == "CollapsingMergeTree";
 		if (const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&*storage))
 			return !distributed->getSignColumnName().empty();
+		if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&*storage))
+			return replicated->getName() == "CollapsingReplicatedMergeTree";
 	}
 	return false;
 }
@@ -222,6 +224,8 @@ String ExpressionAnalyzer::getSignColumnName()
 		return merge_tree->getSignColumnName();
 	if (const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&*storage))
 		return distributed->getSignColumnName();
+	if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&*storage))
+		return replicated->getSignColumnName();
 	return "";
 }
 
