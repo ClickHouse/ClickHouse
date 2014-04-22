@@ -85,9 +85,9 @@ protected:
 		if (!reader)
 		{
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader = new MergeTreeReader(path, column_names, uncompressed_cache, storage);
+			reader.reset(new MergeTreeReader(path, column_names, uncompressed_cache, storage));
 			if (prewhere_actions)
-				pre_reader = new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage);
+				pre_reader.reset(new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage));
 		}
 
 		if (prewhere_actions)
@@ -245,7 +245,7 @@ protected:
 				* Чтобы при создании многих источников, но одновременном чтении только из нескольких,
 				*  буферы не висели в памяти.
 				*/
-			reader = nullptr;
+			reader.reset();
 		}
 
 		return res;
@@ -263,8 +263,8 @@ private:
 	MarkRanges remaining_mark_ranges; /// В каких диапазонах засечек еще не прочли.
 									  /// В порядке убывания номеров, чтобы можно было выбрасывать из конца.
 	bool use_uncompressed_cache;
-	Poco::SharedPtr<MergeTreeReader> reader;
-	Poco::SharedPtr<MergeTreeReader> pre_reader;
+	std::unique_ptr<MergeTreeReader> reader;
+	std::unique_ptr<MergeTreeReader> pre_reader;
 	ExpressionActionsPtr prewhere_actions;
 	String prewhere_column;
 	bool remove_prewhere_column;
