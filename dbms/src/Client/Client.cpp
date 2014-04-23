@@ -468,6 +468,15 @@ private:
 		written_first_block = false;
 
 		const ASTSetQuery * set_query = dynamic_cast<const ASTSetQuery *>(&*parsed_query);
+		const ASTUseQuery * use_query = dynamic_cast<const ASTUseQuery *>(&*parsed_query);
+		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
+		const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
+
+		if (insert && !insert->select)
+			processInsertQuery();
+		else
+			processOrdinaryQuery();
+
 		if (set_query)
 		{
 			/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
@@ -480,7 +489,6 @@ private:
 			}
 		}
 
-		const ASTUseQuery * use_query = dynamic_cast<const ASTUseQuery *>(&*parsed_query);
 		if (use_query)
 		{
 			const String & new_database = use_query->database;
@@ -489,14 +497,6 @@ private:
 			/// Если connection инициирует пересоединение, он использует свою переменную
 			connection->setDefaultDatabase(new_database);
 		}
-
-		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
-		const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
-
-		if (insert && !insert->select)
-			processInsertQuery();
-		else
-			processOrdinaryQuery();
 
 		if (is_interactive)
 		{
