@@ -85,9 +85,9 @@ protected:
 		if (!reader)
 		{
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader.reset(new MergeTreeReader(path, column_names, uncompressed_cache, storage));
+			reader.reset(new MergeTreeReader(path, column_names, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage));
+				pre_reader.reset(new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage, all_mark_ranges));
 		}
 
 		if (prewhere_actions)
