@@ -258,6 +258,10 @@ private:
 	/// Поток, удаляющий информацию о старых блоках из ZooKeeper.
 	std::thread clear_old_blocks_thread;
 
+	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
+	std::thread restarting_thread;
+	Poco::FastMutex shutdown_mutex;
+
 	/// Когда последний раз выбрасывали старые логи из ZooKeeper.
 	time_t clear_old_logs_time = 0;
 

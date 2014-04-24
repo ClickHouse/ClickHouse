@@ -120,15 +120,15 @@ void ZooKeeper::stateChanged(WatchEvent::type event, SessionState::type state, c
 
 void ZooKeeper::checkNotExpired()
 {
-	if (disconnected())
+	if (expired())
 		throw KeeperException(ReturnCode::SessionExpired);
 }
 
-bool ZooKeeper::disconnected()
+bool ZooKeeper::expired()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-	return session_state == SessionState::Expired || session_state == SessionState::AuthFailed;
+	return session_state == SessionState::Expired;
 }
 
 void ZooKeeper::setDefaultACL(ACLs & acl)
