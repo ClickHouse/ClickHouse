@@ -27,7 +27,7 @@ protected:
 		/// Первое чтение
 		if (working_buffer.size() == 0 && (*current)->position() != (*current)->buffer().end())
 		{
-			working_buffer = (*current)->buffer();
+			working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
 			return true;
 		}
 		
@@ -46,7 +46,7 @@ protected:
 			}
 		}
 		
-		working_buffer = (*current)->buffer();
+		working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
 		return true;
 	}
 
