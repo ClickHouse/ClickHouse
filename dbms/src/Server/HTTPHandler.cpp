@@ -86,10 +86,8 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		in_post_maybe_compressed = in_post;
 
 	SharedPtr<ReadBuffer> in;
-	std::string content_type = request.getContentType();
-	if (content_type.length() > strlen("multipart/form-data"))
-		content_type.resize(strlen("multipart/form-data"));
-	if (strcmp(content_type.data(), "multipart/form-data") == 0)
+
+	if (0 == strncmp(request.getContentType().data(), "multipart/form-data", strlen("multipart/form-data")))
 	{
 		in = in_param;
 		ExternalTablesHandler handler(context, params);
