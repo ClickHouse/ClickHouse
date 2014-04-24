@@ -239,6 +239,10 @@ private:
 	ReplicatedMergeTreePartsFetcher fetcher;
 	zkutil::LeaderElectionPtr leader_election;
 
+	/// Для чтения данных из директории unreplicated.
+	std::unique_ptr<MergeTreeData> unreplicated_data;
+	std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
+
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
 

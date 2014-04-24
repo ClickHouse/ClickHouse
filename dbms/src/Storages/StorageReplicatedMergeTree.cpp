@@ -34,7 +34,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
 	replica_name(replica_name_),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-			index_granularity_,mode_, sign_column_, settings_),
+			index_granularity_, mode_, sign_column_, settings_),
 	reader(data), writer(data), merger(data), fetcher(data),
 	log(&Logger::get("StorageReplicatedMergeTree: " + table_name))
 {
@@ -60,6 +60,15 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	}
 
 	loadQueue();
+
+	String unreplicated_path = full_path + "unreplicated/";
+	if (Poco::File(unreplicated_path).exists())
+	{
+		LOG_INFO(log, "Have unreplicated data");
+		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_, context_, primary_expr_ast_,
+			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_));
+		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
+	}
 }
 
 StoragePtr StorageReplicatedMergeTree::create(
@@ -1060,7 +1069,15 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 		size_t max_block_size,
 		unsigned threads)
 {
-	return reader.read(column_names, query, settings, processed_stage, max_block_size, threads);
+	BlockInputStreams res = reader.read(column_names, query, settings, processed_stage, max_block_size, threads);
+
+	if (unreplicated_reader)
+	{
+		BlockInputStreams res2 = unreplicated_reader->read(column_names, query, settings, processed_stage, max_block_size, threads);
+		res.insert(res.begin(), res2.begin(), res2.end());
+	}
+
+	return res;
 }
 
 BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
