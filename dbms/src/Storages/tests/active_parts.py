@@ -9,7 +9,7 @@ import re
 
 parts = {}
 for s in sys.stdin.read().split():
-        m = re.match('^([0-9]{8})_([0-9]{8})_([0-9]+)_([0-9]+)_([0-9]+)$', s)
+        m = re.match('^([0-9]{6})[0-9]{2}_([0-9]{6})[0-9]{2}_([0-9]+)_([0-9]+)_([0-9]+)$', s)
         if m == None:
                 continue
         m1 = m.group(1)
