@@ -335,7 +335,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 				engine_p.parse(pos, end, storage, expected);
 			}
 		}
-	} else {
+	}
+	else
+	{
 		/// VIEW or MATERIALIZED VIEW
 		if (s_materialized.ignore(pos, end, expected) && ws.ignore(pos, end, expected))
 			is_materialized_view = true;
@@ -364,19 +366,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 				return false;
 
 			ws.ignore(pos, end);
-		}
-
-		if (s_lparen.ignore(pos, end, expected))
-		{
-			ws.ignore(pos, end);
-
-			if (!columns_p.parse(pos, end, columns, expected))
-				return false;
-
-			ws.ignore(pos, end);
-
-			if (!s_rparen.ignore(pos, end, expected))
-				return false;
 		}
 
 		/// Опционально - может быть указана внутренняя ENGINE для MATERIALIZED VIEW

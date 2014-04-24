@@ -85,6 +85,9 @@ protected:
   *
   * Или:
   * CREATE|ATTACH DATABASE db
+  *
+  * Или:
+  * CREATE|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {

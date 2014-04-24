@@ -515,7 +515,7 @@ void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 
 		try
 		{
-			while(Block b = in.read())
+			while (Block b = in.read())
 				out.write(b);
 
 			in.readSuffix();
