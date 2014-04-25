@@ -155,6 +155,30 @@ public:
 				return files.empty();
 			}
 
+			/// Контрольная сумма от множества контрольных сумм .bin файлов.
+			String summaryDataChecksum() const
+			{
+				SipHash hash;
+
+				/// Пользуемся тем, что итерирование в детерминированном (лексикографическом) порядке.
+				for (const auto & it : files)
+				{
+					const String & name = it.first;
+					const Checksum & sum = it.second;
+					if (name.size() < strlen(".bin") || name.substr(name.size() - 4) != ".bin")
+						continue;
+					size_t len = name.size();
+					hash.update(reinterpret_cast<const char *>(&len), sizeof(len));
+					hash.update(name.data(), len);
+					hash.update(reinterpret_cast<const char *>(&sum.uncompressed_size), sizeof(sum.uncompressed_size));
+					hash.update(reinterpret_cast<const char *>(&sum.uncompressed_hash), sizeof(sum.uncompressed_hash));
+				}
+
+				UInt64 lo, hi;
+				hash.get128(lo, hi);
+				return DB::toString(lo) + "_" + DB::toString(hi);
+			}
+
 			String toString() const
 			{
 				String s;
