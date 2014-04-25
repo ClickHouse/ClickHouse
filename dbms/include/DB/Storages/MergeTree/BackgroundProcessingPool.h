@@ -182,6 +182,7 @@ private:
 
 	void threadFunction()
 	{
+		/// Начнем со случайной задачи (качество rand() не имеет значения).
 		size_t i = static_cast<size_t>(rand());
 
 		while (!shutdown)
@@ -224,6 +225,7 @@ private:
 
 				if (task->function(context))
 				{
+					/// Если у таска получилось выполнить какую-то работу, запустим его же снова без паузы.
 					--i;
 					need_sleep = false;
 				}

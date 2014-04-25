@@ -288,7 +288,6 @@ void MergeTreeData::loadDataParts()
 
 			if ((*curr_jt)->contains(**prev_jt))
 			{
-				LOG_INFO(log, "Part " << (*curr_jt)->name << " contains " << (*prev_jt)->name);
 				(*prev_jt)->remove_time = time(0);
 				data_parts.erase(prev_jt);
 				prev_jt = curr_jt;
@@ -296,7 +295,6 @@ void MergeTreeData::loadDataParts()
 			}
 			else if ((*prev_jt)->contains(**curr_jt))
 			{
-				LOG_INFO(log, "Part " << (*prev_jt)->name << " contains " << (*curr_jt)->name);
 				(*curr_jt)->remove_time = time(0);
 				data_parts.erase(curr_jt++);
 			}
