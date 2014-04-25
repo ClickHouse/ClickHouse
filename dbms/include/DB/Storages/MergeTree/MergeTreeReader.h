@@ -204,8 +204,9 @@ private:
 			for (size_t i = 0; i < all_mark_ranges.size(); ++i)
 			{
 				size_t right = all_mark_ranges[i].end;
+
 				/// Если правая граница лежит внутри блока, то его тоже придется читать.
-				if ((*marks)[right].offset_in_decompressed_block > 0)
+				if (right < (*marks).size() && (*marks)[right].offset_in_decompressed_block > 0)
 				{
 					while (right < (*marks).size() && (*marks)[right].offset_in_compressed_file ==
 													  (*marks)[all_mark_ranges[i].end].offset_in_compressed_file)
@@ -213,8 +214,8 @@ private:
 				}
 
 				/// Если правее засечек нет, просто используем DEFAULT_BUFFER_SIZE
-				if (right + 1 >= (*marks).size() && (*marks)[right].offset_in_compressed_file ==
-													(*marks)[all_mark_ranges[i].end].offset_in_compressed_file)
+				if (right >= (*marks).size() || (right + 1 == (*marks).size() &&
+					(*marks)[right].offset_in_compressed_file == (*marks)[all_mark_ranges[i].end].offset_in_compressed_file))
 				{
 					max_mark_range = DBMS_DEFAULT_BUFFER_SIZE;
 					break;
