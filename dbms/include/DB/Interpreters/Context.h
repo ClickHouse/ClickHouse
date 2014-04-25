@@ -72,7 +72,7 @@ struct ContextShared
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
-	mutable SharedPtr<zkutil::ZooKeeper> zookeeper;			/// Клиент для ZooKeeper.
+	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
 
 	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
 	int interserver_io_port;								///           и порт,
@@ -309,8 +309,9 @@ public:
 	void setUncompressedCache(size_t max_size_in_bytes);
 	UncompressedCachePtr getUncompressedCache() const;
 
-	void setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper);
-	zkutil::ZooKeeper & getZooKeeper() const;
+	void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
+	/// Если в момент вызова текущая сессия просрочена, синхронно создает и возвращает новую вызовом startNewSession().
+	zkutil::ZooKeeperPtr getZooKeeper() const;
 
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);

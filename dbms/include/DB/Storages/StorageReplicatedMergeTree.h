@@ -35,8 +35,7 @@ public:
 		const String & sign_column_ = "",
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
-	void startup();
-	void shutdown();
+	void shutdown() override;
 	~StorageReplicatedMergeTree();
 
 	std::string getName() const override
@@ -260,14 +259,16 @@ private:
 
 	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
 	std::thread restarting_thread;
-	Poco::FastMutex shutdown_mutex;
 
 	/// Когда последний раз выбрасывали старые логи из ZooKeeper.
 	time_t clear_old_logs_time = 0;
 
 	Logger * log;
 
+	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
 	volatile bool shutdown_called = false;
+	/// Нужно ли завершить restarting_thread.
+	volatile bool permanent_shutdown_called = false;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
@@ -310,6 +311,10 @@ private:
 	  *  Но если таких слишком много, на всякий случай бросить исключение - скорее всего, это ошибка конфигурации.
 	  */
 	void checkParts();
+
+	/// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
+	void startup();
+	void partialShutdown();
 
 
 	/** Проверить, что чексумма куска совпадает с чексуммой того же куска на какой-нибудь другой реплике.
@@ -365,6 +370,10 @@ private:
 	/** В бесконечном цикле вызывает clearOldBlocks.
 	  */
 	void clearOldBlocksThread();
+
+	/** В бесконечном цикле проверяет, не протухла ли сессия в ZooKeeper.
+	  */
+	void restartingThread();
 
 	/// Вызывается во время выбора кусков для слияния.
 	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);

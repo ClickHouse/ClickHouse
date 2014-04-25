@@ -567,9 +567,15 @@ void Context::setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper)
 
 zkutil::ZooKeeper & Context::getZooKeeper() const
 {
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
 	if (!shared->zookeeper)
 		throw Exception("No ZooKeeper in Context", ErrorCodes::NO_ZOOKEEPER);
-	return *shared->zookeeper;
+
+	if (shared->zookeeper->expired())
+		shared->zookeeper = shared->zookeeper->startNewSession();
+
+	return shared->zookeeper;
 }
 
 

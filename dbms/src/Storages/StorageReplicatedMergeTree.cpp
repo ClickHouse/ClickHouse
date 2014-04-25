@@ -72,6 +72,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
 		unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
 	}
+
+	restarting_thread = std::thread(&StorageReplicatedMergeTree::restartingThread, this);
 }
 
 StoragePtr StorageReplicatedMergeTree::create(
@@ -93,7 +95,9 @@ StoragePtr StorageReplicatedMergeTree::create(
 		path_, database_name_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 		index_granularity_, mode_, sign_column_, settings_);
 	StoragePtr res_ptr = res->thisPtr();
-	res->startup();
+	String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
+	InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, res_ptr);
+	res->endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, res->context.getInterserverIOHandler());
 	return res_ptr;
 }
 
@@ -1021,12 +1025,17 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 void StorageReplicatedMergeTree::shutdown()
 {
-	if (shutdown_called)
+	if (permanent_shutdown_called)
 		return;
+	permanent_shutdown_called = true;
+	restarting_thread.join();
+}
+
+void StorageReplicatedMergeTree::partialShutdown()
+{
 	leader_election = nullptr;
 	shutdown_called = true;
 	replica_is_active_node = nullptr;
-	endpoint_holder = nullptr;
 
 	merger.cancelAll();
 	if (unreplicated_merger)
@@ -1042,16 +1051,13 @@ void StorageReplicatedMergeTree::shutdown()
 	queue_updating_thread.join();
 	for (auto & thread : queue_threads)
 		thread.join();
+	queue_threads.clear();
 	LOG_TRACE(log, "Threads finished");
 }
 
 void StorageReplicatedMergeTree::startup()
 {
 	shutdown_called = false;
-
-	String endpoint_name = "ReplicatedMergeTree:" + replica_path;
-	InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(data, thisPtr());
-	endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, context.getInterserverIOHandler());
 
 	activateReplica();
 
@@ -1061,6 +1067,31 @@ void StorageReplicatedMergeTree::startup()
 	queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
 	for (size_t i = 0; i < data.settings.replication_threads; ++i)
 		queue_threads.push_back(std::thread(&StorageReplicatedMergeTree::queueThread, this));
+}
+
+void StorageReplicatedMergeTree::restartingThread()
+{
+	startup();
+
+	while (!permanent_shutdown_called)
+	{
+		if (zookeeper.expired())
+		{
+			/// Запретим писать в таблицу, пока подменяем zookeeper.
+			auto structure_lock = lockDataForAlter();
+
+			partialShutdown();
+
+			zookeeper = context.getZooKeeper();
+
+			startup();
+		}
+
+		std::this_thread::sleep_for(std::chrono::seconds(2));
+	}
+
+	endpoint_holder = nullptr;
+	partialShutdown();
 }
 
 StorageReplicatedMergeTree::~StorageReplicatedMergeTree()

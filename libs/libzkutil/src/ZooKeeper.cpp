@@ -55,8 +55,10 @@ struct StateWatch : public zk::Watch
 	}
 };
 
-void ZooKeeper::init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
+void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, WatchFunction * watch_)
 {
+	hosts = hosts_;
+	sessionTimeoutMs = sessionTimeoutMs_;
 	state_watch = watch_;
 
 	CHECKED_WITHOUT_PATH(impl.init(hosts, sessionTimeoutMs, boost::make_shared<StateWatch>(this)));
@@ -337,6 +339,11 @@ ZooKeeper::~ZooKeeper()
 	{
 		LOG_ERROR(&Logger::get("~ZooKeeper"), "Failed to close ZooKeeper session");
 	}
+}
+
+ZooKeeperPtr ZooKeeper::startNewSession() const
+{
+	return new ZooKeeper(hosts, sessionTimeoutMs, state_watch);
 }
 
 }

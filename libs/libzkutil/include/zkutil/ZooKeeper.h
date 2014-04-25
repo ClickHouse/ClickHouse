@@ -132,6 +132,9 @@ private:
 	friend struct StateWatch;
 
 	zk::ZooKeeper impl;
+
+	String hosts;
+	int32_t sessionTimeoutMs;
 	WatchFunction * state_watch;
 
 	Poco::FastMutex mutex;
@@ -146,6 +149,8 @@ private:
 	  */
 	void checkNotExpired();
 };
+
+typedef ZooKeeper::Ptr ZooKeeperPtr;
 
 
 /** В конструкторе создает эфемерную ноду, в деструкторе - удаляет.
