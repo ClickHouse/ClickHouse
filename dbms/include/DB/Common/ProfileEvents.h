@@ -19,6 +19,7 @@
 	M(CompressedReadBufferBytes, 		"Read decompressed bytes") \
 	M(UncompressedCacheHits, 			"Uncompressed cache hits") \
 	M(UncompressedCacheMisses, 			"Uncompressed cache misses") \
+	M(UncompressedCacheWeightLost,		"Uncompressed cache weight lost") \
 	M(IOBufferAllocs, 					"IO buffers allocations") \
 	M(IOBufferAllocBytes, 				"IO buffers allocated bytes") \
 	M(ArenaAllocChunks, 				"Arena allocated chunks") \
@@ -26,6 +27,12 @@
 	M(FunctionExecute, 					"Function executes") \
 	M(MarkCacheHits, 					"Mark cache hits") \
 	M(MarkCacheMisses, 					"Mark cache misses") \
+	\
+	M(ReplicatedPartFetches, 			"Replicated part fetches") \
+	M(ReplicatedPartFailedFetches,		"Replicated part fetches failed") \
+	M(ObsoleteReplicatedParts,			"Replicated parts rendered obsolete by fetches") \
+	M(ReplicatedPartMerges,				"Replicated part merges") \
+	M(ReplicatedPartFetchesOfMerged,	"Replicated part merges replaced with fetches") \
 	\
 	M(END, "")
 

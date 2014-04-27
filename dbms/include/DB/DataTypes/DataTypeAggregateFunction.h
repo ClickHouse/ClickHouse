@@ -11,25 +11,37 @@ namespace DB
 using Poco::SharedPtr;
 
 /** Тип - состояние агрегатной функции.
-  * Параметры типа - это агрегатная функция и типы её аргументов.
+  * Параметры типа - это агрегатная функция, типы её аргументов и её параметры (для параметрических агрегатных функций).
   */
 class DataTypeAggregateFunction : public IDataType
 {
 private:
 	AggregateFunctionPtr function;
 	DataTypes argument_types;
+	Array parameters;
 	
 public:
-	DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_)
-		: function(function_), argument_types(argument_types_)
+	DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
+		: function(function_), argument_types(argument_types_), parameters(parameters_)
 	{
-		function->setArguments(argument_types);
 	}
 	
 	std::string getName() const
 	{
 		std::stringstream stream;
 		stream << "AggregateFunction(" << function->getName();
+
+		if (!parameters.empty())
+		{
+			stream << "(";
+			for (size_t i = 0; i < parameters.size(); ++i)
+			{
+				if (i)
+					stream << ", ";
+				stream << apply_visitor(DB::FieldVisitorToString(), parameters[i]);
+			}
+			stream << ")";
+		}
 
 		for (DataTypes::const_iterator it = argument_types.begin(); it != argument_types.end(); ++it)
 			stream << ", " << (*it)->getName();
@@ -38,7 +50,7 @@ public:
 		return stream.str();
 	}
 	
-	DataTypePtr clone() const { return new DataTypeAggregateFunction(function, argument_types); }
+	DataTypePtr clone() const { return new DataTypeAggregateFunction(function, argument_types, parameters); }
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
 	void deserializeBinary(Field & field, ReadBuffer & istr) const;

@@ -231,7 +231,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& 
 	if (open.ignore(pos, end, expected))
 	{
 		expr_list_params = expr_list_args;
-		expr_list_args = NULL;
+		expr_list_args = nullptr;
 		
 		ws.ignore(pos, end);
 		contents.parse(pos, end, expr_list_args, expected);
@@ -280,33 +280,44 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& ex
 	if (pos == end)
 		return false;
 
+	/** Максимальная длина числа. 319 символов достаточно, чтобы записать максимальный double в десятичной форме.
+	  * Лишнее копирование нужно, чтобы воспользоваться функциями strto*, которым нужна 0-терминированная строка.
+	  */
+	char buf[320];
+
+	size_t bytes_to_copy = end - pos < 319 ? end - pos : 319;
+	memcpy(buf, pos, bytes_to_copy);
+	buf[bytes_to_copy] = 0;
+
+	char * pos_double = buf;
 	errno = 0;	/// Функции strto* не очищают errno.
-	Float64 float_value = std::strtod(pos, const_cast<char**>(&pos));
-	if (pos == begin || errno == ERANGE)
+	Float64 float_value = std::strtod(buf, &pos_double);
+	if (pos_double == buf || errno == ERANGE)
 	{
-		expected = "number (this cause range error)";
+		expected = "number";
 		return false;
 	}
 	res = float_value;
 
 	/// попробуем использовать более точный тип - UInt64 или Int64
 
-	Pos pos_integer = begin;
+	char * pos_integer = buf;
 	if (float_value < 0)
 	{
 		errno = 0;
-		Int64 int_value = std::strtoll(pos_integer, const_cast<char**>(&pos_integer), 0);
-		if (pos_integer == pos && errno != ERANGE)
+		Int64 int_value = std::strtoll(buf, &pos_integer, 0);
+		if (pos_integer == pos_double && errno != ERANGE)
 			res = int_value;
 	}
 	else
 	{
 		errno = 0;
-		UInt64 uint_value = std::strtoull(pos_integer, const_cast<char**>(&pos_integer), 0);
-		if (pos_integer == pos && errno != ERANGE)
+		UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+		if (pos_integer == pos_double && errno != ERANGE)
 			res = uint_value;
 	}
 
+	pos += pos_double - buf;
 	node = new ASTLiteral(StringRange(begin, pos), res);
 	return true;
 }
@@ -380,7 +391,7 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& e
 		return true;
 	pos = begin;
 
-	expected = "literal: one of NULL, number, single quoted string";
+	expected = "literal: one of nullptr, number, single quoted string";
 	return false;
 }
 
@@ -510,7 +521,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, const ch
 	
 	ws.ignore(pos, end);
 	
-	Poco::SharedPtr<Collator> collator = NULL;
+	Poco::SharedPtr<Collator> collator = nullptr;
 	if (collate.ignore(pos, end))
 	{
 		ws.ignore(pos, end);

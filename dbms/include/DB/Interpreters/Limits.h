@@ -21,7 +21,7 @@ struct Limits
 	  * По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
 	  */
 
-#define APPLY_FOR_SETTINGS(M) \
+#define APPLY_FOR_LIMITS(M) \
 	/** Ограничения на чтение из самых "глубоких" источников. \
 	  * То есть, только в самом глубоком подзапросе. \
 	  * При чтении с удалённого сервера, проверяется только на удалённом сервере. \
@@ -77,7 +77,7 @@ struct Limits
 #define DECLARE(TYPE, NAME, DEFAULT) \
 	TYPE NAME {DEFAULT};
 
-	APPLY_FOR_SETTINGS(DECLARE)
+	APPLY_FOR_LIMITS(DECLARE)
 
 #undef DECLARE
 
@@ -88,7 +88,7 @@ struct Limits
 		else if (name == #NAME) NAME.set(value);
 
 		if (false) {}
-		APPLY_FOR_SETTINGS(TRY_SET)
+		APPLY_FOR_LIMITS(TRY_SET)
 		else
 			return false;
 
@@ -104,7 +104,7 @@ struct Limits
 		else if (name == #NAME) NAME.set(buf);
 
 		if (false) {}
-		APPLY_FOR_SETTINGS(TRY_SET)
+		APPLY_FOR_LIMITS(TRY_SET)
 		else
 			return false;
 
@@ -121,7 +121,7 @@ struct Limits
 		else if (name == #NAME) NAME.set(value);
 
 		if (false) {}
-		APPLY_FOR_SETTINGS(TRY_SET)
+		APPLY_FOR_LIMITS(TRY_SET)
 		else
 			return false;
 
@@ -143,12 +143,10 @@ private:
 			NAME.write(buf); \
 		}
 
-		APPLY_FOR_SETTINGS(WRITE)
+		APPLY_FOR_LIMITS(WRITE)
 
 	#undef WRITE
 	}
-
-#undef APPLY_FOR_SETTINGS
 };
 
 

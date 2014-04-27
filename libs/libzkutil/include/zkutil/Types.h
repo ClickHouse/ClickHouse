@@ -26,7 +26,7 @@ typedef std::shared_ptr<boost::ptr_vector<OpResult> > OpResultsPtr;
 typedef std::vector<std::string> Strings;
 
 typedef boost::function<void (WatchEvent::type event, SessionState::type state,
-                         const std::string & path)> WatchFunction;
+							  const std::string & path)> WatchFunction;
 
 struct WatchEventInfo
 {

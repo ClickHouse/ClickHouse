@@ -3,7 +3,6 @@
 #include <boost/bind.hpp>
 
 #include <Poco/Net/NetException.h>
-#include <Poco/Ext/ScopedTry.h>
 
 #include <Yandex/Revision.h>
 
@@ -22,6 +21,10 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 
+#include <DB/Storages/StorageMemory.h>
+
+#include <DB/Common/ExternalTable.h>
+
 #include "TCPHandler.h"
 
 
@@ -38,6 +41,7 @@ void TCPHandler::runImpl()
 
 	socket().setReceiveTimeout(global_settings.receive_timeout);
 	socket().setSendTimeout(global_settings.send_timeout);
+	socket().setNoDelay(true);
 	
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
@@ -112,13 +116,25 @@ void TCPHandler::runImpl()
 			if (!receivePacket())
 				continue;
 
+			/// Получить блоки временных таблиц
+			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+				readData(global_settings);
+
+			/// Очищаем, так как, получая данные внешних таблиц, мы получили пустой блок.
+			/// А значит, stream помечен как cancelled и читать из него нельзя.
+			state.block_in = nullptr;
+
 			/// Обрабатываем Query
-			
+			state.io = executeQuery(state.query, query_context, false, state.stage);
+
+			if (state.io.out)
+				state.is_insert = true;
+
 			after_check_cancelled.restart();
 			after_send_progress.restart();
 
 			/// Запрос требует приёма данных от клиента?
-			if (state.io.out)
+			if (state.is_insert)
 				processInsertQuery(global_settings);
 			else
 				processOrdinaryQuery();
@@ -146,13 +162,13 @@ void TCPHandler::runImpl()
 			  */
 			LOG_ERROR(log, "Poco::Net::NetException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
-			exception = new Exception(e.displayText(), e.code());
+			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const Poco::Exception & e)
 		{
 			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
-			exception = new Exception(e.displayText(), e.code());
+			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const std::exception & e)
 		{
@@ -203,13 +219,8 @@ void TCPHandler::runImpl()
 }
 
 
-void TCPHandler::processInsertQuery(const Settings & global_settings)
+void TCPHandler::readData(const Settings & global_settings)
 {
-	/// Отправляем клиенту блок - структура таблицы.
-	Block block = state.io.out_sample;
-	sendData(block);
-
-	state.io.out->writePrefix();
 	while (1)
 	{
 		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
@@ -223,6 +234,17 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
 		if (!receivePacket())
 			break;
 	}
+}
+
+
+void TCPHandler::processInsertQuery(const Settings & global_settings)
+{
+	/// Отправляем клиенту блок - структура таблицы.
+	Block block = state.io.out_sample;
+	sendData(block);
+
+	state.io.out->writePrefix();
+	readData(global_settings);
 	state.io.out->writeSuffix();
 }
 
@@ -326,6 +348,8 @@ void TCPHandler::sendTotals()
 			initBlockOutput();
 
 			writeVarUInt(Protocol::Server::Totals, *out);
+			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+				writeStringBinary("", *out);
 
 			state.block_out->write(totals);
 			state.maybe_compressed_out->next();
@@ -349,6 +373,8 @@ void TCPHandler::sendExtremes()
 			initBlockOutput();
 
 			writeVarUInt(Protocol::Server::Extremes, *out);
+			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+				writeStringBinary("", *out);
 
 			state.block_out->write(extremes);
 			state.maybe_compressed_out->next();
@@ -504,7 +530,7 @@ void TCPHandler::receiveQuery()
 	/// Настройки на отдельный запрос.
 	if (client_revision >= DBMS_MIN_REVISION_WITH_PER_QUERY_SETTINGS)
 	{
-		query_context.getSettingsRef().deserialize(*in);
+		query_context.getSettingsRef().deserialize(*in, true);
 	}
 
 	readVarUInt(stage, *in);
@@ -518,20 +544,40 @@ void TCPHandler::receiveQuery()
 	LOG_DEBUG(log, "Query ID: " << state.query_id);
 	LOG_DEBUG(log, "Query: " << state.query);
 	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(stage));
-
-	state.io = executeQuery(state.query, query_context, false, state.stage);
 }
 
 
 bool TCPHandler::receiveData()
 {
 	initBlockInput();
-	
-	/// Прочитать из сети один блок и засунуть его в state.io.out (данные для INSERT-а)
+
+	/// Имя временной таблицы для записи данных, по умолчанию пустая строка
+	String external_table_name;
+	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		readStringBinary(external_table_name, *in);
+
+	/// Прочитать из сети один блок и записать его
 	Block block = state.block_in->read();
+
 	if (block)
 	{
-		state.io.out->write(block);
+		/// Если запрос на вставку, то данные нужно писать напрямую в state.io.out.
+		/// Иначе пишем блоки во временную таблицу external_table_name.
+		if (!state.is_insert)
+		{
+			StoragePtr storage;
+			/// Если такой таблицы не существовало, создаем ее.
+			if (!(storage = query_context.tryGetExternalTable(external_table_name)))
+			{
+				NamesAndTypesListPtr columns = new NamesAndTypesList(block.getColumnsList());
+				storage = StorageMemory::create(external_table_name, columns);
+				query_context.addExternalTable(external_table_name, storage);
+			}
+			/// Данные будем писать напрямую в таблицу.
+			state.io.out = storage->write(ASTPtr());
+		}
+		if (block)
+			state.io.out->write(block);
 		return true;
 	}
 	else
@@ -614,6 +660,8 @@ void TCPHandler::sendData(Block & block)
 	initBlockOutput();
 
 	writeVarUInt(Protocol::Server::Data, *out);
+	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		writeStringBinary("", *out);
 
 	state.block_out->write(block);
 	state.maybe_compressed_out->next();

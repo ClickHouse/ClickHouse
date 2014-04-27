@@ -33,7 +33,7 @@ void executeQuery(
 	ASTPtr ast;
 	const char * expected = "";
 
-	std::vector<char> parse_buf;
+	PODArray<char> parse_buf;
 	const char * begin;
 	const char * end;
 
@@ -68,21 +68,24 @@ void executeQuery(
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception("Syntax error: failed at position "
-			+ toString(pos - begin) + ": "
-			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected),
 			ErrorCodes::SYNTAX_ERROR);
 
 	/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
 	auto insert = dynamic_cast<const ASTInsertQuery *>(&*ast);
-	String query(begin, (insert && insert->data) ? (insert->data - begin) : (pos - begin));
+	size_t query_size = (insert && insert->data) ? (insert->data - begin) : (pos - begin);
+
+	if (query_size > max_query_size)
+		throw Exception("Query is too large (" + toString(query_size) + ")."
+			" max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
+
+	String query(begin, query_size);
 
 	LOG_DEBUG(&Logger::get("executeQuery"), query);
 
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
-	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
@@ -135,10 +138,7 @@ BlockIO executeQuery(
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception("Syntax error: failed at position "
-			+ toString(pos - begin) + ": "
-			+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-			+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected),
 			ErrorCodes::SYNTAX_ERROR);
 
 	/// Проверка ограничений.
@@ -153,7 +153,7 @@ BlockIO executeQuery(
 	
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
-	if (!internal && NULL == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(), context.getSettingsRef().replace_running_query);

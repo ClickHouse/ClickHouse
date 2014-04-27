@@ -39,6 +39,65 @@ static bool namesEqualIgnoreAfterDot(const String & name_without_dot, const ASTP
 	return (name_without_dot == name_type.name || name_with_dot == name_type.name.substr(0, name_with_dot.length()));
 }
 
+void InterpreterAlterQuery::dropColumnFromAST(const ASTIdentifier & drop_column, ASTs & columns)
+{
+	Exception e("Wrong column name. Cannot find column " +  drop_column.name + " to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
+	ASTs::iterator drop_it;
+
+	size_t dot_pos = drop_column.name.find('.');
+	/// случай удаления nested столбца
+	if (dot_pos != std::string::npos)
+	{
+		/// в Distributed таблицах столбцы имеют название "nested.column"
+		drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
+		if (drop_it != columns.end())
+			columns.erase(drop_it);
+		else
+		{
+			try
+			{
+				/// в MergeTree таблицах есть ASTFunction "nested"
+				/// в аргументах которой записаны столбцы
+				ASTs::iterator nested_it;
+				std::string nested_base_name = drop_column.name.substr(0, dot_pos);
+				nested_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, nested_base_name, _1));
+				if (nested_it == columns.end())
+					throw e;
+
+				if ((**nested_it).children.size() != 1)
+					throw e;
+
+				ASTFunction & f = dynamic_cast<ASTFunction &>(*(**nested_it).children.back());
+				if (f.name != "Nested")
+					throw e;
+
+				ASTs & nested_columns = dynamic_cast<ASTExpressionList &>(*f.arguments).children;
+
+				drop_it = std::find_if(nested_columns.begin(), nested_columns.end(), boost::bind(namesEqual, drop_column.name.substr(dot_pos + 1), _1));
+				if (drop_it == nested_columns.end())
+					throw e;
+				else
+					nested_columns.erase(drop_it);
+
+				if (nested_columns.empty())
+					columns.erase(nested_it);
+			}
+			catch (std::bad_cast & bad_cast_err)
+			{
+				throw e;
+			}
+		}
+	}
+	else
+	{
+		drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
+		if (drop_it == columns.end())
+			throw e;
+		else
+			columns.erase(drop_it);
+	}
+}
+
 void InterpreterAlterQuery::execute()
 {
 	ASTAlterQuery & alter = dynamic_cast<ASTAlterQuery &>(*query_ptr);
@@ -46,14 +105,7 @@ void InterpreterAlterQuery::execute()
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
 
 	StoragePtr table = context.getTable(database_name, table_name);
-
-	/// для merge tree запрещаем все операции
-	StorageMergeTree::BigLockPtr merge_tree_lock;
-	if (StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
-		merge_tree_lock = table_merge_tree->lockAllOperations();
-
-	/// Poco::Mutex является рекурсивным, т.е. взятие мьютекса дважды из одного потока не приводит к блокировке
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+	auto table_soft_lock = table->lockDataForAlter();
 
 	const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
 	String path = context.getPath();
@@ -68,9 +120,11 @@ void InterpreterAlterQuery::execute()
 	attach.attach = true;
 	ASTs & columns = dynamic_cast<ASTExpressionList &>(*attach.columns).children;
 
-
 	/// Различные проверки, на возможность выполнения запроса
-	ASTs columns_copy = columns;
+	ASTs columns_copy;
+	for (const auto & ast : columns)
+		columns_copy.push_back(ast->clone());
+
 	IdentifierNameSet identifier_names;
 	attach.storage->collectIdentifierNames(identifier_names);
 	for (ASTAlterQuery::ParameterContainer::const_iterator alter_it = alter.parameters.begin();
@@ -109,11 +163,7 @@ void InterpreterAlterQuery::execute()
 			if (identifier_names.find(drop_column.name) != identifier_names.end())
 				throw Exception("Cannot drop key column", DB::ErrorCodes::ILLEGAL_COLUMN);
 
-			ASTs::iterator drop_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, drop_column.name, _1));
-			if (drop_it == columns_copy.end())
-				throw Exception("Wrong column name. Cannot find column " +  drop_column.name +" to drop", DB::ErrorCodes::ILLEGAL_COLUMN);
-			else
-				columns_copy.erase(drop_it);
+			dropColumnFromAST(drop_column, columns_copy);
 		}
 		else if (params.type == ASTAlterQuery::MODIFY)
 		{
@@ -137,13 +187,33 @@ void InterpreterAlterQuery::execute()
 		}
 	}
 
+	/// Пока разрешим читать из таблицы. Запретим при первой попытке изменить структуру таблицы.
+	/// Это позволит сделать большую часть первого MODIFY, не останавливая чтение из таблицы.
+	IStorage::TableStructureWriteLockPtr table_hard_lock;
+
 	/// todo cycle over sub tables and tables
 	/// Применяем изменения
 	for (ASTAlterQuery::ParameterContainer::const_iterator alter_it = alter.parameters.begin();
 			alter_it != alter.parameters.end(); ++alter_it)
 	{
 		const ASTAlterQuery::Parameters & params = *alter_it;
-		table->alter(params);
+
+		if (params.type == ASTAlterQuery::MODIFY)
+		{
+			table->prepareAlterModify(params);
+
+			if (!table_hard_lock)
+				table_hard_lock = table->lockStructureForAlter();
+
+			table->commitAlterModify(params);
+		}
+		else
+		{
+			if (!table_hard_lock)
+				table_hard_lock = table->lockStructureForAlter();
+
+			table->alter(params);
+		}
 		
 		if (params.type == ASTAlterQuery::ADD)
 		{
@@ -160,8 +230,7 @@ void InterpreterAlterQuery::execute()
 		else if (params.type == ASTAlterQuery::DROP)
 		{
 			const ASTIdentifier & drop_column = dynamic_cast <const ASTIdentifier &>(*params.column);
-			ASTs::iterator drop_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, drop_column.name, _1));
-			columns.erase(drop_it);	
+			dropColumnFromAST(drop_column, columns);
 		}
 		else if (params.type == ASTAlterQuery::MODIFY)
 		{

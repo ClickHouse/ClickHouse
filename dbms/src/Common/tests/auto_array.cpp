@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
 
 		std::cerr << std::endl;
 
-		Arr arr2 = arr;
+		Arr arr2 = std::move(arr);
 
 		std::cerr << arr.size() << ", " << arr2.size() << std::endl;
 		
@@ -79,7 +79,7 @@ int main(int argc, char ** argv)
 			for (size_t j = 0; j < n; ++j)
 				key[j] = DB::toString(rand());
 			
-			map[key] = "Hello, world! " + DB::toString(i);
+			map[std::move(key)] = "Hello, world! " + DB::toString(i);
 		}
 
 		for (Map::const_iterator it = map.begin(); it != map.end(); ++it)
@@ -94,7 +94,7 @@ int main(int argc, char ** argv)
 
 		std::cerr << std::endl;
 
-		Map map2 = map;
+		Map map2 = std::move(map);
 
 		for (Map::const_iterator it = map2.begin(); it != map2.end(); ++it)
 		{
@@ -123,7 +123,7 @@ int main(int argc, char ** argv)
 			for (size_t j = 0; j < n; ++j)
 				key[j] = DB::toString(rand());
 
-			vec.push_back(key);
+			vec.push_back(std::move(key));
 		}
 
 		for (Vec::const_iterator it = vec.begin(); it != vec.end(); ++it)
@@ -136,7 +136,7 @@ int main(int argc, char ** argv)
 
 		std::cerr << std::endl;
 
-		Vec vec2 = vec;
+		Vec vec2 = std::move(vec);
 
 		for (Vec::const_iterator it = vec2.begin(); it != vec2.end(); ++it)
 		{
@@ -224,7 +224,7 @@ int main(int argc, char ** argv)
 			arr2[i] = "Goodbye, world! " + DB::toString(i);
 		}
 
-		arr2 = arr1;
+		arr2 = std::move(arr1);
 		arr1.resize(n);
 
 		std::cerr

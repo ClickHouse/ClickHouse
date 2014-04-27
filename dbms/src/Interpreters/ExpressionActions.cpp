@@ -127,12 +127,12 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
 			if (!col.column->isConst())
 			{
-				col.column = NULL;
+				col.column = nullptr;
 			}
 		}
 		else
 		{
-			sample_block.insert(ColumnWithNameAndType(NULL, result_type, result_name));
+			sample_block.insert(ColumnWithNameAndType(nullptr, result_type, result_name));
 		}
 	}
 	else if (type == ARRAY_JOIN)
@@ -144,7 +144,7 @@ void ExpressionActions::Action::prepare(Block & sample_block)
 			if (!array_type)
 				throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 			current.type = array_type->getNestedType();
-			current.column = NULL;
+			current.column = nullptr;
 		}
 	}
 	else if (type == ADD_COLUMN)
@@ -367,7 +367,7 @@ void ExpressionActions::addInput(const ColumnWithNameAndType & column)
 
 void ExpressionActions::addInput(const NameAndTypePair & column)
 {
-	addInput(ColumnWithNameAndType(NULL, column.second, column.first));
+	addInput(ColumnWithNameAndType(nullptr, column.second, column.first));
 }
 
 void ExpressionActions::add(const Action & action, Names & out_new_columns)

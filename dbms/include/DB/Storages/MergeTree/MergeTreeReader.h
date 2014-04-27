@@ -1,32 +1,48 @@
 #pragma once
 
-#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/IO/CachedCompressedReadBuffer.h>
 #include <DB/IO/CompressedReadBufferFromFile.h>
-
-
-#define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
+#include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNested.h>
 
 
 namespace DB
 {
+
+/** Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
+  */
+struct MarkRange
+{
+	size_t begin;
+	size_t end;
+
+	MarkRange() {}
+	MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
+};
+
+typedef std::vector<MarkRange> MarkRanges;
+
 
 /** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
   * При чтении почти последовательных отрезков делает seek-и быстро, не выбрасывая содержимое буфера.
   */
 class MergeTreeReader
 {
+	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+
 public:
 	MergeTreeReader(const String & path_,	/// Путь к куску
-		const Names & columns_names_, bool use_uncompressed_cache_, StorageMergeTree & storage_)
+		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
 	: path(path_), column_names(columns_names_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
 	{
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			addStream(*it, *storage.getDataTypeByName(*it));
+			addStream(*it, *storage.getDataTypeByName(*it), all_mark_ranges);
 	}
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
@@ -42,8 +58,7 @@ public:
 		bool has_missing_columns = false;
 
 		/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-		/// Если append, все значения NULL, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
-		typedef std::map<std::string, ColumnPtr> OffsetColumns;
+		/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
 		OffsetColumns offset_columns;
 
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -107,6 +122,24 @@ public:
 	{
 		try
 		{
+			/** Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов
+			  *  правильных длин.
+			  * TODO: Если для какой-то вложенной структуры были запрошены только отсутствующие столбцы, для них вернутся пустые
+			  *  массивы, даже если в куске есть смещения для этой вложенной структуры. Это можно исправить.
+			  */
+
+			/// Сначала запомним столбцы смещений для всех массивов в блоке.
+			OffsetColumns offset_columns;
+			for (size_t i = 0; i < res.columns(); ++i)
+			{
+				const ColumnWithNameAndType & column = res.getByPosition(i);
+				if (const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*column.column))
+				{
+					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+					offset_columns[offsets_name] = array->getOffsetsColumn();
+				}
+			}
+
 			size_t pos = 0;	/// Позиция, куда надо вставить недостающий столбец.
 			for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it, ++pos)
 			{
@@ -116,11 +149,27 @@ public:
 					column.name = *it;
 					column.type = storage.getDataTypeByName(*it);
 
-					/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
-						*  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
-						*/
-					column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
-						res.rows(), column.type->getDefault())).convertToFullColumn();
+					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+					if (offset_columns.count(offsets_name))
+					{
+						ColumnPtr offsets_column = offset_columns[offsets_name];
+						DataTypePtr nested_type = dynamic_cast<DataTypeArray &>(*column.type).getNestedType();
+						size_t nested_rows = offsets_column->empty() ? 0
+							: dynamic_cast<ColumnUInt64 &>(*offsets_column).getData().back();
+
+						ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
+							nested_rows, nested_type->getDefault())).convertToFullColumn();
+
+						column.column = new ColumnArray(nested_column, offsets_column);
+					}
+					else
+					{
+						/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
+						  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
+						  */
+						column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
+							res.rows(), column.type->getDefault())).convertToFullColumn();
+					}
 
 					res.insert(pos, column);
 				}
@@ -144,19 +193,47 @@ private:
 		Poco::SharedPtr<CachedCompressedReadBuffer> cached_buffer;
 		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
+		size_t max_mark_range;
 
-		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache)
+		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges)
 			: path_prefix(path_prefix)
 		{
 			loadMarks(mark_cache);
+			size_t max_mark_range = 0;
+
+			for (size_t i = 0; i < all_mark_ranges.size(); ++i)
+			{
+				size_t right = all_mark_ranges[i].end;
+
+				/// Если правая граница лежит внутри блока, то его тоже придется читать.
+				if (right < (*marks).size() && (*marks)[right].offset_in_decompressed_block > 0)
+				{
+					while (right < (*marks).size() && (*marks)[right].offset_in_compressed_file ==
+													  (*marks)[all_mark_ranges[i].end].offset_in_compressed_file)
+						++right;
+				}
+
+				/// Если правее засечек нет, просто используем DEFAULT_BUFFER_SIZE
+				if (right >= (*marks).size() || (right + 1 == (*marks).size() &&
+					(*marks)[right].offset_in_compressed_file == (*marks)[all_mark_ranges[i].end].offset_in_compressed_file))
+				{
+					max_mark_range = DBMS_DEFAULT_BUFFER_SIZE;
+					break;
+				}
+
+				max_mark_range = std::max(max_mark_range, (*marks)[right].offset_in_compressed_file - (*marks)[all_mark_ranges[i].begin].offset_in_compressed_file);
+			}
+
+			size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE < max_mark_range ? DBMS_DEFAULT_BUFFER_SIZE : max_mark_range;
+
 			if (uncompressed_cache)
 			{
-				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache);
+				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache, buffer_size);
 				data_buffer = &*cached_buffer;
 			}
 			else
 			{
-				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin");
+				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", buffer_size);
 				data_buffer = &*non_cached_buffer;
 			}
 		}
@@ -196,7 +273,9 @@ private:
 			try
 			{
 				if (cached_buffer)
+				{
 					cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+				}
 				if (non_cached_buffer)
 					non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
 			}
@@ -214,15 +293,15 @@ private:
 		}
 	};
 
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
 	String path;
 	FileStreams streams;
 	Names column_names;
 	bool use_uncompressed_cache;
-	StorageMergeTree & storage;
+	MergeTreeData & storage;
 
-	void addStream(const String & name, const IDataType & type, size_t level = 0)
+	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
 	{
 		String escaped_column_name = escapeForFileName(name);
 
@@ -244,24 +323,13 @@ private:
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 			if (!streams.count(size_name))
-				streams.insert(std::make_pair(size_name, new Stream(
-					path + escaped_size_name, uncompressed_cache, mark_cache)));
+				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
+					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges)));
 
-			addStream(name, *type_arr->getNestedType(), level + 1);
-		}
-		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
-		{
-			String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-			String escaped_size_name = escaped_column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-			streams[size_name] = new Stream(path + escaped_size_name, uncompressed_cache, mark_cache);
-
-			const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-				addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
+			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
-			streams[name] = new Stream(path + escaped_column_name, uncompressed_cache, mark_cache);
+			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges));
 	}
 
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,

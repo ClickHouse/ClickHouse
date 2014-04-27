@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_QUERY_H
-#define MYSQLXX_QUERY_H
+#pragma once
 
 #include <sstream>
 #include <ostream>
@@ -81,5 +80,3 @@ inline std::ostream & operator<< (std::ostream & ostr, const Query & query)
 
 
 }
-
-#endif

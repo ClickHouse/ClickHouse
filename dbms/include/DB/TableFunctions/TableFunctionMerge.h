@@ -44,7 +44,7 @@ public:
 		String table_name_regexp	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на этот Identifier.
-		/// Нам необходимо его пометить как имя базы данных, посколку по умолчанию стоит значение column
+		/// Нам необходимо его пометить как имя базы данных, поскольку по умолчанию стоит значение column
 		dynamic_cast<ASTIdentifier &>(*args[0]).kind = ASTIdentifier::Database;
 
 		return StorageMerge::create(getName(), chooseColumns(source_database, table_name_regexp, context), source_database, table_name_regexp, context);
@@ -55,15 +55,26 @@ private:
 	{
 		OptimizedRegularExpression table_name_regexp(table_name_regexp_);
 
-		/// Список таблиц могут менять в другом потоке.
-		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-		context.assertDatabaseExists(source_database);
-		const Tables & tables = context.getDatabases().at(source_database);
-		for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
-			if (table_name_regexp.match(it->first))
-				return new NamesAndTypesList((it->second)->getColumnsList());
+		StoragePtr any_table;
 
-		throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular 						 				 expression: " + table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
+		{
+			/// Список таблиц могут менять в другом потоке.
+			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+			context.assertDatabaseExists(source_database);
+			const Tables & tables = context.getDatabases().at(source_database);
+			for (Tables::const_iterator it = tables.begin(); it != tables.end(); ++it)
+				if (table_name_regexp.match(it->first))
+				{
+					any_table = it->second;
+					break;
+				}
+		}
+
+		if (!any_table)
+			throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular 						 				 expression: " + table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
+
+		auto table_lock = any_table->lockStructure(false);
+		return new NamesAndTypesList(any_table->getColumnsList());
 	}
 };
 

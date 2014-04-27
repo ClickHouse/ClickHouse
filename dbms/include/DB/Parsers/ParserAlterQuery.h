@@ -7,8 +7,9 @@ namespace DB
 {
 /** Запрос типа такого:
   * ALTER TABLE [db.]name
-  * 	[ADD COLUMN col_type [AFTER col_after],]
+  * 	[ADD COLUMN col_name type [AFTER col_after],]
   *		[DROP COLUMN col_drop, ...]
+  * 	[MODIFY COLUMN col_modify type, ...]
   */
 class ParserAlterQuery : public IParserBase
 {

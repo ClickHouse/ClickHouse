@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_DATETIME_H
-#define MYSQLXX_DATETIME_H
+#pragma once
 
 #include <string>
 #include <Yandex/DateLUT.h>
@@ -187,5 +186,3 @@ inline std::ostream & operator<< (std::ostream & ostr, const DateTime & datetime
 }
 
 }
-
-#endif

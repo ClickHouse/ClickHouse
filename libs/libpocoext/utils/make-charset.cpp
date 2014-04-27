@@ -204,8 +204,7 @@ Encoding::buildHead (std::ostream& _os, const std::string& _class_name) const
 		"//\n"
 		"// This file is generated automatically. Do not edit it.\n"
 		"//\n\n\n"
-		"#ifndef Foundation_" << _class_name << "_INCLUDED\n"
-		"#define Foundation_" << _class_name << "_INCLUDED\n\n\n";
+		"#pragma once\n\n\n";
 
 	_os << "#include <string>\n";
 	_os << "#include <Poco/Foundation.h>\n";
@@ -247,8 +246,6 @@ Encoding::buildHead (std::ostream& _os, const std::string& _class_name) const
 	_os << "\t\tint convert(int ch, unsigned char* bytes, int length) const;\n";
 	_os << "\t};\n";
 	_os << "}\n\n";
-
-	_os <<  "#endif // Foundation_" << _class_name << "_INCLUDED\n";
 }
 
 void

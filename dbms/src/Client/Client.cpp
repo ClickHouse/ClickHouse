@@ -15,6 +15,7 @@
 #include <unordered_set>
 
 #include <boost/assign/list_inserter.hpp>
+#include <boost/program_options.hpp>
 
 #include <Poco/File.h>
 #include <Poco/SharedPtr.h>
@@ -34,6 +35,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/copyData.h>
+#include <DB/IO/ReadBufferFromIStream.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 
@@ -46,6 +48,7 @@
 
 #include "InterruptListener.h"
 
+#include <DB/Common/ExternalTable.h>
 
 /** Клиент командной строки СУБД ClickHouse.
   */
@@ -55,7 +58,6 @@ namespace DB
 {
 
 using Poco::SharedPtr;
-
 
 class Client : public Poco::Util::Application
 {
@@ -91,6 +93,8 @@ private:
 	BlockOutputStreamPtr block_std_out;
 
 	String home_path;
+
+	String current_profile;
 	
 	/// Путь к файлу истории команд.
 	String history_file;
@@ -110,6 +114,9 @@ private:
 	size_t bytes_read_on_server;
 	size_t written_progress_chars;
 	bool written_first_block;
+
+	/// Информация о внешних таблицах
+	std::list<ExternalTable> external_tables;
 
 
 	void initialize(Poco::Util::Application & self)
@@ -135,6 +142,19 @@ private:
 			loadConfiguration(home_path + "/.clickhouse-client/config.xml");
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
+
+		/// settings и limits могли так же быть указаны в кофигурационном файле, но уже записанные настройки имеют больший приоритет.
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+		if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
+			context.setSetting(#NAME, config().getString(#NAME));
+		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
+
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+		if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
+			context.setSetting(#NAME, config().getString(#NAME));
+		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
+#undef EXTRACT_LIMIT
 	}
 
 
@@ -155,7 +175,8 @@ private:
 				std::cerr << "Stack trace:" << std::endl
 					<< e.getStackTrace().toString();
 			
-			return e.code();
+			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
+			return e.code() ? e.code() : -1;
 		}
 		catch (const Poco::Exception & e)
 		{
@@ -320,7 +341,7 @@ private:
 			
 			query += line;
 			
-			if (!ends_with_backslash && (ends_with_semicolon || !config().hasOption("multiline")))
+			if (!ends_with_backslash && (ends_with_semicolon || !config().has("multiline")))
 			{
 				if (query != prev_query)
 				{
@@ -362,8 +383,9 @@ private:
 
 	void nonInteractive()
 	{
+		String line;
 		if (config().has("query"))
-			process(config().getString("query"));
+			line = config().getString("query");
 		else
 		{
 			/** В случае, если параметр query не задан, то запрос будет читаться из stdin.
@@ -371,32 +393,72 @@ private:
 			  * Поддерживается только один запрос в stdin.
 			  */
 			
-			String stdin_str;
+			ReadBufferFromFileDescriptor in(STDIN_FILENO);
+			WriteBufferFromString out(line);
+			copyData(in, out);
+		}
 
+		if (config().has("multiquery"))
+		{
+			/// Несколько запросов, разделенных ';'.
+			/// Данные для INSERT заканчиваются переводом строки, а не ';'.
+
+			String query;
+
+			const char * begin = line.data();
+			const char * end = begin + line.size();
+
+			while (begin < end)
 			{
-				ReadBufferFromFileDescriptor in(STDIN_FILENO);
-				WriteBufferFromString out(stdin_str);
-				copyData(in, out);
-			}
+				const char * pos = begin;
+				ASTPtr ast = parseQuery(pos, end);
+				ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*ast);
 
-			process(stdin_str);
+				if (insert && insert->data)
+				{
+					pos = insert->data;
+					while (*pos && *pos != '\n')
+						++pos;
+					insert->end = pos;
+				}
+
+				query = line.substr(begin - line.data(), pos - begin);
+
+				begin = pos;
+				while (isWhitespace(*begin) || *begin == ';')
+					++begin;
+
+				process(query, ast);
+			}
+		}
+		else
+		{
+			process(line);
 		}
 	}
 
 
-	bool process(const String & line)
+	bool process(const String & line, ASTPtr parsed_query_ = nullptr)
 	{
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
-		block_std_out = NULL;
+		block_std_out = nullptr;
 
 		watch.restart();
 
 		query = line;
 
 		/// Некоторые части запроса выполняются на стороне клиента (форматирование результата). Поэтому, распарсим запрос.
-		if (!parseQuery())
+		parsed_query = parsed_query_;
+
+		if (!parsed_query)
+		{
+			const char * begin = query.data();
+			parsed_query = parseQuery(begin, begin + query.size());
+		}
+
+		if (!parsed_query)
 			return true;
 
 		processed_rows = 0;
@@ -405,6 +467,8 @@ private:
 		written_progress_chars = 0;
 		written_first_block = false;
 
+		const ASTSetQuery * set_query = dynamic_cast<const ASTSetQuery *>(&*parsed_query);
+		const ASTUseQuery * use_query = dynamic_cast<const ASTUseQuery *>(&*parsed_query);
 		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
 		const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
 
@@ -412,6 +476,27 @@ private:
 			processInsertQuery();
 		else
 			processOrdinaryQuery();
+
+		if (set_query)
+		{
+			/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
+			for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+			{
+				if (it->name ==	"profile")
+					current_profile = it->value.safeGet<String>();
+				else
+					context.setSetting(it->name, it->value);
+			}
+		}
+
+		if (use_query)
+		{
+			const String & new_database = use_query->database;
+			/// Если клиент инициирует пересоединение, он берет настройки из конфига
+			config().setString("database", new_database);
+			/// Если connection инициирует пересоединение, он использует свою переменную
+			connection->setDefaultDatabase(new_database);
+		}
 
 		if (is_interactive)
 		{
@@ -428,10 +513,26 @@ private:
 	}
 
 
+	/// Преобразовать внешние таблицы к ExternalTableData и переслать через connection
+	void sendExternalTables()
+	{
+		const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*parsed_query);
+		if (!select && !external_tables.empty())
+			throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
+
+		std::vector<ExternalTableData> data;
+		for (auto & table : external_tables)
+			data.emplace_back(table.getData(context));
+
+		connection->sendExternalTablesData(data);
+	}
+
+
 	/// Обработать запрос, который не требует передачи блоков данных на сервер.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
+		sendExternalTables();
 		receiveResult();
 	}
 
@@ -445,10 +546,11 @@ private:
 			? query.substr(0, parsed_insert_query.data - query.data())
 			: query;
 
-		if ((is_interactive && !parsed_insert_query.data) || (stdin_is_not_tty && std_in.eof()))
+		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
+		sendExternalTables();
 
 		/// Получим структуру таблицы
 		Block sample = receiveSampleBlock();
@@ -458,44 +560,37 @@ private:
 	}
 
 
-	bool parseQuery()
+	ASTPtr parseQuery(const char *& pos, const char * end)
 	{
 		ParserQuery parser;
 		const char * expected = "";
 
-		const char * begin = query.data();
-		const char * end = begin + query.size();
-		const char * pos = begin;
+		const char * begin = pos;
 
-		bool parse_res = parser.parse(pos, end, parsed_query, expected);
+		ASTPtr res;
+		bool parse_res = parser.parse(pos, end, res, expected);
 
 		/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 		if (!parse_res || (pos != end && *pos != ';'))
 		{
-			std::stringstream message;
-
-			message << "Syntax error: failed at position "
-				<< (pos - begin) << ": "
-				<< std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-				<< ", expected " << (parse_res ? "end of query" : expected) << "."
-				<< std::endl << std::endl;
+			std::string message = getSyntaxErrorMessage(parse_res, begin, end, pos, expected);
 
 			if (is_interactive)
-				std::cerr << message.str();
+				std::cerr << message << std::endl << std::endl;
 			else
-				throw Exception(message.str(), ErrorCodes::SYNTAX_ERROR);
+				throw Exception(message, ErrorCodes::SYNTAX_ERROR);
 
-			return false;
+			return nullptr;
 		}
 
 		if (is_interactive)
 		{
 			std::cout << std::endl;
-			formatAST(*parsed_query, std::cout);
+			formatAST(*res, std::cout);
 			std::cout << std::endl << std::endl;
 		}
 		
-		return true;
+		return res;
 	}
 
 
@@ -788,66 +883,139 @@ private:
 		if (is_interactive && !written_first_block)
 			std::cout << "Ok." << std::endl;
 	}
-	
 
-	void defineOptions(Poco::Util::OptionSet & options)
+public:
+	void init(int argc, char ** argv)
 	{
-		Poco::Util::Application::defineOptions(options);
 
-		options.addOption(
-			Poco::Util::Option("config-file", "c")
-				.required(false)
-				.repeatable(false)
-				.argument("<file>")
-				.binding("config-file"));
+		/// Останавливаем внутреннюю обработку командной строки
+		stopOptionsProcessing();
 
-		options.addOption(
-			Poco::Util::Option("host", "h")
-				.required(false)
-				.repeatable(false)
-				.argument("<host>")
-				.binding("host"));
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
-		options.addOption(
-			Poco::Util::Option("port", "")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("port"));
+		/// Перечисляем основные опции командной строки относящиеся к функциональности клиента,
+		/// а так же все параметры из Settings
+		boost::program_options::options_description main_description("Main options");
+		main_description.add_options()
+			("help", "produce help message")
+			("config-file,c", 	boost::program_options::value<std::string>(), 	"config-file path")
+			("host,h", 			boost::program_options::value<std::string>()->implicit_value("")->default_value("localhost"), "server host")
+			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
+			("user,u", 			boost::program_options::value<std::string>(),	"user")
+			("password", 		boost::program_options::value<std::string>(),	"password")
+			("query,q", 		boost::program_options::value<std::string>(), 	"query")
+			("database,d", 		boost::program_options::value<std::string>(), 	"database")
+			("multiline,m",														"multiline")
+			("multiquery,n",													"multiquery")
+			APPLY_FOR_SETTINGS(DECLARE_SETTING)
+			APPLY_FOR_LIMITS(DECLARE_LIMIT)
+		;
+#undef DECLARE_SETTING
+#undef DECLARE_LIMIT
 
-		options.addOption(
-			Poco::Util::Option("user", "u")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("user"));
+		/// Перечисляем опции командной строки относящиеся к внешним таблицам
+		boost::program_options::options_description external_description("External tables options");
+		external_description.add_options()
+			("file", 		boost::program_options::value<std::string>(), 	"data file or - for stdin")
+			("name", 		boost::program_options::value<std::string>()->default_value("_data"), "name of the table")
+			("format", 		boost::program_options::value<std::string>()->default_value("TabSeparated"), "data format")
+			("structure", 	boost::program_options::value<std::string>(), "structure")
+			("types", 		boost::program_options::value<std::string>(), "types")
+		;
 
-		options.addOption(
-			Poco::Util::Option("password", "")
-				.required(false)
-				.repeatable(false)
-				.argument("<number>")
-				.binding("password"));
+		/// Парсим основные опции командной строки
+		boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(argc, argv).options(main_description).allow_unregistered().run();
+		boost::program_options::variables_map options;
+		boost::program_options::store(parsed, options);
 
-		options.addOption(
-			Poco::Util::Option("query", "e")
-				.required(false)
-				.repeatable(false)
-				.argument("<string>")
-				.binding("query"));
+		/// Демонстрация help message
+		if (options.count("help")
+			|| (options.count("host") && (options["host"].as<std::string>().empty() || options["host"].as<std::string>() == "elp")))
+		{
+			std::cout << main_description << "\n";
+			std::cout << external_description << "\n";
+			exit(0);
+		}
 
-		options.addOption(
-			Poco::Util::Option("database", "d")
-				.required(false)
-				.repeatable(false)
-				.argument("<string>")
-				.binding("database"));
-		
-		options.addOption(
-			Poco::Util::Option("multiline", "m")
-				.required(false)
-				.repeatable(false)
-				.binding("multiline"));
+		std::vector<std::string> to_pass_further = boost::program_options::collect_unrecognized(parsed.options, boost::program_options::include_positional);
+
+		/// Опции командной строки, составленные только из аргументов, не перечисленных в main_description.
+		char newargc = to_pass_further.size() + 1;
+		const char * new_argv[newargc];
+
+		new_argv[0] = "";
+		for (size_t i = 0; i < to_pass_further.size(); ++i)
+			new_argv[i + 1] = to_pass_further[i].c_str();
+
+		/// Разбиваем на интервалы внешних таблиц.
+		std::vector<int> positions;
+		positions.push_back(0);
+		for (int i = 1; i < newargc; ++i)
+			if (strcmp(new_argv[i], "--external") == 0)
+				positions.push_back(i);
+		positions.push_back(newargc);
+
+		size_t cnt = positions.size();
+
+		size_t stdin_count = 0;
+		for (size_t i = 1; i + 1 < cnt; ++i)
+		{
+			boost::program_options::variables_map external_options;
+			boost::program_options::store(boost::program_options::parse_command_line(
+				positions[i + 1] - positions[i], &new_argv[positions[i]], external_description), external_options);
+
+			try
+			{
+				external_tables.emplace_back(external_options);
+				if (external_tables.back().file == "-")
+					++stdin_count;
+				if (stdin_count > 1)
+					throw Exception("Two or more external tables has stdin (-) set as --file field", ErrorCodes::BAD_ARGUMENTS);
+			}
+			catch (const Exception & e)
+			{
+				std::string text = e.displayText();
+				std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+				std::cerr << "Table №" << i << std::endl << std::endl;
+				exit(e.code());
+			}
+		}
+
+		/// Извлекаем settings and limits из полученных options
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+		if (options.count(#NAME)) \
+			context.setSetting(#NAME, options[#NAME].as<std::string>());
+		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
+
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+		if (options.count(#NAME)) \
+			context.setSetting(#NAME, options[#NAME].as<std::string>());
+		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
+#undef EXTRACT_LIMIT
+
+		/// Сохраняем полученные данные во внутренний конфиг
+		if (options.count("config-file"))
+			config().setString("config-file", options["config-file"].as<std::string>());
+		if (options.count("host"))
+			config().setString("host", options["host"].as<std::string>());
+		if (options.count("query"))
+			config().setString("query", options["query"].as<std::string>());
+		if (options.count("database"))
+			config().setString("database", options["database"].as<std::string>());
+
+		if (options.count("port"))
+			config().setInt("port", options["port"].as<int>());
+		if (options.count("user"))
+			config().setString("user", options["user"].as<std::string>());
+		if (options.count("password"))
+			config().setString("password", options["password"].as<std::string>());
+
+		if (options.count("multiline"))
+			config().setBool("multiline", true);
+		if (options.count("multiquery"))
+			config().setBool("multiquery", true);
 	}
 };
 

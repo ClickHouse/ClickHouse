@@ -64,12 +64,15 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 {
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
-	
+
+	auto table_lock = table->lockStructure(true);
+
 	BlockInputStreamPtr in;
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList (table->getSampleBlock().getColumnsList());
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	table->write(query_ptr);
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
+
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
@@ -81,19 +84,16 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 
 		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
 
-		/// Если данных нет.
-		bool has_remaining_data = remaining_data_istr && !remaining_data_istr->eof();
-			
-		if (!query.data && !has_remaining_data)
-			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
-
 		ConcatReadBuffer::ReadBuffers buffers;
 		ReadBuffer buf1(const_cast<char *>(query.data), query.data ? query.end - query.data : 0, 0);
 
 		if (query.data)
 			buffers.push_back(&buf1);
-		if (has_remaining_data)
-			buffers.push_back(remaining_data_istr);
+		buffers.push_back(remaining_data_istr);
+
+		/** NOTE Нельзя читать из remaining_data_istr до того, как прочтём всё между query.data и query.end.
+		  * - потому что query.data может ссылаться на кусок памяти, использующийся в качестве буфера в remaining_data_istr.
+		  */
 
 		ConcatReadBuffer istr(buffers);
 		Block sample = table->getSampleBlock();
@@ -112,10 +112,12 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 }
 
 
-BlockOutputStreamPtr InterpreterInsertQuery::execute()
+BlockIO InterpreterInsertQuery::execute()
 {
 	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
+
+	auto table_lock = table->lockStructure(true);
 
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
 
@@ -124,18 +126,23 @@ BlockOutputStreamPtr InterpreterInsertQuery::execute()
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
+	BlockIO res;
+	res.out_sample = getSampleBlock();
+
 	/// Какой тип запроса: INSERT или INSERT SELECT?
 	if (!query.select)
-		return out;
+	{
+		res.out = out;
+	}
 	else
 	{
 		InterpreterSelectQuery interpreter_select(query.select, context);
 		BlockInputStreamPtr in = interpreter_select.execute();
 		in = new MaterializingBlockInputStream(in);
 		copyData(*in, *out);
-
-		return NULL;
 	}
+
+	return res;
 }
 
 

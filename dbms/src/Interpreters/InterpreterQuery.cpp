@@ -135,8 +135,7 @@ BlockIO InterpreterQuery::execute()
 	{
 		throwIfReadOnly();
 		InterpreterInsertQuery interpreter(query_ptr, context);
-		res.out = interpreter.execute();
-		res.out_sample = interpreter.getSampleBlock();
+		res = interpreter.execute();
 	}
 	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
 	{

@@ -1,5 +1,4 @@
-#ifndef DBMS_CORE_COLUMN_NUMBERS_H
-#define DBMS_CORE_COLUMN_NUMBERS_H
+#pragma once
 
 #include <vector>
 #include <string>
@@ -11,5 +10,3 @@ namespace DB
 typedef std::vector<size_t> ColumnNumbers;
 
 }
-
-#endif

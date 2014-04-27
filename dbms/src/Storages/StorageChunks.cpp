@@ -57,7 +57,7 @@ BlockInputStreams StorageChunks::read(
 	Block virtual_columns_block = getBlockWithVirtualColumns();
 	BlockInputStreamPtr virtual_columns =
 		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
-	std::set<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
 
 	if (all_inclusive)
@@ -126,7 +126,7 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 		chunk_names.push_back(chunk_name);
 	}
 	
-	return StorageLog::write(NULL);
+	return StorageLog::write(nullptr);
 }
 	
 StorageChunks::StorageChunks(
@@ -137,7 +137,7 @@ StorageChunks::StorageChunks(
 	Context & context_,
 	bool attach)
 	:
-	StorageLog(path_, name_, columns_),
+	StorageLog(path_, name_, columns_, context_.getSettings().max_compress_block_size),
 	database_name(database_name_),
 	reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"),
 	context(context_),

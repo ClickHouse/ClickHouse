@@ -168,6 +168,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_create("CREATE", true, true);
+	ParserString s_temporary("TEMPORARY", true, true);
 	ParserString s_attach("ATTACH", true, true);
 	ParserString s_table("TABLE", true, true);
 	ParserString s_database("DATABASE", true, true);
@@ -199,6 +200,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	bool is_view = false;
 	bool is_materialized_view = false;
 	bool is_populate = false;
+	bool is_temporary = false;
 
 	ws.ignore(pos, end);
 
@@ -211,6 +213,12 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	}
 
 	ws.ignore(pos, end);
+
+	if (s_temporary.ignore(pos, end, expected))
+	{
+		is_temporary = true;
+		ws.ignore(pos, end);
+	}
 
 	if (s_database.ignore(pos, end, expected))
 	{
@@ -327,7 +335,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 				engine_p.parse(pos, end, storage, expected);
 			}
 		}
-	} else {
+	}
+	else
+	{
 		/// VIEW or MATERIALIZED VIEW
 		if (s_materialized.ignore(pos, end, expected) && ws.ignore(pos, end, expected))
 			is_materialized_view = true;
@@ -356,19 +366,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 				return false;
 
 			ws.ignore(pos, end);
-		}
-
-		if (s_lparen.ignore(pos, end, expected))
-		{
-			ws.ignore(pos, end);
-
-			if (!columns_p.parse(pos, end, columns, expected))
-				return false;
-
-			ws.ignore(pos, end);
-
-			if (!s_rparen.ignore(pos, end, expected))
-				return false;
 		}
 
 		/// Опционально - может быть указана внутренняя ENGINE для MATERIALIZED VIEW
@@ -403,6 +400,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	query->is_view = is_view;
 	query->is_materialized_view = is_materialized_view;
 	query->is_populate = is_populate;
+	query->is_temporary = is_temporary;
 	
 	if (database)
 		query->database = dynamic_cast<ASTIdentifier &>(*database).name;

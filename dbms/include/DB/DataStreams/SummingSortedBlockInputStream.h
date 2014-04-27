@@ -18,7 +18,7 @@ namespace DB
 class SummingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-	SummingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_)
+	SummingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_)
 		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
 		log(&Logger::get("SummingSortedBlockInputStream")), current_row_is_zero(false)
 	{

@@ -23,13 +23,19 @@ public:
 	{
 		if (database.empty())
 			database = context.getCurrentDatabase();
+
 		storage = context.getTable(database, table);
+		addTableLock(storage->lockStructure(true));
+
 		Dependencies dependencies = context.getDependencies(DatabaseAndTableName(database, table));
 		for (size_t i = 0; i < dependencies.size(); ++i)
 		{
 			children.push_back(new PushingToViewsBlockOutputStream(dependencies[i].first, dependencies[i].second, context, ASTPtr()));
 			queries.push_back(dynamic_cast<StorageView &>(*context.getTable(dependencies[i].first, dependencies[i].second)).getInnerQuery());
 		}
+
+		if (storage->getName() != "View")
+			output = storage->write(query_ptr);
 	}
 
 	String getName() const { return "PushingToViewsBlockOutputStream"; }
@@ -44,13 +50,13 @@ public:
 			copyData(*data, *children[i]);
 		}
 
-		Block buf(block);
-		if (storage->getName() != "View")
-			storage->write(query_ptr)->write(buf);
+		if (output)
+			output->write(block); 
 	}
 
 private:
 	StoragePtr storage;
+	BlockOutputStreamPtr output;
 	String database;
 	String table;
 	Context context;

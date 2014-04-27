@@ -24,6 +24,13 @@ struct Settings
 	  */
 
 #define APPLY_FOR_SETTINGS(M) \
+	/** При записи данных, для сжатия выделяется буфер размером max_compress_block_size. При переполнении буфера или если в буфер */ \
+	/** записано данных больше или равно, чем min_compress_block_size, то при очередной засечке, данные так же будут сжиматься */ \
+	/** В результате, для маленьких столбцов (числа 1-8 байт), при index_granularity = 8192, размер блока будет 64 KБ. */ \
+	/** А для больших столбцов (Title - строка ~100 байт), размер блока будет ~819 КБ.  */ \
+	/** За счёт этого, коэффициент сжатия почти не ухудшится.  */ \
+	M(SettingUInt64, min_compress_block_size, DEFAULT_MIN_COMPRESS_BLOCK_SIZE) \
+	M(SettingUInt64, max_compress_block_size, DEFAULT_MAX_COMPRESS_BLOCK_SIZE) \
 	/** Максимальный размер блока для чтения */ \
 	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
 	/** Максимальное количество потоков выполнения запроса */ \
@@ -94,7 +101,8 @@ struct Settings
 	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
-	void deserialize(ReadBuffer & buf);
+	/// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
+	void deserialize(ReadBuffer & buf, bool check_readonly = false);
 
 	/// Записать изменённые настройки в буфер. (Например, для отправки на удалённый сервер.)
 	void serialize(WriteBuffer & buf) const;

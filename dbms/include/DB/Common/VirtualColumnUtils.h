@@ -9,7 +9,6 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Storages/StoragePtr.h>
 #include <DB/Columns/ColumnString.h>
 
 namespace DB
@@ -35,9 +34,9 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 
 /// Извлечь из входного потока множество значений столбца name
 template<typename T1>
-std::set<T1> extractSingleValueFromBlocks(BlockInputStreamPtr input, const String & name)
+std::multiset<T1> extractSingleValueFromBlocks(BlockInputStreamPtr input, const String & name)
 {
-	std::set<T1> res;
+	std::multiset<T1> res;
 	input->readPrefix();
 	while(1)
 	{
@@ -50,28 +49,6 @@ std::set<T1> extractSingleValueFromBlocks(BlockInputStreamPtr input, const Strin
 	return res;
 }
 
-/// Извлечь из входного потока множество пар значений в столбцах first_name и second_name
-template<typename T1, typename T2>
-std::set< std::pair<T1, T2> > extractTwoValuesFromBlocks(BlockInputStreamPtr input,
-														 const String & first_name, const String & second_name)
-{
-	std::set< std::pair<T1, T2> > res;
-	input->readPrefix();
-	while(1)
-	{
-		Block block = input->read();
-		if (!block) break;
-		const ColumnWithNameAndType & first = block.getByName(first_name);
-		const ColumnWithNameAndType & second = block.getByName(second_name);
-		for (size_t i = 0; i < block.rows(); ++i)
-		{
-			T1 val1 = (*first.column)[i].get<T1>();
-			T2 val2 = (*second.column)[i].get<T2>();
-			res.insert(std::make_pair(val1, val2));
-		}
-	}
-	return res;
 }
 
-}
 }

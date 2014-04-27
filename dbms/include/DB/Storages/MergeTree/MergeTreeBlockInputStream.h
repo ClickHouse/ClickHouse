@@ -1,9 +1,8 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/PKCondition.h>
-
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 
 
@@ -14,24 +13,23 @@ namespace DB
 class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// Параметры storage_ и owned_storage разделены, чтобы можно было сделать поток, не владеющий своим storage
-	/// (например, поток, сливаящий куски). В таком случае сам storage должен следить, чтобы не удалить данные, пока их читают.
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
 		size_t block_size_, const Names & column_names_,
-		StorageMergeTree & storage_, const StorageMergeTree::DataPartPtr & owned_data_part_,
-		const MarkRanges & mark_ranges_, StoragePtr owned_storage, bool use_uncompressed_cache_,
-		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool take_read_lock)
-		: IProfilingBlockInputStream(owned_storage),
+		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
+		const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
+		ExpressionActionsPtr prewhere_actions_, String prewhere_column_)
+		:
 		path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
 		all_mark_ranges(mark_ranges_), remaining_mark_ranges(mark_ranges_),
 		use_uncompressed_cache(use_uncompressed_cache_),
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
-		lock(take_read_lock ? new Poco::ScopedReadRWLock(storage.read_lock) : NULL)
+		log(&Logger::get("MergeTreeBlockInputStream"))
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
-		if (prewhere_actions){
+		if (prewhere_actions)
+		{
 			pre_column_names = prewhere_actions->getRequiredColumns();
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
@@ -49,7 +47,7 @@ public:
 		}
 		column_name_set.insert(column_names.begin(), column_names.end());
 
-		LOG_TRACE(storage.log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
+		LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
 			<< ", up to " << (all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity
 			<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 	}
@@ -59,7 +57,7 @@ public:
 	String getID() const
 	{
 		std::stringstream res;
-		res << "MergeTree(" << owned_storage->getTableName() << ", " << path << ", columns";
+		res << "MergeTree(" << path << ", columns";
 
 		for (size_t i = 0; i < column_names.size(); ++i)
 			res << ", " << column_names[i];
@@ -71,70 +69,6 @@ public:
 
 		res << ")";
 		return res.str();
-	}
-	
-	/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
-	static MarkRanges markRangesFromPkRange(
-		const StorageMergeTree::DataPart::Index & index,
-		StorageMergeTree & storage,
-		PKCondition & key_condition)
-	{
-		MarkRanges res;
-
-		size_t key_size = storage.sort_descr.size();
-		size_t marks_count = index.size() / key_size;
-		
-		/// Если индекс не используется.
-		if (key_condition.alwaysTrue())
-		{
-			res.push_back(MarkRange(0, marks_count));
-		}
-		else
-		{
-			/** В стеке всегда будут находиться непересекающиеся подозрительные отрезки, самый левый наверху (back).
-			  * На каждом шаге берем левый отрезок и проверяем, подходит ли он.
-			  * Если подходит, разбиваем его на более мелкие и кладем их в стек. Если нет - выбрасываем его.
-			  * Если отрезок уже длиной в одну засечку, добавляем его в ответ и выбрасываем.
-			  */
-			std::vector<MarkRange> ranges_stack;
-			ranges_stack.push_back(MarkRange(0, marks_count));
-			while (!ranges_stack.empty())
-			{
-				MarkRange range = ranges_stack.back();
-				ranges_stack.pop_back();
-				
-				bool may_be_true;
-				if (range.end == marks_count)
-					may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size]);
-				else
-					may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size]);
-
-				if (!may_be_true)
-					continue;
-				
-				if (range.end == range.begin + 1)
-				{
-					/// Увидели полезный промежуток между соседними засечками. Либо добавим его к последнему диапазону, либо начнем новый диапазон.
-					if (res.empty() || range.begin - res.back().end > storage.min_marks_for_seek)
-						res.push_back(range);
-					else
-						res.back().end = range.end;
-				}
-				else
-				{
-					/// Разбиваем отрезок и кладем результат в стек справа налево.
-					size_t step = (range.end - range.begin - 1) / storage.settings.coarse_index_granularity + 1;
-					size_t end;
-					
-					for (end = range.end; end > range.begin + step; end -= step)
-						ranges_stack.push_back(MarkRange(end - step, end));
-
-					ranges_stack.push_back(MarkRange(range.begin, end));
-				}
-			}
-		}
-		
-		return res;
 	}
 	
 protected:
@@ -151,9 +85,9 @@ protected:
 		if (!reader)
 		{
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader = new MergeTreeReader(path, column_names, uncompressed_cache, storage);
+			reader.reset(new MergeTreeReader(path, column_names, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)
-				pre_reader = new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage);
+				pre_reader.reset(new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage, all_mark_ranges));
 		}
 
 		if (prewhere_actions)
@@ -199,9 +133,9 @@ protected:
 						return res;
 					}
 
-					for (size_t i = 0; i < ranges_to_read.size(); ++i){
+					for (size_t i = 0; i < ranges_to_read.size(); ++i)
+					{
 						const MarkRange & range = ranges_to_read[i];
-
 						reader->readRange(range.begin, range.end, res);
 					}
 
@@ -217,7 +151,8 @@ protected:
 					/// Прочитаем в нужных отрезках остальные столбцы и составим для них свой фильтр.
 					size_t pre_filter_pos = 0;
 					size_t post_filter_pos = 0;
-					for (size_t i = 0; i < ranges_to_read.size(); ++i){
+					for (size_t i = 0; i < ranges_to_read.size(); ++i)
+					{
 						const MarkRange & range = ranges_to_read[i];
 
 						size_t begin = range.begin;
@@ -310,7 +245,7 @@ protected:
 				* Чтобы при создании многих источников, но одновременном чтении только из нескольких,
 				*  буферы не висели в памяти.
 				*/
-			reader = NULL;
+			reader.reset();
 		}
 
 		return res;
@@ -322,19 +257,19 @@ private:
 	Names column_names;
 	NameSet column_name_set;
 	Names pre_column_names;
-	StorageMergeTree & storage;
-	const StorageMergeTree::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
+	MergeTreeData & storage;
+	const MergeTreeData::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
 	MarkRanges all_mark_ranges; /// В каких диапазонах засечек читать. В порядке возрастания номеров.
 	MarkRanges remaining_mark_ranges; /// В каких диапазонах засечек еще не прочли.
 									  /// В порядке убывания номеров, чтобы можно было выбрасывать из конца.
 	bool use_uncompressed_cache;
-	Poco::SharedPtr<MergeTreeReader> reader;
-	Poco::SharedPtr<MergeTreeReader> pre_reader;
+	std::unique_ptr<MergeTreeReader> reader;
+	std::unique_ptr<MergeTreeReader> pre_reader;
 	ExpressionActionsPtr prewhere_actions;
 	String prewhere_column;
 	bool remove_prewhere_column;
 
-	std::unique_ptr<Poco::ScopedReadRWLock> lock;
+	Logger * log;
 };
 
 }

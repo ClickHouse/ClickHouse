@@ -74,16 +74,20 @@ BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query)
 	return data->write(query);
 }
 
-void StorageMaterializedView::dropImpl() {
+void StorageMaterializedView::drop()
+{
 	context.getGlobalContext().removeDependency(DatabaseAndTableName(select_database_name, select_table_name), 	DatabaseAndTableName(database_name, table_name));
 
-	/// Состваляем и выполняем запрос drop для внутреннего хранилища.
-	ASTDropQuery *drop_query = new ASTDropQuery;
-	drop_query->database = database_name;
-	drop_query->table = getInnerTableName();
-	ASTPtr ast_drop_query = drop_query;
-	InterpreterDropQuery drop_interpreter(ast_drop_query, context);
-	drop_interpreter.execute();
+	if (context.tryGetTable(database_name, getInnerTableName()))
+	{
+		/// Состваляем и выполняем запрос drop для внутреннего хранилища.
+		ASTDropQuery *drop_query = new ASTDropQuery;
+		drop_query->database = database_name;
+		drop_query->table = getInnerTableName();
+		ASTPtr ast_drop_query = drop_query;
+		InterpreterDropQuery drop_interpreter(ast_drop_query, context);
+		drop_interpreter.execute();
+	}
 }
 
 bool StorageMaterializedView::optimize() {

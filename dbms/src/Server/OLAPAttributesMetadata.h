@@ -523,7 +523,6 @@ struct UserAgentID : public IAttributeMetadata
 typedef AttributeIntBase ClickGoodEvent;
 typedef AttributeIntBase ClickPriorityID;
 typedef AttributeIntBase ClickBannerID;
-typedef AttributeIntBase ClickPhraseID;
 typedef AttributeIntBase ClickPageID;
 typedef AttributeIntBase ClickPlaceID;
 typedef AttributeIntBase ClickTypeID;
@@ -532,7 +531,6 @@ typedef AttributeUIntBase ClickDomainID;
 typedef AttributeUIntBase ClickCost;
 typedef AttributeHashBase ClickURLHash;
 typedef AttributeUIntBase ClickOrderID;
-typedef AttributeUIntBase ClickTargetPhraseID;
 typedef AttributeUIntBase GoalReachesAny;
 typedef AttributeUIntBase GoalReachesDepth;
 typedef AttributeUIntBase GoalReachesURL;
@@ -728,7 +726,6 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 		("ClickGoodEvent",			new ClickGoodEvent)
 		("ClickPriorityID",			new ClickPriorityID)
 		("ClickBannerID",			new ClickBannerID)
-		("ClickPhraseID",			new ClickPhraseID)
 		("ClickPageID",				new ClickPageID)
 		("ClickPlaceID",			new ClickPlaceID)
 		("ClickTypeID",				new ClickTypeID)
@@ -737,7 +734,6 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 		("ClickCost",				new ClickCost)
 		("ClickURLHash",			new ClickURLHash)
 		("ClickOrderID",			new ClickOrderID)
-		("ClickTargetPhraseID",		new ClickTargetPhraseID)
 		("GoalReaches",				new GoalReaches)
 		("GoalReachesAny",			new GoalReachesAny)
 		("GoalReachesDepth",		new GoalReachesDepth)

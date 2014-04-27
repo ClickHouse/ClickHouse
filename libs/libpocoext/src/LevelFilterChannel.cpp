@@ -42,11 +42,6 @@
 namespace Poco {
 
 
-LevelFilterChannel::LevelFilterChannel()
-	: Channel(), _channel(NULL), _priority(Message::PRIO_ERROR)
-{
-}
-
 LevelFilterChannel::~LevelFilterChannel()
 {
 	if (_channel)
@@ -136,4 +131,4 @@ void LevelFilterChannel::log(const Message& msg)
 }
 
 
-} // namespace Poco
+}

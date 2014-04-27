@@ -17,8 +17,6 @@ typedef Poco::SharedPtr<StorageMerge> StorageMergePtr;
   */
 class StorageMerge : public IStorage
 {
-typedef std::vector<StoragePtr> SelectedTables;
-
 public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
@@ -30,6 +28,9 @@ public:
 	std::string getName() const { return "Merge"; }
 	std::string getTableName() const { return name; }
 	bool supportsSampling() const { return true; }
+
+	/// Проверка откладывается до метода read. Там проверяется поддержка PREWHERE у использующихся таблиц.
+	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 	NameAndTypePair getColumn(const String &column_name) const;
@@ -43,11 +44,9 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
-	void dropImpl() {}
+	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 	
-	void getSelectedTables(StorageVector & selected_tables);
-
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
 	void alter(const ASTAlterQuery::Parameters & params);
@@ -69,6 +68,8 @@ private:
 		const String & source_database_,
 		const String & table_name_regexp_,
 		const Context & context_);
+
+	void getSelectedTables(StorageVector & selected_tables) const;
 };
 
 }

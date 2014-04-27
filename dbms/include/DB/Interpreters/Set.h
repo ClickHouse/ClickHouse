@@ -1,6 +1,7 @@
 #pragma once
 
 #include <set>
+#include <boost/concept_check.hpp>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -19,6 +20,8 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 
+#include <DB/Storages/MergeTree/BoolMask.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 
 namespace DB
 {
@@ -42,8 +45,9 @@ public:
 	/** Создать множество по выражению (для перечисления в самом запросе).
 	  * types - типы того, что стоит слева от IN.
 	  * node - это список значений: 1, 2, 3 или список tuple-ов: (1, 2), (3, 4), (5, 6).
+	  * create_ordered_set - создавать ли вектор упорядоченных элементов. Нужен для работы индекса
 	  */
-	void createFromAST(DataTypes & types, ASTPtr node);
+	void createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set);
 
 	/** Запомнить поток блоков (для подзапросов), чтобы потом его можно было прочитать и создать множество.
 	  */
@@ -52,7 +56,7 @@ public:
 	BlockInputStreamPtr getSource() { return source; }
 
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
-	bool insertFromBlock(Block & block);
+	bool insertFromBlock(Block & block, bool create_ordered_set = false);
 
 	size_t size() const { return getTotalRowCount(); }
 
@@ -60,6 +64,30 @@ public:
 	  * Записать результат в столбец в позиции result.
 	  */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
+
+	std::string describe()
+	{
+		if (!ordered_set_elements)
+			return "{}";
+		
+		bool first = true;
+		std::stringstream ss;
+		
+		ss << "{";
+		for (const Field & f : *ordered_set_elements)
+		{
+			if (!first)
+				ss << ", " << f;
+			else
+				ss << f;
+			first = false;
+		}
+		ss << "}";
+		return ss.str();
+	}
+
+	/// проверяет есть ли в Set элементы для заданного диапазона индекса
+	BoolMask mayBeTrueInRange(const Range & range);
 	
 private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
@@ -125,9 +153,15 @@ private:
 	size_t getTotalRowCount() const;
 	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
 	size_t getTotalByteCount() const;
+
+	/// вектор упорядоченных элементов Set
+	/// нужен для работы индекса по первичному ключу в секции In
+	typedef std::vector<Field> OrderedSetElements;
+	typedef std::unique_ptr<OrderedSetElements> OrderedSetElementsPtr;
+	OrderedSetElementsPtr ordered_set_elements;
 };
 
-typedef SharedPtr<Set> SetPtr;
+typedef Poco::SharedPtr<Set> SetPtr;
 typedef std::vector<SetPtr> Sets;
 
 

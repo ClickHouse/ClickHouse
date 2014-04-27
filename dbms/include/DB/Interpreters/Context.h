@@ -24,8 +24,10 @@
 #include <DB/Interpreters/Dictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Client/ConnectionPool.h>
 #include <statdaemons/ConfigProcessor.h>
+#include <zkutil/ZooKeeper.h>
 
 
 namespace DB
@@ -41,16 +43,12 @@ typedef std::map<String, StoragePtr> Tables;
 /// имя БД -> таблицы
 typedef std::map<String, Tables> Databases;
 
-/// имя БД -> dropper
-typedef std::map<String, DatabaseDropperPtr> DatabaseDroppers;
-
 /// (имя базы данных, имя таблицы)
 typedef std::pair<String, String> DatabaseAndTableName;
 
 /// таблица -> множество таблиц-вьюшек, которые селектят из нее
 typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
 typedef std::vector<DatabaseAndTableName> Dependencies;
-
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
   * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
@@ -74,9 +72,13 @@ struct ContextShared
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
+	mutable SharedPtr<zkutil::ZooKeeper> zookeeper;			/// Клиент для ZooKeeper.
+
+	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
+	int interserver_io_port;								///           и порт,
+
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
-	DatabaseDroppers database_droppers;						/// Reference counter'ы для ленивого удаления БД.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	FunctionFactory function_factory;						/// Обычные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -91,6 +93,8 @@ struct ContextShared
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
+	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
+	String default_replica_name;							/// Имя реплики из конфига.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -137,7 +141,6 @@ struct ContextShared
 
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(mutex);
-			database_droppers.clear();
 			current_databases = databases;
 		}
 
@@ -163,27 +166,25 @@ class Context
 {
 private:
 	typedef SharedPtr<ContextShared> Shared;
-	Shared shared;
+	Shared shared = new ContextShared;
 
 	String user;						/// Текущий пользователь.
 	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
-	QuotaForIntervalsPtr quota;			/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
+	QuotaForIntervalsPtr quota = new QuotaForIntervals;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
 	String current_database;			/// Текущая БД.
 	String current_query_id;			/// Id текущего запроса.
 	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;					/// Настройки выполнения запроса.
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
-	ProcessList::Element * process_list_elem;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
+	ProcessList::Element * process_list_elem = nullptr;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
 
 	String default_format;				/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
 										/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
-	
-	Context * session_context;			/// Контекст сессии или NULL, если его нет. (Возможно, равен this.)
-	Context * global_context;			/// Глобальный контекст или NULL, если его нет. (Возможно, равен this.)
+	Tables external_tables;				/// Временные таблицы.
+	Context * session_context = nullptr;	/// Контекст сессии или nullptr, если его нет. (Возможно, равен this.)
+	Context * global_context = nullptr;		/// Глобальный контекст или nullptr, если его нет. (Возможно, равен this.)
 
 public:
-	Context() : shared(new ContextShared), quota(new QuotaForIntervals), process_list_elem(NULL), session_context(NULL), global_context(NULL) {}
-
 	String getPath() const;
 	void setPath(const String & path);
 
@@ -214,8 +215,11 @@ public:
 	void assertDatabaseExists(const String & database_name) const;
 	void assertDatabaseDoesntExist(const String & database_name) const;
 
+	Tables getExternalTables() const;
+	StoragePtr tryGetExternalTable(const String & table_name) const;
 	StoragePtr getTable(const String & database_name, const String & table_name) const;
 	StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
+	void addExternalTable(const String & table_name, StoragePtr storage);
 	void addTable(const String & database_name, const String & table_name, StoragePtr table);
 	void addDatabase(const String & database_name);
 
@@ -232,8 +236,10 @@ public:
 	String getDefaultFormat() const;	/// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
 	void setDefaultFormat(const String & name);
 
-	DatabaseDropperPtr getDatabaseDropper(const String & name);
-	
+	/// Имя этой реплики из конфига.
+	String getDefaultReplicaName() const;
+	void setDefaultReplicaName(const String & name);
+
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);
 
@@ -252,6 +258,13 @@ public:
 	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 	const Dictionaries & getDictionaries() const;
+
+	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
+
+	/// Как другие серверы могут обратиться к этому.
+	void setInterserverIOHost(const String & host, int port);
+	String getInterserverIOHost() const;
+	int getInterserverIOPort() const;
 
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
@@ -285,7 +298,7 @@ public:
 	  *  чтобы обновлять и контролировать информацию об общем количестве потраченных на запрос ресурсов.
 	  */
 	void setProcessListElement(ProcessList::Element * elem);
-	/// Может вернуть NULL, если запрос не был вставлен в ProcessList.
+	/// Может вернуть nullptr, если запрос не был вставлен в ProcessList.
 	ProcessList::Element * getProcessListElement();
 
 	/// Список всех запросов.
@@ -293,12 +306,23 @@ public:
 	const ProcessList & getProcessList() const								{ return shared->process_list; }
 
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
-	void setUncompressedCache(size_t cache_size_in_cells);
+	void setUncompressedCache(size_t max_size_in_bytes);
 	UncompressedCachePtr getUncompressedCache() const;
+
+	void setZooKeeper(SharedPtr<zkutil::ZooKeeper> zookeeper);
+	zkutil::ZooKeeper & getZooKeeper() const;
 
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);
 	MarkCachePtr getMarkCache() const;
+
+	/** Очистить кэши разжатых блоков и засечек.
+	  * Обычно это делается при переименовании таблиц, изменении типа столбцов, удалении таблицы.
+	  *  - так как кэши привязаны к именам файлов, и становятся некорректными.
+	  *  (при удалении таблицы - нужно, так как на её месте может появиться другая)
+	  * const - потому что изменение кэша не считается существенным.
+	  */
+	void resetCaches() const;
 
 	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);

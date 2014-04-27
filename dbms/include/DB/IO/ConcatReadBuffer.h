@@ -27,7 +27,7 @@ protected:
 		/// Первое чтение
 		if (working_buffer.size() == 0 && (*current)->position() != (*current)->buffer().end())
 		{
-			working_buffer = (*current)->buffer();
+			working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
 			return true;
 		}
 		
@@ -46,14 +46,14 @@ protected:
 			}
 		}
 		
-		working_buffer = (*current)->buffer();
+		working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
 		return true;
 	}
 
 public:
-	ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(NULL, 0), buffers(buffers_), current(buffers.begin()) {}
+	ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin()) {}
 
-	ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(NULL, 0)
+	ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(nullptr, 0)
 	{
 		buffers.push_back(&buf1);
 		buffers.push_back(&buf2);

@@ -82,13 +82,12 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 		|| dynamic_cast<const ColumnConstString *>(key_columns[0])
 		|| (dynamic_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
 		return KEY_STRING;
-
 	/// Если много ключей - будем строить множество хэшей от них
 	return HASHED;
 }
 
 
-bool Set::insertFromBlock(Block & block)
+bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 {
 	size_t keys_size = block.columns();
 	Row key(keys_size);
@@ -119,6 +118,9 @@ bool Set::insertFromBlock(Block & block)
 			/// Строим ключ
 			UInt64 key = get<UInt64>(column[i]);
 			res.insert(key);
+
+			if(create_ordered_set)
+				ordered_set_elements->push_back(column[i]);
 		}
 	}
 	else if (type == KEY_STRING)
@@ -143,6 +145,9 @@ bool Set::insertFromBlock(Block & block)
 
 				if (inserted)
 					it->data = string_pool.insert(ref.data, ref.size);
+
+				if(create_ordered_set)
+					ordered_set_elements->push_back(std::string(ref.data, ref.size));
 			}
 		}
 		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -162,6 +167,9 @@ bool Set::insertFromBlock(Block & block)
 
 				if (inserted)
 					it->data = string_pool.insert(ref.data, ref.size);
+
+				if(create_ordered_set)
+					ordered_set_elements->push_back(std::string(ref.data, ref.size));
 			}
 		}
 		else
@@ -198,7 +206,7 @@ bool Set::insertFromBlock(Block & block)
 }
 
 
-void Set::createFromAST(DataTypes & types, ASTPtr node)
+void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 {
 	data_types = types;
 
@@ -247,7 +255,13 @@ void Set::createFromAST(DataTypes & types, ASTPtr node)
 		/// NOTE: Потом можно реализовать возможность задавать константные выражения в множествах.
 	}
 
-	insertFromBlock(block);
+	if (create_ordered_set)
+		ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+
+	insertFromBlock(block, create_ordered_set);
+
+	if (create_ordered_set)
+		std::sort(ordered_set_elements->begin(), ordered_set_elements->end());
 }
 
 
@@ -526,6 +540,75 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 	/// Для всех строчек
 	for (size_t i = 0; i < rows; ++i)
 		vec_res[i] = res;
+}
+
+BoolMask Set::mayBeTrueInRange(const Range & range)
+{
+	if (!ordered_set_elements)
+		throw DB::Exception("Ordered set in not created.");
+	
+	if (ordered_set_elements->empty())
+		return BoolMask(false, true);
+
+	const Field & left = range.left;
+	const Field & right = range.right;
+
+	bool can_be_true;
+	bool can_be_false = true;
+
+	/// Если во всем диапазоне одинаковый ключ и он есть в Set, то выбираем блок для in и не выбираем для notIn
+	if (range.left_bounded && range.right_bounded && range.right_included && range.left_included && left == right)
+	{
+		if (std::binary_search(ordered_set_elements->begin(), ordered_set_elements->end(), left))
+		{
+			can_be_false = false;
+			can_be_true = true;
+		}
+		else
+		{
+			can_be_true = false;
+			can_be_false = true;
+		}
+	}
+	else
+	{
+		auto left_it = range.left_bounded ? std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left) : ordered_set_elements->begin();
+		if (range.left_bounded && !range.left_included && left_it != ordered_set_elements->end() && *left_it == left)
+			++left_it;
+
+		/// если весь диапазон, правее in
+		if (left_it == ordered_set_elements->end())
+		{
+			can_be_true = false;
+		}
+		else
+		{
+			auto right_it = range.right_bounded ? std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right) : ordered_set_elements->end();
+			if (range.right_bounded && !range.right_included && right_it != ordered_set_elements->begin() && *(right_it--) == right)
+				--right_it;
+
+			/// весь диапазон, левее in
+			if (right_it == ordered_set_elements->begin())
+			{
+				can_be_true = false;
+			}
+			else
+			{
+				--right_it;
+				/// в диапазон не попадает ни одного ключа из in
+				if (*right_it < *left_it)
+				{
+					can_be_true = false;
+				}
+				else
+				{
+					can_be_true = true;
+				}
+			}
+		}
+	}
+
+	return BoolMask(can_be_true, can_be_false);
 }
 
 }

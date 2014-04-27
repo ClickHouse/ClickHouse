@@ -6,6 +6,7 @@
 namespace DB
 {
 
+
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:

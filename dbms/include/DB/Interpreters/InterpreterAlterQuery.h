@@ -5,6 +5,7 @@
 
 namespace DB
 {
+class ASTIdentifier;
 
 /** Позволяет добавить или удалить столбец в таблице.
   */
@@ -16,6 +17,8 @@ public:
 	void execute();
 
 private:
+	void dropColumnFromAST(const ASTIdentifier & drop_column, ASTs & columns);
+
 	ASTPtr query_ptr;
 	
 	Context context;

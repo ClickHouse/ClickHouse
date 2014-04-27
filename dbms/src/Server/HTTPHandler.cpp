@@ -19,13 +19,14 @@
 
 #include <DB/Interpreters/executeQuery.h>
 
+#include <DB/Common/ExternalTable.h>
+
 #include "HTTPHandler.h"
 
 
 
 namespace DB
 {
-
 
 void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, String query_id)
 {
@@ -45,18 +46,6 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	if (!query_param.empty())
 		query_param += '\n';
 	
-	ReadBufferFromString in_param(query_param);
-	SharedPtr<ReadBuffer> in_post = new ReadBufferFromIStream(istr);
-	SharedPtr<ReadBuffer> in_post_maybe_compressed;
-
-	/// Если указано decompress, то будем разжимать то, что передано POST-ом.
-	if (parse<bool>(params.get("decompress", "0")))
-		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
-	else
-		in_post_maybe_compressed = in_post;
-
-	ConcatReadBuffer in(in_param, *in_post_maybe_compressed);
-
 	/// Если указано compress, то будем сжимать результат.
 	SharedPtr<WriteBufferFromHTTPServerResponse> out = new WriteBufferFromHTTPServerResponse(response);
 	SharedPtr<WriteBuffer> out_maybe_compressed;
@@ -85,6 +74,36 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	context.setUser(user, password, request.clientAddress().host(), quota_key);
 	context.setCurrentQueryId(query_id);
+
+	SharedPtr<ReadBuffer> in_param = new ReadBufferFromString(query_param);
+	SharedPtr<ReadBuffer> in_post = new ReadBufferFromIStream(istr);
+	SharedPtr<ReadBuffer> in_post_maybe_compressed;
+
+	/// Если указано decompress, то будем разжимать то, что передано POST-ом.
+	if (parse<bool>(params.get("decompress", "0")))
+		in_post_maybe_compressed = new CompressedReadBuffer(*in_post);
+	else
+		in_post_maybe_compressed = in_post;
+
+	SharedPtr<ReadBuffer> in;
+
+	if (0 == strncmp(request.getContentType().data(), "multipart/form-data", strlen("multipart/form-data")))
+	{
+		in = in_param;
+		ExternalTablesHandler handler(context, params);
+
+		params.load(request, istr, handler);
+
+		/// Удаляем уже нененужные параметры из хранилища, чтобы впоследствии не перепутать их с натройками контекста и параметрами запроса.
+		for (const auto & it : handler.names)
+		{
+			params.erase(it + "_format");
+			params.erase(it + "_types");
+			params.erase(it + "_structure");
+		}
+	}
+	else
+		in = new ConcatReadBuffer(*in_param, *in_post_maybe_compressed);
 
 	/// Настройки могут быть переопределены в запросе.
 	for (Poco::Net::NameValueCollection::ConstIterator it = params.begin(); it != params.end(); ++it)
@@ -116,7 +135,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 		context.getSettingsRef().limits.readonly = true;
 
 	Stopwatch watch;
-	executeQuery(in, *out_maybe_compressed, context, query_plan);
+	executeQuery(*in, *out_maybe_compressed, context, query_plan);
 	watch.stop();
 
 	if (query_plan)

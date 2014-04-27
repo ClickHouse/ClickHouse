@@ -28,7 +28,7 @@ public:
 	typedef ColumnVector<Offset_t> ColumnOffsets_t;
 
 	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
-	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = NULL)
+	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = nullptr)
 		: data(nested_column), offsets(offsets_column)
 	{
 		if (!offsets_column)
@@ -242,7 +242,7 @@ public:
 		return res;
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
 	{
 		const ColumnArray & rhs = static_cast<const ColumnArray &>(rhs_);
 
@@ -251,7 +251,7 @@ public:
 		size_t rhs_size = rhs.sizeAt(m);
 		size_t min_size = std::min(lhs_size, rhs_size);
 		for (size_t i = 0; i < min_size; ++i)
-			if (int res = data->compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data, nan_direction_hint))
+			if (int res = data.get()->compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint))
 				return res;
 
 		return lhs_size < rhs_size
@@ -265,50 +265,41 @@ public:
 	struct less
 	{
 		const ColumnArray & parent;
-		const Permutation & nested_perm;
 
-		less(const ColumnArray & parent_, const Permutation & nested_perm_) : parent(parent_), nested_perm(nested_perm_) {}
+		less(const ColumnArray & parent_) : parent(parent_) {}
+
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			size_t lhs_size = parent.sizeAt(lhs);
-			size_t rhs_size = parent.sizeAt(rhs);
-			size_t min_size = std::min(lhs_size, rhs_size);
-			for (size_t i = 0; i < min_size; ++i)
-			{
-				if (nested_perm[parent.offsetAt(lhs) + i] < nested_perm[parent.offsetAt(rhs) + i])
-					return positive;
-				else if (nested_perm[parent.offsetAt(lhs) + i] > nested_perm[parent.offsetAt(rhs) + i])
-					return !positive;
-			}
-			return positive == (lhs_size < rhs_size);
+			if (positive)
+				return parent.compareAt(lhs, rhs, parent, 1) < 0;
+			else
+				return parent.compareAt(lhs, rhs, parent, -1) > 0;
 		}
 	};
 
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
-		Permutation nested_perm;
-		data->getPermutation(reverse, limit, nested_perm);
 		size_t s = size();
+		if (limit > s)
+			limit = 0;
+
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		if (limit > s)
-			limit = 0;
-
 		if (limit)
 		{
 			if (reverse)
-				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this, nested_perm));
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
 			else
-				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this, nested_perm));
+				std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
 		}
 		else
 		{
 			if (reverse)
-				std::sort(res.begin(), res.end(), less<false>(*this, nested_perm));
+				std::sort(res.begin(), res.end(), less<false>(*this));
 			else
-				std::sort(res.begin(), res.end(), less<true>(*this, nested_perm));
+				std::sort(res.begin(), res.end(), less<true>(*this));
 		}
 	}
 

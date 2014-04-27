@@ -439,7 +439,7 @@ public:
 	void * alloc(size_t size)
 	{
 		void * buf = ::calloc(size, 1);
-		if (NULL == buf)
+		if (nullptr == buf)
 			throwFromErrno("HashTableAllocator: Cannot calloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
 		return buf;
@@ -459,7 +459,7 @@ public:
 	void * realloc(void * buf, size_t old_size, size_t new_size)
 	{
 		buf = ::realloc(buf, new_size);
-		if (NULL == buf)
+		if (nullptr == buf)
 			throwFromErrno("HashTableAllocator: Cannot realloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
 		memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
@@ -501,7 +501,7 @@ public:
 			return HashTableAllocator::realloc(buf, old_size, new_size);
 
 		buf = ::malloc(new_size);
-		if (NULL == buf)
+		if (nullptr == buf)
 			throwFromErrno("HashTableAllocator: Cannot malloc.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
 		memcpy(buf, stack_memory, old_size);

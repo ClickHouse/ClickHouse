@@ -112,8 +112,13 @@ public:
 		current_size = 0;
 		hits = 0;
 		misses = 0;
+		current_weight_lost = 0;
 	}
 
+protected:
+	size_t current_weight_lost = 0;
+	/// Суммарный вес выброшенных из кеша элементов.
+	/// Обнуляется каждый раз, когда информация добавляется в Profile events
 private:
 	typedef std::list<Key> LRUQueue;
 	typedef typename LRUQueue::iterator LRUQueueIterator;
@@ -148,6 +153,7 @@ private:
 			const Key & key = queue.front();
 			auto it = cells.find(key);
 			current_size -= it->second.size;
+			current_weight_lost += it->second.size;
 			cells.erase(it);
 			queue.pop_front();
 			--queue_size;

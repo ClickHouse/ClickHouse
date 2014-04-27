@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_TYPES_H
-#define MYSQLXX_TYPES_H
+#pragma once
 
 #include <string>
 #include <mysql/mysql.h>
@@ -22,5 +21,3 @@ typedef MYSQL_LENGTH * MYSQL_LENGTHS;
 typedef MYSQL_FIELD * MYSQL_FIELDS;
 
 }
-
-#endif

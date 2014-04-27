@@ -11,6 +11,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB
@@ -22,20 +23,10 @@ class StorageTinyLog;
 class TinyLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage);
+	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_);
 	String getName() const { return "TinyLogBlockInputStream"; }
 
-	String getID() const
-	{
-		std::stringstream res;
-		res << "TinyLog(" << owned_storage->getTableName() << ", " << &*owned_storage;
-		
-		for (size_t i = 0; i < column_names.size(); ++i)
-			res << ", " << column_names[i];
-
-		res << ")";
-		return res.str();
-	}
+	String getID() const;
 	
 protected:
 	Block readImpl();
@@ -57,7 +48,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -68,7 +59,7 @@ private:
 class TinyLogBlockOutputStream : public IBlockOutputStream
 {
 public:
-	TinyLogBlockOutputStream(StoragePtr owned_storage);
+	TinyLogBlockOutputStream(StorageTinyLog & storage_);
 	void write(const Block & block);
 	void writeSuffix();
 private:
@@ -76,8 +67,8 @@ private:
 
 	struct Stream
 	{
-		Stream(const std::string & data_path) :
-			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY),
+		Stream(const std::string & data_path, size_t max_compress_block_size) :
+			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
 			compressed(plain)
 		{
 		}
@@ -92,7 +83,7 @@ private:
 		}
 	};
 
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
 	
 	typedef std::set<std::string> OffsetColumns;
@@ -116,7 +107,7 @@ public:
 	  *  состоящую из указанных столбцов.
 	  * Если не указано attach - создать директорию, если её нет.
 	  */
-	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach);
+	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 
 	std::string getName() const { return "TinyLog"; }
 	std::string getTableName() const { return name; }
@@ -134,7 +125,7 @@ public:
 	BlockOutputStreamPtr write(
 		ASTPtr query);
 
-	void dropImpl();
+	void drop() override;
 	
 	void rename(const String & new_path_to_db, const String & new_name);
 
@@ -142,6 +133,8 @@ private:
 	String path;
 	String name;
 	NamesAndTypesListPtr columns;
+
+	size_t max_compress_block_size;
 
 	/// Данные столбца
 	struct ColumnData
@@ -151,7 +144,7 @@ private:
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
 
-	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach);
+	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_);
 	
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 };

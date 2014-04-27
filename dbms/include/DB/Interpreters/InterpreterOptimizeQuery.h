@@ -20,7 +20,9 @@ public:
 	void execute()
 	{
 		const ASTOptimizeQuery & ast = dynamic_cast<const ASTOptimizeQuery &>(*query_ptr);
-		context.getTable(ast.database, ast.table)->optimize();
+		StoragePtr table = context.getTable(ast.database, ast.table);
+		auto table_lock = table->lockStructure(true);
+		table->optimize();
 	}
 
 private:

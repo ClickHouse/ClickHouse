@@ -41,28 +41,50 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-	/// Если имееем дело с табличной функцией
-	if (query.table && dynamic_cast<const ASTFunction *>(&*query.table))
+	if (query.table && dynamic_cast<ASTSelectQuery *>(&*query.table))
 	{
-		/// Получить табличную функцию
-		TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<const ASTFunction *>(&*query.table)->name, context);
-		/// Выполнить ее и запомнить результат
-		table_function_storage = table_function_ptr->execute(query.table, context);
+		if (table_column_names.empty())
+			context.setColumns(InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
+	}
+	else
+	{
+		if (query.table && dynamic_cast<const ASTFunction *>(&*query.table))
+		{
+			/// Получить табличную функцию
+			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<const ASTFunction *>(&*query.table)->name, context);
+			/// Выполнить ее и запомнить результат
+			storage = table_function_ptr->execute(query.table, context);
+		}
+		else
+		{
+			String database_name;
+			String table_name;
+
+			getDatabaseAndTableNames(database_name, table_name);
+
+			storage = context.getTable(database_name, table_name);
+		}
+
+		table_lock = storage->lockStructure(false);
+		if (table_column_names.empty())
+			context.setColumns(storage->getColumnsList());
 	}
 
-	if (table_function_storage)
-		context.setColumns(table_function_storage->getColumnsList());
-	else if (!table_column_names.empty())
+	if (!table_column_names.empty())
 		context.setColumns(table_column_names);
-	else
-		context.setColumns(!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table)
-			? getTable()->getColumnsList()
-			: InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
 
 	if (context.getColumns().empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer = new ExpressionAnalyzer(query_ptr, context, table_function_storage, subquery_depth);
+	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth);
+
+	/// Выполняем все GLOBAL IN подзапросы, результаты будут сохранены в query_analyzer->external_tables
+	query_analyzer->processGlobalOperations();
+
+	/// Сохраняем в query context новые временные таблицы
+	for (auto & it : query_analyzer->external_tables)
+		if (!(context.tryGetExternalTable(it.first)))
+		context.addExternalTable(it.first, it.second);
 
 	if (input_)
 		streams.push_back(input_);
@@ -83,13 +105,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_);
-
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
 		query.rewriteSelectExpressionList(required_column_names_);
+
+	init(input_);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names_,
@@ -98,13 +120,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_, table_column_names);
-
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
 		query.rewriteSelectExpressionList(required_column_names_);
+
+	init(input_, table_column_names);
 }
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
@@ -112,38 +134,23 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 	/** Если таблица не указана - используем таблицу system.one.
 	  * Если база данных не указана - используем текущую базу данных.
 	  */
+	if (query.database)
+		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
+	if (query.table)
+		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
+
 	if (!query.table)
 	{
 		database_name = "system";
 		table_name = "one";
 	}
 	else if (!query.database)
-		database_name = context.getCurrentDatabase();
-
-	if (query.database)
-		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
-	if (query.table)
-		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
-}
-
-
-StoragePtr InterpreterSelectQuery::getTable()
-{
-	String database_name;
-	String table_name;
-
-	getDatabaseAndTableNames(database_name, table_name);
-	return context.getTable(database_name, table_name);
-}
-
-
-ASTPtr InterpreterSelectQuery::getCreateQuery()
-{
-	String database_name;
-	String table_name;
-
-	getDatabaseAndTableNames(database_name, table_name);
-	return context.getCreateQuery(database_name, table_name);
+	{
+		if (context.tryGetTable("", table_name))
+			database_name = "";
+		else
+			database_name = context.getCurrentDatabase();
+	}
 }
 
 
@@ -208,7 +215,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		bool has_where      = false;
 		bool need_aggregate = false;
 		bool has_having     = false;
-		bool has_order_by   = !query.order_expression_list.isNull();
+		bool has_order_by   = false;
 
 		ExpressionActionsPtr array_join;
 		ExpressionActionsPtr before_where;
@@ -216,79 +223,69 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		ExpressionActionsPtr before_having;
 		ExpressionActionsPtr before_order_and_select;
 		ExpressionActionsPtr final_projection;
-		
-		/// Сначала составим цепочку действий и запомним нужные шаги из нее.
-		
-		ExpressionActionsChain chain;
-		
-		need_aggregate = query_analyzer->hasAggregation();
-			
-		if (from_stage < QueryProcessingStage::WithMergeableState
-			&& to_stage >= QueryProcessingStage::WithMergeableState)
-		{
-			if (query_analyzer->appendArrayJoin(chain))
-				array_join = chain.getLastActions();
 
-			if (query_analyzer->appendWhere(chain))
-			{
-				has_where = true;
-				before_where = chain.getLastActions();
-				
-				/// Если кроме WHERE ничего выполнять не нужно, пометим все исходные столбцы как нужные, чтобы finalize их не выбросил.
-				if (!need_aggregate && to_stage == QueryProcessingStage::WithMergeableState)
-				{
-					Names columns = query_analyzer->getRequiredColumns();
-					chain.getLastStep().required_output.insert(chain.getLastStep().required_output.end(),
-															columns.begin(), columns.end());
-					
-					chain.finalize();
-				}
-				else
-				{
-					chain.addStep();
-				}
-			}
-			
-			if (need_aggregate)
-			{
-				query_analyzer->appendGroupBy(chain);
-				query_analyzer->appendAggregateFunctionsArguments(chain);
-				before_aggregation = chain.getLastActions();
-				
-				chain.finalize();
-				
-				chain.clear();
-			}
-		}
+		/// Столбцы из списка SELECT, до переименования в алиасы.
+		Names selected_columns;
 		
-		if (from_stage <= QueryProcessingStage::WithMergeableState
-			&& to_stage > QueryProcessingStage::WithMergeableState)
+		/// Нужно ли выполнять первую часть конвейера - выполняемую на удаленных серверах при распределенной обработке.
+		bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
+			&& to_stage >= QueryProcessingStage::WithMergeableState;
+		/// Нужно ли выполнять вторую часть конвейера - выполняемую на сервере-инициаторе при распределенной обработке.
+		bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
+			&& to_stage > QueryProcessingStage::WithMergeableState;
+
+		/** Сначала составим цепочку действий и запомним нужные шаги из нее.
+		  * Независимо от from_stage и to_stage составим полную последовательность действий, чтобы выполнять оптимизации и
+		  *  выбрасывать ненужные столбцы с учетом всего запроса. В ненужных частях запроса не будем выполнять подзапросы.
+		  */
+
+		ExpressionActionsChain chain;
+
+		need_aggregate = query_analyzer->hasAggregation();
+
+		if (query_analyzer->appendArrayJoin(chain, !first_stage))
+			array_join = chain.getLastActions();
+
+		if (query_analyzer->appendWhere(chain, !first_stage))
 		{
-			if (need_aggregate && query_analyzer->appendHaving(chain))
+			has_where = true;
+			before_where = chain.getLastActions();
+			chain.addStep();
+		}
+
+		if (need_aggregate)
+		{
+			query_analyzer->appendGroupBy(chain, !first_stage);
+			query_analyzer->appendAggregateFunctionsArguments(chain, !first_stage);
+			before_aggregation = chain.getLastActions();
+
+			chain.finalize();
+			chain.clear();
+
+			if (query_analyzer->appendHaving(chain, !second_stage))
 			{
 				has_having = true;
 				before_having = chain.getLastActions();
 				chain.addStep();
 			}
-			
-			query_analyzer->appendSelect(chain);
-			query_analyzer->appendOrderBy(chain);
-			before_order_and_select = chain.getLastActions();
-			chain.addStep();
-			
-			query_analyzer->appendProjectResult(chain);
-			final_projection = chain.getLastActions();
-			chain.finalize();
-			
-			/// Если предыдущая стадия запроса выполнялась отдельно, нам могли дать лишних столбцов (например, используемых только в секции WHERE).
-			/// Уберем их. Они могут существенно мешать, например, при arrayJoin.
-			if (from_stage == QueryProcessingStage::WithMergeableState)
-				before_order_and_select->prependProjectInput();
-			
-			/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
-			if (has_having)
-				before_having->prependProjectInput();
 		}
+
+		/// Если есть агрегация, выполняем выражения в SELECT и ORDER BY на инициировавшем сервере, иначе - на серверах-источниках.
+		query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
+		selected_columns = chain.getLastStep().required_output;
+		has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
+		before_order_and_select = chain.getLastActions();
+		chain.addStep();
+
+		query_analyzer->appendProjectResult(chain, !second_stage);
+		final_projection = chain.getLastActions();
+
+		chain.finalize();
+		chain.clear();
+
+		/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
+		if (has_having)
+			before_having->prependProjectInput();
 		
 		/// Теперь составим потоки блоков, выполняющие нужные действия.
 		
@@ -299,67 +296,63 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			settings.limits.max_rows_to_group_by &&
 			settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
 			settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
-		/// Нужно ли после агрегации сразу финализироыать агрегатные функции.
+		/// Нужно ли после агрегации сразу финализировать агрегатные функции.
 		bool aggregate_final =
 			need_aggregate &&
 			to_stage > QueryProcessingStage::WithMergeableState &&
 			!query.group_by_with_totals;
 
-		if (from_stage < QueryProcessingStage::WithMergeableState
-			&& to_stage >= QueryProcessingStage::WithMergeableState)
+		if (first_stage)
 		{
 			if (has_where)
 				executeWhere(streams, before_where);
-			
+
 			if (need_aggregate)
 				executeAggregation(streams, before_aggregation, aggregate_overflow_row, aggregate_final);
-
-			if (array_join && !has_where && !need_aggregate && to_stage == QueryProcessingStage::WithMergeableState)
+			else
 			{
-				/** Если есть ARRAY JOIN, его действие сначала старается оказаться в
-				  *  before_where, before_aggregation или before_order_and_select.
-				  * Если ни одного из них нет, array_join нужно выполнить отдельно.
-				  */
-
-				executeExpression(streams, array_join);
+				executeExpression(streams, before_order_and_select);
+				executeDistinct(streams, true, selected_columns);
 			}
 
 			/** Оптимизация - при распределённой обработке запроса,
-			  *  если не указаны DISTINCT, GROUP, HAVING, ORDER, но указан LIMIT,
+			  *  если не указаны GROUP, HAVING, ORDER, но указан LIMIT,
 			  *  то выполним предварительный LIMIT на удалёном сервере.
 			  */
-			if (to_stage == QueryProcessingStage::WithMergeableState
-				&& !query.distinct && !need_aggregate && !has_having && !has_order_by
+			if (!second_stage
+				&& !need_aggregate && !has_having && !has_order_by
 				&& query.limit_length)
 			{
 				executePreLimit(streams);
 			}
 		}
 
-		if (from_stage <= QueryProcessingStage::WithMergeableState
-			&& to_stage > QueryProcessingStage::WithMergeableState)
+		if (second_stage)
 		{
+			bool need_second_distinct_pass = true;
+
 			if (need_aggregate)
 			{
 				/// Если нужно объединить агрегированные результаты с нескольких серверов
-				if (from_stage == QueryProcessingStage::WithMergeableState)
+				if (!first_stage)
 					executeMergeAggregated(streams, aggregate_overflow_row, aggregate_final);
 
 				if (!aggregate_final)
 					executeTotalsAndHaving(streams, has_having, before_having, aggregate_overflow_row);
 				else if (has_having)
 					executeHaving(streams, before_having);
-			}
 
-			executeExpression(streams, before_order_and_select);
+				executeExpression(streams, before_order_and_select);
+
+				executeDistinct(streams, true, selected_columns);
+
+				need_second_distinct_pass = streams.size() > 1;
+			}
 
 			if (has_order_by)
 				executeOrder(streams);
 			
 			executeProjection(streams, final_projection);
-			
-			/// Сначала выполняем DISTINCT во всех источниках.
-			executeDistinct(streams, true);
 
 			/// На этой стадии можно считать минимумы и максимумы, если надо.
 			if (settings.extremes)
@@ -370,20 +363,14 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 			  * ограничивающий число записей в каждом до offset + limit.
 			  */
-			if (query.limit_length && streams.size() > 1)
+			if (query.limit_length && streams.size() > 1 && !query.distinct)
 				executePreLimit(streams);
-			
-			bool need_second_distinct_pass = streams.size() > 1;
 			
 			executeUnion(streams);
 			
 			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 			if (need_second_distinct_pass)
-				executeDistinct(streams, false);
-			
-			/** NOTE: В некоторых случаях, DISTINCT можно было бы применять раньше
-			  *  - до сортировки и, возможно, на удалённых серверах.
-			  */
+				executeDistinct(streams, false, Names());
 
 			executeLimit(streams);
 		}
@@ -436,25 +423,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	if (!streams.empty())
 		return QueryProcessingStage::FetchColumns;
 
-	/// Таблица, откуда читать данные, если не подзапрос.
-	StoragePtr table;
 	/// Интерпретатор подзапроса, если подзапрос
 	SharedPtr<InterpreterSelectQuery> interpreter_subquery;
 
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
 
-	if (table_function_storage)
-	{
-		/// Если в запросе была указана табличная функция, данные читаем из нее.
-		table = table_function_storage;
-	}
-	else if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
-	{
-		/// Запрос из обычной таблицы или без секции FROM.
-		table = getTable();
-	}
-	else if (dynamic_cast<ASTSelectQuery *>(&*query.table))
+	if (query.table && dynamic_cast<ASTSelectQuery *>(&*query.table))
 	{
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		  * Так как результат поздапроса - ещё не результат всего запроса.
@@ -475,16 +450,16 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// если таблица не поддерживает сэмплинг получим исключение
 	/// поэтому запросы типа SHOW TABLES работать с включенном default_sample не будут
 	if (!query.sample_size && settings.default_sample != 1)
-		query.sample_size = new ASTLiteral(StringRange(NULL, NULL), Float64(settings.default_sample));
+		query.sample_size = new ASTLiteral(StringRange(), Float64(settings.default_sample));
 
-	if (query.sample_size && (!table || !table->supportsSampling()))
+	if (query.sample_size && (!storage || !storage->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 	
-	if (query.final && (!table || !table->supportsFinal()))
-		throw Exception("Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+	if (query.final && (!storage || !storage->supportsFinal()))
+		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 	
-	if (query.prewhere_expression && (!table || !table->supportsPrewhere()))
-		throw Exception("Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+	if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
+		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
 	/** При распределённой обработке запроса, в потоках почти не делается вычислений,
 	  *  а делается ожидание и получение данных с удалённых серверов.
@@ -498,7 +473,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	  *  и там должно быть оригинальное значение max_threads, а не увеличенное.
 	  */
 	Settings settings_for_storage = settings;
-	if (table && table->isRemote())
+	if (storage && storage->isRemote())
 		settings.max_threads = settings.max_distributed_connections;
 	
 	/// Ограничение на количество столбцов для чтения.
@@ -526,11 +501,22 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 	
+	query_analyzer->makeSetsForIndex();
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
-	if (!query.table || !dynamic_cast<ASTSelectQuery *>(&*query.table))
- 		streams = table->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
+	if (!interpreter_subquery)
+	{
+		if (storage->isRemote())
+			storage->storeExternalTables(query_analyzer->external_tables);
+ 		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
+ 		for (auto stream : streams)
+ 		{
+			stream->addTableLock(table_lock);
+ 		}
+ 	}
 	else
+	{
 		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), settings.asynchronous));
+	}
 
 	/** Если истчоников слишком много, то склеим их в max_threads источников.
 	  * (Иначе действия в каждом маленьком источнике, а затем объединение состояний, слишком неэффективно.)
@@ -542,7 +528,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	  * Такие ограничения проверяются на сервере-инициаторе запроса, а не на удалённых серверах.
 	  * Потому что сервер-инициатор имеет суммарные данные о выполнении запроса на всех серверах.
 	  */
-	if (table && to_stage == QueryProcessingStage::Complete)
+	if (storage && to_stage == QueryProcessingStage::Complete)
 	{
 		IProfilingBlockInputStream::LocalLimits limits;
 		limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
@@ -754,7 +740,7 @@ void InterpreterSelectQuery::executeProjection(BlockInputStreams & streams, Expr
 }
 
 
-void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order)
+void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order, Names columns)
 {
 	if (query.distinct)
 	{
@@ -772,7 +758,8 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			BlockInputStreamPtr & stream = *it;
-			stream = maybeAsynchronous(new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct), is_async);
+			stream = maybeAsynchronous(new DistinctBlockInputStream(
+				stream, settings.limits, limit_for_distinct, columns), is_async);
 		}
 	}
 }

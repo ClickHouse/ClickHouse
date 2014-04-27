@@ -3,12 +3,12 @@
 #include <sstream>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/Core/SortDescription.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Storages/MergeTree/BoolMask.h>
 
 
 namespace DB
@@ -116,7 +116,6 @@ public:
 };
 
 #pragma GCC diagnostic pop
-
 
 /** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
   */
@@ -262,7 +261,7 @@ public:
 	}
 };
 
-
+struct ASTSet;
 class PKCondition
 {
 public:
@@ -296,6 +295,8 @@ private:
 			/// Атомы логического выражения.
 			FUNCTION_IN_RANGE,
 			FUNCTION_NOT_IN_RANGE,
+			FUNCTION_IN_SET,
+			FUNCTION_NOT_IN_SET,
 			FUNCTION_UNKNOWN, /// Может принимать любое значение.
 			/// Операторы логического выражения.
 			FUNCTION_NOT,
@@ -307,37 +308,19 @@ private:
 		RPNElement(Function function_) : function(function_) {}
 		RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
 		RPNElement(Function function_, size_t key_column_, const Range & range_)
-			: function(function_), range(range_), key_column(key_column_){}
+			: function(function_), range(range_), key_column(key_column_) {}
 		
-		String toString()
-		{
-			switch (function)
-			{
-				case FUNCTION_AND:
-					return "and";
-				case FUNCTION_OR:
-					return "or";
-				case FUNCTION_NOT:
-					return "not";
-				case FUNCTION_UNKNOWN:
-					return "unknown";
-				case FUNCTION_IN_RANGE:
-				case FUNCTION_NOT_IN_RANGE:
-				{
-					std::ostringstream ss;
-					ss << "(column " << key_column << (function == FUNCTION_NOT_IN_RANGE ? " not" : "") << " in " << range.toString() << ")";
-					return ss.str();
-				}
-				default:
-					return "ERROR";
-			}
-		}
+		String toString();
 		
 		Function function;
 		
 		/// Для FUNCTION_IN_RANGE и FUNCTION_NOT_IN_RANGE.
 		Range range;
 		size_t key_column;
+		/// Для FUNCTION_IN_SET
+		ASTPtr in_function;
+		
+		ASTSet * inFunctionToSet();
 	};
 	
 	typedef std::vector<RPNElement> RPN;

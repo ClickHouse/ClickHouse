@@ -10,6 +10,8 @@
 #include <DB/Interpreters/HashMap.h>
 #include <DB/Interpreters/ClearableHashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
+#include <DB/Functions/NumberTraits.h>
+#include <DB/Functions/FunctionsConditional.h>
 
 #include <unordered_map>
 
@@ -30,26 +32,128 @@ namespace DB
   * 						  Например: arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]
   */
 
+
+
+
 class FunctionArray : public IFunction
 {
-public:
+private:
 	/// Получить имя функции.
 	String getName() const
 	{
 		return "array";
 	}
 
+	template <typename T0, typename T1>
+	bool checkRightType(DataTypePtr left, DataTypePtr right, DataTypePtr & type_res) const
+	{
+		if (dynamic_cast<const T1 *>(&*right))
+		{
+			typedef typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type ResultType;
+			type_res = DataTypeFromFieldTypeOrError<ResultType>::getDataType();
+			if (!type_res)
+				throw Exception("Arguments of function " + getName() + " are not upscalable to a common type without loss of precision.",
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			return true;
+		}
+		return false;
+	}
+
+	template <typename T0>
+	bool checkLeftType(DataTypePtr left, DataTypePtr right, DataTypePtr & type_res) const
+	{
+		if (dynamic_cast<const T0 *>(&*left))
+		{
+			if (	checkRightType<T0, DataTypeUInt8>(left, right, type_res)
+				||	checkRightType<T0, DataTypeUInt16>(left, right, type_res)
+				||	checkRightType<T0, DataTypeUInt32>(left, right, type_res)
+				||	checkRightType<T0, DataTypeUInt64>(left, right, type_res)
+				||	checkRightType<T0, DataTypeInt8>(left, right, type_res)
+				||	checkRightType<T0, DataTypeInt16>(left, right, type_res)
+				||	checkRightType<T0, DataTypeInt32>(left, right, type_res)
+				||	checkRightType<T0, DataTypeInt64>(left, right, type_res)
+				||	checkRightType<T0, DataTypeFloat32>(left, right, type_res)
+				||	checkRightType<T0, DataTypeFloat64>(left, right, type_res))
+				return true;
+			else
+				throw Exception("Illegal type " + right->getName() + " as argument of function " + getName(),
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+		return false;
+	}
+
+	template <typename T0, typename T1>
+	bool tryAddField(DataTypePtr type_res, const Field & f, Array & arr) const
+	{
+		if (dynamic_cast<const T0 *>(&*type_res))
+		{
+			arr.push_back(apply_visitor(FieldVisitorConvertToNumber<typename T1::FieldType>(), f));
+			return true;
+		}
+		return false;
+	}
+
+	bool addField(DataTypePtr type_res, const Field & f, Array & arr) const
+	{
+		/// Иначе необходимо
+		if (	tryAddField<DataTypeUInt8, DataTypeUInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeUInt16, DataTypeUInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeUInt32, DataTypeUInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeUInt64, DataTypeUInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeInt8, DataTypeInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeInt16, DataTypeInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeInt32, DataTypeInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeInt64, DataTypeInt64>(type_res, f, arr)
+			||	tryAddField<DataTypeFloat32, DataTypeFloat64>(type_res, f, arr)
+			||	tryAddField<DataTypeFloat64, DataTypeFloat64>(type_res, f, arr) )
+			return true;
+		else
+			throw Exception("Illegal result type " + type_res->getName() + " of function " + getName(),
+							ErrorCodes::LOGICAL_ERROR);
+	}
+
+	DataTypePtr getLeastCommonType(DataTypePtr left, DataTypePtr right) const
+	{
+		DataTypePtr type_res;
+		if (!(	checkLeftType<DataTypeUInt8>(left, right, type_res)
+			||	checkLeftType<DataTypeUInt16>(left, right, type_res)
+			||	checkLeftType<DataTypeUInt32>(left, right, type_res)
+			||	checkLeftType<DataTypeUInt64>(left, right, type_res)
+			||	checkLeftType<DataTypeInt8>(left, right, type_res)
+			||	checkLeftType<DataTypeInt16>(left, right, type_res)
+			||	checkLeftType<DataTypeInt32>(left, right, type_res)
+			||	checkLeftType<DataTypeInt64>(left, right, type_res)
+			||	checkLeftType<DataTypeFloat32>(left, right, type_res)
+			||	checkLeftType<DataTypeFloat64>(left, right, type_res)))
+			throw Exception("Internal error: unexpected type " + left->getName() + " as argument of function " + getName(),
+							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		return type_res;
+	}
+
+public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		if (arguments.empty())
 			throw Exception("Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		for (size_t i = 1, size = arguments.size(); i < size; ++i)
-			if (arguments[i]->getName() != arguments[0]->getName())
-				throw Exception("Arguments for function array must have same type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		DataTypePtr result_type = arguments[0];
 
-		return new DataTypeArray(arguments[0]);
+		if (result_type->behavesAsNumber())
+		{
+			/// Если тип числовой, пробуем выделить наименьший общий тип
+			for (size_t i = 1, size = arguments.size(); i < size; ++i)
+				result_type = getLeastCommonType(result_type, arguments[i]);
+		}
+		else
+		{
+			/// Иначе все аргументы должны быть одинаковыми
+			for (size_t i = 1, size = arguments.size(); i < size; ++i)
+				if (arguments[i]->getName() != arguments[0]->getName())
+					throw Exception("Arguments for function array must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+
+		return new DataTypeArray(result_type);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -60,22 +164,37 @@ public:
 			if (!block.getByPosition(arguments[i]).column->isConst())
 				throw Exception("Arguments for function array must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
+		DataTypePtr result_type = block.getByPosition(arguments[0]).type;
+		if (result_type->behavesAsNumber())
+		{
+			/// Если тип числовой, вычисляем наименьший общий тип
+			for (size_t i = 1, size = arguments.size(); i < size; ++i)
+				result_type = getLeastCommonType(result_type, block.getByPosition(arguments[i]).type);
+		}
+
 		Array arr;
 		for (size_t i = 0, size = arguments.size(); i < size; ++i)
-			arr.push_back((*block.getByPosition(arguments[i]).column)[0]);
+			if (block.getByPosition(arguments[i]).type->getName() == result_type->getName())
+				/// Если элемент такого же типа как результат, просто добавляем его в ответ
+				arr.push_back((*block.getByPosition(arguments[i]).column)[0]);
+			else
+				/// Иначе необходимо привести его к типу результата
+				addField(result_type, (*block.getByPosition(arguments[i]).column)[0], arr);
 
-		block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(arguments[0]).column->size(), arr, new DataTypeArray(block.getByPosition(arguments[0]).type));
+		block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(arguments[0]).column->size(), arr, new DataTypeArray(result_type));
 	}
 };
 
 
-template <typename T, bool negative>
+template <typename T>
 struct ArrayElementNumImpl
 {
-	/** Если negative = false - передаётся индекс с начала массива, начиная с нуля.
+	/** Процедура для константного идекса
+	  * Если negative = false - передаётся индекс с начала массива, начиная с нуля.
 	  * Если negative = true - передаётся индекс с конца массива, начиная с нуля.
 	  */
-	static void vector(
+	template <bool negative>
+	static void vectorConst(
 		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
 		const ColumnArray::Offset_t index,
 		PODArray<T> & result)
@@ -96,12 +215,58 @@ struct ArrayElementNumImpl
 			current_offset = offsets[i];
 		}
 	}
+
+	/** Процедура для неконстантного идекса
+	  * index_type - тип данных идекса
+	  */
+	template <typename index_type>
+	static void vector(
+		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+		const ColumnVector<index_type> & index,
+		PODArray<T> & result)
+	{
+		size_t size = offsets.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+
+			if (index[i].getType() == Field::Types::UInt64)
+			{
+				UInt64 cur_id = safeGet<UInt64>(index[i]);
+				if (cur_id > 0 && cur_id <= array_size)
+					result[i] = data[current_offset + cur_id - 1];
+				else
+					result[i] = T();
+			}
+			else if (index[i].getType() == Field::Types::Int64)
+			{
+				Int64 cur_id = safeGet<Int64>(index[i]);
+				if (cur_id > 0 && cur_id <= array_size)
+					result[i] = data[current_offset + cur_id - 1];
+				else if (cur_id < 0 && -cur_id <= array_size)
+					result[i] = data[offsets[i] + cur_id];
+				else
+					result[i] = T();
+			}
+			else
+				throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
+
+			current_offset = offsets[i];
+		}
+	}
 };
 
-template <bool negative>
 struct ArrayElementStringImpl
 {
-	static void vector(
+	/** Процедура для константного идекса
+	  * Если negative = false - передаётся индекс с начала массива, начиная с нуля.
+	  * Если negative = true - передаётся индекс с конца массива, начиная с нуля.
+	  */
+	template <bool negative>
+	static void vectorConst(
 		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
 		const ColumnArray::Offset_t index,
 		ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets)
@@ -143,6 +308,73 @@ struct ArrayElementStringImpl
 			current_offset = offsets[i];
 		}
 	}
+
+	/** Процедура для неконстантного идекса
+	  * index_type - тип данных идекса
+	  */
+	template <typename index_type>
+	static void vector(
+		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+		const ColumnVector<index_type> & index,
+		ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets)
+	{
+		size_t size = offsets.size();
+		result_offsets.resize(size);
+		result_data.reserve(data.size());
+
+		ColumnArray::Offset_t current_offset = 0;
+		ColumnArray::Offset_t current_result_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t array_size = offsets[i] - current_offset;
+			size_t adjusted_index;
+
+			if (index[i].getType() == Field::Types::UInt64)
+			{
+				UInt64 cur_id = safeGet<UInt64>(index[i]);
+				if (cur_id > 0 && cur_id <= array_size)
+					adjusted_index = cur_id - 1;
+				else
+					adjusted_index = array_size; /// Индекс не вписывается в рамки массива, заменяем заведомо слишком большим
+			}
+			else if (index[i].getType() == Field::Types::Int64)
+			{
+				Int64 cur_id = safeGet<Int64>(index[i]);
+				if (cur_id > 0 && cur_id <= array_size)
+					adjusted_index = cur_id - 1;
+				else if (cur_id < 0 && -cur_id <= array_size)
+					adjusted_index = array_size + cur_id;
+				else
+					adjusted_index = array_size; /// Индекс не вписывается в рамки массива, заменяем слишком большим
+			}
+			else
+				throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
+
+			if (adjusted_index < array_size)
+			{
+				ColumnArray::Offset_t string_pos = current_offset == 0 && adjusted_index == 0
+					? 0
+					: string_offsets[current_offset + adjusted_index - 1];
+
+				ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
+
+				result_data.resize(current_result_offset + string_size);
+				memcpy(&result_data[current_result_offset], &data[string_pos], string_size);
+				current_result_offset += string_size;
+				result_offsets[i] = current_result_offset;
+			}
+			else
+			{
+				/// Вставим пустую строку.
+				result_data.resize(current_result_offset + 1);
+				result_data[current_result_offset] = 0;
+				current_result_offset += 1;
+				result_offsets[i] = current_result_offset;
+			}
+
+			current_offset = offsets[i];
+		}
+	}
 };
 
 
@@ -150,7 +382,7 @@ class FunctionArrayElement : public IFunction
 {
 private:
 	template <typename T>
-	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
+	bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
 		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -166,16 +398,37 @@ private:
 		block.getByPosition(result).column = col_res;
 
 		if (index.getType() == Field::Types::UInt64)
-			ArrayElementNumImpl<T, false>::vector(col_nested->getData(), col_array->getOffsets(), safeGet<UInt64>(index) - 1, col_res->getData());
+			ArrayElementNumImpl<T>::template vectorConst<false>(col_nested->getData(), col_array->getOffsets(), safeGet<UInt64>(index) - 1, col_res->getData());
 		else if (index.getType() == Field::Types::Int64)
-			ArrayElementNumImpl<T, true>::vector(col_nested->getData(), col_array->getOffsets(), -safeGet<Int64>(index) - 1, col_res->getData());
+			ArrayElementNumImpl<T>::template vectorConst<true>(col_nested->getData(), col_array->getOffsets(), -safeGet<Int64>(index) - 1, col_res->getData());
 		else
 			throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
 		return true;
 	}
 
-	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
+	template <typename index_type, typename data_type>
+	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<index_type> & index)
+	{
+		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+
+		if (!col_array)
+			return false;
+
+		const ColumnVector<data_type> * col_nested = dynamic_cast<const ColumnVector<data_type> *>(&col_array->getData());
+
+		if (!col_nested)
+			return false;
+
+		ColumnVector<data_type> * col_res = new ColumnVector<data_type>;
+		block.getByPosition(result).column = col_res;
+
+		ArrayElementNumImpl<data_type>::template vector<index_type>(col_nested->getData(), col_array->getOffsets(), index, col_res->getData());
+
+		return true;
+	}
+
+	bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
 		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -191,7 +444,7 @@ private:
 		block.getByPosition(result).column = col_res;
 
 		if (index.getType() == Field::Types::UInt64)
-			ArrayElementStringImpl<false>::vector(
+			ArrayElementStringImpl::vectorConst<false>(
 				col_nested->getChars(),
 				col_array->getOffsets(),
 				col_nested->getOffsets(),
@@ -199,7 +452,7 @@ private:
 				col_res->getChars(),
 				col_res->getOffsets());
 		else if (index.getType() == Field::Types::Int64)
-			ArrayElementStringImpl<true>::vector(
+			ArrayElementStringImpl::vectorConst<true>(
 				col_nested->getChars(),
 				col_array->getOffsets(),
 				col_nested->getOffsets(),
@@ -212,7 +465,34 @@ private:
 		return true;
 	}
 
-	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
+	template <typename index_type>
+	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<index_type> & index)
+	{
+		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+
+		if (!col_array)
+			return false;
+
+		const ColumnString * col_nested = dynamic_cast<const ColumnString *>(&col_array->getData());
+
+		if (!col_nested)
+			return false;
+
+		ColumnString * col_res = new ColumnString;
+		block.getByPosition(result).column = col_res;
+
+		ArrayElementStringImpl::vector<index_type>(
+				col_nested->getChars(),
+				col_array->getOffsets(),
+				col_nested->getOffsets(),
+				index,
+				col_res->getChars(),
+				col_res->getOffsets());
+
+		return true;
+	}
+
+	bool executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
 		const ColumnConstArray * col_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -239,6 +519,71 @@ private:
 		return true;
 	}
 
+	template <typename index_type>
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<index_type> & index)
+	{
+		const ColumnConstArray * col_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
+
+		if (!col_array)
+			return false;
+
+		const DB::Array & array = col_array->getData();
+		size_t array_size = array.size();
+
+		block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+		for (size_t i = 0; i < col_array->size(); ++i)
+		{
+			if (index[i].getType() == Field::Types::UInt64)
+			{
+				UInt64 cur_id = safeGet<UInt64>(index[i]);
+				if (cur_id > 0 && cur_id <= array_size)
+					block.getByPosition(result).column->insert(array[cur_id - 1]);
+				else
+					block.getByPosition(result).column->insertDefault();
+			}
+			else if (index[i].getType() == Field::Types::Int64)
+			{
+				Int64 cur_id = safeGet<Int64>(index[i]);
+				if (cur_id > 0 && cur_id <= array_size)
+					block.getByPosition(result).column->insert(array[cur_id - 1]);
+				else if (cur_id < 0 && -cur_id <= array_size)
+					block.getByPosition(result).column->insert(array[array_size + cur_id]);
+				else
+					block.getByPosition(result).column->insertDefault();
+			}
+			else
+				throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
+		}
+
+		return true;
+	}
+
+	template <typename index_type>
+	bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnVector<index_type> * index = dynamic_cast<const ColumnVector<index_type> *> (&*block.getByPosition(arguments[1]).column);
+
+		if (!index)
+			return false;
+
+		if (!(	executeNumber<index_type, UInt8>	(block, arguments, result, *index)
+			||	executeNumber<index_type, UInt16>	(block, arguments, result, *index)
+			||	executeNumber<index_type, UInt32>	(block, arguments, result, *index)
+			||	executeNumber<index_type, UInt64>	(block, arguments, result, *index)
+			||	executeNumber<index_type, Int8>		(block, arguments, result, *index)
+			||	executeNumber<index_type, Int16>	(block, arguments, result, *index)
+			||	executeNumber<index_type, Int32>	(block, arguments, result, *index)
+			||	executeNumber<index_type, Int64>	(block, arguments, result, *index)
+			||	executeNumber<index_type, Float32>	(block, arguments, result, *index)
+			||	executeNumber<index_type, Float64>	(block, arguments, result, *index)
+			||	executeConst <index_type>			(block, arguments, result, *index)
+			||	executeString<index_type>			(block, arguments, result, *index)))
+		throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+		return true;
+	}
 public:
 	/// Получить имя функции.
 	String getName() const
@@ -269,28 +614,41 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		if (!block.getByPosition(arguments[1]).column->isConst())
-			throw Exception("Second argument for function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+		{
+			if (!(	executeArgument<UInt8>	(block, arguments, result)
+				||	executeArgument<UInt16>	(block, arguments, result)
+				||	executeArgument<UInt32>	(block, arguments, result)
+				||	executeArgument<UInt64>	(block, arguments, result)
+				||	executeArgument<Int8>	(block, arguments, result)
+				||	executeArgument<Int16>	(block, arguments, result)
+				||	executeArgument<Int32>	(block, arguments, result)
+				||	executeArgument<Int64>	(block, arguments, result)))
+			throw Exception("Second argument for function " + getName() + " must must have UInt or Int type.",
+							ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
+		{
+			Field index = (*block.getByPosition(arguments[1]).column)[0];
 
-		Field index = (*block.getByPosition(arguments[1]).column)[0];
+			if (index == UInt64(0))
+				throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
-		if (index == UInt64(0))
-			throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
-
-		if (!(	executeNumber<UInt8>	(block, arguments, result, index)
-			||	executeNumber<UInt16>	(block, arguments, result, index)
-			||	executeNumber<UInt32>	(block, arguments, result, index)
-			||	executeNumber<UInt64>	(block, arguments, result, index)
-			||	executeNumber<Int8>		(block, arguments, result, index)
-			||	executeNumber<Int16>	(block, arguments, result, index)
-			||	executeNumber<Int32>	(block, arguments, result, index)
-			||	executeNumber<Int64>	(block, arguments, result, index)
-			||	executeNumber<Float32>	(block, arguments, result, index)
-			||	executeNumber<Float64>	(block, arguments, result, index)
-			||	executeConst			(block, arguments, result, index)
-			||	executeString			(block, arguments, result, index)))
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
+			if (!(	executeNumberConst<UInt8>	(block, arguments, result, index)
+				||	executeNumberConst<UInt16>	(block, arguments, result, index)
+				||	executeNumberConst<UInt32>	(block, arguments, result, index)
+				||	executeNumberConst<UInt64>	(block, arguments, result, index)
+				||	executeNumberConst<Int8>		(block, arguments, result, index)
+				||	executeNumberConst<Int16>	(block, arguments, result, index)
+				||	executeNumberConst<Int32>	(block, arguments, result, index)
+				||	executeNumberConst<Int64>	(block, arguments, result, index)
+				||	executeNumberConst<Float32>	(block, arguments, result, index)
+				||	executeNumberConst<Float64>	(block, arguments, result, index)
+				||	executeConstConst			(block, arguments, result, index)
+				||	executeStringConst			(block, arguments, result, index)))
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
 	}
 };
 
@@ -633,7 +991,7 @@ public:
 			return;
 
 		Columns array_columns(arguments.size());
-		const ColumnArray::Offsets_t * offsets = NULL;
+		const ColumnArray::Offsets_t * offsets = nullptr;
 		ConstColumnPlainPtrs data_columns(arguments.size());
 
 		for (size_t i = 0; i < arguments.size(); ++i)

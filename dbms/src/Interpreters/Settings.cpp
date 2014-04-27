@@ -65,8 +65,11 @@ void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfi
 }
 
 /// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
-void Settings::deserialize(ReadBuffer & buf)
+/// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
+void Settings::deserialize(ReadBuffer & buf, bool check_readonly)
 {
+	bool readonly = limits.readonly;
+
 	while (true)
 	{
 		String name;
@@ -75,6 +78,9 @@ void Settings::deserialize(ReadBuffer & buf)
 		/// Пустая строка - это маркер конца настроек.
 		if (name.empty())
 			break;
+
+		if (check_readonly && readonly)
+			throw Exception("Can't set setting " + name + ". Settings are readonly.", ErrorCodes::READONLY);
 
 		set(name, buf);
 	}

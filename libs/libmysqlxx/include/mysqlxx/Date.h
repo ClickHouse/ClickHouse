@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_DATE_H
-#define MYSQLXX_DATE_H
+#pragma once
 
 #include <string.h>
 #include <string>
@@ -164,6 +163,14 @@ public:
 	{
 		return !(*this == other);
 	}
+
+	std::string toString()
+	{
+		std::stringstream ss;
+		ss << year() << '-' << (month() / 10) << (month() % 10)
+			<< '-' << (day() / 10) << (day() % 10);
+		return ss.str();
+	}
 };
 
 inline std::ostream & operator<< (std::ostream & ostr, const Date & date)
@@ -174,5 +181,3 @@ inline std::ostream & operator<< (std::ostream & ostr, const Date & date)
 }
 
 }
-
-#endif

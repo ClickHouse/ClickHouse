@@ -17,17 +17,25 @@ struct UncompressedCacheCell
 	size_t compressed_size;
 };
 
+struct UncompressedSizeWeightFunction
+{
+	size_t operator()(const UncompressedCacheCell & x) const
+	{
+		return x.data.size();
+	}
+};
+
 
 /** Кэш разжатых блоков для CachedCompressedReadBuffer. thread-safe.
   */
-class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash>
+class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>
 {
 private:
-	typedef LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash> Base;
+	typedef LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction> Base;
 
 public:
-	UncompressedCache(size_t max_size_in_cells)
-		: Base(max_size_in_cells) {}
+	UncompressedCache(size_t max_size_in_bytes)
+		: Base(max_size_in_bytes) {}
 
 	/// Посчитать ключ от пути к файлу и смещения.
 	static UInt128 hash(const String & path_to_file, size_t offset)
@@ -52,6 +60,13 @@ public:
 			ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
 
 		return res;
+	}
+
+	void set(const Key & key, MappedPtr mapped)
+	{
+		Base::set(key, mapped);
+		ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, current_weight_lost);
+		current_weight_lost = 0;
 	}
 };
 

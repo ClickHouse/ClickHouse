@@ -19,7 +19,7 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
-	MergingSortedBlockInputStream(BlockInputStreams inputs_, SortDescription & description_, size_t max_block_size_, size_t limit_ = 0)
+	MergingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_, size_t limit_ = 0)
 		: description(description_), max_block_size(max_block_size_), limit(limit_), total_merged_rows(0), first(true), has_collation(false),
 		num_columns(0), source_blocks(inputs_.size()), cursors(inputs_.size()), log(&Logger::get("MergingSortedBlockInputStream"))
 	{
@@ -87,7 +87,7 @@ protected:
 
 	/// Эти методы используются в Collapsing/Summing SortedBlockInputStream-ах.
 
-	/// Сохранить строчку, на которую указывает cursor в row.
+	/// Сохранить строчку, на которую указывает cursor, в row.
 	template<class TSortCursor>
 	void setRow(Row & row, TSortCursor & cursor)
 	{

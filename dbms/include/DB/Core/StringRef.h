@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <functional>
+#include <ostream>
 
 
 namespace DB
@@ -14,13 +15,13 @@ namespace DB
 	/// Штука, чтобы не создавать строки для поиска подстроки в хэш таблице.
 	struct StringRef
 	{
-		const char * data;
-		size_t size;
+		const char * data = nullptr;
+		size_t size = 0;
 
 		StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 		StringRef(const unsigned char * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
 		StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
-		StringRef() : data(NULL), size(0) {}
+		StringRef() {}
 
 		std::string toString() const { return std::string(data, size); }
 	};
@@ -46,6 +47,15 @@ namespace DB
 		return !(lhs == rhs);
 	}
 
+	inline bool operator<(StringRef lhs, StringRef rhs)
+	{
+		int cmp = memcmp(lhs.data, rhs.data, std::min(lhs.size, rhs.size));
+		if (cmp == 0)
+			return lhs.size < rhs.size;
+		else
+			return cmp < 0;
+	}
+
 	struct StringRefHash
 	{
 		inline size_t operator() (StringRef x) const
@@ -56,8 +66,8 @@ namespace DB
 
 	struct StringRefZeroTraits
 	{
-		static inline bool check(DB::StringRef x) { return NULL == x.data; }
-		static inline void set(DB::StringRef & x) { x.data = NULL; }
+		static inline bool check(DB::StringRef x) { return nullptr == x.data; }
+		static inline void set(DB::StringRef & x) { x.data = nullptr; }
 	};
 	
 	inline bool operator==(StringRef lhs, const char * rhs)
@@ -68,6 +78,14 @@ namespace DB
 				return false;
 		}
 		return true;
+	}
+
+	inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
+	{
+		if (str.data)
+			os.write(str.data, str.size);
+
+		return os;
 	}
 }
 

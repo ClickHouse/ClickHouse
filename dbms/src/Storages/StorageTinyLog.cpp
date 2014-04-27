@@ -27,9 +27,22 @@ namespace DB
 using Poco::SharedPtr;
 
 
-TinyLogBlockInputStream::TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage)
-	: IProfilingBlockInputStream(owned_storage), block_size(block_size_), column_names(column_names_), storage(dynamic_cast<StorageTinyLog &>(*owned_storage)), finished(false)
+TinyLogBlockInputStream::TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_)
+	: block_size(block_size_), column_names(column_names_), storage(storage_), finished(false)
 {
+}
+
+
+String TinyLogBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "TinyLog(" << storage.getTableName() << ", " << &storage;
+
+	for (size_t i = 0; i < column_names.size(); ++i)
+		res << ", " << column_names[i];
+
+	res << ")";
+	return res.str();
 }
 
 
@@ -103,21 +116,21 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
-			streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path())));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name] = new Stream(storage.files[size_name].data_file.path());
+		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path()));
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
-		streams[name] = new Stream(storage.files[name].data_file.path());
+		streams[name].reset(new Stream(storage.files[name].data_file.path()));
 }
 
 
@@ -172,8 +185,8 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 }
 
 
-TinyLogBlockOutputStream::TinyLogBlockOutputStream(StoragePtr owned_storage)
-	: IBlockOutputStream(owned_storage), storage(dynamic_cast<StorageTinyLog &>(*owned_storage))
+TinyLogBlockOutputStream::TinyLogBlockOutputStream(StorageTinyLog & storage_)
+	: storage(storage_)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 		addStream(it->first, *it->second);
@@ -187,21 +200,21 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
-			streams.insert(std::make_pair(size_name, new Stream(storage.files[size_name].data_file.path())));
+			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
 		
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name] = new Stream(storage.files[size_name].data_file.path());
+		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size));
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
 	}
 	else
-		streams[name] = new Stream(storage.files[name].data_file.path());
+		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
 }
 
 
@@ -272,8 +285,8 @@ void TinyLogBlockOutputStream::write(const Block & block)
 }
 
 
-StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach)
-	: path(path_), name(name_), columns(columns_)
+StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
+	: path(path_), name(name_), columns(columns_), max_compress_block_size(max_compress_block_size_)
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -290,9 +303,9 @@ StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & na
 		addFile(it->first, *it->second);
 }
 
-StoragePtr StorageTinyLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach)
+StoragePtr StorageTinyLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
 {
-	return (new StorageTinyLog(path_, name_, columns_, attach))->thisPtr();
+	return (new StorageTinyLog(path_, name_, columns_, attach, max_compress_block_size_))->thisPtr();
 }
 
 
@@ -363,18 +376,18 @@ BlockInputStreams StorageTinyLog::read(
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
-	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, thisPtr()));
+	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this));
 }
 
 	
 BlockOutputStreamPtr StorageTinyLog::write(
 	ASTPtr query)
 {
-	return new TinyLogBlockOutputStream(thisPtr());
+	return new TinyLogBlockOutputStream(*this);
 }
 
 
-void StorageTinyLog::dropImpl()
+void StorageTinyLog::drop()
 {
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		if (it->second.data_file.exists())

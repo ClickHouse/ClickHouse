@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_H
-#define MYSQLXX_H
+#pragma once
 
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Transaction.h>
@@ -66,5 +65,3 @@
   *  (при необходимости, зависимости можно убрать).
   * Предполагается, что пользователь сам допишет недостающий функционал.
   */
-
-#endif

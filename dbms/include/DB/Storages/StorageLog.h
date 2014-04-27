@@ -12,6 +12,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB
@@ -36,20 +37,10 @@ typedef std::vector<Mark> Marks;
 class LogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	LogBlockInputStream(size_t block_size_, const Names & column_names_, StoragePtr owned_storage, size_t mark_number_, size_t rows_limit_);
+	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_);
 	String getName() const { return "LogBlockInputStream"; }
 
-	String getID() const
-	{
-		std::stringstream res;
-		res << "Log(" << owned_storage->getTableName() << ", " << &*owned_storage << ", " << mark_number << ", " << rows_limit;
-
-		for (size_t i = 0; i < column_names.size(); ++i)
-			res << ", " << column_names[i];
-
-		res << ")";
-		return res.str();
-	}
+	String getID() const;
 
 protected:
 	Block readImpl();
@@ -77,7 +68,7 @@ private:
 		CompressedReadBuffer compressed;
 	};
 	
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -88,7 +79,7 @@ private:
 class LogBlockOutputStream : public IBlockOutputStream
 {
 public:
-	LogBlockOutputStream(StoragePtr owned_storage);
+	LogBlockOutputStream(StorageLog & storage_);
 	void write(const Block & block);
 	void writeSuffix();
 private:
@@ -97,8 +88,8 @@ private:
 
 	struct Stream
 	{
-		Stream(const std::string & data_path) :
-			plain(data_path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY),
+		Stream(const std::string & data_path, size_t max_compress_block_size) :
+			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
 			compressed(plain)
 		{
 			plain_offset = Poco::File(data_path).getSize();
@@ -118,7 +109,7 @@ private:
 
 	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;
 	
-	typedef std::map<std::string, SharedPtr<Stream> > FileStreams;
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
 	
 	typedef std::set<std::string> OffsetColumns;
@@ -145,7 +136,7 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов; создать файлы, если их нет.
 	  */
-	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 	
 	std::string getName() const { return "Log"; }
 	std::string getTableName() const { return name; }
@@ -183,7 +174,7 @@ protected:
 		throw Exception("There is no column " + _table_column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 	}
 
-	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_);
+	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_);
 	
 	/// Прочитать файлы с засечками, если они ещё не прочитаны.
 	/// Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
@@ -224,6 +215,8 @@ private:
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
 	bool loaded_marks;
+
+	size_t max_compress_block_size;
 
 	/** Для обычных столбцов, в засечках указано количество строчек в блоке.
 	  * Для столбцов-массивов и вложенных структур, есть более одной группы засечек, соответствующих разным файлам:

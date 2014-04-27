@@ -4,8 +4,8 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include <DB/Core/Defines.h>
 #include <DB/Core/Block.h>
+#include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
 #include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
@@ -24,6 +24,10 @@ namespace DB
 
 using Poco::SharedPtr;
 
+/// Поток блоков читающих из таблицы и ее имя
+typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
+/// Вектор пар, описывающих таблицы
+typedef std::vector<ExternalTableData> ExternalTablesData;
 
 /** Соединение с сервером БД для использования в клиенте.
   * Как использовать - см. Core/Protocol.h
@@ -74,16 +78,23 @@ public:
 		Packet() : type(Protocol::Server::Hello) {}
 	};
 
+	/// Изменить базу данных по умолчанию. Изменения начинают использоваться только при следующем переподключении.
+	void setDefaultDatabase(const String & database);
+
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
 	/// Адрес сервера - для сообщений в логе и в эксепшенах.
 	String getServerAddress() const;
 
+	/// Если последний флаг true, то затем необходимо вызвать sendExternalTablesData
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
-		const Settings * settings = NULL);
+		const Settings * settings = nullptr, bool with_pending_data = false);
 	
 	void sendCancel();
-	void sendData(const Block & block);
+	/// Отправить блок данных, на сервере сохранить во временную таблицу name
+	void sendData(const Block & block, const String & name = "");
+	/// Отправить все содержимое внешних таблиц
+	void sendExternalTablesData(ExternalTablesData & data);
 
 	/// Проверить, если ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);

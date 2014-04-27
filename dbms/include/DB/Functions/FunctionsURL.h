@@ -167,7 +167,7 @@ struct ExtractPath
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '/')) && pos[1] == '/' && NULL != (pos = strchr(pos + 2, '/')))
+		if (nullptr != (pos = strchr(data, '/')) && pos[1] == '/' && nullptr != (pos = strchr(pos + 2, '/')))
 		{
 			Pos query_string_or_fragment = strpbrk(pos, "?#");
 
@@ -190,7 +190,7 @@ struct ExtractQueryString
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '?')))
+		if (nullptr != (pos = strchr(data, '?')))
 		{
 			Pos fragment = strchr(pos, '#');
 
@@ -213,7 +213,7 @@ struct ExtractFragment
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '#')))
+		if (nullptr != (pos = strchr(data, '#')))
 		{
 			res_data = pos + (without_leading_char ? 1 : 0);
 			res_size = end - res_data;
@@ -234,7 +234,7 @@ struct ExtractQueryStringAndFragment
 		Pos pos = data;
 		Pos end = pos + size;
 
-		if (NULL != (pos = strchr(data, '?')))
+		if (nullptr != (pos = strchr(data, '?')))
 		{
 			res_data = pos + (without_leading_char ? 1 : 0);
 			res_size = end - res_data;
@@ -291,32 +291,32 @@ struct ExtractURLParameterImpl
 		{
 			size_t cur_offset = offsets[i];
 			
-			const char * pos = NULL;
+			const char * pos = nullptr;
 			
 			do
 			{
 				const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
 				
 				const char * begin = strchr(str, '?');
-				if (begin == NULL)
+				if (begin == nullptr)
 					break;
 				
 				pos = strstr(begin + 1, param_str);
-				if (pos == NULL)
+				if (pos == nullptr)
 					break;
 				if (pos != begin + 1 && *(pos - 1) != ';' && *(pos - 1) != '&')
 				{
-					pos = NULL;
+					pos = nullptr;
 					break;
 				}
 				
 				pos += param_len;
 			} while (false);
 			
-			if (pos != NULL)
+			if (pos != nullptr)
 			{
 				const char * end = strpbrk(pos, "&;#");
-				if (end == NULL)
+				if (end == nullptr)
 					end = pos + strlen(pos);
 				
 				res_data.resize(res_offset + (end - pos) + 1);
@@ -367,15 +367,15 @@ struct CutURLParameterImpl
 			do
 			{
 				const char * begin = strchr(url_begin, '?');
-				if (begin == NULL)
+				if (begin == nullptr)
 					break;
 				
 				const char * pos = strstr(begin + 1, param_str);
-				if (pos == NULL)
+				if (pos == nullptr)
 					break;
 				if (pos != begin + 1 && *(pos - 1) != ';' && *(pos - 1) != '&')
 				{
-					pos = NULL;
+					pos = nullptr;
 					break;
 				}
 				
@@ -448,25 +448,25 @@ public:
 	/// Получить следующий токен, если есть, или вернуть false.
 	bool get(Pos & token_begin, Pos & token_end)
 	{
-		if (pos == NULL)
+		if (pos == nullptr)
 			return false;
 		
 		if (first)
 		{
 			first = false;
 			pos = strchr(pos, '?');
-			if (pos == NULL)
+			if (pos == nullptr)
 				return false;
 			++pos;
 		}
 		
 		token_begin = pos;
 		pos = strchr(pos, '=');
-		if (pos == NULL)
+		if (pos == nullptr)
 			return false;
 		++pos;
 		pos = strpbrk(pos, "&;#");
-		if (pos == NULL)
+		if (pos == nullptr)
 			token_end = end;
 		else
 			token_end = pos++;
@@ -516,7 +516,7 @@ public:
 	/// Получить следующий токен, если есть, или вернуть false.
 	bool get(Pos & token_begin, Pos & token_end)
 	{
-		if (pos == NULL)
+		if (pos == nullptr)
 			return false;
 
 		if (first)
@@ -527,14 +527,14 @@ public:
 		else
 			pos = strchr(pos, '&');
 
-		if (pos == NULL)
+		if (pos == nullptr)
 			return false;
 		++pos;
 
 		token_begin = pos;
 
 		pos = strchr(pos, '=');
-		if (pos == NULL)
+		if (pos == nullptr)
 			return false;
 		else
 			token_end = pos++;

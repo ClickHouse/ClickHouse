@@ -32,7 +32,7 @@ public:
 	typedef ColumnVector<Offset_t> ColumnOffsets_t;
 
 	/** Создать пустой столбец вложенных таблиц, с типом значений, как в столбце nested_column */
-	explicit ColumnNested(Columns nested_columns, ColumnPtr offsets_column = NULL)
+	explicit ColumnNested(Columns nested_columns, ColumnPtr offsets_column = nullptr)
 		: data(nested_columns), offsets(offsets_column)
 	{
 		if (!offsets_column)

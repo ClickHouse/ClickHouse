@@ -1,5 +1,4 @@
-#ifndef DBMS_PARSERS_STRINGRANGE_H
-#define DBMS_PARSERS_STRINGRANGE_H
+#pragma once
 
 #include <map>
 
@@ -11,5 +10,3 @@ typedef std::pair<const char *, const char *> StringRange;
 typedef Poco::SharedPtr<String> StringPtr;
 
 }
-
-#endif

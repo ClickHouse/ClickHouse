@@ -1,5 +1,4 @@
-#ifndef MYSQLXX_CONNECTION_H
-#define MYSQLXX_CONNECTION_H
+#pragma once
 
 #include <boost/noncopyable.hpp>
 
@@ -28,7 +27,7 @@ friend class Singleton<LibrarySingleton>;
 private:
 	LibrarySingleton()
 	{
-		if (mysql_library_init(0, NULL, NULL))
+		if (mysql_library_init(0, nullptr, nullptr))
 			throw Exception("Cannot initialize MySQL library.");
 	}
 
@@ -132,5 +131,3 @@ private:
 
 
 }
-
-#endif

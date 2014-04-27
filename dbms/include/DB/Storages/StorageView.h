@@ -26,7 +26,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
-	virtual void dropImpl();
+	virtual void drop() override;
 
 protected:
 	String select_database_name;

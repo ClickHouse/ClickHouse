@@ -9,7 +9,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Storages/StoragePtr.h>
+#include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 
 namespace DB
@@ -60,7 +60,7 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 		}
 		if (done)
 			break;
-		id ++;
+		++id;
 		current_suffix = toString<Int32>(id);
 	}
 	return current_suffix;
@@ -71,7 +71,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*ast);
 	ASTExpressionList & node = dynamic_cast<ASTExpressionList &>(*select.select_expression_list);
 	ASTs & asts = node.children;
-	ASTLiteral * cur = new ASTLiteral(StringRange(NULL, NULL), value);
+	ASTLiteral * cur = new ASTLiteral(StringRange(), value);
 	cur->alias = column_name;
 	ASTPtr column_value = cur;
 	bool is_replaced = false;
@@ -131,7 +131,7 @@ static void extractFunctions(ASTPtr expression, const std::vector<String> & colu
 /// Построить конъюнкцию из заданных функций
 static ASTPtr buildWhereExpression(const ASTs & functions)
 {
-	if (functions.size() == 0) return NULL;
+	if (functions.size() == 0) return nullptr;
 	if (functions.size() == 1) return functions[0];
 	ASTPtr new_query = new ASTFunction();
 	ASTFunction & new_function = dynamic_cast<ASTFunction & >(*new_query);
@@ -161,7 +161,7 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 	new_select.select_expression_list = new ASTExpressionList();
 	ASTExpressionList & select_list = dynamic_cast<ASTExpressionList & >(*new_select.select_expression_list);
 	for (size_t i = 0; i < columns.size(); ++i)
-		select_list.children.push_back(new ASTIdentifier(StringRange(NULL, NULL), columns[i]));
+		select_list.children.push_back(new ASTIdentifier(StringRange(), columns[i]));
 
 	std::vector<ASTPtr> functions;
 	extractFunctions(select.where_expression, columns, functions);

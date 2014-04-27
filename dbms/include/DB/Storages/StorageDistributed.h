@@ -41,14 +41,14 @@ public:
 	std::string getTableName() const { return name; }
 	std::string getSignColumnName() const { return sign_column_name; };
 	bool supportsSampling() const { return true; }
-	bool supportsFinal() const { return !sign_column_name.empty(); }
+	bool supportsFinal() const { return true; }
 	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	NameAndTypePair getColumn(const String &column_name) const;
-	bool hasColumn(const String &column_name) const;
 
 	bool isRemote() const { return true; }
+	/// Сохранить временные таблицы, чтобы при следующем вызове метода read переслать их на удаленные сервера
+	void storeExternalTables(const Tables & tables_) { external_tables = tables_; }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -58,13 +58,11 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
-	void dropImpl() {}
+	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
 	void alter(const ASTAlterQuery::Parameters &params);
-
-	Block getBlockWithVirtualColumns();
 
 private:
 	StorageDistributed(
@@ -76,8 +74,8 @@ private:
 		const Context & context_,
 		const String & sign_column_name_ = "");
 	
-	/// Создает копию запроса, меняет имена базы данных и таблицы, записавыет значения переменных host и port, если они не пустые.
-	ASTPtr remakeQuery(ASTPtr query, const String & host, size_t port);
+	/// Создает копию запроса, меняет имена базы данных и таблицы.
+	ASTPtr rewriteQuery(ASTPtr query);
 
 	String name;
 	NamesAndTypesListPtr columns;
@@ -85,12 +83,11 @@ private:
 	String remote_table;
 	String sign_column_name;
 
-	/// Имя виртуального столбца, куда записывается имя хоста (Например "_host").
-	String _host_column_name;
-	/// Имя виртуального столбца, куда записывается номер порта (Например "_port").
-	String _port_column_name;
-
 	const Context & context;
+
+	/// Временные таблицы, которые необходимо отправить на сервер. Переменная очищается после каждого вызова метода read
+	/// Для подготовки к отправке нужно использовтаь метод storeExternalTables
+	Tables external_tables;
 
 	/// Используется только, если таблица должна владеть объектом Cluster, которым больше никто не владеет - для реализации TableFunctionRemote.
 	SharedPtr<Cluster> owned_cluster;

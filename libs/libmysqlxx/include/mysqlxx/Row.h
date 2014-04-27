@@ -30,7 +30,7 @@ private:
 
 public:
 	/** Для возможности отложенной инициализации. */
-	Row() : row(NULL), res(NULL)
+	Row()
 	{
 	}
 
@@ -76,16 +76,16 @@ public:
 	  * при использовании UseQueryResult. Или это значит, что объект не инициализирован.
 	  * Вы можете использовать вместо этого преобразование в bool.
 	  */
-	bool empty() const { return row == NULL; }
+	bool empty() const { return row == nullptr; }
 
 	/** Преобразование в bool.
 	  * (Точнее - в тип, который преобразуется в bool, и с которым больше почти ничего нельзя сделать.)
 	  */
-	operator private_bool_type() const	{ return row == NULL ? NULL : &Row::row; }
+	operator private_bool_type() const	{ return row == nullptr ? NULL : &Row::row; }
 
 private:
-	MYSQL_ROW row;
-	ResultBase * res;
+	MYSQL_ROW row = nullptr;
+	ResultBase * res = nullptr;
 	MYSQL_LENGTHS lengths;
 };
 

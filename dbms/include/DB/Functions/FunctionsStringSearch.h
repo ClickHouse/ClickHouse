@@ -810,7 +810,7 @@ struct ReplaceStringImpl
 					match = false;
 			if (match)
 			{
-				replace_cnt ++;
+				++replace_cnt;
 				res_data += replacement;
 				i = i + needle.size() - 1;
 			} else

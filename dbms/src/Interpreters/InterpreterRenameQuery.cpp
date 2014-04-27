@@ -27,9 +27,6 @@ InterpreterRenameQuery::InterpreterRenameQuery(ASTPtr query_ptr_, Context & cont
 
 void InterpreterRenameQuery::execute()
 {
-	/** Все таблицы переименовываются под глобальной блокировкой. */
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
 	
@@ -53,11 +50,18 @@ void InterpreterRenameQuery::execute()
 		String to_table_name_escaped = escapeForFileName(to_table_name);
 		String to_metadata_path = path + "metadata/" + to_database_name_escaped + "/" + (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
 		
-		context.assertTableExists(from_database_name, from_table_name);
+		/// Заблокировать таблицу нужно при незаблокированном контексте.
+		StoragePtr table = context.getTable(from_database_name, from_table_name);
+		auto table_lock = table->lockForAlter();
+
+		/** Все таблицы переименовываются под глобальной блокировкой. */
+		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
 		context.assertTableDoesntExist(to_database_name, to_table_name);
 
 		/// Уведомляем таблицу о том, что она переименовается. Если таблица не поддерживает переименование - кинется исключение.
-		context.getTable(from_database_name, from_table_name)->rename(path + "data/" + to_database_name_escaped + "/", to_table_name);
+
+		table->rename(path + "data/" + to_database_name_escaped + "/", to_table_name);
 
 		/// Пишем новый файл с метаданными.
 		{
@@ -77,10 +81,7 @@ void InterpreterRenameQuery::execute()
 
 			/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
 			if (!parse_res || (pos != end && *pos != ';'))
-				throw Exception("Syntax error in file " + from_metadata_path + ": failed at position "
-					+ toString(pos - create_query.data()) + ": "
-					+ std::string(pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - pos))
-					+ ", expected " + (parse_res ? "end of query" : expected) + ".",
+				throw Exception(getSyntaxErrorMessage(parse_res, create_query.data(), end, pos, expected, "in file " + from_metadata_path),
 					ErrorCodes::SYNTAX_ERROR);
 
 			dynamic_cast<ASTCreateQuery &>(*ast).table = to_table_name;

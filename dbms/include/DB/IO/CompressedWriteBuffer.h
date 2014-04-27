@@ -36,7 +36,7 @@ private:
 
 		size_t uncompressed_size = offset();
 		size_t compressed_size = 0;
-		char * compressed_buffer_ptr = NULL;
+		char * compressed_buffer_ptr = nullptr;
 
 		/** Для того, чтобы различить между QuickLZ и LZ4 и сохранить обратную совместимость (со случаем, когда использовался только QuickLZ),
 		  *  используем старший бит первого байта в сжатых данных (который сейчас не используется в QuickLZ).

@@ -289,7 +289,7 @@ struct DataTypeFromFieldTypeOrError<NumberTraits::Error>
 {
 	static DataTypePtr getDataType()
 	{
-		return NULL;
+		return nullptr;
 	}
 };
 
