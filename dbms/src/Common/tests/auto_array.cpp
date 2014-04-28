@@ -3,7 +3,7 @@
 #include <map>
 
 #include <DB/Core/Field.h>
-#include <DB/Interpreters/HashMap.h>
+#include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/AutoArray.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -155,7 +155,7 @@ int main(int argc, char ** argv)
 	if (argc == 2 && !strcmp(argv[1], "1"))
 	{
 		typedef DB::AutoArray<T> Arr;
-		typedef DB::HashMap<UInt64, Arr> Map;
+		typedef HashMap<UInt64, Arr> Map;
 
 		Stopwatch watch;
 
@@ -185,7 +185,7 @@ int main(int argc, char ** argv)
 	if (argc == 2 && !strcmp(argv[1], "2"))
 	{
 		typedef std::vector<T> Arr;
-		typedef DB::HashMap<UInt64, Arr> Map;
+		typedef HashMap<UInt64, Arr> Map;
 
 		Stopwatch watch;
 

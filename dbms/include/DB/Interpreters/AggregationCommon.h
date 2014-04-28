@@ -5,52 +5,14 @@
 
 #include <DB/Common/SipHash.h>
 #include <DB/Common/Arena.h>
-#include <DB/Core/Row.h>
+#include <DB/Common/UInt128.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Columns/IColumn.h>
-#include <DB/Interpreters/HashMap.h>
+#include <DB/Common/HashTable/HashMap.h>
 
 
 namespace DB
 {
-
-
-/// Для агрегации по SipHash или конкатенации нескольких полей.
-struct UInt128
-{
-	UInt64 first;
-	UInt64 second;
-
-	bool operator== (const UInt128 rhs) const { return first == rhs.first && second == rhs.second; }
-	bool operator!= (const UInt128 rhs) const { return first != rhs.first || second != rhs.second; }
-};
-
-struct UInt128Hash
-{
-	default_hash<UInt64> hash64;
-	size_t operator()(UInt128 x) const { return hash64(hash64(x.first) ^ x.second); }
-};
-
-struct UInt128TrivialHash
-{
-	size_t operator()(UInt128 x) const { return x.first; }
-};
-
-struct UInt128ZeroTraits
-{
-	static inline bool check(UInt128 x) { return x.first == 0 && x.second == 0; }
-	static inline void set(UInt128 & x) { x.first = 0; x.second = 0; }
-};
-
-inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
-
-/// Немного быстрее стандартного
-struct StringHash
-{
-	size_t operator()(const String & x) const { return CityHash64(x.data(), x.size()); }
-};
 
 
 typedef std::vector<size_t> Sizes;

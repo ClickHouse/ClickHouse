@@ -7,8 +7,8 @@
 #include <DB/Columns/ColumnString.h>
 
 #include <DB/Functions/IFunction.h>
-#include <DB/Interpreters/HashMap.h>
-#include <DB/Interpreters/ClearableHashMap.h>
+#include <DB/Common/HashTable/HashMap.h>
+#include <DB/Common/HashTable/ClearableHashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/FunctionsConditional.h>

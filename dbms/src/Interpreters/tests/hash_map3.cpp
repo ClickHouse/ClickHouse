@@ -518,7 +518,7 @@ public:
 struct TrivialHash
 {
 	size_t operator() (UInt64 x) const { return x; }
-	size_t operator() (DB::StringRef x) const { return DB::parse<UInt64>(x.data); }
+	size_t operator() (StringRef x) const { return DB::parse<UInt64>(x.data); }
 };
 
 struct GrowthTraits : public DB::default_growth_traits
@@ -530,11 +530,11 @@ struct GrowthTraits : public DB::default_growth_traits
 
 int main(int argc, char ** argv)
 {
-	typedef DB::HashMap<
-		DB::StringRef,
+	typedef HashMap<
+		StringRef,
 		UInt64,
 		TrivialHash,
-		DB::StringRefZeroTraits,
+		ZeroTraits,
 		GrowthTraits,
 		DB::HashTableAllocatorWithStackMemory<4 * 24> > Map;
 
@@ -542,14 +542,14 @@ int main(int argc, char ** argv)
 
 	map.dump();
 	std::cerr << "size: " << map.size() << std::endl;
-	map[DB::StringRef("1", 1)] = 1;
+	map[StringRef("1", 1)] = 1;
 	map.dump();
 	std::cerr << "size: " << map.size() << std::endl;
-	map[DB::StringRef("9", 1)] = 1;
+	map[StringRef("9", 1)] = 1;
 	map.dump();
 	std::cerr << "size: " << map.size() << std::endl;
 	std::cerr << "Collisions: " << map.getCollisions() << std::endl;
-	map[DB::StringRef("3", 1)] = 2;
+	map[StringRef("3", 1)] = 2;
 	map.dump();
 	std::cerr << "size: " << map.size() << std::endl;
 	std::cerr << "Collisions: " << map.getCollisions() << std::endl;

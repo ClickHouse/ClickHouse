@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Interpreters/HashSet.h>
+#include <DB/Common/HashTable/HashSet.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Limits.h>
 
@@ -147,7 +147,7 @@ private:
 	size_t max_bytes;
 	OverflowMode overflow_mode;
 
-	typedef HashSet<UInt128, UInt128Hash, UInt128ZeroTraits> SetHashed;
+	typedef HashSet<UInt128, UInt128Hash> SetHashed;
 	SetHashed set;
 };
 

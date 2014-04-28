@@ -86,7 +86,7 @@ private:
 
 	Sizes key_sizes;
 
-	StringRefHash hash_func_string;
+	DefaultHash<StringRef> hash_func_string;
 
 	/// Для более точного контроля max_rows_to_group_by.
 	size_t size_of_all_results;

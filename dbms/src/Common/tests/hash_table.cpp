@@ -1,8 +1,11 @@
 #include <iostream>
 #include <iomanip>
 
+#include <DB/Interpreters/AggregationCommon.h>
+
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/HashSet.h>
+
 
 
 struct SmallGrower : public HashTableGrower
@@ -55,6 +58,21 @@ int main(int argc, char ** argv)
 		{
 			DB::WriteBufferFromString wb(dump);
 			cont.writeText(wb);
+		}
+
+		std::cerr << "dump: " << dump << std::endl;
+	}
+
+	{
+		typedef HashSet<
+			DB::UInt128,
+			DB::UInt128TrivialHash> Cont;
+		Cont cont;
+
+		std::string dump;
+		{
+			DB::WriteBufferFromString wb(dump);
+			cont.write(wb);
 		}
 
 		std::cerr << "dump: " << dump << std::endl;

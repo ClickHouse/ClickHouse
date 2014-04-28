@@ -26,20 +26,22 @@ public:
 
 	void merge(const Self & rhs)
 	{
-		if (!this->has_zero && rhs.has_zero)
+		if (!this->hasZero() && rhs.hasZero())
 		{
-			this->has_zero = true;
+			this->setHasZero();
 			++this->m_size;
 		}
 
 		for (size_t i = 0; i < rhs.grower.bufSize(); ++i)
-			if (!rhs.buf[i].isZero())
-				this->insert(rhs.buf[i]);
+			if (!rhs.buf[i].isZero(*this))
+				this->insert(Cell::getKey(rhs.buf[i].getValue()));
 	}
 
 
 	void readAndMerge(DB::ReadBuffer & rb)
 	{
+		Cell::State::read(rb);
+
 		size_t new_size = 0;
 		DB::readVarUInt(new_size, rb);
 
@@ -49,7 +51,7 @@ public:
 		{
 			Cell x;
 			x.read(rb);
-			this->insert(x);
+			this->insert(Cell::getKey(x.getValue()));
 		}
 	}
 };

@@ -14,7 +14,7 @@
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
-#include <DB/Interpreters/HashMap.h>
+#include <DB/Common/HashTable/HashMap.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -32,14 +32,14 @@
   *
   * То есть, тест также позволяет сравнить DB::AutoArray и std::vector.
   *
-  * Если USE_AUTO_ARRAY = 0, то DB::HashMap уверенно обгоняет всех.
-  * Если USE_AUTO_ARRAY = 1, то DB::HashMap чуть менее серьёзно (20%) обгоняет google::dense_hash_map.
+  * Если USE_AUTO_ARRAY = 0, то HashMap уверенно обгоняет всех.
+  * Если USE_AUTO_ARRAY = 1, то HashMap чуть менее серьёзно (20%) обгоняет google::dense_hash_map.
   *
-  * При использовании DB::HashMap, AutoArray имеет довольно серьёзное (40%) преимущество перед std::vector.
+  * При использовании HashMap, AutoArray имеет довольно серьёзное (40%) преимущество перед std::vector.
   * А при использовании других хэш-таблиц, AutoArray ещё более серьёзно обгоняет std::vector
   *  (до трёх c половиной раз в случае std::unordered_map и google::sparse_hash_map).
   *
-  * DB::HashMap, в отличие от google::dense_hash_map, гораздо больше зависит от качества хэш-функции.
+  * HashMap, в отличие от google::dense_hash_map, гораздо больше зависит от качества хэш-функции.
   *
   * PS. Измеряйте всё сами, а то я почти запутался.
   *
@@ -122,8 +122,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		DB::HashMap<Key, Value> map;
-		DB::HashMap<Key, Value>::iterator it;
+		HashMap<Key, Value> map;
+		HashMap<Key, Value>::iterator it;
 		bool inserted;
 
 		for (size_t i = 0; i < n; ++i)
@@ -138,7 +138,7 @@ int main(int argc, char ** argv)
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "DB::HashMap. Size: " << map.size()
+			<< "HashMap. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -151,8 +151,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		std::unordered_map<Key, Value, DB::default_hash<Key> > map;
-		std::unordered_map<Key, Value, DB::default_hash<Key> >::iterator it;
+		std::unordered_map<Key, Value, DefaultHash<Key> > map;
+		std::unordered_map<Key, Value, DefaultHash<Key> >::iterator it;
 		for (size_t i = 0; i < n; ++i)
 		{
 			it = map.insert(std::make_pair(data[i], std::move(value))).first;
@@ -171,8 +171,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		google::dense_hash_map<Key, Value, DB::default_hash<Key> > map;
-		google::dense_hash_map<Key, Value, DB::default_hash<Key> >::iterator it;
+		google::dense_hash_map<Key, Value, DB::DefaultHash<Key> > map;
+		google::dense_hash_map<Key, Value, DB::DefaultHash<Key> >::iterator it;
 		map.set_empty_key(-1ULL);
 		for (size_t i = 0; i < n; ++i)
 		{
@@ -192,8 +192,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		google::sparse_hash_map<Key, Value, DB::default_hash<Key> > map;
-		google::sparse_hash_map<Key, Value, DB::default_hash<Key> >::iterator it;
+		google::sparse_hash_map<Key, Value, DB::DefaultHash<Key> > map;
+		google::sparse_hash_map<Key, Value, DB::DefaultHash<Key> >::iterator it;
 		for (size_t i = 0; i < n; ++i)
 		{
 			map.insert(std::make_pair(data[i], std::move(value)));

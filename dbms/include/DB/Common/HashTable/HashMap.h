@@ -8,11 +8,15 @@
 template <typename Key, typename Mapped, typename Hash>
 struct HashMapCell
 {
+	typedef Mapped TMapped;
+	typedef HashTableNoState State;
+
 	typedef std::pair<Key, Mapped> value_type;
 	value_type value;
 
-	HashMapCell(const Key & key_) : value(key_, Mapped()) {}
-	HashMapCell(const value_type & value_) : value(value_) {}
+	HashMapCell() {}
+	HashMapCell(const Key & key_, const State & state) : value(key_, Mapped()) {}
+	HashMapCell(const value_type & value_, const State & state) : value(value_) {}
 
 	value_type & getValue()				{ return value; }
 	const value_type & getValue() const { return value; }
@@ -26,10 +30,17 @@ struct HashMapCell
 	void setHash(size_t hash_value) {}
 	size_t getHash(const Hash & hash) const { return hash(value.first); }
 
-	static bool isZero(const Key & key) { return key == 0; }
-	bool isZero() const { return isZero(value.first); }
+	bool isZero(const State & state) const { return isZero(value.first, state); }
+	static bool isZero(const Key & key, const State & state) { return ZeroTraits<Key>::check(key); }
 
-	void setZero() { value.first = 0; }
+	/// Установить значение ключа в ноль.
+	void setZero() { ZeroTraits<Key>::set(value.first); }
+
+	/// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
+	static constexpr bool need_zero_value_storage = true;
+
+	/// Является ли ячейка удалённой.
+	bool isDeleted() const { return false; }
 
 	void setMapped(const value_type & value_) { value.second = value_.second; }
 
@@ -66,27 +77,38 @@ struct HashMapCell
 template
 <
 	typename Key,
+	typename Cell,
+	typename Hash = DefaultHash<Key>,
+	typename Grower = HashTableGrower,
+	typename Allocator = HashTableAllocator
+>
+class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
+{
+public:
+	typedef Key key_type;
+	typedef typename Cell::TMapped mapped_type;
+	typedef typename Cell::value_type value_type;
+
+	mapped_type & operator[](Key x)
+	{
+		typename HashMapTable::iterator it;
+		bool inserted;
+		this->emplace(x, it, inserted);
+
+		if (inserted)
+			new(&it->second) mapped_type();
+
+		return it->second;
+	}
+};
+
+
+template
+<
+	typename Key,
 	typename Mapped,
 	typename Hash = DefaultHash<Key>,
 	typename Grower = HashTableGrower,
 	typename Allocator = HashTableAllocator
 >
-class HashMap : public HashTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>
-{
-public:
-	typedef Key key_type;
-	typedef Mapped mapped_type;
-	typedef HashMapCell<Key, Mapped, Hash> value_type;
-
-	Mapped & operator[](Key x)
-	{
-		typename HashMap::iterator it;
-		bool inserted;
-		this->emplace(x, it, inserted);
-
-		if (inserted)
-			new(&it->second) Mapped();
-
-		return it->second;
-	}
-};
+using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;

@@ -615,14 +615,14 @@ public:
 
 			for (size_t i = 0; i < region_ids.size(); ++i)
 			{
-				const DB::StringRef & name_ref = dict.getRegionName(region_ids[i], language);
+				const StringRef & name_ref = dict.getRegionName(region_ids[i], language);
 				col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
 			}
 		}
 		else if (const ColumnConst<UInt32> * col_from = dynamic_cast<const ColumnConst<UInt32> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			UInt32 region_id = col_from->getData();
-			const DB::StringRef & name_ref = dict.getRegionName(region_id, language);
+			const StringRef & name_ref = dict.getRegionName(region_id, language);
 			
 			block.getByPosition(result).column = new ColumnConstString(col_from->size(), name_ref.toString());
 		}

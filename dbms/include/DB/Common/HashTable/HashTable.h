@@ -32,21 +32,45 @@
 #endif
 
 
+/** Состояние хэш-таблицы, которое влияет на свойства её ячеек.
+  * Используется в качестве параметра шаблона.
+  * Например, существует реализация мгновенно-очищаемой хэш-таблицы - ClearableHashMap.
+  *  Для неё, в каждой ячейке хранится номер версии, и в самой хэш-таблице - текущая версия.
+  *  При очистке, просто увеличивается текущая версия; все ячейки с несовпадающей версией считаются пустыми.
+  * Другой пример: для приближённого рассчёта количества уникальных посетителей, есть хэш-таблица UniquesHashSet.
+  *  В ней имеется понятие "степень". При каждом переполнении, ячейки с ключами, не делящимися на соответствующую степень двух, удаляются.
+  */
+struct HashTableNoState
+{
+	/// Сериализация, в бинарном и текстовом виде.
+	void write(DB::WriteBuffer & wb) const 		{}
+	void writeText(DB::WriteBuffer & wb) const 	{}
+
+	/// Десериализация, в бинарном и текстовом виде.
+	void read(DB::ReadBuffer & rb) 				{}
+	void readText(DB::ReadBuffer & rb) 			{}
+};
+
 
 /** Compile-time интерфейс ячейки хэш-таблицы.
   * Разные ячейки используются для реализации разных хэш-таблиц.
   * Ячейка должна содержать ключ.
-  * Также может содержать значение и произвольные дополнительные данные.
+  * Также может содержать значение и произвольные дополнительные данные
+  *  (пример: запомненное значение хэш-функции; номер версии для ClearableHashMap).
   */
 template <typename Key, typename Hash>
 struct HashTableCell
 {
+	typedef HashTableNoState State;
+
 	typedef Key value_type;
 	Key key;
 
+	HashTableCell() {}
+
 	/// Создать ячейку с заданным ключём / ключём и значением.
-	HashTableCell(const Key & key_) : key(key_) {}
-///	HashTableCell(const value_type & value_) : key(value_) {}
+	HashTableCell(const Key & key_, const State & state) : key(key_) {}
+///	HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
 	/// Получить то, что будет value_type контейнера.
 	value_type & getValue()				{ return key; }
@@ -68,13 +92,20 @@ struct HashTableCell
 	/// Если запоминание значения хэш-функции не предусмотрено, то просто вычислить хэш.
 	size_t getHash(const Hash & hash) const { return hash(key); }
 
-	/// Является ли ключ нулевым. Ячейка для нулевого ключа хранится отдельно, не в основном буфере.
+	/// Является ли ключ нулевым. В основном буфере, ячейки с нулевым ключём, считаются пустыми.
+	/// Если нулевые ключи могут быть вставлены в таблицу, то ячейка для нулевого ключа хранится отдельно, не в основном буфере.
 	/// Нулевые ключи должны быть такими, что занулённый кусок памяти представляет собой нулевой ключ.
-	static bool isZero(const Key & key) { return key == 0; }
-	bool isZero() const { return isZero(key); }
+	bool isZero(const State & state) const { return isZero(key, state); }
+	static bool isZero(const Key & key, const State & state) { return ZeroTraits<Key>::check(key); }
 
 	/// Установить значение ключа в ноль.
-	void setZero() { key = 0; }
+	void setZero() { ZeroTraits<Key>::set(key); }
+
+	/// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
+	static constexpr bool need_zero_value_storage = true;
+
+	/// Является ли ячейка удалённой.
+	bool isDeleted() const { return false; }
 
 	/// Установить отображаемое значение, если есть (для HashMap), в соответствующиее из value.
 	void setMapped(const value_type & value) {}
@@ -84,8 +115,8 @@ struct HashTableCell
 	void writeText(DB::WriteBuffer & wb) const 	{ DB::writeDoubleQuoted(key, wb); }
 
 	/// Десериализация, в бинарном и текстовом виде.
-	void read(DB::ReadBuffer & rb) 				{ DB::readBinary(key, rb); }
-	void readText(DB::ReadBuffer & rb) 			{ DB::writeDoubleQuoted(key, rb); }
+	void read(DB::ReadBuffer & rb)		{ DB::readBinary(key, rb); }
+	void readText(DB::ReadBuffer & rb)	{ DB::writeDoubleQuoted(key, rb); }
 };
 
 
@@ -133,6 +164,38 @@ struct HashTableGrower
 };
 
 
+/** Если нужно хранить нулевой ключ отдельно - место для его хранения. */
+template <bool need_zero_value_storage, typename Cell>
+struct ZeroValueStorage;
+
+template <typename Cell>
+struct ZeroValueStorage<true, Cell>
+{
+private:
+	bool has_zero = false;
+	char zero_value_storage[sizeof(Cell)];	/// Кусок памяти для элемента с ключём 0.
+
+public:
+	bool hasZero() const { return has_zero; }
+	void setHasZero() { has_zero = true; }
+	void clearHasZero() { has_zero = false; }
+
+	Cell * zeroValue() 			 { return reinterpret_cast<Cell*>(zero_value_storage); }
+	const Cell * zeroValue() const	 { return reinterpret_cast<const Cell*>(zero_value_storage); }
+};
+
+template <typename Cell>
+struct ZeroValueStorage<false, Cell>
+{
+	bool hasZero() const { return false; }
+	void setHasZero() { throw DB::Exception("HashTable: logical error", DB::ErrorCodes::LOGICAL_ERROR); }
+	void clearHasZero() {}
+
+	Cell * zeroValue() 			 { return nullptr; }
+	const Cell * zeroValue() const	 { return nullptr; }
+};
+
+
 template
 <
 	typename Key,
@@ -141,28 +204,27 @@ template
 	typename Grower,
 	typename Allocator
 >
-class HashTable : private boost::noncopyable, private Hash, private Allocator		/// empty base optimization
+class HashTable :
+	private boost::noncopyable,
+	protected Hash,
+	protected Allocator,
+	protected Cell::State,
+	protected ZeroValueStorage<Cell::need_zero_value_storage, Cell> 	/// empty base optimization
 {
-private:
+protected:
 	friend class const_iterator;
 	friend class iterator;
 
 	typedef size_t HashValue;
 	typedef HashTable<Key, Cell, Hash, Grower, Allocator> Self;
 
-	size_t m_size;			/// Количество элементов
+	size_t m_size = 0;		/// Количество элементов
 	Cell * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
 	Grower grower;
-	bool has_zero;			/// Хэш-таблица содержит элемент со значением ключа = 0.
-
-	char zero_value_storage[sizeof(Cell)];	/// Кусок памяти для элемента с ключём 0.
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 	mutable size_t collisions;
 #endif
-
-	Cell * zero_value() 			 { return reinterpret_cast<Cell*>(zero_value_storage); }
-	const Cell * zero_value() const	 { return reinterpret_cast<const Cell*>(zero_value_storage); }
 
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
 
@@ -170,9 +232,9 @@ private:
 	size_t bufSizeBytes() const			{ return grower.bufSize() * sizeof(Cell); }
 
 	/// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
-	size_t findCell(const Cell & x, size_t place_value)
+	size_t findCell(const Key & x, size_t place_value) const
 	{
-		while (!buf[place_value].isZero() && !buf[place_value].keyEquals(x))
+		while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x))
 		{
 			place_value = grower.next(place_value);
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -182,7 +244,6 @@ private:
 
 		return place_value;
 	}
-
 
 	void alloc()
 	{
@@ -221,9 +282,21 @@ private:
 		  * Элемент может остаться на месте, или переместиться в новое место "справа",
 		  *  или переместиться левее по цепочке разрешения коллизий, из-за того, что элементы левее него были перемещены в новое место "справа".
 		  */
-		for (size_t i = 0; i < old_size; ++i)
-			if (!buf[i].isZero())
+		size_t i = 0;
+		for (; i < old_size; ++i)
+			if (!buf[i].isZero(*this) && !buf[i].isDeleted())
 				reinsert(buf[i]);
+
+		/** Также имеется особый случай:
+		  *    если элемент должен был быть в конце старого буфера,                    [        x]
+		  *    но находится в начале из-за цепочки разрешения коллизий,                [o       x]
+		  *    то после ресайза, он сначала снова окажется не на своём месте,          [        xo        ]
+		  *    и для того, чтобы перенести его куда надо,
+		  *    надо будет после переноса всех элементов из старой половинки            [         o   x    ]
+		  *    обработать ещё хвостик из цепочки разрешения коллизий сразу после неё   [        o    x    ]
+		  */
+		for (; !buf[i].isZero(*this) && !buf[i].isDeleted(); ++i)
+			reinsert(buf[i]);
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 		watch.stop();
@@ -246,10 +319,10 @@ private:
 			return;
 
 		/// Вычисление нового места, с учётом цепочки разрешения коллизий.
-		place_value = findCell(x, place_value);
+		place_value = findCell(Cell::getKey(x.getValue()), place_value);
 
 		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
-		if (!buf[place_value].isZero() && x.keyEquals(buf[place_value]))
+		if (!buf[place_value].isZero(*this) && x.keyEquals(buf[place_value]))
 			return;
 
 		/// Копирование на новое место и зануление старого.
@@ -265,11 +338,10 @@ public:
 	typedef typename Cell::value_type value_type;
 
 
-	HashTable() :
-		m_size(0),
-		has_zero(false)
+	HashTable()
 	{
-		zero_value()->setZero();
+		if (Cell::need_zero_value_storage)
+			this->zeroValue()->setZero();
 		alloc();
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -304,12 +376,12 @@ public:
 
 		iterator & operator++()
 		{
-			if (unlikely(ptr->isZero()))
+			if (unlikely(ptr->isZero(*container)))
 				ptr = container->buf;
 			else
 				++ptr;
 
-			while (ptr < container->buf + container->grower.bufSize() && ptr->isZero())
+			while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
 				++ptr;
 
 			return *this;
@@ -338,12 +410,12 @@ public:
 
 		const_iterator & operator++()
 		{
-			if (unlikely(ptr->isZero()))
+			if (unlikely(ptr->isZero(*container)))
 				ptr = container->buf;
 			else
 				++ptr;
 
-			while (ptr < container->buf + container->grower.bufSize() && ptr->isZero())
+			while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
 				++ptr;
 
 			return *this;
@@ -356,11 +428,11 @@ public:
 
 	const_iterator begin() const
 	{
-		if (has_zero)
-			return const_iterator(this, zero_value());
+		if (this->hasZero())
+			return const_iterator(this, this->zeroValue());
 
 		const Cell * ptr = buf;
-		while (ptr < buf + grower.bufSize() && ptr->isZero())
+		while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
 			++ptr;
 
 		return const_iterator(this, ptr);
@@ -368,11 +440,11 @@ public:
 
 	iterator begin()
 	{
-		if (has_zero)
-			return iterator(this, zero_value());
+		if (this->hasZero())
+			return iterator(this, this->zeroValue());
 
 		Cell * ptr = buf;
-		while (ptr < buf + grower.bufSize() && ptr->isZero())
+		while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
 			++ptr;
 
 		return iterator(this, ptr);
@@ -382,16 +454,16 @@ public:
 	iterator end() 					{ return iterator(this, buf + grower.bufSize()); }
 
 
-private:
+protected:
 	/// Если ключ нулевой - вставить его в специальное место и вернуть true.
 	bool emplaceIfZero(Key x, iterator & it, bool & inserted)
 	{
-		if (Cell::isZero(x))
+		if (Cell::isZero(x, *this))
 		{
-			if (!has_zero)
+			if (!this->hasZero())
 			{
 				++m_size;
-				has_zero = true;
+				this->setHasZero();
 				inserted = true;
 			}
 			else
@@ -413,13 +485,13 @@ private:
 
 		it = iterator(this, &buf[place_value]);
 
-		if (!buf[place_value].isZero() && buf[place_value].keyEquals(x))
+		if (!buf[place_value].isZero(*this) && buf[place_value].keyEquals(x))
 		{
 			inserted = false;
 			return;
 		}
 
-		new(&buf[place_value]) Cell(x);
+		new(&buf[place_value]) Cell(x, *this);
 		buf[place_value].setHash(hash_value);
 		inserted = true;
 		++m_size;
@@ -480,51 +552,53 @@ public:
 
 	iterator find(Key x)
 	{
-		if (Cell::isZero(x))
-			return has_zero ? begin() : end();
+		if (Cell::isZero(x, *this))
+			return this->hasZero() ? begin() : end();
 
 		size_t place_value = findCell(x, grower.place(hash(x)));
 
-		return !buf[place_value].isZero() ? iterator(this, &buf[place_value]) : end();
+		return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
 	}
 
 
 	const_iterator find(Key x) const
 	{
-		if (Cell::isZero(x))
-			return has_zero ? begin() : end();
+		if (Cell::isZero(x, *this))
+			return this->hasZero() ? begin() : end();
 
 		size_t place_value = findCell(x, grower.place(hash(x)));
 
-		return !buf[place_value].isZero() ? const_iterator(this, &buf[place_value]) : end();
+		return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
 	}
 
 
 	void write(DB::WriteBuffer & wb) const
 	{
+		Cell::State::write(wb);
 		DB::writeVarUInt(m_size, wb);
 
-		if (has_zero)
-			zero_value()->write(wb);
+		if (this->hasZero())
+			this->zeroValue()->write(wb);
 
 		for (size_t i = 0; i < grower.bufSize(); ++i)
-			if (!buf[i].isZero())
+			if (!buf[i].isZero(*this))
 				buf[i].write(wb);
 	}
 
 	void writeText(DB::WriteBuffer & wb) const
 	{
+		Cell::State::writeText(wb);
 		DB::writeText(m_size, wb);
 
-		if (has_zero)
+		if (this->hasZero())
 		{
 			DB::writeChar(',', wb);
-			zero_value()->writeText(wb);
+			this->zeroValue()->writeText(wb);
 		}
 
 		for (size_t i = 0; i < grower.bufSize(); ++i)
 		{
-			if (!buf[i].isZero())
+			if (!buf[i].isZero(*this))
 			{
 				DB::writeChar(',', wb);
 				buf[i].writeText(wb);
@@ -534,7 +608,9 @@ public:
 
 	void read(DB::ReadBuffer & rb)
 	{
-		has_zero = false;
+		Cell::State::read(rb);
+
+		this->clearHasZero();
 		m_size = 0;
 
 		size_t new_size = 0;
@@ -554,7 +630,9 @@ public:
 
 	void readText(DB::ReadBuffer & rb)
 	{
-		has_zero = false;
+		Cell::State::readText(rb);
+
+		this->clearHasZero();
 		m_size = 0;
 
 		size_t new_size = 0;

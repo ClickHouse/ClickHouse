@@ -14,7 +14,7 @@
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
-#include <DB/Interpreters/HashMap.h>
+#include <DB/Common/HashTable/HashMap.h>
 
 
 int main(int argc, char ** argv)
@@ -47,8 +47,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		DB::HashMap<Key, Value> map;
-		DB::HashMap<Key, Value>::iterator it;
+		HashMap<Key, Value> map;
+		HashMap<Key, Value>::iterator it;
 		bool inserted;
 
 		for (size_t i = 0; i < n; ++i)
@@ -61,7 +61,7 @@ int main(int argc, char ** argv)
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "DB::HashMap. Size: " << map.size()
+			<< "HashMap. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< ", collisions: " << map.getCollisions()
@@ -71,7 +71,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		std::unordered_map<Key, Value, DB::default_hash<Key> > map;
+		std::unordered_map<Key, Value, DB::DefaultHash<Key> > map;
 		for (size_t i = 0; i < n; ++i)
 			++map[data[i]];
 		
@@ -86,7 +86,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		google::dense_hash_map<Key, Value, DB::default_hash<Key> > map;
+		google::dense_hash_map<Key, Value, DB::DefaultHash<Key> > map;
 		map.set_empty_key(-1ULL);
 		for (size_t i = 0; i < n; ++i)
   			++map[data[i]];
@@ -102,7 +102,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		google::sparse_hash_map<Key, Value, DB::default_hash<Key> > map;
+		google::sparse_hash_map<Key, Value, DB::DefaultHash<Key> > map;
 		for (size_t i = 0; i < n; ++i)
 			++map[data[i]];
 
