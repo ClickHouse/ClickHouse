@@ -26,15 +26,17 @@ struct ClearableHashMapState
 
 
 template <typename Key, typename Mapped, typename Hash>
-struct ClearableHashMapCell : public HashMapCell
+struct ClearableHashMapCell : public HashMapCell<Key, Mapped, Hash, ClearableHashMapState>
 {
 	typedef ClearableHashMapState State;
+	typedef HashMapCell<Key, Mapped, Hash, ClearableHashMapState> Base;
+	typedef typename Base::value_type value_type;
 
 	UInt32 version;
 
 	ClearableHashMapCell() {}
-	ClearableHashMapCell(const Key & key_, const State & state) : value(key_, Mapped()), version(state.version) {}
-	ClearableHashMapCell(const value_type & value_, const State & state) : value(value_), version(state.version) {}
+	ClearableHashMapCell(const Key & key_, const State & state) : Base(key_, state), version(state.version) {}
+	ClearableHashMapCell(const value_type & value_, const State & state) : Base(value_, state), version(state.version) {}
 
 	bool isZero(const State & state) const { return version != state.version; }
 	static bool isZero(const Key & key, const State & state) { return false; }

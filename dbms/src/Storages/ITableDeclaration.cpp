@@ -94,7 +94,7 @@ static std::string listOfColumns(const NamesAndTypesList & available_columns)
 }
 
 
-typedef google::dense_hash_map<StringRef, const IDataType *> NamesAndTypesMap;
+typedef google::dense_hash_map<StringRef, const IDataType *, std::hash<StringRef> > NamesAndTypesMap;
 
 
 static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_columns)
@@ -120,7 +120,7 @@ void ITableDeclaration::check(const Names & column_names) const
 
 	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
 
-	typedef google::dense_hash_set<StringRef> UniqueStrings;
+	typedef google::dense_hash_set<StringRef, std::hash<StringRef> > UniqueStrings;
 	UniqueStrings unique_names;
 	unique_names.set_empty_key(StringRef());
 

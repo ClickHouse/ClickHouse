@@ -530,7 +530,7 @@ struct GrowthTraits : public DB::default_growth_traits
 
 int main(int argc, char ** argv)
 {
-	typedef HashMap<
+	typedef DB::HashMap<
 		StringRef,
 		UInt64,
 		TrivialHash,

@@ -58,10 +58,10 @@ struct HashTableNoState
   * Также может содержать значение и произвольные дополнительные данные
   *  (пример: запомненное значение хэш-функции; номер версии для ClearableHashMap).
   */
-template <typename Key, typename Hash>
+template <typename Key, typename Hash, typename TState = HashTableNoState>
 struct HashTableCell
 {
-	typedef HashTableNoState State;
+	typedef TState State;
 
 	typedef Key value_type;
 	Key key;

@@ -5,11 +5,11 @@
 #include <DB/Common/HashTable/HashTableAllocator.h>
 
 
-template <typename Key, typename Mapped, typename Hash>
+template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCell
 {
-	typedef Mapped TMapped;
-	typedef HashTableNoState State;
+	typedef TMapped Mapped;
+	typedef TState State;
 
 	typedef std::pair<Key, Mapped> value_type;
 	value_type value;
@@ -86,7 +86,7 @@ class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
 public:
 	typedef Key key_type;
-	typedef typename Cell::TMapped mapped_type;
+	typedef typename Cell::Mapped mapped_type;
 	typedef typename Cell::value_type value_type;
 
 	mapped_type & operator[](Key x)
