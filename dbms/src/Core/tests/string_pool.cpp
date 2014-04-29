@@ -29,7 +29,7 @@ int main(int argc, char ** argv)
 	typedef std::unordered_map<StringRef, int, StringRefHash> RefsSet;
 	typedef google::dense_hash_map<std::string, int> DenseSet;
 	typedef google::dense_hash_map<StringRef, int, StringRefHash> RefsDenseSet;
-	typedef HashMap<StringRef, int> RefsHashMap;
+	typedef HashMap<StringRef, int, StringRefHash> RefsHashMap;
 	Vec vec;
 
 	vec.reserve(n);
