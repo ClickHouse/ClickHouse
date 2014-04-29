@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include <Poco/Types.h>
-#include <Poco/SharedPtr.h>
 #include <Yandex/strong_typedef.h>
 
 

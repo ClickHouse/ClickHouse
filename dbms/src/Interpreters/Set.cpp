@@ -24,9 +24,12 @@ namespace DB
 size_t Set::getTotalRowCount() const
 {
 	size_t rows = 0;
-	rows += key64.size();
-	rows += key_string.size();
-	rows += hashed.size();
+	if (key64)
+		rows += key64->size();
+	if (key_string)
+		rows += key_string->size();
+	if (hashed)
+		rows += hashed->size();
 	return rows;
 }
 
@@ -34,9 +37,12 @@ size_t Set::getTotalRowCount() const
 size_t Set::getTotalByteCount() const
 {
 	size_t bytes = 0;
-	bytes += key64.getBufferSizeInBytes();
-	bytes += key_string.getBufferSizeInBytes();
-	bytes += hashed.getBufferSizeInBytes();
+	if (key64)
+		bytes += key64->getBufferSizeInBytes();
+	if (key_string)
+		bytes += key_string->getBufferSizeInBytes();
+	if (hashed)
+		bytes += hashed->getBufferSizeInBytes();
 	bytes += string_pool.size();
 	return bytes;
 }
@@ -105,11 +111,11 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 
 	/// Какую структуру данных для множества использовать?
 	keys_fit_128_bits = false;
-	type = chooseMethod(key_columns, keys_fit_128_bits, key_sizes);
+	init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
 
 	if (type == KEY_64)
 	{
-		SetUInt64 & res = key64;
+		SetUInt64 & res = *key64;
 		const IColumn & column = *key_columns[0];
 
 		/// Для всех строчек
@@ -125,7 +131,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 	}
 	else if (type == KEY_STRING)
 	{
-		SetString & res = key_string;
+		SetString & res = *key_string;
 		const IColumn & column = *key_columns[0];
 
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
@@ -177,7 +183,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 	}
 	else if (type == HASHED)
 	{
-		SetHashed & res = hashed;
+		SetHashed & res = *hashed;
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
@@ -329,7 +335,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 
 	if (type == KEY_64)
 	{
-		const SetUInt64 & set = key64;
+		const SetUInt64 & set = *key64;
 		const IColumn & column = *key_columns[0];
 		
 		/// Для всех строчек
@@ -342,7 +348,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 	}
 	else if (type == KEY_STRING)
 	{
-		const SetString & set = key_string;
+		const SetString & set = *key_string;
 		const IColumn & column = *key_columns[0];
 		
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
@@ -384,7 +390,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 	}
 	else if (type == HASHED)
 	{
-		const SetHashed & set = hashed;
+		const SetHashed & set = *hashed;
 		
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
@@ -402,7 +408,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	
 	if (type == KEY_64)
 	{
-		const SetUInt64 & set = key64;
+		const SetUInt64 & set = *key64;
 
 		size_t prev_offset = 0;
 		/// Для всех строчек
@@ -424,7 +430,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	}
 	else if (type == KEY_STRING)
 	{
-		const SetString & set = key_string;
+		const SetString & set = *key_string;
 		
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&nested_column))
 		{
@@ -479,7 +485,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	}
 	else if (type == HASHED)
 	{
-		const SetHashed & set = hashed;
+		const SetHashed & set = *hashed;
 		ConstColumnPlainPtrs nested_columns(1, &nested_column);
 		
 		size_t prev_offset = 0;
@@ -521,13 +527,13 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 	{
 		if (type == KEY_64)
 		{
-			const SetUInt64 & set = key64;
+			const SetUInt64 & set = *key64;
 			UInt64 key = get<UInt64>(values[j]);
 			res |= negative ^ (set.end() != set.find(key));
 		}
 		else if (type == KEY_STRING)
 		{
-			const SetString & set = key_string;
+			const SetString & set = *key_string;
 			res |= negative ^ (set.end() != set.find(StringRef(get<String>(values[j]))));
 		}
 		else

@@ -14,7 +14,7 @@
 
 #include <DB/Parsers/IAST.h>
 
-#include <DB/Interpreters/HashSet.h>
+#include <DB/Common/HashTable/HashSet.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Limits.h>
 #include <DB/Columns/ColumnConst.h>
@@ -33,7 +33,7 @@ class Set
 {
 public:
 	Set(const Limits & limits)
-		: type(EMPTY), log(&Logger::get("Set")),
+		: log(&Logger::get("Set")),
 		max_rows(limits.max_rows_in_set),
 		max_bytes(limits.max_bytes_in_set),
 		overflow_mode(limits.set_overflow_mode)
@@ -94,16 +94,16 @@ private:
 	  *  одного или нескольких столбцов значений множеству.
 	  */
 	typedef HashSet<UInt64> SetUInt64;
-	typedef HashSet<StringRef, StringRefHash, StringRefZeroTraits> SetString;
-	typedef HashSet<UInt128, UInt128Hash, UInt128ZeroTraits> SetHashed;
+	typedef HashSet<StringRef> SetString;
+	typedef HashSet<UInt128, UInt128Hash> SetHashed;
 
 	BlockInputStreamPtr source;
 
 	/// Специализация для случая, когда есть один числовой ключ.
-	SetUInt64 key64;
+	std::unique_ptr<SetUInt64> key64;
 
 	/// Специализация для случая, когда есть один строковый ключ.
-	SetString key_string;
+	std::unique_ptr<SetString> key_string;
 	Arena string_pool;
 
 	/** Сравнивает 128 битные хэши.
@@ -111,7 +111,7 @@ private:
 	  * Иначе - вычисляет SipHash от набора из всех ключей.
 	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 	  */
-	SetHashed hashed;
+	std::unique_ptr<SetHashed> hashed;
 
 	enum Type
 	{
@@ -120,7 +120,7 @@ private:
 		KEY_STRING	= 2,
 		HASHED		= 3,
 	};
-	Type type;
+	Type type = EMPTY;
 	
 	bool keys_fit_128_bits;
 	Sizes key_sizes;
@@ -138,6 +138,22 @@ private:
 	OverflowMode overflow_mode;
 	
 	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+
+	void init(Type type_)
+	{
+		type = type_;
+
+		switch (type)
+		{
+			case EMPTY:			break;
+			case KEY_64:		key64		.reset(new SetUInt64); 	break;
+			case KEY_STRING:	key_string	.reset(new SetString); 	break;
+			case HASHED:		hashed		.reset(new SetHashed);	break;
+
+			default:
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		}
+	}
 
 	/// Если в левой части IN стоит массив. Проверяем, что хоть один элемент массива лежит в множестве.
 	void executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;

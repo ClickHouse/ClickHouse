@@ -14,7 +14,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Interpreters/AggregationCommon.h>
-#include <DB/Interpreters/HashSet.h>
+#include <DB/Common/HashTable/HashSet.h>
 
 #include <DB/Columns/ColumnString.h>
 
@@ -74,17 +74,17 @@ struct AggregateFunctionUniqExactData
 {
 	typedef T Key;
 
-	struct GrowthTraits : public default_growth_traits
+	/// При создании, хэш-таблица должна быть небольшой.
+	struct Grower : public HashTableGrower
 	{
-		/// При создании, хэш-таблица должна быть небольшой.
-		static const int INITIAL_SIZE_DEGREE = 64 / sizeof(Key);
+		static const size_t initial_size_degree = 64 / sizeof(Key);
+		Grower() { size_degree = initial_size_degree; }
 	};
 
 	typedef HashSet<
 		Key,
-		default_hash<Key>,
-		default_zero_traits<Key>,
-		GrowthTraits,
+		DefaultHash<Key>,
+		Grower,
 		HashTableAllocatorWithStackMemory<64>
 	> Set;
 
@@ -99,17 +99,17 @@ struct AggregateFunctionUniqExactData<String>
 {
 	typedef UInt128 Key;
 
-	struct GrowthTraits : public default_growth_traits
+	/// При создании, хэш-таблица должна быть небольшой.
+	struct Grower : public HashTableGrower
 	{
-		/// При создании, хэш-таблица должна быть небольшой.
-		static const int INITIAL_SIZE_DEGREE = 64 / sizeof(Key);
+		static const size_t initial_size_degree = 64 / sizeof(Key);
+		Grower() { size_degree = initial_size_degree; }
 	};
 
 	typedef HashSet<
 		Key,
 		UInt128TrivialHash,
-		UInt128ZeroTraits,
-		GrowthTraits,
+		Grower,
 		HashTableAllocatorWithStackMemory<64>
 	> Set;
 

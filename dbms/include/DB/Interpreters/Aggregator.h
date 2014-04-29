@@ -43,9 +43,9 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
   */
 typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
-typedef HashMap<StringRef, AggregateDataPtr, StringRefHash, StringRefZeroTraits> AggregatedDataWithStringKey;
-typedef HashMap<UInt128, AggregateDataPtr, UInt128Hash, UInt128ZeroTraits> AggregatedDataWithKeys128;
-typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash, UInt128ZeroTraits> AggregatedDataHashed;
+typedef HashMap<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
+typedef HashMap<UInt128, AggregateDataPtr, UInt128Hash> AggregatedDataWithKeys128;
+typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
 
 class Aggregator;
 
@@ -79,23 +79,23 @@ struct AggregatedDataVariants : private boost::noncopyable
 	AggregatedDataWithoutKey without_key = nullptr;
 
 	/// Специализация для случая, когда есть один числовой ключ.
-	/// auto_ptr - для ленивой инициализации (так как иначе HashMap в конструкторе выделяет и зануляет слишком много памяти).
-	std::auto_ptr<AggregatedDataWithUInt64Key> key64;
+	/// unique_ptr - для ленивой инициализации (так как иначе HashMap в конструкторе выделяет и зануляет слишком много памяти).
+	std::unique_ptr<AggregatedDataWithUInt64Key> key64;
 
 	/// Специализация для случая, когда есть один строковый ключ.
-	std::auto_ptr<AggregatedDataWithStringKey> key_string;
+	std::unique_ptr<AggregatedDataWithStringKey> key_string;
 	Arena string_pool;
 
 	size_t keys_size;	/// Количество ключей
 	Sizes key_sizes;	/// Размеры ключей, если ключи фиксированной длины
 
 	/// Специализация для случая, когда ключи фискированной длины помещаются в 128 бит.
-	std::auto_ptr<AggregatedDataWithKeys128> keys128;
+	std::unique_ptr<AggregatedDataWithKeys128> keys128;
 
 	/** Агрегирует по 128 битному хэшу от ключа.
 	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 	  */ 
-	std::auto_ptr<AggregatedDataHashed> hashed;
+	std::unique_ptr<AggregatedDataHashed> hashed;
 	Arena keys_pool;
 	
 	enum Type

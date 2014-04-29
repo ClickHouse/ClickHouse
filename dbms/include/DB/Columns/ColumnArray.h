@@ -79,7 +79,7 @@ public:
 
 	StringRef getDataAt(size_t n) const
 	{
-		/** Работает для массивов чисел.
+		/** Работает для массивов значений фиксированной длины.
 		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам.
 		  */
 		StringRef begin = data->getDataAt(offsetAt(n));
@@ -89,7 +89,20 @@ public:
 
 	void insertData(const char * pos, size_t length)
 	{
-		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		/** Аналогично - только для массивов значений фиксированной длины.
+		  */
+		IColumn * data_ = data.get();
+		if (!data_->isFixed())
+			throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+
+		size_t field_size = data_->sizeOfField();
+
+		const char * end = pos + length;
+		for (; pos + field_size <= end; pos += field_size)
+			data_->insertData(pos, field_size);
+
+		if (pos != end)
+			throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const

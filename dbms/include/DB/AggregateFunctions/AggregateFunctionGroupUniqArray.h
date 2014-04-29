@@ -8,7 +8,7 @@
 
 #include <DB/Columns/ColumnArray.h>
 
-#include <DB/Interpreters/HashSet.h>
+#include <DB/Common/HashTable/HashSet.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionGroupArray.h>
 
@@ -22,18 +22,18 @@ namespace DB
 template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
-	struct GrowthTraits : public default_growth_traits
+	/// При создании, хэш-таблица должна быть небольшой.
+	struct Grower : public HashTableGrower
 	{
-		/// При создании, хэш-таблица должна быть небольшой.
-		static const int INITIAL_SIZE_DEGREE = 4;
+		static const size_t initial_size_degree = 16;
+		Grower() { size_degree = initial_size_degree; }
 	};
 
 	typedef HashSet<
 		T,
-		default_hash<T>,
-		default_zero_traits<T>,
-		GrowthTraits,
-		HashTableAllocatorWithStackMemory<sizeof(T) * (1 <<  GrowthTraits::INITIAL_SIZE_DEGREE)>
+		DefaultHash<T>,
+		Grower,
+		HashTableAllocatorWithStackMemory<sizeof(T) * (1 << Grower::initial_size_degree)>
 	> Set;
 
 	Set value;
