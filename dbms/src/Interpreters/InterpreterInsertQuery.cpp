@@ -68,11 +68,13 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	auto table_lock = table->lockStructure(true);
 
 	BlockInputStreamPtr in;
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList (table->getSampleBlock().getColumnsList());
-	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
-	table->write(query_ptr);
-	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
 
+	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
+	/// TODO Плохо - исправить.
+	table->write(query_ptr);
+
+	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
@@ -98,7 +100,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		ConcatReadBuffer istr(buffers);
 		Block sample = table->getSampleBlock();
 
-		in = context.getFormatFactory().getInput(format, istr, sample, context.getSettings().max_block_size, context.getDataTypeFactory());
+		in = context.getFormatFactory().getInput(format, istr, sample, context.getSettings().max_insert_block_size, context.getDataTypeFactory());
 		copyData(*in, *out);
 	}
 	else
@@ -122,7 +124,9 @@ BlockIO InterpreterInsertQuery::execute()
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
 
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
+	/// TODO Плохо - исправить.
 	table->write(query_ptr);
+
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 

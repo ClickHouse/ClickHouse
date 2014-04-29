@@ -18,7 +18,7 @@ public:
 	BlockInputStreamFromRowInputStream(
 		RowInputStreamPtr row_input_,
 		const Block & sample_,
-		size_t max_block_size_ = DEFAULT_BLOCK_SIZE);
+		size_t max_block_size_ = DEFAULT_INSERT_BLOCK_SIZE);	/// Обычно дамп читается в целях вставки в таблицу.
 
 	void readPrefix() { row_input->readPrefix(); }
 	void readSuffix() { row_input->readSuffix(); }

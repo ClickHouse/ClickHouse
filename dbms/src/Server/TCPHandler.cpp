@@ -598,7 +598,7 @@ void TCPHandler::initBlockInput()
 			"Native",
 			*state.maybe_compressed_in,
 			state.io.out_sample,
-			query_context.getSettingsRef().max_block_size,
+			query_context.getSettingsRef().max_insert_block_size,	/// Реально не используется в формате Native.
 			query_context.getDataTypeFactory());
 	}
 }

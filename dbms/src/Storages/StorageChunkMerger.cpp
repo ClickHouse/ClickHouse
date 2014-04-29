@@ -11,7 +11,6 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
-#include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>

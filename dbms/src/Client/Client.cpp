@@ -221,7 +221,7 @@ private:
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
 
 		insert_format = "Values";
-		insert_format_max_block_size = config().getInt("insert_format_max_block_size", format_max_block_size);
+		insert_format_max_block_size = config().getInt("insert_format_max_block_size", DEFAULT_INSERT_BLOCK_SIZE);
 
 		connect();
 

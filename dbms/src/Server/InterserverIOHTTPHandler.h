@@ -11,7 +11,7 @@ class InterserverIOHTTPHandler : public Poco::Net::HTTPRequestHandler
 public:
 	InterserverIOHTTPHandler(Server & server_)
 		: server(server_)
-		, log(&Logger::get("InterserverIOHTTPHandler "))
+		, log(&Logger::get("InterserverIOHTTPHandler"))
 	{
 	}
 
