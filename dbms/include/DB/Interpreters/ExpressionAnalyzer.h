@@ -21,24 +21,24 @@ namespace DB
 class ExpressionAnalyzer : private boost::noncopyable
 {
 public:
-	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, size_t subquery_depth_ = 0)
+	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, size_t subquery_depth_ = 0, bool do_global_ = false)
 		: ast(ast_), context(context_), settings(context.getSettings()),
-		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(getTable())
+		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(getTable()), do_global(do_global_)
 	{
 		init();
 	}
 
-	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, StoragePtr storage_, size_t subquery_depth_ = 0)
+	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, StoragePtr storage_, size_t subquery_depth_ = 0, bool do_global_ = false)
 		: ast(ast_), context(context_), settings(context.getSettings()),
-		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(storage_ ? storage_ : getTable())
+		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(storage_ ? storage_ : getTable()), do_global(do_global_)
 	{
 		init();
 	}
 
 	/// columns - список известных столбцов (которых можно достать из таблицы).
-	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, const NamesAndTypesList & columns_, size_t subquery_depth_ = 0)
+	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, const NamesAndTypesList & columns_, size_t subquery_depth_ = 0, bool do_global_ = false)
 		: ast(ast_), context(context_), settings(context.getSettings()),
-		subquery_depth(subquery_depth_), columns(columns_), storage(getTable())
+		subquery_depth(subquery_depth_), columns(columns_), storage(getTable()), do_global(do_global_)
 	{
 		init();
 	}
@@ -101,6 +101,7 @@ public:
 
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
+	std::map<String, BlockInputStreamPtr> external_data;
 
 	/// Создаем какие сможем Set из секции In для использования индекса по ним
 	void makeSetsForIndex();
@@ -131,6 +132,7 @@ private:
 	AggregateDescriptions aggregate_descriptions;
 
 	std::map<std::string, SetPtr> sets_with_subqueries;
+	std::map<std::string, SetPtr> global_sets_with_subqueries;
 	typedef std::map<String, ASTPtr> Aliases;
 	Aliases aliases;
 	
@@ -144,6 +146,9 @@ private:
 	/// Для секции ARRAY JOIN отображение из алиаса в полное столбца
 	/// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b"->"array(1,2)".
 	NameToNameMap array_join_alias_to_name;
+
+	/// Вычислять ли результат глобальных селектов при анализировании запроса.
+	bool do_global;
 	
 	/** Для getActionsImpl.
 	  * Стек из ExpressionActions, соответствующих вложенным лямбда-выражениям.
@@ -270,8 +275,7 @@ private:
 
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
-	/// Выполнить подзапрос в секции GLOBAL IN и запомнить результат во временную таблицу типа memory
-	/// Все новые временные таблицы хранятся в переменной external_tables
+	/// Запустить подзапрос в секции GLOBAL IN, создать временную таблицу типа memory и запомнить эту пару в переменной external_tables
 	void addExternalStorage(ASTFunction * node, size_t & name_id);
 
 	void getArrayJoinedColumns();
