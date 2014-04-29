@@ -221,11 +221,36 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& 
 		return false;
 
 	ws.ignore(pos, end);
+	Pos contents_begin = pos;
 	contents.parse(pos, end, expr_list_args, expected);
+	Pos contents_end = pos;
 	ws.ignore(pos, end);
 
 	if (!close.ignore(pos, end, expected))
 		return false;
+
+	/** Проверка на распространённый случай ошибки - часто из-за сложности квотирования аргументов командной строки,
+	  *  в запрос попадает выражение вида toDate(2014-01-01) вместо toDate('2014-01-01').
+	  * Если не сообщить, что первый вариант - ошибка, то аргумент будет проинтерпретирован как 2014 - 01 - 01 - некоторое число,
+	  *  и запрос тихо вернёт неожиданный результат.
+	  */
+	if (dynamic_cast<const ASTIdentifier &>(*identifier).name == "toDate"
+		&& contents_end - contents_begin == strlen("2014-01-01")
+		&& contents_begin[0] >= '2' && contents_begin[0] <= '3'
+		&& contents_begin[1] >= '0' && contents_begin[1] <= '9'
+		&& contents_begin[2] >= '0' && contents_begin[2] <= '9'
+		&& contents_begin[3] >= '0' && contents_begin[3] <= '9'
+		&& contents_begin[4] == '-'
+		&& contents_begin[5] >= '0' && contents_begin[5] <= '9'
+		&& contents_begin[6] >= '0' && contents_begin[6] <= '9'
+		&& contents_begin[7] == '-'
+		&& contents_begin[8] >= '0' && contents_begin[8] <= '9'
+		&& contents_begin[9] >= '0' && contents_begin[9] <= '9')
+	{
+		std::string contents(contents_begin, contents_end - contents_begin);
+		throw Exception("Argument of function toDate is unquoted: toDate(" + contents + "), must be: toDate('" + contents + "')"
+			, ErrorCodes::SYNTAX_ERROR);
+	}
 
 	/// У параметрической агрегатной функции - два списка (параметры и аргументы) в круглых скобках. Пример: quantile(0.9)(x).
 	if (open.ignore(pos, end, expected))
