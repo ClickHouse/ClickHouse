@@ -90,8 +90,10 @@ public:
 		}
 		else
 		{
+			void * new_buf = alloc(new_size);
+			memcpy(new_buf, buf, old_size);
 			free(buf, old_size);
-			buf = alloc(new_size);
+			buf = new_buf;
 		}
 
 
