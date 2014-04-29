@@ -76,15 +76,12 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 	if (context.getColumns().empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth);
-
-	/// Выполняем все GLOBAL IN подзапросы, результаты будут сохранены в query_analyzer->external_tables
-	query_analyzer->processGlobalOperations();
+	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true);
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->external_tables)
 		if (!(context.tryGetExternalTable(it.first)))
-		context.addExternalTable(it.first, it.second);
+			context.addExternalTable(it.first, it.second);
 
 	if (input_)
 		streams.push_back(input_);

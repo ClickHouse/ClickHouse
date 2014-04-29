@@ -81,12 +81,22 @@ void ExpressionAnalyzer::init()
 	select_query = dynamic_cast<ASTSelectQuery *>(&*ast);
 	has_aggregation = false;
 
+	/// Выполняем все GLOBAL IN подзапросы, результаты будут сохранены в query_analyzer->external_tables
+	if (do_global)
+		processGlobalOperations();
+
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
 
 	getArrayJoinedColumns();
 
 	removeUnusedColumns();
+
+	if (do_global)
+	{
+		for (auto & it : external_data)
+			copyData(*it.second, *external_tables[it.first]->write(ASTPtr()));
+	}
 
 	/// Найдем агрегатные функции.
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
@@ -637,13 +647,13 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 		String external_table_name = "_data" + toString(name_id++);
 		external_storage = StorageMemory::create(external_table_name, columns);
 		BlockOutputStreamPtr output = external_storage->write(ASTPtr());
-		copyData(*interpreter.execute(), *output);
 
 		ASTIdentifier * ast_ident = new ASTIdentifier();
 		ast_ident->kind = ASTIdentifier::Table;
 		ast_ident->name = external_storage->getTableName();
 		arg = ast_ident;
 		external_tables[external_table_name] = external_storage;
+		external_data[external_table_name] = interpreter.execute();
 	}
 	else
 		throw Exception("GLOBAL [NOT] IN supports only SELECT data.", ErrorCodes::BAD_ARGUMENTS);
@@ -1243,6 +1253,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 
 void ExpressionAnalyzer::processGlobalOperations()
 {
+
 	std::vector<ASTPtr> global_nodes;
 	findGlobalFunctions(ast, global_nodes);
 
