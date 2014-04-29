@@ -26,9 +26,9 @@ int main(int argc, char ** argv)
 
 	typedef std::vector<std::string> Vec;
 	typedef std::unordered_map<std::string, int> Set;
-	typedef std::unordered_map<StringRef, int> RefsSet;
+	typedef std::unordered_map<StringRef, int, StringRefHash> RefsSet;
 	typedef google::dense_hash_map<std::string, int> DenseSet;
-	typedef google::dense_hash_map<StringRef, int, DefaultHash<StringRef> > RefsDenseSet;
+	typedef google::dense_hash_map<StringRef, int, StringRefHash> RefsDenseSet;
 	typedef HashMap<StringRef, int> RefsHashMap;
 	Vec vec;
 

@@ -52,6 +52,19 @@ struct HashTableNoState
 };
 
 
+/// Эти функции могут быть перегружены для пользовательских типов.
+namespace ZeroTraits
+{
+
+template <typename T>
+bool check(const T x) { return x == 0; }
+
+template <typename T>
+void set(T & x) { x = 0; }
+
+};
+
+
 /** Compile-time интерфейс ячейки хэш-таблицы.
   * Разные ячейки используются для реализации разных хэш-таблиц.
   * Ячейка должна содержать ключ.
@@ -96,10 +109,10 @@ struct HashTableCell
 	/// Если нулевые ключи могут быть вставлены в таблицу, то ячейка для нулевого ключа хранится отдельно, не в основном буфере.
 	/// Нулевые ключи должны быть такими, что занулённый кусок памяти представляет собой нулевой ключ.
 	bool isZero(const State & state) const { return isZero(key, state); }
-	static bool isZero(const Key & key, const State & state) { return ZeroTraits<Key>::check(key); }
+	static bool isZero(const Key & key, const State & state) { return ZeroTraits::check(key); }
 
 	/// Установить значение ключа в ноль.
-	void setZero() { ZeroTraits<Key>::set(key); }
+	void setZero() { ZeroTraits::set(key); }
 
 	/// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
 	static constexpr bool need_zero_value_storage = true;

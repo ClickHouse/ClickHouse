@@ -31,10 +31,10 @@ struct HashMapCell
 	size_t getHash(const Hash & hash) const { return hash(value.first); }
 
 	bool isZero(const State & state) const { return isZero(value.first, state); }
-	static bool isZero(const Key & key, const State & state) { return ZeroTraits<Key>::check(key); }
+	static bool isZero(const Key & key, const State & state) { return ZeroTraits::check(key); }
 
 	/// Установить значение ключа в ноль.
-	void setZero() { ZeroTraits<Key>::set(value.first); }
+	void setZero() { ZeroTraits::set(value.first); }
 
 	/// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
 	static constexpr bool need_zero_value_storage = true;

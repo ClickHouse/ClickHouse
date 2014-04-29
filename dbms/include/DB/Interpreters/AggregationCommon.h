@@ -11,9 +11,12 @@
 #include <DB/Common/HashTable/HashMap.h>
 
 
+template <>
+struct DefaultHash<StringRef> : public StringRefHash {};
+
+
 namespace DB
 {
-
 
 typedef std::vector<size_t> Sizes;
 

@@ -9,8 +9,6 @@
 #include <functional>
 #include <ostream>
 
-#include <DB/Common/HashTable/Hash.h>
-
 
 /// Штука, чтобы не создавать строки для поиска подстроки в хэш таблице.
 struct StringRef
@@ -56,29 +54,36 @@ inline bool operator<(StringRef lhs, StringRef rhs)
 		return cmp < 0;
 }
 
-template <>
-struct DefaultHash<StringRef>
+
+struct StringRefHash
 {
-	inline size_t operator() (StringRef x) const
+	size_t operator() (StringRef x) const
 	{
 		return CityHash64(x.data, x.size);
 	}
 };
 
-template <>
-struct ZeroTraits<StringRef>
+
+namespace std
 {
-	static inline bool check(StringRef x) { return nullptr == x.data; }
-	static inline void set(StringRef & x) { x.data = nullptr; }
+	template <>
+	struct hash<StringRef> : public StringRefHash {};
+}
+
+
+namespace ZeroTraits
+{
+	inline bool check(StringRef x) { return nullptr == x.data; }
+	inline void set(StringRef & x) { x.data = nullptr; }
 };
+
 
 inline bool operator==(StringRef lhs, const char * rhs)
 {
 	for (size_t pos = 0; pos < lhs.size; ++pos)
-	{
 		if (!rhs[pos] || lhs.data[pos] != rhs[pos])
 			return false;
-	}
+
 	return true;
 }
 
@@ -88,17 +93,4 @@ inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
 		os.write(str.data, str.size);
 
 	return os;
-}
-
-
-namespace std
-{
-	template <>
-	struct hash<StringRef>
-	{
-		size_t operator()(const StringRef & x) const
-		{
-			return CityHash64(x.data, x.size);
-		}
-	};
 }

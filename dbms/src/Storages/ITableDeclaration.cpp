@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 #include <DB/Storages/ITableDeclaration.h>
@@ -10,7 +11,7 @@
 namespace DB
 {
 
-bool ITableDeclaration::hasRealColumn(const String &column_name) const
+bool ITableDeclaration::hasRealColumn(const String & column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
@@ -30,7 +31,7 @@ Names ITableDeclaration::getColumnNamesList() const
 }
 
 
-NameAndTypePair ITableDeclaration::getRealColumn(const String &column_name) const
+NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
@@ -40,13 +41,13 @@ NameAndTypePair ITableDeclaration::getRealColumn(const String &column_name) cons
 }
 
 
-bool ITableDeclaration::hasColumn(const String &column_name) const
+bool ITableDeclaration::hasColumn(const String & column_name) const
 {
 	return hasRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 
-NameAndTypePair ITableDeclaration::getColumn(const String &column_name) const
+NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 {
 	return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
@@ -94,7 +95,7 @@ static std::string listOfColumns(const NamesAndTypesList & available_columns)
 }
 
 
-typedef google::dense_hash_map<StringRef, const IDataType *, DefaultHash<StringRef> > NamesAndTypesMap;
+typedef google::dense_hash_map<StringRef, const IDataType *, StringRefHash> NamesAndTypesMap;
 
 
 static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_columns)
@@ -120,7 +121,7 @@ void ITableDeclaration::check(const Names & column_names) const
 
 	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
 
-	typedef google::dense_hash_set<StringRef, DefaultHash<StringRef> > UniqueStrings;
+	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;
 	unique_names.set_empty_key(StringRef());
 

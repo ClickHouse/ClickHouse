@@ -1094,7 +1094,7 @@ private:
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
 		size_t prev_off = 0;
-		typedef ClearableHashMap<StringRef, UInt32, DefaultHash<StringRef>, Grower,
+		typedef ClearableHashMap<StringRef, UInt32, StringRefHash, Grower,
 			HashTableAllocatorWithStackMemory<(1 << Grower::initial_size_degree) * sizeof(StringRef)> > ValuesToIndices;
 
 		ValuesToIndices indices;

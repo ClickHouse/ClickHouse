@@ -43,12 +43,3 @@ DEFAULT_HASH_64(DB::Float32)
 DEFAULT_HASH_64(DB::Float64)
 
 #undef DEFAULT_HASH_64
-
-
-/// Может быть специализировано для пользовательских типов.
-template <typename T>
-struct ZeroTraits
-{
-	static bool check(const T x) { return x == 0; }
-	static void set(T & x) { x = 0; }
-};
