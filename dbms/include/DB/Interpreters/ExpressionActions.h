@@ -26,9 +26,6 @@ class ExpressionActions
 public:
 	struct Action
 	{
-	private:
-		Action() {}
-		
 	public:
 		enum Type
 		{
@@ -168,6 +165,14 @@ public:
 	
 	/// Добавляет в начало удаление всех лишних столбцов.
 	void prependProjectInput();
+
+	/// Добавить в начало указанное действие типа ARRAY JOIN. Поменять соответствующие входные типы на массивы.
+	/// Если в списке ARRAY JOIN есть неизвестные столбцы, взять их типы из sample_block, а сразу после ARRAY JOIN удалить.
+	void prependArrayJoin(const Action & action, const Block & sample_block);
+
+	/// Если последнее действие - ARRAY JOIN, и оно не влияет на столбцы из required_columns, выбросить и вернуть его.
+	/// Поменять соответствующие выходные типы на массивы.
+	bool popUnusedArrayJoin(const Names & required_columns, Action & out_action);
 	
 	/// - Добавляет действия для удаления всех столбцов, кроме указанных.
 	/// - Убирает неиспользуемые входные столбцы.
@@ -246,39 +251,9 @@ struct ExpressionActionsChain
 	Settings settings;
 	Steps steps;
 	
-	void addStep()
-	{
-		if (steps.empty())
-			throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
-		
-		ColumnsWithNameAndType columns = steps.back().actions->getSampleBlock().getColumns();
-		steps.push_back(Step(new ExpressionActions(columns, settings)));
-	}
+	void addStep();
 	
-	void finalize()
-	{
-		for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
-		{
-			steps[i].actions->finalize(steps[i].required_output);
-			
-			if (i > 0)
-			{
-				Names & previous_output = steps[i - 1].required_output;
-				const NamesAndTypesList & columns = steps[i].actions->getRequiredColumnsWithTypes();
-				for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-					previous_output.push_back(it->first);
-				
-				std::sort(previous_output.begin(), previous_output.end());
-				previous_output.erase(std::unique(previous_output.begin(), previous_output.end()), previous_output.end());
-				
-				/// Если на выходе предыдущего шага образуются ненужные столбцы, добавим в начало этого шага их выбрасывание.
-				/// За исключением случая, когда мы выбросим все столбцы и потеряем количество строк в блоке.
-				if (!steps[i].actions->getRequiredColumnsWithTypes().empty()
-					&& previous_output.size() > steps[i].actions->getRequiredColumnsWithTypes().size())
-					steps[i].actions->prependProjectInput();
-			}
-		}
-	}
+	void finalize();
 	
 	void clear()
 	{
@@ -300,6 +275,8 @@ struct ExpressionActionsChain
 		
 		return steps.back();
 	}
+
+	std::string dumpChain();
 };
 
 }

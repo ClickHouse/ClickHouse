@@ -240,8 +240,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 		need_aggregate = query_analyzer->hasAggregation();
 
-		if (query_analyzer->appendArrayJoin(chain, !first_stage))
-			array_join = chain.getLastActions();
+		query_analyzer->appendArrayJoin(chain, !first_stage);
 
 		if (query_analyzer->appendWhere(chain, !first_stage))
 		{
@@ -340,7 +339,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 					executeHaving(streams, before_having);
 
 				executeExpression(streams, before_order_and_select);
-
 				executeDistinct(streams, true, selected_columns);
 
 				need_second_distinct_pass = streams.size() > 1;

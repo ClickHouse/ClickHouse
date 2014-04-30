@@ -1283,9 +1283,6 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
 
 	addMultipleArrayJoinAction(*step.actions);
 
-	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
-		step.required_output.push_back(it->first);
-
 	return true;
 }
 

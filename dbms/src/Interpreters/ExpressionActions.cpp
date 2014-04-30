@@ -413,6 +413,51 @@ void ExpressionActions::prependProjectInput()
 	actions.insert(actions.begin(), Action::project(getRequiredColumns()));
 }
 
+void ExpressionActions::prependArrayJoin(const Action & action, const Block & sample_block)
+{
+	if (action.type != Action::ARRAY_JOIN)
+		throw Exception("ARRAY_JOIN action expected", ErrorCodes::LOGICAL_ERROR);
+
+	NameSet array_join_set(action.array_joined_columns.begin(), action.array_joined_columns.end());
+	for (auto & it : input_columns)
+	{
+		if (array_join_set.count(it.first))
+		{
+			array_join_set.erase(it.first);
+			it.second = new DataTypeArray(it.second);
+		}
+	}
+	for (const std::string & name : array_join_set)
+	{
+		input_columns.push_back(NameAndTypePair(name, sample_block.getByName(name).type));
+		actions.insert(actions.begin(), Action::removeColumn(name));
+	}
+
+	actions.insert(actions.begin(), action);
+	optimizeArrayJoin();
+}
+
+
+bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Action & out_action)
+{
+	if (actions.empty() || actions.back().type != Action::ARRAY_JOIN)
+		return false;
+	NameSet required_set(required_columns.begin(), required_columns.end());
+	for (const std::string & name : actions.back().array_joined_columns)
+	{
+		if (required_set.count(name))
+			return false;
+	}
+	for (const std::string & name : actions.back().array_joined_columns)
+	{
+		DataTypePtr & type = sample_block.getByName(name).type;
+		type = new DataTypeArray(type);
+	}
+	out_action = actions.back();
+	actions.pop_back();
+	return true;
+}
+
 void ExpressionActions::execute(Block & block) const
 {
 	for (size_t i = 0; i < actions.size(); ++i)
@@ -454,10 +499,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 		final_columns.insert(name);
 	}
 	
-	/// Не будем оставлять блок пустым, чтобы не потерять количество строк в нем.
-	if (final_columns.empty())
-		final_columns.insert(getSmallestColumn(input_columns));
-	
 	/// Какие столбцы нужны, чтобы выполнить действия от текущего до последнего.
 	NameSet needed_columns = final_columns;
 	/// Какие столбцы никто не будет трогать от текущего действия до последнего.
@@ -486,14 +527,24 @@ void ExpressionActions::finalize(const Names & output_columns)
 			/// Не будем ARRAY JOIN-ить столбцы, которые дальше не используются.
 			/// Обычно такие столбцы не используются и до ARRAY JOIN, и поэтому выбрасываются дальше в этой функции.
 			/// Не будем убирать все столбцы, чтобы не потерять количество строк.
-			NameSet::iterator it = action.array_joined_columns.begin();
-			while (it != action.array_joined_columns.end() && action.array_joined_columns.size() > 1)
+			for (auto it = action.array_joined_columns.begin(); it != action.array_joined_columns.end();)
 			{
-				NameSet::iterator jt = it;
-				++it;
-				if (!needed_columns.count(*jt))
+				bool need = needed_columns.count(*it);
+				if (!need && action.array_joined_columns.size() > 1)
 				{
-					action.array_joined_columns.erase(jt);
+					action.array_joined_columns.erase(it++);
+				}
+				else
+				{
+					needed_columns.insert(*it);
+					unmodified_columns.erase(*it);
+
+					/// Если никакие результаты ARRAY JOIN не используются, принудительно оставим на выходе произвольный столбец,
+					///  чтобы не потерять количество строк.
+					if (!need)
+						final_columns.insert(*it);
+
+					++it;
 				}
 			}
 		}
@@ -531,6 +582,10 @@ void ExpressionActions::finalize(const Names & output_columns)
 	/// Не будем выбрасывать все входные столбцы, чтобы не потерять количество строк в блоке.
 	if (needed_columns.empty() && !input_columns.empty())
 		needed_columns.insert(getSmallestColumn(input_columns));
+
+	/// Не будем оставлять блок пустым, чтобы не потерять количество строк в нем.
+	if (final_columns.empty())
+		final_columns.insert(getSmallestColumn(input_columns));
 	
 	for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
 	{
@@ -697,6 +752,67 @@ void ExpressionActions::optimizeArrayJoin()
 			}
 		}
 	}
+}
+
+
+void ExpressionActionsChain::addStep()
+{
+	if (steps.empty())
+		throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+
+	ColumnsWithNameAndType columns = steps.back().actions->getSampleBlock().getColumns();
+	steps.push_back(Step(new ExpressionActions(columns, settings)));
+}
+
+void ExpressionActionsChain::finalize()
+{
+	/// Финализируем все шаги. Справа налево, чтобы определять ненужные входные столбцы.
+	for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
+	{
+		Names required_output = steps[i].required_output;
+		if (i + 1 < static_cast<int>(steps.size()))
+		{
+			for (const auto & it : steps[i + 1].actions->getRequiredColumnsWithTypes())
+				required_output.push_back(it.first);
+		}
+		steps[i].actions->finalize(required_output);
+	}
+
+	/// Когда возможно, перенесем ARRAY JOIN из более ранних шагов в более поздние.
+	for (size_t i = 1; i < steps.size(); ++i)
+	{
+		ExpressionActions::Action action;
+		if (steps[i - 1].actions->popUnusedArrayJoin(steps[i - 1].required_output, action))
+			steps[i].actions->prependArrayJoin(action, steps[i - 1].actions->getSampleBlock());
+	}
+
+	/// Добавим выбрасывание ненужных столбцов в начало каждого шага.
+	for (size_t i = 1; i < steps.size(); ++i)
+	{
+		size_t columns_from_previous = steps[i - 1].actions->getSampleBlock().columns();
+
+		/// Если на выходе предыдущего шага образуются ненужные столбцы, добавим в начало этого шага их выбрасывание.
+		/// За исключением случая, когда мы выбросим все столбцы и потеряем количество строк в блоке.
+		if (!steps[i].actions->getRequiredColumnsWithTypes().empty()
+			&& columns_from_previous > steps[i].actions->getRequiredColumnsWithTypes().size())
+			steps[i].actions->prependProjectInput();
+	}
+}
+
+std::string ExpressionActionsChain::dumpChain()
+{
+	std::stringstream ss;
+
+	for (size_t i = 0; i < steps.size(); ++i)
+	{
+		ss << "step " << i << "\n";
+		ss << "required output:\n";
+		for (const std::string & name : steps[i].required_output)
+			ss << name << "\n";
+		ss << "\n" << steps[i].actions->dumpActions() << "\n";
+	}
+
+	return ss.str();
 }
 
 }
