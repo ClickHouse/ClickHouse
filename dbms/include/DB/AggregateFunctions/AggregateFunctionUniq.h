@@ -77,7 +77,7 @@ struct AggregateFunctionUniqExactData
 	/// При создании, хэш-таблица должна быть небольшой.
 	struct Grower : public HashTableGrower
 	{
-		static const size_t initial_size_degree = 64 / sizeof(Key);
+		static const size_t initial_size_degree = 4;
 		Grower() { size_degree = initial_size_degree; }
 	};
 
@@ -85,7 +85,7 @@ struct AggregateFunctionUniqExactData
 		Key,
 		DefaultHash<Key>,
 		Grower,
-		HashTableAllocatorWithStackMemory<64>
+		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << Grower::initial_size_degree)>
 	> Set;
 
 	Set set;
@@ -102,7 +102,7 @@ struct AggregateFunctionUniqExactData<String>
 	/// При создании, хэш-таблица должна быть небольшой.
 	struct Grower : public HashTableGrower
 	{
-		static const size_t initial_size_degree = 64 / sizeof(Key);
+		static const size_t initial_size_degree = 3;
 		Grower() { size_degree = initial_size_degree; }
 	};
 
@@ -110,7 +110,7 @@ struct AggregateFunctionUniqExactData<String>
 		Key,
 		UInt128TrivialHash,
 		Grower,
-		HashTableAllocatorWithStackMemory<64>
+		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << Grower::initial_size_degree)>
 	> Set;
 
 	Set set;

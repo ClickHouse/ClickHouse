@@ -25,7 +25,7 @@ struct AggregateFunctionGroupUniqArrayData
 	/// При создании, хэш-таблица должна быть небольшой.
 	struct Grower : public HashTableGrower
 	{
-		static const size_t initial_size_degree = 16;
+		static const size_t initial_size_degree = 4;
 		Grower() { size_degree = initial_size_degree; }
 	};
 
