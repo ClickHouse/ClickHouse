@@ -111,7 +111,9 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 
 	/// Какую структуру данных для множества использовать?
 	keys_fit_128_bits = false;
-	init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
+
+	if (empty())
+		init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
 
 	if (type == KEY_64)
 	{

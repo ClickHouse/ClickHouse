@@ -5,9 +5,9 @@ INSERT INTO test.big_array SELECT groupArray(number % 255) AS x FROM (SELECT * F
 
 SELECT count() FROM test.big_array ARRAY JOIN x;
 SELECT count() FROM test.big_array ARRAY JOIN x AS y;
-SELECT countIf(has(x, toUInt64(10))), sum(y) FROM temp.ar ARRAY JOIN x AS y;
-SELECT countIf(has(x, toUInt64(10))) FROM temp.ar ARRAY JOIN x AS y;
-SELECT countIf(has(x, toUInt64(10))), sum(y) FROM temp.ar ARRAY JOIN x AS y WHERE 1;
-SELECT countIf(has(x, toUInt64(10))) FROM temp.ar ARRAY JOIN x AS y WHERE 1;
+SELECT countIf(has(x, toUInt64(10))), sum(y) FROM test.big_array ARRAY JOIN x AS y;
+SELECT countIf(has(x, toUInt64(10))) FROM test.big_array ARRAY JOIN x AS y;
+SELECT countIf(has(x, toUInt64(10))), sum(y) FROM test.big_array ARRAY JOIN x AS y WHERE 1;
+SELECT countIf(has(x, toUInt64(10))) FROM test.big_array ARRAY JOIN x AS y WHERE 1;
 
 DROP TABLE test.big_array;
