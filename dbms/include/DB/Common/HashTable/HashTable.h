@@ -471,6 +471,10 @@ protected:
 	/// Если ключ нулевой - вставить его в специальное место и вернуть true.
 	bool emplaceIfZero(Key x, iterator & it, bool & inserted)
 	{
+		/// Если утверждается, что нулевой ключ не могут вставить в таблицу.
+		if (!Cell::need_zero_value_storage)
+			return false;
+
 		if (Cell::isZero(x, *this))
 		{
 			if (!this->hasZero())
