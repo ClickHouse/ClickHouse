@@ -176,7 +176,7 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 
 			for (size_t i = begin; i < end; ++i)
 			{
-				keys64[i] = get<UInt64>(column[i]);
+				keys64[i] = column.get64(i);
 				thread_nums[i] = intHash32<0xd1f93e3190506c7cULL>(keys64[i]) % threads;
 			}
 		}

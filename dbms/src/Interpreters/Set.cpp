@@ -122,7 +122,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 		for (size_t i = 0; i < rows; ++i)
 		{
 			/// Строим ключ
-			UInt64 key = get<UInt64>(column[i]);
+			UInt64 key = column.get64(i);
 			res.insert(key);
 
 			if(create_ordered_set)
@@ -342,7 +342,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 		for (size_t i = 0; i < rows; ++i)
 		{
 			/// Строим ключ
-			UInt64 key = get<UInt64>(column[i]);
+			UInt64 key = column.get64(i);
 			vec_res[i] = negative ^ (set.end() != set.find(key));
 		}
 	}
@@ -419,7 +419,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 			for (size_t j = prev_offset; j < offsets[i]; ++j)
 			{
 				/// Строим ключ
-				UInt64 key = get<UInt64>(nested_column[j]);
+				UInt64 key = nested_column.get64(j);
 				res |= negative ^ (set.end() != set.find(key));
 				if (res)
 					break;

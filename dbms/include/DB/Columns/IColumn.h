@@ -84,6 +84,15 @@ public:
 		return getDataAt(n);
 	}
 
+	/** Получить число типа UInt64, младшие байты которого - reinterpret_cast соответствующего значения в столбце,
+	  * а остальные байты - нулевые.
+	  * Используется для оптимизации некоторых вычислений (например, агрегации).
+	  */
+	virtual UInt64 get64(size_t n) const
+	{
+		throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/** Удалить всё кроме диапазона элементов.
 	  * Используется, например, для операции LIMIT.
 	  */

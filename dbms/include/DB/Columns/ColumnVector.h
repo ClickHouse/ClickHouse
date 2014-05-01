@@ -102,7 +102,7 @@ public:
 	{
 		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
 	}
-	
+
 	void insertFrom(const IColumn & src, size_t n)
 	{
 		data.push_back(static_cast<const Self &>(src).getData()[n]);
@@ -218,6 +218,8 @@ public:
 		res = typename NearestFieldType<T>::Type(this->data[n]);
 	}
 
+	UInt64 get64(size_t n) const;
+
 	void insert(const Field & x)
 	{
 		this->data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
@@ -327,6 +329,40 @@ public:
 		max = typename NearestFieldType<T>::Type(cur_max);
 	}
 };
+
+
+template <typename T>
+UInt64 ColumnVector<T>::get64(size_t n) const
+{
+	return this->data[n];
+}
+
+template <>
+inline UInt64 ColumnVector<Float64>::get64(size_t n) const
+{
+	union
+	{
+		Float64 src;
+		UInt64 res;
+	};
+
+	src = this->data[n];
+	return res;
+}
+
+template <>
+inline UInt64 ColumnVector<Float32>::get64(size_t n) const
+{
+	union
+	{
+		Float32 src;
+		UInt64 res;
+	};
+
+	res = 0;
+	src = this->data[n];
+	return res;
+}
 
 
 }

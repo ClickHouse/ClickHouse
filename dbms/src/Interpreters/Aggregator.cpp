@@ -254,7 +254,7 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 			for (size_t i = 0; i < rows; ++i)
 			{
 				/// Строим ключ
-				UInt64 key = get<UInt64>(column[i]);
+				UInt64 key = column.get64(i);
 
 				AggregatedDataWithUInt64Key::iterator it;
 				bool inserted;
@@ -943,7 +943,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			for (size_t i = start_row; i < rows; ++i)
 			{
 				/// Строим ключ
-				UInt64 key = get<UInt64>(column[i]);
+				UInt64 key = column.get64(i);
 				
 				AggregatedDataWithUInt64Key::iterator it;
 				bool inserted;
