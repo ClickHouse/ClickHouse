@@ -33,8 +33,10 @@ protected:
 
 	typedef size_t HashValue;
 	typedef TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator> Self;
+public:
 	typedef ImplTable Impl;
 
+protected:
 	size_t m_size = 0;		/// Количество элементов
 
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
