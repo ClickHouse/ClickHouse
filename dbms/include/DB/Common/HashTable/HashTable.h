@@ -335,7 +335,7 @@ protected:
 		place_value = findCell(Cell::getKey(x.getValue()), place_value);
 
 		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
-		if (!buf[place_value].isZero(*this) && x.keyEquals(buf[place_value]))
+		if (!buf[place_value].isZero(*this))
 			return;
 
 		/// Копирование на новое место и зануление старого.
@@ -379,10 +379,9 @@ public:
 
 		friend class HashTable;
 
-		iterator(Self * container_, Cell * ptr_) : container(container_), ptr(ptr_) {}
-
 	public:
 		iterator() {}
+		iterator(Self * container_, Cell * ptr_) : container(container_), ptr(ptr_) {}
 
 		bool operator== (const iterator & rhs) const { return ptr == rhs.ptr; }
 		bool operator!= (const iterator & rhs) const { return ptr != rhs.ptr; }
@@ -412,10 +411,9 @@ public:
 
 		friend class HashTable;
 
-		const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {}
-
 	public:
 		const_iterator() {}
+		const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {}
 		const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {}
 
 		bool operator== (const const_iterator & rhs) const { return ptr == rhs.ptr; }
@@ -502,7 +500,7 @@ protected:
 
 		it = iterator(this, &buf[place_value]);
 
-		if (!buf[place_value].isZero(*this) && buf[place_value].keyEquals(x))
+		if (!buf[place_value].isZero(*this))
 		{
 			inserted = false;
 			return;
