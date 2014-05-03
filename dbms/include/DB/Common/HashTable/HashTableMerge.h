@@ -24,15 +24,17 @@ private:
 	Table * container;
 	Cell * ptr;
 
-	/** Находимся ли мы в цепочке разрешения коллизий в самом начале буфера?
-		* В этом случае, цепочка может содержать ключи, которые должны были бы быть в конце буфера.
-		*/
-	bool in_first_chain;
-
 	/** Начало цепочки разрешения коллизий, которая доходит до конца хэш-таблицы,
 		* или buf + buf_size, если такой нет.
 		*/
 	Cell * begin_of_last_chain;
+
+	size_t current_place_value;
+
+	/** Находимся ли мы в цепочке разрешения коллизий в самом начале буфера?
+		* В этом случае, цепочка может содержать ключи, которые должны были бы быть в конце буфера.
+		*/
+	bool in_first_chain;
 
 	bool overlapped = false;
 
@@ -140,6 +142,8 @@ public:
 			if (ptr != cell_with_min_place_value)
 				ptr->swap(*cell_with_min_place_value);
 		}
+
+		current_place_value = min_place_value;
 	}
 
 	bool isValid() const
@@ -157,19 +161,10 @@ public:
 		return ptr;
 	}
 
-	/// Для priority_queue (инвертировано).
 	bool operator< (const HashTableMergeCursor & rhs) const
 	{
-		if (!isValid())
-			return true;
-		if (!rhs.isValid())
-			return false;
-
-		size_t lhs_place = place(ptr);
-		size_t rhs_place = place(rhs.ptr);
-
-		return lhs_place > rhs_place
-			|| (lhs_place == rhs_place && !ptr->less(*rhs.ptr));
+		return current_place_value < rhs.current_place_value
+			|| (current_place_value == rhs.current_place_value && ptr->less(*rhs.ptr));
 	}
 };
 
@@ -189,33 +184,41 @@ void processMergedHashTables(std::vector<Table*> & tables, MergeFunction && merg
 	size_t tables_size = tables.size();
 
 	/// Определим максимальный размер таблиц.
-	size_t max_size = 0;
+	size_t max_buf_size = 0;
 	for (size_t i = 0; i < tables_size; ++i)
-		if (tables[i].size() > max_size)
-			max_size = tables[i].size();
+		if (tables[i]->grower.bufSize() > max_buf_size)
+			max_buf_size = tables[i]->grower.bufSize();
+
+	std::cerr << "max_buf_size: " << max_buf_size << std::endl;
 
 	/// Ресайзим все таблицы к этому размеру.
 	for (size_t i = 0; i < tables_size; ++i)
-		if (tables[i].size() < max_size)
-			tables[i].resize(max_size);
+		if (tables[i]->grower.bufSize() < max_buf_size)
+			tables[i]->resize(0, max_buf_size);
 
-	typedef std::priority_queue<Cursor> Queue;
+	for (size_t i = 0; i < tables_size; ++i)
+		std::cerr << "buf_size: " << tables[i]->grower.bufSize() << std::endl;
+
+	typedef std::vector<Cursor> Queue;
 	Queue queue;
+	queue.reserve(tables_size);
 
 	for (size_t i = 0; i < tables_size; ++i)
 	{
-		Cursor cursor(&tables[i]);
+		Cursor cursor(tables[i]);
 		if (cursor.isValid())
-			queue.push(cursor);
+			queue.emplace_back(cursor);
 	}
 
 	Cell * prev_cell = nullptr;
 	while (!queue.empty())
 	{
-		Cursor cursor = queue.top();
-		queue.pop();
+		size_t min_pos = 0;
+		for (size_t i = 1, size = queue.size(); i < size; ++i)
+			if (queue[i] < queue[min_pos])
+				min_pos = i;
 
-		Cell * current_cell = cursor.getCell();
+		Cell * current_cell = queue[min_pos].getCell();
 
 		if (!prev_cell)
 		{
@@ -231,9 +234,9 @@ void processMergedHashTables(std::vector<Table*> & tables, MergeFunction && merg
 			merge_func(prev_cell->getValue(), current_cell->getValue());
 		}
 
-		cursor.next();
-		if (cursor.isValid())
-			queue.push(cursor);
+		queue[min_pos].next();
+		if (!queue[min_pos].isValid())
+			queue.erase(queue.begin() + min_pos);
 	}
 
 	if (prev_cell)

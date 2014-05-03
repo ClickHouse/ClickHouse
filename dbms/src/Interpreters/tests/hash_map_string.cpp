@@ -21,7 +21,67 @@
 #include <DB/Interpreters/AggregationCommon.h>
 
 
-typedef StringRef Key;
+struct CompactStringRef
+{
+	union
+	{
+		const char * data_mixed = nullptr;
+		struct
+		{
+			char dummy[6];
+			UInt16 size;
+		};
+	};
+
+	CompactStringRef(const char * data_, size_t size_)
+	{
+		data_mixed = data_;
+		size = size_;
+	}
+
+	CompactStringRef(const unsigned char * data_, size_t size_) : CompactStringRef(reinterpret_cast<const char *>(data_), size_) {}
+	CompactStringRef(const std::string & s) : CompactStringRef(s.data(), s.size()) {}
+	CompactStringRef() {}
+
+	const char * data() const { return reinterpret_cast<const char *>(reinterpret_cast<intptr_t>(data_mixed) & 0x0000FFFFFFFFFFFFULL); }
+
+	std::string toString() const { return std::string(data(), size); }
+};
+
+inline bool operator==(CompactStringRef lhs, CompactStringRef rhs)
+{
+	if (lhs.size != rhs.size)
+		return false;
+
+	const char * lhs_data = lhs.data();
+	const char * rhs_data = rhs.data();
+	for (size_t pos = lhs.size - 1; pos < lhs.size; --pos)
+		if (lhs_data[pos] != rhs_data[pos])
+			return false;
+
+	return true;
+}
+
+namespace ZeroTraits
+{
+	template <>
+	inline bool check<CompactStringRef>(CompactStringRef x) { return nullptr == x.data_mixed; }
+
+	template <>
+	inline void set<CompactStringRef>(CompactStringRef & x) { x.data_mixed = nullptr; }
+};
+
+template <>
+struct DefaultHash<CompactStringRef>
+{
+	size_t operator() (CompactStringRef x) const
+	{
+		return CityHash64(x.data(), x.size);
+	}
+};
+
+
+typedef CompactStringRef Key;
 typedef UInt64 Value;
 
 struct CellWithSavedHash : public HashMapCell<Key, Value, DefaultHash<Key> >
@@ -32,35 +92,20 @@ struct CellWithSavedHash : public HashMapCell<Key, Value, DefaultHash<Key> >
 	CellWithSavedHash(const Key & key_, const State & state) : HashMapCell(key_, state) {}
 	CellWithSavedHash(const value_type & value_, const State & state) : HashMapCell(value_, state) {}
 
-	static bool equals(const StringRef & lhs, const StringRef & rhs)
+/*	static bool equals(const StringRef & lhs, const StringRef & rhs)
 	{
 		if (lhs.size != rhs.size)
 			return false;
 
-	/*	for (size_t pos = lhs.size - 1; pos < lhs.size; --pos)
-			if (lhs.data[pos] != rhs.data[pos])
-				return false;*/
-
-		size_t pos = 0;
-		while (pos < lhs.size)
-		{
-			if (*reinterpret_cast<const UInt64 *>(&lhs.data[pos]) != *reinterpret_cast<const UInt64 *>(&rhs.data[pos]))
-				return false;
-			pos += 8;
-		}
-
-/*		while (pos < lhs.size)
-		{
+		for (size_t pos = lhs.size - 1; pos < lhs.size; --pos)
 			if (lhs.data[pos] != rhs.data[pos])
 				return false;
-			++pos;
-		}*/
 
 		return true;
-	}
+	}*/
 
 	bool keyEquals(const Key & key_) const { return value.first == key_; }
-	bool keyEquals(const CellWithSavedHash & other) const { return saved_hash == other.saved_hash && equals(value.first, other.value.first); }
+	bool keyEquals(const CellWithSavedHash & other) const { return saved_hash == other.saved_hash && value.first == other.value.first; }
 
 	void setHash(size_t hash_value) { saved_hash = hash_value; }
 	size_t getHash(const DefaultHash<Key> & hash) const { return saved_hash; }
@@ -125,7 +170,7 @@ int main(int argc, char ** argv)
 		for (size_t i = 0; i < n && !in2.eof(); ++i)
 		{
 			DB::readStringBinary(tmp, in2);
-			data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
+			data[i] = Key(pool.insert(tmp.data(), tmp.size()), tmp.size());
 		}
 
 		watch.stop();
@@ -136,7 +181,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (m == 1)
+	if (!m || m == 1)
 	{
 		Stopwatch watch;
 
@@ -168,7 +213,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (m == 2)
+	if (!m || m == 2)
 	{
 		Stopwatch watch;
 
@@ -184,7 +229,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (m == 3)
+	if (!m || m == 3)
 	{
 		Stopwatch watch;
 
@@ -201,7 +246,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (m == 4)
+	if (!m || m == 4)
 	{
 		Stopwatch watch;
 

@@ -178,6 +178,11 @@ struct HashTableGrower
 				 ? initial_size_degree
 				 : (static_cast<size_t>(log2(num_elems - 1)) + 2));
 	}
+
+	void setBufSize(size_t buf_size_)
+	{
+		size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+	}
 };
 
 
@@ -285,7 +290,7 @@ protected:
 
 
 	/// Увеличить размер буфера.
-	void resize(size_t for_num_elems = 0)
+	void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
 	{
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 		Stopwatch watch;
@@ -297,6 +302,12 @@ protected:
 		if (for_num_elems)
 		{
 			grower.set(for_num_elems);
+			if (grower.bufSize() <= old_size)
+				return;
+		}
+		else if (for_buf_size)
+		{
+			grower.setBufSize(for_buf_size);
 			if (grower.bufSize() <= old_size)
 				return;
 		}
