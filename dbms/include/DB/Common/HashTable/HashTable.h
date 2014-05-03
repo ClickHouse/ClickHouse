@@ -237,6 +237,7 @@ protected:
 
 	size_t m_size = 0;		/// Количество элементов
 	Cell * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
+	size_t buf_size_bytes;
 	Grower grower;
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -244,9 +245,6 @@ protected:
 #endif
 
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
-
-	/// Размер хэш-таблицы в байтах.
-	size_t bufSizeBytes() const			{ return grower.bufSize() * sizeof(Cell); }
 
 	/// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
 	size_t findCell(const Key & x, size_t place_value) const
@@ -264,13 +262,14 @@ protected:
 
 	void alloc()
 	{
-		// TODO Если здесь исключение, то free будет вызывана от неправильного размера.
-		buf = reinterpret_cast<Cell *>(Allocator::alloc(bufSizeBytes()));
+		size_t new_size_bytes = grower.bufSize() * sizeof(Cell);
+		buf = reinterpret_cast<Cell *>(Allocator::alloc(new_size_bytes));
+		buf_size_bytes = new_size_bytes;
 	}
 
 	void free()
 	{
-		Allocator::free(buf, bufSizeBytes());
+		Allocator::free(buf, buf_size_bytes);
 	}
 
 
@@ -282,7 +281,6 @@ protected:
 #endif
 
 		size_t old_size = grower.bufSize();
-		size_t old_size_bytes = bufSizeBytes();
 
 		if (for_num_elems)
 		{
@@ -300,7 +298,9 @@ protected:
 			grower.increaseSize();
 
 		/// Расширим пространство.
-		buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_size_bytes, bufSizeBytes()));
+		size_t new_size_bytes = grower.bufSize() * sizeof(Cell);
+		buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, buf_size_bytes, new_size_bytes));
+		buf_size_bytes = new_size_bytes;
 
 		/** Теперь некоторые элементы может потребоваться переместить на новое место.
 		  * Элемент может остаться на месте, или переместиться в новое место "справа",
@@ -690,7 +690,7 @@ public:
 
 	size_t getBufferSizeInBytes() const
 	{
-		return bufSizeBytes();
+		return buf_size_bytes;
 	}
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
