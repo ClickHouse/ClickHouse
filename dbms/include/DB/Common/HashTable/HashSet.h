@@ -15,7 +15,7 @@ template
 <
 	typename Key,
 	typename Hash = DefaultHash<Key>,
-	typename Grower = HashTableGrower,
+	typename Grower = HashTableGrower<>,
 	typename Allocator = HashTableAllocator
 >
 class HashSet : public HashTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>

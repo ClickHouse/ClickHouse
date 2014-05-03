@@ -111,7 +111,7 @@ struct CellWithSavedHash : public HashMapCell<Key, Value, DefaultHash<Key> >
 	size_t getHash(const DefaultHash<Key> & hash) const { return saved_hash; }
 };
 
-struct Grower : public HashTableGrower
+struct Grower : public HashTableGrower<>
 {
 	/// Состояние этой структуры достаточно, чтобы получить размер буфера хэш-таблицы.
 

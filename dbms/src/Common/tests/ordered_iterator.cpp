@@ -89,7 +89,7 @@ struct Grower
 };
 
 
-typedef HashTableWithDump<Key, HashTableCell<Key, TrivialHash>, TrivialHash, HashTableGrower, HashTableAllocator> Set;
+typedef HashTableWithDump<Key, HashTableCell<Key, TrivialHash>, TrivialHash, HashTableGrower<>, HashTableAllocator> Set;
 
 
 int main(int argc, char ** argv)

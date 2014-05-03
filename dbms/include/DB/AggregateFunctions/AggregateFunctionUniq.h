@@ -75,17 +75,11 @@ struct AggregateFunctionUniqExactData
 	typedef T Key;
 
 	/// При создании, хэш-таблица должна быть небольшой.
-	struct Grower : public HashTableGrower
-	{
-		static const size_t initial_size_degree = 4;
-		Grower() { size_degree = initial_size_degree; }
-	};
-
 	typedef HashSet<
 		Key,
 		DefaultHash<Key>,
-		Grower,
-		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << Grower::initial_size_degree)>
+		HashTableGrower<4>,
+		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>
 	> Set;
 
 	Set set;
@@ -100,17 +94,11 @@ struct AggregateFunctionUniqExactData<String>
 	typedef UInt128 Key;
 
 	/// При создании, хэш-таблица должна быть небольшой.
-	struct Grower : public HashTableGrower
-	{
-		static const size_t initial_size_degree = 3;
-		Grower() { size_degree = initial_size_degree; }
-	};
-
 	typedef HashSet<
 		Key,
 		UInt128TrivialHash,
-		Grower,
-		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << Grower::initial_size_degree)>
+		HashTableGrower<3>,
+		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>
 	> Set;
 
 	Set set;

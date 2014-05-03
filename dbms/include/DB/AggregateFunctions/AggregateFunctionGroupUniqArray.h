@@ -23,17 +23,11 @@ template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
 	/// При создании, хэш-таблица должна быть небольшой.
-	struct Grower : public HashTableGrower
-	{
-		static const size_t initial_size_degree = 4;
-		Grower() { size_degree = initial_size_degree; }
-	};
-
 	typedef HashSet<
 		T,
 		DefaultHash<T>,
-		Grower,
-		HashTableAllocatorWithStackMemory<sizeof(T) * (1 << Grower::initial_size_degree)>
+		HashTableGrower<4>,
+		HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
 	> Set;
 
 	Set value;

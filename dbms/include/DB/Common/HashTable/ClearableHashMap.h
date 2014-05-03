@@ -54,7 +54,7 @@ template
 	typename Key,
 	typename Mapped,
 	typename Hash = DefaultHash<Key>,
-	typename Grower = HashTableGrower,
+	typename Grower = HashTableGrower<>,
 	typename Allocator = HashTableAllocator
 >
 class ClearableHashMap : public HashMapTable<Key, ClearableHashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>

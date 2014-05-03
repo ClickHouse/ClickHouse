@@ -8,16 +8,10 @@
 
 
 
-struct SmallGrower : public HashTableGrower
-{
-	SmallGrower() { size_degree = 1; }
-};
-
-
 int main(int argc, char ** argv)
 {
 	{
-		typedef HashSet<int, DefaultHash<int>, SmallGrower> Cont;
+		typedef HashSet<int, DefaultHash<int>, HashTableGrower<1> > Cont;
 		Cont cont;
 
 		cont.insert(1);
@@ -45,7 +39,7 @@ int main(int argc, char ** argv)
 	}
 
 	{
-		typedef HashMap<int, std::string, DefaultHash<int>, SmallGrower> Cont;
+		typedef HashMap<int, std::string, DefaultHash<int>, HashTableGrower<1> > Cont;
 		Cont cont;
 
 		cont.insert(std::make_pair(1, "Hello, world!"));

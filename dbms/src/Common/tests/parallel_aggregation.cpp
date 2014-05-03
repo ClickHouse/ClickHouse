@@ -27,18 +27,12 @@ typedef std::vector<Key> Source;
 typedef HashMap<Key, Value> Map;
 
 
-struct TwoLevelGrower : public HashTableGrower
-{
-	static const size_t initial_size_degree = 8;
-	TwoLevelGrower() { size_degree = initial_size_degree; }
-};
-
 template
 <
 	typename Key,
 	typename Cell,
 	typename Hash = DefaultHash<Key>,
-	typename Grower = TwoLevelGrower,
+	typename Grower = HashTableGrower<8>,
 	typename Allocator = HashTableAllocator
 >
 class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator> >
@@ -66,7 +60,7 @@ template
 	typename Key,
 	typename Mapped,
 	typename Hash = DefaultHash<Key>,
-	typename Grower = TwoLevelGrower,
+	typename Grower = HashTableGrower<8>,
 	typename Allocator = HashTableAllocator
 >
 using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
@@ -96,19 +90,13 @@ struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 };
 
 
-struct FixedSizeGrower : public HashTableGrower
-{
-	static const size_t initial_size_degree = 21;
-	FixedSizeGrower() { size_degree = initial_size_degree; }
-};
-
 /*typedef HashTableWithSmallLocks<
 	Key,
 	HashTableCellWithLock<
 		Key,
 		HashMapCell<Key, Value, DefaultHash<Key> > >,
 	DefaultHash<Key>,
-	FixedSizeGrower,
+	HashTableGrower<21>,
 	HashTableAllocator> MapSmallLocks;*/
 
 

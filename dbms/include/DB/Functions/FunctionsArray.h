@@ -1053,11 +1053,7 @@ public:
 
 private:
 	/// Изначально выделить кусок памяти для 512 элементов.
-	struct Grower : public HashTableGrower
-	{
-		static const size_t initial_size_degree = 9;
-		Grower() { size_degree = initial_size_degree; }
-	};
+	static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
 	template <typename T>
 	bool executeNumber(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
@@ -1068,8 +1064,8 @@ private:
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
 		const typename ColumnVector<T>::Container_t & values = nested->getData();
 
-		typedef ClearableHashMap<T, UInt32, DefaultHash<T>, Grower,
-			HashTableAllocatorWithStackMemory<(1 << Grower::initial_size_degree) * sizeof(T)> > ValuesToIndices;
+		typedef ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)> > ValuesToIndices;
 
 		ValuesToIndices indices;
 		size_t prev_off = 0;
@@ -1094,8 +1090,8 @@ private:
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
 		size_t prev_off = 0;
-		typedef ClearableHashMap<StringRef, UInt32, StringRefHash, Grower,
-			HashTableAllocatorWithStackMemory<(1 << Grower::initial_size_degree) * sizeof(StringRef)> > ValuesToIndices;
+		typedef ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)> > ValuesToIndices;
 
 		ValuesToIndices indices;
 		for (size_t i = 0; i < offsets.size(); ++i)
@@ -1149,8 +1145,8 @@ private:
 		if (keys_bytes > 16)
 			return false;
 
-		typedef ClearableHashMap<UInt128, UInt32, UInt128Hash, Grower,
-			HashTableAllocatorWithStackMemory<(1 << Grower::initial_size_degree) * sizeof(UInt128)> > ValuesToIndices;
+		typedef ClearableHashMap<UInt128, UInt32, UInt128Hash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > ValuesToIndices;
 
 		ValuesToIndices indices;
 		size_t prev_off = 0;
@@ -1175,8 +1171,8 @@ private:
 	{
 		size_t count = columns.size();
 
-		typedef ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, Grower,
-			HashTableAllocatorWithStackMemory<(1 << Grower::initial_size_degree) * sizeof(UInt128)> > ValuesToIndices;
+		typedef ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > ValuesToIndices;
 
 		ValuesToIndices indices;
 		StringRefs keys(count);

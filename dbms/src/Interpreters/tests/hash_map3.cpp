@@ -26,7 +26,7 @@ template
 	typename Key,
 	typename Mapped,
 	typename Hash = DefaultHash<Key>,
-	typename Grower = HashTableGrower,
+	typename Grower = HashTableGrower<>,
 	typename Allocator = HashTableAllocator
 >
 class HashMapWithDump : public HashMap<Key, Mapped, Hash, Grower, Allocator>
@@ -52,11 +52,12 @@ struct TrivialHash
 	size_t operator() (StringRef x) const { return DB::parse<UInt64>(x.data); }
 };
 
-struct Grower : public HashTableGrower
+struct Grower : public HashTableGrower<2>
 {
-	static const size_t initial_size_degree = 2;
-	Grower() { size_degree = initial_size_degree; }
-	void increaseSize() { ++size_degree; }
+	void increaseSize()
+	{
+		++size_degree;
+	}
 };
 
 int main(int argc, char ** argv)

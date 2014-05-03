@@ -22,16 +22,6 @@ typedef UInt64 Key;
 typedef UInt64 Value;
 
 
-struct Grower : public HashTableGrower
-{
-	/// Состояние этой структуры достаточно, чтобы получить размер буфера хэш-таблицы.
-
-	/// Определяет начальный размер хэш-таблицы.
-	static const size_t initial_size_degree = 8;
-	Grower() { size_degree = initial_size_degree; }
-};
-
-
 int main(int argc, char ** argv)
 {
 	size_t n = atoi(argv[1]);
@@ -58,7 +48,7 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
-		typedef TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, Grower, HashTableAllocator> Map;
+		typedef TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator> Map;
 
 		Map map;
 		Map::iterator it;

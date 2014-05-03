@@ -139,12 +139,10 @@ struct HashTableCell
 
 /** Определяет размер хэш-таблицы, а также когда и во сколько раз её надо ресайзить.
   */
+template <size_t initial_size_degree = 16>
 struct HashTableGrower
 {
 	/// Состояние этой структуры достаточно, чтобы получить размер буфера хэш-таблицы.
-
-	/// Определяет начальный размер хэш-таблицы.
-	static const size_t initial_size_degree = 16;
 
 	UInt8 size_degree = initial_size_degree;
 
