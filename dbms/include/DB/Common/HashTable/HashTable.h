@@ -130,6 +130,10 @@ struct HashTableCell
 	/// Десериализация, в бинарном и текстовом виде.
 	void read(DB::ReadBuffer & rb)		{ DB::readBinary(key, rb); }
 	void readText(DB::ReadBuffer & rb)	{ DB::writeDoubleQuoted(key, rb); }
+
+	/// Нужны, если используется HashTableMergeCursor.
+	void swap(HashTableCell & rhs) { std::swap(key, rhs.key); }
+	bool less(HashTableCell & rhs) const { return key < rhs.key; }
 };
 
 
@@ -209,6 +213,10 @@ struct ZeroValueStorage<false, Cell>
 };
 
 
+template <typename Table>
+class HashTableMergeCursor;
+
+
 template
 <
 	typename Key,
@@ -230,6 +238,13 @@ protected:
 
 	typedef size_t HashValue;
 	typedef HashTable<Key, Cell, Hash, Grower, Allocator> Self;
+	typedef Cell cell_type;
+
+	template <typename Table>
+	friend class HashTableMergeCursor;
+
+	template <typename Table, typename MergeFunction, typename Callback>
+	friend void processMergedHashTables(std::vector<Table*> & tables, MergeFunction && merge_func, Callback && callback);
 
 	size_t m_size = 0;		/// Количество элементов
 	Cell * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.

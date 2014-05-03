@@ -5,8 +5,11 @@
 
 #include <DB/Interpreters/AggregationCommon.h>
 
+#define DBMS_HASH_MAP_DEBUG_RESIZES
+
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/TwoLevelHashTable.h>
+#include <DB/Common/HashTable/HashTableWithSmallLocks.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
@@ -20,7 +23,7 @@ typedef UInt64 Value;
 
 typedef std::vector<Key> Source;
 
-typedef HashMap<Key, Value> Map1;
+typedef HashMap<Key, Value> Map;
 
 
 struct TwoLevelGrower : public HashTableGrower
@@ -67,53 +70,57 @@ template
 >
 using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 
-typedef TwoLevelHashMap<Key, Value> Map2;
+typedef TwoLevelHashMap<Key, Value> MapTwoLevel;
 
 
-struct __attribute__((__aligned__(64))) SmallLock
+struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 {
-	std::atomic<bool> locked {false};
-	char dummy[64 - sizeof(locked)];
-
-	bool tryLock()
-	{
-		bool expected = false;
-		return locked.compare_exchange_strong(expected, true, std::memory_order_acquire);
-	}
-
-	void unlock()
-	{
-		locked.store(false, std::memory_order_release);
-	}
+	char dummy[64 - sizeof(SmallLock)];
 };
 
 
-void aggregate1(Map1 & map, Source::const_iterator begin, Source::const_iterator end)
+struct FixedSizeGrower : public HashTableGrower
+{
+	static const size_t initial_size_degree = 21;
+	FixedSizeGrower() { size_degree = initial_size_degree; }
+};
+
+typedef HashTableWithSmallLocks<
+	Key,
+	HashTableCellWithLock<
+		Key,
+		HashMapCell<Key, Value, DefaultHash<Key> > >,
+	DefaultHash<Key>,
+	FixedSizeGrower,
+	HashTableAllocator> MapSmallLocks;
+
+
+void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
 	for (auto it = begin; it != end; ++it)
 		++map[*it];
 }
 
-void aggregate2(Map2 & map, Source::const_iterator begin, Source::const_iterator end)
+void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
 	for (auto it = begin; it != end; ++it)
 		++map[*it];
 }
 
-void merge2(Map2 * maps, size_t num_threads, size_t bucket)
+void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 {
 	for (size_t i = 1; i < num_threads; ++i)
 		for (auto it = maps[i].impls[bucket].begin(); it != maps[i].impls[bucket].end(); ++it)
 			maps[0].impls[bucket][it->first] += it->second;
 }
 
-void aggregate3(Map1 & local_map, Map1 & global_map, SmallLock & mutex, Source::const_iterator begin, Source::const_iterator end)
+void aggregate3(Map & local_map, Map & global_map, AlignedSmallLock & mutex, Source::const_iterator begin, Source::const_iterator end)
 {
 	static constexpr size_t threshold = 65536;
 
 	for (auto it = begin; it != end; ++it)
 	{
-		Map1::iterator found = local_map.find(*it);
+		Map::iterator found = local_map.find(*it);
 
 		if (found != local_map.end())
 			++found->second;
@@ -132,14 +139,14 @@ void aggregate3(Map1 & local_map, Map1 & global_map, SmallLock & mutex, Source::
 	}
 }
 
-void aggregate4(Map1 & local_map, Map2 & global_map, SmallLock * mutexes, Source::const_iterator begin, Source::const_iterator end)
+void aggregate4(Map & local_map, MapTwoLevel & global_map, AlignedSmallLock * mutexes, Source::const_iterator begin, Source::const_iterator end)
 {
 	DefaultHash<Key> hash;
 	static constexpr size_t threshold = 65536;
 
 	for (auto it = begin; it != end; ++it)
 	{
-		Map1::iterator found = local_map.find(*it);
+		Map::iterator found = local_map.find(*it);
 
 		if (found != local_map.end())
 			++found->second;
@@ -152,7 +159,7 @@ void aggregate4(Map1 & local_map, Map2 & global_map, SmallLock * mutexes, Source
 
 			if (mutexes[bucket].tryLock())
 			{
-				Map2::Impl::iterator inserted_it;
+				MapTwoLevel::Impl::iterator inserted_it;
 				bool inserted;
 				global_map.impls[bucket].emplace(*it, inserted_it, inserted, hash_value);
 				mutexes[bucket].unlock();
@@ -162,6 +169,33 @@ void aggregate4(Map1 & local_map, Map2 & global_map, SmallLock * mutexes, Source
 		}
 	}
 }
+
+void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
+{
+//	static constexpr size_t threshold = 65536;
+
+	for (auto it = begin; it != end; ++it)
+	{
+/*		Map::iterator found = local_map.find(*it);
+
+		if (found != local_map.end())
+			++found->second;
+		else if (local_map.size() < threshold)
+			++local_map[*it];	/// TODO Можно было бы делать один lookup, а не два.
+		else*/
+		{
+			SmallScopedLock lock;
+			MapSmallLocks::iterator insert_it;
+			bool inserted;
+
+			if (global_map.tryEmplace(*it, insert_it, inserted, lock))
+				++insert_it->second;
+			else
+				++local_map[*it];
+		}
+	}
+}
+
 
 
 int main(int argc, char ** argv)
@@ -188,7 +222,7 @@ int main(int argc, char ** argv)
 			<< "Vector. Size: " << n
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
-			<< std::endl;
+			<< std::endl << std::endl;
 	}
 
 	if (!method || method == 1)
@@ -198,7 +232,7 @@ int main(int argc, char ** argv)
 		  * Затем сливаем их вместе.
 		  */
 
-		Map1 maps[num_threads];
+		Map maps[num_threads];
 
 		Stopwatch watch;
 
@@ -257,7 +291,7 @@ int main(int argc, char ** argv)
 		  *  и преимущество в производительности достигает 4 раз.
 		  */
 
-		Map2 maps[num_threads];
+		MapTwoLevel maps[num_threads];
 
 		Stopwatch watch;
 
@@ -287,7 +321,7 @@ int main(int argc, char ** argv)
 
 		watch.restart();
 
-		for (size_t i = 0; i < Map2::NUM_BUCKETS; ++i)
+		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
 			pool.schedule(std::bind(merge2,
 				&maps[0], num_threads, i));
 
@@ -307,7 +341,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 
 		size_t sum_size = 0;
-		for (size_t i = 0; i < Map2::NUM_BUCKETS; ++i)
+		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
 			sum_size += maps[0].impls[i].size();
 
 		std::cerr << "Size: " << sum_size << std::endl << std::endl;
@@ -325,9 +359,9 @@ int main(int argc, char ** argv)
 		  * Этот метод плохой - много contention-а.
 		  */
 
-		Map1 local_maps[num_threads];
-		Map1 global_map;
-		SmallLock mutex;
+		Map local_maps[num_threads];
+		Map global_map;
+		AlignedSmallLock mutex;
 
 		Stopwatch watch;
 
@@ -391,12 +425,12 @@ int main(int argc, char ** argv)
 		  * Если размер локальной хэш-таблицы большой, и в ней нет элемента,
 		  *  то вставляем его в одну из 256 глобальных хэш-таблиц, каждая из которых под своим mutex-ом.
 		  * Затем сливаем все локальные хэш-таблицы в глобальную.
-		  * Этот метод тоже плохой.
+		  * Этот метод не такой уж плохой при большом количестве потоков, но хуже второго.
 		  */
 
-		Map1 local_maps[num_threads];
-		Map2 global_map;
-		SmallLock mutexes[Map2::NUM_BUCKETS];
+		Map local_maps[num_threads];
+		MapTwoLevel global_map;
+		AlignedSmallLock mutexes[MapTwoLevel::NUM_BUCKETS];
 
 		Stopwatch watch;
 
@@ -427,7 +461,7 @@ int main(int argc, char ** argv)
 		std::cerr << std::endl;
 
 		size_t sum_size = 0;
-		for (size_t i = 0; i < Map2::NUM_BUCKETS; ++i)
+		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
 			sum_size += global_map.impls[i].size();
 
 		std::cerr << "Size (global): " << sum_size << std::endl;
@@ -455,10 +489,77 @@ int main(int argc, char ** argv)
 			<< std::endl;
 
 		sum_size = 0;
-		for (size_t i = 0; i < Map2::NUM_BUCKETS; ++i)
+		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
 			sum_size += global_map.impls[i].size();
 
 		std::cerr << "Size: " << sum_size << std::endl << std::endl;
+	}
+
+	if (!method || method == 5)
+	{
+		/** Вариант 5.
+		  * В разных потоках агрегируем независимо в разные хэш-таблицы,
+		  *  пока их размер не станет достаточно большим.
+		  * Если размер локальной хэш-таблицы большой, и в ней нет элемента,
+		  *  то вставляем его в одну глобальную хэш-таблицу, содержащую маленькие защёлки в каждой ячейке,
+		  *  а если защёлку не удалось захватить, то вставляем в локальную.
+		  * Затем сливаем все локальные хэш-таблицы в глобальную.
+		  */
+
+		Map local_maps[num_threads];
+		MapSmallLocks global_map;
+
+		Stopwatch watch;
+
+		for (size_t i = 0; i < num_threads; ++i)
+			pool.schedule(std::bind(aggregate5,
+				std::ref(local_maps[i]),
+				std::ref(global_map),
+				data.begin() + (data.size() * i) / num_threads,
+				data.begin() + (data.size() * (i + 1)) / num_threads));
+
+		pool.wait();
+
+		watch.stop();
+		double time_aggregated = watch.elapsedSeconds();
+		std::cerr
+			<< "Aggregated in " << time_aggregated
+			<< " (" << n / time_aggregated << " elem/sec.)"
+			<< std::endl;
+
+		size_t size_before_merge = 0;
+		std::cerr << "Sizes (local): ";
+		for (size_t i = 0; i < num_threads; ++i)
+		{
+			std::cerr << (i == 0 ? "" : ", ") << local_maps[i].size();
+			size_before_merge += local_maps[i].size();
+		}
+		std::cerr << std::endl;
+		std::cerr << "Size (global): " << global_map.size() << std::endl;
+		size_before_merge += global_map.size();
+
+		watch.restart();
+
+		for (size_t i = 0; i < num_threads; ++i)
+			for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
+				global_map.insert(std::make_pair(it->first, 0)).first->second += it->second;
+
+		pool.wait();
+
+		watch.stop();
+		double time_merged = watch.elapsedSeconds();
+		std::cerr
+			<< "Merged in " << time_merged
+			<< " (" << size_before_merge / time_merged << " elem/sec.)"
+			<< std::endl;
+
+		double time_total = time_aggregated + time_merged;
+		std::cerr
+			<< "Total in " << time_total
+			<< " (" << n / time_total << " elem/sec.)"
+			<< std::endl;
+
+		std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
 	}
 
 	return 0;
