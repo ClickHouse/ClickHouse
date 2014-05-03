@@ -76,7 +76,8 @@ protected:
 		for (size_t i = 0, size = many_data.size(); i < size; ++i)
 		{
 			many_data[i] = new AggregatedDataVariants;
-			pool.schedule(boost::bind(&ParallelAggregatingBlockInputStream::calculate, this, boost::ref(children[i]), boost::ref(*many_data[i]), boost::ref(exceptions[i])));
+			pool.schedule(boost::bind(&ParallelAggregatingBlockInputStream::calculate, this,
+				boost::ref(children[i]), boost::ref(*many_data[i]), boost::ref(exceptions[i]), current_memory_tracker));
 		}
 		pool.wait();
 
@@ -97,8 +98,10 @@ private:
 	boost::threadpool::pool pool;
 
 	/// Вычисления, которые выполняются в отдельном потоке
-	void calculate(BlockInputStreamPtr & input, AggregatedDataVariants & data, ExceptionPtr & exception)
+	void calculate(BlockInputStreamPtr & input, AggregatedDataVariants & data, ExceptionPtr & exception, MemoryTracker * memory_tracker)
 	{
+		current_memory_tracker = memory_tracker;
+
 		try
 		{
 			aggregator->execute(input, data);

@@ -2,6 +2,8 @@
 
 #include <limits>
 
+#include <DB/Common/MemoryTracker.h>
+
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
@@ -324,6 +326,9 @@ private:
 
 	void toLarge()
 	{
+		if (current_memory_tracker)
+			current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
+
 		/// На время копирования данных из tiny, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
@@ -343,7 +348,12 @@ public:
 	~QuantileTiming()
 	{
 		if (isLarge())
+		{
 			delete large;
+
+			if (current_memory_tracker)
+				current_memory_tracker->free(sizeof(detail::QuantileTimingLarge));
+		}
 	}
 
 	void insert(UInt64 x)
@@ -405,6 +415,10 @@ public:
 			if (!isLarge())
 			{
 				tiny.count = TINY_MAX_ELEMS + 1;
+
+				if (current_memory_tracker)
+					current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
+
 				large = new detail::QuantileTimingLarge;
 			}
 
@@ -424,6 +438,10 @@ public:
 			if (!isLarge())
 			{
 				tiny.count = TINY_MAX_ELEMS + 1;
+
+				if (current_memory_tracker)
+					current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
+
 				large = new detail::QuantileTimingLarge;
 			}
 			

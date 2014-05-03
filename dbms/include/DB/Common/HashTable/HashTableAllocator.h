@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/mman.h>
 
+#include <DB/Common/MemoryTracker.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -31,6 +32,9 @@ public:
 	/// Выделить кусок памяти и заполнить его нулями.
 	void * alloc(size_t size)
 	{
+		if (current_memory_tracker)
+			current_memory_tracker->alloc(size);
+
 		void * buf;
 
 		if (size >= MMAP_THRESHOLD)
@@ -63,6 +67,9 @@ public:
 		{
 			::free(buf);
 		}
+
+		if (current_memory_tracker)
+			current_memory_tracker->free(size);
 	}
 
 	/** Увеличить размер куска памяти.
@@ -72,6 +79,9 @@ public:
 	  */
 	void * realloc(void * buf, size_t old_size, size_t new_size)
 	{
+		if (current_memory_tracker)
+			current_memory_tracker->realloc(old_size, new_size);
+
 		if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD)
 		{
 			buf = ::realloc(buf, new_size);
@@ -95,7 +105,6 @@ public:
 			free(buf, old_size);
 			buf = new_buf;
 		}
-
 
 		return buf;
 	}

@@ -264,6 +264,7 @@ protected:
 
 	void alloc()
 	{
+		// TODO Если здесь исключение, то free будет вызывана от неправильного размера.
 		buf = reinterpret_cast<Cell *>(Allocator::alloc(bufSizeBytes()));
 	}
 

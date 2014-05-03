@@ -72,7 +72,10 @@ struct Limits
 	/** Ограничения для максимального размера запоминаемого состояния при выполнении DISTINCT. */ \
 	M(SettingUInt64, max_rows_in_distinct, 0) \
 	M(SettingUInt64, max_bytes_in_distinct, 0) \
-	M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW)
+	M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW) \
+	\
+	/** Максимальное использование памяти при обработке запроса. 0 - не ограничено. */ \
+	M(SettingUInt64, max_memory_usage, 0) \
 
 #define DECLARE(TYPE, NAME, DEFAULT) \
 	TYPE NAME {DEFAULT};

@@ -89,7 +89,7 @@ protected:
 		/// Если вычислений ещё не было - вычислим первый блок синхронно
 		if (!started)
 		{
-			calculate();
+			calculate(current_memory_tracker);
 			started = true;
 		}
 		else	/// Если вычисления уже идут - подождём результата
@@ -113,13 +113,15 @@ protected:
 	void next()
 	{
 		ready.reset();
-		pool.schedule(boost::bind(&AsynchronousBlockInputStream::calculate, this));
+		pool.schedule(boost::bind(&AsynchronousBlockInputStream::calculate, this, current_memory_tracker));
 	}
 	
 
 	/// Вычисления, которые могут выполняться в отдельном потоке
-	void calculate()
+	void calculate(MemoryTracker * memory_tracker)
 	{
+		current_memory_tracker = memory_tracker;
+
 		try
 		{
 			block = children.back()->read();

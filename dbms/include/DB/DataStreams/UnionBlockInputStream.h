@@ -148,7 +148,7 @@ protected:
 			threads_data.resize(max_threads);
 			for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
 			{
-				it->runnable = new Thread(*this);
+				it->runnable = new Thread(*this, current_memory_tracker);
 				it->thread = new Poco::Thread;
 				it->thread->start(*it->runnable);
 			}
@@ -202,7 +202,10 @@ private:
 	class Thread : public Poco::Runnable
 	{
 	public:
-		Thread(UnionBlockInputStream & parent_) : parent(parent_) {}
+		Thread(UnionBlockInputStream & parent_, MemoryTracker * memory_tracker) : parent(parent_)
+		{
+			current_memory_tracker = memory_tracker;
+		}
 
 		void run()
 		{

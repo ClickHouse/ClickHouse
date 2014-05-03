@@ -10,6 +10,7 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
 
 
@@ -34,15 +35,26 @@ public:
 		
 		Stopwatch watch;
 
-		volatile size_t rows_processed;
-		volatile size_t bytes_processed;
+		volatile size_t rows_processed = 0;
+		volatile size_t bytes_processed = 0;
 
-		bool is_cancelled;
+		MemoryTracker memory_tracker;
+
+		bool is_cancelled = false;
 		
 
-		Element(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_)
-			: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), rows_processed(0), bytes_processed(0),
-			is_cancelled(false) {}
+		Element(const String & query_, const String & user_,
+			const String & query_id_, const Poco::Net::IPAddress & ip_address_,
+			size_t max_memory_usage)
+			: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), memory_tracker(max_memory_usage)
+		{
+			current_memory_tracker = &memory_tracker;
+		}
+
+		~Element()
+		{
+			current_memory_tracker = nullptr;
+		}
 
 		bool update(size_t rows, size_t bytes) volatile
 		{
@@ -113,7 +125,7 @@ public:
 	  * Если времени не хватило - кинуть исключение.
 	  */
 	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_wait_milliseconds = DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS, bool replace_running_query = false)
+		size_t max_memory_usage = 0, size_t max_wait_milliseconds = DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS, bool replace_running_query = false)
 	{
 		EntryPtr res;
 
@@ -134,7 +146,7 @@ public:
 					{
 						if (!replace_running_query)
 							throw Exception("Query with id = " + query_id_ + " is already running.",
-											ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+								ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 						element->second->is_cancelled = true;
 						/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
 						queries->second.erase(element);
@@ -144,7 +156,7 @@ public:
 
 			++cur_size;
 
-			res = new Entry(*this, cont.insert(cont.end(), Element(query_, user_, query_id_, ip_address_)));
+			res = new Entry(*this, cont.emplace(cont.end(), query_, user_, query_id_, ip_address_, max_memory_usage));
 
 			if (!query_id_.empty())
 				user_to_queries[user_][query_id_] = &res->get();

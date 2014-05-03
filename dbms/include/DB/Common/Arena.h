@@ -6,6 +6,7 @@
 #include <Poco/SharedPtr.h>
 #include <Yandex/likely.h>
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/MemoryTracker.h>
 
 
 namespace DB
@@ -37,6 +38,9 @@ private:
 			ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
 			ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
 
+			if (current_memory_tracker)
+				current_memory_tracker->alloc(size_);
+
 			begin = allocate(size_);
 			pos = begin;
 			end = begin + size_;
@@ -46,6 +50,9 @@ private:
 		~Chunk()
 		{
 			deallocate(begin, size());
+
+			if (current_memory_tracker)
+				current_memory_tracker->free(size());
 
 			if (prev)
 				delete prev;

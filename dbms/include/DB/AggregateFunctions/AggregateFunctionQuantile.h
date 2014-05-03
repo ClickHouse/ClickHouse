@@ -20,7 +20,7 @@ template <typename ArgumentFieldType>
 struct AggregateFunctionQuantileData
 {
 	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO> Sample;
-	Sample sample;
+	Sample sample;	/// TODO Добавить MemoryTracker
 };
 
 

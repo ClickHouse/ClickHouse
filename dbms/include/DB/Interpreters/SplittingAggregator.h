@@ -91,9 +91,9 @@ private:
 	/// Для более точного контроля max_rows_to_group_by.
 	size_t size_of_all_results;
 
-	void calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception);
-	void aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception);
-	void convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, bool final, ExceptionPtr & exception);
+	void calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception, MemoryTracker * memory_tracker);
+	void aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception, MemoryTracker * memory_tracker);
+	void convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, bool final, ExceptionPtr & exception, MemoryTracker * memory_tracker);
 };
 
 

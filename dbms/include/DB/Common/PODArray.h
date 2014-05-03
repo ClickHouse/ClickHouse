@@ -12,6 +12,7 @@
 #include <Yandex/likely.h>
 #include <Yandex/strong_typedef.h>
 
+#include <DB/Common/MemoryTracker.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -88,6 +89,10 @@ private:
 		}
 		
 		size_t bytes_to_alloc = to_size(n);
+
+		if (current_memory_tracker)
+			current_memory_tracker->alloc(bytes_to_alloc);
+
 		c_start = c_end = Allocator::allocate(bytes_to_alloc);
 		c_end_of_storage = c_start + bytes_to_alloc;
 	}
@@ -101,6 +106,9 @@ private:
 			::free(c_start);
 		else
 			Allocator::deallocate(c_start, storage_size());
+
+		if (current_memory_tracker)
+			current_memory_tracker->free(storage_size());
 	}
 
 	void realloc(size_t n)
@@ -116,6 +124,9 @@ private:
 
 		char * old_c_start = c_start;
 		char * old_c_end_of_storage = c_end_of_storage;
+
+		if (current_memory_tracker)
+			current_memory_tracker->realloc(storage_size(), bytes_to_alloc);
 
 		if (use_libc_realloc)
 		{

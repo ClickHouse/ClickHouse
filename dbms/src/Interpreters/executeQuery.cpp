@@ -89,8 +89,10 @@ void executeQuery(
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
+			context.getSettingsRef().limits.max_memory_usage,
 			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
 			context.getSettingsRef().replace_running_query);
+
 		context.setProcessListElement(&process_list_entry->get());
 	}
 
@@ -159,8 +161,10 @@ BlockIO executeQuery(
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
+			context.getSettingsRef().limits.max_memory_usage,
 			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
 			context.getSettingsRef().replace_running_query);
+
 		context.setProcessListElement(&process_list_entry->get());
 	}
 

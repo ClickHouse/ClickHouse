@@ -102,7 +102,8 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 				boost::ref(block),
 				rows * thread_no / threads,
 				rows * (thread_no + 1) / threads,
-				boost::ref(exceptions[thread_no])));
+				boost::ref(exceptions[thread_no]),
+				current_memory_tracker));
 
 		pool.wait();
 
@@ -120,7 +121,8 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 				boost::ref(block),
 				boost::ref(*results[thread_no]),
 				thread_no,
-				boost::ref(exceptions[thread_no])));
+				boost::ref(exceptions[thread_no]),
+				current_memory_tracker));
 
 		pool.wait();
 
@@ -158,7 +160,8 @@ void SplittingAggregator::convertToBlocks(ManyAggregatedDataVariants & data_vari
 			boost::ref(*data_variants[thread_no]),
 			boost::ref(blocks[thread_no]),
 			final,
-			boost::ref(exceptions[thread_no])));
+			boost::ref(exceptions[thread_no]),
+			current_memory_tracker));
 
 	pool.wait();
 
@@ -166,8 +169,10 @@ void SplittingAggregator::convertToBlocks(ManyAggregatedDataVariants & data_vari
 }
 
 
-void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception)
+void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception, MemoryTracker * memory_tracker)
 {
+	current_memory_tracker = memory_tracker;
+
 	try
 	{
 		if (method == AggregatedDataVariants::KEY_64)
@@ -237,8 +242,11 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 }
 
 
-void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception)
+void SplittingAggregator::aggregateThread(
+	Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception, MemoryTracker * memory_tracker)
 {
+	current_memory_tracker = memory_tracker;
+
 	try
 	{
 		result.aggregator = this;
@@ -419,8 +427,11 @@ void SplittingAggregator::aggregateThread(Block & block, AggregatedDataVariants 
 }
 
 
-void SplittingAggregator::convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, bool final, ExceptionPtr & exception)
+void SplittingAggregator::convertToBlockThread(
+	AggregatedDataVariants & data_variant, Block & block, bool final, ExceptionPtr & exception, MemoryTracker * memory_tracker)
 {
+	current_memory_tracker = memory_tracker;
+
 	try
 	{
 		block = convertToBlock(data_variant, final);

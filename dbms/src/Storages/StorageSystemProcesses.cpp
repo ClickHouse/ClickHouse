@@ -12,13 +12,14 @@ namespace DB
 StorageSystemProcesses::StorageSystemProcesses(const std::string & name_, const Context & context_)
 	: name(name_), context(context_)
 {
-	columns.push_back(NameAndTypePair("user", 		new DataTypeString));
-	columns.push_back(NameAndTypePair("address",	new DataTypeString));
-	columns.push_back(NameAndTypePair("elapsed", 	new DataTypeFloat64));
-	columns.push_back(NameAndTypePair("rows_read", 	new DataTypeUInt64));
-	columns.push_back(NameAndTypePair("bytes_read",	new DataTypeUInt64));
-	columns.push_back(NameAndTypePair("query", 		new DataTypeString));
-	columns.push_back(NameAndTypePair("query_id", 	new DataTypeString));
+	columns.push_back(NameAndTypePair("user", 			new DataTypeString));
+	columns.push_back(NameAndTypePair("address",		new DataTypeString));
+	columns.push_back(NameAndTypePair("elapsed", 		new DataTypeFloat64));
+	columns.push_back(NameAndTypePair("rows_read", 		new DataTypeUInt64));
+	columns.push_back(NameAndTypePair("bytes_read",		new DataTypeUInt64));
+	columns.push_back(NameAndTypePair("memory_usage",	new DataTypeUInt64));
+	columns.push_back(NameAndTypePair("query", 			new DataTypeString));
+	columns.push_back(NameAndTypePair("query_id", 		new DataTypeString));
 }
 
 StoragePtr StorageSystemProcesses::create(const std::string & name_, const Context & context_)
@@ -66,6 +67,12 @@ BlockInputStreams StorageSystemProcesses::read(
 	col_bytes_read.column = new ColumnUInt64;
 	block.insert(col_bytes_read);
 
+	ColumnWithNameAndType col_memory_usage;
+	col_memory_usage.name = "memory_usage";
+	col_memory_usage.type = new DataTypeUInt64;
+	col_memory_usage.column = new ColumnUInt64;
+	block.insert(col_memory_usage);
+
 	ColumnWithNameAndType col_query;
 	col_query.name = "query";
 	col_query.type = new DataTypeString;
@@ -90,6 +97,7 @@ BlockInputStreams StorageSystemProcesses::read(
 		col_elapsed.column->insert(it->watch.elapsedSeconds());
 		col_rows_read.column->insert(rows_read);
 		col_bytes_read.column->insert(bytes_read);
+		col_memory_usage.column->insert(UInt64(it->memory_tracker.get()));
 		col_query.column->insert(it->query);
 		col_query_id.column->insert(it->query_id);
 	}

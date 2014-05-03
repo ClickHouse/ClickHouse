@@ -3,6 +3,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/MemoryTracker.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -87,6 +88,9 @@ private:
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
 
+		if (current_memory_tracker)
+			current_memory_tracker->alloc(m_capacity);
+
 		if (!alignment)
 		{
 			m_data = reinterpret_cast<char *>(malloc(m_capacity));
@@ -105,8 +109,13 @@ private:
 
 	void dealloc()
 	{
-		if (m_data)
-			free(reinterpret_cast<void *>(m_data));
+		if (!m_data)
+			return;
+
+		free(reinterpret_cast<void *>(m_data));
+
+		if (current_memory_tracker)
+			current_memory_tracker->free(m_capacity);
 	}
 };
 
