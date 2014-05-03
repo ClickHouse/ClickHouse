@@ -96,7 +96,7 @@ private:
 	size_t max_threads;
 	boost::threadpool::pool pool;
 
-	/// Вычисления, которые выполнятся в отдельном потоке
+	/// Вычисления, которые выполняются в отдельном потоке
 	void calculate(BlockInputStreamPtr & input, AggregatedDataVariants & data, ExceptionPtr & exception)
 	{
 		try
