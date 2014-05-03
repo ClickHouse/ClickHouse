@@ -71,10 +71,6 @@ struct HashMapCell
 		DB::assertString(",", rb);
 		DB::readDoubleQuoted(value.second, rb);
 	}
-
-	/// Нужны, если используется HashTableMergeCursor.
-	void swap(HashMapCell & rhs) { std::swap(value, rhs.value); }
-	bool less(HashMapCell & rhs) const { return value.first < rhs.value.first; }
 };
 
 

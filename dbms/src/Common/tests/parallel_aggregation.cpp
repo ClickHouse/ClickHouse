@@ -10,7 +10,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/TwoLevelHashTable.h>
 //#include <DB/Common/HashTable/HashTableWithSmallLocks.h>
-#include <DB/Common/HashTable/HashTableMerge.h>
+//#include <DB/Common/HashTable/HashTableMerge.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
@@ -567,14 +567,14 @@ int main(int argc, char ** argv)
 		std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
 	}*/
 
-	if (!method || method == 6)
+	/*if (!method || method == 6)
 	{
-		/** Вариант 6.
+		*//** Вариант 6.
 		  * В разных потоках агрегируем независимо в разные хэш-таблицы.
 		  * Затем "сливаем" их, проходя по ним в одинаковом порядке ключей.
 		  * Довольно тормозной вариант.
 		  */
-
+/*
 		Map maps[num_threads];
 
 		Stopwatch watch;
@@ -617,13 +617,6 @@ int main(int argc, char ** argv)
 			[] (Map::value_type & dst, const Map::value_type & src) { dst.second += src.second; },
 			[&] (const Map::value_type & dst) { ++size; });
 
-/*		size_t sum = 0;
-		for (size_t i = 0; i < num_threads; ++i)
-			for (HashTableMergeCursor<Map> it(&maps[i]); it.isValid(); it.next())
-				sum += it.get().second;
-
-		std::cerr << "sum: " << sum << std::endl;*/
-
 		watch.stop();
 		double time_merged = watch.elapsedSeconds();
 		std::cerr
@@ -637,7 +630,7 @@ int main(int argc, char ** argv)
 			<< " (" << n / time_total << " elem/sec.)"
 			<< std::endl;
 		std::cerr << "Size: " << size << std::endl << std::endl;
-	}
+	}*/
 
 	return 0;
 }
