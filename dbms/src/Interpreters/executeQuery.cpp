@@ -88,7 +88,9 @@ void executeQuery(
 	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
-			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
+			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
+			context.getSettingsRef().replace_running_query);
 		context.setProcessListElement(&process_list_entry->get());
 	}
 
@@ -156,7 +158,9 @@ BlockIO executeQuery(
 	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
-			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(), context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(), context.getSettingsRef().replace_running_query);
+			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
+			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
+			context.getSettingsRef().replace_running_query);
 		context.setProcessListElement(&process_list_entry->get());
 	}
 
