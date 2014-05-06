@@ -63,8 +63,6 @@ public:
 
 		readQueries();
 		run();
-
-		std::cerr << "\nTotal queries executed: " << queries_total << std::endl;
 	}
 
 private:
@@ -84,17 +82,42 @@ private:
 	DataTypeFactory data_type_factory;
 	ConnectionPool connections;
 
-	Stopwatch watch_per_interval;
-	size_t queries_total = 0;
-	size_t queries_per_interval = 0;
-	size_t read_rows_per_interval = 0;
-	size_t read_bytes_per_interval = 0;
-	size_t result_rows_per_interval = 0;
-	size_t result_bytes_per_interval = 0;
+	struct Stats
+	{
+		Stopwatch watch;
+		size_t queries = 0;
+		size_t read_rows = 0;
+		size_t read_bytes = 0;
+		size_t result_rows = 0;
+		size_t result_bytes = 0;
 
-	typedef ReservoirSampler<double> Sampler;
-	Sampler sampler {1 << 16};
-	Sampler global_sampler {1 << 16};
+		typedef ReservoirSampler<double> Sampler;
+		Sampler sampler {1 << 16};
+
+		void add(double seconds, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
+		{
+			++queries;
+			read_rows += read_rows_inc;
+			read_bytes += read_bytes_inc;
+			result_rows += result_rows_inc;
+			result_bytes += result_bytes_inc;
+			sampler.insert(seconds);
+		}
+
+		void clear()
+		{
+			watch.restart();
+			queries = 0;
+			read_rows = 0;
+			read_bytes = 0;
+			result_rows = 0;
+			result_bytes = 0;
+			sampler.clear();
+		}
+	};
+
+	Stats info_per_interval;
+	Stats info_total;
 
 	Poco::FastMutex mutex;
 
@@ -127,7 +150,7 @@ private:
 
 		InterruptListener interrupt_listener;
 
-		watch_per_interval.restart();
+		info_per_interval.watch.restart();
 		Stopwatch watch;
 
 		/// В цикле, кладём все запросы в очередь.
@@ -140,7 +163,7 @@ private:
 
 			if (watch.elapsedSeconds() > delay)
 			{
-				report();
+				report(info_per_interval);
 				watch.restart();
 			}
 		}
@@ -151,8 +174,8 @@ private:
 
 		pool.wait();
 
-		std::cerr << std::endl << "Totals:" << std::endl;
-		reportTimings(global_sampler);
+		std::cerr << "\nTotal queries executed: " << info_total.queries << std::endl;
+		report(info_total);
 	}
 
 
@@ -227,66 +250,39 @@ private:
 
 		const BlockStreamProfileInfo & info = stream.getInfo();
 
-		addTiming(watch.elapsedSeconds(), read_rows, read_bytes, info.rows, info.bytes);
+		double seconds = watch.elapsedSeconds();
+
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		info_per_interval.add(seconds, read_rows, read_bytes, info.rows, info.bytes);
+		info_total.add(seconds, read_rows, read_bytes, info.rows, info.bytes);
 	}
 
 
-	void addTiming(double seconds, size_t read_rows, size_t read_bytes, size_t result_rows, size_t result_bytes)
+	void report(Stats & info)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-		++queries_total;
-		++queries_per_interval;
-		read_rows_per_interval += read_rows;
-		read_bytes_per_interval += read_bytes;
-		result_rows_per_interval += result_rows;
-		result_bytes_per_interval += result_bytes;
-		sampler.insert(seconds);
-		global_sampler.insert(seconds);
-	}
-
-
-	void reportTimings(Sampler & sampler)
-	{
-		for (size_t percent = 0; percent < 90; percent += 10)
-			std::cerr << percent << "%\t" << sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
-
-		std::cerr << "95%\t" 	<< sampler.quantileInterpolated(0.95) 	<< " sec." << std::endl;
-		std::cerr << "99%\t" 	<< sampler.quantileInterpolated(0.99) 	<< " sec." << std::endl;
-		std::cerr << "99.9%\t" 	<< sampler.quantileInterpolated(0.999) 	<< " sec." << std::endl;
-		std::cerr << "99.99%\t" << sampler.quantileInterpolated(0.9999) << " sec." << std::endl;
-		std::cerr << "100%\t" 	<< sampler.quantileInterpolated(1) 		<< " sec." << std::endl;
-	}
-
-
-	void report()
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
-		double seconds = watch_per_interval.elapsedSeconds();
+		double seconds = info.watch.elapsedSeconds();
 
 		std::cerr
 			<< std::endl
-			<< "QPS: " << (queries_per_interval / seconds) << ", "
-			<< "RPS: " << (read_rows_per_interval / seconds) << ", "
-			<< "MiB/s: " << (read_bytes_per_interval / seconds / 1048576) << ", "
-			<< "result RPS: " << (result_rows_per_interval / seconds) << ", "
-			<< "result MiB/s: " << (result_bytes_per_interval / seconds / 1048576) << "."
+			<< "QPS: " << (info.queries / seconds) << ", "
+			<< "RPS: " << (info.read_rows / seconds) << ", "
+			<< "MiB/s: " << (info.read_bytes / seconds / 1048576) << ", "
+			<< "result RPS: " << (info.result_rows / seconds) << ", "
+			<< "result MiB/s: " << (info.result_bytes / seconds / 1048576) << "."
 			<< std::endl;
 
-		reportTimings(sampler);
-		resetCounts();
-	}
+		for (size_t percent = 0; percent < 90; percent += 10)
+			std::cerr << percent << "%\t" << info.sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
 
-	void resetCounts()
-	{
-		sampler.clear();
-		queries_per_interval = 0;
-		read_rows_per_interval = 0;
-		read_bytes_per_interval = 0;
-		result_rows_per_interval = 0;
-		result_bytes_per_interval = 0;
-		watch_per_interval.restart();
+		std::cerr << "95%\t" 	<< info.sampler.quantileInterpolated(0.95) 	<< " sec." << std::endl;
+		std::cerr << "99%\t" 	<< info.sampler.quantileInterpolated(0.99) 	<< " sec." << std::endl;
+		std::cerr << "99.9%\t" 	<< info.sampler.quantileInterpolated(0.999) 	<< " sec." << std::endl;
+		std::cerr << "99.99%\t" << info.sampler.quantileInterpolated(0.9999) << " sec." << std::endl;
+		std::cerr << "100%\t" 	<< info.sampler.quantileInterpolated(1) 		<< " sec." << std::endl;
+
+		info.clear();
 	}
 };
 
