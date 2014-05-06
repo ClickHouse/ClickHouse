@@ -273,7 +273,7 @@ private:
 			<< "result MiB/s: " << (info.result_bytes / seconds / 1048576) << "."
 			<< std::endl;
 
-		for (size_t percent = 0; percent < 90; percent += 10)
+		for (size_t percent = 0; percent <= 90; percent += 10)
 			std::cerr << percent << "%\t" << info.sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
 
 		std::cerr << "95%\t" 	<< info.sampler.quantileInterpolated(0.95) 	<< " sec." << std::endl;
