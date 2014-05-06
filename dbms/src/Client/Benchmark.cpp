@@ -89,7 +89,11 @@ private:
 	size_t queries_per_interval = 0;
 	size_t rows_per_interval = 0;
 	size_t bytes_per_interval = 0;
-	ReservoirSampler<double> sampler {1 << 16};
+
+	typedef ReservoirSampler<double> Sampler;
+	Sampler sampler {1 << 16};
+	Sampler global_sampler {1 << 16};
+
 	Poco::FastMutex mutex;
 
 
@@ -144,6 +148,9 @@ private:
 			queue.push("");
 
 		pool.wait();
+
+		std::cerr << std::endl << "Totals:" << std::endl;
+		reportTimings(global_sampler);
 	}
 
 
@@ -226,9 +233,17 @@ private:
 
 		++queries_total;
 		++queries_per_interval;
-		rows += rows_per_interval;
-		bytes += bytes_per_interval;
+		rows_per_interval += rows;
+		bytes_per_interval += bytes;
 		sampler.insert(seconds);
+		global_sampler.insert(seconds);
+	}
+
+
+	void reportTimings(Sampler & sampler)
+	{
+		for (size_t percent = 0; percent <= 100; percent += 10)
+			std::cerr << percent << "%\t" << sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
 	}
 
 
@@ -243,12 +258,9 @@ private:
 			<< "MiB/s: " << (bytes_per_interval / watch_per_interval.elapsedSeconds() / 1048576) << "."
 			<< std::endl;
 
-		for (size_t percent = 0; percent <= 100; percent += 10)
-			std::cerr << percent << "%\t" << sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
-
+		reportTimings(sampler);
 		resetCounts();
 	}
-
 
 	void resetCounts()
 	{
