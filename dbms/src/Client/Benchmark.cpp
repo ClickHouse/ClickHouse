@@ -87,8 +87,10 @@ private:
 	Stopwatch watch_per_interval;
 	size_t queries_total = 0;
 	size_t queries_per_interval = 0;
-	size_t rows_per_interval = 0;
-	size_t bytes_per_interval = 0;
+	size_t read_rows_per_interval = 0;
+	size_t read_bytes_per_interval = 0;
+	size_t result_rows_per_interval = 0;
+	size_t result_bytes_per_interval = 0;
 
 	typedef ReservoirSampler<double> Sampler;
 	Sampler sampler {1 << 16};
@@ -214,27 +216,31 @@ private:
 		Stopwatch watch;
 		RemoteBlockInputStream stream(connection, query, nullptr);
 
-		size_t rows = 0;
-		size_t bytes = 0;
-		stream.setProgressCallback([&](size_t rows_inc, size_t bytes_inc) { rows += rows_inc; bytes += bytes_inc; });
+		size_t read_rows = 0;
+		size_t read_bytes = 0;
+		stream.setProgressCallback([&](size_t rows_inc, size_t bytes_inc) { read_rows += rows_inc; read_bytes += bytes_inc; });
 
 		stream.readPrefix();
 		while (Block block = stream.read())
 			;
 		stream.readSuffix();
 
-		addTiming(watch.elapsedSeconds(), rows, bytes);
+		const BlockStreamProfileInfo & info = stream.getInfo();
+
+		addTiming(watch.elapsedSeconds(), read_rows, read_bytes, info.rows, info.bytes);
 	}
 
 
-	void addTiming(double seconds, size_t rows, size_t bytes)
+	void addTiming(double seconds, size_t read_rows, size_t read_bytes, size_t result_rows, size_t result_bytes)
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
 		++queries_total;
 		++queries_per_interval;
-		rows_per_interval += rows;
-		bytes_per_interval += bytes;
+		read_rows_per_interval += read_rows;
+		read_bytes_per_interval += read_bytes;
+		result_rows_per_interval += result_rows;
+		result_bytes_per_interval += result_bytes;
 		sampler.insert(seconds);
 		global_sampler.insert(seconds);
 	}
@@ -257,11 +263,15 @@ private:
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
+		double seconds = watch_per_interval.elapsedSeconds();
+
 		std::cerr
 			<< std::endl
-			<< "QPS: " << (queries_per_interval / watch_per_interval.elapsedSeconds()) << ", "
-			<< "RPS: " << (rows_per_interval / watch_per_interval.elapsedSeconds()) << ", "
-			<< "MiB/s: " << (bytes_per_interval / watch_per_interval.elapsedSeconds() / 1048576) << "."
+			<< "QPS: " << (queries_per_interval / seconds) << ", "
+			<< "RPS: " << (read_rows_per_interval / seconds) << ", "
+			<< "MiB/s: " << (read_bytes_per_interval / seconds / 1048576) << ", "
+			<< "result RPS: " << (result_rows_per_interval / seconds) << ", "
+			<< "result MiB/s: " << (result_bytes_per_interval / seconds / 1048576) << "."
 			<< std::endl;
 
 		reportTimings(sampler);
@@ -272,8 +282,10 @@ private:
 	{
 		sampler.clear();
 		queries_per_interval = 0;
-		rows_per_interval = 0;
-		bytes_per_interval = 0;
+		read_rows_per_interval = 0;
+		read_bytes_per_interval = 0;
+		result_rows_per_interval = 0;
+		result_bytes_per_interval = 0;
 		watch_per_interval.restart();
 	}
 };
