@@ -242,8 +242,14 @@ private:
 
 	void reportTimings(Sampler & sampler)
 	{
-		for (size_t percent = 0; percent <= 100; percent += 10)
+		for (size_t percent = 0; percent < 90; percent += 10)
 			std::cerr << percent << "%\t" << sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
+
+		std::cerr << "95%\t" 	<< sampler.quantileInterpolated(0.95) 	<< " sec." << std::endl;
+		std::cerr << "99%\t" 	<< sampler.quantileInterpolated(0.99) 	<< " sec." << std::endl;
+		std::cerr << "99.9%\t" 	<< sampler.quantileInterpolated(0.999) 	<< " sec." << std::endl;
+		std::cerr << "99.99%\t" << sampler.quantileInterpolated(0.9999) << " sec." << std::endl;
+		std::cerr << "100%\t" 	<< sampler.quantileInterpolated(1) 		<< " sec." << std::endl;
 	}
 
 
