@@ -195,6 +195,12 @@ ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::strin
 	return code;
 }
 
+ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::string & data, CreateMode::type mode)
+{
+	std::string path_created;
+	return tryCreate(path, data, mode, path_created);
+}
+
 void ZooKeeper::remove(const std::string & path, int32_t version)
 {
 	checkNotExpired();

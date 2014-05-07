@@ -528,7 +528,7 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 		{
 			if (future_parts.count(name))
 			{
-				LOG_TRACE(log, "Not merging into part " << entry.new_part_name << " yet because part " << name << " is not ready yet.");
+				LOG_TRACE(log, "Not merging into part " << entry.new_part_name << " because part " << name << " is not ready yet.");
 				return false;
 			}
 		}
@@ -869,21 +869,25 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				}
 			}
 
-			/// Нужно загрузить новую запись в очередь перед тем, как в следующий раз выбирать куски для слияния.
-			///  (чтобы куски пометились как currently_merging).
-			pullLogsToQueue();
-
-			for (size_t i = 0; i + 1 < parts.size(); ++i)
+			if (success)
 			{
-				/// Уберем больше не нужные отметки о несуществующих блоках.
-				for (UInt64 number = parts[i]->right + 1; number <= parts[i + 1]->left - 1; ++number)
-				{
-					String number_str = toString(number);
-					while (number_str.size() < 10)
-						number_str = '0' + number_str;
-					String path = zookeeper_path + "/block_numbers/block-" + number_str;
+				/// Нужно загрузить новую запись в очередь перед тем, как в следующий раз выбирать куски для слияния.
+				///  (чтобы куски пометились как currently_merging).
+				pullLogsToQueue();
 
-					zookeeper.tryRemove(path);
+				String month_name = parts[0]->name.substr(0, 6);
+				for (size_t i = 0; i + 1 < parts.size(); ++i)
+				{
+					/// Уберем больше не нужные отметки о несуществующих блоках.
+					for (UInt64 number = parts[i]->right + 1; number <= parts[i + 1]->left - 1; ++number)
+					{
+						String number_str = toString(number);
+						while (number_str.size() < 10)
+							number_str = '0' + number_str;
+						String path = zookeeper_path + "/block_numbers/" + month_name + "/block-" + number_str;
+
+						zookeeper.tryRemove(path);
+					}
 				}
 			}
 		}
@@ -929,13 +933,15 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 	if (currently_merging.count(left->name) || currently_merging.count(right->name))
 		return false;
 
+	String month_name = left->name.substr(0, 6);
+
 	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
 	for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)
 	{
 		String number_str = toString(number);
 		while (number_str.size() < 10)
 			number_str = '0' + number_str;
-		String path = zookeeper_path + "/block_numbers/block-" + number_str;
+		String path = zookeeper_path + "/block_numbers/" + month_name + "/block-" + number_str;
 
 		if (AbandonableLockInZooKeeper::check(path, zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
 		{

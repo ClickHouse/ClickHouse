@@ -20,7 +20,7 @@ class SummingSortedBlockInputStream : public MergingSortedBlockInputStream
 public:
 	SummingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_)
 		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-		log(&Logger::get("SummingSortedBlockInputStream")), current_row_is_zero(false)
+		log(&Logger::get("SummingSortedBlockInputStream")), current_row_is_zero(false), output_is_non_empty(false)
 	{
 	}
 
@@ -58,6 +58,8 @@ private:
 	
 	Row current_row;
 	bool current_row_is_zero;	/// Текущая строчка просуммировалась в ноль, и её следует удалить.
+
+	bool output_is_non_empty; /// Отдали ли мы наружу хоть одну строку.
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
