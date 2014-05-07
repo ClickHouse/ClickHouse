@@ -61,6 +61,7 @@ public:
 	  * При остальных ошибках бросает исключение.
 	  */
 	ReturnCode::type tryCreate(const std::string & path, const std::string & data, CreateMode::type mode, std::string & pathCreated);
+	ReturnCode::type tryCreate(const std::string & path, const std::string & data, CreateMode::type mode);
 
 	/** Удалить ноду, если ее версия равна version (если -1, подойдет любая версия).
 	  */
