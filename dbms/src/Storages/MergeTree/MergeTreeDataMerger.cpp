@@ -128,9 +128,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			const MergeTreeData::DataPartPtr & last_part = *jt;
 
 			/// Кусок разрешено сливать с предыдущим, и в одном правильном месяце.
-			if (!can_merge(prev_part, last_part) ||
-				last_part->left_month != last_part->right_month ||
-				last_part->left_month != month)
+			if (last_part->left_month != last_part->right_month ||
+				last_part->left_month != month ||
+				!can_merge(prev_part, last_part))
 			{
 				break;
 			}
