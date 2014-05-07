@@ -7,9 +7,6 @@ namespace DB
 
 void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_columns)
 {
-	if (current_row_is_zero)
-		return;
-
 	for (size_t i = 0; i < num_columns; ++i)
 		merged_columns[i]->insert(current_row[i]);
 }
@@ -84,9 +81,10 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 		if (next_key != current_key)
 		{
 			/// Запишем данные для предыдущей группы.
-			if (!current_key[0].isNull())
+			if (!current_key[0].isNull() && !current_row_is_zero)
 			{
 				++merged_rows;
+				output_is_non_empty = true;
 				insertCurrentRow(merged_columns);
 			}
 
@@ -116,9 +114,13 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			return;
 	}
 
-	/// Запишем данные для последней группы.
-	++merged_rows;
-	insertCurrentRow(merged_columns);
+	/// Запишем данные для последней группы, если она ненулевая.
+	/// Если она нулевая, и без нее выходной поток окажется пустым, запишем ее все равно.
+	if (!current_row_is_zero || !output_is_non_empty)
+	{
+		++merged_rows;
+		insertCurrentRow(merged_columns);
+	}
 
 	children.clear();
 }
