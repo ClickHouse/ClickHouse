@@ -528,7 +528,7 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 		{
 			if (future_parts.count(name))
 			{
-				LOG_TRACE(log, "Not merging into part " << entry.new_part_name << " yet because part " << name << " is not ready yet.");
+				LOG_TRACE(log, "Not merging into part " << entry.new_part_name << " because part " << name << " is not ready yet.");
 				return false;
 			}
 		}
