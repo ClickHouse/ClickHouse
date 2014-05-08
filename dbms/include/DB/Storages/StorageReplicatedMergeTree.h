@@ -62,6 +62,8 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
+	bool optimize() override;
+
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */
 	void drop() override;
@@ -243,6 +245,7 @@ private:
 	/// Для чтения данных из директории unreplicated.
 	std::unique_ptr<MergeTreeData> unreplicated_data;
 	std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
+	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;

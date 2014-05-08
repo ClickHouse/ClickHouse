@@ -70,6 +70,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_,
 			database_name_ + "." + table_name + "[unreplicated]"));
 		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
+		unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
 	}
 }
 
@@ -1027,6 +1028,10 @@ void StorageReplicatedMergeTree::shutdown()
 	replica_is_active_node = nullptr;
 	endpoint_holder = nullptr;
 
+	merger.cancelAll();
+	if (unreplicated_merger)
+		unreplicated_merger->cancelAll();
+
 	LOG_TRACE(log, "Waiting for threads to finish");
 	if (is_leader_node)
 	{
@@ -1096,6 +1101,25 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 		insert_id = insert->insert_id;
 
 	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id);
+}
+
+bool StorageReplicatedMergeTree::optimize()
+{
+	/// Померджим какие-нибудь куски из директории unreplicated. TODO: Мерджить реплицируемые куски тоже.
+
+	if (!unreplicated_data)
+		return false;
+
+	unreplicated_data->clearOldParts();
+
+	MergeTreeData::DataPartsVector parts;
+	String merged_name;
+	auto always_can_merge = [](const MergeTreeData::DataPartPtr &a, const MergeTreeData::DataPartPtr &b) { return true; };
+	if (!unreplicated_merger->selectPartsToMerge(parts, merged_name, 0, true, true, false, always_can_merge))
+		return false;
+
+	unreplicated_merger->mergeParts(parts, merged_name);
+	return true;
 }
 
 void StorageReplicatedMergeTree::drop()
