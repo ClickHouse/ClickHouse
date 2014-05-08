@@ -27,9 +27,9 @@ MemoryTracker::~MemoryTracker()
 	LOG_DEBUG(&Logger::get("MemoryTracker"), "Peak memory usage for query: " << formatReadableSize(peak) << ".");
 }
 
-void MemoryTracker::alloc(Int32 size)
+void MemoryTracker::alloc(Int64 size)
 {
-	Int32 will_be = __sync_add_and_fetch(&amount, size);
+	Int64 will_be = __sync_add_and_fetch(&amount, size);
 
 	if (unlikely(limit && will_be > limit))
 	{

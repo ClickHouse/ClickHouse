@@ -9,32 +9,32 @@
   */
 class MemoryTracker
 {
-	Int32 amount = 0;
-	Int32 peak = 0;
-	Int32 limit = 0;
+	Int64 amount = 0;
+	Int64 peak = 0;
+	Int64 limit = 0;
 
 public:
-	MemoryTracker(Int32 limit_) : limit(limit_) {}
+	MemoryTracker(Int64 limit_) : limit(limit_) {}
 
 	~MemoryTracker();
 
 	/** Вызывайте эти функции перед соответствующими операциями с памятью.
 	  */
-	void alloc(Int32 size);
+	void alloc(Int64 size);
 
-	void realloc(Int32 old_size, Int32 new_size)
+	void realloc(Int64 old_size, Int64 new_size)
 	{
 		alloc(new_size - old_size);
 	}
 
 	/** А эту функцию имеет смысл вызывать после освобождения памяти.
 	  */
-	void free(Int32 size)
+	void free(Int64 size)
 	{
 		__sync_sub_and_fetch(&amount, size);
 	}
 
-	Int32 get() const
+	Int64 get() const
 	{
 		return amount;
 	}
