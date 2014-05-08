@@ -2,6 +2,7 @@
 #include <zkutil/KeeperException.h>
 #include <iostream>
 #include <readline/readline.h>
+#include <readline/history.h>
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
 #include <Yandex/logger_useful.h>
@@ -50,6 +51,7 @@ int main(int argc, char ** argv)
 
 		while (char * line_ = readline(":3 "))
 		{
+			add_history(line_);
 			std::string line(line_);
 			free(line_);
 
