@@ -316,12 +316,6 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 	new_data_part->size = to->marksCount();
 	new_data_part->modification_time = time(0);
 
-	if (0 == to->marksCount())
-	{
-		throw Exception("All rows have been deleted while merging from " + parts.front()->name
-			+ " to " + parts.back()->name, ErrorCodes::LOGICAL_ERROR);
-	}
-
 	/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
 	auto replaced_parts = data.renameTempPartAndReplace(new_data_part);
 
