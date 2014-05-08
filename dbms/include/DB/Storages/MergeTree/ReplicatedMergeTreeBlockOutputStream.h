@@ -12,7 +12,8 @@ class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
 	ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, const String & insert_id_)
-		: storage(storage_), insert_id(insert_id_), block_index(0), log(&Logger::get("ReplicatedMergeTreeBlockOutputStream")) {}
+		: storage(storage_), insert_id(insert_id_), block_index(0),
+		log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)")) {}
 
 	void write(const Block & block) override
 	{

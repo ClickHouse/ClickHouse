@@ -25,7 +25,8 @@ public:
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  */
-	static StoragePtr create(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	static StoragePtr create(const String & path_, const String & database_name_, const String & name_,
+		NamesAndTypesListPtr columns_,
 		const Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
@@ -141,7 +142,8 @@ private:
 
 	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
 
-	StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	StorageMergeTree(const String & path_, const String & database_name_, const String & name_,
+					NamesAndTypesListPtr columns_,
 					const Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,

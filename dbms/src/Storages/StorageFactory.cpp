@@ -300,11 +300,11 @@ StoragePtr StorageFactory::get(
 			throw Exception("Index granularity must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
 
 		if (replicated)
-			return StorageReplicatedMergeTree::create(zookeeper_path, replica_name, attach, data_path, table_name,
+			return StorageReplicatedMergeTree::create(zookeeper_path, replica_name, attach, data_path, database_name, table_name,
 				columns, context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, mode, sign_column_name);
 		else
-			return StorageMergeTree::create(data_path, table_name,
+			return StorageMergeTree::create(data_path, database_name, table_name,
 				columns, context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, mode, sign_column_name);
 	}

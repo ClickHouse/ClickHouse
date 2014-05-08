@@ -20,7 +20,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
 	const String & replica_name_,
 	bool attach,
-	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	const String & path_, const String & database_name_, const String & name_,
+	NamesAndTypesListPtr columns_,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -34,9 +35,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
 	replica_name(replica_name_),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-			index_granularity_, mode_, sign_column_, settings_),
+			index_granularity_, mode_, sign_column_, settings_, database_name_ + "." + table_name),
 	reader(data), writer(data), merger(data), fetcher(data),
-	log(&Logger::get("StorageReplicatedMergeTree: " + table_name))
+	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
 	if (!zookeeper_path.empty() && *zookeeper_path.rbegin() == '/')
 		zookeeper_path.erase(zookeeper_path.end() - 1);
@@ -66,7 +67,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	{
 		LOG_INFO(log, "Have unreplicated data");
 		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_, context_, primary_expr_ast_,
-			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_));
+			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_,
+			database_name_ + "." + table_name + "[unreplicated]"));
 		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
 	}
 }
@@ -75,7 +77,8 @@ StoragePtr StorageReplicatedMergeTree::create(
 	const String & zookeeper_path_,
 	const String & replica_name_,
 	bool attach,
-	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	const String & path_, const String & database_name_, const String & name_,
+	NamesAndTypesListPtr columns_,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -86,7 +89,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	const MergeTreeSettings & settings_)
 {
 	StorageReplicatedMergeTree * res = new StorageReplicatedMergeTree(zookeeper_path_, replica_name_, attach,
-		path_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
+		path_, database_name_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 		index_granularity_, mode_, sign_column_, settings_);
 	StoragePtr res_ptr = res->thisPtr();
 	res->startup();
