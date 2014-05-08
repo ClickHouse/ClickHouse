@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Storages/StorageMergeTree.h>
+#include <iomanip>
 
 namespace DB
 {
@@ -21,7 +22,9 @@ public:
 			{
 				double delay = std::pow(storage.data.settings.insert_delay_step, parts_count - storage.data.settings.parts_to_delay_insert);
 				delay /= 1000;
-				LOG_INFO(storage.log, "Delaying inserting block by " << delay << "s because there are " << parts_count << " parts");
+				delay = std::min(delay, 5 * 60.); /// Ограничим задержку 5 минутами.
+				LOG_INFO(storage.log, "Delaying inserting block by "
+					<< std::fixed << std::setprecision(4) << delay << "s because there are " << parts_count << " parts");
 				std::this_thread::sleep_for(std::chrono::duration<double>(delay));
 			}
 

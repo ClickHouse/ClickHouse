@@ -24,7 +24,8 @@ public:
 		const String & zookeeper_path_,
 		const String & replica_name_,
 		bool attach,
-		const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+		const String & path_, const String & database_name_, const String & name_,
+		NamesAndTypesListPtr columns_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
@@ -60,6 +61,8 @@ public:
 		unsigned threads = 1) override;
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
+
+	bool optimize() override;
 
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */
@@ -242,6 +245,7 @@ private:
 	/// Для чтения данных из директории unreplicated.
 	std::unique_ptr<MergeTreeData> unreplicated_data;
 	std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
+	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
@@ -265,7 +269,8 @@ private:
 		const String & zookeeper_path_,
 		const String & replica_name_,
 		bool attach,
-		const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+		const String & path_, const String & database_name_, const String & name_,
+		NamesAndTypesListPtr columns_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,

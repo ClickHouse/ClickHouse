@@ -9,7 +9,8 @@ namespace DB
 BackgroundProcessingPool StorageMergeTree::merge_pool;
 
 
-StorageMergeTree::StorageMergeTree(const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+StorageMergeTree::StorageMergeTree(const String & path_, const String & database_name_, const String & name_,
+				NamesAndTypesListPtr columns_,
 				const Context & context_,
 				ASTPtr & primary_expr_ast_,
 				const String & date_column_name_,
@@ -20,9 +21,9 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & name_, N
 				const MergeTreeSettings & settings_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), increment(full_path + "increment.txt"),
 		data(full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-			index_granularity_,mode_, sign_column_, settings_),
+			index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + name),
 	reader(data), writer(data), merger(data),
-	log(&Logger::get("MergeTree " + name)),
+	log(&Logger::get(database_name_ + "." + name + " (StorageMergeTree)")),
 	shutdown_called(false)
 {
 	increment.fixIfBroken(data.getMaxDataPartIndex());
@@ -31,7 +32,8 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & name_, N
 }
 
 StoragePtr StorageMergeTree::create(
-	const String & path_, const String & name_, NamesAndTypesListPtr columns_,
+	const String & path_, const String & database_name_, const String & name_,
+	NamesAndTypesListPtr columns_,
 	const Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -42,7 +44,7 @@ StoragePtr StorageMergeTree::create(
 	const MergeTreeSettings & settings_)
 {
 	StorageMergeTree * res = new StorageMergeTree(
-		path_, name_, columns_, context_, primary_expr_ast_, date_column_name_,
+		path_, database_name_, name_, columns_, context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, mode_, sign_column_, settings_);
 	StoragePtr res_ptr = res->thisPtr();
 
@@ -101,6 +103,8 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	full_path = new_full_path;
 
 	increment.setPath(full_path + "increment.txt");
+
+	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
 }
 
 void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)

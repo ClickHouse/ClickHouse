@@ -407,7 +407,8 @@ public:
 					size_t index_granularity_,
 					Mode mode_,
 					const String & sign_column_,
-					const MergeTreeSettings & settings_);
+					const MergeTreeSettings & settings_,
+					const String & log_name_);
 
 	std::string getModePrefix() const;
 
@@ -431,6 +432,8 @@ public:
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
 	String getFullPath() const { return full_path; }
+
+	String getLogName() const { return log_name; }
 
 	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
 	  */
@@ -509,6 +512,7 @@ private:
 
 	NamesAndTypesListPtr columns;
 
+	String log_name;
 	Logger * log;
 
 	/// Регулярное выражение соответсвующее названию директории с кусочками

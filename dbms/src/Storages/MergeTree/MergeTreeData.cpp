@@ -15,19 +15,6 @@
 namespace DB
 {
 
-static String lastTwoPathComponents(String path)
-{
-	if (!path.empty() && *path.rbegin() == '/')
-		path.erase(path.end() - 1);
-	size_t slash = path.rfind('/');
-	if (slash == String::npos || slash == 0)
-		return path;
-	slash = path.rfind('/', slash - 1);
-	if (slash == String::npos)
-		return path;
-	return path.substr(slash + 1);
-}
-
 MergeTreeData::MergeTreeData(
 	const String & full_path_, NamesAndTypesListPtr columns_,
 	const Context & context_,
@@ -36,14 +23,15 @@ MergeTreeData::MergeTreeData(
 	size_t index_granularity_,
 	Mode mode_,
 	const String & sign_column_,
-	const MergeTreeSettings & settings_)
+	const MergeTreeSettings & settings_,
+	const String & log_name_)
 	: context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
-	full_path(full_path_), columns(columns_),
-	log(&Logger::get("MergeTreeData: " + lastTwoPathComponents(full_path))),
+	full_path(full_path_), columns(columns_), log_name(log_name_),
+	log(&Logger::get(log_name + " (Data)")),
 	file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)")
 {
 	/// создаём директорию, если её нет
@@ -369,8 +357,6 @@ void MergeTreeData::setPath(const String & new_full_path)
 	full_path = new_full_path;
 
 	context.resetCaches();
-
-	log = &Logger::get(lastTwoPathComponents(full_path));
 }
 
 void MergeTreeData::dropAllData()

@@ -14,7 +14,7 @@ class ReplicatedMergeTreePartsServer : public InterserverIOEndpoint
 {
 public:
 	ReplicatedMergeTreePartsServer(MergeTreeData & data_, StoragePtr owned_storage_) : data(data_),
-		owned_storage(owned_storage_), log(&Logger::get("ReplicatedMergeTreePartsServer")) {}
+		owned_storage(owned_storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsServer)")) {}
 
 	void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) override
 	{

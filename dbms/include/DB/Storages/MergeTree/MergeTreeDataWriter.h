@@ -31,7 +31,7 @@ typedef std::list<BlockWithDateInterval> BlocksWithDateIntervals;
 class MergeTreeDataWriter
 {
 public:
-	MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get("MergeTreeDataWriter")) {}
+	MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
 
 	/** Разбивает блок на блоки, каждый из которых нужно записать в отдельный кусок.
 	  *  (читай: разбивает строки по месяцам)
