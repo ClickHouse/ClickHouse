@@ -5,6 +5,8 @@
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
 #include <Yandex/logger_useful.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/ReadBufferFromString.h>
 
 
 void printStat(const zkutil::Stat & s)
@@ -41,13 +43,16 @@ int main(int argc, char ** argv)
 			return 2;
 		}
 
-		Logger::root().setChannel(new Poco::ConsoleChannel(std::cout));
+		Logger::root().setChannel(new Poco::ConsoleChannel(std::cerr));
 		Logger::root().setLevel("trace");
 
 		zkutil::ZooKeeper zk(argv[1]);
 
-		while (char * line = readline(":3 "))
+		while (char * line_ = readline(":3 "))
 		{
+			std::string line(line_);
+			free(line_);
+
 			try
 			{
 				std::stringstream ss(line);
@@ -76,8 +81,22 @@ int main(int argc, char ** argv)
 				}
 				else if (cmd == "create")
 				{
-					std::string data, mode;
-					ss >> data >> mode;
+					DB::ReadBufferFromString in(line);
+
+					std::string data;
+					std::string mode;
+
+					DB::assertString("create", in);
+					DB::skipWhitespaceIfAny(in);
+
+					if (!in.eof() && *in.position() == '\'')
+						DB::readQuotedString(data, in);
+					else
+						DB::readString(data, in);
+
+					DB::skipWhitespaceIfAny(in);
+					DB::readString(mode, in);
+
 					zkutil::CreateMode::type m;
 					if (mode == "p")
 						m = zkutil::CreateMode::Persistent;
@@ -128,9 +147,24 @@ int main(int argc, char ** argv)
 				}
 				else if (cmd == "set")
 				{
+					DB::ReadBufferFromString in(line);
+
 					std::string data;
 					int version = -1;
-					ss >> data >> version;
+
+					DB::assertString("set", in);
+					DB::skipWhitespaceIfAny(in);
+
+					if (!in.eof() && *in.position() == '\'')
+						DB::readQuotedString(data, in);
+					else
+						DB::readString(data, in);
+
+					DB::skipWhitespaceIfAny(in);
+
+					if (!in.eof())
+						DB::readText(version, in);
+
 					zkutil::Stat stat;
 					zk.set(path, data, version, &stat);
 					printStat(stat);
