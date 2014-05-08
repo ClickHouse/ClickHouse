@@ -34,6 +34,27 @@ void waitForWatch(zkutil::WatchFuture & future)
 }
 
 
+void readUntilSpace(std::string & s, DB::ReadBuffer & buf)
+{
+	s = "";
+	while (!buf.eof())
+	{
+		if (isspace(*buf.position()))
+			return;
+		s.push_back(*buf.position());
+		++buf.position();
+	}
+}
+
+void readMaybeQuoted(std::string & s, DB::ReadBuffer & buf)
+{
+	if (!buf.eof() && *buf.position() == '\'')
+		DB::readQuotedString(s, buf);
+	else
+		readUntilSpace(s, buf);
+}
+
+
 int main(int argc, char ** argv)
 {
 	try
@@ -85,19 +106,17 @@ int main(int argc, char ** argv)
 				{
 					DB::ReadBufferFromString in(line);
 
+					std::string path;
 					std::string data;
 					std::string mode;
 
 					DB::assertString("create", in);
 					DB::skipWhitespaceIfAny(in);
-
-					if (!in.eof() && *in.position() == '\'')
-						DB::readQuotedString(data, in);
-					else
-						DB::readString(data, in);
-
+					readMaybeQuoted(path, in);
 					DB::skipWhitespaceIfAny(in);
-					DB::readString(mode, in);
+					readMaybeQuoted(data, in);
+					DB::skipWhitespaceIfAny(in);
+					readUntilSpace(mode, in);
 
 					zkutil::CreateMode::type m;
 					if (mode == "p")
@@ -156,12 +175,7 @@ int main(int argc, char ** argv)
 
 					DB::assertString("set", in);
 					DB::skipWhitespaceIfAny(in);
-
-					if (!in.eof() && *in.position() == '\'')
-						DB::readQuotedString(data, in);
-					else
-						DB::readString(data, in);
-
+					readMaybeQuoted(data, in);
 					DB::skipWhitespaceIfAny(in);
 
 					if (!in.eof())
