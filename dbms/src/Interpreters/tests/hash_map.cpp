@@ -51,6 +51,19 @@
 #define USE_AUTO_ARRAY	0
 
 
+struct AlternativeHash
+{
+	size_t operator() (UInt64 x) const
+	{
+		x ^= x >> 23;
+		x *= 0x2127599bf4325c37ULL;
+		x ^= x >> 47;
+
+		return x;
+	}
+};
+
+
 int main(int argc, char ** argv)
 {
 	typedef DB::UInt64 Key;
@@ -151,6 +164,36 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
+		typedef HashMap<Key, Value, AlternativeHash> Map;
+		Map map;
+		Map::iterator it;
+		bool inserted;
+
+		for (size_t i = 0; i < n; ++i)
+		{
+			map.emplace(data[i], it, inserted);
+			if (inserted)
+			{
+				new(&it->second) Value(std::move(value));
+				INIT;
+			}
+		}
+
+		watch.stop();
+		std::cerr << std::fixed << std::setprecision(2)
+			<< "HashMap. Size: " << map.size()
+			<< ", elapsed: " << watch.elapsedSeconds()
+			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			<< ", collisions: " << map.getCollisions()
+#endif
+			<< std::endl;
+	}
+
+	if (argc < 3 || atoi(argv[2]) == 3)
+	{
+		Stopwatch watch;
+
 		std::unordered_map<Key, Value, DefaultHash<Key> > map;
 		std::unordered_map<Key, Value, DefaultHash<Key> >::iterator it;
 		for (size_t i = 0; i < n; ++i)
@@ -167,7 +210,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (argc < 3 || atoi(argv[2]) == 3)
+	if (argc < 3 || atoi(argv[2]) == 4)
 	{
 		Stopwatch watch;
 
@@ -188,7 +231,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (argc < 3 || atoi(argv[2]) == 4)
+	if (argc < 3 || atoi(argv[2]) == 5)
 	{
 		Stopwatch watch;
 
