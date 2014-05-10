@@ -40,34 +40,28 @@ protected:
 	size_t m_size = 0;		/// Количество элементов
 
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
-	size_t bucket(size_t hash_value) const { return hash_value >> 24; }	/// TODO: брать не настолько младший байт.
+	size_t bucket(size_t hash_value) const { return hash_value >> 56; }
 
 	typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)
 	{
-		do
-		{
+		while (bucket != NUM_BUCKETS && impls[bucket].empty())
 			++bucket;
-		}
-		while (bucket != NUM_BUCKETS && !impls[bucket].empty());
 
 		if (bucket != NUM_BUCKETS)
 			return impls[bucket].begin();
 
-		return impls[NUM_BUCKETS - 1].end();
+		return impls[MAX_BUCKET].end();
 	}
 
 	typename Impl::const_iterator beginOfNextNonEmptyBucket(size_t & bucket) const
 	{
-		do
-		{
+		while (bucket != NUM_BUCKETS && impls[bucket].empty())
 			++bucket;
-		}
-		while (bucket != NUM_BUCKETS && !impls[bucket].empty());
 
 		if (bucket != NUM_BUCKETS)
 			return impls[bucket].begin();
 
-		return impls[NUM_BUCKETS - 1].end();
+		return impls[MAX_BUCKET].end();
 	}
 
 public:
@@ -75,19 +69,20 @@ public:
 	typedef typename Impl::value_type value_type;
 
 	static constexpr size_t NUM_BUCKETS = 256;
+	static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
 	Impl impls[NUM_BUCKETS];
 
 
 	class iterator
 	{
-		Impl * impls;
+		Self * container;
 		size_t bucket;
 		typename Impl::iterator current_it;
 
 		friend class TwoLevelHashTable;
 
-		iterator(Impl * impls_, size_t bucket_, typename Impl::iterator & current_it_)
-			: impls(impls_), bucket(bucket_), current_it(current_it_) {}
+		iterator(Self * container_, size_t bucket_, typename Impl::iterator current_it_)
+			: container(container_), bucket(bucket_), current_it(current_it_) {}
 
 	public:
 		iterator() {}
@@ -98,8 +93,11 @@ public:
 		iterator & operator++()
 		{
 			++current_it;
-			if (current_it == impls[bucket].end())
-				current_it = beginOfNextNonEmptyBucket(bucket);
+			if (current_it == container->impls[bucket].end())
+			{
+				++bucket;
+				current_it = container->beginOfNextNonEmptyBucket(bucket);
+			}
 
 			return *this;
 		}
@@ -111,18 +109,18 @@ public:
 
 	class const_iterator
 	{
-		Impl * impls;
+		Self * container;
 		size_t bucket;
 		typename Impl::const_iterator current_it;
 
 		friend class TwoLevelHashTable;
 
-		const_iterator(Impl * impls_, size_t bucket_, typename Impl::const_iterator & current_it_)
-			: impls(impls_), bucket(bucket_), current_it(current_it_) {}
+		const_iterator(Self * container_, size_t bucket_, typename Impl::const_iterator current_it_)
+			: container(container_), bucket(bucket_), current_it(current_it_) {}
 
 	public:
 		const_iterator() {}
-		const_iterator(const iterator & rhs) : impls(rhs.impls), current_it(rhs.current_it), bucket(rhs.bucket) {}
+		const_iterator(const iterator & rhs) : container(rhs.container), bucket(rhs.bucket), current_it(rhs.current_it) {}
 
 		bool operator== (const const_iterator & rhs) const { return current_it == rhs.current_it; }
 		bool operator!= (const const_iterator & rhs) const { return current_it != rhs.current_it; }
@@ -130,8 +128,11 @@ public:
 		const_iterator & operator++()
 		{
 			++current_it;
-			if (current_it == impls[bucket].end())
-				current_it = beginOfNextNonEmptyBucket(bucket);
+			if (current_it == container->impls[bucket].end())
+			{
+				++bucket;
+				current_it = container->beginOfNextNonEmptyBucket(bucket);
+			}
 
 			return *this;
 		}
@@ -144,17 +145,19 @@ public:
 	const_iterator begin() const
 	{
 		size_t buck = 0;
-		return beginOfNextNonEmptyBucket(buck);
+		typename Impl::const_iterator impl_it = beginOfNextNonEmptyBucket(buck);
+		return { this, buck, impl_it };
 	}
 
 	iterator begin()
 	{
 		size_t buck = 0;
-		return beginOfNextNonEmptyBucket(buck);
+		typename Impl::iterator impl_it = beginOfNextNonEmptyBucket(buck);
+		return { this, buck, impl_it };
 	}
 
-	const_iterator end() const 		{ return impls[NUM_BUCKETS - 1].end(); }
-	iterator end() 					{ return impls[NUM_BUCKETS - 1].end(); }
+	const_iterator end() const 		{ return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
+	iterator end() 					{ return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
 
 
 	/// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
@@ -196,7 +199,7 @@ public:
 		size_t buck = bucket(hash_value);
 		typename Impl::iterator impl_it;
 		impls[buck].emplace(x, impl_it, inserted);
-		it = iterator(impls, buck, impl_it);
+		it = iterator(this, buck, impl_it);
 
 		if (inserted)
 			++m_size;
@@ -210,7 +213,7 @@ public:
 
 		typename Impl::iterator found = impls[buck].find(x);
 		return found != impls[buck].end()
-			? iterator(impls, buck, found)
+			? iterator(this, buck, found)
 			: end();
 	}
 
@@ -222,7 +225,7 @@ public:
 
 		typename Impl::const_iterator found = impls[buck].find(x);
 		return found != impls[buck].end()
-			? const_iterator(impls, buck, found)
+			? const_iterator(this, buck, found)
 			: end();
 	}
 
