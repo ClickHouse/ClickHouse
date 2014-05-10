@@ -94,7 +94,7 @@ private:
 	  *  одного или нескольких столбцов значений множеству.
 	  */
 	typedef HashSet<UInt64> SetUInt64;
-	typedef HashSet<StringRef> SetString;
+	typedef HashSetWithSavedHash<StringRef> SetString;
 	typedef HashSet<UInt128, UInt128Hash> SetHashed;
 
 	BlockInputStreamPtr source;

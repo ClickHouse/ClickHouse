@@ -48,7 +48,7 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
   */
 typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
-typedef HashMap<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
+typedef HashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
 typedef HashMap<UInt128, AggregateDataPtr, UInt128Hash> AggregatedDataWithKeys128;
 typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
 

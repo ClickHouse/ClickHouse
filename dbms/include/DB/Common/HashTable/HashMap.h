@@ -74,6 +74,25 @@ struct HashMapCell
 };
 
 
+template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
+struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
+{
+	typedef HashMapCell<Key, TMapped, Hash, TState> Base;
+
+	size_t saved_hash;
+
+	HashMapCellWithSavedHash() : Base() {}
+	HashMapCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {}
+	HashMapCellWithSavedHash(const typename Base::value_type & value_, const typename Base::State & state) : Base(value_, state) {}
+
+	bool keyEquals(const Key & key_) const { return this->value.first == key_; }
+	bool keyEquals(const HashMapCellWithSavedHash & other) const { return saved_hash == other.saved_hash && this->value.first == other.value.first; }
+
+	void setHash(size_t hash_value) { saved_hash = hash_value; }
+	size_t getHash(const Hash & hash) const { return saved_hash; }
+};
+
+
 template
 <
 	typename Key,
@@ -112,3 +131,14 @@ template
 	typename Allocator = HashTableAllocator
 >
 using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
+
+
+template
+<
+	typename Key,
+	typename Mapped,
+	typename Hash = DefaultHash<Key>,
+	typename Grower = HashTableGrower<>,
+	typename Allocator = HashTableAllocator
+>
+using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;
