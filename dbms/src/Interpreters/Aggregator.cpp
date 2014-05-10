@@ -324,14 +324,132 @@ void Aggregator::destroyImpl(
 }
 
 
+bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
+	ConstColumnPlainPtrs & key_columns, AggregateColumns & aggregate_columns,
+	Sizes & key_sizes, StringRefs & key,
+	bool & no_more_keys)
+{
+	initialize(block);
+
+	/// result будет уничтожать состояния агрегатных функций в деструкторе
+	result.aggregator = this;
+
+	for (size_t i = 0; i < aggregates_size; ++i)
+		aggregate_columns[i].resize(aggregates[i].arguments.size());
+
+	/// Запоминаем столбцы, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByPosition(keys[i]).column;
+
+	for (size_t i = 0; i < aggregates_size; ++i)
+	{
+		for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
+		{
+			aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
+
+			/** Агрегатные функции рассчитывают, что в них передаются полноценные столбцы.
+				* Поэтому, стобцы-константы не разрешены в качестве аргументов агрегатных функций.
+				*/
+			if (aggregate_columns[i][j]->isConst())
+				throw Exception("Constants is not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
+		}
+	}
+
+	size_t rows = block.rows();
+
+	/// Каким способом выполнять агрегацию?
+	if (result.empty())
+	{
+		result.init(chooseAggregationMethod(key_columns, key_sizes));
+		result.keys_size = keys_size;
+		result.key_sizes = key_sizes;
+		LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+	}
+
+	if (overflow_row && !result.without_key)
+	{
+		result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->create(result.without_key + offsets_of_aggregate_states[i]);
+	}
+
+	if (result.type == AggregatedDataVariants::WITHOUT_KEY)
+	{
+		AggregatedDataWithoutKey & res = result.without_key;
+		if (!res)
+		{
+			res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->create(res + offsets_of_aggregate_states[i]);
+		}
+
+		/// Оптимизация в случае единственной агрегатной функции count.
+		AggregateFunctionCount * agg_count = aggregates_size == 1
+			? dynamic_cast<AggregateFunctionCount *>(aggregate_functions[0])
+			: NULL;
+
+		if (agg_count)
+			agg_count->addDelta(res, rows);
+		else
+		{
+			for (size_t i = 0; i < rows; ++i)
+			{
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					aggregate_functions[j]->add(res + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+			}
+		}
+	}
+
+	AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
+
+	if (result.type == AggregatedDataVariants::KEY_64)
+		executeImpl(*result.key64, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type == AggregatedDataVariants::KEY_STRING)
+		executeImpl(*result.key_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
+		executeImpl(*result.key_fixed_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type == AggregatedDataVariants::KEYS_128)
+		executeImpl(*result.keys128, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type == AggregatedDataVariants::HASHED)
+		executeImpl(*result.hashed, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	/// Проверка ограничений.
+	if (!no_more_keys && max_rows_to_group_by && result.size() > max_rows_to_group_by)
+	{
+		if (group_by_overflow_mode == OverflowMode::THROW)
+			throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result.size())
+				+ " rows, maximum: " + toString(max_rows_to_group_by),
+				ErrorCodes::TOO_MUCH_ROWS);
+		else if (group_by_overflow_mode == OverflowMode::BREAK)
+			return false;
+		else if (group_by_overflow_mode == OverflowMode::ANY)
+			no_more_keys = true;
+		else
+			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	return true;
+}
+
+
 /** Результат хранится в оперативке и должен полностью помещаться в оперативку.
   */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
 	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
-
 	AggregateColumns aggregate_columns(aggregates_size);
+	Sizes key_sizes;
 
 	/** Используется, если есть ограничение на максимальное количество строк при агрегации,
 	  *  и если group_by_overflow_mode == ANY.
@@ -347,122 +465,16 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	size_t src_rows = 0;
 	size_t src_bytes = 0;
 
-	Sizes key_sizes;
-
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
-		initialize(block);
-
-		/// result будет уничтожать состояния агрегатных функций в деструкторе
-		result.aggregator = this;
-		
 		src_rows += block.rows();
 		src_bytes += block.bytes();
 
-		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_columns[i].resize(aggregates[i].arguments.size());
-		
-		/// Запоминаем столбцы, с которыми будем работать
-		for (size_t i = 0; i < keys_size; ++i)
-			key_columns[i] = block.getByPosition(keys[i]).column;
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-		{
-			for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
-			{
-				aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
-
-				/** Агрегатные функции рассчитывают, что в них передаются полноценные столбцы.
-				  * Поэтому, стобцы-константы не разрешены в качестве аргументов агрегатных функций.
-				  */
-				if (aggregate_columns[i][j]->isConst())
-					throw Exception("Constants is not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
-			}
-		}
-
-		size_t rows = block.rows();
-
-		/// Каким способом выполнять агрегацию?
-		if (result.empty())
-		{
-			result.init(chooseAggregationMethod(key_columns, key_sizes));
-			result.keys_size = keys_size;
-			result.key_sizes = key_sizes;
-			LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
-		}
-
-		if (overflow_row && !result.without_key)
-		{
-			result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->create(result.without_key + offsets_of_aggregate_states[i]);
-		}
-
-		if (result.type == AggregatedDataVariants::WITHOUT_KEY)
-		{
-			AggregatedDataWithoutKey & res = result.without_key;
-			if (!res)
-			{
-				res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregate_functions[i]->create(res + offsets_of_aggregate_states[i]);
-			}
-
-			/// Оптимизация в случае единственной агрегатной функции count.
-			AggregateFunctionCount * agg_count = aggregates_size == 1
-				? dynamic_cast<AggregateFunctionCount *>(aggregate_functions[0])
-				: NULL;
-
-			if (agg_count)
-				agg_count->addDelta(res, rows);
-			else
-			{
-				for (size_t i = 0; i < rows; ++i)
-				{
-					/// Добавляем значения
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->add(res + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-				}
-			}
-		}
-
-		AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
-
-		if (result.type == AggregatedDataVariants::KEY_64)
-			executeImpl(*result.key64, result.aggregates_pool, rows, key_columns, aggregate_columns,
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
-		else if (result.type == AggregatedDataVariants::KEY_STRING)
-			executeImpl(*result.key_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
-		else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
-			executeImpl(*result.key_fixed_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
-		else if (result.type == AggregatedDataVariants::KEYS_128)
-			executeImpl(*result.keys128, result.aggregates_pool, rows, key_columns, aggregate_columns,
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
-		else if (result.type == AggregatedDataVariants::HASHED)
-			executeImpl(*result.hashed, result.aggregates_pool, rows, key_columns, aggregate_columns,
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
-		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
-			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-
-		/// Проверка ограничений.
-		if (!no_more_keys && max_rows_to_group_by && result.size() > max_rows_to_group_by)
-		{
-			if (group_by_overflow_mode == OverflowMode::THROW)
-				throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result.size())
-					+ " rows, maximum: " + toString(max_rows_to_group_by),
-					ErrorCodes::TOO_MUCH_ROWS);
-			else if (group_by_overflow_mode == OverflowMode::BREAK)
-				break;
-			else if (group_by_overflow_mode == OverflowMode::ANY)
-				no_more_keys = true;
-			else
-				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-		}
+		if (!executeOnBlock(block, result,
+			key_columns, aggregate_columns, key_sizes, key,
+			no_more_keys))
+			break;
 	}
 
 	double elapsed_seconds = watch.elapsedSeconds();

@@ -430,6 +430,15 @@ public:
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
+	typedef std::vector<ConstColumnPlainPtrs> AggregateColumns;
+	typedef std::vector<ColumnAggregateFunction::Container_t *> AggregateColumnsData;
+
+	/// Обработать один блок. Вернуть false, если обработку следует прервать (при group_by_overflow_mode = 'break').
+	bool executeOnBlock(Block & block, AggregatedDataVariants & result,
+		ConstColumnPlainPtrs & key_columns, AggregateColumns & aggregate_columns,	/// Передаются, чтобы не создавать их заново на каждый блок
+		Sizes & key_sizes, StringRefs & keys,										/// - передайте соответствующие объекты, которые изначально пустые.
+		bool & no_more_keys);
+
 	/** Преобразовать структуру данных агрегации в блок.
 	  * Если overflow_row = true, то агрегаты для строк, не попавших в max_rows_to_group_by, кладутся в первую строчку возвращаемого блока.
 	  *
@@ -494,9 +503,6 @@ protected:
 	  */
 	void destroyAggregateStates(AggregatedDataVariants & result);
 
-
-	typedef std::vector<ConstColumnPlainPtrs> AggregateColumns;
-	typedef std::vector<ColumnAggregateFunction::Container_t *> AggregateColumnsData;
 
 	template <typename Method>
 	void executeImpl(
