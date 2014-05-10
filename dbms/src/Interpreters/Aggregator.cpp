@@ -185,7 +185,7 @@ void Aggregator::executeImpl(
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключём.
 		if (inserted)
 		{
-			method.onNewKey(it, keys_size, i, keys);
+			method.onNewKey(it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
@@ -296,7 +296,7 @@ void Aggregator::mergeStreamsImpl(
 
 		if (inserted)
 		{
-			method.onNewKey(it, keys_size, i, keys);
+			method.onNewKey(it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);

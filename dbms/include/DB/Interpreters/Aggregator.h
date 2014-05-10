@@ -91,7 +91,7 @@ struct AggregationMethodKey64
 
 	/** Разместить дополнительные данные, если это необходимо, в случае, когда в хэш-таблицу был вставлен новый ключ.
 	  */
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys)
+	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
 
@@ -114,7 +114,6 @@ struct AggregationMethodString
 	typedef Data::const_iterator const_iterator;
 
 	Data data;
-	Arena string_pool;		/// NOTE Может быть лучше вместо этого использовать aggregates_pool?
 
 	const ColumnString::Offsets_t * offsets;
 	const ColumnString::Chars_t * chars;
@@ -140,9 +139,9 @@ struct AggregationMethodString
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys)
+	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
-		it->first.data = string_pool.insert(it->first.data, it->first.size);
+		it->first.data = pool.insert(it->first.data, it->first.size);
 	}
 
 	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -162,7 +161,6 @@ struct AggregationMethodFixedString
 	typedef Data::const_iterator const_iterator;
 
 	Data data;
-	Arena string_pool;		/// NOTE Может быть лучше вместо этого использовать aggregates_pool?
 
 	size_t n;
 	const ColumnFixedString::Chars_t * chars;
@@ -188,9 +186,9 @@ struct AggregationMethodFixedString
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys)
+	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
-		it->first.data = string_pool.insert(it->first.data, it->first.size);
+		it->first.data = pool.insert(it->first.data, it->first.size);
 	}
 
 	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -228,7 +226,7 @@ struct AggregationMethodKeys128
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys)
+	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
 
@@ -255,7 +253,6 @@ struct AggregationMethodHashed
 	typedef Data::const_iterator const_iterator;
 
 	Data data;
-	Arena keys_pool;		/// NOTE Может быть лучше вместо этого использовать aggregates_pool?
 
 	void init(ConstColumnPlainPtrs & key_columns)
 	{
@@ -274,9 +271,9 @@ struct AggregationMethodHashed
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value.second; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value.second; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys)
+	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
-		it->second.first = placeKeysInPool(i, keys_size, keys, keys_pool);
+		it->second.first = placeKeysInPool(i, keys_size, keys, pool);
 	}
 
 	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)

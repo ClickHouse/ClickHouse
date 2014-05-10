@@ -312,7 +312,7 @@ void SplittingAggregator::aggregateThread(
 				
 				if (inserted)
 				{
-					it->first.data = result.key_string->string_pool.insert(ref.data, ref.size);
+					it->first.data = result.aggregates_pool->insert(ref.data, ref.size);
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
@@ -350,7 +350,7 @@ void SplittingAggregator::aggregateThread(
 
 				if (inserted)
 				{
-					it->first.data = result.key_fixed_string->string_pool.insert(ref.data, ref.size);
+					it->first.data = result.aggregates_pool->insert(ref.data, ref.size);
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
@@ -424,7 +424,7 @@ void SplittingAggregator::aggregateThread(
 
 				if (inserted)
 				{
-					it->second.first = extractKeysAndPlaceInPool(i, keys_size, key_columns, key, result.hashed->keys_pool);
+					it->second.first = extractKeysAndPlaceInPool(i, keys_size, key_columns, key, *result.aggregates_pool);
 					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
