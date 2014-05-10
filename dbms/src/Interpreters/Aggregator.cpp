@@ -3,9 +3,6 @@
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/Columns/ColumnAggregateFunction.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 
@@ -19,7 +16,16 @@ namespace DB
 AggregatedDataVariants::~AggregatedDataVariants()
 {
 	if (aggregator && !aggregator->all_aggregates_has_trivial_destructor)
-		aggregator->destroyAggregateStates(*this);
+	{
+		try
+		{
+			aggregator->destroyAggregateStates(*this);
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	}
 }
 
 
@@ -85,13 +91,13 @@ void Aggregator::initialize(Block & block)
 			DataTypes argument_types(arguments_size);
 			for (size_t j = 0; j < arguments_size; ++j)
 				argument_types[j] = block.getByPosition(aggregates[i].arguments[j]).type;
-			
+
 			col.type = new DataTypeAggregateFunction(aggregates[i].function, argument_types, aggregates[i].parameters);
 			col.column = new ColumnAggregateFunction(aggregates[i].function);
 
 			sample.insert(col);
 		}
-	}	
+	}
 }
 
 
@@ -119,23 +125,202 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumeric())
-	{
-		
 		return AggregatedDataVariants::KEY_64;
-	}
 
 	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
 	if (keys_fit_128_bits)
 		return AggregatedDataVariants::KEYS_128;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
-	if (keys_size == 1
-		&& (dynamic_cast<const ColumnString *>(key_columns[0]) || dynamic_cast<const ColumnFixedString *>(key_columns[0])
-			|| dynamic_cast<const ColumnConstString *>(key_columns[0])))
+	if (keys_size == 1 && dynamic_cast<const ColumnString *>(key_columns[0]))
 		return AggregatedDataVariants::KEY_STRING;
+
+	if (keys_size == 1 && dynamic_cast<const ColumnFixedString *>(key_columns[0]))
+		return AggregatedDataVariants::KEY_FIXED_STRING;
 
 	/// Иначе будем агрегировать по хэшу от ключей.
 	return AggregatedDataVariants::HASHED;
+}
+
+
+template <typename Method>
+void Aggregator::executeImpl(
+	Method & method,
+	Arena * aggregates_pool,
+	size_t rows,
+	ConstColumnPlainPtrs & key_columns,
+	AggregateColumns & aggregate_columns,
+	const Sizes & key_sizes,
+	StringRefs & keys,
+	bool no_more_keys,
+	AggregateDataPtr overflow_row) const
+{
+	method.init(key_columns);
+
+	/// Для всех строчек.
+	for (size_t i = 0; i < rows; ++i)
+	{
+		typename Method::iterator it;
+		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
+		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
+
+		/// Получаем ключ для вставки в хэш-таблицу.
+		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
+
+		if (!no_more_keys)	/// Вставляем.
+			method.data.emplace(key, it, inserted);
+		else
+		{
+			/// Будем добавлять только если ключ уже есть.
+			inserted = false;
+			it = method.data.find(key);
+			if (method.data.end() == it)
+				overflow = true;
+		}
+
+		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
+		if (overflow && !overflow_row)
+			continue;
+
+		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключём.
+		if (inserted)
+		{
+			method.onNewKey(it, keys_size, i, keys);
+
+			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
+			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
+
+			for (size_t j = 0; j < aggregates_size; ++j)
+				aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
+		}
+
+		AggregateDataPtr value = !overflow ? Method::getAggregateData(it->second) : overflow_row;
+
+		/// Добавляем значения в агрегатные функции.
+		for (size_t j = 0; j < aggregates_size; ++j)
+			aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+	}
+}
+
+
+template <typename Method>
+void Aggregator::convertToBlockImpl(
+	Method & method,
+	ColumnPlainPtrs & key_columns,
+	AggregateColumnsData & aggregate_columns,
+	ColumnPlainPtrs & final_aggregate_columns,
+	const Sizes & key_sizes,
+	size_t start_row,
+	bool final) const
+{
+	if (!final)
+	{
+		size_t j = start_row;
+		for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it, ++j)
+		{
+			method.insertKeyIntoColumns(it, key_columns, keys_size, key_sizes);
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+				(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
+		}
+	}
+	else
+	{
+		for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
+		{
+			method.insertKeyIntoColumns(it, key_columns, keys_size, key_sizes);
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->insertResultInto(
+					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+					*final_aggregate_columns[i]);
+		}
+	}
+}
+
+
+template <typename Method>
+void Aggregator::mergeDataImpl(
+	Method & method_dst,
+	Method & method_src) const
+{
+	for (typename Method::iterator it = method_src.data.begin(); it != method_src.data.end(); ++it)
+	{
+		typename Method::iterator res_it;
+		bool inserted;
+		method_dst.data.emplace(it->first, res_it, inserted);
+
+		if (!inserted)
+		{
+			for (size_t i = 0; i < aggregates_size; ++i)
+			{
+				aggregate_functions[i]->merge(
+					Method::getAggregateData(res_it->second) + offsets_of_aggregate_states[i],
+					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+				aggregate_functions[i]->destroy(
+					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+			}
+		}
+		else
+		{
+			res_it->second = it->second;
+		}
+	}
+}
+
+
+template <typename Method>
+void Aggregator::mergeStreamsImpl(
+	Method & method,
+	Arena * aggregates_pool,
+	size_t start_row,
+	size_t rows,
+	ConstColumnPlainPtrs & key_columns,
+	AggregateColumnsData & aggregate_columns,
+	const Sizes & key_sizes,
+	StringRefs & keys) const
+{
+	method.init(key_columns);
+
+	/// Для всех строчек.
+	for (size_t i = start_row; i < rows; ++i)
+	{
+		typename Method::iterator it;
+		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
+
+		/// Получаем ключ для вставки в хэш-таблицу.
+		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
+
+		method.data.emplace(key, it, inserted);
+
+		if (inserted)
+		{
+			method.onNewKey(it, keys_size, i, keys);
+
+			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
+			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
+
+			for (size_t j = 0; j < aggregates_size; ++j)
+				aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
+		}
+
+		/// Мерджим состояния агрегатных функций.
+		for (size_t j = 0; j < aggregates_size; ++j)
+			aggregate_functions[j]->merge(
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[j],
+				(*aggregate_columns[j])[i]);
+	}
+}
+
+
+template <typename Method>
+void Aggregator::destroyImpl(
+	Method & method) const
+{
+	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->destroy(Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
 }
 
 
@@ -146,7 +331,6 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
 
-	typedef std::vector<ConstColumnPlainPtrs> AggregateColumns;
 	AggregateColumns aggregate_columns(aggregates_size);
 
 	/** Используется, если есть ограничение на максимальное количество строк при агрегации,
@@ -244,227 +428,24 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 				}
 			}
 		}
-		
+
+		AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
+
 		if (result.type == AggregatedDataVariants::KEY_64)
-		{
-			AggregatedDataWithUInt64Key & res = *result.key64;
-			const IColumn & column = *key_columns[0];
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				UInt64 key = column.get64(i);
-
-				AggregatedDataWithUInt64Key::iterator it;
-				bool inserted;
-				bool overflow = false;
-
-				if (!no_more_keys)
-					res.emplace(key, it, inserted);
-				else
-				{
-					inserted = false;
-					it = res.find(key);
-					if (res.end() == it)
-						overflow = true;
-				}
-
-				if (overflow && !overflow_row)
-					continue;
-				
-				if (inserted)
-				{
-					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-					
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-				}
-
-				AggregateDataPtr value = overflow ? result.without_key : it->second;
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-			}
-		}
+			executeImpl(*result.key64, result.aggregates_pool, rows, key_columns, aggregate_columns,
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
-		{
-			AggregatedDataWithStringKey & res = *result.key_string;
-			const IColumn & column = *key_columns[0];
-
-			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
-			{
-				const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-	            const ColumnString::Chars_t & data = column_string->getChars();
-
-				/// Для всех строчек
-				for (size_t i = 0; i < rows; ++i)
-				{
-					/// Строим ключ
-					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-
-					AggregatedDataWithStringKey::iterator it;
-					bool inserted;
-					bool overflow = false;
-
-					if (!no_more_keys)
-						res.emplace(ref, it, inserted);
-					else
-					{
-						inserted = false;
-						it = res.find(ref);
-						if (res.end() == it)
-							overflow = true;
-					}
-
-					if (overflow && !overflow_row)
-						continue;
-
-					if (inserted)
-					{
-						it->first.data = result.string_pool.insert(ref.data, ref.size);
-						it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-						for (size_t j = 0; j < aggregates_size; ++j)
-							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-					}
-
-					AggregateDataPtr value = overflow ? result.without_key : it->second;
-
-					/// Добавляем значения
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-				}
-			}
-			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
-			{
-				size_t n = column_string->getN();
-				const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-				/// Для всех строчек
-				for (size_t i = 0; i < rows; ++i)
-				{
-					/// Строим ключ
-					StringRef ref(&data[i * n], n);
-
-					AggregatedDataWithStringKey::iterator it;
-					bool inserted;
-					bool overflow = false;
-
-					if (!no_more_keys)
-						res.emplace(ref, it, inserted);
-					else
-					{
-						inserted = false;
-						it = res.find(ref);
-						if (res.end() == it)
-							overflow = true;
-					}
-
-					if (overflow && !overflow_row)
-						continue;
-
-					if (inserted)
-					{
-						it->first.data = result.string_pool.insert(ref.data, ref.size);
-						it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-						for (size_t j = 0; j < aggregates_size; ++j)
-							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-					}
-
-					AggregateDataPtr value = overflow ? result.without_key : it->second;
-
-					/// Добавляем значения
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-				}
-			}
-			else
-				throw Exception("Illegal type of column when aggregating by string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-		}
+			executeImpl(*result.key_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
+		else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
+			executeImpl(*result.key_fixed_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
 		else if (result.type == AggregatedDataVariants::KEYS_128)
-		{
-			AggregatedDataWithKeys128 & res = *result.keys128;
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				AggregatedDataWithKeys128::iterator it;
-				bool inserted;
-				bool overflow = false;
-				UInt128 key128 = pack128(i, keys_size, key_columns, key_sizes);
-
-				if (!no_more_keys)
-					res.emplace(key128, it, inserted);
-				else
-				{
-					inserted = false;
-					it = res.find(key128);
-					if (res.end() == it)
-						overflow = true;
-				}
-
-				if (overflow && !overflow_row)
-					continue;
-
-				if (inserted)
-				{
-					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-				}
-
-				AggregateDataPtr value = overflow ? result.without_key : it->second;
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-			}
-		}
+			executeImpl(*result.keys128, result.aggregates_pool, rows, key_columns, aggregate_columns,
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
 		else if (result.type == AggregatedDataVariants::HASHED)
-		{
-			AggregatedDataHashed & res = *result.hashed;
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				AggregatedDataHashed::iterator it;
-				bool inserted;
-				bool overflow = false;
-				UInt128 key128 = hash128(i, keys_size, key_columns, key);
-
-				if (!no_more_keys)
-					res.emplace(key128, it, inserted);
-				else
-				{
-					inserted = false;
-					it = res.find(key128);
-					if (res.end() == it)
-						overflow = true;
-				}
-
-				if (overflow && !overflow_row)
-					continue;
-
-				if (inserted)
-				{
-					it->second.first = placeKeysInPool(i, keys_size, key, result.keys_pool);
-					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
-				}
-
-				AggregateDataPtr value = overflow ? result.without_key : it->second.second;
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-			}
-		}
+			executeImpl(*result.hashed, result.aggregates_pool, rows, key_columns, aggregate_columns,
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
 		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -506,10 +487,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 	if (data_variants.empty())
 		return Block();
 
-	typedef std::vector<ColumnAggregateFunction::Container_t *> AggregateColumns;
-	
 	ColumnPlainPtrs key_columns(keys_size);
-	AggregateColumns aggregate_columns(aggregates_size);
+	AggregateColumnsData aggregate_columns(aggregates_size);
 	ColumnPlainPtrs final_aggregate_columns(aggregates_size);
 
 	for (size_t i = 0; i < keys_size; ++i)
@@ -561,130 +540,20 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 	size_t start_row = overflow_row ? 1 : 0;
 	
 	if (data_variants.type == AggregatedDataVariants::KEY_64)
-	{
-		AggregatedDataWithUInt64Key & data = *data_variants.key64;
-
-		IColumn & first_column = *key_columns[0];
-
-		size_t j = start_row;
-
-		if (!final)
-		{
-			for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
-			}
-		}
-		else
-		{
-			for (AggregatedDataWithUInt64Key::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				first_column.insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregate_functions[i]->insertResultInto(it->second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
-			}
-		}
-	}
+		convertToBlockImpl(*data_variants.key64, key_columns, aggregate_columns,
+						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
-	{
-		AggregatedDataWithStringKey & data = *data_variants.key_string;
-		IColumn & first_column = *key_columns[0];
-
-		size_t j = start_row;
-
-		if (!final)
-		{
-			for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				first_column.insertData(it->first.data, it->first.size);
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
-			}
-		}
-		else
-		{
-			for (AggregatedDataWithStringKey::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				first_column.insertData(it->first.data, it->first.size);
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregate_functions[i]->insertResultInto(it->second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
-			}
-		}
-	}
+		convertToBlockImpl(*data_variants.key_string, key_columns, aggregate_columns,
+						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
+	else if (data_variants.type == AggregatedDataVariants::KEY_FIXED_STRING)
+		convertToBlockImpl(*data_variants.key_fixed_string, key_columns, aggregate_columns,
+						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
 	else if (data_variants.type == AggregatedDataVariants::KEYS_128)
-	{
-		AggregatedDataWithKeys128 & data = *data_variants.keys128;
-
-		size_t j = start_row;
-
-		if (!final)
-		{
-			for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				size_t offset = 0;
-				for (size_t i = 0; i < keys_size; ++i)
-				{
-					size_t size = data_variants.key_sizes[i];
-					key_columns[i]->insertData(reinterpret_cast<const char *>(&it->first) + offset, size);
-					offset += size;
-				}
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					(*aggregate_columns[i])[j] = it->second + offsets_of_aggregate_states[i];
-			}
-		}
-		else
-		{
-			for (AggregatedDataWithKeys128::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				size_t offset = 0;
-				for (size_t i = 0; i < keys_size; ++i)
-				{
-					size_t size = data_variants.key_sizes[i];
-					key_columns[i]->insertData(reinterpret_cast<const char *>(&it->first) + offset, size);
-					offset += size;
-				}
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregate_functions[i]->insertResultInto(it->second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
-			}
-		}
-	}
+		convertToBlockImpl(*data_variants.keys128, key_columns, aggregate_columns,
+						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
-	{
-		AggregatedDataHashed & data = *data_variants.hashed;
-
-		size_t j = start_row;
-
-		if (!final)
-		{
-			for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				for (size_t i = 0; i < keys_size; ++i)
-					key_columns[i]->insertDataWithTerminatingZero(it->second.first[i].data, it->second.first[i].size);
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					(*aggregate_columns[i])[j] = it->second.second + offsets_of_aggregate_states[i];
-			}
-		}
-		else
-		{
-			for (AggregatedDataHashed::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-			{
-				for (size_t i = 0; i < keys_size; ++i)
-					key_columns[i]->insertDataWithTerminatingZero(it->second.first[i].data, it->second.first[i].size);
-
-				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregate_functions[i]->insertResultInto(it->second.second + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
-			}
-		}
-	}
+		convertToBlockImpl(*data_variants.hashed, key_columns, aggregate_columns,
+						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
 	else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -755,103 +624,17 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 				aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
 			}
 		}
-		
+
 		if (res->type == AggregatedDataVariants::KEY_64)
-		{
-			AggregatedDataWithUInt64Key & res_data = *res->key64;
-			AggregatedDataWithUInt64Key & current_data = *current.key64;
-
-			for (AggregatedDataWithUInt64Key::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
-			{
-				AggregatedDataWithUInt64Key::iterator res_it;
-				bool inserted;
-				res_data.emplace(it->first, res_it, inserted);
-
-				if (!inserted)
-				{
-					for (size_t i = 0; i < aggregates_size; ++i)
-					{
-						aggregate_functions[i]->merge(res_it->second + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
-						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
-					}
-				}
-				else
-					res_it->second = it->second;
-			}
-		}
+			mergeDataImpl(*res->key64, *current.key64);
 		else if (res->type == AggregatedDataVariants::KEY_STRING)
-		{
-			AggregatedDataWithStringKey & res_data = *res->key_string;
-			AggregatedDataWithStringKey & current_data = *current.key_string;
-			
-			for (AggregatedDataWithStringKey::const_iterator it = current_data.begin(); it != current_data.end(); ++it)
-			{
-				AggregatedDataWithStringKey::iterator res_it;
-				bool inserted;
-				res_data.emplace(it->first, res_it, inserted);
-
-				if (!inserted)
-				{
-					for (size_t i = 0; i < aggregates_size; ++i)
-					{
-						aggregate_functions[i]->merge(res_it->second + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
-						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
-					}
-				}
-				else
-					res_it->second = it->second;
-			}
-		}
+			mergeDataImpl(*res->key_string, *current.key_string);
+		else if (res->type == AggregatedDataVariants::KEY_FIXED_STRING)
+			mergeDataImpl(*res->key_fixed_string, *current.key_fixed_string);
 		else if (res->type == AggregatedDataVariants::KEYS_128)
-		{
-			AggregatedDataWithKeys128 & res_data = *res->keys128;
-			AggregatedDataWithKeys128 & current_data = *current.keys128;
-
-			for (AggregatedDataWithKeys128::iterator it = current_data.begin(); it != current_data.end(); ++it)
-			{
-				AggregatedDataWithKeys128::iterator res_it;
-				bool inserted;
-				res_data.emplace(it->first, res_it, inserted);
-
-				if (!inserted)
-				{
-					for (size_t i = 0; i < aggregates_size; ++i)
-					{
-						aggregate_functions[i]->merge(res_it->second + offsets_of_aggregate_states[i], it->second + offsets_of_aggregate_states[i]);
-						aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
-					}
-				}
-				else
-				{
-					res_it->second = it->second;
-				}
-			}
-		}
+			mergeDataImpl(*res->keys128, *current.keys128);
 		else if (res->type == AggregatedDataVariants::HASHED)
-		{
-			AggregatedDataHashed & res_data = *res->hashed;
-			AggregatedDataHashed & current_data = *current.hashed;
-
-			for (AggregatedDataHashed::iterator it = current_data.begin(); it != current_data.end(); ++it)
-			{
-				AggregatedDataHashed::iterator res_it;
-				bool inserted;
-				res_data.emplace(it->first, res_it, inserted);
-
-				if (!inserted)
-				{
-					for (size_t i = 0; i < aggregates_size; ++i)
-					{
-						aggregate_functions[i]->merge(res_it->second.second + offsets_of_aggregate_states[i], it->second.second + offsets_of_aggregate_states[i]);
-						aggregate_functions[i]->destroy(it->second.second + offsets_of_aggregate_states[i]);
-					}
-				}
-				else
-				{
-					res_it->second = it->second;
-				}
-			}
-		}
+			mergeDataImpl(*res->hashed, *current.hashed);
 		else if (res->type != AggregatedDataVariants::WITHOUT_KEY)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -877,9 +660,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
 
-	typedef ColumnAggregateFunction::Container_t * AggregateColumn;
-	typedef std::vector<AggregateColumn> AggregateColumns;
-	AggregateColumns aggregate_columns(aggregates_size);
+	AggregateColumnsData aggregate_columns(aggregates_size);
 
 	Block empty_block;
 	initialize(empty_block);
@@ -935,148 +716,15 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 		size_t start_row = overflow_row ? 1 : 0;
 
 		if (result.type == AggregatedDataVariants::KEY_64)
-		{
-			AggregatedDataWithUInt64Key & res = *result.key64;
-			const IColumn & column = *key_columns[0];
-
-			/// Для всех строчек
-			for (size_t i = start_row; i < rows; ++i)
-			{
-				/// Строим ключ
-				UInt64 key = column.get64(i);
-				
-				AggregatedDataWithUInt64Key::iterator it;
-				bool inserted;
-				res.emplace(key, it, inserted);
-
-				if (inserted)
-				{
-					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-				}
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
-			}
-		}
+			mergeStreamsImpl(*result.key64, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
-		{
-			AggregatedDataWithStringKey & res = *result.key_string;
-			const IColumn & column = *key_columns[0];
-
-			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
-            {
-                const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-                const ColumnString::Chars_t & data = column_string->getChars();
-
-				/// Для всех строчек
-				for (size_t i = start_row; i < rows; ++i)
-				{
-					/// Строим ключ
-					StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-
-					AggregatedDataWithStringKey::iterator it;
-					bool inserted;
-					res.emplace(ref, it, inserted);
-
-					if (inserted)
-					{
-						it->first.data = result.string_pool.insert(ref.data, ref.size);
-						it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-						for (size_t j = 0; j < aggregates_size; ++j)
-							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-					}
-
-					/// Добавляем значения
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
-				}
-			}
-			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
-            {
-                size_t n = column_string->getN();
-                const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-				/// Для всех строчек
-				for (size_t i = start_row; i < rows; ++i)
-				{
-					/// Строим ключ
-					StringRef ref(&data[i * n], n);
-
-					AggregatedDataWithStringKey::iterator it;
-					bool inserted;
-					res.emplace(ref, it, inserted);
-
-					if (inserted)
-					{
-						it->first.data = result.string_pool.insert(ref.data, ref.size);
-						it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-						for (size_t j = 0; j < aggregates_size; ++j)
-							aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-					}
-
-					/// Добавляем значения
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
-				}
-			}
-			else
-				throw Exception("Illegal type of column when aggregating by string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-		}
+			mergeStreamsImpl(*result.key_string, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
+		else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
+			mergeStreamsImpl(*result.key_fixed_string, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
 		else if (result.type == AggregatedDataVariants::KEYS_128)
-		{
-			AggregatedDataWithKeys128 & res = *result.keys128;
-
-			/// Для всех строчек
-			for (size_t i = start_row; i < rows; ++i)
-			{
-				AggregatedDataWithKeys128::iterator it;
-				bool inserted;
-				res.emplace(pack128(i, keys_size, key_columns, key_sizes), it, inserted);
-
-				if (inserted)
-				{
-					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
-				}
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->merge(it->second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
-			}
-		}
+			mergeStreamsImpl(*result.keys128, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
 		else if (result.type == AggregatedDataVariants::HASHED)
-		{
-			AggregatedDataHashed & res = *result.hashed;
-
-			/// Для всех строчек
-			for (size_t i = start_row; i < rows; ++i)
-			{
-				AggregatedDataHashed::iterator it;
-				bool inserted;
-				res.emplace(hash128(i, keys_size, key_columns, key), it, inserted);
-
-				if (inserted)
-				{
-					it->second.first = placeKeysInPool(i, keys_size, key, result.keys_pool);
-					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
-				}
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->merge(it->second.second + offsets_of_aggregate_states[j], (*aggregate_columns[j])[i]);
-			}
-		}
+			mergeStreamsImpl(*result.hashed, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
 		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -1100,30 +748,19 @@ void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
 		for (size_t i = 0; i < aggregates_size; ++i)
 			aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
+
 	if (result.type == AggregatedDataVariants::KEY_64)
-	{
-		AggregatedDataWithUInt64Key & res_data = *result.key64;
-
-		for (AggregatedDataWithUInt64Key::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
-	}
+		destroyImpl(*result.key64);
 	else if (result.type == AggregatedDataVariants::KEY_STRING)
-	{
-		AggregatedDataWithStringKey & res_data = *result.key_string;
-
-		for (AggregatedDataWithStringKey::const_iterator it = res_data.begin(); it != res_data.end(); ++it)
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->destroy(it->second + offsets_of_aggregate_states[i]);
-	}
+		destroyImpl(*result.key_string);
+	else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
+		destroyImpl(*result.key_fixed_string);
+	else if (result.type == AggregatedDataVariants::KEYS_128)
+		destroyImpl(*result.keys128);
 	else if (result.type == AggregatedDataVariants::HASHED)
-	{
-		AggregatedDataHashed & res_data = *result.hashed;
-
-		for (AggregatedDataHashed::iterator it = res_data.begin(); it != res_data.end(); ++it)
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->destroy(it->second.second + offsets_of_aggregate_states[i]);
-	}
+		destroyImpl(*result.hashed);
+	else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 }
 
 
