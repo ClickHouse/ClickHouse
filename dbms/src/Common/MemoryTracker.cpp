@@ -12,13 +12,13 @@ static std::string formatReadableSize(double size)
 	const char* units[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"};
 	size_t i = 0;
 	while (i + 1 < sizeof(units) / sizeof(units[0]) &&
-			fabs(size) >= 1024)
+		fabs(size) >= 1024)
 	{
 		size /= 1024;
         ++i;
     }
     std::stringstream ss;
-    ss << std::fixed << std::setprecision(i) << size << units[i];
+    ss << std::fixed << std::setprecision(i) << size << ' ' << units[i];
     return ss.str();
 }
 
