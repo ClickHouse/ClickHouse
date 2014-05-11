@@ -78,7 +78,7 @@ struct IntHash32Impl
 	
 	static UInt32 apply(UInt64 x)
 	{
-		/// seed взят из /dev/urandom.
+		/// seed взят из /dev/urandom. Он позволяет избежать нежелательных зависимостей с хэшами в разных структурах данных.
 		return intHash32<0x75D9543DE018BF45ULL>(x);
 	}
 };
@@ -89,7 +89,7 @@ struct IntHash64Impl
 
 	static UInt64 apply(UInt64 x)
 	{
-		return intHash64(x);
+		return intHash64(x ^ 0x4CF2D2BAAE6DA887ULL);
 	}
 };
 
