@@ -32,7 +32,7 @@ protected:
 	friend class iterator;
 
 	typedef size_t HashValue;
-	typedef TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator> Self;
+	typedef TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable> Self;
 public:
 	typedef ImplTable Impl;
 
