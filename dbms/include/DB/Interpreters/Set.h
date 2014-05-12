@@ -76,10 +76,7 @@ public:
 		ss << "{";
 		for (const Field & f : *ordered_set_elements)
 		{
-			if (!first)
-				ss << ", " << f;
-			else
-				ss << f;
+			ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
 			first = false;
 		}
 		ss << "}";

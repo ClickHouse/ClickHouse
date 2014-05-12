@@ -294,7 +294,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 				}
 			}
 		}
-		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ConvertImpl<DataTypeString, ToDataType, Name>::execute(block, arguments, result);
 		}

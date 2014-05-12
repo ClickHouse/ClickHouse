@@ -19,7 +19,7 @@ class ITableDeclaration
 public:
 	/** Имя таблицы.
 	  */
-	virtual std::string getTableName() const { return ""; }
+	virtual std::string getTableName() const = 0;
 
 	/** Получить список имён и типов столбцов таблицы, только невиртуальные.
 	  */

@@ -573,7 +573,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 	StoragePtr external_storage;
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 		if (node->kind == ASTIdentifier::Kind::Table)
-			if (external_storage = context.tryGetExternalTable(node->name))
+			if ((external_storage = context.tryGetExternalTable(node->name)))
 				external_tables[node->name] = external_storage;
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
@@ -584,7 +584,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 			ASTPtr & arg = args.children[1];
 			/// Если имя таблицы для селекта
 			if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*arg))
-				if (external_storage = context.tryGetExternalTable(id->name))
+				if ((external_storage = context.tryGetExternalTable(id->name)))
 					external_tables[id->name] = external_storage;
 		}
 	}
@@ -619,7 +619,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 
 			StoragePtr existing_storage;
 
-			if (existing_storage = context.tryGetExternalTable(table->name))
+			if ((existing_storage = context.tryGetExternalTable(table->name)))
 			{
 				external_tables[table->name] = existing_storage;
 				return;

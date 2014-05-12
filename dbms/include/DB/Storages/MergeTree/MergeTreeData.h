@@ -427,7 +427,7 @@ public:
 	/// Кладет в DataPart данные из имени кусочка.
 	void parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
 
-	std::string getTableName() { return ""; }
+	std::string getTableName() const { throw Exception("Logical error: calling method getTableName of not a table.", ErrorCodes::LOGICAL_ERROR); }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 

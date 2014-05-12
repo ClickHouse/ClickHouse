@@ -202,7 +202,7 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
 	if (database_name.empty())
 	{
 		StoragePtr res;
-		if (res = tryGetExternalTable(table_name))
+		if ((res = tryGetExternalTable(table_name)))
 			return res;
 		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
 			return res;
@@ -228,7 +228,7 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 	if (database_name.empty())
 	{
 		StoragePtr res;
-		if (res = tryGetExternalTable(table_name))
+		if ((res = tryGetExternalTable(table_name)))
 			return res;
 		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
 			return res;
