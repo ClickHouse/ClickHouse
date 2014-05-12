@@ -261,7 +261,7 @@ public:
 	}
 };
 
-struct ASTSet;
+class ASTSet;
 class PKCondition
 {
 public:

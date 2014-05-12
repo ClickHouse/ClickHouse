@@ -20,8 +20,8 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 				const String & sign_column_,
 				const MergeTreeSettings & settings_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), increment(full_path + "increment.txt"),
-		data(full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-			index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + name),
+	data(full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
+	index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + name),
 	reader(data), writer(data), merger(data),
 	log(&Logger::get(database_name_ + "." + name + " (StorageMergeTree)")),
 	shutdown_called(false)

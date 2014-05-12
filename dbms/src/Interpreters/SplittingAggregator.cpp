@@ -14,7 +14,7 @@ namespace DB
 
 void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedDataVariants & results)
 {
-	Stopwatch watch;
+	//Stopwatch watch;
 
 	/// Читаем все данные
 	while (Block block = stream->read())
@@ -49,17 +49,14 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		/// Каким способом выполнять агрегацию?
 		if (method == AggregatedDataVariants::EMPTY)
-		{
 			method = chooseAggregationMethod(key_columns, key_sizes);
-	//		LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
-		}
 
 		/// Подготавливаем массивы, куда будут складываться ключи или хэши от ключей.
 		if (method == AggregatedDataVariants::KEY_64)
 		{
 			keys64.resize(rows);
 		}
-		else if (method == AggregatedDataVariants::KEY_STRING)
+		else if (method == AggregatedDataVariants::KEY_STRING || method == AggregatedDataVariants::KEY_FIXED_STRING)
 		{
 			hashes64.resize(rows);
 			string_refs.resize(rows);
@@ -93,9 +90,9 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		/// Параллельно вычисляем хэши и ключи.
 
-		LOG_TRACE(log, "Calculating keys and hashes.");
+	//	LOG_TRACE(log, "Calculating keys and hashes.");
 
-		watch.start();
+	//	watch.start();
 
 		for (size_t thread_no = 0; thread_no < threads; ++thread_no)
 			pool.schedule(boost::bind(&SplittingAggregator::calculateHashesThread, this,
@@ -109,12 +106,12 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		rethrowFirstException(exceptions);
 
-		LOG_TRACE(log, "Calculated keys and hashes in " << std::fixed << std::setprecision(2) << watch.elapsedSeconds() << " sec.");
-		watch.restart();
+	//	LOG_TRACE(log, "Calculated keys and hashes in " << std::fixed << std::setprecision(2) << watch.elapsedSeconds() << " sec.");
+	//	watch.restart();
 
 		/// Параллельно агрегируем в независимые хэш-таблицы
 
-		LOG_TRACE(log, "Parallel aggregating.");
+	//	LOG_TRACE(log, "Parallel aggregating.");
 
 		for (size_t thread_no = 0; thread_no < threads; ++thread_no)
 			pool.schedule(boost::bind(&SplittingAggregator::aggregateThread, this,
@@ -128,20 +125,13 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		rethrowFirstException(exceptions);
 
-		LOG_TRACE(log, "Parallel aggregated in " << std::fixed << std::setprecision(2) << watch.elapsedSeconds() << " sec.");
+	//	LOG_TRACE(log, "Parallel aggregated in " << std::fixed << std::setprecision(2) << watch.elapsedSeconds() << " sec.");
 
 		/// Проверка ограничений
 
 		if (max_rows_to_group_by && size_of_all_results > max_rows_to_group_by && group_by_overflow_mode == OverflowMode::BREAK)
 			break;
 	}
-
-/*	double elapsed_seconds = watch.elapsedSeconds();
-	size_t rows = result.size();
-	LOG_TRACE(log, std::fixed << std::setprecision(3)
-		<< "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
-		<< " in " << elapsed_seconds << " sec."
-		<< " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");*/
 }
 
 
@@ -188,33 +178,32 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 		else if (method == AggregatedDataVariants::KEY_STRING)
 		{
 			const IColumn & column = *key_columns[0];
+			const ColumnString & column_string = dynamic_cast<const ColumnString &>(column);
 
-			if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+			const ColumnString::Offsets_t & offsets = column_string.getOffsets();
+			const ColumnString::Chars_t & data = column_string.getChars();
+
+			for (size_t i = begin; i < end; ++i)
 			{
-				const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-	            const ColumnString::Chars_t & data = column_string->getChars();
-
-				for (size_t i = begin; i < end; ++i)
-				{
-					string_refs[i] = StringRef(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-					hashes64[i] = hash_func_string(string_refs[i]);
-					thread_nums[i] = (hashes64[i] >> 32) % threads;
-				}
+				string_refs[i] = StringRef(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
+				hashes64[i] = hash_func_string(string_refs[i]);
+				thread_nums[i] = (hashes64[i] >> 32) % threads;
 			}
-			else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+		}
+		else if (method == AggregatedDataVariants::KEY_FIXED_STRING)
+		{
+			const IColumn & column = *key_columns[0];
+			const ColumnFixedString & column_string = dynamic_cast<const ColumnFixedString &>(column);
+
+			size_t n = column_string.getN();
+			const ColumnFixedString::Chars_t & data = column_string.getChars();
+
+			for (size_t i = begin; i < end; ++i)
 			{
-				size_t n = column_string->getN();
-				const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-				for (size_t i = begin; i < end; ++i)
-				{
-					string_refs[i] = StringRef(&data[i * n], n);
-					hashes64[i] = hash_func_string(string_refs[i]);
-					thread_nums[i] = (hashes64[i] >> 32) % threads;
-				}
+				string_refs[i] = StringRef(&data[i * n], n);
+				hashes64[i] = hash_func_string(string_refs[i]);
+				thread_nums[i] = (hashes64[i] >> 32) % threads;
 			}
-			else
-				throw Exception("Illegal type of column when aggregating by string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 		}
 		else if (method == AggregatedDataVariants::KEYS_128)
 		{
@@ -261,7 +250,7 @@ void SplittingAggregator::aggregateThread(
 
 		if (method == AggregatedDataVariants::KEY_64)
 		{
-			AggregatedDataWithUInt64Key & res = *result.key64;
+			AggregatedDataWithUInt64Key & res = result.key64->data;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -299,7 +288,7 @@ void SplittingAggregator::aggregateThread(
 		}
 		else if (method == AggregatedDataVariants::KEY_STRING)
 		{
-			AggregatedDataWithStringKey & res = *result.key_string;
+			AggregatedDataWithStringKey & res = result.key_string->data;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -323,7 +312,45 @@ void SplittingAggregator::aggregateThread(
 				
 				if (inserted)
 				{
-					it->first.data = result.string_pool.insert(ref.data, ref.size);
+					it->first.data = result.aggregates_pool->insert(ref.data, ref.size);
+					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+
+					for (size_t j = 0; j < aggregates_size; ++j)
+						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
+				}
+
+				/// Добавляем значения
+				for (size_t j = 0; j < aggregates_size; ++j)
+					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+			}
+		}
+		else if (method == AggregatedDataVariants::KEY_FIXED_STRING)
+		{
+			AggregatedDataWithStringKey & res = result.key_fixed_string->data;
+
+			for (size_t i = 0; i < rows; ++i)
+			{
+				if (thread_nums[i] != thread_no)
+					continue;
+
+				AggregatedDataWithStringKey::iterator it;
+				bool inserted;
+
+				StringRef ref = string_refs[i];
+
+				if (!no_more_keys)
+					res.emplace(ref, it, inserted, hashes64[i]);
+				else
+				{
+					inserted = false;
+					it = res.find(ref);
+					if (res.end() == it)
+						continue;
+				}
+
+				if (inserted)
+				{
+					it->first.data = result.aggregates_pool->insert(ref.data, ref.size);
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 					for (size_t j = 0; j < aggregates_size; ++j)
@@ -337,7 +364,7 @@ void SplittingAggregator::aggregateThread(
 		}
 		else if (method == AggregatedDataVariants::KEYS_128)
 		{
-			AggregatedDataWithKeys128 & res = *result.keys128;
+			AggregatedDataWithKeys128 & res = result.keys128->data;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -374,7 +401,7 @@ void SplittingAggregator::aggregateThread(
 		else if (method == AggregatedDataVariants::HASHED)
 		{
 			StringRefs key(keys_size);
-			AggregatedDataHashed & res = *result.hashed;
+			AggregatedDataHashed & res = result.hashed->data;
 
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -397,7 +424,7 @@ void SplittingAggregator::aggregateThread(
 
 				if (inserted)
 				{
-					it->second.first = extractKeysAndPlaceInPool(i, keys_size, key_columns, key, result.keys_pool);
+					it->second.first = extractKeysAndPlaceInPool(i, keys_size, key_columns, key, *result.aggregates_pool);
 					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 
 					for (size_t j = 0; j < aggregates_size; ++j)

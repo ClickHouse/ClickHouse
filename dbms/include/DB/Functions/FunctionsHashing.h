@@ -12,6 +12,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Common/HashTable/Hash.h>
 #include <DB/Functions/IFunction.h>
 
 #include <stats/IntHash.h>
@@ -33,6 +34,7 @@ namespace DB
   *
   * Быстрая некриптографическая хэш функция от любого целого числа:
   * intHash32:	number -> UInt32
+  * intHash64:  number -> UInt64
   */
 
 struct HalfMD5Impl
@@ -76,8 +78,18 @@ struct IntHash32Impl
 	
 	static UInt32 apply(UInt64 x)
 	{
-		/// seed взят из /dev/urandom.
+		/// seed взят из /dev/urandom. Он позволяет избежать нежелательных зависимостей с хэшами в разных структурах данных.
 		return intHash32<0x75D9543DE018BF45ULL>(x);
+	}
+};
+
+struct IntHash64Impl
+{
+	typedef UInt64 ReturnType;
+
+	static UInt64 apply(UInt64 x)
+	{
+		return intHash64(x ^ 0x4CF2D2BAAE6DA887ULL);
 	}
 };
 
@@ -220,11 +232,13 @@ struct NameHalfMD5 			{ static const char * get() { return "halfMD5"; } };
 struct NameSipHash64		{ static const char * get() { return "sipHash64"; } };
 struct NameCityHash64 		{ static const char * get() { return "cityHash64"; } };
 struct NameIntHash32 		{ static const char * get() { return "intHash32"; } };
+struct NameIntHash64 		{ static const char * get() { return "intHash64"; } };
 
 typedef FunctionStringHash64<HalfMD5Impl,		NameHalfMD5> 		FunctionHalfMD5;
 typedef FunctionStringHash64<SipHash64Impl,		NameSipHash64> 		FunctionSipHash64;
 typedef FunctionStringHash64<CityHash64Impl,	NameCityHash64> 	FunctionCityHash64;
 typedef FunctionIntHash<IntHash32Impl,			NameIntHash32> 		FunctionIntHash32;
+typedef FunctionIntHash<IntHash64Impl,			NameIntHash64> 		FunctionIntHash64;
 
 
 }

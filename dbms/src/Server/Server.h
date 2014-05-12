@@ -71,15 +71,11 @@ private:
 class Server : public Daemon
 {
 public:
-	Poco::Util::LayeredConfiguration & config;
-
 	/// Глобальные настройки севрера
 	Poco::SharedPtr<Context> global_context;
 	
 	Poco::SharedPtr<OLAP::QueryParser> olap_parser;
 	Poco::SharedPtr<OLAP::QueryConverter> olap_converter;
-	
-    Server() : config(Application::instance().config()) {}
 	
 protected:
 	Poco::SharedPtr<UsersConfigReloader> users_config_reloader;

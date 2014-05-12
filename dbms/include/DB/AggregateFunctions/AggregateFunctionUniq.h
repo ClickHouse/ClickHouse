@@ -53,7 +53,7 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 
 struct AggregateFunctionUniqUniquesHashSetData
 {
-	typedef UniquesHashSet Set;
+	typedef UniquesHashSet<DefaultHash<UInt64>> Set;
 	Set set;
 	
 	static String getName() { return "uniq"; }

@@ -7,9 +7,10 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/sparse_hash_map>
 
-#include <statdaemons/Stopwatch.h>
-
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
+
+#include <statdaemons/Stopwatch.h>
+#include <stats/UniquesHashSet.h>
 
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -48,6 +49,8 @@ int main(int argc, char ** argv)
 	{
 		Stopwatch watch;
 
+		std::cerr << sizeof(HashMapCell<Key, Value, DefaultHash<Key> >) << std::endl;
+
 		typedef TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator> Map;
 
 		Map map;
@@ -68,6 +71,58 @@ int main(int argc, char ** argv)
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
+
+		size_t sum_counts = 0;
+		size_t elems = 0;
+		for (const auto & kv : map)
+		{
+			sum_counts += kv.second;
+			++elems;
+		}
+
+		std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
+	}
+
+	{
+		Stopwatch watch;
+
+		typedef TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator> Map;
+		//typedef HashMap<Key, Value, UniquesHashSetDefaultHash> Map;
+
+		Map map;
+		Map::iterator it;
+		bool inserted;
+
+		for (size_t i = 0; i < n; ++i)
+		{
+			map.emplace(i, it, inserted);
+			if (inserted)
+				it->second = 0;
+			++it->second;
+		}
+
+		watch.stop();
+		std::cerr << std::fixed << std::setprecision(2)
+			<< "HashMap. Size: " << map.size()
+			<< ", elapsed: " << watch.elapsedSeconds()
+			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+			<< std::endl;
+
+		size_t sum_counts = 0;
+		size_t elems = 0;
+		for (const auto & kv : map)
+		{
+			sum_counts += kv.second;
+			++elems;
+
+			if (kv.first > n)
+				std::cerr << kv.first << std::endl;
+		}
+
+		std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
+
+		if (sum_counts != n)
+			std::cerr << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
 	}
 
 	return 0;

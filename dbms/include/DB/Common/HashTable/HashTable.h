@@ -189,7 +189,7 @@ struct ZeroValueStorage<true, Cell>
 {
 private:
 	bool has_zero = false;
-	char zero_value_storage[sizeof(Cell)];	/// Кусок памяти для элемента с ключём 0.
+	char zero_value_storage[sizeof(Cell)] __attribute__((__aligned__(__alignof__(Cell))));	/// Кусок памяти для элемента с ключём 0.
 
 public:
 	bool hasZero() const { return has_zero; }
