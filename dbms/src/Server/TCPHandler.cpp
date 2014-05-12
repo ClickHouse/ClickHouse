@@ -424,10 +424,10 @@ void TCPHandler::receiveHello()
 		if (packet_type == 'G' || packet_type == 'P')
 		{
 			writeString("HTTP/1.0 400 Bad Request\r\n\r\n"
-				"Port " + server.config.getString("tcp_port") + " is for clickhouse-client program.\r\n"
-				"You must use port " + server.config.getString("http_port") + " for HTTP"
-				+ (server.config.getBool("use_olap_http_server", false)
-					? "\r\n or port " + server.config.getString("olap_http_port") + " for OLAPServer compatibility layer.\r\n"
+				"Port " + server.config().getString("tcp_port") + " is for clickhouse-client program.\r\n"
+				"You must use port " + server.config().getString("http_port") + " for HTTP"
+				+ (server.config().getBool("use_olap_http_server", false)
+					? "\r\n or port " + server.config().getString("olap_http_port") + " for OLAPServer compatibility layer.\r\n"
 					: ".\r\n"),
 				*out);
 

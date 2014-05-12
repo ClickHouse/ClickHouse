@@ -234,47 +234,47 @@ int Server::main(const std::vector<std::string> & args)
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
 	  */
 	global_context->setGlobalContext(*global_context);
-	global_context->setPath(config.getString("path"));
+	global_context->setPath(config().getString("path"));
 
-	if (config.has("zookeeper"))
-		global_context->setZooKeeper(new zkutil::ZooKeeper(config, "zookeeper"));
+	if (config().has("zookeeper"))
+		global_context->setZooKeeper(new zkutil::ZooKeeper(config(), "zookeeper"));
 
-	if (config.has("interserver_http_port"))
+	if (config().has("interserver_http_port"))
 	{
 		String this_host;
-		if (config.has("interserver_http_host"))
-			this_host = config.getString("interserver_http_host");
+		if (config().has("interserver_http_host"))
+			this_host = config().getString("interserver_http_host");
 		else
 			this_host = Poco::Net::DNS::hostName();
 
-		String port_str = config.getString("interserver_http_port");
+		String port_str = config().getString("interserver_http_port");
 		int port = parse<int>(port_str);
 
 		global_context->setInterserverIOHost(this_host, port);
 	}
 
-	if (config.has("replica_name"))
-		global_context->setDefaultReplicaName(config.getString("replica_name"));
+	if (config().has("replica_name"))
+		global_context->setDefaultReplicaName(config().getString("replica_name"));
 
-	std::string users_config_path = config.getString("users_config", config.getString("config-file", "config.xml"));
+	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config().xml"));
 	users_config_reloader = new UsersConfigReloader(users_config_path, global_context);
 
 	/// Максимальное количество одновременно выполняющихся запросов.
-	global_context->getProcessList().setMaxSize(config.getInt("max_concurrent_queries", 0));
+	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
 	/// Размер кэша разжатых блоков. Если нулевой - кэш отключён.
-	size_t uncompressed_cache_size = parse<size_t>(config.getString("uncompressed_cache_size", "0"));
+	size_t uncompressed_cache_size = parse<size_t>(config().getString("uncompressed_cache_size", "0"));
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
 	/// Размер кэша засечек. Если нулевой - кэш отключён.
-	size_t mark_cache_size = parse<size_t>(config.getString("mark_cache_size", "0"));
+	size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size", "0"));
 	if (mark_cache_size)
 		global_context->setMarkCache(mark_cache_size);
 
 	/// Загружаем настройки.
 	Settings & settings = global_context->getSettingsRef();
-	global_context->setSetting("profile", config.getString("default_profile", "default"));
+	global_context->setSetting("profile", config().getString("default_profile", "default"));
 
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(*global_context);
@@ -290,19 +290,19 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes", *global_context));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 		
-	global_context->setCurrentDatabase(config.getString("default_database", "default"));
+	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 
 	{
-		bool use_olap_server = config.getBool("use_olap_http_server", false);
-		Poco::Timespan keep_alive_timeout(config.getInt("keep_alive_timeout", 10), 0);
+		bool use_olap_server = config().getBool("use_olap_http_server", false);
+		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
 
-		Poco::ThreadPool server_pool(3, config.getInt("max_connections", 1024));
+		Poco::ThreadPool server_pool(3, config().getInt("max_connections", 1024));
 		Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
 		http_params->setTimeout(settings.receive_timeout);
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
 		/// HTTP
-		Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("http_port")));
+		Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config().getString("http_port")));
 		http_socket.setReceiveTimeout(settings.receive_timeout);
 		http_socket.setSendTimeout(settings.send_timeout);
 		Poco::Net::HTTPServer http_server(
@@ -312,7 +312,7 @@ int Server::main(const std::vector<std::string> & args)
 			http_params);
 
 		/// TCP
-		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config.getString("tcp_port")));
+		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config().getString("tcp_port")));
 		tcp_socket.setReceiveTimeout(settings.receive_timeout);
 		tcp_socket.setSendTimeout(settings.send_timeout);
 		Poco::Net::TCPServer tcp_server(
@@ -323,9 +323,9 @@ int Server::main(const std::vector<std::string> & args)
 
 		/// Interserver IO HTTP
 		Poco::SharedPtr<Poco::Net::HTTPServer> interserver_io_http_server;
-		if (config.has("interserver_http_port"))
+		if (config().has("interserver_http_port"))
 		{
-			String port_str = config.getString("interserver_http_port");
+			String port_str = config().getString("interserver_http_port");
 
 			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress("[::]:"
 				+ port_str));
@@ -343,9 +343,9 @@ int Server::main(const std::vector<std::string> & args)
 		if (use_olap_server)
 		{
 			olap_parser = new OLAP::QueryParser();
-			olap_converter = new OLAP::QueryConverter(config);
+			olap_converter = new OLAP::QueryConverter(config());
 
-			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config.getString("olap_http_port")));
+			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config().getString("olap_http_port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
 			olap_http_socket.setSendTimeout(settings.send_timeout);
 			olap_http_server = new Poco::Net::HTTPServer(
