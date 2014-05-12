@@ -40,7 +40,7 @@ protected:
 	size_t m_size = 0;		/// Количество элементов
 
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
-	size_t bucket(size_t hash_value) const { return hash_value >> 56; }
+	size_t getBucketFromHash(size_t hash_value) const { return hash_value >> 56; }
 
 	typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)
 	{
@@ -50,6 +50,7 @@ protected:
 		if (bucket != NUM_BUCKETS)
 			return impls[bucket].begin();
 
+		--bucket;
 		return impls[MAX_BUCKET].end();
 	}
 
@@ -61,6 +62,7 @@ protected:
 		if (bucket != NUM_BUCKETS)
 			return impls[bucket].begin();
 
+		--bucket;
 		return impls[MAX_BUCKET].end();
 	}
 
@@ -87,8 +89,8 @@ public:
 	public:
 		iterator() {}
 
-		bool operator== (const iterator & rhs) const { return current_it == rhs.current_it; }
-		bool operator!= (const iterator & rhs) const { return current_it != rhs.current_it; }
+		bool operator== (const iterator & rhs) const { return bucket == rhs.bucket && current_it == rhs.current_it; }
+		bool operator!= (const iterator & rhs) const { return !(*this == rhs); }
 
 		iterator & operator++()
 		{
@@ -122,8 +124,8 @@ public:
 		const_iterator() {}
 		const_iterator(const iterator & rhs) : container(rhs.container), bucket(rhs.bucket), current_it(rhs.current_it) {}
 
-		bool operator== (const const_iterator & rhs) const { return current_it == rhs.current_it; }
-		bool operator!= (const const_iterator & rhs) const { return current_it != rhs.current_it; }
+		bool operator== (const const_iterator & rhs) const { return bucket == rhs.bucket && current_it == rhs.current_it; }
+		bool operator!= (const const_iterator & rhs) const { return !(*this == rhs); }
 
 		const_iterator & operator++()
 		{
@@ -196,7 +198,7 @@ public:
 	/// То же самое, но с заранее вычисленным значением хэш-функции.
 	void emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
 	{
-		size_t buck = bucket(hash_value);
+		size_t buck = getBucketFromHash(hash_value);
 		typename Impl::iterator impl_it;
 		impls[buck].emplace(x, impl_it, inserted);
 		it = iterator(this, buck, impl_it);
@@ -209,7 +211,7 @@ public:
 	iterator find(Key x)
 	{
 		size_t hash_value = hash(x);
-		size_t buck = bucket(hash_value);
+		size_t buck = getBucketFromHash(hash_value);
 
 		typename Impl::iterator found = impls[buck].find(x);
 		return found != impls[buck].end()
@@ -221,7 +223,7 @@ public:
 	const_iterator find(Key x) const
 	{
 		size_t hash_value = hash(x);
-		size_t buck = bucket(hash_value);
+		size_t buck = getBucketFromHash(hash_value);
 
 		typename Impl::const_iterator found = impls[buck].find(x);
 		return found != impls[buck].end()
