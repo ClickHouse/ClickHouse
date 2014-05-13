@@ -35,8 +35,7 @@ public:
 		const String & sign_column_ = "",
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
-	void startup();
-	void shutdown();
+	void shutdown() override;
 	~StorageReplicatedMergeTree();
 
 	std::string getName() const override
@@ -201,7 +200,7 @@ private:
 	typedef std::vector<std::thread> Threads;
 
 	Context & context;
-	zkutil::ZooKeeper & zookeeper;
+	zkutil::ZooKeeperPtr zookeeper;
 
 	/// Куски, для которых в очереди есть задание на слияние.
 	StringSet currently_merging;
@@ -228,6 +227,10 @@ private:
 	/** /replicas/me/is_active.
 	  */
 	zkutil::EphemeralNodeHolderPtr replica_is_active_node;
+	
+	/** Случайные данные, которые мы записали в /replicas/me/is_active.
+	  */
+	String active_node_identifier;
 
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
@@ -258,12 +261,18 @@ private:
 	/// Поток, удаляющий информацию о старых блоках из ZooKeeper.
 	std::thread clear_old_blocks_thread;
 
+	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
+	std::thread restarting_thread;
+
 	/// Когда последний раз выбрасывали старые логи из ZooKeeper.
 	time_t clear_old_logs_time = 0;
 
 	Logger * log;
 
+	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
 	volatile bool shutdown_called = false;
+	/// Нужно ли завершить restarting_thread.
+	volatile bool permanent_shutdown_called = false;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
@@ -306,6 +315,10 @@ private:
 	  *  Но если таких слишком много, на всякий случай бросить исключение - скорее всего, это ошибка конфигурации.
 	  */
 	void checkParts();
+
+	/// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
+	void startup();
+	void partialShutdown();
 
 
 	/** Проверить, что чексумма куска совпадает с чексуммой того же куска на какой-нибудь другой реплике.
@@ -361,6 +374,10 @@ private:
 	/** В бесконечном цикле вызывает clearOldBlocks.
 	  */
 	void clearOldBlocksThread();
+
+	/** В бесконечном цикле проверяет, не протухла ли сессия в ZooKeeper.
+	  */
+	void restartingThread();
 
 	/// Вызывается во время выбора кусков для слияния.
 	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);

@@ -25,11 +25,11 @@ public:
 			time_t min_date_time = DateLUTSingleton::instance().fromDayNum(DayNum_t(current_block.min_date));
 			String month_name = toString(Date2OrderedIdentifier(min_date_time) / 100);
 
-			storage.zookeeper.tryCreate(storage.zookeeper_path + "/block_numbers/" + month_name, "", zkutil::CreateMode::Persistent);
+			storage.zookeeper->tryCreate(storage.zookeeper_path + "/block_numbers/" + month_name, "", zkutil::CreateMode::Persistent);
 
 			AbandonableLockInZooKeeper block_number_lock(
 				storage.zookeeper_path + "/block_numbers/" + month_name + "/block-",
-				storage.zookeeper_path + "/temp", storage.zookeeper);
+				storage.zookeeper_path + "/temp", *storage.zookeeper);
 
 			UInt64 part_number = block_number_lock.getNumber();
 
@@ -42,7 +42,7 @@ public:
 				block_id = part->checksums.summaryDataChecksum();
 
 			String expected_checksums_str;
-			if (!block_id.empty() && storage.zookeeper.tryGet(
+			if (!block_id.empty() && storage.zookeeper->tryGet(
 				storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
 			{
 				LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it");
@@ -71,28 +71,28 @@ public:
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id,
 					"",
-					storage.zookeeper.getDefaultACL(),
+					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id + "/checksums",
 					part->checksums.toString(),
-					storage.zookeeper.getDefaultACL(),
+					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id + "/number",
 					toString(part_number),
-					storage.zookeeper.getDefaultACL(),
+					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 			}
 			storage.checkPartAndAddToZooKeeper(part, ops);
 			ops.push_back(new zkutil::Op::Create(
 				storage.replica_path + "/log/log-",
 				log_entry.toString(),
-				storage.zookeeper.getDefaultACL(),
+				storage.zookeeper->getDefaultACL(),
 				zkutil::CreateMode::PersistentSequential));
 			block_number_lock.getUnlockOps(ops);
 
-			storage.zookeeper.multi(ops);
+			storage.zookeeper->multi(ops);
 		}
 	}
 

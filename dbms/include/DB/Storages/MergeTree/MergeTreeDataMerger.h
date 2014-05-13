@@ -38,10 +38,12 @@ public:
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
-	/** Отменяет все текущие мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
-	  * После этого с этим экземпляром ничего делать нельзя.
+	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
+	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancelAll().
 	  */
 	void cancelAll() { canceled = true; }
+
+	void uncancelAll() { canceled = false; }
 
 private:
 	MergeTreeData & data;

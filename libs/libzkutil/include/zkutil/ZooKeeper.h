@@ -18,6 +18,8 @@ const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 class ZooKeeper
 {
 public:
+	typedef Poco::SharedPtr<ZooKeeper> Ptr;
+
 	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT, WatchFunction * watch = nullptr);
 
 	/** конфиг вида
@@ -38,12 +40,18 @@ public:
 
 	~ZooKeeper();
 
-	/** Возвращает true, если сессия навсегда завершена.
-	  * Это возможно только если соединение было установлено, а потом разорвалось. Это достаточно редкая ситуация.
-	  * С другой стороны, если, например, указан неправильный сервер или порт, попытки соединения будут продолжаться бесконечно,
-	  * disconnected() будет возвращать false, и все вызовы будут выбрасывать исключение ConnectionLoss.
+	/** Создает новую сессию с теми же параметрами. Можно использовать для переподключения, если сессия истекла.
+	  * Новой сессии соответствует только возвращенный экземпляр ZooKeeper, этот экземпляр не изменяется.
 	  */
-	bool disconnected();
+	Ptr startNewSession() const;
+
+	/** Возвращает true, если сессия навсегда завершена.
+	  * Это возможно только если соединение было установлено, потом разорвалось, потом снова восстановилось, но слишком поздно.
+	  * Это достаточно редкая ситуация.
+	  * С другой стороны, если, например, указан неправильный сервер или порт, попытки соединения будут продолжаться бесконечно,
+	  *  expired() будет возвращать false, и все вызовы будут выбрасывать исключение ConnectionLoss.
+	  */
+	bool expired();
 
 	void setDefaultACL(ACLs & acl);
 
@@ -124,6 +132,9 @@ private:
 	friend struct StateWatch;
 
 	zk::ZooKeeper impl;
+
+	std::string hosts;
+	int32_t sessionTimeoutMs;
 	WatchFunction * state_watch;
 
 	Poco::FastMutex mutex;
@@ -138,6 +149,8 @@ private:
 	  */
 	void checkNotExpired();
 };
+
+typedef ZooKeeper::Ptr ZooKeeperPtr;
 
 
 /** В конструкторе создает эфемерную ноду, в деструкторе - удаляет.
