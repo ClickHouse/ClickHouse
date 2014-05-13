@@ -1119,8 +1119,8 @@ void StorageReplicatedMergeTree::restartingThread()
 	catch (...)
 	{
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
-		LOG_ERROR(log, "Exception in restartingThread. The storage will be read-only until server restart.");
-		goReadOnly();
+		LOG_ERROR(log, "Exception in restartingThread. Calling std::terminate just in case.");
+		std::terminate();
 		return;
 	}
 
