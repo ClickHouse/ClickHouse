@@ -33,7 +33,7 @@ int main()
 	std::cin >> unused;
 
 	children.clear();
-	std::cout << "will getChildren (this call will block forever, which seems to be zkcpp issue)" << std::endl;
+	std::cout << "will getChildren (this call will either succeded either return OperationTimeout)" << std::endl;
 	ret = zookeeper.getChildren("/", nullptr, children, stat);
 
 	std::cout << "getChildren returned " << zk::ReturnCode::toString(ret) << std::endl;
