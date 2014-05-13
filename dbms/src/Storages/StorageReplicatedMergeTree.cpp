@@ -40,6 +40,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	reader(data), writer(data), merger(data), fetcher(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
+	if (!zookeeper)
+	{
+		goReadOnly();
+		return;
+	}
+
 	if (!zookeeper_path.empty() && *zookeeper_path.rbegin() == '/')
 		zookeeper_path.erase(zookeeper_path.end() - 1);
 	replica_path = zookeeper_path + "/replicas/" + replica_name;
@@ -102,9 +108,12 @@ StoragePtr StorageReplicatedMergeTree::create(
 		path_, database_name_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 		index_granularity_, mode_, sign_column_, settings_);
 	StoragePtr res_ptr = res->thisPtr();
-	String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
-	InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, res_ptr);
-	res->endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, res->context.getInterserverIOHandler());
+	if (!res->is_read_only)
+	{
+		String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
+		InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, res_ptr);
+		res->endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, res->context.getInterserverIOHandler());
+	}
 	return res_ptr;
 }
 
@@ -1061,14 +1070,33 @@ void StorageReplicatedMergeTree::partialShutdown()
 	if (is_leader_node)
 	{
 		is_leader_node = false;
-		merge_selecting_thread.join();
-		clear_old_blocks_thread.join();
+		if (merge_selecting_thread.joinable())
+			merge_selecting_thread.join();
+		if (clear_old_blocks_thread.joinable())
+			clear_old_blocks_thread.join();
 	}
-	queue_updating_thread.join();
+	if (queue_updating_thread.joinable())
+		queue_updating_thread.join();
 	for (auto & thread : queue_threads)
 		thread.join();
 	queue_threads.clear();
 	LOG_TRACE(log, "Threads finished");
+}
+
+void StorageReplicatedMergeTree::goReadOnly()
+{
+	LOG_INFO(log, "Going to read-only mode");
+
+	is_read_only = true;
+	shutdown_called = true;
+	permanent_shutdown_called = true;
+
+	leader_election = nullptr;
+	replica_is_active_node = nullptr;
+	merger.cancelAll();
+	is_leader_node = false;
+
+	endpoint_holder = nullptr;
 }
 
 void StorageReplicatedMergeTree::startup()
@@ -1119,8 +1147,8 @@ void StorageReplicatedMergeTree::restartingThread()
 	catch (...)
 	{
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
-		LOG_ERROR(log, "Exception in restartingThread. Calling std::terminate just in case.");
-		std::terminate();
+		LOG_ERROR(log, "Exception in restartingThread. The storage will be read-only until server restart.");
+		goReadOnly();
 		return;
 	}
 
@@ -1168,6 +1196,9 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 {
+	if (is_read_only)
+		throw Exception("Table is in read only mode", ErrorCodes::TABLE_IS_READ_ONLY);
+
 	String insert_id;
 	if (ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*query))
 		insert_id = insert->insert_id;

@@ -202,6 +202,9 @@ private:
 	Context & context;
 	zkutil::ZooKeeperPtr zookeeper;
 
+	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
+	bool is_read_only = false;
+
 	/// Куски, для которых в очереди есть задание на слияние.
 	StringSet currently_merging;
 	Poco::FastMutex currently_merging_mutex;
@@ -319,6 +322,9 @@ private:
 	/// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
 	void startup();
 	void partialShutdown();
+
+	/// Запретить запись в таблицу и завершить все фоновые потоки.
+	void goReadOnly();
 
 
 	/** Проверить, что чексумма куска совпадает с чексуммой того же куска на какой-нибудь другой реплике.
