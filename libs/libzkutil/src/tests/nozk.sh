@@ -6,10 +6,5 @@
 
 # Чтобы посмотреть, какие правила сейчас есть, используйте sudo iptables -L и sudo ip6tables -L
 
-sudo iptables -A OUTPUT -d example1 -j DROP
-sudo iptables -A OUTPUT -d example2 -j DROP
-sudo iptables -A OUTPUT -d example3 -j DROP
-sudo ip6tables -A OUTPUT -d example1 -j DROP
-sudo ip6tables -A OUTPUT -d example2 -j DROP
-sudo ip6tables -A OUTPUT -d example3 -j DROP
-
+sudo iptables -A OUTPUT -p tcp --dport 2181 -j DROP
+sudo ip6tables -A OUTPUT -p tcp --dport 2181 -j DROP

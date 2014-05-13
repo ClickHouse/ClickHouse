@@ -133,7 +133,7 @@ private:
 
 	zk::ZooKeeper impl;
 
-	String hosts;
+	std::string hosts;
 	int32_t sessionTimeoutMs;
 	WatchFunction * state_watch;
 

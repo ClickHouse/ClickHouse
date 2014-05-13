@@ -200,7 +200,7 @@ private:
 	typedef std::vector<std::thread> Threads;
 
 	Context & context;
-	zkutil::ZooKeeper & zookeeper;
+	zkutil::ZooKeeperPtr zookeeper;
 
 	/// Куски, для которых в очереди есть задание на слияние.
 	StringSet currently_merging;
@@ -227,6 +227,10 @@ private:
 	/** /replicas/me/is_active.
 	  */
 	zkutil::EphemeralNodeHolderPtr replica_is_active_node;
+	
+	/** Случайные данные, которые мы записали в /replicas/me/is_active.
+	  */
+	String active_node_identifier;
 
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
