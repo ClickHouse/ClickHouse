@@ -5,6 +5,7 @@
 #include <Yandex/logger_useful.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -61,6 +62,9 @@ public:
 
 		size_t res = fs.f_bfree * fs.f_bsize;
 
+		/// Зарезервируем дополнительно 30 МБ. Когда я тестировал, statvfs показывал на несколько мегабайт больше свободного места, чем df.
+		res -= std::min(res, 30 * (1ul << 20));
+
 		Poco::ScopedLock<Poco::FastMutex> lock(reserved_bytes_mutex);
 
 		if (reserved_bytes > res)
@@ -71,11 +75,13 @@ public:
 		return res;
 	}
 
-	/// Если места (приблизительно) недостаточно, возвращает nullptr.
+	/// Если места (приблизительно) недостаточно, бросает исключение.
 	static ReservationPtr reserve(const std::string & path, size_t size)
 	{
-		if (getUnreservedFreeSpace(path) < size)
-			return nullptr;
+		size_t free_bytes = getUnreservedFreeSpace(path);
+		if (free_bytes < size)
+			throw Exception("Not enough free disk space to reserve: " + toString(free_bytes) + " available, "
+				+ toString(size) + " requested", ErrorCodes::NOT_ENOUGH_SPACE);
 		return new Reservation(size);
 	}
 

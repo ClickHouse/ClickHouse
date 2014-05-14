@@ -883,8 +883,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				auto can_merge = std::bind(
 					&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 
-				if (merger.selectPartsToMerge(parts, merged_name, 0, false, false, has_big_merge, can_merge) ||
-					merger.selectPartsToMerge(parts, merged_name, 0,  true, false, has_big_merge, can_merge))
+				if (merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
+												false, false, has_big_merge, can_merge) ||
+					merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
+												true, false, has_big_merge, can_merge))
 				{
 					LogEntry entry;
 					entry.type = LogEntry::MERGE_PARTS;

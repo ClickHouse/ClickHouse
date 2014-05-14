@@ -42,9 +42,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
-	if (available_disk_space == 0)
-		available_disk_space = std::numeric_limits<size_t>::max();
-
 	size_t min_max = -1U;
 	size_t min_min = -1U;
 	int max_len = 0;
@@ -315,6 +312,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 
 	new_data_part->size = to->marksCount();
 	new_data_part->modification_time = time(0);
+	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
 
 	/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
 	auto replaced_parts = data.renameTempPartAndReplace(new_data_part);

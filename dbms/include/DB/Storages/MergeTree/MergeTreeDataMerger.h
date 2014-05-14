@@ -10,13 +10,15 @@ namespace DB
 class MergeTreeDataMerger
 {
 public:
+	static const size_t NO_LIMIT = std::numeric_limits<size_t>::max();
+
 	MergeTreeDataMerger(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Merger)")), canceled(false) {}
 
 	typedef std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> AllowedMergingPredicate;
 
 	/** Выбирает, какие куски слить. Использует кучу эвристик.
 	  * Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
-	  * Если available_disk_space > 0, выбирает куски так, чтобы места на диске хватило с запасом для их слияния.
+	  * Выбирает куски так, чтобы available_disk_space, скорее всего, хватило с запасом для их слияния.
 	  *
 	  * can_merge - функция, определяющая, можно ли объединить пару соседних кусков.
 	  *  Эта функция должна координировать слияния со вставками и другими слияниями, обеспечивая, что:
