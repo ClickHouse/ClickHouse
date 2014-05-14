@@ -904,7 +904,7 @@ public:
 			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<std::string>(),	"user")
 			("password", 		boost::program_options::value<std::string>(),	"password")
-			("query,q", 		boost::program_options::value<std::string>(), 	"query")
+			("query,q,e", 		boost::program_options::value<std::string>(), 	"query")
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
