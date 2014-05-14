@@ -278,7 +278,7 @@ void StorageReplicatedMergeTree::checkParts()
 		auto containing = data.getContainingPart(missing_name);
 		if (!containing)
 			throw Exception("Not found " + toString(expected_parts.size())
-				+ " parts (including " + missing_name + ") in table " + data.getTableName(),
+				+ " parts (including " + missing_name + ") in table " + getTableName(),
 				ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 		LOG_ERROR(log, "Ignoring missing local part " << missing_name << " because part " << containing->name << " exists");
 		if (unexpected_parts.count(containing))
@@ -292,7 +292,7 @@ void StorageReplicatedMergeTree::checkParts()
 		unexpected_parts.size() > 2 ||
 		expected_parts.size() > 20)
 	{
-		throw Exception("The local set of parts of table " + data.getTableName() + " doesn't look like the set of parts in ZooKeeper."
+		throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper."
 			" There are " + toString(unexpected_parts.size()) + " unexpected parts, "
 			+ toString(parts_to_add.size()) + " unexpectedly merged parts, "
 			+ toString(expected_parts.size()) + " unexpectedly obsolete parts",
