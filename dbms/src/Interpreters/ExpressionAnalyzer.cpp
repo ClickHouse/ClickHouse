@@ -81,22 +81,16 @@ void ExpressionAnalyzer::init()
 	select_query = dynamic_cast<ASTSelectQuery *>(&*ast);
 	has_aggregation = false;
 
-	/// Выполняем все GLOBAL IN подзапросы, результаты будут сохранены в query_analyzer->external_tables
-	if (do_global)
-		processGlobalOperations();
+	external_table_id = 1;
 
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
 
+	findExternalTables(ast);
+
 	getArrayJoinedColumns();
 
 	removeUnusedColumns();
-
-	if (do_global)
-	{
-		for (auto & it : external_data)
-			copyData(*it.second, *external_tables[it.first]->write(ASTPtr()));
-	}
 
 	/// Найдем агрегатные функции.
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
@@ -506,6 +500,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 		{
 			node->kind = ASTFunction::FUNCTION;
 		}
+
+		if (do_global && (node->name == "globalIn" || node->name == "globalNotIn"))
+			addExternalStorage(node);
 	}
 
 	current_asts.erase(initial_ast);
@@ -591,8 +588,12 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 }
 
 
-void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id)
+void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 {
+	String external_table_name = "_data";
+	while (context.tryGetExternalTable(external_table_name + toString(external_table_id)))
+		++external_table_id;
+
 	IAST & args = *node->arguments;
 	ASTPtr & arg = args.children[1];
 	StoragePtr external_storage = StoragePtr();
@@ -619,6 +620,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 
 			StoragePtr existing_storage;
 
+			/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
 			if ((existing_storage = context.tryGetExternalTable(table->name)))
 			{
 				external_tables[table->name] = existing_storage;
@@ -644,9 +646,8 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 		Block sample = interpreter.getSampleBlock();
 		NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
 
-		String external_table_name = "_data" + toString(name_id++);
+		String external_table_name = "_data" + toString(external_table_id++);
 		external_storage = StorageMemory::create(external_table_name, columns);
-		BlockOutputStreamPtr output = external_storage->write(ASTPtr());
 
 		ASTIdentifier * ast_ident = new ASTIdentifier();
 		ast_ident->kind = ASTIdentifier::Table;
@@ -654,6 +655,13 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node, size_t & name_id
 		arg = ast_ident;
 		external_tables[external_table_name] = external_storage;
 		external_data[external_table_name] = interpreter.execute();
+
+		/// Добавляем множество, при обработке которого будет заполнена внешняя таблица.
+		ASTSet * ast_set = new ASTSet("external_" + arg->getColumnName());
+		ast_set->set = new Set(settings.limits);
+		ast_set->set->setSource(external_data[external_table_name]);
+		ast_set->set->setExternalOutput(external_tables[external_table_name]);
+		sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
 	}
 	else
 		throw Exception("GLOBAL [NOT] IN supports only SELECT data.", ErrorCodes::BAD_ARGUMENTS);
@@ -679,6 +687,11 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
 		ASTPtr ast_set_ptr = ast_set;
 
+		/// Удаляем множество, которое могло быть создано, чтобы заполнить внешнюю таблицу
+		/// Вместо него будет добавлено множество, так же заполняющее себя и помогающее отвечать на зарос.
+
+		sets_with_subqueries.erase("external_" + ast_set->getColumnName());
+
 		if (sets_with_subqueries.count(ast_set->getColumnName()))
 		{
 			ast_set->set = sets_with_subqueries[ast_set->getColumnName()];
@@ -697,29 +710,44 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			subquery_settings.extremes = 0;
 			subquery_context.setSettings(subquery_settings);
 
+			ast_set->set = new Set(settings.limits);
+
 			ASTPtr subquery;
+			bool external = false;
 			if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
 			{
-				ParserSelectQuery parser;
+				if (external_data.count(table->name))
+				{
+					external = true;
+					ast_set->set->setExternalOutput(external_tables[table->name]);
+					ast_set->set->setSource(external_data[table->name]);
+				}
+				else
+				{
+					ParserSelectQuery parser;
 
-				String query = "SELECT * FROM " + table->name;
-				const char * begin = query.data();
-				const char * end = begin + query.size();
-				const char * pos = begin;
-				const char * expected = "";
+					String query = "SELECT * FROM " + table->name;
+					const char * begin = query.data();
+					const char * end = begin + query.size();
+					const char * pos = begin;
+					const char * expected = "";
 
-				bool parse_res = parser.parse(pos, end, subquery, expected);
-				if (!parse_res)
-					throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
-									ErrorCodes::LOGICAL_ERROR);
+					bool parse_res = parser.parse(pos, end, subquery, expected);
+					if (!parse_res)
+						throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
+										ErrorCodes::LOGICAL_ERROR);
+				}
 			}
 			else
 				subquery = arg->children[0];
 
-			InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+			/// Если чтение из внешней таблицы, то источник данных уже вычислен.
+			if (!external)
+			{
+				InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+				ast_set->set->setSource(interpreter.execute());
+			}
 
-			ast_set->set = new Set(settings.limits);
-			ast_set->set->setSource(interpreter.execute());
 			sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
 		}
 		arg = ast_set_ptr;
@@ -1249,24 +1277,6 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 	}
 
 	actions.add(ExpressionActions::Action::arrayJoin(result_columns));
-}
-
-void ExpressionAnalyzer::processGlobalOperations()
-{
-
-	std::vector<ASTPtr> global_nodes;
-	findGlobalFunctions(ast, global_nodes);
-
-	size_t id = 1;
-	for (size_t i = 0; i < global_nodes.size(); ++i)
-	{
-		String external_table_name = "_data";
-		while (context.tryGetExternalTable(external_table_name + toString(id)))
-			++id;
-		addExternalStorage(dynamic_cast<ASTFunction *>(&*global_nodes[i]), id);
-	}
-
-	findExternalTables(ast);
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)

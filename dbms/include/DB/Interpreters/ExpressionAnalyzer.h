@@ -8,6 +8,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Aggregator.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include "Set.h"
 
 
@@ -66,8 +67,6 @@ public:
 	  *  образом действия не следует выполнять, они нужны только чтобы получить список столбцов с их типами.
 	  */
 	
-	void processGlobalOperations();
-
 	/// До агрегации:
 	bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
 	bool appendWhere(ExpressionActionsChain & chain, bool only_types);
@@ -102,6 +101,7 @@ public:
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
 	std::map<String, BlockInputStreamPtr> external_data;
+	size_t external_table_id;
 
 	/// Создаем какие сможем Set из секции In для использования индекса по ним
 	void makeSetsForIndex();
@@ -276,7 +276,7 @@ private:
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 	/// Запустить подзапрос в секции GLOBAL IN, создать временную таблицу типа memory и запомнить эту пару в переменной external_tables
-	void addExternalStorage(ASTFunction * node, size_t & name_id);
+	void addExternalStorage(ASTFunction * node);
 
 	void getArrayJoinedColumns();
 	void getArrayJoinedColumnsImpl(ASTPtr ast);

@@ -95,6 +95,12 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 
 bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 {
+	if (external_table)
+	{
+		BlockOutputStreamPtr output = external_table->write(ASTPtr());
+		output->write(block);
+	}
+
 	size_t keys_size = block.columns();
 	Row key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);

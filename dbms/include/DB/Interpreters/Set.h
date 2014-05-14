@@ -53,6 +53,8 @@ public:
 	  */
 	void setSource(BlockInputStreamPtr stream) { source = stream; }
 
+	void setExternalOutput(StoragePtr storage) { external_table = storage; }
+
 	BlockInputStreamPtr getSource() { return source; }
 
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
@@ -95,6 +97,8 @@ private:
 	typedef HashSet<UInt128, UInt128Hash> SetHashed;
 
 	BlockInputStreamPtr source;
+
+	StoragePtr external_table;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	std::unique_ptr<SetUInt64> key64;
