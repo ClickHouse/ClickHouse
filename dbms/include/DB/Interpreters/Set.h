@@ -38,6 +38,7 @@ public:
 		transfer_overflow_mode(limits.transfer_overflow_mode),
 		bytes_in_external_table(0),
 		rows_in_external_table(0),
+		only_external(false),
 		log(&Logger::get("Set")),
 		max_rows(limits.max_rows_in_set),
 		max_bytes(limits.max_bytes_in_set),

@@ -958,12 +958,21 @@ public:
 
 		size_t cnt = positions.size();
 
+		if (cnt == 2 && newargc > 1)
+		{
+			Exception e("Unknown option " + to_pass_further[0] + ". Maybe missed --external flag in front of it.", ErrorCodes::BAD_ARGUMENTS);
+			std::string text = e.displayText();
+			std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+			exit(e.code());
+		}
+
 		size_t stdin_count = 0;
 		for (size_t i = 1; i + 1 < cnt; ++i)
 		{
+			/// Парсим основные опции командной строки
+			boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(positions[i + 1] - positions[i], &new_argv[positions[i]]).options(external_description).run();
 			boost::program_options::variables_map external_options;
-			boost::program_options::store(boost::program_options::parse_command_line(
-				positions[i + 1] - positions[i], &new_argv[positions[i]], external_description), external_options);
+			boost::program_options::store(parsed, external_options);
 
 			try
 			{

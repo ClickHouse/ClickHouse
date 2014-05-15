@@ -217,8 +217,21 @@ private:
 					if (right - left + 1 >  MAX_ADDRESSES)
 						throw Exception("Storage Distributed, first argument generates too many result addresses",
 							ErrorCodes::BAD_ARGUMENTS);
+					bool add_leading_zeroes = false;
+					size_t len = last_dot - 1 - (i + 1);
+					/// Если у левой и правой границы поровну цифр, значит необходимо дополнять лидирующими нулями.
+					if (last_dot - 1 - (i + 1) == m - (last_dot + 1))
+						add_leading_zeroes = true;
 					for (size_t id = left; id <= right; ++id)
-						buffer.push_back(toString<uint64>(id));
+					{
+						String cur = toString<uint64>(id);
+						if (add_leading_zeroes)
+						{
+							while (cur.size() < len)
+								cur = "0" + cur;
+						}
+						buffer.push_back(cur);
+					}
 				} else if (have_splitter) /// Если внутри есть текущий разделитель, то сгенерировать множество получаемых строк
 					buffer = parseDescription(description, i + 1, m, splitter);
 				else 					/// Иначе просто скопировать, порождение произойдет при вызове с правильным разделителем
