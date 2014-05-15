@@ -58,6 +58,16 @@ bool Set::checkSetSizeLimits() const
 }
 	
 
+bool Set::checkExternalSizeLimits() const
+{
+	if (max_rows_to_transfer && rows_in_external_table > max_rows_to_transfer)
+		return false;
+	if (max_bytes_to_transfer && bytes_in_external_table > max_bytes_to_transfer)
+		return false;
+	return true;
+}
+
+
 Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
 {
 	size_t keys_size = key_columns.size();
@@ -99,7 +109,27 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 	{
 		BlockOutputStreamPtr output = external_table->write(ASTPtr());
 		output->write(block);
+		bytes_in_external_table += block.bytes();
+		rows_in_external_table += block.rows();
+
+		if (!checkExternalSizeLimits())
+		{
+			if (transfer_overflow_mode == OverflowMode::THROW)
+				throw Exception("IN-external_table size exceeded."
+					" Rows: " + toString(rows_in_external_table) +
+					", limit: " + toString(max_rows_to_transfer) +
+					". Bytes: " + toString(bytes_in_external_table) +
+					", limit: " + toString(max_bytes_to_transfer) + ".",
+					ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+
+			if (transfer_overflow_mode == OverflowMode::BREAK)
+				return false;
+
+			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		}
 	}
+
+	if (only_external) return true;
 
 	size_t keys_size = block.columns();
 	Row key(keys_size);

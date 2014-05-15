@@ -33,7 +33,12 @@ class Set
 {
 public:
 	Set(const Limits & limits)
-		: log(&Logger::get("Set")),
+		: max_bytes_to_transfer(limits.max_bytes_to_transfer),
+		max_rows_to_transfer(limits.max_rows_to_transfer),
+		transfer_overflow_mode(limits.transfer_overflow_mode),
+		bytes_in_external_table(0),
+		rows_in_external_table(0),
+		log(&Logger::get("Set")),
 		max_rows(limits.max_rows_in_set),
 		max_bytes(limits.max_bytes_in_set),
 		overflow_mode(limits.set_overflow_mode)
@@ -54,6 +59,7 @@ public:
 	void setSource(BlockInputStreamPtr stream) { source = stream; }
 
 	void setExternalOutput(StoragePtr storage) { external_table = storage; }
+	void setOnlyExternal(bool flag) { only_external = flag; }
 
 	BlockInputStreamPtr getSource() { return source; }
 
@@ -98,7 +104,14 @@ private:
 
 	BlockInputStreamPtr source;
 
+	/// Информация о внешней таблице, заполняемой этим классом
 	StoragePtr external_table;
+	size_t max_bytes_to_transfer;
+	size_t max_rows_to_transfer;
+	OverflowMode transfer_overflow_mode;
+	size_t bytes_in_external_table;
+	size_t rows_in_external_table;
+	bool only_external;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	std::unique_ptr<SetUInt64> key64;
@@ -165,7 +178,9 @@ private:
 	
 	/// Проверить не превышены ли допустимые размеры множества ключей
 	bool checkSetSizeLimits() const;
-	
+	/// Проверить не превышены ли допустимые размеры внешней таблицы для передачи данных
+	bool checkExternalSizeLimits() const;
+
 	/// Считает суммарное число ключей во всех Set'ах
 	size_t getTotalRowCount() const;
 	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
