@@ -661,7 +661,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 		ast_set->set = new Set(settings.limits);
 		ast_set->set->setSource(external_data[external_table_name]);
 		ast_set->set->setExternalOutput(external_tables[external_table_name]);
-		ast_set->set->setOnlyExternal();
+		ast_set->set->setOnlyExternal(true);
 		sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
 	}
 	else
