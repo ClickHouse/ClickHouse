@@ -204,32 +204,4 @@ public:
 };
 
 
-/** То же самое, но выводит состояние вычислений в строке в текстовом виде.
-  * Используется, если какой-то внешней программе (сейчас это ███████████)
-  *  надо получить это состояние и потом использовать по-своему.
-  */
-template <typename T, typename Data>
-class AggregateFunctionUniqState : public AggregateFunctionUniq<T, Data>
-{
-public:
-	String getName() const { return Data::getName() + "State"; }
-
-	DataTypePtr getReturnType() const
-	{
-		return new DataTypeString;
-	}
-
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
-	{
-		String res;
-		{
-			WriteBufferFromString wb(res);
-			this->data(place).set.writeText(wb);
-		}
-
-		static_cast<ColumnString &>(to).insertDataWithTerminatingZero(res.data(), res.size() + 1);
-	}
-};
-
-
 }

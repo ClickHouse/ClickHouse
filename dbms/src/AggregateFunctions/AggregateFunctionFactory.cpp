@@ -205,46 +205,6 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
-	else if (name == "uniqState")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqState, AggregateFunctionUniqUniquesHashSetData>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniqState<DataTypeDate::FieldType, AggregateFunctionUniqUniquesHashSetData>;
-		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniqState<DataTypeDateTime::FieldType, AggregateFunctionUniqUniquesHashSetData>;
-		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniqState<String, AggregateFunctionUniqUniquesHashSetData>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqHLL12State")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqState, AggregateFunctionUniqHLL12Data>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (dynamic_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniqState<DataTypeDate::FieldType, AggregateFunctionUniqHLL12Data>;
-		else if (dynamic_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniqState<DataTypeDateTime::FieldType, AggregateFunctionUniqHLL12Data>;
-		else if (dynamic_cast<const DataTypeString*>(&argument_type) || dynamic_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniqState<String, AggregateFunctionUniqHLL12Data>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
 	else if (name == "median" || name == "quantile")
 	{
 		if (argument_types.size() != 1)
@@ -364,9 +324,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 		"sum",
 		"avg",
 		"uniq",
-		"uniqState",
 		"uniqHLL12",
-		"uniqHLL12State",
 		"uniqExact",
 		"groupArray",
 		"groupUniqArray",

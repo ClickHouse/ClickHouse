@@ -28,7 +28,7 @@
 namespace DB
 {
 
-void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, String query_id)
+void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
 	LOG_TRACE(log, "Request URI: " << request.getURI());
 
@@ -68,6 +68,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	}
 
 	std::string quota_key = params.get("quota_key", "");
+	std::string query_id = params.get("query_id", "");
 	
 	Context context = *server.global_context;
 	context.setGlobalContext(*server.global_context);
@@ -124,7 +125,9 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 			|| it->first == "compress"
 			|| it->first == "decompress"
 			|| it->first == "user"
-			|| it->first == "password")
+			|| it->first == "password"
+			|| it->first == "quota_key"
+			|| it->first == "query_id")
 		{
 		}
 		else	/// Все неизвестные параметры запроса рассматриваются, как настройки.

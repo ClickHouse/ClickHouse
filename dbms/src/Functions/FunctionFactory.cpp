@@ -82,8 +82,6 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "replaceRegexpOne")			return new FunctionReplaceRegexpOne;
 	else if (name == "replaceRegexpAll")			return new FunctionReplaceRegexpAll;
 	else if (name == "substringUTF8")				return new FunctionSubstringUTF8;
-	else if (name == "bitmaskToList")				return new FunctionBitmaskToList;
-	else if (name == "bitmaskToArray")				return new FunctionBitmaskToArray;
 
 	else if (name == "toUInt8")						return new FunctionToUInt8;
 	else if (name == "toUInt16")					return new FunctionToUInt16;
@@ -99,6 +97,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "toDateTime")					return new FunctionToDateTime;
 	else if (name == "toString")					return new FunctionToString;
 	else if (name == "toFixedString")				return new FunctionToFixedString;
+	else if (name == "toStringCutToZero")			return new FunctionToStringCutToZero;
 
 	else if (name == "reinterpretAsUInt8")			return new FunctionReinterpretAsUInt8;
 	else if (name == "reinterpretAsUInt16")		return new FunctionReinterpretAsUInt16;
@@ -157,7 +156,8 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "IPv4StringToNum")			return new FunctionIPv4StringToNum;
 	else if (name == "hex")							return new FunctionHex;
 	else if (name == "unhex")						return new FunctionUnhex;
-	else if (name == "toStringCutToZero")			return new FunctionToStringCutToZero;
+	else if (name == "bitmaskToList")				return new FunctionBitmaskToList;
+	else if (name == "bitmaskToArray")				return new FunctionBitmaskToArray;
 
 	else if (name == "rand")						return new FunctionRand;
 	else if (name == "rand64")						return new FunctionRand64;
@@ -170,16 +170,16 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "queryString")				return new FunctionQueryString;
 	else if (name == "fragment")					return new FunctionFragment;
 	else if (name == "queryStringAndFragment")		return new FunctionQueryStringAndFragment;
+	else if (name == "extractURLParameter")		return new FunctionExtractURLParameter;
+	else if (name == "extractURLParameters")		return new FunctionExtractURLParameters;
+	else if (name == "extractURLParameterNames")		return new FunctionExtractURLParameterNames;
+	else if (name == "URLHierarchy")				return new FunctionURLHierarchy;
+	else if (name == "URLPathHierarchy")				return new FunctionURLPathHierarchy;
 	else if (name == "cutWWW")						return new FunctionCutWWW;
 	else if (name == "cutQueryString")				return new FunctionCutQueryString;
 	else if (name == "cutFragment")				return new FunctionCutFragment;
 	else if (name == "cutQueryStringAndFragment")	return new FunctionCutQueryStringAndFragment;
-	else if (name == "extractURLParameter")		return new FunctionExtractURLParameter;
-	else if (name == "extractURLParameters")		return new FunctionExtractURLParameters;
-	else if (name == "extractURLParameterNames")		return new FunctionExtractURLParameterNames;
 	else if (name == "cutURLParameter")			return new FunctionCutURLParameter;
-	else if (name == "URLHierarchy")				return new FunctionURLHierarchy;
-	else if (name == "URLPathHierarchy")				return new FunctionURLPathHierarchy;
 
 	else if (name == "hostName")					return new FunctionHostName;
 	else if (name == "visibleWidth")				return new FunctionVisibleWidth;
