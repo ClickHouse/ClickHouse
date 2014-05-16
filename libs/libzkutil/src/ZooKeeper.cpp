@@ -23,7 +23,7 @@ struct WatchWithPromise : public zk::Watch
 		if (notified)
 		{
 			LOG_WARNING(&Logger::get("WatchWithPromise"), "Ignoring event " << WatchEvent::toString(event) << " with state "
-				<< SessionState::toString(state) << " for path " << path);
+				<< SessionState::toString(state) << (path.empty() ? "" : " for path " + path));
 			return;
 		}
 		promise.set_value(WatchEventInfo(event, state, path));
