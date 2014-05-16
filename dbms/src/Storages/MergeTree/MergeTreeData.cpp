@@ -713,11 +713,30 @@ MergeTreeData::DataParts MergeTreeData::getAllDataParts()
 	return all_data_parts;
 }
 
-size_t MergeTreeData::getDataPartsCount()
+size_t MergeTreeData::getMaxPartsCountForMonth()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
-	return data_parts.size();
+	size_t res = 0;
+	size_t cur_count = 0;
+	DayNum_t cur_month = DayNum_t(0);
+
+	for (const auto & part : data_parts)
+	{
+		if (part->left_month == cur_month)
+		{
+			++cur_count;
+		}
+		else
+		{
+			cur_month = part->left_month;
+			cur_count = 1;
+		}
+
+		res = std::max(res, cur_count);
+	}
+
+	return res;
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_name, bool including_inactive)
