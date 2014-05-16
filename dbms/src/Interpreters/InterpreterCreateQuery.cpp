@@ -76,7 +76,8 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
 	Block select_sample;
-	if (create.select && !create.attach)
+	/// Для таблиц типа вью, чтобы получить столбцы, может понадобиться sample block.
+	if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
 	{
 		interpreter_select = new InterpreterSelectQuery(create.select, context);
 		select_sample = interpreter_select->getSampleBlock();
