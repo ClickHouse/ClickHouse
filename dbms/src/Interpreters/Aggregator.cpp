@@ -19,7 +19,7 @@ AggregatedDataVariants::~AggregatedDataVariants()
 	{
 		try
 		{
-			aggregator->destroyAggregateStates(*this);
+			aggregator->destroyAllAggregateStates(*this);
 		}
 		catch (...)
 		{
@@ -143,6 +143,30 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 }
 
 
+void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
+{
+	for (size_t j = 0; j < aggregates_size; ++j)
+	{
+		try
+		{
+			/** Может возникнуть исключение при нехватке памяти.
+			  * Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
+			  * Код не очень удобный.
+			  */
+			aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
+		}
+		catch (...)
+		{
+			for (size_t rollback_j = 0; rollback_j < j; ++rollback_j)
+				aggregate_functions[rollback_j]->destroy(aggregate_data + offsets_of_aggregate_states[j]);
+
+			aggregate_data = nullptr;
+			throw;
+		}
+	}
+}
+
+
 template <typename Method>
 void Aggregator::executeImpl(
 	Method & method,
@@ -189,9 +213,7 @@ void Aggregator::executeImpl(
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
-
-			for (size_t j = 0; j < aggregates_size; ++j)
-				aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
+			createAggregateStates(aggregate_data);
 		}
 
 		AggregateDataPtr value = !overflow ? Method::getAggregateData(it->second) : overflow_row;
@@ -300,9 +322,7 @@ void Aggregator::mergeStreamsImpl(
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
-
-			for (size_t j = 0; j < aggregates_size; ++j)
-				aggregate_functions[j]->create(aggregate_data + offsets_of_aggregate_states[j]);
+			createAggregateStates(aggregate_data);
 		}
 
 		/// Мерджим состояния агрегатных функций.
@@ -319,8 +339,19 @@ void Aggregator::destroyImpl(
 	Method & method) const
 {
 	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
+	{
 		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_functions[i]->destroy(Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+		{
+			char * data = Method::getAggregateData(it->second);
+
+			/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
+			  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
+			  *  то data будет равен nullptr-у.
+			  */
+			if (nullptr != data)
+				aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
+		}
+	}
 }
 
 
@@ -369,9 +400,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	if (overflow_row && !result.without_key)
 	{
 		result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_functions[i]->create(result.without_key + offsets_of_aggregate_states[i]);
+		createAggregateStates(result.without_key);
 	}
 
 	if (result.type == AggregatedDataVariants::WITHOUT_KEY)
@@ -380,9 +409,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		if (!res)
 		{
 			res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->create(res + offsets_of_aggregate_states[i]);
+			createAggregateStates(res);
 		}
 
 		/// Оптимизация в случае единственной агрегатной функции count.
@@ -715,9 +742,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			if (!res)
 			{
 				res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-				
-				for (size_t i = 0; i < aggregates_size; ++i)
-					aggregate_functions[i]->create(res + offsets_of_aggregate_states[i]);
+				createAggregateStates(res);
 			}
 
 			/// Добавляем значения
@@ -745,7 +770,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 }
 
 
-void Aggregator::destroyAggregateStates(AggregatedDataVariants & result)
+void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 {
 	if (result.size() == 0)
 		return;
