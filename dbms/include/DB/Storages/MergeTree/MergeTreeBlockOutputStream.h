@@ -17,7 +17,7 @@ public:
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 		for (auto & current_block : part_blocks)
 		{
-			size_t parts_count = storage.data.getDataPartsCount();
+			size_t parts_count = storage.data.getMaxPartsCountForMonth();
 			if (parts_count > storage.data.settings.parts_to_delay_insert)
 			{
 				double delay = std::pow(storage.data.settings.insert_delay_step, parts_count - storage.data.settings.parts_to_delay_insert);

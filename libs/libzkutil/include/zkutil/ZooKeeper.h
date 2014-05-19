@@ -148,6 +148,8 @@ private:
 	  * Если это окажется проблемой, возможно, стоит избавиться от zkcpp.
 	  */
 	void checkNotExpired();
+
+	void removeChildrenRecursive(const std::string & path);
 };
 
 typedef ZooKeeper::Ptr ZooKeeperPtr;

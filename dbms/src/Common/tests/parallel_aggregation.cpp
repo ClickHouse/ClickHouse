@@ -3,7 +3,7 @@
 #include <mutex>
 #include <atomic>
 
-#define DBMS_HASH_MAP_DEBUG_RESIZES
+//#define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <DB/Interpreters/AggregationCommon.h>
 
@@ -48,7 +48,7 @@ public:
 		bool inserted;
 		this->emplace(x, it, inserted);
 
-		if (inserted)
+		if (!__has_trivial_constructor(mapped_type) && inserted)
 			new(&it->second) mapped_type();
 
 		return it->second;
@@ -90,6 +90,9 @@ struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 };
 
 
+typedef AlignedSmallLock Mutex;
+
+
 /*typedef HashTableWithSmallLocks<
 	Key,
 	HashTableCellWithLock<
@@ -119,7 +122,7 @@ void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 			maps[0].impls[bucket][it->first] += it->second;
 }
 
-void aggregate3(Map & local_map, Map & global_map, AlignedSmallLock & mutex, Source::const_iterator begin, Source::const_iterator end)
+void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
 {
 	static constexpr size_t threshold = 65536;
 
@@ -144,9 +147,8 @@ void aggregate3(Map & local_map, Map & global_map, AlignedSmallLock & mutex, Sou
 	}
 }
 
-void aggregate4(Map & local_map, MapTwoLevel & global_map, AlignedSmallLock * mutexes, Source::const_iterator begin, Source::const_iterator end)
+void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Source::const_iterator begin, Source::const_iterator end)
 {
-	DefaultHash<Key> hash;
 	static constexpr size_t threshold = 65536;
 
 	for (auto it = begin; it != end; ++it)
@@ -159,14 +161,12 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, AlignedSmallLock * mu
 			++local_map[*it];	/// TODO Можно было бы делать один lookup, а не два.
 		else
 		{
-			size_t hash_value = hash(*it);
-			size_t bucket = hash_value >> 24;
+			size_t hash_value = global_map.hash(*it);
+			size_t bucket = global_map.getBucketFromHash(hash_value);
 
 			if (mutexes[bucket].tryLock())
 			{
-				MapTwoLevel::Impl::iterator inserted_it;
-				bool inserted;
-				global_map.impls[bucket].emplace(*it, inserted_it, inserted, hash_value);
+				++global_map.impls[bucket][*it];
 				mutexes[bucket].unlock();
 			}
 			else
@@ -345,11 +345,7 @@ int main(int argc, char ** argv)
 			<< " (" << n / time_total << " elem/sec.)"
 			<< std::endl;
 
-		size_t sum_size = 0;
-		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-			sum_size += maps[0].impls[i].size();
-
-		std::cerr << "Size: " << sum_size << std::endl << std::endl;
+		std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
 	}
 
 	if (!method || method == 3)
@@ -366,7 +362,7 @@ int main(int argc, char ** argv)
 
 		Map local_maps[num_threads];
 		Map global_map;
-		AlignedSmallLock mutex;
+		Mutex mutex;
 
 		Stopwatch watch;
 
@@ -435,7 +431,7 @@ int main(int argc, char ** argv)
 
 		Map local_maps[num_threads];
 		MapTwoLevel global_map;
-		AlignedSmallLock mutexes[MapTwoLevel::NUM_BUCKETS];
+		Mutex mutexes[MapTwoLevel::NUM_BUCKETS];
 
 		Stopwatch watch;
 
@@ -465,10 +461,7 @@ int main(int argc, char ** argv)
 		}
 		std::cerr << std::endl;
 
-		size_t sum_size = 0;
-		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-			sum_size += global_map.impls[i].size();
-
+		size_t sum_size = global_map.size();
 		std::cerr << "Size (global): " << sum_size << std::endl;
 		size_before_merge += sum_size;
 
@@ -493,11 +486,7 @@ int main(int argc, char ** argv)
 			<< " (" << n / time_total << " elem/sec.)"
 			<< std::endl;
 
-		sum_size = 0;
-		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-			sum_size += global_map.impls[i].size();
-
-		std::cerr << "Size: " << sum_size << std::endl << std::endl;
+		std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
 	}
 
 /*	if (!method || method == 5)

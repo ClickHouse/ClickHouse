@@ -36,12 +36,10 @@ protected:
 public:
 	typedef ImplTable Impl;
 
-protected:
-	size_t m_size = 0;		/// Количество элементов
-
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
 	size_t getBucketFromHash(size_t hash_value) const { return hash_value >> 56; }
 
+protected:
 	typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)
 	{
 		while (bucket != NUM_BUCKETS && impls[bucket].empty())
@@ -202,9 +200,6 @@ public:
 		typename Impl::iterator impl_it;
 		impls[buck].emplace(x, impl_it, inserted);
 		it = iterator(this, buck, impl_it);
-
-		if (inserted)
-			++m_size;
 	}
 
 
@@ -267,17 +262,25 @@ public:
 
 	size_t size() const
 	{
-	    return m_size;
+		size_t res = 0;
+		for (size_t i = 0; i < NUM_BUCKETS; ++i)
+			res += impls[i].size();
+
+		return res;
 	}
 
 	bool empty() const
 	{
-	    return 0 == m_size;
+	    for (size_t i = 0; i < NUM_BUCKETS; ++i)
+			if (!impls[i].empty())
+				return false;
+
+		return true;
 	}
 
 	size_t getBufferSizeInBytes() const
 	{
-		size_t res;
+		size_t res = 0;
 		for (size_t i = 0; i < NUM_BUCKETS; ++i)
 			res += impls[i].getBufferSizeInBytes();
 

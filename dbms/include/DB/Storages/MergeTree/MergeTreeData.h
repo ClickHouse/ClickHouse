@@ -439,7 +439,10 @@ public:
 	  */
 	DataParts getDataParts();
 	DataParts getAllDataParts();
-	size_t getDataPartsCount();
+
+	/** Максимальное количество кусков в одном месяце.
+	  */
+	size_t getMaxPartsCountForMonth();
 
 	/** Возвращает кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
 	  * Если including_inactive, просматриваются также неактивные куски (all_data_parts).

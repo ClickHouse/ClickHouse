@@ -42,7 +42,7 @@ int main(int argc, char ** argv)
 		typedef HashMap<int, std::string, DefaultHash<int>, HashTableGrower<1> > Cont;
 		Cont cont;
 
-		cont.insert(std::make_pair(1, "Hello, world!"));
+		cont.insert(Cont::value_type(1, "Hello, world!"));
 		cont[1] = "Goodbye.";
 
 		for (auto x : cont)
