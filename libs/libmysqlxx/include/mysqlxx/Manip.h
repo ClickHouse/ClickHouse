@@ -89,7 +89,7 @@ struct EscapeManipResult
 	}
 
 
-	std::ostream & operator<< (const String & string)
+	std::ostream & operator<< (const Value & string)
 	{
 		writeEscapedData(string.data(), string.size());
 		return ostr;

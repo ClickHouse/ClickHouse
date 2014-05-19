@@ -31,7 +31,7 @@ class ResultBase;
   * Позволяет преобразовать значение (распарсить) в различные типы данных:
   * - с помощью функций вида getUInt(), getString(), ... (рекомендуется);
   * - с помощью шаблонной функции get<Type>(), которая специализирована для многих типов (для шаблонного кода);
-  * - шаблонная функция get<Type> работает также для всех типов, у которых есть конструктор из String
+  * - шаблонная функция get<Type> работает также для всех типов, у которых есть конструктор из Value
   *   (это сделано для возможности расширения);
   * - с помощью operator Type() - но этот метод реализован лишь для совместимости и не рекомендуется
   *   к использованию, так как неудобен (часто возникают неоднозначности).
@@ -45,13 +45,13 @@ class ResultBase;
   *  корректно распарсится согласно текущей тайм-зоне, сделано так, что метод getUInt и соответствующие методы get<>()
   *  также умеют парсить дату и дату-время.
   */
-class String
+class Value
 {
 public:
 	/** Параметр res_ используется только для генерации подробной информации в исключениях.
 	  * Можно передать NULL - тогда подробной информации в исключениях не будет.
 	  */
-	String(const char * data_, size_t length_, const ResultBase * res_) : m_data(data_), m_length(length_), res(res_)
+	Value(const char * data_, size_t length_, const ResultBase * res_) : m_data(data_), m_length(length_), res(res_)
 	{
 	}
 
@@ -119,7 +119,7 @@ public:
 	bool is_null() const { return isNull(); }
 
 	/** Получить любой поддерживаемый тип (для шаблонного кода).
-	  * Поддерживаются основные типы, а также любые типы с конструктором от String (для удобства расширения).
+	  * Поддерживаются основные типы, а также любые типы с конструктором от Value (для удобства расширения).
 	  */
 	template <typename T> T get() const;
 
@@ -377,30 +377,30 @@ private:
 };
 
 
-template <> inline bool 				String::get<bool				>() const { return getBool(); }
-template <> inline char 				String::get<char				>() const { return getInt(); }
-template <> inline signed char 			String::get<signed char			>() const { return getInt(); }
-template <> inline unsigned char		String::get<unsigned char		>() const { return getUInt(); }
-template <> inline short 				String::get<short				>() const { return getInt(); }
-template <> inline unsigned short		String::get<unsigned short		>() const { return getUInt(); }
-template <> inline int 					String::get<int					>() const { return getInt(); }
-template <> inline unsigned int 		String::get<unsigned int		>() const { return getUInt(); }
-template <> inline long 				String::get<long				>() const { return getInt(); }
-template <> inline unsigned long 		String::get<unsigned long		>() const { return getUInt(); }
-template <> inline long long 			String::get<long long			>() const { return getInt(); }
-template <> inline unsigned long long 	String::get<unsigned long long	>() const { return getUInt(); }
-template <> inline float 				String::get<float				>() const { return getDouble(); }
-template <> inline double 				String::get<double				>() const { return getDouble(); }
-template <> inline std::string			String::get<std::string			>() const { return getString(); }
-template <> inline Date					String::get<Date				>() const { return getDate(); }
-template <> inline DateTime				String::get<DateTime			>() const { return getDateTime(); }
+template <> inline bool 				Value::get<bool					>() const { return getBool(); }
+template <> inline char 				Value::get<char					>() const { return getInt(); }
+template <> inline signed char 			Value::get<signed char			>() const { return getInt(); }
+template <> inline unsigned char		Value::get<unsigned char		>() const { return getUInt(); }
+template <> inline short 				Value::get<short				>() const { return getInt(); }
+template <> inline unsigned short		Value::get<unsigned short		>() const { return getUInt(); }
+template <> inline int 					Value::get<int					>() const { return getInt(); }
+template <> inline unsigned int 		Value::get<unsigned int			>() const { return getUInt(); }
+template <> inline long 				Value::get<long					>() const { return getInt(); }
+template <> inline unsigned long 		Value::get<unsigned long		>() const { return getUInt(); }
+template <> inline long long 			Value::get<long long			>() const { return getInt(); }
+template <> inline unsigned long long 	Value::get<unsigned long long	>() const { return getUInt(); }
+template <> inline float 				Value::get<float				>() const { return getDouble(); }
+template <> inline double 				Value::get<double				>() const { return getDouble(); }
+template <> inline std::string			Value::get<std::string			>() const { return getString(); }
+template <> inline Date					Value::get<Date					>() const { return getDate(); }
+template <> inline DateTime				Value::get<DateTime				>() const { return getDateTime(); }
 
-template <> inline VisitID_t	String::get<VisitID_t	>() const { return VisitID_t(getUInt()); }
+template <> inline VisitID_t			Value::get<VisitID_t			>() const { return VisitID_t(getUInt()); }
 
-template <typename T> inline T			String::get() 						const { return T(*this); }
+template <typename T> inline T			Value::get() 						const { return T(*this); }
 
 
-inline std::ostream & operator<< (std::ostream & ostr, const String & x)
+inline std::ostream & operator<< (std::ostream & ostr, const Value & x)
 {
 	return ostr.write(x.data(), x.size());
 }

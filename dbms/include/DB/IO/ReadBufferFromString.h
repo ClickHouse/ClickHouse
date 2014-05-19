@@ -11,7 +11,7 @@ namespace DB
 class ReadBufferFromString : public ReadBuffer
 {
 public:
-	/// std::string или mysqlxx::String
+	/// std::string или mysqlxx::Value
 	template <typename S>
 	ReadBufferFromString(const S & s) : ReadBuffer(const_cast<char *>(s.data()), s.size(), 0) {}
 };
