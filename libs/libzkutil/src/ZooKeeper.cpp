@@ -316,11 +316,21 @@ ReturnCode::type ZooKeeper::tryMulti(const Ops & ops, OpResultsPtr * out_results
 	return code;
 }
 
-void ZooKeeper::removeRecursive(const std::string & path)
+void ZooKeeper::removeChildrenRecursive(const std::string& path)
 {
 	Strings children = getChildren(path);
+	zkutil::Ops ops;
 	for (const std::string & child : children)
-		removeRecursive(path + "/" + child);
+	{
+		removeChildrenRecursive(path + "/" + child);
+		ops.push_back(new Op::Remove(path + "/" + child, -1));
+	}
+	multi(ops);
+}
+
+void ZooKeeper::removeRecursive(const std::string & path)
+{
+	removeChildrenRecursive(path);
 	remove(path);
 }
 

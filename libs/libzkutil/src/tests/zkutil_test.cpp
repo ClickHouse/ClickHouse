@@ -138,6 +138,10 @@ int main(int argc, char ** argv)
 				{
 					zk.remove(path);
 				}
+				else if (cmd == "rmr")
+				{
+					zk.removeRecursive(path);
+				}
 				else if (cmd == "exists")
 				{
 					std::string w;
@@ -192,6 +196,7 @@ int main(int argc, char ** argv)
 					std::cout << "  ls path [w]\n";
 					std::cout << "  create path data (p|ps|e|es)\n";
 					std::cout << "  remove path\n";
+					std::cout << "  rmr path\n";
 					std::cout << "  exists path [w]\n";
 					std::cout << "  get path [w]\n";
 					std::cout << "  set path data [version]" << std::endl;
