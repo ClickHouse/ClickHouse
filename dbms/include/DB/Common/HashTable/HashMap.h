@@ -5,17 +5,38 @@
 #include <DB/Common/HashTable/HashTableAllocator.h>
 
 
+struct NoInitTag {};
+
+/// Пара, которая не инициализирует элементы, если не нужно.
+template <typename First, typename Second>
+struct PairNoInit
+{
+	First first;
+	Second second;
+
+	PairNoInit() {}
+
+	template <typename First_>
+	PairNoInit(First_ && first_, NoInitTag)
+		: first(std::forward<First_>(first_)) {}
+
+	template <typename First_, typename Second_>
+	PairNoInit(First_ && first_, Second_ && second_)
+		: first(std::forward<First_>(first_)), second(std::forward<Second_>(second_)) {}
+};
+
+
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCell
 {
 	typedef TMapped Mapped;
 	typedef TState State;
 
-	typedef std::pair<Key, Mapped> value_type;
+	typedef PairNoInit<Key, Mapped> value_type;
 	value_type value;
 
 	HashMapCell() {}
-	HashMapCell(const Key & key_, const State & state) : value(key_, Mapped()) {}
+	HashMapCell(const Key & key_, const State & state) : value(key_, NoInitTag()) {}
 	HashMapCell(const value_type & value_, const State & state) : value(value_) {}
 
 	value_type & getValue()				{ return value; }
@@ -114,7 +135,8 @@ public:
 		bool inserted;
 		this->emplace(x, it, inserted);
 
-		if (inserted)
+		/// Если тривиальный конструктор, то инициализация нулями (через вызов конструктора для POD-ов) не нужна, так как таблица и так заполнена нулями.
+		if (!__has_trivial_constructor(mapped_type) && inserted)
 			new(&it->second) mapped_type();
 
 		return it->second;
