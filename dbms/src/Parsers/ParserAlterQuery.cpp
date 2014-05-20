@@ -6,6 +6,7 @@
 #include <boost/concept_check.hpp>
 
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTAlterQuery.h>
 
 namespace DB
@@ -27,8 +28,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *
 	ParserString s_drop("DROP", true, true);
 	ParserString s_comma(",");
 
-	ParserIdentifier parser_name;
-	ParserNameTypePair parser_name_type;
+	ParserCompoundIdentifier parser_name;
+	ParserCompoundNameTypePair parser_name_type;
 
 	ASTPtr table;
 	ASTPtr database;
