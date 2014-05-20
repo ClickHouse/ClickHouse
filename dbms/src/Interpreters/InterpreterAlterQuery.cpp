@@ -129,6 +129,17 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 	size_t dot_pos = add_column.name.find('.');
 	bool insert_nested_column = dot_pos != std::string::npos;
 
+	if (insert_nested_column)
+	{
+		const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
+		StringRange type_range = add_column.type->range;
+		String type(type_range.first, type_range.second - type_range.first);
+		if (!dynamic_cast<DataTypeArray *>(data_type_factory.get(type).get()))
+		{
+			throw Exception("Cannot add column " + add_column.name + ". Because it is not an array. Only arrays could be nested and consist '.' in their names");
+		}
+	}
+
 	if (dynamic_cast<StorageMergeTree *>(table.get()) && insert_nested_column)
 	{
 		/// специальный случай для вставки nested столбцов в MergeTree
