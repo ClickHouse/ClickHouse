@@ -28,6 +28,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *
 	ParserString s_drop("DROP", true, true);
 	ParserString s_comma(",");
 
+	ParserIdentifier table_parser;
 	ParserCompoundIdentifier parser_name;
 	ParserCompoundNameTypePair parser_name_type;
 
@@ -50,13 +51,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *
 
 	ws.ignore(pos, end);
 
-	if (!parser_name.parse(pos, end, database, expected))
+	if (!table_parser.parse(pos, end, database, expected))
 		return false;
 
 	/// Parse [db].name
 	if (s_dot.ignore(pos, end))
 	{
-		if (!parser_name.parse(pos, end, table, expected))
+		if (!table_parser.parse(pos, end, table, expected))
 			return false;
 
 		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
