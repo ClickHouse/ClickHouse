@@ -1,7 +1,7 @@
 #pragma once
 
 #include <mysqlxx/Types.h>
-#include <mysqlxx/String.h>
+#include <mysqlxx/Value.h>
 #include <mysqlxx/ResultBase.h>
 
 
@@ -43,15 +43,15 @@ public:
 	/** Получить значение по индексу.
 	  * Здесь используется int, а не unsigned, чтобы не было неоднозначности с тем же методом, принимающим const char *.
 	  */
-	String operator[] (int n) const
+	Value operator[] (int n) const
 	{
 		if (unlikely(static_cast<size_t>(n) >= res->getNumFields()))
 			throw Exception("Index of column is out of range.");
-		return String(row[n], lengths[n], res);
+		return Value(row[n], lengths[n], res);
 	}
 
 	/** Получить значение по имени. Слегка менее эффективно. */
-	String operator[] (const char * name) const
+	Value operator[] (const char * name) const
 	{
 		unsigned n = res->getNumFields();
 		MYSQL_FIELDS fields = res->getFields();
@@ -64,7 +64,7 @@ public:
 	}
 
 	/** Получить значение по индексу. */
-	String at(size_t n) const
+	Value at(size_t n) const
 	{
 		return operator[](n);
 	}

@@ -1,10 +1,10 @@
-#include <mysqlxx/String.h>
+#include <mysqlxx/Value.h>
 #include <mysqlxx/ResultBase.h>
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Exception.h>
 
 
-void mysqlxx::String::throwException(const char * text) const
+void mysqlxx::Value::throwException(const char * text) const
 {
 	std::stringstream info;
 	info << text;

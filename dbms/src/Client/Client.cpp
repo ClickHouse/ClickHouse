@@ -14,7 +14,6 @@
 
 #include <unordered_set>
 
-#include <boost/assign/list_inserter.hpp>
 #include <boost/program_options.hpp>
 
 #include <Poco/File.h>
@@ -70,7 +69,13 @@ public:
 
 private:
 	typedef std::unordered_set<String> StringSet;
-	StringSet exit_strings;
+	StringSet exit_strings {
+		"exit", "quit", "logout",
+		"учше", "йгше", "дщпщге",
+		"exit;", "quit;", "logout;",
+		"учшеж", "йгшеж", "дщпщгеж",
+		"q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+	};
 
 	bool is_interactive;				/// Использовать readline интерфейс или batch режим.
 	bool stdin_is_not_tty;				/// stdin - не терминал.
@@ -122,13 +127,6 @@ private:
 	void initialize(Poco::Util::Application & self)
 	{
 		Poco::Util::Application::initialize(self);
-
-		boost::assign::insert(exit_strings)
-			("exit")("quit")("logout")
-			("учше")("йгше")("дщпщге")
-			("exit;")("quit;")("logout;")
-			("учше;")("йгше;")("дщпщге;")
-			("q")("й")("\\q")("\\Q");
 
 		const char * home_path_cstr = getenv("HOME");
 		if (home_path_cstr)

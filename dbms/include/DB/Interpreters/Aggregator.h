@@ -498,10 +498,14 @@ protected:
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
 	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
 
+	/** Создать состояния агрегатных функций для одного ключа.
+	  */
+	void createAggregateStates(AggregateDataPtr & aggregate_data) const;
+
 	/** Вызвать методы destroy для состояний агрегатных функций.
 	  * Используется в обработчике исключений при агрегации, так как RAII в данном случае не применим.
 	  */
-	void destroyAggregateStates(AggregatedDataVariants & result);
+	void destroyAllAggregateStates(AggregatedDataVariants & result);
 
 
 	template <typename Method>
