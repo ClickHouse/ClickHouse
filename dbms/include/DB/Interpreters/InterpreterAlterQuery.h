@@ -18,6 +18,7 @@ public:
 
 private:
 	void dropColumnFromAST(const ASTIdentifier & drop_column, ASTs & columns);
+	void addColumnToAST(StoragePtr table, ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr & after_column_ptr);
 
 	ASTPtr query_ptr;
 	
