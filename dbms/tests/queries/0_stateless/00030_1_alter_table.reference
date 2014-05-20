@@ -8,3 +8,8 @@ ToDrop	UInt32
 Added0	UInt32
 Added1	UInt32
 Added2	UInt32
+AddedNested1.A	Array(UInt32)
+AddedNested1.B	Array(UInt64)
+AddedNested1.C	Array(String)
+AddedNested2.A	Array(UInt32)
+AddedNested2.B	Array(UInt64)

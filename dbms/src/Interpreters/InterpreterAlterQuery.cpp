@@ -98,6 +98,92 @@ void InterpreterAlterQuery::dropColumnFromAST(const ASTIdentifier & drop_column,
 	}
 }
 
+void addColumnToAST1(ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr & after_column_ptr)
+{
+	const ASTNameTypePair & add_column = dynamic_cast<const ASTNameTypePair &>(*add_column_ptr);
+	const ASTIdentifier * col_after = after_column_ptr ? &dynamic_cast<const ASTIdentifier &>(*after_column_ptr) : nullptr;
+
+	if (std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, add_column.name, _1)) != columns.end())
+	{
+		throw Exception("Fail to add column " + add_column.name + ". Column already exists");
+	}
+	ASTs::iterator insert_it = columns.end();
+	if (col_after)
+	{
+		/// если есть точка, то нас просят вставить после nested столбца
+		auto find_functor = col_after->name.find('.') != std::string ::npos ? boost::bind(namesEqual, col_after->name, _1) : boost::bind(namesEqualIgnoreAfterDot, col_after->name, _1);
+
+		insert_it = std::find_if(columns.begin(), columns.end(), find_functor);
+		if (insert_it == columns.end())
+			throw Exception("Wrong column name. Cannot find column " + col_after->name + " to insert after");
+	}
+	columns.insert(insert_it, add_column_ptr);
+}
+
+void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr & after_column_ptr)
+{
+	/// хотим исключение если приведение зафейлится
+	const ASTNameTypePair & add_column = dynamic_cast<const ASTNameTypePair &>(*add_column_ptr);
+	const ASTIdentifier * after_col = after_column_ptr ? &dynamic_cast<const ASTIdentifier &>(*after_column_ptr) : nullptr;
+
+	size_t dot_pos = add_column.name.find('.');
+	bool insert_nested_column = dot_pos != std::string::npos;
+
+	if (insert_nested_column)
+	{
+		const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
+		StringRange type_range = add_column.type->range;
+		String type(type_range.first, type_range.second - type_range.first);
+		if (!dynamic_cast<DataTypeArray *>(data_type_factory.get(type).get()))
+		{
+			throw Exception("Cannot add column " + add_column.name + ". Because it is not an array. Only arrays could be nested and consist '.' in their names");
+		}
+	}
+
+	if (dynamic_cast<StorageMergeTree *>(table.get()) && insert_nested_column)
+	{
+		/// специальный случай для вставки nested столбцов в MergeTree
+		/// в MergeTree таблицах есть ASTFunction "Nested" в аргументах которой записаны столбцы
+		std::string nested_base_name = add_column.name.substr(0, dot_pos);
+		ASTs::iterator nested_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, nested_base_name, _1));
+
+		if (nested_it != columns.end())
+		{
+			/// нужно добавить колонку в уже существующий nested столбец
+			ASTFunction * nested_func = dynamic_cast<ASTFunction *>((*nested_it)->children.back().get());
+			if (!(**nested_it).children.size() || !nested_func || nested_func->name != "Nested")
+				throw Exception("Column with name " + nested_base_name + " already exists. But it is not nested.");
+
+			ASTs & nested_columns = dynamic_cast<ASTExpressionList &>(*nested_func->arguments).children;
+
+			ASTPtr new_nested_column = add_column_ptr->clone();
+			dynamic_cast<ASTNameTypePair &>(*new_nested_column).name = add_column.name.substr(dot_pos + 1);
+			ASTPtr new_after_column = after_column_ptr ? after_column_ptr->clone() : nullptr;
+
+			if (new_after_column)
+			{
+				size_t after_dot_pos = after_col->name.find('.');
+				if (after_dot_pos == std::string::npos)
+					throw Exception("Nested column " + add_column.name + " should be inserted only after nested column");
+				if (add_column.name.substr(0, dot_pos) != after_col->name.substr(0, after_dot_pos))
+					throw Exception("Nested column " + add_column.name + "should be inserted after column with the same name before the '.'");
+
+				dynamic_cast<ASTIdentifier &>(*new_after_column).name = after_col->name.substr(after_dot_pos + 1);
+			}
+			addColumnToAST1(nested_columns, new_nested_column, new_after_column);
+		}
+		else
+		{
+			throw Exception("If you want to create new Nested column use syntax like. ALTER TABLE table ADD COLUMN MyColumn Nested(Name1 Type1, Name2 Type2...) [AFTER BeforeColumn]");
+		}
+	}
+	else
+	{
+		/// в Distributed и Merge таблицах столбцы имеют название "nested.column"
+		addColumnToAST1(columns, add_column_ptr, after_column_ptr);
+	}
+}
+
 void InterpreterAlterQuery::execute()
 {
 	ASTAlterQuery & alter = dynamic_cast<ASTAlterQuery &>(*query_ptr);
@@ -134,26 +220,7 @@ void InterpreterAlterQuery::execute()
 
 		if (params.type == ASTAlterQuery::ADD)
 		{
-			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
-			StringRange type_range = name_type.type->range;
-
-			/// проверяем корректность типа. В случае некоректного типа будет исключение
-			data_type_factory.get(String(type_range.first, type_range.second - type_range.first));
-
-			/// Проверяем, что колонка еще не существует
-			if (std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqual, name_type.name, _1)) != columns_copy.end())
-				throw Exception("Wrong column name. Column " + name_type.name  + " already exists", DB::ErrorCodes::ILLEGAL_COLUMN);
-
-			/// Проверяем опциональный аргумент AFTER
-			ASTs::iterator insert_it = columns_copy.end();
-			if (params.column)
-			{
-				const ASTIdentifier & col_after = dynamic_cast<const ASTIdentifier &>(*params.column);
-				insert_it = std::find_if(columns_copy.begin(), columns_copy.end(), boost::bind(namesEqualIgnoreAfterDot, col_after.name, _1)) ;
-				if (insert_it == columns_copy.end())
-					throw Exception("Wrong column name. Cannot find column " + col_after.name + " to insert after", DB::ErrorCodes::ILLEGAL_COLUMN);
-			}
-			columns_copy.insert(insert_it, params.name_type);
+			addColumnToAST(table, columns_copy, params.name_type, params.column);
 		}
 		else if (params.type == ASTAlterQuery::DROP)
 		{
@@ -217,15 +284,7 @@ void InterpreterAlterQuery::execute()
 		
 		if (params.type == ASTAlterQuery::ADD)
 		{
-			/// Применяем опциональный аргумент AFTER
-			ASTs::iterator insert_it = columns.end();
-			if (params.column)
-			{
-				const ASTIdentifier & col_after = dynamic_cast<const ASTIdentifier &>(*params.column);
-				insert_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqualIgnoreAfterDot, col_after.name, _1)) ;
-				++insert_it; /// increase iterator because we want to insert after found element not before
-			}
-			columns.insert(insert_it, params.name_type);
+			addColumnToAST(table, columns, params.name_type, params.column);
 		}
 		else if (params.type == ASTAlterQuery::DROP)
 		{

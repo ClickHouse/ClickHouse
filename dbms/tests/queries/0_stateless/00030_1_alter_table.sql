@@ -8,4 +8,8 @@ ALTER TABLE alter_test ADD COLUMN Added0 UInt32;
 ALTER TABLE alter_test ADD COLUMN Added2 UInt32;
 ALTER TABLE alter_test ADD COLUMN Added1 UInt32 AFTER Added0;
 
+ALTER TABLE alter_test ADD COLUMN AddedNested1 Nested(A UInt32, B UInt64) AFTER Added2;
+ALTER TABLE alter_test ADD COLUMN `AddedNested1.C` Array(String) AFTER `AddedNested1.B`;
+ALTER TABLE alter_test ADD COLUMN AddedNested2 Nested(A UInt32, B UInt64) AFTER AddedNested1;
+
 DESC TABLE alter_test;
