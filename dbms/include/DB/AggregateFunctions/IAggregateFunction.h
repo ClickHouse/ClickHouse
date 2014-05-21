@@ -84,6 +84,9 @@ public:
 
 	/// Вставить результат в столбец.
 	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
+
+	/// Можно ли вызывать метод insertResultInto, или всегда нужно запоминать состояние.
+	virtual bool isFinal() const { return true; }
 };
 
 

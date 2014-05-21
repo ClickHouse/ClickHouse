@@ -78,17 +78,26 @@ public:
 
 	Field operator[](size_t n) const
 	{
-		throw Exception("Method operator[] is not supported for ColumnAggregateFunction. You must access underlying vector directly.", ErrorCodes::NOT_IMPLEMENTED);;
+		String buffer_string;
+		WriteBufferFromString buffer(buffer_string);
+		func->serialize(data[n], buffer);
+		return Field(buffer_string);
 	}
 
 	void get(size_t n, Field & res) const
 	{
-		throw Exception("Method get is not supported for ColumnAggregateFunction. You must access underlying vector directly.", ErrorCodes::NOT_IMPLEMENTED);;
+		String buffer_string;
+		WriteBufferFromString buffer(buffer_string);
+		func->serialize(data[n], buffer);
+		res = buffer_string;
 	}
 
 	StringRef getDataAt(size_t n) const
 	{
-		throw Exception("Method getDataAt is not supported for ColumnAggregateFunction. You must access underlying vector directly.", ErrorCodes::NOT_IMPLEMENTED);
+		String buffer_string;
+		WriteBufferFromString buffer(buffer_string);
+		func->serialize(data[n], buffer);
+		return StringRef(buffer_string);
 	}
 
 	void insertData(const char * pos, size_t length)
