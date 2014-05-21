@@ -182,10 +182,17 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 					cur_longest_len = cur_len;
 				}
 				else
-					LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name
-						<< " because not enough free space: " << available_disk_space << " free and unreserved, "
-						<< cur_total_size << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
-						<< "% on overhead)");
+				{
+					time_t now = time(0);
+					if (now - disk_space_warning_time > 3600)
+					{
+						disk_space_warning_time = now;
+						LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name
+							<< " because not enough free space: " << available_disk_space << " free and unreserved, "
+							<< cur_total_size << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
+							<< "% on overhead); suppressing similar warnings for the next hour");
+					}
+				}
 			}
 		}
 
