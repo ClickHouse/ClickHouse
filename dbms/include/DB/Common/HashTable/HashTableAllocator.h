@@ -79,11 +79,11 @@ public:
 	  */
 	void * realloc(void * buf, size_t old_size, size_t new_size)
 	{
-		if (current_memory_tracker)
-			current_memory_tracker->realloc(old_size, new_size);
-
 		if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD)
 		{
+			if (current_memory_tracker)
+				current_memory_tracker->realloc(old_size, new_size);
+
 			buf = ::realloc(buf, new_size);
 			if (nullptr == buf)
 				DB::throwFromErrno("HashTableAllocator: Cannot realloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
@@ -92,6 +92,9 @@ public:
 		}
 		else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
 		{
+			if (current_memory_tracker)
+				current_memory_tracker->realloc(old_size, new_size);
+
 			buf = mremap(buf, old_size, new_size, MREMAP_MAYMOVE);
 			if (MAP_FAILED == buf)
 				DB::throwFromErrno("HashTableAllocator: Cannot mremap.", DB::ErrorCodes::CANNOT_MREMAP);
