@@ -192,6 +192,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 							<< cur_total_size << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
 							<< "% on overhead); suppressing similar warnings for the next hour");
 					}
+					break;
 				}
 			}
 		}
