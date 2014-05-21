@@ -11,6 +11,7 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 
 #include <algorithm>
 #include <boost/bind.hpp>
@@ -116,6 +117,7 @@ void addColumnToAST1(ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr
 		insert_it = std::find_if(columns.begin(), columns.end(), find_functor);
 		if (insert_it == columns.end())
 			throw Exception("Wrong column name. Cannot find column " + col_after->name + " to insert after");
+		++insert_it;
 	}
 	columns.insert(insert_it, add_column_ptr);
 }
@@ -129,18 +131,19 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 	size_t dot_pos = add_column.name.find('.');
 	bool insert_nested_column = dot_pos != std::string::npos;
 
+	const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
+	StringRange type_range = add_column.type->range;
+	String type(type_range.first, type_range.second - type_range.first);
+	DataTypePtr datatype = data_type_factory.get(type);
 	if (insert_nested_column)
 	{
-		const DataTypeFactory & data_type_factory = context.getDataTypeFactory();
-		StringRange type_range = add_column.type->range;
-		String type(type_range.first, type_range.second - type_range.first);
-		if (!dynamic_cast<DataTypeArray *>(data_type_factory.get(type).get()))
+		if (!dynamic_cast<DataTypeArray *>(datatype.get()))
 		{
 			throw Exception("Cannot add column " + add_column.name + ". Because it is not an array. Only arrays could be nested and consist '.' in their names");
 		}
 	}
 
-	if (dynamic_cast<StorageMergeTree *>(table.get()) && insert_nested_column)
+	if ((dynamic_cast<StorageMergeTree *>(table.get()) || dynamic_cast<StorageReplicatedMergeTree *>(table.get())) && insert_nested_column)
 	{
 		/// специальный случай для вставки nested столбцов в MergeTree
 		/// в MergeTree таблицах есть ASTFunction "Nested" в аргументах которой записаны столбцы
@@ -156,8 +159,9 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 
 			ASTs & nested_columns = dynamic_cast<ASTExpressionList &>(*nested_func->arguments).children;
 
-			ASTPtr new_nested_column = add_column_ptr->clone();
-			dynamic_cast<ASTNameTypePair &>(*new_nested_column).name = add_column.name.substr(dot_pos + 1);
+			ASTPtr new_nested_column_ptr = add_column_ptr->clone();
+			ASTNameTypePair& new_nested_column = dynamic_cast<ASTNameTypePair &>(*new_nested_column_ptr);
+			new_nested_column.name = add_column.name.substr(dot_pos + 1);
 			ASTPtr new_after_column = after_column_ptr ? after_column_ptr->clone() : nullptr;
 
 			if (new_after_column)
@@ -170,7 +174,18 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 
 				dynamic_cast<ASTIdentifier &>(*new_after_column).name = after_col->name.substr(after_dot_pos + 1);
 			}
-			addColumnToAST1(nested_columns, new_nested_column, new_after_column);
+
+			{
+				/// удаляем массив из типа, т.е. Array(String) -> String
+				ParserIdentifierWithOptionalParameters type_parser;
+				const char * expected;
+				const char * begin = new_nested_column.type->range.first + strlen("Array(");
+				const char * end = new_nested_column.type->range.second - static_cast<int>(strlen(")"));
+				if (!type_parser.parse(begin, end, new_nested_column.type, expected))
+					throw Exception("Fail to convert type like Array(SomeType) -> SomeType for type " + type);
+			}
+
+			addColumnToAST1(nested_columns, new_nested_column_ptr, new_after_column);
 		}
 		else
 		{
