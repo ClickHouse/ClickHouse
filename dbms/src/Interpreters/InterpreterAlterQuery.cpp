@@ -11,6 +11,7 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 
 #include <algorithm>
 #include <boost/bind.hpp>
@@ -116,6 +117,7 @@ void addColumnToAST1(ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr
 		insert_it = std::find_if(columns.begin(), columns.end(), find_functor);
 		if (insert_it == columns.end())
 			throw Exception("Wrong column name. Cannot find column " + col_after->name + " to insert after");
+		++insert_it;
 	}
 	columns.insert(insert_it, add_column_ptr);
 }
@@ -140,7 +142,7 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 		}
 	}
 
-	if (dynamic_cast<StorageMergeTree *>(table.get()) && insert_nested_column)
+	if ((dynamic_cast<StorageMergeTree *>(table.get()) || dynamic_cast<StorageReplicatedMergeTree *>(table.get())) && insert_nested_column)
 	{
 		/// специальный случай для вставки nested столбцов в MergeTree
 		/// в MergeTree таблицах есть ASTFunction "Nested" в аргументах которой записаны столбцы
