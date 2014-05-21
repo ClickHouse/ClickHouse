@@ -25,6 +25,8 @@ public:
 		: function(function_), argument_types(argument_types_), parameters(parameters_)
 	{
 	}
+
+	std::string getFunctionName() const { return function->getName(); }
 	
 	std::string getName() const
 	{
@@ -49,6 +51,9 @@ public:
 		stream << ")";
 		return stream.str();
 	}
+
+	DataTypePtr getReturnType() const {return function->getReturnType(); };
+	DataTypes getArgumentsDataTypes() const { return argument_types; }
 	
 	DataTypePtr clone() const { return new DataTypeAggregateFunction(function, argument_types, parameters); }
 
