@@ -235,17 +235,21 @@ void Aggregator::convertToBlockImpl(
 	size_t start_row,
 	bool final) const
 {
-	if (!final)
-	{
+//	if (!final || !aggregate_functions[i]->isFinal()) {
 		size_t j = start_row;
 		for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it, ++j)
 		{
 			method.insertKeyIntoColumns(it, key_columns, keys_size, key_sizes);
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
+				if (!final || !aggregate_functions[i]->isFinal())
+					(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
+				else
+					aggregate_functions[i]->insertResultInto(
+						Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+						*final_aggregate_columns[i]);
 		}
-	}
+/*	}
 	else
 	{
 		for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
@@ -257,7 +261,7 @@ void Aggregator::convertToBlockImpl(
 					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
 					*final_aggregate_columns[i]);
 		}
-	}
+	}*/
 }
 
 
@@ -341,16 +345,17 @@ void Aggregator::destroyImpl(
 	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
 	{
 		for (size_t i = 0; i < aggregates_size; ++i)
-		{
-			char * data = Method::getAggregateData(it->second);
+			if (aggregate_functions[i]->isFinal())
+			{
+				char * data = Method::getAggregateData(it->second);
 
-			/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
-			  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
-			  *  то data будет равен nullptr-у.
-			  */
-			if (nullptr != data)
-				aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
-		}
+				/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
+				*  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
+				*  то data будет равен nullptr-у.
+				*/
+				if (nullptr != data)
+					aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
+			}
 	}
 }
 
@@ -538,7 +543,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
-		if (!final)
+		if (!final || !aggregate_functions[i]->isFinal())
 		{
 			/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
 			ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
@@ -564,11 +569,10 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 	{
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
-		if (!final)
-			for (size_t i = 0; i < aggregates_size; ++i)
+		for (size_t i = 0; i < aggregates_size; ++i)
+			if (!final || !aggregate_functions[i]->isFinal())
 				(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
-		else
-			for (size_t i = 0; i < aggregates_size; ++i)
+			else
 				aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
 
 		if (overflow_row)
@@ -783,7 +787,8 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 		AggregatedDataWithoutKey & res_data = result.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
+			if (aggregate_functions[i]->isFinal())
+				aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
 
 	if (result.type == AggregatedDataVariants::KEY_64)
