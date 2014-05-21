@@ -158,7 +158,7 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 		catch (...)
 		{
 			for (size_t rollback_j = 0; rollback_j < j; ++rollback_j)
-				aggregate_functions[rollback_j]->destroy(aggregate_data + offsets_of_aggregate_states[j]);
+				aggregate_functions[rollback_j]->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
 
 			aggregate_data = nullptr;
 			throw;

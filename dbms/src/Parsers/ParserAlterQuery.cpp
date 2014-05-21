@@ -6,6 +6,7 @@
 #include <boost/concept_check.hpp>
 
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTAlterQuery.h>
 
 namespace DB
@@ -27,8 +28,9 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *
 	ParserString s_drop("DROP", true, true);
 	ParserString s_comma(",");
 
-	ParserIdentifier parser_name;
-	ParserNameTypePair parser_name_type;
+	ParserIdentifier table_parser;
+	ParserCompoundIdentifier parser_name;
+	ParserCompoundNameTypePair parser_name_type;
 
 	ASTPtr table;
 	ASTPtr database;
@@ -49,13 +51,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *
 
 	ws.ignore(pos, end);
 
-	if (!parser_name.parse(pos, end, database, expected))
+	if (!table_parser.parse(pos, end, database, expected))
 		return false;
 
 	/// Parse [db].name
 	if (s_dot.ignore(pos, end))
 	{
-		if (!parser_name.parse(pos, end, table, expected))
+		if (!table_parser.parse(pos, end, table, expected))
 			return false;
 
 		query->table = dynamic_cast<ASTIdentifier &>(*table).name;

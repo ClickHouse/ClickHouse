@@ -1,10 +1,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTCreateQuery.h>
-
-#include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
@@ -100,33 +97,6 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 
 	return false;
 }
-
-
-bool ParserNameTypePair::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
-{
-	ParserIdentifier name_parser;
-	ParserIdentifierWithOptionalParameters type_parser;
-	ParserWhiteSpaceOrComments ws_parser;
-	
-	Pos begin = pos;
-
-	ASTPtr name, type;
-	if (name_parser.parse(pos, end, name, expected)
-		&& ws_parser.ignore(pos, end, expected)
-		&& type_parser.parse(pos, end, type, expected))
-	{
-		ASTNameTypePair * name_type_pair = new ASTNameTypePair(StringRange(begin, pos));
-		node = name_type_pair;
-		name_type_pair->name = dynamic_cast<ASTIdentifier &>(*name).name;
-		name_type_pair->type = type;
-		name_type_pair->children.push_back(type);
-		return true;
-	}
-	
-	pos = begin;
-	return false;
-}
-
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
 {

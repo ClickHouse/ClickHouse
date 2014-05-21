@@ -276,9 +276,7 @@ void SplittingAggregator::aggregateThread(
 				if (inserted)
 				{
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
+					createAggregateStates(it->second);
 				}
 
 				/// Добавляем значения
@@ -314,9 +312,7 @@ void SplittingAggregator::aggregateThread(
 				{
 					it->first.data = result.aggregates_pool->insert(ref.data, ref.size);
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
+					createAggregateStates(it->second);
 				}
 
 				/// Добавляем значения
@@ -352,9 +348,7 @@ void SplittingAggregator::aggregateThread(
 				{
 					it->first.data = result.aggregates_pool->insert(ref.data, ref.size);
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
+					createAggregateStates(it->second);
 				}
 
 				/// Добавляем значения
@@ -388,9 +382,7 @@ void SplittingAggregator::aggregateThread(
 				if (inserted)
 				{
 					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second + offsets_of_aggregate_states[j]);
+					createAggregateStates(it->second);
 				}
 
 				/// Добавляем значения
@@ -426,9 +418,7 @@ void SplittingAggregator::aggregateThread(
 				{
 					it->second.first = extractKeysAndPlaceInPool(i, keys_size, key_columns, key, *result.aggregates_pool);
 					it->second.second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-
-					for (size_t j = 0; j < aggregates_size; ++j)
-						aggregate_functions[j]->create(it->second.second + offsets_of_aggregate_states[j]);
+					createAggregateStates(it->second.second);
 				}
 
 				/// Добавляем значения
