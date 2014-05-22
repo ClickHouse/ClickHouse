@@ -83,7 +83,7 @@ public:
 	{
 		Field field;
 		columns[0]->get(row_num, field);
-		ReadBufferFromString read_buffer(field.safeGet<String>());
+		ReadBufferFromString read_buffer(field.safeGet<String &>());
 		nested_func->deserializeMerge(place, read_buffer);
 	}
 
