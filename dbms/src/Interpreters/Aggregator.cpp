@@ -528,65 +528,83 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 		key_columns[i]->reserve(rows);
 	}
 
-	for (size_t i = 0; i < aggregates_size; ++i)
+	try
 	{
-		is_final[i] = final && aggregate_functions[i]->canBeFinal();
-		if (!is_final[i])
-		{
-			/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
-			ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
-
-			for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
-				column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
-
-			aggregate_columns[i] = &column_aggregate_func.getData();
-			aggregate_columns[i]->resize(rows);
-		}
-		else
-		{
-			ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
-			column.type = aggregate_functions[i]->getReturnType();
-			column.column = column.type->createColumn();
-			column.column->reserve(rows);
-
-			final_aggregate_columns[i] = column.column;
-		}
-	}
-
-	if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
-	{
-		AggregatedDataWithoutKey & data = data_variants.without_key;
-
 		for (size_t i = 0; i < aggregates_size; ++i)
+		{
+			is_final[i] = final && aggregate_functions[i]->canBeFinal();
 			if (!is_final[i])
-				(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+			{
+				/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
+				ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
+
+				for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
+					column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
+
+				aggregate_columns[i] = &column_aggregate_func.getData();
+				aggregate_columns[i]->resize(rows);
+			}
 			else
-				aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+			{
+				ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
+				column.type = aggregate_functions[i]->getReturnType();
+				column.column = column.type->createColumn();
+				column.column->reserve(rows);
 
-		if (overflow_row)
-			for (size_t i = 0; i < keys_size; ++i)
-				key_columns[i]->insertDefault();
+				final_aggregate_columns[i] = column.column;
+			}
+		}
+
+		if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
+		{
+			AggregatedDataWithoutKey & data = data_variants.without_key;
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+				if (!is_final[i])
+					(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
+				else
+					aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+
+			if (overflow_row)
+				for (size_t i = 0; i < keys_size; ++i)
+					key_columns[i]->insertDefault();
+		}
+
+		size_t start_row = overflow_row ? 1 : 0;
+
+		if (data_variants.type == AggregatedDataVariants::KEY_64)
+			convertToBlockImpl(*data_variants.key64, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row);
+		else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
+			convertToBlockImpl(*data_variants.key_string, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row);
+		else if (data_variants.type == AggregatedDataVariants::KEY_FIXED_STRING)
+			convertToBlockImpl(*data_variants.key_fixed_string, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row);
+		else if (data_variants.type == AggregatedDataVariants::KEYS_128)
+			convertToBlockImpl(*data_variants.keys128, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row);
+		else if (data_variants.type == AggregatedDataVariants::HASHED)
+			convertToBlockImpl(*data_variants.hashed, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row);
+		else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 	}
+	catch (...)
+	{
+		/** Работа с состояниями агрегатных функций недостаточно exception-safe.
+		  * Если часть столбцов aggregate_columns была resize-на, но значения не были вставлены,
+		  *  то эти столбцы будут в некорректном состоянии
+		  *  (ColumnAggregateFunction попытаются в деструкторе вызвать деструкторы у элементов, которых нет),
+		  *  а также деструкторы будут вызываться у AggregatedDataVariants.
+		  * Поэтому, вручную "откатываем" их.
+		  */
+		for (size_t i = 0; i < aggregates_size; ++i)
+			if (aggregate_columns[i])
+				aggregate_columns[i]->clear();
 
-	size_t start_row = overflow_row ? 1 : 0;
-	
-	if (data_variants.type == AggregatedDataVariants::KEY_64)
-		convertToBlockImpl(*data_variants.key64, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row);
-	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
-		convertToBlockImpl(*data_variants.key_string, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row);
-	else if (data_variants.type == AggregatedDataVariants::KEY_FIXED_STRING)
-		convertToBlockImpl(*data_variants.key_fixed_string, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row);
-	else if (data_variants.type == AggregatedDataVariants::KEYS_128)
-		convertToBlockImpl(*data_variants.keys128, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row);
-	else if (data_variants.type == AggregatedDataVariants::HASHED)
-		convertToBlockImpl(*data_variants.hashed, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row);
-	else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
-		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		throw;
+	}
 
 	if (!final)
 	{
