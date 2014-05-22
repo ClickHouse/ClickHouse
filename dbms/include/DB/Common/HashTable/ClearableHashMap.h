@@ -57,9 +57,25 @@ template
 	typename Grower = HashTableGrower<>,
 	typename Allocator = HashTableAllocator
 >
-class ClearableHashMap : public HashMapTable<Key, ClearableHashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>
+class ClearableHashMap : public HashTable<Key, ClearableHashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>
 {
 public:
+	typedef Key key_type;
+	typedef Mapped mapped_type;
+	typedef typename ClearableHashMap::cell_type::value_type value_type;
+
+	mapped_type & operator[](Key x)
+	{
+		typename ClearableHashMap::iterator it;
+		bool inserted;
+		this->emplace(x, it, inserted);
+
+		if (inserted)
+			new(&it->second) mapped_type();		/// В отличие от HashMap, всегда инициализируем значение.
+
+		return it->second;
+	}
+
 	void clear()
 	{
 		++this->version;
