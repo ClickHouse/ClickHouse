@@ -15,12 +15,19 @@ using Poco::SharedPtr;
 
 void DataTypeAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	throw Exception("Serialization of individual aggregate functions is not supported", ErrorCodes::NOT_IMPLEMENTED);
+	const String & s = get<const String &>(field);
+	writeVarUInt(s.size(), ostr);
+	writeString(s, ostr);
 }
 
 void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-	throw Exception("Deserialization of individual aggregate functions is not supported", ErrorCodes::NOT_IMPLEMENTED);
+	UInt64 size;
+	readVarUInt(size, istr);
+	field = String();
+	String & s = get<String &>(field);
+	s.resize(size);
+	istr.readStrict(&s[0], size);
 }
 
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -66,37 +73,46 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 
 void DataTypeAggregateFunction::serializeText(const Field & field, WriteBuffer & ostr) const
 {
-	throw Exception("Cannot write aggregate function as text.", ErrorCodes::CANNOT_WRITE_AGGREGATE_FUNCTION_AS_TEXT);
+	writeString(get<const String &>(field), ostr);
 }
+
 
 void DataTypeAggregateFunction::deserializeText(Field & field, ReadBuffer & istr) const
 {
-	throw Exception("Cannot read aggregate function from text.", ErrorCodes::CANNOT_READ_AGGREGATE_FUNCTION_FROM_TEXT);
+	field.assignString("", 0);
+	readString(get<String &>(field), istr);
 }
+
 
 void DataTypeAggregateFunction::serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
 {
-	throw Exception("Cannot write aggregate function as text.", ErrorCodes::CANNOT_WRITE_AGGREGATE_FUNCTION_AS_TEXT);
+	writeEscapedString(get<const String &>(field), ostr);
 }
+
 
 void DataTypeAggregateFunction::deserializeTextEscaped(Field & field, ReadBuffer & istr) const
 {
-	throw Exception("Cannot read aggregate function from text.", ErrorCodes::CANNOT_READ_AGGREGATE_FUNCTION_FROM_TEXT);
+	field.assignString("", 0);
+	readEscapedString(get<String &>(field), istr);
 }
+
 
 void DataTypeAggregateFunction::serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
 {
-	throw Exception("Cannot write aggregate function as text.", ErrorCodes::CANNOT_WRITE_AGGREGATE_FUNCTION_AS_TEXT);
+	writeQuotedString(get<const String &>(field), ostr);
 }
+
 
 void DataTypeAggregateFunction::deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 {
-	throw Exception("Cannot read aggregate function from text.", ErrorCodes::CANNOT_READ_AGGREGATE_FUNCTION_FROM_TEXT);
+	field.assignString("", 0);
+	readQuotedString(get<String &>(field), istr);
 }
+
 
 void DataTypeAggregateFunction::serializeTextJSON(const Field & field, WriteBuffer & ostr) const
 {
-	throw Exception("Cannot write aggregate function as text.", ErrorCodes::CANNOT_WRITE_AGGREGATE_FUNCTION_AS_TEXT);
+	writeJSONString(get<const String &>(field), ostr);
 }
 
 ColumnPtr DataTypeAggregateFunction::createColumn() const

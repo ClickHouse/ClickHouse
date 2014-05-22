@@ -6,6 +6,9 @@
 
 #include <DB/Columns/ColumnVector.h>
 
+#include <DB/Core/Field.h>
+
+#include <DB/IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -78,31 +81,40 @@ public:
 
 	Field operator[](size_t n) const
 	{
-		String buffer_string;
-		WriteBufferFromString buffer(buffer_string);
-		func->serialize(data[n], buffer);
-		return Field(buffer_string);
+		Field field = String();
+		{
+			WriteBufferFromString buffer(field.get<String &>());
+			func->serialize(data[n], buffer);
+		}
+		return field;
 	}
 
 	void get(size_t n, Field & res) const
 	{
-		String buffer_string;
-		WriteBufferFromString buffer(buffer_string);
-		func->serialize(data[n], buffer);
-		res = buffer_string;
+		res.assignString("", 0);
+		{
+			WriteBufferFromString buffer(res.get<String &>());
+			func->serialize(data[n], buffer);
+		}
 	}
 
 	StringRef getDataAt(size_t n) const
 	{
-		String buffer_string;
-		WriteBufferFromString buffer(buffer_string);
-		func->serialize(data[n], buffer);
-		return StringRef(buffer_string);
+		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+	}
+
+	void insert(const Field & x)
+	{
+		insertDefault();
+		ReadBufferFromString read_buffer(x.safeGet<const String &>());
+		func->deserializeMerge(data[data.size()-1], read_buffer);
 	}
 
 	void insertData(const char * pos, size_t length)
 	{
-		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		insertDefault();
+		ReadBuffer read_buffer(const_cast<char *>(pos), length);
+		func->deserializeMerge(data[data.size()-1], read_buffer);
 	}
 	
 	ColumnPtr cut(size_t start, size_t length) const
@@ -123,12 +135,6 @@ public:
 	ColumnPtr replicate(const Offsets_t & offsets) const
 	{
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
-	}
-
-	void insert(const Field & x)
-	{
-		throw Exception("Method insert is not supported for ColumnAggregateFunction. You must access underlying vector directly.",
-			ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	void getExtremes(Field & min, Field & max) const

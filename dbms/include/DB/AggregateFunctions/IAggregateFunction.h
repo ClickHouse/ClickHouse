@@ -82,11 +82,23 @@ public:
 	/// Десериализовать состояние и объединить своё состояние с ним.
 	virtual void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const = 0;
 
+	/// Сериализовать состояние в текстовом виде (а не в бинарном, как в функции serialize). Нельзя сериализовывать "пустое" состояние.
+	virtual void serializeText(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	{
+		throw Exception("Method serializeText is not supported for " + getName() + ".", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	/// Десериализовать текстовое состояние и объединить своё состояние с ним.
+	virtual void deserializeMergeText(AggregateDataPtr place, ReadBuffer & buf) const
+	{
+		throw Exception("Method deserializeMergeText is not supported for " + getName() + ".", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/// Вставить результат в столбец.
 	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
 	/// Можно ли вызывать метод insertResultInto, или всегда нужно запоминать состояние.
-	virtual bool isFinal() const { return true; }
+	virtual bool canBeFinal() const { return true; }
 };
 
 

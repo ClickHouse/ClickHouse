@@ -101,7 +101,7 @@ public:
 	}
 
 	/// Для аггрегатных функции типа state никогда не нужно вызывать insertResultInto
-	bool isFinal() const { return false; }
+	bool canBeFinal() const { return false; }
 
 };
 

@@ -470,6 +470,7 @@ protected:
 	Names key_names;
 	AggregateDescriptions aggregates;
 	std::vector<IAggregateFunction *> aggregate_functions;
+	std::vector<bool> is_final;
 	size_t keys_size;
 	size_t aggregates_size;
 	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
@@ -527,8 +528,7 @@ protected:
 		AggregateColumnsData & aggregate_columns,
 		ColumnPlainPtrs & final_aggregate_columns,
 		const Sizes & key_sizes,
-		size_t start_row,
-		bool final) const;
+		size_t start_row) const;
 
 	template <typename Method>
 	void mergeDataImpl(
