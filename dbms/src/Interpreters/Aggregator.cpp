@@ -39,6 +39,7 @@ void Aggregator::initialize(Block & block)
 	initialized = true;
 
 	aggregate_functions.resize(aggregates_size);
+	is_final.assign(aggregates_size, false);
 	for (size_t i = 0; i < aggregates_size; ++i)
 		aggregate_functions[i] = &*aggregates[i].function;
 
@@ -232,8 +233,7 @@ void Aggregator::convertToBlockImpl(
 	AggregateColumnsData & aggregate_columns,
 	ColumnPlainPtrs & final_aggregate_columns,
 	const Sizes & key_sizes,
-	size_t start_row,
-	bool final) const
+	size_t start_row) const
 {
 	size_t j = start_row;
 	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it, ++j)
@@ -241,7 +241,7 @@ void Aggregator::convertToBlockImpl(
 		method.insertKeyIntoColumns(it, key_columns, keys_size, key_sizes);
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			if (!final || !aggregate_functions[i]->canBeFinal())
+			if (!is_final[i])
 				(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
 			else
 				aggregate_functions[i]->insertResultInto(
@@ -332,7 +332,7 @@ void Aggregator::destroyImpl(
 	{
 		for (size_t i = 0; i < aggregates_size; ++i)
 			/// Если аггрегатная функция не может быть финализирована, то за ее удаление отвечает ColumnAggregateFunction
-			if (aggregate_functions[i]->canBeFinal())
+			if (is_final[i])
 			{
 				char * data = Method::getAggregateData(it->second);
 
@@ -530,7 +530,8 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
-		if (!final || !aggregate_functions[i]->canBeFinal())
+		is_final[i] = final && aggregate_functions[i]->canBeFinal();
+		if (!is_final[i])
 		{
 			/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
 			ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
@@ -557,7 +558,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 		AggregatedDataWithoutKey & data = data_variants.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			if (!final || !aggregate_functions[i]->canBeFinal())
+			if (!is_final[i])
 				(*aggregate_columns[i])[0] = data + offsets_of_aggregate_states[i];
 			else
 				aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
@@ -571,19 +572,19 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 	
 	if (data_variants.type == AggregatedDataVariants::KEY_64)
 		convertToBlockImpl(*data_variants.key64, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
+						   final_aggregate_columns, data_variants.key_sizes, start_row);
 	else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
 		convertToBlockImpl(*data_variants.key_string, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
+						   final_aggregate_columns, data_variants.key_sizes, start_row);
 	else if (data_variants.type == AggregatedDataVariants::KEY_FIXED_STRING)
 		convertToBlockImpl(*data_variants.key_fixed_string, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
+						   final_aggregate_columns, data_variants.key_sizes, start_row);
 	else if (data_variants.type == AggregatedDataVariants::KEYS_128)
 		convertToBlockImpl(*data_variants.keys128, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
+						   final_aggregate_columns, data_variants.key_sizes, start_row);
 	else if (data_variants.type == AggregatedDataVariants::HASHED)
 		convertToBlockImpl(*data_variants.hashed, key_columns, aggregate_columns,
-						   final_aggregate_columns, data_variants.key_sizes, start_row, final);
+						   final_aggregate_columns, data_variants.key_sizes, start_row);
 	else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -775,7 +776,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 			/// Если аггрегатная функция не может быть финализирована, то за ее удаление отвечает ColumnAggregateFunction
-			if (aggregate_functions[i]->canBeFinal())
+			if (is_final[i])
 				aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
 
