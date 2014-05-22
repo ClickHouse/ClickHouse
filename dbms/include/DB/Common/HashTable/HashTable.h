@@ -237,14 +237,11 @@ protected:
 
 	size_t m_size = 0;		/// Количество элементов
 	Cell * buf;				/// Кусок памяти для всех элементов кроме элемента с ключём 0.
-	size_t buf_size_bytes;
 	Grower grower;
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 	mutable size_t collisions;
 #endif
-
-	size_t hash(const Key & x) const { return Hash::operator()(x); }
 
 	/// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
 	size_t findCell(const Key & x, size_t place_value) const
@@ -260,16 +257,15 @@ protected:
 		return place_value;
 	}
 
-	void alloc()
+	void alloc(const Grower & new_grower)
 	{
-		size_t new_size_bytes = grower.bufSize() * sizeof(Cell);
-		buf = reinterpret_cast<Cell *>(Allocator::alloc(new_size_bytes));
-		buf_size_bytes = new_size_bytes;
+		buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
+		grower = new_grower;
 	}
 
 	void free()
 	{
-		Allocator::free(buf, buf_size_bytes);
+		Allocator::free(buf, getBufferSizeInBytes());
 	}
 
 
@@ -282,25 +278,31 @@ protected:
 
 		size_t old_size = grower.bufSize();
 
+		/** Чтобы в случае исключения, объект остался в корректном состоянии,
+		  *  изменение переменной grower (определяющией размер буфера хэш-таблицы)
+		  *  откладываем на момент после реального изменения буфера.
+		  * Временная переменная new_grower используется, чтобы определить новый размер.
+		  */
+		Grower new_grower = grower;
+
 		if (for_num_elems)
 		{
-			grower.set(for_num_elems);
-			if (grower.bufSize() <= old_size)
+			new_grower.set(for_num_elems);
+			if (new_grower.bufSize() <= old_size)
 				return;
 		}
 		else if (for_buf_size)
 		{
-			grower.setBufSize(for_buf_size);
-			if (grower.bufSize() <= old_size)
+			new_grower.setBufSize(for_buf_size);
+			if (new_grower.bufSize() <= old_size)
 				return;
 		}
 		else
-			grower.increaseSize();
+			new_grower.increaseSize();
 
 		/// Расширим пространство.
-		size_t new_size_bytes = grower.bufSize() * sizeof(Cell);
-		buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, buf_size_bytes, new_size_bytes));
-		buf_size_bytes = new_size_bytes;
+		buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, getBufferSizeInBytes(), new_grower.bufSize() * sizeof(Cell)));
+		grower = new_grower;
 
 		/** Теперь некоторые элементы может потребоваться переместить на новое место.
 		  * Элемент может остаться на месте, или переместиться в новое место "справа",
@@ -361,12 +363,14 @@ public:
 	typedef Key key_type;
 	typedef typename Cell::value_type value_type;
 
+	size_t hash(const Key & x) const { return Hash::operator()(x); }
+
 
 	HashTable()
 	{
 		if (Cell::need_zero_value_storage)
 			this->zeroValue()->setZero();
-		alloc();
+		alloc(grower);
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 		collisions = 0;
@@ -643,8 +647,9 @@ public:
 		DB::readVarUInt(new_size, rb);
 
 		free();
-		grower.set(new_size);
-		alloc();
+		Grower new_grower = grower;
+		new_grower.set(new_size);
+		alloc(new_grower);
 
 		for (size_t i = 0; i < new_size; ++i)
 		{
@@ -665,8 +670,9 @@ public:
 		DB::readText(new_size, rb);
 
 		free();
-		grower.set(new_size);
-		alloc();
+		Grower new_grower = grower;
+		new_grower.set(new_size);
+		alloc(new_grower);
 
 		for (size_t i = 0; i < new_size; ++i)
 		{
@@ -690,7 +696,7 @@ public:
 
 	size_t getBufferSizeInBytes() const
 	{
-		return buf_size_bytes;
+		return grower.bufSize() * sizeof(Cell);
 	}
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
