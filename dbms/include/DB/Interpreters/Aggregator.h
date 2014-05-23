@@ -470,7 +470,7 @@ protected:
 	Names key_names;
 	AggregateDescriptions aggregates;
 	std::vector<IAggregateFunction *> aggregate_functions;
-	std::vector<bool> is_final;
+	std::vector<char> is_final;
 	size_t keys_size;
 	size_t aggregates_size;
 	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.

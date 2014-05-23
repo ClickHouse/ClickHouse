@@ -332,18 +332,16 @@ void Aggregator::destroyImpl(
 	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
 	{
 		for (size_t i = 0; i < aggregates_size; ++i)
-			/// Если аггрегатная функция не может быть финализирована, то за ее удаление отвечает ColumnAggregateFunction
-			if (is_final[i])
-			{
-				char * data = Method::getAggregateData(it->second);
+		{
+			char * data = Method::getAggregateData(it->second);
 
-				/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
-				*  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
-				*  то data будет равен nullptr-у.
-				*/
-				if (nullptr != data)
-					aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
-			}
+			/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
+			  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
+			  *  то data будет равен nullptr-у.
+			  */
+			if (nullptr != data)
+				aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
+		}
 	}
 }
 
@@ -794,9 +792,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 		AggregatedDataWithoutKey & res_data = result.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			/// Если аггрегатная функция не может быть финализирована, то за ее удаление отвечает ColumnAggregateFunction
-			if (is_final[i])
-				aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
+			aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
 
 	if (result.type == AggregatedDataVariants::KEY_64)
