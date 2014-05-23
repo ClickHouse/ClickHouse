@@ -671,6 +671,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
+
+			current_data = nullptr;
 		}
 
 		if (res->type == AggregatedDataVariants::KEY_64)
