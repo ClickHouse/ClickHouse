@@ -57,7 +57,7 @@ public:
 		nested_func->create(place);
 	}
 
-	void destroy(AggregateDataPtr place) const
+	void destroy(AggregateDataPtr place) const noexcept
 	{
 		nested_func->destroy(place);
 	}
