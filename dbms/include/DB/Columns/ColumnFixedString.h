@@ -122,7 +122,8 @@ public:
 		bool operator()(size_t lhs, size_t rhs) const
 		{
 			/// TODO: memcmp тормозит.
-			return positive == (0 > memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n));
+			int res = memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
+			return positive ? (res < 0) : (res > 0);
 		}
 	};
 
