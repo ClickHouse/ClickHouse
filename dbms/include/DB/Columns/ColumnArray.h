@@ -280,7 +280,7 @@ public:
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
 		size_t s = size();
-		if (limit > s)
+		if (limit >= s)
 			limit = 0;
 
 		res.resize(s);

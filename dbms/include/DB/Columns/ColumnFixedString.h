@@ -133,7 +133,7 @@ public:
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		if (limit > s)
+		if (limit >= s)
 			limit = 0;
 
 		if (limit)
