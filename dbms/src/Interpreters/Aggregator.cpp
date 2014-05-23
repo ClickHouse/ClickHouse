@@ -265,14 +265,15 @@ void Aggregator::mergeDataImpl(
 		if (!inserted)
 		{
 			for (size_t i = 0; i < aggregates_size; ++i)
-			{
 				aggregate_functions[i]->merge(
 					Method::getAggregateData(res_it->second) + offsets_of_aggregate_states[i],
 					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
 
+			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->destroy(
 					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
-			}
+
+			Method::getAggregateData(it->second) = nullptr;
 		}
 		else
 		{
@@ -668,10 +669,10 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			AggregatedDataWithoutKey & current_data = current.without_key;
 
 			for (size_t i = 0; i < aggregates_size; ++i)
-			{
 				aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i]);
+
+			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
-			}
 		}
 
 		if (res->type == AggregatedDataVariants::KEY_64)
