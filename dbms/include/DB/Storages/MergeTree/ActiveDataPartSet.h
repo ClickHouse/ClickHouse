@@ -61,7 +61,9 @@ public:
 	ActiveDataPartSet();
 
 	void add(const String & name);
-	String getContainingPart(const String & name);
+	String getContainingPart(const String & name) const;
+
+	Strings getParts() const;
 
 	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
@@ -74,7 +76,7 @@ public:
 private:
 	typedef std::set<Part> Parts;
 
-	Poco::Mutex mutex;
+	mutable Poco::Mutex mutex;
 	Parts parts;
 };
 
