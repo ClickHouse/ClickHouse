@@ -72,45 +72,6 @@ public:
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 
-	/// Добавляет куски в множество currently_merging.
-	struct CurrentlyMergingPartsTagger
-	{
-		Strings parts;
-		StorageReplicatedMergeTree & storage;
-
-		CurrentlyMergingPartsTagger(const Strings & parts_, StorageReplicatedMergeTree & storage_)
-			: parts(parts_), storage(storage_)
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
-			for (const auto & name : parts)
-			{
-				if (storage.currently_merging.count(name))
-					throw Exception("Tagging alreagy tagged part " + name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-			}
-			storage.currently_merging.insert(parts.begin(), parts.end());
-		}
-
-		~CurrentlyMergingPartsTagger()
-		{
-			try
-			{
-				Poco::ScopedLock<Poco::FastMutex> lock(storage.currently_merging_mutex);
-				for (const auto & name : parts)
-				{
-					if (!storage.currently_merging.count(name))
-						throw Exception("Untagging already untagged part " + name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-					storage.currently_merging.erase(name);
-				}
-			}
-			catch (...)
-			{
-				tryLogCurrentException(__PRETTY_FUNCTION__);
-			}
-		}
-	};
-
-	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
-
 	/// Добавляет кусок в множество future_parts.
 	struct FuturePartTagger
 	{
@@ -156,13 +117,12 @@ private:
 		String new_part_name;
 		Strings parts_to_merge;
 
-		CurrentlyMergingPartsTaggerPtr currently_merging_tagger;
 		FuturePartTaggerPtr future_part_tagger;
 
-		void tagPartsAsCurrentlyMerging(StorageReplicatedMergeTree & storage)
+		void addResultToVirtualParts(StorageReplicatedMergeTree & storage)
 		{
-			if (type == MERGE_PARTS)
-				currently_merging_tagger = new CurrentlyMergingPartsTagger(parts_to_merge, storage);
+			if (type == MERGE_PARTS || type == GET_PART)
+				storage.virtual_parts.add(new_part_name);
 		}
 
 		void tagPartAsFuture(StorageReplicatedMergeTree & storage)
@@ -205,9 +165,8 @@ private:
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
 	bool is_read_only = false;
 
-	/// Куски, для которых в очереди есть задание на слияние.
-	StringSet currently_merging;
-	Poco::FastMutex currently_merging_mutex;
+	/// Каким будет множество активных кусков после выполнения всей текущей очереди.
+	ActiveDataPartSet virtual_parts;
 
 	/** Очередь того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
 	  * В ZK записи в хронологическом порядке. Здесь - не обязательно.
@@ -318,6 +277,9 @@ private:
 	  *  Но если таких слишком много, на всякий случай бросить исключение - скорее всего, это ошибка конфигурации.
 	  */
 	void checkParts();
+
+	/// Положить все куски из data в virtual_parts.
+	void initVirtualParts();
 
 	/// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
 	void startup();
