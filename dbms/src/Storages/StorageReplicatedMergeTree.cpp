@@ -196,7 +196,7 @@ void StorageReplicatedMergeTree::checkTableStructure()
 
 void StorageReplicatedMergeTree::createReplica()
 {
-	LOG_DEBUG(log, "Creating table " << replica_path);
+	LOG_DEBUG(log, "Creating replica " << replica_path);
 
 	/** Запомним список других реплик.
 	  * NOTE: Здесь есть race condition. Если почти одновременно добавить нескольких реплик, сразу же начиная в них писать,
