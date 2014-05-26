@@ -362,7 +362,7 @@ void StorageReplicatedMergeTree::checkParts()
 
 		LogEntry log_entry;
 		log_entry.type = LogEntry::GET_PART;
-		log_entry.source_replica = replica_name;
+		log_entry.source_replica = "";
 		log_entry.new_part_name = name;
 
 		/// Полагаемся, что это происходит до загрузки очереди (loadQueue).

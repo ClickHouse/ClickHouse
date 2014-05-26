@@ -113,7 +113,7 @@ private:
 		String znode_name;
 
 		Type type;
-		String source_replica;
+		String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
 		String new_part_name;
 		Strings parts_to_merge;
 
