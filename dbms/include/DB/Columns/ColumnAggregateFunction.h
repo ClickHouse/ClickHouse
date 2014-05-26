@@ -103,18 +103,26 @@ public:
 		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
 	}
 
+	/// Объединить состояние в последней строке с заданным
+	void insertMerge(const Field & x)
+	{
+		ReadBufferFromString read_buffer(x.safeGet<const String &>());
+		func->deserializeMerge(data.back(), read_buffer);
+	}
+
 	void insert(const Field & x)
 	{
-		insertDefault();
-		ReadBufferFromString read_buffer(x.safeGet<const String &>());
-		func->deserializeMerge(data[data.size()-1], read_buffer);
+		data.push_back(AggregateDataPtr());
+		func->create(data.back());
+		insertMerge(x);
 	}
 
 	void insertData(const char * pos, size_t length)
 	{
-		insertDefault();
+		data.push_back(AggregateDataPtr());
+		func->create(data.back());
 		ReadBuffer read_buffer(const_cast<char *>(pos), length);
-		func->deserializeMerge(data[data.size()-1], read_buffer);
+		func->deserializeMerge(data.back(), read_buffer);
 	}
 	
 	ColumnPtr cut(size_t start, size_t length) const

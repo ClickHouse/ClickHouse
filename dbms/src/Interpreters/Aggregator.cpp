@@ -530,8 +530,10 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 	try
 	{
 		for (size_t i = 0; i < aggregates_size; ++i)
-		{
 			is_final[i] = final && aggregate_functions[i]->canBeFinal();
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+		{
 			if (!is_final[i])
 			{
 				/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
