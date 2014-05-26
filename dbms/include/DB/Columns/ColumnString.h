@@ -266,9 +266,11 @@ public:
 		less(const ColumnString & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			return positive == (0 > strcmp(
+			int res = strcmp(
 				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]),
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)])));
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]));
+
+			return positive ? (res < 0) : (res > 0);
 		}
 	};
 
@@ -279,7 +281,7 @@ public:
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		if (limit > s)
+		if (limit >= s)
 			limit = 0;
 
 		if (limit)
@@ -308,9 +310,11 @@ public:
 		
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			return positive == (0 > collator.compare(
+			int res = collator.compare(
 				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs)));
+				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
+
+			return positive ? (res < 0) : (res > 0);
 		}
 	};
 
@@ -322,7 +326,7 @@ public:
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 
-		if (limit > s)
+		if (limit >= s)
 			limit = 0;
 
 		if (limit)

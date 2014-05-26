@@ -59,7 +59,7 @@ public:
 	virtual void create(AggregateDataPtr place) const = 0;
 
 	/// Уничтожить данные для агрегации.
-	virtual void destroy(AggregateDataPtr place) const = 0;
+	virtual void destroy(AggregateDataPtr place) const noexcept = 0;
 
 	/// Уничтожать данные не обязательно.
 	virtual bool hasTrivialDestructor() const = 0;
@@ -118,7 +118,7 @@ public:
 		new (place) Data;
 	}
 
-	void destroy(AggregateDataPtr place) const
+	void destroy(AggregateDataPtr place) const noexcept
 	{
 		data(place).~Data();
 	}

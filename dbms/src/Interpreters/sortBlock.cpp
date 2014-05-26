@@ -97,7 +97,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 		for (size_t i = 0; i < size; ++i)
 			perm[i] = i;
 
-		if (limit > size)
+		if (limit >= size)
 			limit = 0;
 		
 		bool need_collation = false;

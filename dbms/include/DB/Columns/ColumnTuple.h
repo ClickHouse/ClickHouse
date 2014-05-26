@@ -182,7 +182,7 @@ public:
 		for (size_t i = 0; i < rows; ++i)
 			res[i] = i;
 
-		if (limit > rows)
+		if (limit >= rows)
 			limit = 0;
 
 		if (limit)
