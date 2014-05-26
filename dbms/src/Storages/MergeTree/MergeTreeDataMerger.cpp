@@ -235,7 +235,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			++it;
 		}
 
-		merged_name = MergeTreeData::getPartName(
+		merged_name = ActiveDataPartSet::getPartName(
 			left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
 
 		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name
@@ -257,7 +257,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 		all_column_names.push_back(it.first);
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-	data.parsePartName(merged_name, *new_data_part);
+	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
 	new_data_part->name = "tmp_" + merged_name;
 
 	/** Читаем из всех кусков, сливаем и пишем в новый.
