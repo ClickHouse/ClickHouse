@@ -126,6 +126,8 @@ static String formattedAST(const ASTPtr & ast)
 
 void StorageReplicatedMergeTree::createTable()
 {
+	LOG_DEBUG(log, "Creating table " << zookeeper_path);
+
 	zookeeper->create(zookeeper_path, "", zkutil::CreateMode::Persistent);
 
 	/// Запишем метаданные таблицы, чтобы реплики могли сверять с ними свою локальную структуру таблицы.
@@ -194,6 +196,8 @@ void StorageReplicatedMergeTree::checkTableStructure()
 
 void StorageReplicatedMergeTree::createReplica()
 {
+	LOG_DEBUG(log, "Creating table " << replica_path);
+
 	/** Запомним список других реплик.
 	  * NOTE: Здесь есть race condition. Если почти одновременно добавить нескольких реплик, сразу же начиная в них писать,
 	  *       небольшая часть данных может не реплицироваться.
@@ -210,7 +214,10 @@ void StorageReplicatedMergeTree::createReplica()
 
 	/// Если таблица пуста, больше ничего делать не нужно.
 	if (replicas.empty())
+	{
+		LOG_DEBUG(log, "No other replicas");
 		return;
+	}
 
 	/// "Эталонная" реплика, у которой мы возьмем информацию о множестве кусков, очередь и указатели на логи.
 	String source_replica = replicas[0];
@@ -220,6 +227,8 @@ void StorageReplicatedMergeTree::createReplica()
 	  */
 	for (const String & replica : replicas)
 	{
+		LOG_DEBUG(log, "Waiting for " << replica << " to acknowledge me");
+
 		bool active = true;
 		while(true)
 		{
@@ -237,6 +246,8 @@ void StorageReplicatedMergeTree::createReplica()
 		if (active)
 			source_replica = replica;
 	}
+
+	LOG_INFO(log, "Will mimic " << source_replica);
 
 	String source_path = zookeeper_path + "/replicas/" + source_replica;
 
@@ -278,12 +289,14 @@ void StorageReplicatedMergeTree::createReplica()
 
 		zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
 	}
+	LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
 
 	/// Добавим в очередь содержимое очереди эталонной реплики.
 	for (const String & entry : source_queue)
 	{
 		zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
 	}
+	LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
 }
 
 void StorageReplicatedMergeTree::activateReplica()
