@@ -110,7 +110,7 @@ public:
 		assertEOF(in);
 
 		MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-		data.parsePartName(part_name, *new_data_part);
+		ActiveDataPartSet::parsePartName(part_name, *new_data_part);
 		new_data_part->name = "tmp_" + part_name;
 		new_data_part->modification_time = time(0);
 		new_data_part->loadIndex();

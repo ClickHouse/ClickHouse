@@ -6,6 +6,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Storages/MergeTree/ActiveDataPartSet.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/Common/escapeForFileName.h>
 #include <Poco/RWLock.h>
@@ -116,7 +117,7 @@ class MergeTreeData : public ITableDeclaration
 {
 public:
 	/// Описание куска с данными.
-	struct DataPart
+	struct DataPart : public ActiveDataPartSet::Part
 	{
 		/** Контрольные суммы всех не временных файлов.
 		  * Для сжатых файлов хранятся чексумма и размер разжатых данных, чтобы не зависеть от способа сжатия.
@@ -203,21 +204,11 @@ public:
  		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0), remove_time(0) {}
 
  		MergeTreeData & storage;
-		DayNum_t left_date;
-		DayNum_t right_date;
-		UInt64 left;
-		UInt64 right;
-		/// Уровень игнорируется. Использовался предыдущей эвристикой слияния.
-		UInt32 level;
 
-		std::string name;
 		size_t size;	/// в количестве засечек.
 		size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано
 		time_t modification_time;
 		mutable time_t remove_time; /// Когда кусок убрали из рабочего набора.
-
-		DayNum_t left_month;
-		DayNum_t right_month;
 
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
@@ -259,36 +250,6 @@ public:
 			Poco::File f(from);
 			f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
 			f.renameTo(to);
-		}
-
-		bool operator< (const DataPart & rhs) const
-		{
-			if (left_month != rhs.left_month)
-				return left_month < rhs.left_month;
-			if (right_month != rhs.right_month)
-				return right_month < rhs.right_month;
-
-			if (left != rhs.left)
-				return left < rhs.left;
-			if (right != rhs.right)
-				return right < rhs.right;
-
-			if (level != rhs.level)
-				return level < rhs.level;
-
-			return false;
-		}
-
-		/// Содержит другой кусок (получен после объединения другого куска с каким-то ещё)
-		bool contains(const DataPart & rhs) const
-		{
-			return left_month == rhs.left_month		/// Куски за разные месяцы не объединяются
-				&& right_month == rhs.right_month
-				&& level > rhs.level
-				&& left_date <= rhs.left_date
-				&& right_date >= rhs.right_date
-				&& left <= rhs.left
-				&& right >= rhs.right;
 		}
 
 		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
@@ -419,14 +380,6 @@ public:
 
 	UInt64 getMaxDataPartIndex();
 
-	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
-
-	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
-	bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const;
-
-	/// Кладет в DataPart данные из имени кусочка.
-	void parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
-
 	std::string getTableName() const { throw Exception("Logical error: calling method getTableName of not a table.",
 		ErrorCodes::LOGICAL_ERROR); }
 
@@ -447,6 +400,8 @@ public:
 
 	/** Возвращает кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
 	  * Если including_inactive, просматриваются также неактивные куски (all_data_parts).
+	  * При including_inactive, нахождение куска гарантируется только если есть кусок, совпадающий с part_name;
+	  *  строго покрывающий кусок в некоторых случаях может не найтись.
 	  */
 	DataPartPtr getContainingPart(const String & part_name, bool including_inactive = false);
 
@@ -518,9 +473,6 @@ private:
 
 	String log_name;
 	Logger * log;
-
-	/// Регулярное выражение соответсвующее названию директории с кусочками
-	Poco::RegularExpression file_name_regexp;
 
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;

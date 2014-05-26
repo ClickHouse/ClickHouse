@@ -31,8 +31,7 @@ MergeTreeData::MergeTreeData(
 	mode(mode_), sign_column(sign_column_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
 	full_path(full_path_), columns(columns_), log_name(log_name_),
-	log(&Logger::get(log_name + " (Data)")),
-	file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)")
+	log(&Logger::get(log_name + " (Data)"))
 {
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
@@ -77,60 +76,6 @@ std::string MergeTreeData::getModePrefix() const
 }
 
 
-
-
-String MergeTreeData::getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level)
-{
-	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
-
-	/// Имя директории для куска иммет вид: YYYYMMDD_YYYYMMDD_N_N_L.
-	String res;
-	{
-		unsigned left_date_id = Date2OrderedIdentifier(date_lut.fromDayNum(left_date));
-		unsigned right_date_id = Date2OrderedIdentifier(date_lut.fromDayNum(right_date));
-
-		WriteBufferFromString wb(res);
-
-		writeIntText(left_date_id, wb);
-		writeChar('_', wb);
-		writeIntText(right_date_id, wb);
-		writeChar('_', wb);
-		writeIntText(left_id, wb);
-		writeChar('_', wb);
-		writeIntText(right_id, wb);
-		writeChar('_', wb);
-		writeIntText(level, wb);
-	}
-
-	return res;
-}
-
-
-void MergeTreeData::parsePartName(const String & file_name, DataPart & part, const Poco::RegularExpression::MatchVec * matches_p)
-{
-	Poco::RegularExpression::MatchVec match_vec;
-	if (!matches_p)
-	{
-		if (!isPartDirectory(file_name, match_vec))
-			throw Exception("Unexpected part name: " + file_name, ErrorCodes::BAD_DATA_PART_NAME);
-		matches_p = &match_vec;
-	}
-
-	const Poco::RegularExpression::MatchVec & matches = *matches_p;
-
-	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
-
-	part.left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
-	part.right_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
-	part.left = parse<UInt64>(file_name.substr(matches[3].offset, matches[3].length));
-	part.right = parse<UInt64>(file_name.substr(matches[4].offset, matches[4].length));
-	part.level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
-
-	part.left_month = date_lut.toFirstDayNumOfMonth(part.left_date);
-	part.right_month = date_lut.toFirstDayNumOfMonth(part.right_date);
-}
-
-
 void MergeTreeData::loadDataParts()
 {
 	LOG_DEBUG(log, "Loading data parts");
@@ -170,11 +115,11 @@ void MergeTreeData::loadDataParts()
 	Poco::RegularExpression::MatchVec matches;
 	for (const String & file_name : part_file_names)
 	{
-		if (!isPartDirectory(file_name, matches))
+		if (!ActiveDataPartSet::isPartDirectory(file_name, matches))
 			continue;
 
 		MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-		parsePartName(file_name, *part, &matches);
+		ActiveDataPartSet::parsePartName(file_name, *part, &matches);
 		part->name = file_name;
 
 		bool broken = false;
@@ -212,10 +157,10 @@ void MergeTreeData::loadDataParts()
 				{
 					if (contained_name == file_name)
 						continue;
-					if (!isPartDirectory(contained_name, matches))
+					if (!ActiveDataPartSet::isPartDirectory(contained_name, matches))
 						continue;
 					DataPart contained_part(*this);
-					parsePartName(contained_name, contained_part, &matches);
+					ActiveDataPartSet::parsePartName(contained_name, contained_part, &matches);
 					if (part->contains(contained_part))
 					{
 						LOG_ERROR(log, "Found part " << full_path + contained_name);
@@ -393,7 +338,7 @@ void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size
 	{
 		std::string dir_name = it_dir.name();
 
-		if (!isPartDirectory(dir_name, matches))
+		if (!ActiveDataPartSet::isPartDirectory(dir_name, matches))
 			continue;
 
 		/// Цикл по каждому из файлов в директории кусочков
@@ -616,12 +561,6 @@ void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
 }
 
 
-bool MergeTreeData::isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches) const
-{
-	return (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
-}
-
-
 void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
 {
 	auto removed = renameTempPartAndReplace(part, increment);
@@ -648,7 +587,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 	if (increment)
 		part->left = part->right = increment->get(false);
 
-	part->name = getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+	part->name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
 	if (data_parts.count(part))
 		throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
@@ -742,7 +681,7 @@ size_t MergeTreeData::getMaxPartsCountForMonth()
 MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_name, bool including_inactive)
 {
 	MutableDataPartPtr tmp_part(new DataPart(*this));
-	parsePartName(part_name, *tmp_part);
+	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
 
 	Poco::ScopedLock<Poco::FastMutex> lock(including_inactive ? all_data_parts_mutex : data_parts_mutex);
 
