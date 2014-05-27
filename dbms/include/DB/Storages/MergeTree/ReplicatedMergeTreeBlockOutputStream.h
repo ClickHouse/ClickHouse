@@ -20,6 +20,8 @@ public:
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 		for (auto & current_block : part_blocks)
 		{
+			storage.data.delayInsertIfNeeded();
+
 			++block_index;
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
 			time_t min_date_time = DateLUTSingleton::instance().fromDayNum(DayNum_t(current_block.min_date));

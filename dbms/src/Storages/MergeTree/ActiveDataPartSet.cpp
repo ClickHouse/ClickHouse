@@ -41,7 +41,7 @@ void ActiveDataPartSet::add(const String & name)
 	parts.insert(part);
 }
 
-String ActiveDataPartSet::getContainingPart(const String & part_name)
+String ActiveDataPartSet::getContainingPart(const String & part_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(mutex);
 
@@ -67,6 +67,19 @@ String ActiveDataPartSet::getContainingPart(const String & part_name)
 	}
 
 	return "";
+}
+
+Strings ActiveDataPartSet::getParts() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(mutex);
+
+	Strings res;
+	for (const Part & part : parts)
+	{
+		res.push_back(part.name);
+	}
+
+	return res;
 }
 
 

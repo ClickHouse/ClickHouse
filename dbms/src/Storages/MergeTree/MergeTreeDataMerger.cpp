@@ -5,6 +5,7 @@
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
+#include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 
 
 namespace DB
@@ -289,6 +290,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 
 		case MergeTreeData::Summing:
 			merged_stream = new SummingSortedBlockInputStream(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case MergeTreeData::Aggregating:
+			merged_stream = new AggregatingSortedBlockInputStream(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		default:

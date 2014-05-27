@@ -37,7 +37,7 @@ NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) con
 	for (auto & it : real_columns)
 		if (it.first == column_name)
 			return it;
-	throw Exception("There is no column " + column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 
@@ -60,7 +60,7 @@ const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_nam
 		if (it->first == column_name)
 			return it->second;
 
-	throw Exception("There is no column " + column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 
@@ -115,8 +115,7 @@ void ITableDeclaration::check(const Names & column_names) const
 	const NamesAndTypesList & available_columns = getColumnsList();
 
 	if (column_names.empty())
-		throw Exception("Empty list of columns queried for table " + getTableName()
-			+ ". There are columns: " + listOfColumns(available_columns),
+		throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
 			ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
 	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
@@ -128,12 +127,11 @@ void ITableDeclaration::check(const Names & column_names) const
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
 		if (columns_map.end() == columns_map.find(*it))
-			throw Exception("There is no column with name " + *it + " in table " + getTableName()
-			+ ". There are columns: " + listOfColumns(available_columns),
+			throw Exception("There is no column with name " + *it + " in table. There are columns: " + listOfColumns(available_columns),
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
 		if (unique_names.end() != unique_names.find(*it))
-			throw Exception("Column " + *it + " queried more than once in table " + getTableName(),
+			throw Exception("Column " + *it + " queried more than once",
 				ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
 		unique_names.insert(*it);
 	}
@@ -160,14 +158,12 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 
 		NamesAndTypesMap::const_iterator it = columns_map.find(column.name);
 		if (columns_map.end() == it)
-			throw Exception("There is no column with name " + column.name + " in table " + getTableName()
-				+ ". There are columns: " + listOfColumns(available_columns),
-				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+			throw Exception("There is no column with name " + column.name + ". There are columns: "
+				+ listOfColumns(available_columns), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
 		if (column.type->getName() != it->second->getName())
-			throw Exception("Type mismatch for column " + column.name + " in table " + getTableName()
-				+ ". Column has type " + it->second->getName() + ", got type " + column.type->getName(),
-				ErrorCodes::TYPE_MISMATCH);
+			throw Exception("Type mismatch for column " + column.name + ". Column has type "
+				+ it->second->getName() + ", got type " + column.type->getName(), ErrorCodes::TYPE_MISMATCH);
 	}
 
 	if (need_all && names_in_block.size() < columns_map.size())

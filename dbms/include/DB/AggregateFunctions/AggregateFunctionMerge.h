@@ -81,10 +81,7 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		Field field;
-		columns[0]->get(row_num, field);
-		ReadBufferFromString read_buffer(field.safeGet<String &>());
-		nested_func->deserializeMerge(place, read_buffer);
+		merge(place, columns[0]->getDataAt(row_num).data);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
