@@ -427,10 +427,6 @@ public:
 	  */
 	void renameAndDetachPart(DataPartPtr part, const String & prefix);
 
-	/** Удаляет кусок из рабочего набора. clearOldParts удалит его файлы, если на него никто не ссылается.
-	  */
-	void removePart(DataPartPtr part);
-
 	/** Удалить неактуальные куски. Возвращает имена удаленных кусков.
 	  */
 	Strings clearOldParts();
