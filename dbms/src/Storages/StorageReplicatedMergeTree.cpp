@@ -725,7 +725,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		entry.type == LogEntry::MERGE_PARTS)
 	{
 		/// Если у нас уже есть этот кусок или покрывающий его кусок, ничего делать не нужно.
-		MergeTreeData::DataPartPtr containing_part = data.getContainingPart(entry.new_part_name);
+		MergeTreeData::DataPartPtr containing_part = data.getContainingPart(entry.new_part_name, true);
 
 		/// Даже если кусок есть локально, его (в исключительных случаях) может не быть в zookeeper.
 		if (containing_part && zookeeper->exists(replica_path + "/parts/" + containing_part->name))
@@ -737,7 +737,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 	}
 
 	if (entry.type == LogEntry::GET_PART && entry.source_replica == replica_name)
-		LOG_ERROR(log, "Part " << entry.new_part_name << " from own log doesn't exist.");
+		LOG_WARNING(log, "Part " << entry.new_part_name << " from own log doesn't exist.");
 
 	bool do_fetch = false;
 

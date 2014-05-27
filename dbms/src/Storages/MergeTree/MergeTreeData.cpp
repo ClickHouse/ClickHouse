@@ -697,14 +697,20 @@ MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_
 	MutableDataPartPtr tmp_part(new DataPart(*this));
 	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
 
-	Poco::ScopedLock<Poco::FastMutex> lock(including_inactive ? all_data_parts_mutex : data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
-	DataParts & parts = including_inactive ? all_data_parts : data_parts;
+	if (including_inactive)
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+		DataParts::iterator it = all_data_parts.lower_bound(tmp_part);
+		if (it != all_data_parts.end() && (*it)->name == part_name)
+			return *it;
+	}
 
 	/// Кусок может покрываться только предыдущим или следующим в data_parts.
-	DataParts::iterator it = parts.lower_bound(tmp_part);
+	DataParts::iterator it = data_parts.lower_bound(tmp_part);
 
-	if (it != parts.end())
+	if (it != data_parts.end())
 	{
 		if ((*it)->name == part_name)
 			return *it;
@@ -712,7 +718,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_
 			return *it;
 	}
 
-	if (it != parts.begin())
+	if (it != data_parts.begin())
 	{
 		--it;
 		if ((*it)->contains(*tmp_part))

@@ -403,10 +403,10 @@ public:
 	  */
 	void delayInsertIfNeeded();
 
-	/** Возвращает кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
-	  * Если including_inactive, просматриваются также неактивные куски (all_data_parts).
-	  * При including_inactive, нахождение куска гарантируется только если есть кусок, совпадающий с part_name;
-	  *  строго покрывающий кусок в некоторых случаях может не найтись.
+	/** Если !including_inactive:
+	  *   Возвращает активный кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
+	  * Если including_inactive:
+	  *   Если среди all_data_parts есть кусок с именем part_name, возвращает его. Иначе делает то же, что при !including_inactive.
 	  */
 	DataPartPtr getContainingPart(const String & part_name, bool including_inactive = false);
 
