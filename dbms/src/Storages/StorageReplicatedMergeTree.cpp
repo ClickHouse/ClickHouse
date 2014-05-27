@@ -617,7 +617,8 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 
 		bool operator<(const LogIterator & rhs) const
 		{
-			return timestamp < rhs.timestamp;
+			/// Нужно доставать из очереди минимальный timestamp.
+			return timestamp > rhs.timestamp;
 		}
 
 		bool readEntry(zkutil::ZooKeeper & zookeeper, const String & zookeeper_path)
@@ -1395,10 +1396,14 @@ void StorageReplicatedMergeTree::drop()
 {
 	shutdown();
 
+	LOG_INFO(log, "Removing replica " << replica_path);
 	replica_is_active_node = nullptr;
 	zookeeper->removeRecursive(replica_path);
 	if (zookeeper->getChildren(zookeeper_path + "/replicas").empty())
+	{
+		LOG_INFO(log, "Removing table " << zookeeper_path << " (this might take several minutes)");
 		zookeeper->removeRecursive(zookeeper_path);
+	}
 }
 
 void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const

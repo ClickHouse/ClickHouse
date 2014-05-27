@@ -336,7 +336,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 	/// Проверим, что удалились все исходные куски и только они.
 	if (replaced_parts.size() != parts.size())
 	{
-		LOG_ERROR(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
+		LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
 			<< " instead of " << parts.size());
 	}
 	else

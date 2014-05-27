@@ -597,6 +597,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 	/// Переименовываем кусок.
 	Poco::File(old_path).renameTo(new_path);
 
+	bool obsolete = false; /// Покрыт ли part каким-нибудь куском.
 	DataPartsVector res;
 	/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
 	DataParts::iterator it = data_parts.lower_bound(part);
@@ -606,6 +607,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 		--it;
 		if (!part->contains(**it))
 		{
+			if ((*it)->contains(*part))
+				obsolete = true;
 			++it;
 			break;
 		}
@@ -615,14 +618,28 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 	}
 	std::reverse(res.begin(), res.end()); /// Нужно получить куски в порядке возрастания.
 	/// Пойдем вправо.
-	while (it != data_parts.end() && part->contains(**it))
+	while (it != data_parts.end())
 	{
+		if (!part->contains(**it))
+		{
+			if ((*it)->name == part->name || (*it)->contains(*part))
+				obsolete = true;
+			break;
+		}
 		res.push_back(*it);
 		(*it)->remove_time = time(0);
 		data_parts.erase(it++);
 	}
 
-	data_parts.insert(part);
+	if (obsolete)
+	{
+		LOG_WARNING(log, "Obsolete part " + part->name + " added");
+	}
+	else
+	{
+		data_parts.insert(part);
+	}
+	
 	all_data_parts.insert(part);
 
 	return res;
