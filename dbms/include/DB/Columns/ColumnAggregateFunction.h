@@ -100,34 +100,47 @@ public:
 
 	StringRef getDataAt(size_t n) const
 	{
-		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+		return StringRef(data[n], sizeof(data[n]));
 	}
 
 	/// Объединить состояние в последней строке с заданным
-	void insertMerge(const Field & x)
+	void insertMerge(StringRef input)
 	{
-		ReadBufferFromString read_buffer(x.safeGet<const String &>());
-		func->deserializeMerge(data.back(), read_buffer);
+		func->merge(data.back(), input.data);
 	}
 
 	void insert(const Field & x)
 	{
 		data.push_back(AggregateDataPtr());
 		func->create(data.back());
-		insertMerge(x);
+		ReadBufferFromString read_buffer(x.safeGet<const String &>());
+		func->deserializeMerge(data.back(), read_buffer);
 	}
 
 	void insertData(const char * pos, size_t length)
 	{
-		data.push_back(AggregateDataPtr());
-		func->create(data.back());
-		ReadBuffer read_buffer(const_cast<char *>(pos), length);
-		func->deserializeMerge(data.back(), read_buffer);
+		data.push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
+//		For debugging:
+//		AggregateDataPtr tmp = AggregateDataPtr();
+//		func->create(tmp);
+//		func->merge(tmp, data.back());
 	}
-	
+
 	ColumnPtr cut(size_t start, size_t length) const
 	{
-		throw Exception("Method cut is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+		if (start + length > this->data.size())
+			throw Exception("Parameters start = "
+				+ toString(start) + ", length = "
+				+ toString(length) + " are out of bound in ColumnAggregateFunction::cut() method"
+				" (data.size() = " + toString(this->data.size()) + ").",
+				ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(func, arenas);
+		ColumnPtr res = res_;
+		res_->data.resize(length);
+		for (size_t i = 0; i < length; ++i)
+			res_->data[i] = this->data[start+i];
+		return res;
 	}
 
 	ColumnPtr filter(const Filter & filter) const
@@ -137,7 +150,22 @@ public:
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
-		throw Exception("Method permute is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+		size_t size = this->data.size();
+
+		if (limit == 0)
+			limit = size;
+		else
+			limit = std::min(size, limit);
+
+		if (perm.size() < limit)
+			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(func, arenas);
+		ColumnPtr res = res_;
+		res_->data.resize(limit);
+		for (size_t i = 0; i < limit; ++i)
+			res_->data[i] = this->data[perm[i]];
+		return res;
 	}
 
 	ColumnPtr replicate(const Offsets_t & offsets) const

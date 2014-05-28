@@ -79,7 +79,7 @@ private:
 		for (size_t i = 0, size = column_numbers_to_aggregate.size(); i < size; ++i)
 		{
 			size_t j = column_numbers_to_aggregate[i];
-			column_to_aggregate[i]->insertMerge((*cursor->all_columns[j])[cursor->pos]);
+			column_to_aggregate[i]->insertMerge((*cursor->all_columns[j]).getDataAt(cursor->pos));
 		}
 	}
 };
