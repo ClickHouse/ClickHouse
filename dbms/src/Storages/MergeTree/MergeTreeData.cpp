@@ -69,6 +69,7 @@ std::string MergeTreeData::getModePrefix() const
 		case Ordinary: 		return "";
 		case Collapsing: 	return "Collapsing";
 		case Summing: 		return "Summing";
+		case Aggregating: 	return "Aggregating";
 
 		default:
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);

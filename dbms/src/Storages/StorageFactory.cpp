@@ -212,6 +212,8 @@ StoragePtr StorageFactory::get(
 			mode = MergeTreeData::Collapsing;
 		else if (name_part == "Summing")
 			mode = MergeTreeData::Summing;
+		else if (name_part == "Aggregating")
+			mode = MergeTreeData::Aggregating;
 		else if (!name_part.empty())
 			throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);
 

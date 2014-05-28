@@ -81,7 +81,7 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		merge(place, columns[0]->getDataAt(row_num).data);
+		nested_func->merge(place, columns[0]->getDataAt(row_num).data);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
