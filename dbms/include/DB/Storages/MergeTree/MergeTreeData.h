@@ -381,8 +381,9 @@ public:
 
 	UInt64 getMaxDataPartIndex();
 
-	std::string getTableName() const { throw Exception("Logical error: calling method getTableName of not a table.",
-		ErrorCodes::LOGICAL_ERROR); }
+	std::string getTableName() const {
+		return "abc";//throw Exception("Logical error: calling method getTableName of not a table.",	ErrorCodes::LOGICAL_ERROR);
+	}
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 

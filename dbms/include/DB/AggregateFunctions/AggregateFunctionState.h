@@ -5,6 +5,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/Columns/ColumnAggregateFunction.h>
 
 
 namespace DB
@@ -97,7 +98,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		throw Exception("Aggregate function " + getName() + " doesn't support insertResultInto method", ErrorCodes::NOT_IMPLEMENTED);
+		static_cast<ColumnAggregateFunction &>(to).insertData(place, 0);
 	}
 
 	/// Для аггрегатных функции типа state никогда не нужно вызывать insertResultInto
