@@ -202,13 +202,14 @@ private:
 	class Thread : public Poco::Runnable
 	{
 	public:
-		Thread(UnionBlockInputStream & parent_, MemoryTracker * memory_tracker) : parent(parent_)
+		Thread(UnionBlockInputStream & parent_, MemoryTracker * memory_tracker_)
+			: parent(parent_), memory_tracker(memory_tracker_)
 		{
-			current_memory_tracker = memory_tracker;
 		}
 
 		void run()
 		{
+			current_memory_tracker = memory_tracker;
 			ExceptionPtr exception;
 			
 			try
@@ -304,6 +305,7 @@ private:
 
 	private:
 		UnionBlockInputStream & parent;
+		MemoryTracker * memory_tracker;
 	};
 
 
