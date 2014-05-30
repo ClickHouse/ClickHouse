@@ -111,7 +111,9 @@ public:
 
 	void insert(const Field & x)
 	{
-		data.push_back(AggregateDataPtr());
+		if (arenas.empty())
+			arenas.push_back(new Arena());
+		data.push_back(arenas.back()->alloc(func->sizeOfData()*10));
 		func->create(data.back());
 		ReadBufferFromString read_buffer(x.safeGet<const String &>());
 		func->deserializeMerge(data.back(), read_buffer);
@@ -120,10 +122,6 @@ public:
 	void insertData(const char * pos, size_t length)
 	{
 		data.push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
-//		For debugging:
-//		AggregateDataPtr tmp = AggregateDataPtr();
-//		func->create(tmp);
-//		func->merge(tmp, data.back());
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const
@@ -145,7 +143,22 @@ public:
 
 	ColumnPtr filter(const Filter & filter) const
 	{
-		throw Exception("Method filter is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+		size_t size = data.size();
+		if (size != filter.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(func, arenas);
+		ColumnPtr res = res_;
+
+		if (size == 0)
+			return res;
+
+		res_->data.reserve(size);
+		for (size_t i = 0; i < size; ++i)
+			if (filter[i])
+				res_->data.push_back(this->data[i]);
+
+		return res;
 	}
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const

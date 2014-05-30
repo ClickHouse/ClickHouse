@@ -35,6 +35,10 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 	const ColumnAggregateFunction & real_column = dynamic_cast<const ColumnAggregateFunction &>(column);
 	const ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
+	for (auto & val: vec)
+		std::cerr << static_cast<void *>(val) << " ";
+	std::cerr << std::endl;
+
 	ColumnAggregateFunction::Container_t::const_iterator it = vec.begin() + offset;
 	ColumnAggregateFunction::Container_t::const_iterator end = limit ? it + limit : vec.end();
 

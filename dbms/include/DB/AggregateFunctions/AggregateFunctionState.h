@@ -98,11 +98,11 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		static_cast<ColumnAggregateFunction &>(to).insertData(place, 0);
+		static_cast<ColumnAggregateFunction &>(to).getData().push_back(const_cast<AggregateDataPtr>(place));
 	}
 
-	/// Для аггрегатных функции типа state никогда не нужно вызывать insertResultInto
-	bool canBeFinal() const { return false; }
+	/// Аггрегатная функция или состояние аггрегатной функции.
+	bool isState() const { return true; }
 
 };
 

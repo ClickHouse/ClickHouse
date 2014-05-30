@@ -349,7 +349,7 @@ void Aggregator::destroyImpl(
 			*  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
 			*  то data будет равен nullptr-у.
 			*/
-			if (nullptr != data)
+			if (nullptr != data && !aggregate_functions[i]->isState())
 				aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
 		}
 	}
@@ -559,7 +559,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 				column.column = column.type->createColumn();
 				column.column->reserve(rows);
 
-				if (!aggregate_functions[i]->canBeFinal())
+				if (aggregate_functions[i]->isState())
 				{
 					/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
 					ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*column.column);
@@ -811,7 +811,8 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 		AggregatedDataWithoutKey & res_data = result.without_key;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
+			if (!aggregate_functions[i]->isState())
+				aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
 
 	if (result.type == AggregatedDataVariants::KEY_64)

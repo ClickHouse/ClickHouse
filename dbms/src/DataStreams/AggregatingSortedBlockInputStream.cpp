@@ -89,10 +89,10 @@ void AggregatingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainP
 			current_key = std::move(next_key);
 			next_key.resize(description.size());
 
-			++merged_rows;
 			/// Запишем данные для очередной группы.
 			setRow(current_row, current);
 			insertCurrentRow(merged_columns);
+			++merged_rows;
 		}
 		else
 		{
