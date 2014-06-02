@@ -96,7 +96,7 @@ public:
 	/// Отправить все содержимое внешних таблиц
 	void sendExternalTablesData(ExternalTablesData & data);
 
-	/// Проверить, если ли данные, которые можно прочитать.
+	/// Проверить, есть ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);
 
 	/// Получить пакет от сервера.
