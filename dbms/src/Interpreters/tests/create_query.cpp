@@ -17,7 +17,6 @@ int main(int argc, char ** argv)
 			"WatchID				UInt64,\n"
 			"JavaEnable 			UInt8,\n"
 			"Title 					String,\n"
-			"GoodEvent 				UInt32,\n"
 			"EventTime 				DateTime,\n"
 			"CounterID 				UInt32,\n"
 			"ClientIP 				UInt32,\n"
