@@ -35,6 +35,8 @@ namespace mysqlxx
   *		  	mysqlxx::Pool::Entry connection = pool.Get();
   *			std::string s = connection->query("SELECT 'Hello, world!' AS world").use().fetch()["world"].getString();
   *		}
+  *
+  * TODO: Упростить, используя PoolBase.
   */
 class Pool
 {
