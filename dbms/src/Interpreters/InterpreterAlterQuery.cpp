@@ -13,6 +13,8 @@
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 
+#include <Poco/FileStream.h>
+
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <boost/bind/placeholders.hpp>
