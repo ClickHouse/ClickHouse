@@ -62,18 +62,6 @@ public:
 		this->data(place).sum += tmp;
 	}
 
-	void serializeText(ConstAggregateDataPtr place, WriteBuffer & buf) const
-	{
-		writeText(this->data(place).sum, buf);
-	}
-
-	void deserializeMergeText(AggregateDataPtr place, ReadBuffer & buf) const
-	{
-		typename NearestFieldType<T>::Type tmp;
-		readText(tmp, buf);
-		this->data(place).sum += tmp;
-	}
-
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
 		static_cast<ColumnVector<typename NearestFieldType<T>::Type> &>(to).getData().push_back(this->data(place).sum);

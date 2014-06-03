@@ -76,28 +76,18 @@ public:
 	/// Объединить состояние с другим состоянием.
 	virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const = 0;
 
-	/// Сериализовать состояние (например, для передачи по сети). Нельзя сериализовывать "пустое" состояние.
+	/// Сериализовать состояние (например, для передачи по сети).
 	virtual void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const = 0;
 
 	/// Десериализовать состояние и объединить своё состояние с ним.
 	virtual void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const = 0;
 
-	/// Сериализовать состояние в текстовом виде (а не в бинарном, как в функции serialize). Нельзя сериализовывать "пустое" состояние.
-	virtual void serializeText(ConstAggregateDataPtr place, WriteBuffer & buf) const
-	{
-		throw Exception("Method serializeText is not supported for " + getName() + ".", ErrorCodes::NOT_IMPLEMENTED);
-	}
-
-	/// Десериализовать текстовое состояние и объединить своё состояние с ним.
-	virtual void deserializeMergeText(AggregateDataPtr place, ReadBuffer & buf) const
-	{
-		throw Exception("Method deserializeMergeText is not supported for " + getName() + ".", ErrorCodes::NOT_IMPLEMENTED);
-	}
-
 	/// Вставить результат в столбец.
 	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
-	/// Аггрегатная функция или состояние аггрегатной функции.
+	/** Возвращает true для агрегатных функций типа -State.
+	  * Они выполняются как другие агрегатные функции, но не финализируются (возвращают состояние агрегации, которое может быть объединено с другим).
+	  */
 	virtual bool isState() const { return false; }
 };
 
