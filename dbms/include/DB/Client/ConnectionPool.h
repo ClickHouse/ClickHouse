@@ -52,7 +52,7 @@ public:
 			Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
 			Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 			Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
-	   : Base(max_connections_, &Logger::get("ConnectionPool (" + Poco::Net::SocketAddress(host, port).toString() + ")")),
+	   : Base(max_connections_, &Logger::get("ConnectionPool (" + Poco::Net::SocketAddress(host_, port_).toString() + ")")),
 		host(host_), port(port_), default_database(default_database_),
 		user(user_), password(password_),
 		client_name(client_name_), compression(compression_), data_type_factory(data_type_factory_),
