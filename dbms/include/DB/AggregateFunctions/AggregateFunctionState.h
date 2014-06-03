@@ -1,8 +1,5 @@
 #pragma once
 
-#include <DB/Columns/ColumnArray.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
@@ -14,8 +11,7 @@ namespace DB
 
 /** Не агрегатная функция, а адаптер агрегатных функций,
   * Агрегатные функции с суффиксом State отличаются от соответствующих тем, что их состояния не финализируются.
-  * Возвращаемый тип - DataTypeAggregateFunction. Функция insertResultInto не используется (реализация будет кидать исключение).
-  * Aggregator/SplittingAggregator будет проверять, что вычисляется агрегатная функция -State, и не будет вызывать insertResultInto.
+  * Возвращаемый тип - DataTypeAggregateFunction.
   */
 
 class AggregateFunctionState : public IAggregateFunction

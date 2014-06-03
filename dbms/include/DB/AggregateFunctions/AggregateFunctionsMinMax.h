@@ -116,42 +116,6 @@ public:
 		}
 	}
 
-	void serializeText(ConstAggregateDataPtr place, WriteBuffer & buf) const
-	{
-		const Data & d = this->data(place);
-
-		if (unlikely(d.value.isNull()))
-		{
-			writeText(false, buf);
-		}
-		else
-		{
-			writeText(true, buf);
-			type->serializeText(this->data(place).value, buf);
-		}
-	}
-
-	void deserializeMergeText(AggregateDataPtr place, ReadBuffer & buf) const
-	{
-		Data & d = this->data(place);
-
-		bool is_not_null = false;
-		readText(is_not_null, buf);
-
-		if (is_not_null)
-		{
-			if (!d.value.isNull())
-			{
-				Field value_;
-				type->deserializeText(value_, buf);
-				if (Traits::better(value_, d.value))
-					d.value = value_;
-			}
-			else
-				type->deserializeText(d.value, buf);
-		}
-	}
-
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
 		if (unlikely(this->data(place).value.isNull()))
