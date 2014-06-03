@@ -30,11 +30,15 @@ Block NumbersBlockInputStream::readImpl()
 	ColumnUInt64::Container_t & vec = column->getData();
 	column_with_name_and_type.column = column;
 
-	for (size_t i = 0; i < block_size; ++i)
-		vec[i] = next++;
+	size_t curr = next;		/// Локальная переменная почему-то работает быстрее (>20%), чем член класса.
+	UInt64 * pos = &vec[0];	/// Это тоже ускоряет код.
+	UInt64 * end = &vec[block_size];
+	while (pos < end)
+		*pos++ = curr++;
+	next = curr;
 
 	res.insert(column_with_name_and_type);
-	
+
 	return res;
 }
 
