@@ -25,7 +25,7 @@ using Poco::SharedPtr;
   * 
   * Используется для сериализации вложенной таблицы.
   */
-class ColumnNested : public IColumn
+class ColumnNested final : public IColumn
 {
 public:
 	/** По индексу i находится смещение до начала i + 1 -го элемента. */

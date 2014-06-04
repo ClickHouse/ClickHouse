@@ -512,7 +512,7 @@ public:
 
 
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantileTiming : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType> >
+class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType> >
 {
 private:
 	double level;
@@ -572,7 +572,7 @@ public:
   * Возвращает массив результатов.
   */
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantilesTiming : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
+class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
 {
 private:
 	typedef std::vector<double> Levels;

@@ -9,7 +9,7 @@ namespace DB
 
 /** Столбец, который всего лишь группирует вместе несколько других столбцов.
   */
-class ColumnTuple : public IColumn
+class ColumnTuple final : public IColumn
 {
 private:
 	Block data;

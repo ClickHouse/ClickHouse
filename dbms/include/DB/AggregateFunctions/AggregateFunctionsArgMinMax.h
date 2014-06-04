@@ -30,7 +30,7 @@ struct AggregateFunctionsArgMinMaxData
 
 /// Возвращает первое попавшееся значение arg для минимального/максимального value. Пример: argMax(arg, value).
 template <typename Traits>
-class AggregateFunctionsArgMinMax : public IAggregateFunctionHelper<AggregateFunctionsArgMinMaxData>
+class AggregateFunctionsArgMinMax final : public IAggregateFunctionHelper<AggregateFunctionsArgMinMaxData>
 {
 private:
 	DataTypePtr type_res;

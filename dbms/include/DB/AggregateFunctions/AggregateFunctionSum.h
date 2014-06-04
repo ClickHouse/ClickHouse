@@ -22,7 +22,7 @@ struct AggregateFunctionSumData
 	
 /// Считает сумму чисел.
 template <typename T>
-class AggregateFunctionSum : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T> >
+class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T> >
 {
 public:
 	String getName() const { return "sum"; }

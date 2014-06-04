@@ -193,7 +193,7 @@ protected:
   * (Есть ещё ColumnAggregateFunction.)
   */
 template <typename T>
-class ColumnVector : public ColumnVectorBase<T>
+class ColumnVector final : public ColumnVectorBase<T>
 {
 private:
 	typedef ColumnVector<T> Self;

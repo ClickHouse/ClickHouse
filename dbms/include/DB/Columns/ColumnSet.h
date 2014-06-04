@@ -11,7 +11,7 @@ namespace DB
   * Ведёт себя как столбец-константа (так как множество одно, а не своё на каждую строку).
   * Значение у этого столбца нестандартное, поэтому его невозможно получить через обычный интерфейс.
   */
-class ColumnSet : public IColumnDummy
+class ColumnSet final : public IColumnDummy
 {
 public:
 	ColumnSet(size_t s_, SetPtr data_) : IColumnDummy(s_), data(data_) {}

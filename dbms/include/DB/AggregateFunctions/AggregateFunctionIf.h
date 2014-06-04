@@ -14,7 +14,7 @@ namespace DB
   *  и вычисляет вложенную агрегатную функцию для значений при выполненном условии.
   * Например, avgIf(x, cond) вычисляет среднее x при условии cond.
   */
-class AggregateFunctionIf : public IAggregateFunction
+class AggregateFunctionIf final : public IAggregateFunction
 {
 private:
 	AggregateFunctionPtr nested_func_owner;

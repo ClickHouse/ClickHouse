@@ -14,7 +14,7 @@ namespace DB
   * Возвращаемый тип - DataTypeAggregateFunction.
   */
 
-class AggregateFunctionState : public IAggregateFunction
+class AggregateFunctionState final : public IAggregateFunction
 {
 private:
 	AggregateFunctionPtr nested_func_owner;

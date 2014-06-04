@@ -14,7 +14,7 @@ namespace DB
   *  и объединяют их при агрегации.
   */
 
-class AggregateFunctionMerge : public IAggregateFunction
+class AggregateFunctionMerge final : public IAggregateFunction
 {
 private:
 	AggregateFunctionPtr nested_func_owner;

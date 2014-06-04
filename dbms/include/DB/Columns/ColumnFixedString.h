@@ -12,7 +12,7 @@ namespace DB
 /** Cтолбeц значений типа "строка фиксированной длины".
   * Если вставить строку меньшей длины, то она будет дополнена нулевыми байтами.
   */
-class ColumnFixedString : public IColumn
+class ColumnFixedString final : public IColumn
 {
 public:
 	typedef PODArray<UInt8> Chars_t;

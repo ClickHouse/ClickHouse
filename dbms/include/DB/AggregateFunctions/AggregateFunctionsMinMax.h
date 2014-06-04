@@ -31,7 +31,7 @@ struct AggregateFunctionsMinMaxData
 
 /// Берёт минимальное (или максимальное) значение. Если таких много - то первое попавшееся из них.
 template <typename Traits>
-class AggregateFunctionsMinMax : public IUnaryAggregateFunction<AggregateFunctionsMinMaxData, AggregateFunctionsMinMax<Traits> >
+class AggregateFunctionsMinMax final : public IUnaryAggregateFunction<AggregateFunctionsMinMaxData, AggregateFunctionsMinMax<Traits> >
 {
 private:
 	typedef typename IAggregateFunctionHelper<AggregateFunctionsMinMaxData>::Data Data;

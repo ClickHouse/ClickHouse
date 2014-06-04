@@ -21,7 +21,7 @@ namespace DB
   * Столбец захватывает владение пулом и всеми агрегатными функциями,
   *  которые в него переданы (уничтожает их в дестркуторе).
   */
-class ColumnAggregateFunction : public ColumnVectorBase<AggregateDataPtr>
+class ColumnAggregateFunction final : public ColumnVectorBase<AggregateDataPtr>
 {
 private:
 	AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
@@ -59,9 +59,7 @@ public:
 		res->reserve(data.size());
 
 		for (size_t i = 0; i < data.size(); ++i)
-		{
 			function->insertResultInto(data[i], column);
-		}
 
 		return res;
 	}

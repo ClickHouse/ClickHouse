@@ -14,7 +14,7 @@ namespace DB
   *  который любую агрегатную функцию agg(x) делает агрегатной функцией вида aggArray(x).
   * Адаптированная агрегатная функция вычисляет вложенную агрегатную функцию для каждого элемента массива.
   */
-class AggregateFunctionArray : public IAggregateFunction
+class AggregateFunctionArray final : public IAggregateFunction
 {
 private:
 	AggregateFunctionPtr nested_func_owner;

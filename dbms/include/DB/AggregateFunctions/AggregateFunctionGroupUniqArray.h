@@ -103,7 +103,7 @@ public:
   * То есть, выдаёт массив, содержащий уникальные значения из внутренностей массивов-аргументов.
   */
 template <typename T>
-class AggregateFunctionGroupUniqArrays : public AggregateFunctionGroupUniqArray<T>
+class AggregateFunctionGroupUniqArrays final : public AggregateFunctionGroupUniqArray<T>
 {
 public:
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const

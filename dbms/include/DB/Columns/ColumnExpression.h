@@ -10,7 +10,7 @@ namespace DB
 /** Столбец, содержащий лямбда-выражение.
   * Ведёт себя как столбец-константа. Содержит выражение, но не входные или выходные данные.
   */
-class ColumnExpression : public IColumnDummy
+class ColumnExpression final : public IColumnDummy
 {
 public:
 	ColumnExpression(size_t s_, ExpressionActionsPtr expression_, const NamesAndTypes & arguments_, DataTypePtr return_type_, std::string return_name_)

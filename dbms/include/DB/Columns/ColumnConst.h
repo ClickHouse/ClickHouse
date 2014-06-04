@@ -27,7 +27,7 @@ public:
 /** шаблон для столбцов-констант (столбцов одинаковых значений).
   */
 template <typename T>
-class ColumnConst : public IColumnConst
+class ColumnConst final : public IColumnConst
 {
 public:
 	typedef T Type;

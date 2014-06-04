@@ -10,7 +10,7 @@ namespace DB
   * Это - вложенный столбец произвольного размера.
   * Сам ColumnReplicated притворяется, как столбец указанного в конструкторе размера.
   */
-class ColumnReplicated : public IColumnDummy
+class ColumnReplicated final : public IColumnDummy
 {
 public:
 	ColumnReplicated(size_t s_, ColumnPtr nested_) : IColumnDummy(s_), nested(nested_) {}

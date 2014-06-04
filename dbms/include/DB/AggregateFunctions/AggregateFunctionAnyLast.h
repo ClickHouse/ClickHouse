@@ -17,7 +17,7 @@ struct AggregateFunctionAnyLastData
 
 
 /// Берёт последнее попавшееся значение
-class AggregateFunctionAnyLast : public IUnaryAggregateFunction<AggregateFunctionAnyLastData, AggregateFunctionAnyLast>
+class AggregateFunctionAnyLast final : public IUnaryAggregateFunction<AggregateFunctionAnyLastData, AggregateFunctionAnyLast>
 {
 private:
 	DataTypePtr type;

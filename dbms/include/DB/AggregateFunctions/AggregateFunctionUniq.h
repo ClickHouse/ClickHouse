@@ -161,7 +161,7 @@ namespace detail
 
 /// Приближённо вычисляет количество различных значений.
 template <typename T, typename Data>
-class AggregateFunctionUniq : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
+class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
 {
 public:
 	AggregateFunctionUniq() {}

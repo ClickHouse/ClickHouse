@@ -14,7 +14,7 @@ namespace DB
 
 /** Cтолбeц значений типа "строка".
   */
-class ColumnString : public IColumn
+class ColumnString final : public IColumn
 {
 public:
 	//typedef std::vector<UInt8> Chars_t;
