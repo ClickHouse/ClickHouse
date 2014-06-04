@@ -376,7 +376,7 @@ void ZooKeeper::setDefaultACL(AclPtr new_acl)
 	default_acl = new_acl;
 }
 
-static std::string ZooKeeper::error2string(int32_t code)
+std::string ZooKeeper::error2string(int32_t code)
 {
 	return zerror(code);
 }
