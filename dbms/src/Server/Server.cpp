@@ -267,8 +267,8 @@ int Server::main(const std::vector<std::string> & args)
 	if (uncompressed_cache_size)
 		global_context->setUncompressedCache(uncompressed_cache_size);
 
-	/// Размер кэша засечек. Если нулевой - кэш отключён.
-	size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size", "0"));
+	/// Размер кэша засечек. Обязательный параметр.
+	size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size"));
 	if (mark_cache_size)
 		global_context->setMarkCache(mark_cache_size);
 
