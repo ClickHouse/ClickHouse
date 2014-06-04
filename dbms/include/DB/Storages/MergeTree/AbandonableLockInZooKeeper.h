@@ -90,7 +90,7 @@ public:
 		/// Если вспомогательной ноды нет, нужно еще раз проверить существование основной ноды,
 		///  потому что за это время могли успеть вызвать unlock().
 		/// Заодно уберем оттуда путь к вспомогательной ноде.
-		if (zookeeper.trySet(path, "") == zkutil::ReturnCode::Ok)
+		if (zookeeper.trySet(path, "") == ZOK)
 			return ABANDONED;
 
 		return UNLOCKED;
