@@ -16,23 +16,27 @@ int main()
 	{
 		ZooKeeper zk("mtfilter01t:2181,metrika-test:2181,mtweb01t:2181", 5000);
 		Strings children;
-		children = zk.getChildren("/");
-		for (auto s : children)
-		{
-			std::cout << s << std::endl;
-		}
-		sleep(5);
 
-		children = zk.getChildren("/");
-		for (auto s : children)
-		{
-			std::cout << s << std::endl;
-		}
+		std::cout << "create path" << std::endl;
+		zk.create("/test", "old", zkutil::CreateMode::Persistent);
+		zkutil::Stat stat;
+		zkutil::WatchFuture watch;
+
+		std::cout << "get path" << std::endl;
+		zk.get("/test", &stat, &watch);
+		std::cout << "set path" << std::endl;
+		zk.set("/test", "new");
+		watch.wait();
+		WatchEventInfo event_info = watch.get();
+		std::cout << "watch happened for path: " << event_info.path << " " << event_info.event << std::endl;
+		std::cout << "remove path" << std::endl;
+		zk.remove("/test");
 
 		Ops ops;
-		std::string node = "/test";
-		std::string value = "dummy";
-		ops.push_back(new Op::Create(node, value, zk.getDefaultACL(), CreateMode::PersistentSequential));
+		ops.push_back(new Op::Create("/test", "multi1", zk.getDefaultACL(), CreateMode::Persistent));
+		ops.push_back(new Op::SetData("/test", "multi2", -1));
+		ops.push_back(new Op::Remove("/test", -1));
+		std::cout << "multi" << std::endl;
 		OpResultsPtr res = zk.multi(ops);
 		std::cout << "path created: " << dynamic_cast<Op::Create &>(ops[0]).getPathCreated() << std::endl;
 	}

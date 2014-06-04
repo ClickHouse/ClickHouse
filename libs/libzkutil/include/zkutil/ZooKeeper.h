@@ -17,7 +17,8 @@ typedef WatchWithPromise * WatchWithPromisePtr;
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
   * Вместо callback-ов для watch-ей используются std::future.
-  * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке.
+  * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке кроме OperationTimeout.
+  * При OperationTimeout пытаемся попробоватть еще retry_num раз.
   * Методы с названиями, начинающимися с try, не бросают исключение только при перечисленных видах ошибок.
   * Например, исключение бросается в любом случае, если сессия разорвалась или если не хватает прав или ресурсов.
   */
@@ -114,7 +115,7 @@ public:
 						WatchFuture * watch = nullptr);
 
 	/** Не бросает исключение при следующих ошибках:
-	  *  - Такой ноды нет. В таком случае возвращает false.
+	  *  - Такой ноды нет.
 	  */
 	int32_t tryGetChildren(const std::string & path, Strings & res,
 						Stat * stat = nullptr,
@@ -150,6 +151,29 @@ private:
 	WatchWithPromisePtr watchForFuture(WatchFuture * future);
 	static void processPromise(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);
 
+	template <class T>
+	int32_t retry(const T & operation)
+	{
+		int32_t code = operation();
+		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT); ++i)
+		{
+			code = operation();
+		}
+		return code;
+	}
+
+	/// методы не бросают исключений, а возвращают коды ошибок
+	int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
+	int32_t removeImpl(const std::string & path, int32_t version = -1);
+	bool getImpl(const std::string & path, std::string & res, Stat * stat = nullptr, WatchFuture * watch = nullptr);
+	int32_t setImpl(const std::string & path, const std::string & data,
+							int32_t version = -1, Stat * stat = nullptr);
+	int32_t getChildrenImpl(const std::string & path, Strings & res,
+						Stat * stat = nullptr,
+						WatchFuture * watch = nullptr);
+	int32_t multiImpl(const Ops & ops, OpResultsPtr * out_results = nullptr);
+	int32_t existsImpl(const std::string & path, Stat * stat_, WatchFuture * watch = nullptr);
+
 	std::string hosts;
 	int32_t sessionTimeoutMs;
 
@@ -159,6 +183,9 @@ private:
 
 	WatchFunction * state_watch;
 	std::unordered_set<WatchWithPromise *> watch_store;
+
+	/// Количество попыток повторить операцию при OperationTimeout
+	size_t retry_num = 3;
 };
 
 typedef ZooKeeper::Ptr ZooKeeperPtr;
