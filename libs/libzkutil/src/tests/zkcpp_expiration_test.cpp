@@ -1,47 +1,44 @@
-#include <zookeeper/zookeeper.hh>
+#include <zkutil/ZooKeeper.h>
+#include <iostream>
+#include <unistd.h>
 
-namespace zk = org::apache::zookeeper;
-
-/** Проверяет, правда ли, что вызовы в zkcpp при просроченной сессии блокируются навсегда.
+using namespace zkutil;
+/** Проверяет, правда ли, что вызовы при просроченной сессии блокируются навсегда.
   * Разорвать сессию можно, например, так: `./nozk.sh && sleep 6s && ./yeszk.sh`
   */
 
-void stateChanged(zk::WatchEvent::type event, zk::SessionState::type state, const std::string & path)
+void watcher(zhandle_t *zh, int type, int state, const char *path,void *watcherCtx)
 {
-	std::cout << "state changed; event: " << zk::WatchEvent::toString(event) << ", state: " << zk::SessionState::toString(state)
-		<< ", path: " << path << std::endl;
 }
-
 int main()
 {
-	zk::ZooKeeper zookeeper;
-	zookeeper.init("example1:2181,example2:2181,example3:2181", 5000, nullptr);
-
-	std::vector<std::string> children;
-	zk::data::Stat stat;
-	zk::ReturnCode::type ret = zookeeper.getChildren("/", nullptr, children, stat);
-
-	std::cout << "getChildren returned " << zk::ReturnCode::toString(ret) << std::endl;
-	std::cout << "children of /:" << std::endl;
-	for (const auto & s : children)
+	try
 	{
-		std::cout << s << std::endl;
+		ZooKeeper zk("mtfilter01t:2181,metrika-test:2181,mtweb01t:2181", 5000);
+		Strings children;
+		children = zk.getChildren("/");
+		for (auto s : children)
+		{
+			std::cout << s << std::endl;
+		}
+		sleep(5);
+
+		children = zk.getChildren("/");
+		for (auto s : children)
+		{
+			std::cout << s << std::endl;
+		}
+
+		Ops ops;
+		std::string node = "/test";
+		std::string value = "dummy";
+		ops.push_back(new Op::Create(node, value, zk.getDefaultACL(), CreateMode::PersistentSequential));
+		OpResultsPtr res = zk.multi(ops);
+		std::cout << "path created: " << dynamic_cast<Op::Create &>(ops[0]).getPathCreated() << std::endl;
 	}
-
-	std::cout << "break connection to example1:2181,example2:2181,example3:2181 for at least 5 seconds and enter something" << std::endl;
-	std::string unused;
-	std::cin >> unused;
-
-	children.clear();
-	std::cout << "will getChildren (this call will either succeded either return OperationTimeout)" << std::endl;
-	ret = zookeeper.getChildren("/", nullptr, children, stat);
-
-	std::cout << "getChildren returned " << zk::ReturnCode::toString(ret) << std::endl;
-	std::cout << "children of /:" << std::endl;
-	for (const auto & s : children)
+	catch (KeeperException & e)
 	{
-		std::cout << s << std::endl;
+		std::cerr << "KeeperException " << e.what() << " " << e.message() << std::endl;
 	}
-
 	return 0;
 }

@@ -2,12 +2,18 @@
 #include <zkutil/Types.h>
 #include <zkutil/KeeperException.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <unordered_set>
 
 
 namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+
+struct WatchWithPromise;
+
+/// Из-за вызова С кода легче самому явно управлять памятью
+typedef WatchWithPromise * WatchWithPromisePtr;
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
   * Вместо callback-ов для watch-ей используются std::future.
@@ -45,6 +51,8 @@ public:
 	  */
 	Ptr startNewSession() const;
 
+	int state();
+
 	/** Возвращает true, если сессия навсегда завершена.
 	  * Это возможно только если соединение было установлено, потом разорвалось, потом снова восстановилось, но слишком поздно.
 	  * Это достаточно редкая ситуация.
@@ -53,14 +61,14 @@ public:
 	  */
 	bool expired();
 
-	void setDefaultACL(ACLs & acl);
+	AclPtr getDefaultACL();
 
-	ACLs getDefaultACL();
+	void setDefaultACL(AclPtr new_acl);
 
 	/** Создать znode. Используется ACL, выставленный вызовом setDefaultACL (по умолчанию, всем полный доступ).
 	  * Если что-то пошло не так, бросить исключение.
 	  */
-	std::string create(const std::string & path, const std::string & data, CreateMode::type mode);
+	std::string create(const std::string & path, const std::string & data, int32_t mode);
 
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Нет родителя создаваемой ноды.
@@ -68,8 +76,8 @@ public:
 	  *  - Такая нода уже есть.
 	  * При остальных ошибках бросает исключение.
 	  */
-	ReturnCode::type tryCreate(const std::string & path, const std::string & data, CreateMode::type mode, std::string & pathCreated);
-	ReturnCode::type tryCreate(const std::string & path, const std::string & data, CreateMode::type mode);
+	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
+	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode);
 
 	/** Удалить ноду, если ее версия равна version (если -1, подойдет любая версия).
 	  */
@@ -80,7 +88,7 @@ public:
 	  *  - У ноды другая версия.
 	  *  - У ноды есть дети.
 	  */
-	ReturnCode::type tryRemove(const std::string & path, int32_t version = -1);
+	int32_t tryRemove(const std::string & path, int32_t version = -1);
 
 	bool exists(const std::string & path, Stat * stat = nullptr, WatchFuture * watch = nullptr);
 
@@ -98,7 +106,7 @@ public:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
 	  */
-	ReturnCode::type trySet(const std::string & path, const std::string & data,
+	int32_t trySet(const std::string & path, const std::string & data,
 							int32_t version = -1, Stat * stat = nullptr);
 
 	Strings getChildren(const std::string & path,
@@ -108,7 +116,7 @@ public:
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет. В таком случае возвращает false.
 	  */
-	bool tryGetChildren(const std::string & path, Strings & res,
+	int32_t tryGetChildren(const std::string & path, Strings & res,
 						Stat * stat = nullptr,
 						WatchFuture * watch = nullptr);
 
@@ -120,36 +128,37 @@ public:
 
 	/** Бросает исключение только если какая-нибудь операция вернула "неожиданную" ошибку - такую ошибку,
 	  *  увидев которую соответствующий метод try* бросил бы исключение. */
-	ReturnCode::type tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
+	int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
 
 
 	/** Удаляет ноду вместе с поддеревом. Если в это время кто-то добавит иили удалит ноду в поддереве, результат не определен.
 	  */
 	void removeRecursive(const std::string & path);
 
+	static std::string error2string(int32_t code);
+
+	/// максимальный размер данных в узле в байтах
+	/// В версии 3.4.5. максимальный размер узла 1 Mb
+	static const size_t MAX_NODE_SIZE = 1048576;
+
+	/// Размер прибавляемого ZooKeeper суффикса при создании Sequential ноды
+	/// На самом деле размер меньше, но для удобства округлим в верхнюю сторону
+	static const size_t SEQUENTIAL_SUFFIX_SIZE = 64;
 private:
 	void init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_);
-	friend struct StateWatch;
-
-	zk::ZooKeeper impl;
+	void removeChildrenRecursive(const std::string & path);
+	WatchWithPromisePtr watchForFuture(WatchFuture * future);
+	static void processPromise(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);
 
 	std::string hosts;
 	int32_t sessionTimeoutMs;
-	WatchFunction * state_watch;
 
 	Poco::FastMutex mutex;
-	ACLs default_acl;
-	SessionState::type session_state;
+	AclPtr default_acl;
+	zhandle_t * impl;
 
-	void stateChanged(WatchEvent::type event, SessionState::type state, const std::string& path);
-
-	/** Бросает исключение, если сессия истекла. Почему-то zkcpp этого не делает, а вместо этого виснет (смотри zkcpp_expiration_test).
-	  * Не очень надежно: возможно, вызов к zkcpp все же может повиснуть, если между проверкой и вызовом состояние успеет поменяться.
-	  * Если это окажется проблемой, возможно, стоит избавиться от zkcpp.
-	  */
-	void checkNotExpired();
-
-	void removeChildrenRecursive(const std::string & path);
+	WatchFunction * state_watch;
+	std::unordered_set<WatchWithPromise *> watch_store;
 };
 
 typedef ZooKeeper::Ptr ZooKeeperPtr;
