@@ -1,4 +1,5 @@
 #include <DB/IO/HashingWriteBuffer.h>
+#include <iomanip>
 
 std::ostream & operator<<(std::ostream & os, const uint128 & data)
 {
