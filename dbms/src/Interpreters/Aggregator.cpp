@@ -93,7 +93,7 @@ void Aggregator::initialize(Block & block)
 				argument_types[j] = block.getByPosition(aggregates[i].arguments[j]).type;
 
 			col.type = new DataTypeAggregateFunction(aggregates[i].function, argument_types, aggregates[i].parameters);
-			col.column = new ColumnAggregateFunction(aggregates[i].function);
+			col.column = col.type->createColumn();
 
 			sample.insert(col);
 		}

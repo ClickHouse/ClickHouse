@@ -117,7 +117,7 @@ void DataTypeAggregateFunction::serializeTextJSON(const Field & field, WriteBuff
 
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-	return new ColumnAggregateFunction(function);
+	return new ColumnAggregateFunction(new AggregateStatesHolder(function));
 }
 
 ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field & field) const

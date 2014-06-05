@@ -4,7 +4,7 @@
 
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 
-#include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/IColumn.h>
 
 #include <DB/Core/Field.h>
 
@@ -29,6 +29,9 @@ public:
 	Arenas arenas;
 	PODArray<AggregateDataPtr> data;
 
+	AggregateStatesHolder(const AggregateFunctionPtr & func_) : func(func_) {}
+	AggregateStatesHolder(const AggregateFunctionPtr & func_, const Arenas & arenas_) : func(func_), arenas(arenas_) {}
+
 	~AggregateStatesHolder()
 	{
 		IAggregateFunction * function = func;
@@ -37,156 +40,191 @@ public:
 			for (size_t i = 0, s = data.size(); i < s; ++i)
 				function->destroy(data[i]);
 	}
-};
-
-
-/** Столбец состояний агрегатных функций.
-  */
-class ColumnAggregateFunction final : public ColumnVectorBase<AggregateDataPtr>
-{
-private:
-	AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
-	Arenas arenas;
-public:
-	ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-		: func(func_)
-	{
-	}
-
-	ColumnAggregateFunction(const AggregateFunctionPtr & func_, const Arenas & arenas_)
-		: func(func_), arenas(arenas_)
-	{
-	}
-
-	void set(const AggregateFunctionPtr & func_)
-	{
-		func = func_;
-	}
-
-	AggregateFunctionPtr getAggregateFunction() { return func; }
-	AggregateFunctionPtr getAggregateFunction() const { return func; }
 
 	/// Захватить владение ареной.
 	void addArena(ArenaPtr arena_)
 	{
 		arenas.push_back(arena_);
 	}
+};
+
+typedef SharedPtr<AggregateStatesHolder> AggregateStatesHolderPtr;
+
+
+/** Столбец состояний агрегатных функций.
+  */
+class ColumnAggregateFunction final : public IColumn
+{
+public:
+	typedef PODArray<AggregateDataPtr> Container_t;
+
+private:
+	AggregateStatesHolderPtr holder;
+
+	/** Массив (указателей на состояния агрегатных функций) может
+	  *  либо лежать в holder-е (пример - только что созданный столбец со всеми значениями),
+	  *  либо быть своим (пример - столбец отфильтрованных значений - тогда свой массив содержит только то, что отфильтровано).
+	  */
+	Container_t own_data;
+	Container_t * data;		/// Указывает на AggregateStatesHolder::data или на own_data.
+
+public:
+	ColumnAggregateFunction(AggregateStatesHolderPtr holder_)
+		: holder(holder_), data(&holder->data)
+	{
+	}
+
+	void set(const AggregateFunctionPtr & func_)
+	{
+		holder->func = func_;
+	}
+
+	AggregateFunctionPtr getAggregateFunction() { return holder->func; }
+	AggregateFunctionPtr getAggregateFunction() const { return holder->func; }
+
+	/// Захватить владение ареной.
+	void addArena(ArenaPtr arena_)
+	{
+		holder->addArena(arena_);
+	}
 
 	ColumnPtr convertToValues()
 	{
-		IAggregateFunction * function = func;
+		IAggregateFunction * function = holder->func;
 		ColumnPtr res = function->getReturnType()->createColumn();
 		IColumn & column = *res;
-		res->reserve(data.size());
+		res->reserve(data->size());
 
-		for (size_t i = 0; i < data.size(); ++i)
-			function->insertResultInto(data[i], column);
+		for (size_t i = 0; i < data->size(); ++i)
+			function->insertResultInto((*data)[i], column);
 
 		return res;
 	}
 
-	~ColumnAggregateFunction()
-	{
-		std::cerr << __PRETTY_FUNCTION__ << " " << this << std::endl;
-
-		IAggregateFunction * function = func;
-
-		if (!function->hasTrivialDestructor())
-			for (size_t i = 0, s = data.size(); i < s; ++i)
-				function->destroy(data[i]);
-	}
-	
  	std::string getName() const { return "ColumnAggregateFunction"; }
 
- 	ColumnPtr cloneEmpty() const { return new ColumnAggregateFunction(func, arenas); };
+	size_t sizeOfField() const { return sizeof(own_data[0]); }
 
-	bool isNumeric() const { return false; }
+	size_t size() const
+	{
+		return data->size();
+	}
+
+ 	ColumnPtr cloneEmpty() const
+ 	{
+		auto res = new ColumnAggregateFunction(const_cast<AggregateStatesHolderPtr &>(holder));
+		res->data = &res->own_data;
+		return res;
+	};
 
 	Field operator[](size_t n) const
 	{
 		Field field = String();
 		{
 			WriteBufferFromString buffer(field.get<String &>());
-			func->serialize(data[n], buffer);
+			holder->func->serialize((*data)[n], buffer);
 		}
 		return field;
 	}
 
 	void get(size_t n, Field & res) const
 	{
-		res.assignString("", 0);
+		res = String();
 		{
 			WriteBufferFromString buffer(res.get<String &>());
-			func->serialize(data[n], buffer);
+			holder->func->serialize((*data)[n], buffer);
 		}
 	}
 
 	StringRef getDataAt(size_t n) const
 	{
-		return StringRef(data[n], sizeof(data[n]));
+		return StringRef((*data)[n], sizeof((*data)[n]));
 	}
 
 	/// Объединить состояние в последней строке с заданным
 	void insertMerge(StringRef input)
 	{
-		func->merge(data.back(), input.data);
+		holder.get()->func.get()->merge(data->back(), input.data);
 	}
 
 	void insert(const Field & x)
 	{
-		if (arenas.empty())
-			arenas.push_back(new Arena());
-		data.push_back(arenas.back()->alloc(func->sizeOfData()*10));
-		func->create(data.back());
-		ReadBufferFromString read_buffer(x.safeGet<const String &>());
-		func->deserializeMerge(data.back(), read_buffer);
+		if (holder.get()->arenas.empty())
+			holder.get()->addArena(new Arena());
+
+		IAggregateFunction * function = holder->func;
+
+		data->push_back(holder.get()->arenas.back()->alloc(function->sizeOfData()));
+		function->create(data->back());
+		ReadBufferFromString read_buffer(x.get<const String &>());
+		function->deserializeMerge(data->back(), read_buffer);
+	}
+
+	void insertFrom(const IColumn & src, size_t n)
+	{
+		/// Должны совпадать holder-ы.
+		if (unlikely(holder.get() != static_cast<const ColumnAggregateFunction &>(src).holder.get()))
+			throw Exception("Columns with aggregates must hold same data", ErrorCodes::LOGICAL_ERROR);
+
+		data->push_back(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+	}
+
+	void insertDefault()
+	{
+		throw Exception("Method insertDefault is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	size_t byteSize() const
+	{
+		return data->size() * sizeof((*data)[0]);
 	}
 
 	void insertData(const char * pos, size_t length)
 	{
-		data.push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
+		data->push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const
 	{
-		if (start + length > this->data.size())
+		if (start + length > data->size())
 			throw Exception("Parameters start = "
 				+ toString(start) + ", length = "
 				+ toString(length) + " are out of bound in ColumnAggregateFunction::cut() method"
-				" (data.size() = " + toString(this->data.size()) + ").",
+				" (data.size() = " + toString(data->size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(func, arenas);
-		ColumnPtr res = res_;
-		res_->data.resize(length);
+		ColumnPtr res = cloneEmpty();
+		ColumnAggregateFunction * res_ = static_cast<ColumnAggregateFunction *>(res.get());
+
+		res_->data->resize(length);
 		for (size_t i = 0; i < length; ++i)
-			res_->data[i] = this->data[start+i];
+			(*res_->data)[i] = (*data)[start + i];
 		return res;
 	}
 
 	ColumnPtr filter(const Filter & filter) const
 	{
-		size_t size = data.size();
+		size_t size = data->size();
 		if (size != filter.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(func, arenas);
-		ColumnPtr res = res_;
+		ColumnPtr res = cloneEmpty();
+		ColumnAggregateFunction * res_ = static_cast<ColumnAggregateFunction *>(res.get());
 
 		if (size == 0)
 			return res;
 
-		res_->data.reserve(size);
+		res_->data->reserve(size);
 		for (size_t i = 0; i < size; ++i)
 			if (filter[i])
-				res_->data.push_back(this->data[i]);
+				res_->data->push_back((*data)[i]);
 
 		return res;
 	}
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
-		size_t size = this->data.size();
+		size_t size = data->size();
 
 		if (limit == 0)
 			limit = size;
@@ -196,11 +234,13 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(func, arenas);
-		ColumnPtr res = res_;
-		res_->data.resize(limit);
+		ColumnPtr res = cloneEmpty();
+		ColumnAggregateFunction * res_ = static_cast<ColumnAggregateFunction *>(res.get());
+
+		res_->data->resize(limit);
 		for (size_t i = 0; i < limit; ++i)
-			res_->data[i] = this->data[perm[i]];
+			(*res_->data)[i] = (*data)[perm[i]];
+
 		return res;
 	}
 
@@ -221,10 +261,21 @@ public:
 
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
-		size_t s = data.size();
+		size_t s = data->size();
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
+	}
+
+	/** Более эффективные методы манипуляции */
+	Container_t & getData()
+	{
+		return *data;
+	}
+
+	const Container_t & getData() const
+	{
+		return *data;
 	}
 };
 
