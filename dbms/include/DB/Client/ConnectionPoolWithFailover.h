@@ -61,7 +61,7 @@ public:
 		{
 			if (load_balancing == LoadBalancing::NEAREST_HOSTNAME)
 				nested_pools[i].priority = hostname_differences[i];
-			else if (load_balancing == LoadBalancing::NEAREST_HOSTNAME)
+			else if (load_balancing == LoadBalancing::RANDOM)
 				nested_pools[i].priority = 0;
 			else
 				throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing)), ErrorCodes::LOGICAL_ERROR);
