@@ -77,16 +77,16 @@ template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {
 /** Шаблон столбцов, которые используют для хранения простой массив.
   */
 template <typename T>
-class ColumnVectorBase : public IColumn
+class ColumnVector : public IColumn
 {
 private:
-	typedef ColumnVectorBase<T> Self;
+	typedef ColumnVector<T> Self;
 public:
 	typedef T value_type;
 	typedef PODArray<value_type> Container_t;
 
-	ColumnVectorBase() {}
-	ColumnVectorBase(size_t n) : data(n) {}
+	ColumnVector() {}
+	ColumnVector(size_t n) : data(n) {}
 
 	bool isNumeric() const { return IsNumber<T>::value; }
 	bool isFixed() const { return IsNumber<T>::value; }
@@ -173,6 +173,134 @@ public:
 		data.reserve(n);
 	}
 
+	std::string getName() const { return "ColumnVector<" + TypeName<T>::get() + ">"; }
+
+	ColumnPtr cloneEmpty() const
+	{
+		return new ColumnVector<T>;
+	}
+
+	Field operator[](size_t n) const
+	{
+		return typename NearestFieldType<T>::Type(data[n]);
+	}
+
+	void get(size_t n, Field & res) const
+	{
+		res = typename NearestFieldType<T>::Type(data[n]);
+	}
+
+	UInt64 get64(size_t n) const;
+
+	void insert(const Field & x)
+	{
+		data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
+	}
+
+	ColumnPtr cut(size_t start, size_t length) const
+	{
+		if (start + length > data.size())
+			throw Exception("Parameters start = "
+			+ toString(start) + ", length = "
+			+ toString(length) + " are out of bound in IColumnVector<T>::cut() method"
+			" (data.size() = " + toString(data.size()) + ").",
+							ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+			Self * res = new Self(length);
+		memcpy(&res->getData()[0], &data[start], length * sizeof(data[0]));
+		return res;
+	}
+
+	ColumnPtr filter(const IColumn::Filter & filt) const
+	{
+		size_t size = data.size();
+		if (size != filt.size())
+			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Self * res_ = new Self;
+		ColumnPtr res = res_;
+		typename Self::Container_t & res_data = res_->getData();
+		res_data.reserve(size);
+
+		for (size_t i = 0; i < size; ++i)
+			if (filt[i])
+				res_data.push_back(data[i]);
+
+			return res;
+	}
+
+	ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const
+	{
+		size_t size = data.size();
+
+		if (limit == 0)
+			limit = size;
+		else
+			limit = std::min(size, limit);
+
+		if (perm.size() < limit)
+			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Self * res_ = new Self(limit);
+		ColumnPtr res = res_;
+		typename Self::Container_t & res_data = res_->getData();
+		for (size_t i = 0; i < limit; ++i)
+			res_data[i] = data[perm[i]];
+
+		return res;
+	}
+
+	ColumnPtr replicate(const IColumn::Offsets_t & offsets) const
+	{
+		size_t size = data.size();
+		if (size != offsets.size())
+			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Self * res_ = new Self;
+		ColumnPtr res = res_;
+		typename Self::Container_t & res_data = res_->getData();
+		res_data.reserve(offsets.back());
+
+		IColumn::Offset_t prev_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			size_t size_to_replicate = offsets[i] - prev_offset;
+			prev_offset = offsets[i];
+
+			for (size_t j = 0; j < size_to_replicate; ++j)
+				res_data.push_back(data[i]);
+		}
+
+		return res;
+	}
+
+	void getExtremes(Field & min, Field & max) const
+	{
+		size_t size = data.size();
+
+		if (size == 0)
+		{
+			min = typename NearestFieldType<T>::Type(0);
+			max = typename NearestFieldType<T>::Type(0);
+			return;
+		}
+
+		T cur_min = data[0];
+		T cur_max = data[0];
+
+		for (size_t i = 1; i < size; ++i)
+		{
+			if (data[i] < cur_min)
+				cur_min = data[i];
+
+			if (data[i] > cur_max)
+				cur_max = data[i];
+		}
+
+		min = typename NearestFieldType<T>::Type(cur_min);
+		max = typename NearestFieldType<T>::Type(cur_max);
+	}
+
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{
@@ -189,152 +317,10 @@ protected:
 };
 
 
-/** Реализация для числовых типов.
-  * (Есть ещё ColumnAggregateFunction.)
-  */
-template <typename T>
-class ColumnVector final : public ColumnVectorBase<T>
-{
-private:
-	typedef ColumnVector<T> Self;
-public:
-	ColumnVector() {}
-	ColumnVector(size_t n) : ColumnVectorBase<T>(n) {}
-
- 	std::string getName() const { return "ColumnVector<" + TypeName<T>::get() + ">"; }
-
-	ColumnPtr cloneEmpty() const
-	{
-		return new ColumnVector<T>;
-	}
-
-	Field operator[](size_t n) const
-	{
-		return typename NearestFieldType<T>::Type(this->data[n]);
-	}
-
-	void get(size_t n, Field & res) const
-	{
-		res = typename NearestFieldType<T>::Type(this->data[n]);
-	}
-
-	UInt64 get64(size_t n) const;
-
-	void insert(const Field & x)
-	{
-		this->data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
-	}
-
-	ColumnPtr cut(size_t start, size_t length) const
-	{
-		if (start + length > this->data.size())
-			throw Exception("Parameters start = "
-				+ toString(start) + ", length = "
-				+ toString(length) + " are out of bound in IColumnVector<T>::cut() method"
-				" (data.size() = " + toString(this->data.size()) + ").",
-				ErrorCodes::PARAMETER_OUT_OF_BOUND);
-
-		Self * res = new Self(length);
-		memcpy(&res->getData()[0], &this->data[start], length * sizeof(this->data[0]));
-		return res;
-	}
-
-	ColumnPtr filter(const IColumn::Filter & filt) const
-	{
-		size_t size = this->data.size();
-		if (size != filt.size())
-			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		Self * res_ = new Self;
-		ColumnPtr res = res_;
-		typename Self::Container_t & res_data = res_->getData();
-		res_data.reserve(size);
-
-		for (size_t i = 0; i < size; ++i)
-			if (filt[i])
-				res_data.push_back(this->data[i]);
-
-		return res;
-	}
-
-	ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const
-	{
-		size_t size = this->data.size();
-
-		if (limit == 0)
-			limit = size;
-		else
-			limit = std::min(size, limit);
-		
-		if (perm.size() < limit)
-			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		Self * res_ = new Self(limit);
-		ColumnPtr res = res_;
-		typename Self::Container_t & res_data = res_->getData();
-		for (size_t i = 0; i < limit; ++i)
-			res_data[i] = this->data[perm[i]];
-
-		return res;
-	}
-
-	ColumnPtr replicate(const IColumn::Offsets_t & offsets) const
-	{
-		size_t size = this->data.size();
-		if (size != offsets.size())
-			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		Self * res_ = new Self;
-		ColumnPtr res = res_;
-		typename Self::Container_t & res_data = res_->getData();
-		res_data.reserve(offsets.back());
-
-		IColumn::Offset_t prev_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			size_t size_to_replicate = offsets[i] - prev_offset;
-			prev_offset = offsets[i];
-
-			for (size_t j = 0; j < size_to_replicate; ++j)
-				res_data.push_back(this->data[i]);
-		}
-
-		return res;
-	}
-
-	void getExtremes(Field & min, Field & max) const
-	{
-		size_t size = this->data.size();
-
-		if (size == 0)
-		{
-			min = typename NearestFieldType<T>::Type(0);
-			max = typename NearestFieldType<T>::Type(0);
-			return;
-		}
-
-		T cur_min = this->data[0];
-		T cur_max = this->data[0];
-
-		for (size_t i = 1; i < size; ++i)
-		{
-			if (this->data[i] < cur_min)
-				cur_min = this->data[i];
-
-			if (this->data[i] > cur_max)
-				cur_max = this->data[i];
-		}
-
-		min = typename NearestFieldType<T>::Type(cur_min);
-		max = typename NearestFieldType<T>::Type(cur_max);
-	}
-};
-
-
 template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n) const
 {
-	return this->data[n];
+	return data[n];
 }
 
 template <>
@@ -346,7 +332,7 @@ inline UInt64 ColumnVector<Float64>::get64(size_t n) const
 		UInt64 res;
 	};
 
-	src = this->data[n];
+	src = data[n];
 	return res;
 }
 
@@ -360,7 +346,7 @@ inline UInt64 ColumnVector<Float32>::get64(size_t n) const
 	};
 
 	res = 0;
-	src = this->data[n];
+	src = data[n];
 	return res;
 }
 

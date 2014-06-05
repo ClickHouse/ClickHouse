@@ -14,12 +14,33 @@ namespace DB
 {
 
 
-/** Столбец, хранящий состояния агрегатных функций.
-  * Состояния агрегатных функций хранятся в пуле (arena),
-  *  (возможно, в нескольких)
-  *  а в массиве (ColumnVector) хранятся указатели на них.
-  * Столбец захватывает владение пулом и всеми агрегатными функциями,
-  *  которые в него переданы (уничтожает их в дестркуторе).
+/** Отвечает за владение и уничтожение состояний агрегатных функций.
+  * В ColumnAggregateFunction хранится SharedPtr на него,
+  *  чтобы уничтожить все состояния агрегатных функций только после того,
+  *  как они перестали быть нужными во всех столбцах, использующих общие состояния.
+  *
+  * Состояния агрегатных функций выделены в пуле (arena) (возможно, в нескольких).
+  *  а в массиве (data) хранятся указатели на них.
+  */
+class AggregateStatesHolder
+{
+public:
+	AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
+	Arenas arenas;
+	PODArray<AggregateDataPtr> data;
+
+	~AggregateStatesHolder()
+	{
+		IAggregateFunction * function = func;
+
+		if (!function->hasTrivialDestructor())
+			for (size_t i = 0, s = data.size(); i < s; ++i)
+				function->destroy(data[i]);
+	}
+};
+
+
+/** Столбец состояний агрегатных функций.
   */
 class ColumnAggregateFunction final : public ColumnVectorBase<AggregateDataPtr>
 {
@@ -66,6 +87,8 @@ public:
 
 	~ColumnAggregateFunction()
 	{
+		std::cerr << __PRETTY_FUNCTION__ << " " << this << std::endl;
+
 		IAggregateFunction * function = func;
 
 		if (!function->hasTrivialDestructor())
