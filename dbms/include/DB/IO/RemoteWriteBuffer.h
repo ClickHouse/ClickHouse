@@ -9,6 +9,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/HashingWriteBuffer.h>
 
 #include <Yandex/logger_useful.h>
 
@@ -37,11 +38,14 @@ private:
 
 	Poco::Net::HTTPClientSession session;
 	std::ostream * ostr;	/// этим владеет session
-	Poco::SharedPtr<WriteBufferFromOStream> impl;
+	Poco::SharedPtr<WriteBuffer> impl;
 
 	/// Отправили все данные и переименовали файл
 	bool finalized;
-	
+
+	/// считать ли чексумму для отправляемого файла
+	bool calc_checksum;
+	Poco::SharedPtr<WriteBuffer> temp_write_buffer;
 public:
 	/** Если tmp_path не пустой, то записывает сначала временный файл, а затем переименовывает,
 	  *  удаляя существующие файлы, если есть.
@@ -50,10 +54,10 @@ public:
 	RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
 		const std::string & tmp_path_ = "", const std::string & if_exists_ = "remove",
 		bool decompress_ = false, size_t timeout_ = 0, unsigned connection_retries_ = 3,
-		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, bool calc_checksum_ = false)
 		: WriteBuffer(nullptr, 0), host(host_), port(port_), path(path_),
 		tmp_path(tmp_path_), if_exists(if_exists_),
-		decompress(decompress_), connection_retries(connection_retries_), finalized(false)
+		decompress(decompress_), connection_retries(connection_retries_), finalized(false), calc_checksum(calc_checksum_)
 	{
 		Poco::URI::encode(path, "&#", encoded_path);
 		Poco::URI::encode(tmp_path, "&#", encoded_tmp_path);
@@ -108,7 +112,14 @@ public:
 			break;
 		}
 
-		impl = new WriteBufferFromOStream(*ostr, buffer_size_);
+		if (calc_checksum)
+		{
+			temp_write_buffer = new WriteBufferFromOStream(*ostr, buffer_size_);
+			impl = new HashingWriteBuffer(*temp_write_buffer);
+		}
+		else
+			impl = new WriteBufferFromOStream(*ostr, buffer_size_);
+
 		set(impl->buffer().begin(), impl->buffer().size());
 	}
 
@@ -152,6 +163,13 @@ public:
 	void cancel()
 	{
 		finalized = true;
+	}
+
+	std::string getHash()
+	{
+		std::stringstream ss;
+		ss << dynamic_cast<HashingWriteBuffer &>(*impl).getHash();
+		return ss.str();
 	}
 
 	~RemoteWriteBuffer()

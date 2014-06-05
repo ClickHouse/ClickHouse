@@ -3,6 +3,7 @@
 #include <city.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+#include <DB/IO/ReadHelpers.h>
 
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
 
@@ -119,3 +120,6 @@ public:
 	}
 };
 }
+
+std::ostream & operator<<(std::ostream & os, const uint128 & data);
+std::istream & operator>>(std::istream & is, uint128 & data);
