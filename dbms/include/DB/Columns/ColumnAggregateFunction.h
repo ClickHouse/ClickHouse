@@ -66,9 +66,11 @@ public:
 
 	~ColumnAggregateFunction()
 	{
-		if (!func->hasTrivialDestructor())
+		IAggregateFunction * function = func;
+
+		if (!function->hasTrivialDestructor())
 			for (size_t i = 0, s = data.size(); i < s; ++i)
-				func->destroy(data[i]);
+				function->destroy(data[i]);
 	}
 	
  	std::string getName() const { return "ColumnAggregateFunction"; }

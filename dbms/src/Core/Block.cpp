@@ -23,14 +23,14 @@ void Block::addDefaults(NamesAndTypesListPtr required_columns)
 {
 	for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
 	{
-		if (!this->has(it->first))
+		if (!has(it->first))
 		{
 			ColumnWithNameAndType col;
 			col.name = it->first;
 			col.type = it->second;
 			col.column = dynamic_cast<IColumnConst &>(*it->second->createConstColumn(
-				this->rows(), it->second->getDefault())).convertToFullColumn();
-			this->insert(col);
+				rows(), it->second->getDefault())).convertToFullColumn();
+			insert(col);
 		}
 	}
 }
