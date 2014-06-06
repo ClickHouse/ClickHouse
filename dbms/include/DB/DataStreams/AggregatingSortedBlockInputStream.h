@@ -55,7 +55,7 @@ private:
 
 	/// Столбцы с какими номерами надо аггрегировать.
 	ColumnNumbers column_numbers_to_aggregate;
-	std::vector<ColumnAggregateFunction *> column_to_aggregate;
+	std::vector<ColumnAggregateFunction *> columns_to_aggregate;
 
 	Row current_key;		/// Текущий первичный ключ.
 	Row next_key;			/// Первичный ключ следующей строки.
@@ -71,7 +71,7 @@ private:
 	/// Вставить в результат первую строку для текущей группы.
 	void insertCurrentRow(ColumnPlainPtrs & merged_columns);
 
-	/** Извлечь все состояния аггрегатных функции и объединить с текущей группой.
+	/** Извлечь все состояния аггрегатных функций и объединить с текущей группой.
 	  */
 	template<class TSortCursor>
 	void addRow(TSortCursor & cursor)
@@ -79,7 +79,7 @@ private:
 		for (size_t i = 0, size = column_numbers_to_aggregate.size(); i < size; ++i)
 		{
 			size_t j = column_numbers_to_aggregate[i];
-			column_to_aggregate[i]->insertMerge((*cursor->all_columns[j]).getDataAt(cursor->pos));
+			columns_to_aggregate[i]->insertMerge((*cursor->all_columns[j]).getDataAt(cursor->pos));
 		}
 	}
 };

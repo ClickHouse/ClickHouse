@@ -49,6 +49,7 @@ public:
 };
 
 typedef SharedPtr<AggregateStatesHolder> AggregateStatesHolderPtr;
+typedef std::vector<AggregateStatesHolderPtr> AggregateStatesHolders;
 
 
 /** Столбец состояний агрегатных функций.
@@ -59,7 +60,7 @@ public:
 	typedef PODArray<AggregateDataPtr> Container_t;
 
 private:
-	AggregateStatesHolderPtr holder;
+	AggregateStatesHolders holders;
 
 	/** Массив (указателей на состояния агрегатных функций) может
 	  *  либо лежать в holder-е (пример - только что созданный столбец со всеми значениями),
@@ -69,28 +70,40 @@ private:
 	Container_t * data;		/// Указывает на AggregateStatesHolder::data или на own_data.
 
 public:
+	/** Создать столбец, значениями которого владеет holder; использовать массив значений оттуда.
+	  */
 	ColumnAggregateFunction(AggregateStatesHolderPtr holder_)
-		: holder(holder_), data(&holder->data)
+		: holders(1, holder_), data(&holder_->data)
+	{
+	}
+
+	/** Создать столбец, значениями которого владеет один или несколько holders;
+	  * Использовать свой пустой массив значений.
+	  * - для функции cloneEmpty.
+	  */
+	ColumnAggregateFunction(AggregateStatesHolders & holders_)
+		: holders(holders_), data(&own_data)
 	{
 	}
 
 	void set(const AggregateFunctionPtr & func_)
 	{
-		holder->func = func_;
+		for (auto holder : holders)
+			holder->func = func_;
 	}
 
-	AggregateFunctionPtr getAggregateFunction() { return holder->func; }
-	AggregateFunctionPtr getAggregateFunction() const { return holder->func; }
+	AggregateFunctionPtr getAggregateFunction() { return holders[0]->func; }
+	AggregateFunctionPtr getAggregateFunction() const { return holders[0]->func; }
 
 	/// Захватить владение ареной.
 	void addArena(ArenaPtr arena_)
 	{
-		holder->addArena(arena_);
+		holders[0]->addArena(arena_);
 	}
 
 	ColumnPtr convertToValues()
 	{
-		IAggregateFunction * function = holder->func;
+		IAggregateFunction * function = holders[0]->func;
 		ColumnPtr res = function->getReturnType()->createColumn();
 		IColumn & column = *res;
 		res->reserve(data->size());
@@ -112,9 +125,7 @@ public:
 
  	ColumnPtr cloneEmpty() const
  	{
-		auto res = new ColumnAggregateFunction(const_cast<AggregateStatesHolderPtr &>(holder));
-		res->data = &res->own_data;
-		return res;
+		return new ColumnAggregateFunction(const_cast<AggregateStatesHolders &>(holders));
 	};
 
 	Field operator[](size_t n) const
@@ -122,7 +133,7 @@ public:
 		Field field = String();
 		{
 			WriteBufferFromString buffer(field.get<String &>());
-			holder->func->serialize((*data)[n], buffer);
+			holders[0]->func->serialize((*data)[n], buffer);
 		}
 		return field;
 	}
@@ -132,7 +143,7 @@ public:
 		res = String();
 		{
 			WriteBufferFromString buffer(res.get<String &>());
-			holder->func->serialize((*data)[n], buffer);
+			holders[0]->func->serialize((*data)[n], buffer);
 		}
 	}
 
@@ -144,17 +155,36 @@ public:
 	/// Объединить состояние в последней строке с заданным
 	void insertMerge(StringRef input)
 	{
-		holder.get()->func.get()->merge(data->back(), input.data);
+		holders[0].get()->func.get()->merge(data->back(), input.data);
 	}
 
 	void insert(const Field & x)
 	{
-		if (holder.get()->arenas.empty())
-			holder.get()->addArena(new Arena());
+		/** Этот метод создаёт новое состояние агрегатной функции (IAggregateFunction::create).
+		  * Оно должно быть потом уничтожено с помощью метода IAggregateFunction::destroy.
+		  * Для этого, о нём должен знать holder.
+		  *
+		  * Поэтому, если массив значений ещё не лежит в holder-е,
+		  *  то создадим новый holder, и будем использовать массив значений в нём.
+		  *
+		  * NOTE: Как сделать менее запутанно?
+		  */
 
-		IAggregateFunction * function = holder->func;
+		if (unlikely(data == &own_data))
+		{
+			/// Нельзя одновременно вставлять "свои" значения и использовать "чужие".
+			if (!own_data.empty())
+				throw Poco::Exception("Inserting new values to ColumnAggregateFunction with existing referenced values is not supported",
+					ErrorCodes::LOGICAL_ERROR);
 
-		data->push_back(holder.get()->arenas.back()->alloc(function->sizeOfData()));
+			holders.push_back(new AggregateStatesHolder(holders[0].get()->func));
+			holders.back().get()->addArena(new Arena);
+			data = &holders.back().get()->data;
+		}
+
+		IAggregateFunction * function = holders[0]->func;
+
+		data->push_back(holders.back().get()->arenas.back()->alloc(function->sizeOfData()));
 		function->create(data->back());
 		ReadBufferFromString read_buffer(x.get<const String &>());
 		function->deserializeMerge(data->back(), read_buffer);
@@ -163,9 +193,6 @@ public:
 	void insertFrom(const IColumn & src, size_t n)
 	{
 		/// Должны совпадать holder-ы.
-		if (unlikely(holder.get() != static_cast<const ColumnAggregateFunction &>(src).holder.get()))
-			throw Exception("Columns with aggregates must hold same data", ErrorCodes::LOGICAL_ERROR);
-
 		data->push_back(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
 

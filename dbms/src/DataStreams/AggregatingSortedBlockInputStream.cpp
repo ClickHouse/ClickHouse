@@ -53,7 +53,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
 				continue;
 
 			column_numbers_to_aggregate.push_back(i);
-			column_to_aggregate.push_back(dynamic_cast<ColumnAggregateFunction *>(merged_columns[i]));
+			columns_to_aggregate.push_back(dynamic_cast<ColumnAggregateFunction *>(merged_columns[i]));
 		}
 	}
 
