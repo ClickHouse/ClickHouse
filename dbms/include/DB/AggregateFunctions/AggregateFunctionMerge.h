@@ -44,6 +44,8 @@ public:
 		if (!data_type || data_type->getFunctionName() != nested_func->getName())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		nested_func->setArguments(data_type->getArgumentsDataTypes());
 	}
 
 	void setParameters(const Array & params)
