@@ -10,43 +10,48 @@
 namespace DB
 {
 
-/** Вычисляет хеш от записываемых данных и передает их в указанный WriteBuffer.
-  * В качестве основного буфера используется буфер вложенного WriteBuffer.
-  */
-class HashingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+template <class Buffer>
+class IHashingBuffer : public BufferWithOwnMemory<Buffer>
 {
-private:
-	WriteBuffer & out;
+public:
+	IHashingBuffer<Buffer>(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE) :
+		block_pos(0), block_size(block_size_), state(0, 0)
+	{
+	}
 
-	size_t block_size;
-	size_t block_pos;
-	uint128 state;
+	uint128 getHash()
+	{
+		if (block_pos)
+			return CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
+		else
+			return state;
+	}
 
-	void append(Position data)
+	void append(DB::BufferBase::Position data)
 	{
 		state = CityHash128WithSeed(data, block_size, state);
 	}
 
-	void nextImpl() override
+	/// вычисление хэша зависит от разбиения по блокам
+	/// поэтому нужно вычислить хэш от n полных кусочков и одного неполного
+	void calculateHash(DB::BufferBase::Position data, size_t len)
 	{
-		size_t len = offset();
-
 		if (len)
 		{
-			Position data = working_buffer.begin();
-
+			/// если данных меньше, чем block_size то сложим их в свой буффер и посчитаем от них hash позже
 			if (block_pos + len < block_size)
 			{
-				memcpy(&memory[block_pos], data, len);
+				memcpy(&BufferWithOwnMemory<Buffer>::memory[block_pos], data, len);
 				block_pos += len;
 			}
 			else
 			{
+				/// если в буффер уже что-то записано, то допишем его
 				if (block_pos)
 				{
 					size_t n = block_size - block_pos;
-					memcpy(&memory[block_pos], data, n);
-					append(&memory[0]);
+					memcpy(&BufferWithOwnMemory<Buffer>::memory[block_pos], data, n);
+					append(&BufferWithOwnMemory<Buffer>::memory[0]);
 					len -= n;
 					data += n;
 					block_pos = 0;
@@ -59,13 +64,36 @@ private:
 					data += block_size;
 				}
 
+				/// запишем остаток в свой буфер
 				if (len)
 				{
-					memcpy(&memory[0], data, len);
+					memcpy(&BufferWithOwnMemory<Buffer>::memory[0], data, len);
 					block_pos = len;
 				}
 			}
 		}
+	}
+
+protected:
+	size_t block_pos;
+	size_t block_size;
+	uint128 state;
+};
+
+/** Вычисляет хеш от записываемых данных и передает их в указанный WriteBuffer.
+  * В качестве основного буфера используется буфер вложенного WriteBuffer.
+  */
+class HashingWriteBuffer : public IHashingBuffer<WriteBuffer>
+{
+private:
+	WriteBuffer & out;
+
+	void nextImpl() override
+	{
+		size_t len = offset();
+
+		Position data = working_buffer.begin();
+		calculateHash(data, len);
 
 		out.position() = pos;
 		out.next();
@@ -76,22 +104,12 @@ public:
 	HashingWriteBuffer(
 		WriteBuffer & out_,
 		size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(block_size_), out(out_), block_size(block_size_), block_pos(0)
+		: IHashingBuffer<DB::WriteBuffer>(block_size_), out(out_)
 	{
 		out.next(); /// Если до нас в out что-то уже писали, не дадим остаткам этих данных повлиять на хеш.
 		working_buffer = out.buffer();
 		pos = working_buffer.begin();
 		state = uint128(0, 0);
 	}
-
-	uint128 getHash()
-	{
-		next();
-		if (block_pos)
-			return CityHash128WithSeed(&memory[0], block_pos, state);
-		else
-			return state;
-	}
 };
-
 }
