@@ -121,5 +121,8 @@ public:
 };
 }
 
+
+std::string uint128ToString(uint128 data);
+
 std::ostream & operator<<(std::ostream & os, const uint128 & data);
 std::istream & operator>>(std::istream & is, uint128 & data);
