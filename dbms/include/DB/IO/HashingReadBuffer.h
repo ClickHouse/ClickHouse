@@ -14,13 +14,16 @@ class HashingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
 	HashingReadBuffer(ReadBuffer & in_, size_t block_size = DBMS_DEFAULT_HASHING_BLOCK_SIZE) :
-		block_pos(0), block_size(DBMS_DEFAULT_HASHING_BLOCK_SIZE), state(0, 0), in(in_), ignore_before_this(nullptr)
+		block_pos(0), block_size(DBMS_DEFAULT_HASHING_BLOCK_SIZE), state(0, 0), in(in_)
 	{
 		working_buffer = in.buffer();
+		pos = in.position();
 
-		/// если какая то часть данных уже была прочитана до нас, то не дадим этим данным повлиять на хэш
-		if (in.position() != in.buffer().begin())
-			ignore_before_this = in.position();
+		/// считаем хэш от уже прочитанных данных
+		if (working_buffer.size())
+		{
+			calculateHash(pos, working_buffer.end() - pos);
+		}
 	}
 
 	uint128 getHash()
@@ -39,19 +42,8 @@ private:
 		state = CityHash128WithSeed(data, block_size, state);
 	}
 
-	bool nextImpl() override
+	void calculateHash(Position data, size_t len)
 	{
-		size_t len = working_buffer.size();
-		Position data = working_buffer.begin();
-
-		/// корректировка на данные прочитанные до нас
-		if (ignore_before_this)
-		{
-			len -= ignore_before_this - working_buffer.begin();
-			data = ignore_before_this;
-			ignore_before_this = nullptr;
-		}
-
 		if (len)
 		{
 			/// если данных меньше, чем block_size то сложим их в свой буффер и посчитаем от них hash позже
@@ -66,18 +58,18 @@ private:
 				if (block_pos)
 				{
 					size_t n = block_size - block_pos;
-					memcpy(&memory[block_pos], data, len);
+					memcpy(&memory[block_pos], data, n);
 					append(&memory[0]);
 					len -= n;
 					data += n;
 					block_pos = 0;
 				}
 
-				while (len >= block_pos)
+				while (len >= block_size)
 				{
 					append(data);
-					len -= block_pos;
-					data += block_pos;
+					len -= block_size;
+					data += block_size;
 				}
 
 				if (len)
@@ -87,9 +79,17 @@ private:
 				}
 			}
 		}
+	}
 
+	bool nextImpl() override
+	{
+		in.position() = pos;
 		bool res = in.next();
 		working_buffer = in.buffer();
+		pos = in.position();
+
+		calculateHash(working_buffer.begin(), working_buffer.size());
+
 		return res;
 	}
 
@@ -98,8 +98,5 @@ private:
 	size_t block_size;
 	uint128 state;
 	ReadBuffer & in;
-
-	/// игнорируем уже прочитанные данные
-	Position ignore_before_this;
 };
 }
