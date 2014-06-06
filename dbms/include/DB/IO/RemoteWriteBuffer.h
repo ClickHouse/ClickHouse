@@ -165,11 +165,9 @@ public:
 		finalized = true;
 	}
 
-	std::string getHash()
+	uint128 getHash()
 	{
-		std::stringstream ss;
-		ss << dynamic_cast<HashingWriteBuffer &>(*impl).getHash();
-		return ss.str();
+		return dynamic_cast<HashingWriteBuffer &>(*impl).getHash();
 	}
 
 	~RemoteWriteBuffer()
