@@ -51,7 +51,7 @@ public:
 		if (!blocksHaveEqualStructure(block, sample_block))
 		{
 			std::stringstream message;
-			message << "Block structure different from table structure.\n"
+			message << "Block structure is different from table structure.\n"
 				<< "\nTable structure:\n(" << sample_block.dumpStructure() << ")\nBlock structure:\n(" << block.dumpStructure() << ")\n";
 
 			throw DB::Exception(message.str());
