@@ -170,7 +170,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 		if (init)
 		{
 			function = column->getAggregateFunction();
-			target = new ColumnAggregateFunction(new AggregateStatesHolder(column->getAggregateFunction(), Arenas(1, arena)));
+			target = new ColumnAggregateFunction(column->getAggregateFunction(), Arenas(1, arena));
 			totals.insert(ColumnWithNameAndType(target, current.type, current.name));
 
 			data = arena->alloc(function->sizeOfData());

@@ -14,45 +14,29 @@ namespace DB
 {
 
 
-/** Отвечает за владение и уничтожение состояний агрегатных функций.
-  * В ColumnAggregateFunction хранится SharedPtr на него,
-  *  чтобы уничтожить все состояния агрегатных функций только после того,
-  *  как они перестали быть нужными во всех столбцах, использующих общие состояния.
-  *
-  * Состояния агрегатных функций выделены в пуле (arena) (возможно, в нескольких).
-  *  а в массиве (data) хранятся указатели на них.
-  */
-class AggregateStatesHolder
-{
-public:
-	AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
-	Arenas arenas;
-	PODArray<AggregateDataPtr> data;
-
-	AggregateStatesHolder(const AggregateFunctionPtr & func_) : func(func_) {}
-	AggregateStatesHolder(const AggregateFunctionPtr & func_, const Arenas & arenas_) : func(func_), arenas(arenas_) {}
-
-	~AggregateStatesHolder()
-	{
-		IAggregateFunction * function = func;
-
-		if (!function->hasTrivialDestructor())
-			for (size_t i = 0, s = data.size(); i < s; ++i)
-				function->destroy(data[i]);
-	}
-
-	/// Захватить владение ареной.
-	void addArena(ArenaPtr arena_)
-	{
-		arenas.push_back(arena_);
-	}
-};
-
-typedef SharedPtr<AggregateStatesHolder> AggregateStatesHolderPtr;
-typedef std::vector<AggregateStatesHolderPtr> AggregateStatesHolders;
-
-
 /** Столбец состояний агрегатных функций.
+  * Представлен в виде массива указателей на состояния агрегатных функций (data).
+  * Сами состояния хранятся в одном из пулов (arenas).
+  *
+  * Может быть в двух вариантах:
+  *
+  * 1. Владеть своими значениями - то есть, отвечать за их уничтожение.
+  * Столбец состоит из значений, "отданных ему на попечение" после выполнения агрегации (см. Aggregator, функция convertToBlock),
+  *  или из значений, созданных им самим (см. метод insert).
+  * В этом случае, src будет равно nullptr, и столбец будет сам уничтожать (вызывать IAggregateFunction::destroy)
+  *  состояния агрегатных функций в деструкторе.
+  *
+  * 2. Не владеть своими значениями, а использовать значения, взятые из другого столбца ColumnAggregateFunction.
+  * Например, это столбец, полученный перестановкой/фильтрацией или другими преобразованиями из другого столбца.
+  * В этом случае, в src будет shared ptr-ом на столбец-источник. Уничтожением значений будет заниматься этот столбец-источник.
+  *
+  * Это решение несколько ограничено:
+  * - не поддерживается вариант, в котором столбец содержит часть "своих" и часть "чужих" значений;
+  * - не поддерживается вариант наличия нескольких столбцов-источников, что может понадобиться для более оптимального слияния двух столбцов.
+  *
+  * Эти ограничения можно снять, если добавить массив флагов или даже refcount-ов,
+  *  определяющий, какие отдельные значения надо уничтожать, а какие - нет.
+  * Ясно, что этот метод имел бы существенно ненулевую цену.
   */
 class ColumnAggregateFunction final : public IColumn
 {
@@ -60,72 +44,87 @@ public:
 	typedef PODArray<AggregateDataPtr> Container_t;
 
 private:
-	AggregateStatesHolders holders;
+	Arenas arenas;			/// Пулы, в которых выделены состояния агрегатных функций.
 
-	/** Массив (указателей на состояния агрегатных функций) может
-	  *  либо лежать в holder-е (пример - только что созданный столбец со всеми значениями),
-	  *  либо быть своим (пример - столбец отфильтрованных значений - тогда свой массив содержит только то, что отфильтровано).
-	  */
-	Container_t own_data;
-	Container_t * data;		/// Указывает на AggregateStatesHolder::data или на own_data.
+	struct Holder
+	{
+		typedef SharedPtr<Holder> Ptr;
+
+		AggregateFunctionPtr func;	/// Используется для уничтожения состояний и для финализации значений.
+		const Ptr src;		/// Источник. Используется, если данный столбец создан из другого и использует все или часть его значений.
+		Container_t data;	/// Массив указателей на состояния агрегатных функций, расположенных в пулах.
+
+		Holder(const AggregateFunctionPtr & func_) : func(func_) {}
+		Holder(const Ptr & src_) : func(src_->func), src(src_) {}
+
+		~Holder()
+		{
+			IAggregateFunction * function = func;
+
+			if (!function->hasTrivialDestructor() && src.isNull())
+				for (auto val : data)
+					function->destroy(val);
+		}
+	};
+
+	Holder::Ptr holder;		/// NOTE Вместо этого можно было бы унаследовать IColumn от enable_shared_from_this.
+
+	/// Создать столбец на основе другого.
+	ColumnAggregateFunction(const ColumnAggregateFunction & src)
+		: arenas(src.arenas), holder(new Holder(src.holder))
+	{
+	}
 
 public:
-	/** Создать столбец, значениями которого владеет holder; использовать массив значений оттуда.
-	  */
-	ColumnAggregateFunction(AggregateStatesHolderPtr holder_)
-		: holders(1, holder_), data(&holder_->data)
+	ColumnAggregateFunction(const AggregateFunctionPtr & func_)
+		: holder(new Holder(func_))
 	{
 	}
 
-	/** Создать столбец, значениями которого владеет один или несколько holders;
-	  * Использовать свой пустой массив значений.
-	  * - для функции cloneEmpty.
-	  */
-	ColumnAggregateFunction(AggregateStatesHolders & holders_)
-		: holders(holders_), data(&own_data)
+	ColumnAggregateFunction(const AggregateFunctionPtr & func_, const Arenas & arenas_)
+		: arenas(arenas_), holder(new Holder(func_))
 	{
 	}
 
-	void set(const AggregateFunctionPtr & func_)
+    void set(const AggregateFunctionPtr & func_)
 	{
-		for (auto holder : holders)
-			holder->func = func_;
+		holder->func = func_;
 	}
 
-	AggregateFunctionPtr getAggregateFunction() { return holders[0]->func; }
-	AggregateFunctionPtr getAggregateFunction() const { return holders[0]->func; }
+	AggregateFunctionPtr getAggregateFunction() { return holder->func; }
+	AggregateFunctionPtr getAggregateFunction() const { return holder->func; }
 
 	/// Захватить владение ареной.
 	void addArena(ArenaPtr arena_)
 	{
-		holders[0]->addArena(arena_);
+		arenas.push_back(arena_);
 	}
 
 	ColumnPtr convertToValues()
 	{
-		IAggregateFunction * function = holders[0]->func;
+		IAggregateFunction * function = holder->func;
 		ColumnPtr res = function->getReturnType()->createColumn();
 		IColumn & column = *res;
-		res->reserve(data->size());
+		res->reserve(getData().size());
 
-		for (size_t i = 0; i < data->size(); ++i)
-			function->insertResultInto((*data)[i], column);
+		for (auto val : getData())
+			function->insertResultInto(val, column);
 
 		return res;
 	}
 
  	std::string getName() const { return "ColumnAggregateFunction"; }
 
-	size_t sizeOfField() const { return sizeof(own_data[0]); }
+	size_t sizeOfField() const { return sizeof(getData()[0]); }
 
 	size_t size() const
 	{
-		return data->size();
+		return getData().size();
 	}
 
  	ColumnPtr cloneEmpty() const
  	{
-		return new ColumnAggregateFunction(const_cast<AggregateStatesHolders &>(holders));
+		return new ColumnAggregateFunction(holder->func, Arenas(1, new Arena));
 	};
 
 	Field operator[](size_t n) const
@@ -133,7 +132,7 @@ public:
 		Field field = String();
 		{
 			WriteBufferFromString buffer(field.get<String &>());
-			holders[0]->func->serialize((*data)[n], buffer);
+			holder.get()->func->serialize(getData()[n], buffer);
 		}
 		return field;
 	}
@@ -143,57 +142,39 @@ public:
 		res = String();
 		{
 			WriteBufferFromString buffer(res.get<String &>());
-			holders[0]->func->serialize((*data)[n], buffer);
+			holder.get()->func->serialize(getData()[n], buffer);
 		}
 	}
 
 	StringRef getDataAt(size_t n) const
 	{
-		return StringRef((*data)[n], sizeof((*data)[n]));
+		return StringRef(reinterpret_cast<const char *>(&getData()[n]), sizeof(getData()[n]));
 	}
 
-	/// Объединить состояние в последней строке с заданным
-	void insertMerge(StringRef input)
+	void insertData(const char * pos, size_t length)
 	{
-		holders[0].get()->func.get()->merge(data->back(), input.data);
-	}
-
-	void insert(const Field & x)
-	{
-		/** Этот метод создаёт новое состояние агрегатной функции (IAggregateFunction::create).
-		  * Оно должно быть потом уничтожено с помощью метода IAggregateFunction::destroy.
-		  * Для этого, о нём должен знать holder.
-		  *
-		  * Поэтому, если массив значений ещё не лежит в holder-е,
-		  *  то создадим новый holder, и будем использовать массив значений в нём.
-		  *
-		  * NOTE: Как сделать менее запутанно?
-		  */
-
-		if (unlikely(data == &own_data))
-		{
-			/// Нельзя одновременно вставлять "свои" значения и использовать "чужие".
-			if (!own_data.empty())
-				throw Poco::Exception("Inserting new values to ColumnAggregateFunction with existing referenced values is not supported",
-					ErrorCodes::LOGICAL_ERROR);
-
-			holders.push_back(new AggregateStatesHolder(holders[0].get()->func));
-			holders.back().get()->addArena(new Arena);
-			data = &holders.back().get()->data;
-		}
-
-		IAggregateFunction * function = holders[0]->func;
-
-		data->push_back(holders.back().get()->arenas.back()->alloc(function->sizeOfData()));
-		function->create(data->back());
-		ReadBufferFromString read_buffer(x.get<const String &>());
-		function->deserializeMerge(data->back(), read_buffer);
+		getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 	}
 
 	void insertFrom(const IColumn & src, size_t n)
 	{
-		/// Должны совпадать holder-ы.
-		data->push_back(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+		getData().push_back(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+	}
+
+	/// Объединить состояние в последней строке с заданным
+	void insertMergeFrom(const IColumn & src, size_t n)
+	{
+		holder.get()->func.get()->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+	}
+
+	void insert(const Field & x)
+	{
+		IAggregateFunction * function = holder.get()->func;
+
+		getData().push_back(arenas.back().get()->alloc(function->sizeOfData()));
+		function->create(getData().back());
+		ReadBufferFromString read_buffer(x.get<const String &>());
+		function->deserializeMerge(getData().back(), read_buffer);
 	}
 
 	void insertDefault()
@@ -203,55 +184,50 @@ public:
 
 	size_t byteSize() const
 	{
-		return data->size() * sizeof((*data)[0]);
-	}
-
-	void insertData(const char * pos, size_t length)
-	{
-		data->push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
+		return getData().size() * sizeof(getData()[0]);
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const
 	{
-		if (start + length > data->size())
+		if (start + length > getData().size())
 			throw Exception("Parameters start = "
 				+ toString(start) + ", length = "
 				+ toString(length) + " are out of bound in ColumnAggregateFunction::cut() method"
-				" (data.size() = " + toString(data->size()) + ").",
+				" (data.size() = " + toString(getData().size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		ColumnPtr res = cloneEmpty();
-		ColumnAggregateFunction * res_ = static_cast<ColumnAggregateFunction *>(res.get());
+		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
+		ColumnPtr res = res_;
 
-		res_->data->resize(length);
+		res_->getData().resize(length);
 		for (size_t i = 0; i < length; ++i)
-			(*res_->data)[i] = (*data)[start + i];
+			res_->getData()[i] = getData()[start + i];
 		return res;
 	}
 
 	ColumnPtr filter(const Filter & filter) const
 	{
-		size_t size = data->size();
+		size_t size = getData().size();
 		if (size != filter.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnPtr res = cloneEmpty();
-		ColumnAggregateFunction * res_ = static_cast<ColumnAggregateFunction *>(res.get());
+		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
+		ColumnPtr res = res_;
 
 		if (size == 0)
 			return res;
 
-		res_->data->reserve(size);
+		res_->getData().reserve(size);
 		for (size_t i = 0; i < size; ++i)
 			if (filter[i])
-				res_->data->push_back((*data)[i]);
+				res_->getData().push_back(getData()[i]);
 
 		return res;
 	}
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const
 	{
-		size_t size = data->size();
+		size_t size = getData().size();
 
 		if (limit == 0)
 			limit = size;
@@ -261,12 +237,12 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		ColumnPtr res = cloneEmpty();
-		ColumnAggregateFunction * res_ = static_cast<ColumnAggregateFunction *>(res.get());
+		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
+		ColumnPtr res = res_;
 
-		res_->data->resize(limit);
+		res_->getData().resize(limit);
 		for (size_t i = 0; i < limit; ++i)
-			(*res_->data)[i] = (*data)[perm[i]];
+			res_->getData()[i] = getData()[perm[i]];
 
 		return res;
 	}
@@ -288,7 +264,7 @@ public:
 
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const
 	{
-		size_t s = data->size();
+		size_t s = getData().size();
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
@@ -297,12 +273,12 @@ public:
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()
 	{
-		return *data;
+		return holder.get()->data;
 	}
 
 	const Container_t & getData() const
 	{
-		return *data;
+		return holder.get()->data;
 	}
 };
 
