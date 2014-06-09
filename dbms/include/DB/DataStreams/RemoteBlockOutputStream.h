@@ -85,7 +85,7 @@ private:
 	String query;
 	Block sample_block;
 
-	bool sent_query;
+	bool sent_query = false;
 };
 
 }
