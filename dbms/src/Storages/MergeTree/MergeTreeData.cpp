@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
+#include <algorithm>
 
 
 
@@ -352,6 +353,23 @@ void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size
 				if (file.exists())
 					file.remove();
 			}
+		}
+
+		/// Удаляем лишние столбцы из checksums.txt
+		for (auto & part : all_data_parts)
+		{
+			if (!part)
+				continue;
+
+			for (auto it = part->checksums.files.lower_bound(column_name);
+				(it != part->checksums.files.end()) && (it->first.substr(0, column_name.size()) == column_name); ++it)
+			{
+				if (re.match(it->first))
+					const_cast<DataPart::Checksums::FileChecksums &>(part->checksums.files).erase(it);
+			}
+			/// Записываем файл с чексуммами.
+			WriteBufferFromFile out(full_path + part->name + "/" + "checksums.txt", 1024);
+			part->checksums.writeText(out);
 		}
 	}
 }
