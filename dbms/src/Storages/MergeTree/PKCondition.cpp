@@ -147,7 +147,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		}
 		else
 			return false;
-		
+
 		std::string func_name = func->name;
 		
 		/// Заменим <const> <sign> <column> на <column> <-sign> <const>
@@ -166,24 +166,24 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		out.function = RPNElement::FUNCTION_IN_RANGE;
 		out.key_column = column;
 		
-		if (func->name == "notEquals")
+		if (func_name == "notEquals")
 		{
 			out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
 			out.range = Range(value);
 		}
-		else if (func->name == "equals")
+		else if (func_name == "equals")
 			out.range = Range(value);
-		else if (func->name == "less")
+		else if (func_name == "less")
 			out.range = Range::createRightBounded(value, false);
-		else if (func->name == "greater")
+		else if (func_name == "greater")
 			out.range = Range::createLeftBounded(value, false);
-		else if (func->name == "lessOrEquals")
+		else if (func_name == "lessOrEquals")
 			out.range = Range::createRightBounded(value, true);
-		else if (func->name == "greaterOrEquals")
+		else if (func_name == "greaterOrEquals")
 			out.range = Range::createLeftBounded(value, true);
-		else if (func->name == "in" || func->name == "notIn")
+		else if (func_name == "in" || func_name == "notIn")
 		{
-			out.function = func->name == "in" ? RPNElement::FUNCTION_IN_SET : RPNElement::FUNCTION_NOT_IN_SET;
+			out.function = func_name == "in" ? RPNElement::FUNCTION_IN_SET : RPNElement::FUNCTION_NOT_IN_SET;
 			out.in_function = node;
 		}
 		else
