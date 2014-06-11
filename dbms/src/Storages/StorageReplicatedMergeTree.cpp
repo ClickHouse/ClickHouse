@@ -325,7 +325,7 @@ void StorageReplicatedMergeTree::activateReplica()
 	}
 	catch (zkutil::KeeperException & e)
 	{
-		if (e.code == zkutil::ReturnCode::NodeExists)
+		if (e.code == ZNODEEXISTS)
 			throw Exception("Replica " + replica_path + " appears to be already active. If you're sure it's not, "
 				"try again in a minute or remove znode " + replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 
@@ -508,9 +508,9 @@ void StorageReplicatedMergeTree::clearOldParts()
 		zkutil::Ops ops;
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/checksums", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
-		zkutil::ReturnCode::type code = zookeeper->tryMulti(ops);
-		if (code != zkutil::ReturnCode::Ok)
-			LOG_WARNING(log, "Couldn't remove part " << name << " from ZooKeeper: " << zkutil::ReturnCode::toString(code));
+		int32_t code = zookeeper->tryMulti(ops);
+		if (code != ZOK)
+			LOG_WARNING(log, "Couldn't remove part " << name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
 	}
 
 	if (!parts.empty())
@@ -552,7 +552,7 @@ void StorageReplicatedMergeTree::clearOldBlocks()
 	if (!zookeeper->exists(zookeeper_path + "/blocks", &stat))
 		throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
-	int children_count = stat.getnumChildren();
+	int children_count = stat.numChildren;
 
 	/// Чтобы делать "асимптотически" меньше запросов exists, будем ждать, пока накопятся в 1.1 раза больше блоков, чем нужно.
 	if (static_cast<double>(children_count) < data.settings.replicated_deduplication_window * 1.1)
@@ -569,7 +569,7 @@ void StorageReplicatedMergeTree::clearOldBlocks()
 	{
 		zkutil::Stat stat;
 		zookeeper->exists(zookeeper_path + "/blocks/" + block, &stat);
-		timed_blocks.push_back(std::make_pair(stat.getczxid(), block));
+		timed_blocks.push_back(std::make_pair(stat.czxid, block));
 	}
 
 	std::sort(timed_blocks.begin(), timed_blocks.end(), std::greater<std::pair<Int64, String>>());
@@ -629,7 +629,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 			zkutil::Stat stat;
 			if (!zookeeper.tryGet(zookeeper_path + "/replicas/" + replica + "/log/log-" + index_str, entry_str, &stat))
 				return false;
-			timestamp = stat.getczxid();
+			timestamp = stat.czxid;
 			return true;
 		}
 	};
@@ -684,7 +684,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 			replica_path + "/log_pointers/" + iterator.replica, toString(iterator.index + 1), -1));
 		auto results = zookeeper->multi(ops);
 
-		String path_created = dynamic_cast<zkutil::OpResult::Create &>((*results)[0]).getPathCreated();
+		String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
 		entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 		entry.addResultToVirtualParts(*this);
 		queue.push_back(entry);
@@ -933,9 +933,9 @@ void StorageReplicatedMergeTree::queueThread()
 			executeLogEntry(entry);
 
 			auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
-			if (code != zkutil::ReturnCode::Ok)
+			if (code != ZOK)
 				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
-					<< zkutil::ReturnCode::toString(code) + ". There must be a bug somewhere. Ignoring it.");
+					<< zkutil::ZooKeeper::error2string(code) + ". There must be a bug somewhere. Ignoring it.");
 
 			success = true;
 		}

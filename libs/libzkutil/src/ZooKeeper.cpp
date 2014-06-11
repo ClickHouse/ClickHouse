@@ -1,29 +1,44 @@
 #include <zkutil/ZooKeeper.h>
 #include <boost/make_shared.hpp>
 #include <Yandex/logger_useful.h>
-
-
-#define CHECKED(x, path) { ReturnCode::type code = x; if (code != ReturnCode::Ok) throw KeeperException(code, path); }
-#define CHECKED_WITHOUT_PATH(x) { ReturnCode::type code = x; if (code != ReturnCode::Ok) throw KeeperException(code); }
+#include <boost/bind.hpp>
 
 namespace zkutil
 {
 
+const int CreateMode::Persistent = 0;
+const int CreateMode::Ephemeral = ZOO_EPHEMERAL;
+const int CreateMode::EphemeralSequential = ZOO_EPHEMERAL | ZOO_SEQUENCE;
+const int CreateMode::PersistentSequential = ZOO_SEQUENCE;
+
+void check(int32_t code, const std::string path = "")
+{
+	if (code != ZOK)
+	{
+		if (path.size())
+			throw KeeperException(code, path);
+		else
+			throw KeeperException(code);
+	}
+}
+
 typedef std::promise<WatchEventInfo> WatchPromise;
 
-struct WatchWithPromise : public zk::Watch
+struct WatchWithPromise
 {
 	WatchPromise promise;
 	bool notified;
+	/// существует все время существования WatchWithPromise
+	ZooKeeper & zk;
 
-	WatchWithPromise() : notified(false) {}
+	WatchWithPromise(ZooKeeper & zk_) : notified(false), zk(zk_) {}
 
-	void process(WatchEvent::type event, SessionState::type state, const std::string & path)
+	void process(zhandle_t * zh, int32_t event, int32_t state, const char * path)
 	{
 		if (notified)
 		{
-			LOG_WARNING(&Logger::get("WatchWithPromise"), "Ignoring event " << WatchEvent::toString(event) << " with state "
-				<< SessionState::toString(state) << (path.empty() ? "" : " for path " + path));
+			LOG_WARNING(&Logger::get("WatchWithPromise"), "Ignoring event " << event << " with state "
+				<< state << (path ? std::string(" for path ") + path : ""));
 			return;
 		}
 		promise.set_value(WatchEventInfo(event, state, path));
@@ -31,29 +46,27 @@ struct WatchWithPromise : public zk::Watch
 	}
 };
 
-typedef boost::shared_ptr<zk::Watch> WatchPtr;
-typedef boost::shared_ptr<WatchWithPromise> WatchWithPromisePtr;
-
-static WatchPtr watchForFuture(WatchFuture * future)
+WatchWithPromisePtr ZooKeeper::watchForFuture(WatchFuture * future)
 {
 	if (!future)
 		return nullptr;
-	WatchWithPromisePtr res = boost::make_shared<WatchWithPromise>();
+	WatchWithPromisePtr res = new WatchWithPromise(*this);
+	watch_store.insert(res);
 	*future = res->promise.get_future();
 	return res;
 }
 
-struct StateWatch : public zk::Watch
+
+void ZooKeeper::processPromise(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx)
 {
-	ZooKeeper * owner;
-
-	StateWatch(ZooKeeper * owner_) : owner(owner_) {}
-
-	void process(WatchEvent::type event, SessionState::type state, const std::string & path)
+	if (watcherCtx)
 	{
-		owner->stateChanged(event, state, path);
+		WatchWithPromise * watch = reinterpret_cast<WatchWithPromise *>(watcherCtx);
+		watch->process(zh, type, state, path);
+		delete watch;
+		watch->zk.watch_store.erase(watch);
 	}
-};
+}
 
 void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, WatchFunction * watch_)
 {
@@ -61,17 +74,20 @@ void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, Watc
 	sessionTimeoutMs = sessionTimeoutMs_;
 	state_watch = watch_;
 
-	CHECKED_WITHOUT_PATH(impl.init(hosts, sessionTimeoutMs, boost::make_shared<StateWatch>(this)));
+	if (watch_)
+		impl = zookeeper_init(hosts.c_str(), *watch_, sessionTimeoutMs, nullptr, nullptr, 0);
+	else
+		impl = zookeeper_init(hosts.c_str(), nullptr, sessionTimeoutMs, nullptr, nullptr, 0);
 
-	ACL perm;
-	perm.getid().getscheme() = "world";
-	perm.getid().getid() = "anyone";
-	perm.setperms(zk::Permission::All);
-	default_acl.push_back(perm);
+	if (!impl)
+		throw KeeperException("Fail to initialize zookeeper. Hosts are " + hosts);
+
+	default_acl = &ZOO_OPEN_ACL_UNSAFE;
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
 {
+	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	init(hosts, sessionTimeoutMs, watch_);
 }
 
@@ -111,207 +127,264 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 	init(args.hosts, args.session_timeout_ms, watch);
 }
 
-void ZooKeeper::stateChanged(WatchEvent::type event, SessionState::type state, const std::string & path)
+int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
+					Stat * stat_,
+					WatchFuture * watch)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	String_vector strings;
+	int code;
+	Stat stat;
+	if (watch)
+	{
+		code = zoo_wget_children2(impl, path.c_str(), processPromise, reinterpret_cast<void *>(watchForFuture(watch)), &strings, &stat);
+	}
+	else
+	{
+		code = zoo_wget_children2(impl, path.c_str(), nullptr, nullptr, &strings, &stat);
+	}
 
-	session_state = state;
-	if (state_watch)
-		(*state_watch)(event, state, path);
+	if (code == ZOK)
+	{
+		if (stat_)
+			*stat_ = stat;
+		res.resize(strings.count);
+		for (int i = 0; i < strings.count; ++i)
+			res[i] = std::string(strings.data[i]);
+		deallocate_String_vector(&strings);
+	}
+
+	return code;
 }
-
-void ZooKeeper::checkNotExpired()
-{
-	if (expired())
-		throw KeeperException(ReturnCode::SessionExpired);
-}
-
-bool ZooKeeper::expired()
-{
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
-	return session_state == SessionState::Expired;
-}
-
-void ZooKeeper::setDefaultACL(ACLs & acl)
-{
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
-	default_acl = acl;
-}
-
-ACLs ZooKeeper::getDefaultACL()
-{
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
-	return default_acl;
-}
-
 Strings ZooKeeper::getChildren(
 	const std::string & path, Stat * stat, WatchFuture * watch)
 {
-	checkNotExpired();
-	Stat s;
 	Strings res;
-	CHECKED(impl.getChildren(path, watchForFuture(watch), res, s), path);
-	if (stat)
-		*stat = s;
+	check(tryGetChildren(path, res, stat, watch), path);
 	return res;
 }
 
-bool ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
-								Stat * stat, WatchFuture * watch)
+int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
+								Stat * stat_, WatchFuture * watch)
 {
-	checkNotExpired();
-	Stat s;
-	ReturnCode::type code = impl.getChildren(path, watchForFuture(watch), res, s);
-	if (!(	code == ReturnCode::Ok ||
-			code == ReturnCode::NoNode))
+	int32_t code = retry(boost::bind(&ZooKeeper::getChildrenImpl, this, boost::ref(path), boost::ref(res), stat_, watch));
+
+	if (!(	code == ZOK ||
+			code == ZNONODE))
 		throw KeeperException(code, path);
-	if (code == ReturnCode::NoNode)
-		return false;
-	if (stat)
-		*stat = s;
-	return true;
-}
 
-std::string ZooKeeper::create(const std::string & path, const std::string & data, CreateMode::type mode)
-{
-	checkNotExpired();
-
-	std::string res;
-	CHECKED(impl.create(path, data, getDefaultACL(), mode, res), path);
-	return res;
-}
-
-ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::string & data, CreateMode::type mode, std::string & pathCreated)
-{
-	checkNotExpired();
-
-	ReturnCode::type code = impl.create(path, data, getDefaultACL(), mode, pathCreated);
-	if (!(	code == ReturnCode::Ok ||
-			code == ReturnCode::NoNode ||
-			code == ReturnCode::NodeExists ||
-			code == ReturnCode::NoChildrenForEphemerals))
-		throw KeeperException(code, path);
 	return code;
 }
 
-ReturnCode::type ZooKeeper::tryCreate(const std::string & path, const std::string & data, CreateMode::type mode)
+int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated)
 {
-	std::string path_created;
-	return tryCreate(path, data, mode, path_created);
+	int code;
+	/// имя ноды может быть больше переданного пути, если создается sequential нода.
+	size_t name_buffer_size = path.size() + SEQUENTIAL_SUFFIX_SIZE;
+	char * name_buffer = new char[name_buffer_size];
+
+	code = zoo_create(impl, path.c_str(), data.c_str(), data.size(), default_acl, mode,  name_buffer, name_buffer_size);
+
+	if (code == ZOK)
+	{
+		pathCreated = std::string(name_buffer);
+	}
+
+	delete[] name_buffer;
+
+	return code;
+}
+
+std::string ZooKeeper::create(const std::string & path, const std::string & data, int32_t type)
+{
+	std::string  pathCreated;
+	check(tryCreate(path, data, type, pathCreated), path);
+	return pathCreated;
+}
+
+int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated)
+{
+	int code = retry(boost::bind(&ZooKeeper::createImpl, this, boost::ref(path), boost::ref(data), mode, boost::ref(pathCreated)));
+
+	if (!(	code == ZOK ||
+			code == ZNONODE ||
+			code == ZNODEEXISTS ||
+			code == ZNOCHILDRENFOREPHEMERALS))
+		throw KeeperException(code, path);
+
+	return code;
+}
+
+int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode)
+{
+	std::string pathCreated;
+	return tryCreate(path, data, mode, pathCreated);
+}
+
+int32_t ZooKeeper::removeImpl(const std::string & path, int32_t version)
+{
+	int32_t code = zoo_delete(impl, path.c_str(), version);
+	return code;
 }
 
 void ZooKeeper::remove(const std::string & path, int32_t version)
 {
-	checkNotExpired();
-	CHECKED(impl.remove(path, version), path);
+	check(tryRemove(path, version), path);
 }
 
-ReturnCode::type ZooKeeper::tryRemove(const std::string & path, int32_t version)
+int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 {
-	checkNotExpired();
-	ReturnCode::type code = impl.remove(path, version);
-	if (!(	code == ReturnCode::Ok ||
-			code == ReturnCode::NoNode ||
-			code == ReturnCode::BadVersion ||
-			code == ReturnCode::NotEmpty))
+	int32_t code = retry(boost::bind(&ZooKeeper::removeImpl, this, boost::ref(path), version));
+	if (!(	code == ZOK ||
+			code == ZNONODE ||
+			code == ZBADVERSION ||
+			code == ZNOTEMPTY))
 		throw KeeperException(code, path);
 	return code;
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat, WatchFuture * watch)
+int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchFuture * watch)
 {
-	checkNotExpired();
-	Stat s;
-	ReturnCode::type code = impl.exists(path, watchForFuture(watch), s);
-	if (!(	code == ReturnCode::Ok ||
-			code == ReturnCode::NoNode))
+	int32_t code;
+	Stat stat;
+	if (watch)
+		code = zoo_wexists(impl, path.c_str(), processPromise, reinterpret_cast<void *>(watchForFuture(watch)), &stat);
+	else
+		code = zoo_wexists(impl, path.c_str(), nullptr, nullptr, &stat);
+
+	if (code == ZOK)
+	{
+		if (stat_)
+			*stat_ = stat;
+	}
+
+	return code;
+}
+
+bool ZooKeeper::exists(const std::string & path, Stat * stat_, WatchFuture * watch)
+{
+	int32_t code = existsImpl(path, stat_, watch);
+
+	if (!(	code == ZOK ||
+			code == ZNONODE))
 		throw KeeperException(code, path);
-	if (code == ReturnCode::NoNode)
+	if (code == ZNONODE)
 		return false;
-	if (stat)
-		*stat = s;
 	return true;
+}
+
+bool ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchFuture * watch)
+{
+	char buffer[MAX_NODE_SIZE];
+	int buffer_len = MAX_NODE_SIZE;
+	int32_t code;
+	Stat stat;
+	if (watch)
+		code = zoo_wget(impl, path.c_str(), processPromise, reinterpret_cast<void *>(watchForFuture(watch)), buffer, &buffer_len, &stat);
+	else
+		code = zoo_wget(impl, path.c_str(), nullptr, nullptr, buffer, &buffer_len, &stat);
+
+	if (code == ZOK)
+	{
+		if (stat_)
+			*stat_ = stat;
+
+		res = std::string(buffer, buffer_len);
+	}
+	return code;
 }
 
 std::string ZooKeeper::get(const std::string & path, Stat * stat, WatchFuture * watch)
 {
-	checkNotExpired();
 	std::string res;
-	Stat s;
-	CHECKED(impl.get(path, watchForFuture(watch), res, s), path);
-	if (stat)
-		*stat = s;
-	return res;
+	if (tryGet(path, res, stat, watch))
+		return res;
+	else
+		throw KeeperException("Fail to get data for node " + path);
 }
 
-bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat, WatchFuture * watch)
+bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, WatchFuture * watch)
 {
-	checkNotExpired();
-	Stat s;
-	ReturnCode::type code = impl.get(path, watchForFuture(watch), res, s);
-	if (!(	code == ReturnCode::Ok ||
-			code == ReturnCode::NoNode))
+	int32_t code = retry(boost::bind(&ZooKeeper::getImpl, this, boost::ref(path), boost::ref(res), stat_, watch));
+
+	if (!(	code == ZOK ||
+			code == ZNONODE))
 		throw KeeperException(code, path);
-	if (code == ReturnCode::NoNode)
+
+	if (code == ZOK)
+		return true;
+	else
 		return false;
-	if (stat)
-		*stat = s;
-	return true;
+}
+
+int32_t ZooKeeper::setImpl(const std::string & path, const std::string & data,
+						int32_t version, Stat * stat_)
+{
+	Stat stat;
+	int32_t code = zoo_set2(impl, path.c_str(), data.c_str(), data.length(), version, &stat);
+	if (code == ZOK)
+	{
+		if (stat_)
+			*stat_ = stat;
+	}
+	return code;
 }
 
 void ZooKeeper::set(const std::string & path, const std::string & data, int32_t version, Stat * stat)
 {
-	checkNotExpired();
-	Stat s;
-	CHECKED(impl.set(path, data, version, s), path);
-	if (stat)
-		*stat = s;
+	check(trySet(path, data, version, stat), path);
 }
 
-ReturnCode::type ZooKeeper::trySet(const std::string & path, const std::string & data,
-									int32_t version, Stat * stat)
+int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
+									int32_t version, Stat * stat_)
 {
-	checkNotExpired();
-	Stat s;
-	ReturnCode::type code = impl.set(path, data, version, s);
-	if (!(	code == ReturnCode::Ok ||
-			code == ReturnCode::NoNode ||
-			code == ReturnCode::BadVersion))
+	int32_t code = retry(boost::bind(&ZooKeeper::setImpl, this, boost::ref(path), boost::ref(data), version, stat_));
+
+	if (!(	code == ZOK ||
+			code == ZNONODE ||
+			code == ZBADVERSION))
 		throw KeeperException(code, path);
-	if (stat)
-		*stat = s;
+	return code;
+}
+
+int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
+{
+	size_t count = ops_.size();
+	OpResultsPtr out_results(new OpResults(count));
+
+	/// копируем структуру содержащую указатели дефолтным конструктором копирования
+	/// это безопасно, т.к. у нее нет деструктора
+	std::vector<zoo_op_t> ops;
+	for (const Op & op : ops_)
+		ops.push_back(*(op.data));
+
+	int32_t code = zoo_multi(impl, ops.size(), ops.data(), out_results->data());
+
+	if (code == ZOK)
+	{
+		if (out_results_)
+			*out_results_ = out_results;
+	}
+
 	return code;
 }
 
 OpResultsPtr ZooKeeper::multi(const Ops & ops)
 {
-	checkNotExpired();
-	OpResultsPtr res = std::make_shared<OpResults>();
-	CHECKED_WITHOUT_PATH(impl.multi(ops, *res));
-	for (size_t i = 0; i < res->size(); ++i)
-	{
-		if ((*res)[i].getReturnCode() != ReturnCode::Ok)
-			throw KeeperException((*res)[i].getReturnCode());
-	}
-	return res;
+	OpResultsPtr results;
+	check(tryMulti(ops, &results));
+	return results;
 }
 
-ReturnCode::type ZooKeeper::tryMulti(const Ops & ops, OpResultsPtr * out_results)
+int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 {
-	checkNotExpired();
-	OpResultsPtr results = std::make_shared<OpResults>();
-	ReturnCode::type code = impl.multi(ops, *results);
-	if (out_results)
-		*out_results = results;
-	if (code != ReturnCode::Ok &&
-		code != ReturnCode::NoNode &&
-		code != ReturnCode::NodeExists &&
-		code != ReturnCode::NoChildrenForEphemerals &&
-		code != ReturnCode::BadVersion &&
-		code != ReturnCode::NotEmpty)
+	int32_t code = retry(boost::bind(&ZooKeeper::multiImpl, this, boost::ref(ops_), out_results_));
+
+	if (code != ZOK &&
+		code != ZNONODE &&
+		code != ZNODEEXISTS &&
+		code != ZNOCHILDRENFOREPHEMERALS &&
+		code != ZBADVERSION &&
+		code != ZNOTEMPTY)
 			throw KeeperException(code);
 	return code;
 }
@@ -320,10 +393,12 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
 	Strings children = getChildren(path);
 	zkutil::Ops ops;
+	Strings strings;
 	for (const std::string & child : children)
 	{
 		removeChildrenRecursive(path + "/" + child);
-		ops.push_back(new Op::Remove(path + "/" + child, -1));
+		strings.push_back(path + "/" + child);
+		ops.push_back(new Op::Remove(strings.back(), -1));
 	}
 	multi(ops);
 }
@@ -336,7 +411,12 @@ void ZooKeeper::removeRecursive(const std::string & path)
 
 void ZooKeeper::close()
 {
-	CHECKED_WITHOUT_PATH(impl.close());
+	check(zookeeper_close(impl));
+
+	/// удаляем WatchWithPromise которые уже никогда не будут обработаны
+	for (WatchWithPromise * watch : watch_store)
+		delete watch;
+	watch_store.clear();
 }
 
 ZooKeeper::~ZooKeeper()
@@ -356,4 +436,36 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
 	return new ZooKeeper(hosts, sessionTimeoutMs, state_watch);
 }
 
+Op::Create::Create(const std::string & path_, const std::string & value_, AclPtr acl, int32_t flags)
+: path(path_), value(value_), created_path(path.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
+{
+	zoo_create_op_init(data.get(), path.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());
+}
+
+AclPtr ZooKeeper::getDefaultACL()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	return default_acl;
+}
+
+void ZooKeeper::setDefaultACL(AclPtr new_acl)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	default_acl = new_acl;
+}
+
+std::string ZooKeeper::error2string(int32_t code)
+{
+	return zerror(code);
+}
+
+int ZooKeeper::state()
+{
+	return zoo_state(impl);
+}
+
+bool ZooKeeper::expired()
+{
+	return state() == ZOO_EXPIRED_SESSION_STATE;
+}
 }

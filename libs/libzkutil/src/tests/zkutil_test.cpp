@@ -13,24 +13,24 @@
 void printStat(const zkutil::Stat & s)
 {
 	std::cout << "Stat:\n";
-	std::cout << "  czxid: " << s.getczxid() << '\n';
-	std::cout << "  mzxid: " << s.getmzxid() << '\n';
-	std::cout << "  ctime: " << s.getctime() << '\n';
-	std::cout << "  mtime: " << s.getmtime() << '\n';
-	std::cout << "  version: " << s.getversion() << '\n';
-	std::cout << "  cversion: " << s.getcversion() << '\n';
-	std::cout << "  aversion: " << s.getaversion() << '\n';
-	std::cout << "  ephemeralOwner: " << s.getephemeralOwner() << '\n';
-	std::cout << "  dataLength: " << s.getdataLength() << '\n';
-	std::cout << "  numChildren: " << s.getnumChildren() << '\n';
-	std::cout << "  pzxid: " << s.getpzxid() << std::endl;
+	std::cout << "  czxid: " << s.czxid << '\n';
+	std::cout << "  mzxid: " << s.mzxid << '\n';
+	std::cout << "  ctime: " << s.ctime << '\n';
+	std::cout << "  mtime: " << s.mtime << '\n';
+	std::cout << "  version: " << s.version << '\n';
+	std::cout << "  cversion: " << s.cversion << '\n';
+	std::cout << "  aversion: " << s.aversion << '\n';
+	std::cout << "  ephemeralOwner: " << s.ephemeralOwner << '\n';
+	std::cout << "  dataLength: " << s.dataLength << '\n';
+	std::cout << "  numChildren: " << s.numChildren << '\n';
+	std::cout << "  pzxid: " << s.pzxid << std::endl;
 }
 
 void waitForWatch(zkutil::WatchFuture & future)
 {
 	std::cout << "waiting for watch" << std::endl;
 	zkutil::WatchEventInfo res = future.get();
-	std::cout << "event: " << zkutil::WatchEvent::toString(res.event) << std::endl;
+	std::cout << "event: " << res.event << std::endl;
 }
 
 
@@ -118,7 +118,7 @@ int main(int argc, char ** argv)
 					DB::skipWhitespaceIfAny(in);
 					readUntilSpace(mode, in);
 
-					zkutil::CreateMode::type m;
+					int32_t m;
 					if (mode == "p")
 						m = zkutil::CreateMode::Persistent;
 					else if (mode == "ps")
