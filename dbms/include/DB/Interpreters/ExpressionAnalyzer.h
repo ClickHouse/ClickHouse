@@ -140,11 +140,11 @@ private:
 	typedef std::map<ASTPtr, ASTPtr> MapOfASTs;
 	
 	/// Какой столбец нужно по-ARRAY-JOIN-ить, чтобы получить указанный.
-	/// Например, для SELECT s.v ... ARRAY JOIN a AS s сюда попадет "s.v"->"a.v".
+	/// Например, для SELECT s.v ... ARRAY JOIN a AS s сюда попадет "s.v" -> "a.v".
 	NameToNameMap array_join_result_to_source;
 
-	/// Для секции ARRAY JOIN отображение из алиаса в полное столбца
-	/// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b"->"array(1,2)".
+	/// Для секции ARRAY JOIN отображение из алиаса в полное имя столбца.
+	/// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b" -> "array(1,2)".
 	NameToNameMap array_join_alias_to_name;
 
 	/// Вычислять ли результат глобальных селектов при анализировании запроса.
