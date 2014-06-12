@@ -141,7 +141,7 @@ void ExpressionAnalyzer::init()
 }
 
 
-NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, const NamesAndTypesList & cols)
+NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypesList & cols)
 {
 	return std::find_if(cols.begin(), cols.end(),
 		[&](const NamesAndTypesList::value_type & val) { return val.first == name; });

@@ -155,7 +155,7 @@ private:
 
 	void init();
 
-	static NamesAndTypesList::iterator findColumn(const String & name, const NamesAndTypesList & cols);
+	static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
 	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
 	void removeUnusedColumns();
