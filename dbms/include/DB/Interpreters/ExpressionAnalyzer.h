@@ -103,14 +103,13 @@ public:
 
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
-	std::map<String, BlockInputStreamPtr> external_data;
+	std::unordered_map<String, BlockInputStreamPtr> external_data;
 	size_t external_table_id = 1;
 
 	/// Создаем какие сможем Set из секции In для использования индекса по ним
 	void makeSetsForIndex();
-private:
-	typedef std::set<String> NamesSet;
 
+private:
 	ASTPtr ast;
 	ASTSelectQuery * select_query;
 	const Context & context;
@@ -131,7 +130,7 @@ private:
 	/// Таблица, из которой делается запрос.
 	const StoragePtr storage;
 
-	bool has_aggregation;
+	bool has_aggregation = false;
 	NamesAndTypesList aggregation_keys;
 	AggregateDescriptions aggregate_descriptions;
 
@@ -151,12 +150,12 @@ private:
 	/// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b" -> "array(1,2)".
 	NameToNameMap array_join_alias_to_name;
 
-	/// Вычислять ли результат глобальных селектов при анализировании запроса.
+	/// Нужно ли подготавливать к выполнению глобальные подзапросы при анализировании запроса.
 	bool do_global;
 
 	void init();
 
-	NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
+	static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
 	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
 	void removeUnusedColumns();
@@ -171,13 +170,13 @@ private:
 	void normalizeTree();
 	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias);
 
-	/// Обходит запрос и сохраняет найденные глобальные функции (например GLOBAL IN)
-	void findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes);
+	/// Находит в запросе использования внешних таблиц. Заполняет external_tables.
 	void findExternalTables(ASTPtr & ast);
 
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
-	/// Запустить подзапрос в секции GLOBAL IN, создать временную таблицу типа memory и запомнить эту пару в переменной external_tables
+
+	/// Запустить подзапрос в секции GLOBAL IN, создать временную таблицу типа Memory и запомнить эту пару в переменной external_tables.
 	void addExternalStorage(ASTFunction * node);
 
 	void getArrayJoinedColumns();
@@ -195,7 +194,7 @@ private:
 	/// Установить has_aggregation = true, если есть хоть одна агрегатная функция.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
 
-	void getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names);
+	void getRequiredColumnsImpl(ASTPtr ast, NameSet & required_columns, NameSet & ignored_names);
 
 	/// Получить таблицу, из которой идет запрос
 	StoragePtr getTable();
@@ -206,8 +205,11 @@ private:
 	void assertAggregation();
 	void assertArrayJoin();
 
+	/** Создать Set из явного перечисления значений в запросе.
+	  * Если create_ordered_set = true - создать структуру данных, подходящую для использования индекса.
+	  */
 	void makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set);
-	void makeSetsForIndexRecursively(ASTPtr & node, const Block & sample_block);
+	void makeSetsForIndexImpl(ASTPtr & node, const Block & sample_block);
 };
 
 }

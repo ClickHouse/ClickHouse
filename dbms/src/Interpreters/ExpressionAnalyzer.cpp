@@ -79,7 +79,6 @@ static void setAlias(ASTPtr & ast, const std::string & alias)
 void ExpressionAnalyzer::init()
 {
 	select_query = dynamic_cast<ASTSelectQuery *>(&*ast);
-	has_aggregation = false;
 
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
@@ -142,13 +141,10 @@ void ExpressionAnalyzer::init()
 }
 
 
-NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypesList & cols)
+NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, const NamesAndTypesList & cols)
 {
-	NamesAndTypesList::iterator it;
-	for (it = cols.begin(); it != cols.end(); ++it)
-		if (it->first == name)
-			break;
-	return it;
+	return std::find_if(cols.begin(), cols.end(),
+		[&](const NamesAndTypesList::value_type & val) { return val.first == name; });
 }
 
 
@@ -199,6 +195,7 @@ StoragePtr ExpressionAnalyzer::getTable()
 			return context.tryGetTable(database, table);
 		}
 	}
+
 	return StoragePtr();
 }
 
@@ -235,8 +232,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
 	{
 		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
-		 * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
-		 */
+		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
+		  */
 		String function_string = node->getColumnName();
 		NamesAndTypesList::const_iterator it = findColumn(function_string);
 		if (columns.end() != it)
@@ -286,8 +283,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			if (ASTAsterisk * asterisk = dynamic_cast<ASTAsterisk *>(&*asts[i]))
 			{
 				ASTs all_columns;
-				for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-					all_columns.push_back(new ASTIdentifier(asterisk->range, it->first));
+				for (const auto & column_name_type : columns)
+					all_columns.push_back(new ASTIdentifier(asterisk->range, column_name_type.first));
+
 				asts.erase(asts.begin() + i);
 				asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
 			}
@@ -354,16 +352,17 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	finished_asts[initial_ast] = ast;
 }
 
+
 void ExpressionAnalyzer::makeSetsForIndex()
 {
 	if (storage && ast && storage->supportsIndexForIn())
-		makeSetsForIndexRecursively(ast, storage->getSampleBlock());
+		makeSetsForIndexImpl(ast, storage->getSampleBlock());
 }
 
-void ExpressionAnalyzer::makeSetsForIndexRecursively(ASTPtr & node, const Block & sample_block)
+void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sample_block)
 {
 	for (auto & child : node->children)
-		makeSetsForIndexRecursively(child, sample_block);
+		makeSetsForIndexImpl(child, sample_block);
 
 	ASTFunction * func = dynamic_cast<ASTFunction *>(node.get());
 	if (func && func->kind == ASTFunction::FUNCTION && (func->name == "in" || func->name == "notIn"))
@@ -383,22 +382,6 @@ void ExpressionAnalyzer::makeSetsForIndexRecursively(ASTPtr & node, const Block 
 				if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
 					throw;
 			}
-		}
-	}
-}
-
-void ExpressionAnalyzer::findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes)
-{
-	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			findGlobalFunctions(*it, global_nodes);
-
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
-	{
-		if (node->name == "globalIn" || node->name == "globalNotIn")
-		{
-			global_nodes.push_back(ast);
 		}
 	}
 }
@@ -434,6 +417,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 
 void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 {
+	/// Сгенерируем имя для внешней таблицы.
 	String external_table_name = "_data";
 	while (context.tryGetExternalTable(external_table_name + toString(external_table_id)))
 		++external_table_id;
@@ -480,7 +464,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 			bool parse_res = parser.parse(pos, end, subquery, expected);
 			if (!parse_res)
 				throw Exception("Error in parsing SELECT query while creating set for table " + table->name + ".",
-								ErrorCodes::LOGICAL_ERROR);
+					ErrorCodes::LOGICAL_ERROR);
 		}
 		else
 			subquery = arg->children[0];
@@ -532,14 +516,15 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
 		ASTPtr ast_set_ptr = ast_set;
 
+		String set_id = ast_set->getColumnName();
+
 		/// Удаляем множество, которое могло быть создано, чтобы заполнить внешнюю таблицу
 		/// Вместо него будет добавлено множество, так же заполняющее себя и помогающее отвечать на зарос.
+		sets_with_subqueries.erase("external_" + set_id);
 
-		sets_with_subqueries.erase("external_" + ast_set->getColumnName());
-
-		if (sets_with_subqueries.count(ast_set->getColumnName()))
+		if (sets_with_subqueries.count(set_id))
 		{
-			ast_set->set = sets_with_subqueries[ast_set->getColumnName()];
+			ast_set->set = sets_with_subqueries[set_id];
 		}
 		else
 		{
@@ -547,6 +532,10 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 
 			ASTPtr subquery;
 			bool external = false;
+
+			/** В правой части IN-а может стоять подзапрос или имя таблицы.
+			  * Во втором случае, это эквивалентно подзапросу (SELECT * FROM t).
+			  */
 			if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
 			{
 				if (external_data.count(table->name))
@@ -593,12 +582,14 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 				ast_set->set->setSource(interpreter.execute());
 			}
 
-			sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
+			sets_with_subqueries[set_id] = ast_set->set;
 		}
+
 		arg = ast_set_ptr;
 	}
 	else
 	{
+		/// Явное перечисление значений в скобках.
 		makeExplicitSet(node, sample_block, false);
 	}
 }
@@ -739,10 +730,8 @@ struct ExpressionAnalyzer::ScopeStack
 	size_t getColumnLevel(const std::string & name)
 	{
 		for (int i = static_cast<int>(stack.size()) - 1; i >= 0; --i)
-		{
 			if (stack[i].new_columns.count(name))
 				return i;
-		}
 
 		throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
 	}
@@ -826,6 +815,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 			ASTPtr expr = select_query->array_join_expression_list->children[0];
 			String source_name = expr->getColumnName();
 			String result_name = expr->getAlias();
+
 			/// Это массив.
 			if (!dynamic_cast<ASTIdentifier *>(&*expr) || findColumn(source_name, columns) != columns.end())
 			{
@@ -834,14 +824,13 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 			else /// Это вложенная таблица.
 			{
 				bool found = false;
-				for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+				for (const auto & column_name_type : columns)
 				{
-					String table_name = DataTypeNested::extractNestedTableName(it->first);
-					String column_name = DataTypeNested::extractNestedColumnName(it->first);
+					String table_name = DataTypeNested::extractNestedTableName(column_name_type.first);
+					String column_name = DataTypeNested::extractNestedColumnName(column_name_type.first);
 					if (table_name == source_name)
 					{
-						array_join_result_to_source[DataTypeNested::concatenateNestedName(result_name, column_name)]
-							= it->first;
+						array_join_result_to_source[DataTypeNested::concatenateNestedName(result_name, column_name)] = column_name_type.first;
 						found = true;
 						break;
 					}
@@ -896,9 +885,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			/// Если такой столбец есть в таблице, значит пользователь наверно забыл окружить его агрегатной функцией или добавить в GROUP BY.
 
 			bool found = false;
-			for (NamesAndTypesList::const_iterator it = columns.begin();
-					it != columns.end(); ++it)
-				if (it->first == name)
+			for (const auto & column_name_type : columns)
+				if (column_name_type.first == name)
 					found = true;
 
 			if (found)
@@ -1079,10 +1067,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 						Names captured = lambda_actions->getRequiredColumns();
 						for (size_t j = 0; j < captured.size(); ++j)
-						{
 							if (findColumn(captured[j], lambda_arguments) == lambda_arguments.end())
 								additional_requirements.push_back(captured[j]);
-						}
 
 						/// Не можем дать название getColumnName(),
 						///  потому что оно не однозначно определяет выражение (типы аргументов могут быть разными).
@@ -1503,8 +1489,8 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 	else
 	{
 		/// Не будем удалять исходные столбцы.
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			result_names.push_back(it->first);
+		for (const auto & column_name_type : columns)
+			result_names.push_back(column_name_type.first);
 	}
 
 	actions->finalize(result_names);
@@ -1531,8 +1517,13 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
 
 void ExpressionAnalyzer::removeUnusedColumns()
 {
-	NamesSet required;
-	NamesSet ignored;
+	/** Вычислим, какие столбцы требуются для выполнения выражения.
+	  * Затем, удалим все остальные столбцы из списка доступных столбцов.
+	  * После выполнения, columns будет содержать только список столбцов, нужных для чтения из таблицы.
+	  */
+
+	NameSet required;
+	NameSet ignored;
 
 	if (select_query && select_query->array_join_expression_list)
 	{
@@ -1548,7 +1539,7 @@ void ExpressionAnalyzer::removeUnusedColumns()
 			else
 			{
 				/// Для выражений в ARRAY JOIN ничего игнорировать не нужно.
-				NamesSet empty;
+				NameSet empty;
 				getRequiredColumnsImpl(expressions[i], required, empty);
 			}
 
@@ -1558,16 +1549,14 @@ void ExpressionAnalyzer::removeUnusedColumns()
 
 	getRequiredColumnsImpl(ast, required, ignored);
 
+	/// Вставляем в список требуемых столбцов столбцы, нужные для вычисления ARRAY JOIN.
 	NameSet array_join_sources;
-	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
-	{
-		array_join_sources.insert(it->second);
-	}
-	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
-	{
-		if (array_join_sources.count(it->first))
-			required.insert(it->first);
-	}
+	for (const auto & result_source : array_join_result_to_source)
+		array_join_sources.insert(result_source.second);
+
+	for (const auto & column_name_type : columns)
+		if (array_join_sources.count(column_name_type.first))
+			required.insert(column_name_type.first);
 
 	/// Нужно прочитать хоть один столбец, чтобы узнать количество строк.
 	if (required.empty())
@@ -1577,16 +1566,15 @@ void ExpressionAnalyzer::removeUnusedColumns()
 
 	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
 	{
-		NamesAndTypesList::iterator it0 = it;
-		++it;
+		unknown_required_columns.erase(it->first);
 
-		unknown_required_columns.erase(it0->first);
-
-		if (!required.count(it0->first))
+		if (!required.count(it->first))
 		{
-			required.erase(it0->first);
-			columns.erase(it0);
+			required.erase(it->first);
+			columns.erase(it++);
 		}
+		else
+			++it;
 	}
 
 	/// Возможно, среди неизвестных столбцов есть виртуальные. Удаляем их из списка неизвестных и добавляем
@@ -1611,10 +1599,11 @@ Names ExpressionAnalyzer::getRequiredColumns()
 	Names res;
 	for (const auto & column_name_type : columns)
 		res.push_back(column_name_type.first);
+
 	return res;
 }
 
-void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names)
+void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NameSet & required_columns, NameSet & ignored_names)
 {
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{

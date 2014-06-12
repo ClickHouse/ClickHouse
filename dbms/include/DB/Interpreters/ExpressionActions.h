@@ -5,7 +5,9 @@
 #include <DB/Core/Names.h>
 #include <DB/Core/ColumnWithNameAndType.h>
 #include <DB/Core/Block.h>
-#include <set>
+
+#include <unordered_set>
+#include <unordered_map>
 
 
 namespace DB
@@ -16,8 +18,8 @@ typedef Poco::SharedPtr<IFunction> FunctionPtr;
 
 typedef std::pair<std::string, std::string> NameWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
-typedef std::set<String> NameSet;
-typedef std::map<String, String> NameToNameMap;
+typedef std::unordered_set<String> NameSet;
+typedef std::unordered_map<String, String> NameToNameMap;
 
 
 /** Действие над блоком.
