@@ -304,7 +304,7 @@ std::string ExpressionAction::toString() const
 			break;
 		case ARRAY_JOIN:
 			ss << "ARRAY JOIN ";
-			for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 			{
 				if (it != array_joined_columns.begin())
 					ss << ", ";
