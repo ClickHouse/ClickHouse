@@ -280,6 +280,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		select_query->children.push_back(select_query->table);
 	if (select_query->array_join_expression_list)
 		select_query->children.push_back(select_query->array_join_expression_list);
+	if (select_query->join)
+		select_query->children.push_back(select_query->join);
 	if (select_query->sample_size)
 		select_query->children.push_back(select_query->sample_size);
 	if (select_query->where_expression)

@@ -1178,35 +1178,6 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 		actions_stack.addAction(ExpressionActions::Action::addColumn(column));
 	}
-	else if (ASTJoin * node = dynamic_cast<ASTJoin *>(&*ast))
-	{
-		auto & join_keys_expr_list = dynamic_cast<ASTExpressionList &>(*node->using_expr_list);
-
-		size_t num_join_keys = join_keys_expr_list.children.size();
-		Names join_key_names(num_join_keys);
-		for (size_t i = 0; i < num_join_keys; ++i)
-			join_key_names[i] = join_keys_expr_list.children[i]->getColumnName();
-
-		JoinPtr join = new Join(join_key_names, settings.limits);
-
-		/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
-		  * Так как результат этого поздапроса - ещё не результат всего запроса.
-		  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-		  * TODO: отдельные ограничения для JOIN.
-		  */
-		Context subquery_context = context;
-		Settings subquery_settings = context.getSettings();
-		subquery_settings.limits.max_result_rows = 0;
-		subquery_settings.limits.max_result_bytes = 0;
-		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
-		subquery_settings.extremes = 0;
-		subquery_context.setSettings(subquery_settings);
-
-		InterpreterSelectQuery interpreter(node->subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
-		join->setSource(interpreter.execute());
-
-		joins_with_subqueries[node->subquery->getColumnName()] = join;
-	}
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
@@ -1473,10 +1444,42 @@ Sets ExpressionAnalyzer::getSetsWithSubqueries()
 
 Joins ExpressionAnalyzer::getJoinsWithSubqueries()
 {
-	Joins res;
-	for (auto & s : joins_with_subqueries)
-		res.push_back(s.second);
-	return res;
+	std::cerr << __PRETTY_FUNCTION__ << std::endl;
+
+	if (select_query->join)
+	{
+		std::cerr << "Found JOIN" << std::endl;
+
+		auto & node = dynamic_cast<ASTJoin &>(*select_query->join);
+		auto & join_keys_expr_list = dynamic_cast<ASTExpressionList &>(*node.using_expr_list);
+
+		size_t num_join_keys = join_keys_expr_list.children.size();
+		Names join_key_names(num_join_keys);
+		for (size_t i = 0; i < num_join_keys; ++i)
+			join_key_names[i] = join_keys_expr_list.children[i]->getColumnName();
+
+		JoinPtr join = new Join(join_key_names, settings.limits);
+
+		/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
+		* Так как результат этого поздапроса - ещё не результат всего запроса.
+		* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+		* TODO: отдельные ограничения для JOIN.
+		*/
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		InterpreterSelectQuery interpreter(node.subquery->children[0], subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+		join->setSource(interpreter.execute());
+
+		return Joins(1, join);
+	}
+
+	return Joins();
 }
 
 

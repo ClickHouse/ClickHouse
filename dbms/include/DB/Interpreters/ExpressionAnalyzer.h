@@ -133,7 +133,6 @@ private:
 	AggregateDescriptions aggregate_descriptions;
 
 	std::unordered_map<String, SetPtr> sets_with_subqueries;
-	std::unordered_map<String, JoinPtr> joins_with_subqueries;
 
 	typedef std::unordered_map<String, ASTPtr> Aliases;
 	Aliases aliases;
