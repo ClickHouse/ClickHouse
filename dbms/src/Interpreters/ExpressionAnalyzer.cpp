@@ -974,10 +974,10 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			if (!only_consts)
 			{
 				String result_name = node->getColumnName();
-				actions_stack.addAction(ExpressionActions::Action::copyColumn(arg->getColumnName(), result_name));
+				actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
 				NameSet joined_columns;
 				joined_columns.insert(result_name);
-				actions_stack.addAction(ExpressionActions::Action::arrayJoin(joined_columns));
+				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns));
 			}
 
 			return;
@@ -1004,7 +1004,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						fake_column.name = node->getColumnName();
 						fake_column.type = new DataTypeUInt8;
 						fake_column.column = new ColumnConstUInt8(1, 0);
-						actions_stack.addAction(ExpressionActions::Action::addColumn(fake_column));
+						actions_stack.addAction(ExpressionAction::addColumn(fake_column));
 						getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack);
 					}
 					return;
@@ -1058,7 +1058,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					{
 						column.column = new ColumnSet(1, set->set);
 
-						actions_stack.addAction(ExpressionActions::Action::addColumn(column));
+						actions_stack.addAction(ExpressionAction::addColumn(column));
 					}
 
 					argument_types.push_back(column.type);
@@ -1146,7 +1146,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						lambda_column.column = new ColumnExpression(1, lambda_actions, lambda_arguments, result_type, result_name);
 						lambda_column.type = argument_types[i];
 						lambda_column.name = argument_names[i];
-						actions_stack.addAction(ExpressionActions::Action::addColumn(lambda_column));
+						actions_stack.addAction(ExpressionAction::addColumn(lambda_column));
 					}
 				}
 			}
@@ -1164,7 +1164,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			}
 
 			if (arguments_present)
-				actions_stack.addAction(ExpressionActions::Action::applyFunction(function, argument_names, node->getColumnName()),
+				actions_stack.addAction(ExpressionAction::applyFunction(function, argument_names, node->getColumnName()),
 										additional_requirements);
 		}
 	}
@@ -1176,7 +1176,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		column.type = type;
 		column.name = node->getColumnName();
 
-		actions_stack.addAction(ExpressionActions::Action::addColumn(column));
+		actions_stack.addAction(ExpressionAction::addColumn(column));
 	}
 	else
 	{
@@ -1273,11 +1273,11 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
 	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
 	{
 		if (it->first != it->second)
-			actions.add(ExpressionActions::Action::copyColumn(it->second, it->first));
+			actions.add(ExpressionAction::copyColumn(it->second, it->first));
 		result_columns.insert(it->first);
 	}
 
-	actions.add(ExpressionActions::Action::arrayJoin(result_columns));
+	actions.add(ExpressionAction::arrayJoin(result_columns));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
@@ -1430,7 +1430,7 @@ void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain,
 		step.required_output.push_back(result_columns.back().second);
 	}
 
-	step.actions->add(ExpressionActions::Action::project(result_columns));
+	step.actions->add(ExpressionAction::project(result_columns));
 }
 
 
@@ -1497,7 +1497,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 		getRootActionsImpl(asts[i], true, false, temp_actions);
 	}
 
-	temp_actions.add(ExpressionActions::Action::project(result_columns));
+	temp_actions.add(ExpressionAction::project(result_columns));
 
 	return temp_actions.getSampleBlock();
 }
@@ -1552,7 +1552,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 	if (project_result)
 	{
-		actions->add(ExpressionActions::Action::project(result_columns));
+		actions->add(ExpressionAction::project(result_columns));
 	}
 	else
 	{

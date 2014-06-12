@@ -374,15 +374,19 @@ void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size
 	}
 }
 
-void MergeTreeData::createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column)
+void MergeTreeData::createConvertExpression(
+	const String & in_column_name,
+	const String & out_type,
+	ExpressionActionsPtr & out_expression,
+	String & out_column)
 {
 	Names out_names;
 	out_expression = new ExpressionActions(
 		NamesAndTypesList(1, NameAndTypePair(in_column_name, getDataTypeByName(in_column_name))), context.getSettingsRef());
 
 	FunctionPtr function = context.getFunctionFactory().get("to" + out_type, context);
-	out_expression->add(ExpressionActions::Action::applyFunction(function, Names(1, in_column_name)), out_names);
-	out_expression->add(ExpressionActions::Action::removeColumn(in_column_name));
+	out_expression->add(ExpressionAction::applyFunction(function, Names(1, in_column_name)), out_names);
+	out_expression->add(ExpressionAction::removeColumn(in_column_name));
 
 	out_column = out_names[0];
 }
@@ -658,7 +662,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 	{
 		data_parts.insert(part);
 	}
-	
+
 	all_data_parts.insert(part);
 
 	return res;
