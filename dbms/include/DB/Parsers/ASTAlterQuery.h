@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/Parsers/IAST.h>
-#include <boost/concept_check.hpp>
 
 namespace DB
 {

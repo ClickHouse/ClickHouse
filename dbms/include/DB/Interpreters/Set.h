@@ -1,7 +1,6 @@
 #pragma once
 
 #include <set>
-#include <boost/concept_check.hpp>
 
 #include <statdaemons/Stopwatch.h>
 

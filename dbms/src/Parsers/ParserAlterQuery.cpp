@@ -2,9 +2,6 @@
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ParserCreateQuery.h>
-
-#include <boost/concept_check.hpp>
-
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTAlterQuery.h>

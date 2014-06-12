@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Poco/Mutex.h>
-#include <boost/concept_check.hpp>
-#include <boost/smart_ptr/shared_ptr.hpp>
 
 #include <statdaemons/OptimizedRegularExpression.h>
 
