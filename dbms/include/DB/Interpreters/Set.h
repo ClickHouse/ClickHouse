@@ -165,7 +165,7 @@ private:
 			case HASHED:		hashed		.reset(new SetHashed);	break;
 
 			default:
-				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+				throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 		}
 	}
 
