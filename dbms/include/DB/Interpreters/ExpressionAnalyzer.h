@@ -50,7 +50,9 @@ public:
 	/// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
 	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
 
-	/// Получить набор столбцов, которые достаточно прочесть для вычисления выражения.
+	/** Получить набор столбцов, которых достаточно прочитать из таблицы для вычисления выражения.
+	  * Не учитываются столбцы, добавляемые из другой таблицы путём JOIN-а.
+	  */
 	Names getRequiredColumns();
 
 	/** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
@@ -123,10 +125,8 @@ private:
 	/// Столбцы после ARRAY JOIN и/или агрегации.
 	NamesAndTypesList aggregated_columns;
 
-	/// Таблица, из которой делается запрос. Используется для sign-rewrite'а
+	/// Таблица, из которой делается запрос.
 	const StoragePtr storage;
-	/// Имя поля Sign в таблице. Непусто, если нужно осуществлять sign-rewrite
-	String sign_column_name;
 
 	bool has_aggregation;
 	NamesAndTypesList aggregation_keys;
@@ -265,10 +265,9 @@ private:
 
 	/** Для узлов-звёздочек - раскрыть их в список всех столбцов.
 	  * Для узлов-литералов - подставить алиасы.
-	  * Для агрегатных функций - если нужно, сделать sign rewrite.
 	  */
 	void normalizeTree();
-	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, bool in_sign_rewritten);
+	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias);
 
 	/// Обходит запрос и сохраняет найденные глобальные функции (например GLOBAL IN)
 	void findGlobalFunctions(ASTPtr & ast, std::vector<ASTPtr> & global_nodes);
@@ -297,24 +296,6 @@ private:
 
 	/// Получить таблицу, из которой идет запрос
 	StoragePtr getTable();
-
-	/// Получить имя столбца Sign
-	String getSignColumnName();
-
-	/// Проверить нужно ли переписывать агрегатные функции для учета Sign
-	bool needSignRewrite();
-
-	/// Попробовать переписать агрегатную функцию для учета Sign
-	bool considerSignRewrite(ASTPtr & ast);
-
-	ASTPtr createSignColumn();
-
-	/// Заменить count() на sum(Sign)
-	ASTPtr rewriteCount(const ASTFunction * node);
-	/// Заменить sum(x) на sum(x * Sign)
-	ASTPtr rewriteSum(const ASTFunction * node);
-	/// Заменить avg(x) на sum(Sign * x) / sum(Sign)
-	ASTPtr rewriteAvg(const ASTFunction * node);
 
 	void initChain(ExpressionActionsChain & chain, NamesAndTypesList & columns);
 

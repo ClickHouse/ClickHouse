@@ -375,7 +375,6 @@ public:
 
 	std::string getModePrefix() const;
 
-	std::string getSignColumnName() const { return sign_column; }
 	bool supportsSampling() const { return !!sampling_expression; }
 	bool supportsFinal() const { return !sign_column.empty(); }
 	bool supportsPrewhere() const { return true; }

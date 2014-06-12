@@ -45,7 +45,6 @@ public:
 	}
 
 	std::string getTableName() const { return name; }
-	std::string getSignColumnName() const { return data.getSignColumnName(); }
 	bool supportsSampling() const { return data.supportsSampling(); }
 	bool supportsFinal() const { return data.supportsFinal(); }
 	bool supportsPrewhere() const { return data.supportsPrewhere(); }

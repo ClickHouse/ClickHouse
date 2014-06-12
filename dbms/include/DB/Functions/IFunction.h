@@ -34,7 +34,7 @@ public:
 	  * - либо getReturnType, либо getReturnTypeAndPrerequisites
 	  * - одну из перегрузок execute.
 	  */
-	
+
 	/// Получить основное имя функции.
 	virtual String getName() const = 0;
 
@@ -44,7 +44,7 @@ public:
 	{
 		throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
-	
+
 	/** Получить тип результата по типам аргументов и значениям константных аргументов.
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
 	  * Еще можно вернуть описание дополнительных столбцов, которые требуются для выполнения функции.
@@ -61,14 +61,14 @@ public:
 			types[i] = arguments[i].type;
 		out_return_type = getReturnType(types);
 	}
-	
+
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
 	/// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений и кладет результат в arguments.
 	virtual void getLambdaArgumentTypes(DataTypes & arguments) const
 	{
 		throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
-	
+
 	/// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
 	/// Перегрузка для тех, кому не нужны prerequisites. Снаружи не вызывается.
 	virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result)

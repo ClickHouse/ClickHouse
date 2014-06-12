@@ -32,12 +32,12 @@ namespace DB
 
 static bool endsWith(const std::string & s, const std::string & suffix)
 {
-	return s.size() >= suffix.size() && s.substr(s.size() - suffix.size()) == suffix;
+	return s.size() >= suffix.size() && 0 == strncmp(s.data() + s.size() - suffix.size(), suffix.data(), suffix.size());
 }
 
 static bool startsWith(const std::string & s, const std::string & prefix)
 {
-	return s.size() >= prefix.size() && s.substr(0, prefix.size()) == prefix;
+	return s.size() >= prefix.size() && 0 == strncmp(s.data(), prefix.data(), prefix.size());
 }
 
 /** Для StorageMergeTree: достать первичный ключ в виде ASTExpressionList.
@@ -75,7 +75,7 @@ StoragePtr StorageFactory::get(
 	bool attach) const
 {
 	columns = DataTypeNested::expandNestedColumns(*columns);
-	
+
 	if (name == "Log")
 	{
 		return StorageLog::create(data_path, table_name, columns, context.getSettings().max_compress_block_size);
@@ -99,30 +99,30 @@ StoragePtr StorageFactory::get(
 	else if (name == "ChunkMerger")
 	{
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
-		
+
 		do
 		{
 			if (args_func.size() != 1)
 				break;
-			
+
 			ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
-			
+
 			if (args.size() < 3 || args.size() > 4)
 				break;
-			
+
 			String source_database = dynamic_cast<ASTIdentifier &>(*args[0]).name;
 			String source_table_name_regexp = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
 			size_t chunks_to_merge = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
-			
+
 			String destination_name_prefix = "group_";
 			String destination_database = source_database;
-			
+
 			if (args.size() > 3)
 				destination_name_prefix = dynamic_cast<ASTIdentifier &>(*args[3]).name;
-			
+
 			return StorageChunkMerger::create(database_name, table_name, columns, source_database, source_table_name_regexp, destination_name_prefix, chunks_to_merge, context);
 		} while(false);
-		
+
 		throw Exception("Storage ChunkMerger requires from 3 to 4 parameters:"
 			" source database, regexp for source table names, number of chunks to merge, [destination tables name prefix].",
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -156,7 +156,7 @@ StoragePtr StorageFactory::get(
 
 		String source_database 		= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		String table_name_regexp	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
-		
+
 		return StorageMerge::create(table_name, columns, source_database, table_name_regexp, context);
 	}
 	else if (name == "Distributed")
@@ -167,24 +167,22 @@ StoragePtr StorageFactory::get(
 		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
 
 		if (args_func.size() != 1)
-			throw Exception("Storage Distributed requires 3 or 4 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table[, sign column name].",
+			throw Exception("Storage Distributed requires 3 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
+
 		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
-		
-		if (args.size() != 3 && args.size() != 4)
-			throw Exception("Storage Distributed requires 3 or 4 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table[, sign column name].",
+
+		if (args.size() != 3)
+			throw Exception("Storage Distributed requires 3 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
+
 		String cluster_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
 		String remote_database 	= dynamic_cast<ASTIdentifier &>(*args[1]).name;
 		String remote_table 	= dynamic_cast<ASTIdentifier &>(*args[2]).name;
-		String sign_column_name	= args.size() == 4 ? dynamic_cast<ASTIdentifier &>(*args[3]).name : "";
 
-		return StorageDistributed::create(table_name, columns, remote_database, remote_table, cluster_name,
-			context, sign_column_name);
+		return StorageDistributed::create(table_name, columns, remote_database, remote_table, cluster_name, context);
 	}
 	else if (endsWith(name, "MergeTree"))
 	{

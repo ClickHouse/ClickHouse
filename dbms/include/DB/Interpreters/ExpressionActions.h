@@ -56,13 +56,16 @@ public:
 	/// Для ADD_COLUMN.
 	ColumnPtr added_column;
 
-	/// Для ARRAY_JOIN
-	NameSet array_joined_columns;
-
 	/// Для APPLY_FUNCTION.
 	mutable FunctionPtr function; /// mutable - чтобы можно было делать execute.
 	Names argument_names;
 	Names prerequisite_names;
+
+	/// Для ARRAY_JOIN
+	NameSet array_joined_columns;
+
+	/// Для JOIN
+	//JoinPtr join;
 
 	/// Для PROJECT.
 	NamesWithAliases projection;

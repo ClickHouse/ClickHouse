@@ -58,8 +58,6 @@ struct Settings
 	M(SettingUInt64, distributed_connections_pool_size, DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE) \
 	/** Максимальное количество попыток соединения с репликами. */ \
 	M(SettingUInt64, connections_with_failover_max_tries, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES) \
-	/** Переписывать запросы SELECT из CollapsingMergeTree с агрегатными функциями для автоматического учета поля Sign. */ \
-	M(SettingBool, sign_rewrite, false) \
 	/** Считать минимумы и максимумы столбцов результата. Они могут выводиться в JSON-форматах. */ \
 	M(SettingBool, extremes, false) \
 	/** Использовать ли кэш разжатых блоков. */ \

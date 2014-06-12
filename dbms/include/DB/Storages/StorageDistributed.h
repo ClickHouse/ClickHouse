@@ -25,8 +25,7 @@ public:
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const String & cluster_name,
-		Context & context_,
-		const String & sign_column_name_ = "");
+		Context & context_);
 
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
@@ -34,12 +33,10 @@ public:
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		SharedPtr<Cluster> & owned_cluster_,
-		Context & context_,
-		const String & sign_column_name_ = "");
+		Context & context_);
 
 	std::string getName() const { return "Distributed"; }
 	std::string getTableName() const { return name; }
-	std::string getSignColumnName() const { return sign_column_name; };
 	bool supportsSampling() const { return true; }
 	bool supportsFinal() const { return true; }
 	bool supportsPrewhere() const { return true; }
@@ -71,9 +68,8 @@ private:
 		const String & remote_database_,
 		const String & remote_table_,
 		Cluster & cluster_,
-		const Context & context_,
-		const String & sign_column_name_ = "");
-	
+		const Context & context_);
+
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
 	ASTPtr rewriteQuery(ASTPtr query);
 
@@ -81,7 +77,6 @@ private:
 	NamesAndTypesListPtr columns;
 	String remote_database;
 	String remote_table;
-	String sign_column_name;
 
 	const Context & context;
 

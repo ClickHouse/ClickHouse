@@ -21,11 +21,9 @@ StorageDistributed::StorageDistributed(
 	const String & remote_database_,
 	const String & remote_table_,
 	Cluster & cluster_,
-	const Context & context_,
-	const String & sign_column_name_)
+	const Context & context_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
-	sign_column_name(sign_column_name_),
 	context(context_),
 	cluster(cluster_)
 {
@@ -37,11 +35,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	const String & cluster_name,
-	Context & context_,
-	const String & sign_column_name_)
+	Context & context_)
 {
 	context_.initClusters();
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), context_, sign_column_name_))->thisPtr();
+	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), context_))->thisPtr();
 }
 
 
@@ -51,10 +48,9 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	SharedPtr<Cluster> & owned_cluster_,
-	Context & context_,
-	const String & sign_column_name_)
+	Context & context_)
 {
-	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, context_, sign_column_name_);
+	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, context_);
 
 	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;
@@ -91,9 +87,7 @@ BlockInputStreams StorageDistributed::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	/// Установим sign_rewrite = 0, чтобы второй раз не переписывать запрос
 	Settings new_settings = settings;
-	new_settings.sign_rewrite = false;
 	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
 
 	size_t result_size = cluster.pools.size() + cluster.getLocalNodesNum();

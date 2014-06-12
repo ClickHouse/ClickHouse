@@ -207,160 +207,18 @@ StoragePtr ExpressionAnalyzer::getTable()
 }
 
 
-bool ExpressionAnalyzer::needSignRewrite()
-{
-	if (settings.sign_rewrite && storage)
-	{
-		if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(&*storage))
-			return merge_tree->getName() == "CollapsingMergeTree";
-		if (const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&*storage))
-			return !distributed->getSignColumnName().empty();
-		if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&*storage))
-			return replicated->getName() == "CollapsingReplicatedMergeTree";
-	}
-	return false;
-}
-
-
-String ExpressionAnalyzer::getSignColumnName()
-{
-	if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(&*storage))
-		return merge_tree->getSignColumnName();
-	if (const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&*storage))
-		return distributed->getSignColumnName();
-	if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&*storage))
-		return replicated->getSignColumnName();
-	return "";
-}
-
-
-ASTPtr ExpressionAnalyzer::createSignColumn()
-{
-	ASTIdentifier * p_sign_column = new ASTIdentifier(ast->range, sign_column_name);
-	ASTIdentifier & sign_column = *p_sign_column;
-	ASTPtr sign_column_node = p_sign_column;
-	sign_column.name = sign_column_name;
-	return sign_column_node;
-}
-
-
-ASTPtr ExpressionAnalyzer::rewriteCount(const ASTFunction * node)
-{
-	/// 'Sign'
-	ASTExpressionList * p_exp_list = new ASTExpressionList;
-	ASTExpressionList & exp_list = *p_exp_list;
-	ASTPtr exp_list_node = p_exp_list;
-	exp_list.children.push_back(createSignColumn());
-
-	/// sum(Sign)
-	ASTFunction * p_sum = new ASTFunction;
-	ASTFunction & sum = *p_sum;
-	ASTPtr sum_node = p_sum;
-	sum.name = "sum";
-	sum.alias = node->alias;
-	sum.arguments = exp_list_node;
-	sum.children.push_back(exp_list_node);
-
-	return sum_node;
-}
-
-
-ASTPtr ExpressionAnalyzer::rewriteSum(const ASTFunction * node)
-{
-	/// 'x', 'Sign'
-	ASTExpressionList * p_mult_exp_list = new ASTExpressionList;
-	ASTExpressionList & mult_exp_list = *p_mult_exp_list;
-	ASTPtr mult_exp_list_node = p_mult_exp_list;
-	mult_exp_list.children.push_back(createSignColumn());
-	mult_exp_list.children.push_back(node->arguments->children[0]);
-
-	/// x * Sign
-	ASTFunction * p_mult = new ASTFunction;
-	ASTFunction & mult = *p_mult;
-	ASTPtr mult_node = p_mult;
-	mult.name = "multiply";
-	mult.arguments = mult_exp_list_node;
-	mult.children.push_back(mult_exp_list_node);
-
-	/// 'x * Sign'
-	ASTExpressionList * p_exp_list = new ASTExpressionList;
-	ASTExpressionList & exp_list = *p_exp_list;
-	ASTPtr exp_list_node = p_exp_list;
-	exp_list.children.push_back(mult_node);
-
-	/// sum(x * Sign)
-	ASTFunction * p_sum = new ASTFunction;
-	ASTFunction & sum = *p_sum;
-	ASTPtr sum_node = p_sum;
-	sum.name = "sum";
-	sum.alias = node->alias;
-	sum.arguments = exp_list_node;
-	sum.children.push_back(exp_list_node);
-
-	return sum_node;
-}
-
-
-ASTPtr ExpressionAnalyzer::rewriteAvg(const ASTFunction * node)
-{
-	/// node без alias для переписывания числителя и знаменателя
-	ASTPtr node_clone = node->clone();
-	ASTFunction * node_clone_func = dynamic_cast<ASTFunction *>(&*node_clone);
-	node_clone_func->alias = "";
-
-	/// 'sum(Sign * x)', 'sum(Sign)'
-	ASTExpressionList * p_div_exp_list = new ASTExpressionList;
-	ASTExpressionList & div_exp_list = *p_div_exp_list;
-	ASTPtr div_exp_list_node = p_div_exp_list;
-	div_exp_list.children.push_back(rewriteSum(node_clone_func));
-	div_exp_list.children.push_back(rewriteCount(node_clone_func));
-
-	/// sum(Sign * x) / sum(Sign)
-	ASTFunction * p_div = new ASTFunction;
-	ASTFunction & div = *p_div;
-	ASTPtr div_node = p_div;
-	div.name = "divide";
-	div.alias = node->alias;
-	div.arguments = div_exp_list_node;
-	div.children.push_back(div_exp_list_node);
-
-	return div_node;
-}
-
-
-bool ExpressionAnalyzer::considerSignRewrite(ASTPtr & ast)
-{
-	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
-	if (!node)
-		return false;
-	const String & name = node->name;
-	if (name == "count")
-		ast = rewriteCount(node);
-	else if (name == "sum")
-		ast = rewriteSum(node);
-	else if (name == "avg")
-		ast = rewriteAvg(node);
-	else
-		return false;
-	return true;
-}
-
-
 void ExpressionAnalyzer::normalizeTree()
 {
 	SetOfASTs tmp_set;
 	MapOfASTs tmp_map;
-	if (needSignRewrite())
-		sign_column_name = getSignColumnName();
-	normalizeTreeImpl(ast, tmp_map, tmp_set, "", false);
+	normalizeTreeImpl(ast, tmp_map, tmp_set, "");
 }
 
 
 /// finished_asts - уже обработанные вершины (и на что они заменены)
 /// current_asts - вершины в текущем стеке вызовов этого метода
 /// current_alias - алиас, повешенный на предка ast (самого глубокого из предков с алиасами)
-/// in_sign_rewritten - находимся ли мы в поддереве, полученном в результате sign rewrite
-void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, bool in_sign_rewritten)
+void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias)
 {
 	if (finished_asts.count(ast))
 	{
@@ -376,10 +234,6 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 		current_alias = *my_alias;
 
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
-
-	if (!in_sign_rewritten && !sign_column_name.empty())
-		in_sign_rewritten = considerSignRewrite(ast);
-
 	bool replaced = false;
 
 	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
@@ -425,12 +279,6 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 				replaced = true;
 			}
-			else
-			{
-				/// Проверим имеет ли смысл sign-rewrite
-				if (!in_sign_rewritten && sign_column_name != "" && node->name == sign_column_name)
-					throw Exception("Requested Sign column while sign-rewrite is on.", ErrorCodes::QUERY_SECTION_DOESNT_MAKE_SENSE);
-			}
 		}
 	}
 	else if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
@@ -453,7 +301,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	/// Если заменили корень поддерева вызовемся для нового корня снова - на случай, если алиас заменился на алиас.
 	if (replaced)
 	{
-		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias, in_sign_rewritten);
+		normalizeTreeImpl(ast, finished_asts, current_asts, current_alias);
 		current_asts.erase(initial_ast);
 		current_asts.erase(ast);
 		finished_asts[initial_ast] = ast;
@@ -464,17 +312,17 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
-			normalizeTreeImpl(*it, finished_asts, current_asts, current_alias, in_sign_rewritten);
+			normalizeTreeImpl(*it, finished_asts, current_asts, current_alias);
 
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
 	{
 		if (select->prewhere_expression)
-			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
+			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias);
 		if (select->where_expression)
-			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
+			normalizeTreeImpl(select->where_expression, finished_asts, current_asts, current_alias);
 		if (select->having_expression)
-			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias, in_sign_rewritten);
+			normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias);
 	}
 
 	/// Действия, выполняемые снизу вверх.
@@ -1662,8 +1510,8 @@ Names ExpressionAnalyzer::getRequiredColumns()
 		throw Exception("Unknown identifier: " + *unknown_required_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
 
 	Names res;
-	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
-		res.push_back(it->first);
+	for (const auto & column_name_type : columns)
+		res.push_back(column_name_type.first);
 	return res;
 }
 

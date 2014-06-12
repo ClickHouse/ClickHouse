@@ -44,7 +44,6 @@ public:
 	}
 
 	std::string getTableName() const override { return table_name; }
-	std::string getSignColumnName() const { return data.getSignColumnName(); }
 	bool supportsSampling() const override { return data.supportsSampling(); }
 	bool supportsFinal() const override { return data.supportsFinal(); }
 	bool supportsPrewhere() const override { return data.supportsPrewhere(); }
@@ -68,7 +67,7 @@ public:
 	void drop() override;
 
 	bool supportsIndexForIn() const override { return true; }
-	
+
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 
@@ -189,7 +188,7 @@ private:
 	/** /replicas/me/is_active.
 	  */
 	zkutil::EphemeralNodeHolderPtr replica_is_active_node;
-	
+
 	/** Случайные данные, которые мы записали в /replicas/me/is_active.
 	  */
 	String active_node_identifier;
