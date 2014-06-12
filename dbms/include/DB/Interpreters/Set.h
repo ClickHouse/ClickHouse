@@ -30,6 +30,8 @@ namespace DB
   */
 class Set
 {
+friend class Join;
+
 public:
 	Set(const Limits & limits)
 		: max_bytes_to_transfer(limits.max_bytes_to_transfer),

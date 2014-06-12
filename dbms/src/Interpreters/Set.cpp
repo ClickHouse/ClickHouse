@@ -115,7 +115,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 		if (!checkExternalSizeLimits())
 		{
 			if (transfer_overflow_mode == OverflowMode::THROW)
-				throw Exception("IN-external_table size exceeded."
+				throw Exception("IN external table size limit exceeded."
 					" Rows: " + toString(rows_in_external_table) +
 					", limit: " + toString(max_rows_to_transfer) +
 					". Bytes: " + toString(bytes_in_external_table) +
@@ -129,10 +129,10 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 		}
 	}
 
-	if (only_external) return true;
+	if (only_external)
+		return true;
 
 	size_t keys_size = block.columns();
-	Row key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
 	data_types.resize(keys_size);
 
