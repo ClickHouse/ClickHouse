@@ -66,8 +66,7 @@ private:
 	void executeLimit(				BlockInputStreams & streams);
 	void executeProjection(			BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeDistinct(			BlockInputStreams & streams, bool before_order, Names columns);
-	void executeSubqueriesInSets(	BlockInputStreams & streams, const Sets & sets);
-	
+	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, const Sets & sets, const Joins & joins);
 
 	ASTPtr query_ptr;
 	ASTSelectQuery & query;

@@ -594,12 +594,12 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 	while (context.tryGetExternalTable(external_table_name + toString(external_table_id)))
 		++external_table_id;
 
-	IAST & args = *node->arguments;
+	IAST & args = *node->arguments;		/// TODO Для JOIN.
 	ASTPtr & arg = args.children[1];
-	StoragePtr external_storage = StoragePtr();
+	StoragePtr external_storage;
 
 	/// Если подзапрос или имя таблицы для селекта
-	if (dynamic_cast<ASTSubquery *>(&*arg) || dynamic_cast<ASTIdentifier *>(&*arg))
+	if (dynamic_cast<const ASTSubquery *>(&*arg) || dynamic_cast<const ASTIdentifier *>(&*arg))
 	{
 		/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
 			* Так как результат этого поздапроса - ещё не результат всего запроса.
@@ -614,7 +614,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 		subquery_context.setSettings(subquery_settings);
 
 		ASTPtr subquery;
-		if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
+		if (const ASTIdentifier * table = dynamic_cast<const ASTIdentifier *>(&*arg))
 		{
 			ParserSelectQuery parser;
 
@@ -649,7 +649,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 		String external_table_name = "_data" + toString(external_table_id++);
 		external_storage = StorageMemory::create(external_table_name, columns);
 
-		ASTIdentifier * ast_ident = new ASTIdentifier();
+		ASTIdentifier * ast_ident = new ASTIdentifier;
 		ast_ident->kind = ASTIdentifier::Table;
 		ast_ident->name = external_storage->getTableName();
 		arg = ast_ident;
@@ -699,18 +699,6 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		}
 		else
 		{
-			/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
-			  * Так как результат этого поздапроса - ещё не результат всего запроса.
-			  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-			  */
-			Context subquery_context = context;
-			Settings subquery_settings = context.getSettings();
-			subquery_settings.limits.max_result_rows = 0;
-			subquery_settings.limits.max_result_bytes = 0;
-			/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
-			subquery_settings.extremes = 0;
-			subquery_context.setSettings(subquery_settings);
-
 			ast_set->set = new Set(settings.limits);
 
 			ASTPtr subquery;
@@ -745,6 +733,18 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			/// Если чтение из внешней таблицы, то источник данных уже вычислен.
 			if (!external)
 			{
+				/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
+				  * Так как результат этого поздапроса - ещё не результат всего запроса.
+				  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+				  */
+				Context subquery_context = context;
+				Settings subquery_settings = context.getSettings();
+				subquery_settings.limits.max_result_rows = 0;
+				subquery_settings.limits.max_result_bytes = 0;
+				/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+				subquery_settings.extremes = 0;
+				subquery_context.setSettings(subquery_settings);
+
 				InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
 				ast_set->set->setSource(interpreter.execute());
 			}
@@ -1178,6 +1178,35 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 		actions_stack.addAction(ExpressionActions::Action::addColumn(column));
 	}
+	else if (ASTJoin * node = dynamic_cast<ASTJoin *>(&*ast))
+	{
+		auto & join_keys_expr_list = dynamic_cast<ASTExpressionList &>(*node->using_expr_list);
+
+		size_t num_join_keys = join_keys_expr_list.children.size();
+		Names join_key_names(num_join_keys);
+		for (size_t i = 0; i < num_join_keys; ++i)
+			join_key_names[i] = join_keys_expr_list.children[i]->getColumnName();
+
+		JoinPtr join = new Join(join_key_names, settings.limits);
+
+		/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
+		  * Так как результат этого поздапроса - ещё не результат всего запроса.
+		  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+		  * TODO: отдельные ограничения для JOIN.
+		  */
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 0;
+		subquery_settings.limits.max_result_bytes = 0;
+		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		InterpreterSelectQuery interpreter(node->subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+		join->setSource(interpreter.execute());
+
+		joins_with_subqueries[node->subquery->getColumnName()] = join;
+	}
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
@@ -1438,6 +1467,14 @@ Sets ExpressionAnalyzer::getSetsWithSubqueries()
 {
 	Sets res;
 	for (auto & s : sets_with_subqueries)
+		res.push_back(s.second);
+	return res;
+}
+
+Joins ExpressionAnalyzer::getJoinsWithSubqueries()
+{
+	Joins res;
+	for (auto & s : joins_with_subqueries)
 		res.push_back(s.second);
 	return res;
 }

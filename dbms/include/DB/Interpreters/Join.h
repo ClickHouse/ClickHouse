@@ -48,15 +48,24 @@ public:
 	void setExternalOutput(StoragePtr storage) { external_table = storage; }
 	void setOnlyExternal(bool flag) { only_external = flag; }
 
-	/// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
-	bool insertFromBlock(Block & block);
+	/** Добавить в отображение для соединения блок "правой" таблицы.
+	  * Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
+	  */
+	bool insertFromBlock(const Block & block);
+
+	/** Присоединить к блоку "левой" таблицы новые столбцы из сформированного отображения.
+	  */
+	void anyLeftJoinBlock(Block & block);
 
 	size_t size() const { return getTotalRowCount(); }
 	
 private:
 	/// Имена ключевых столбцов - по которым производится соединение.
 	const Names key_names;
-	ColumnNumbers key_numbers;
+	/// Номера ключевых столбцов в "левой" таблице.
+	ColumnNumbers key_numbers_left;
+	/// Номера ключевых столбцов в "правой" таблице.
+	ColumnNumbers key_numbers_right;
 
 	/// Ссылка на строку в блоке.
 	struct RowRef

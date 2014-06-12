@@ -8,8 +8,8 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Aggregator.h>
 #include <DB/Interpreters/ExpressionActions.h>
-#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
-#include "Set.h"
+#include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/Join.h>
 
 
 namespace DB
@@ -94,6 +94,7 @@ public:
 	  * То есть, нужно вызвать getSubquerySets после всех вызовов append* или getActions и создать все возвращенные множества перед выполнением действий.
 	  */
 	Sets getSetsWithSubqueries();
+	Joins getJoinsWithSubqueries();
 
 	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
 	Block getSelectSampleBlock();
@@ -131,9 +132,10 @@ private:
 	NamesAndTypesList aggregation_keys;
 	AggregateDescriptions aggregate_descriptions;
 
-	std::map<std::string, SetPtr> sets_with_subqueries;
-	std::map<std::string, SetPtr> global_sets_with_subqueries;
-	typedef std::map<String, ASTPtr> Aliases;
+	std::unordered_map<String, SetPtr> sets_with_subqueries;
+	std::unordered_map<String, JoinPtr> joins_with_subqueries;
+
+	typedef std::unordered_map<String, ASTPtr> Aliases;
 	Aliases aliases;
 	
 	typedef std::set<const IAST *> SetOfASTs;

@@ -54,7 +54,7 @@ bool Join::checkExternalSizeLimits() const
 }
 
 
-bool Join::insertFromBlock(Block & block)
+bool Join::insertFromBlock(const Block & block)
 {
 	if (external_table)
 	{
@@ -87,13 +87,13 @@ bool Join::insertFromBlock(Block & block)
 	ConstColumnPlainPtrs key_columns(keys_size);
 
 	/// Переводим имена столбцов в номера, если они ещё не вычислены.
-	if (key_numbers.empty())
+	if (key_numbers_right.empty())
 		for (const auto & name : key_names)
-			key_numbers.push_back(block.getPositionByName(name));
+			key_numbers_right.push_back(block.getPositionByName(name));
 
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
-		key_columns[i] = block.getByPosition(key_numbers[i]).column;
+		key_columns[i] = block.getByPosition(key_numbers_right[i]).column;
 
 	size_t rows = block.rows();
 
@@ -105,6 +105,7 @@ bool Join::insertFromBlock(Block & block)
 
 	blocks.push_back(block);
 	const Block * stored_block = &blocks.back();
+	/// TODO Удалить из stored_block ключевые столбцы, так как они не нужны.
 
 	if (type == Set::KEY_64)
 	{
@@ -216,6 +217,69 @@ bool Join::insertFromBlock(Block & block)
 	}
 
 	return true;
+}
+
+
+void Join::anyLeftJoinBlock(Block & block)
+{
+	if (blocks.empty())
+		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
+
+	size_t keys_size = key_names.size();
+	ConstColumnPlainPtrs key_columns(keys_size);
+
+	/// Переводим имена столбцов в номера, если они ещё не вычислены.
+	if (key_numbers_left.empty())
+		for (const auto & name : key_names)
+			key_numbers_left.push_back(block.getPositionByName(name));
+
+	/// Запоминаем столбцы ключей, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByPosition(key_numbers_left[i]).column;
+
+	/// Добавляем в блок новые столбцы.
+	const Block & first_mapped_block = blocks.front();
+	size_t num_columns_to_add = first_mapped_block.columns();
+	ColumnPlainPtrs added_columns(num_columns_to_add);
+
+	for (size_t i = 0; i < num_columns_to_add; ++i)
+	{
+		const ColumnWithNameAndType & src_column = first_mapped_block.getByPosition(i);
+		ColumnWithNameAndType new_column = src_column.cloneEmpty();
+		block.insert(new_column);
+		added_columns[i] = new_column.column;
+		added_columns[i]->reserve(src_column.column->size());
+	}
+
+	size_t rows = block.rows();
+
+	if (type == Set::KEY_64)
+	{
+		const MapUInt64 & map = *key64;
+		const IColumn & column = *key_columns[0];
+
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			/// Строим ключ
+			UInt64 key = column.get64(i);
+
+			MapUInt64::const_iterator it = map.find(key);
+
+			if (it != map.end())
+			{
+				for (size_t j = 0; j < num_columns_to_add; ++j)
+					added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(j).column.get(), it->second.row_num);
+			}
+			else
+			{
+				for (size_t j = 0; j < num_columns_to_add; ++j)
+					added_columns[j]->insertDefault();
+			}
+		}
+	}
+	else
+		throw Exception("Unknown JOIN variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 }
 
 

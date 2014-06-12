@@ -1,6 +1,9 @@
 #pragma once
+
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/Join.h>
+
 
 namespace DB
 {
@@ -10,13 +13,15 @@ namespace DB
 class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	CreatingSetsBlockInputStream(BlockInputStreamPtr input, const Sets & sets_)
-		: sets(sets_), created(false), log(&Logger::get("CreatingSetsBlockInputStream"))
+	CreatingSetsBlockInputStream(BlockInputStreamPtr input, const Sets & sets_, const Joins & joins_)
+		: sets(sets_), joins(joins_)
 	{
-		for (SetPtr set : sets)
-		{
+		for (auto & set : sets)
 			children.push_back(set->getSource());
-		}
+
+		for (auto & join : joins)
+			children.push_back(join->getSource());
+
 		children.push_back(input);
 	}
 
@@ -46,11 +51,13 @@ protected:
 
 private:
 	Sets sets;
-	bool created;
+	Joins joins;
+	bool created = false;
 
-	Logger * log;
+	Logger * log = &Logger::get("CreatingSetsBlockInputStream");
 
-	void createSet(SetPtr set);
+	void createSet(SetPtr & set);
+	void createJoin(JoinPtr & join);
 	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries);
 };
 

@@ -374,8 +374,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	executeUnion(streams);
 
 	Sets sets_with_subqueries = query_analyzer->getSetsWithSubqueries();
-	if (!sets_with_subqueries.empty())
-		executeSubqueriesInSets(streams, sets_with_subqueries);
+	Joins joins_with_subqueries = query_analyzer->getJoinsWithSubqueries();
+	if (!sets_with_subqueries.empty() || !joins_with_subqueries.empty())
+		executeSubqueriesInSetsAndJoins(streams, sets_with_subqueries, joins_with_subqueries);
 
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
@@ -805,9 +806,9 @@ void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams)
 }
 
 
-void InterpreterSelectQuery::executeSubqueriesInSets(BlockInputStreams & streams, const Sets & sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, const Sets & sets, const Joins & joins)
 {
-	streams[0] = new CreatingSetsBlockInputStream(streams[0], sets);
+	streams[0] = new CreatingSetsBlockInputStream(streams[0], sets, joins);
 }
 
 
