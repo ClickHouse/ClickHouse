@@ -348,7 +348,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 	ParserCreateQuery parser;
 	ASTPtr ast;
-	const char * expected = "";
+	Expected expected = "";
 	bool parse_res = parser.parse(pos, end, ast, expected);
 
 	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.

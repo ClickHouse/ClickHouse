@@ -67,7 +67,7 @@ const char * ParserAccessExpression::operators[] =
 
 
 
-bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	bool first = true;
 	ParserWhiteSpaceOrComments ws;
@@ -109,7 +109,7 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expe
 }
 	
 
-bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	bool first = true;
 	ParserWhiteSpaceOrComments ws;
@@ -191,7 +191,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 	return true;
 }
 
-bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 
@@ -235,7 +235,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 	return true;
 }
 
-bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString symbol1("?");
@@ -300,7 +300,7 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 }
 
 
-bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString arrow("->");
@@ -370,7 +370,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const 
 }
 
 
-bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 
@@ -421,7 +421,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 }
 
 
-bool ParserUnaryMinusExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserUnaryMinusExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	/// В качестве исключения, отрицательные числа должны парситься, как литералы, а не как применение оператора.
 
@@ -454,20 +454,20 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias()
 }
 
 
-bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	return ParserList(ParserPtr(new ParserExpressionWithOptionalAlias), ParserPtr(new ParserString(","))).parse(pos, end, node, expected);
 }
 
 
-bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	return nested_parser.parse(pos, end, node, expected)
 		&& !dynamic_cast<ASTExpressionList &>(*node).children.empty();
 }
 
 
-bool ParserOrderByExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserOrderByExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	return ParserList(ParserPtr(new ParserOrderByElement), ParserPtr(new ParserString(",")), false).parse(pos, end, node, expected);
 }

@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 		names_and_types->push_back(NameAndTypePair("a", new DataTypeArray(new DataTypeUInt32)));
 
 		ASTPtr primary_expr;
-		const char * expected = "";
+		Expected expected = "";
 		String primary_expr_str = "d";
 		const char * begin = primary_expr_str.data();
 		const char * end = begin + primary_expr_str.size();
@@ -82,7 +82,7 @@ int main(int argc, char ** argv)
 			QueryProcessingStage::Enum stage;
 
 			ASTPtr select;
-			const char * expected = "";
+			Expected expected = "";
 			String select_str = "SELECT * FROM test";
 			const char * begin = select_str.data();
 			const char * end = begin + select_str.size();

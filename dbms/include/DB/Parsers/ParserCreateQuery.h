@@ -16,7 +16,7 @@ class ParserNestedTable : public IParserBase
 {
 protected:
 	const char * getName() const { return "nested table"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 	
@@ -30,7 +30,7 @@ class ParserIdentifierWithParameters : public IParserBase
 {
 protected:
 	const char * getName() const { return "identifier with parameters"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -41,7 +41,7 @@ class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
 	const char * getName() const { return "identifier with optional parameters"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -50,7 +50,7 @@ class IParserNameTypePair : public IParserBase
 {
 protected:
 	const char * getName() const { return "name and type pair"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 /** Имя и тип через пробел. Например, URL String. */
@@ -59,7 +59,7 @@ typedef IParserNameTypePair<ParserIdentifier> ParserNameTypePair;
 typedef IParserNameTypePair<ParserCompoundIdentifier> ParserCompoundNameTypePair;
 
 template <class NameParser>
-bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	NameParser name_parser;
 	ParserIdentifierWithOptionalParameters type_parser;
@@ -89,7 +89,7 @@ class ParserNameTypePairList : public IParserBase
 {
 protected:
 	const char * getName() const { return "name and type pair list"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -98,7 +98,7 @@ class ParserEngine : public IParserBase
 {
 protected:
 	const char * getName() const { return "ENGINE"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -126,7 +126,7 @@ class ParserCreateQuery : public IParserBase
 {
 protected:
 	const char * getName() const { return "CREATE TABLE or ATTACH TABLE query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 }

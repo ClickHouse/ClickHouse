@@ -69,6 +69,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(Subquery)
 	DISPATCH(AlterQuery)
 	DISPATCH(ShowProcesslistQuery)
+	DISPATCH(Join)
 	else
 		throw Exception("Unknown element in AST: " + ast.getID()
 			+ ((ast.range.first && (ast.range.second > ast.range.first))
@@ -155,6 +156,12 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		one_line
 			? formatAST(*ast.array_join_expression_list, s, indent, hilite, one_line)
 			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.array_join_expression_list), s, indent, hilite);
+	}
+
+	if (ast.join)
+	{
+		s << " ";
+		formatAST(*ast.join, s, indent, hilite, one_line);
 	}
 	
 	if (ast.final)
@@ -708,7 +715,7 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 	}
 	s << nl_or_ws;
 
-	for( std::size_t i = 0; i < ast.parameters.size(); ++i)
+	for (size_t i = 0; i < ast.parameters.size(); ++i)
 	{
 		const ASTAlterQuery::Parameters &p = ast.parameters[i];
 
@@ -735,6 +742,22 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 
 		s << nl_or_ws;
 	}
+}
+
+void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+	s << (hilite ? hilite_keyword : "")
+		<< (ast.locality == ASTJoin::Global ? "GLOBAL " : "")
+		<< (ast.strictness == ASTJoin::Any ? "ANY " : "ALL ")
+		<< (ast.kind == ASTJoin::Inner ? "INNER " : "LEFT ")
+		<< "JOIN"
+		<< (hilite ? hilite_none : "");
+
+	formatAST(*ast.subquery, s, indent, hilite, one_line, need_parens);
+
+	s << (hilite ? hilite_keyword : "") << " USING " << (hilite ? hilite_none : "");
+
+	formatAST(*ast.using_expr_list, s, indent, hilite, one_line, need_parens);
 }
 
 

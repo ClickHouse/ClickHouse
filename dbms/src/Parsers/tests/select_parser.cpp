@@ -9,8 +9,10 @@
 
 int main(int argc, char ** argv)
 {
-	DB::ParserSelectQuery parser;
-	DB::ASTPtr ast;
+	using namespace DB;
+	
+	ParserSelectQuery parser;
+	ASTPtr ast;
 	std::string input = 
 		" SELECT 18446744073709551615, f(1), '\\\\', [a, b, c], (a, b, c), 1 + 2 * -3, a = b OR c > d.1 + 2 * -g[0] AND NOT e < f * (x + y)"
 		" FROM default.hits"
@@ -19,7 +21,7 @@ int main(int argc, char ** argv)
 		" HAVING SUM(Refresh) > 100"
 		" ORDER BY Visits, PageViews"
 		" LIMIT 1000, 10";
-	const char * expected = "";
+	Expected expected = "";
 
 	const char * begin = input.data();
 	const char * end = begin + input.size();
@@ -28,7 +30,7 @@ int main(int argc, char ** argv)
 	if (parser.parse(pos, end, ast, expected))
 	{
 		std::cout << "Success." << std::endl;
-		DB::formatAST(*ast, std::cerr);
+		formatAST(*ast, std::cerr);
 		std::cout << std::endl;
 
 		std::cout << std::endl << ast->getTreeID() << std::endl;

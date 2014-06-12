@@ -631,7 +631,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 			const char * begin = query.data();
 			const char * end = begin + query.size();
 			const char * pos = begin;
-			const char * expected = "";
+			Expected expected = "";
 
 			bool parse_res = parser.parse(pos, end, subquery, expected);
 			if (!parse_res)
@@ -731,7 +731,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 					const char * begin = query.data();
 					const char * end = begin + query.size();
 					const char * pos = begin;
-					const char * expected = "";
+					Expected expected = "";
 
 					bool parse_res = parser.parse(pos, end, subquery, expected);
 					if (!parse_res)

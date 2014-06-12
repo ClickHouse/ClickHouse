@@ -24,7 +24,7 @@ namespace DB
 {
 
 
-bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 	ASTPtr contents_node;
@@ -52,7 +52,7 @@ bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& exp
 }
 
 
-bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 	ASTPtr contents_node;
@@ -96,7 +96,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, c
 }
 
 
-bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 	ASTPtr select_node;
@@ -120,7 +120,7 @@ bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& 
 }
 	
 
-bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -154,7 +154,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *
 }
 
 
-bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -199,7 +199,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, cons
 }
 
 
-bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -283,7 +283,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& 
 }
 
 
-bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 	ParserString nested_parser("NULL", true);
@@ -297,7 +297,7 @@ bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expe
 }
 
 
-bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Field res;
 
@@ -348,7 +348,7 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& ex
 }
 
 
-bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 	String s;
@@ -396,7 +396,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, const cha
 }
 
 
-bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -421,7 +421,7 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& e
 }
 
 
-bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_as("AS", true, true);
@@ -439,7 +439,7 @@ bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& exp
 }
 
 
-bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -487,7 +487,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, const
 }
 
 
-bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserAlias alias_p;
@@ -519,7 +519,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, const
 }
 
 
-bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 

@@ -558,10 +558,10 @@ private:
 	}
 
 
-	ASTPtr parseQuery(const char *& pos, const char * end)
+	ASTPtr parseQuery(Expected & pos, const char * end)
 	{
 		ParserQuery parser;
-		const char * expected = "";
+		Expected expected = "";
 
 		const char * begin = pos;
 

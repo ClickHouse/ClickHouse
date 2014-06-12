@@ -76,7 +76,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 			ParserExpressionList args_parser;
 			ASTPtr args_ast;
-			const char * expected = "";
+			Expected expected = "";
 			IParser::Pos pos = parameters.data();
 			IParser::Pos end = pos + parameters.size();
 
@@ -127,7 +127,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 		{
 			ParserNameTypePairList columns_p;
 			ASTPtr columns_ast;
-			const char * expected = "";
+			Expected expected = "";
 			IParser::Pos pos = parameters.data();
 			IParser::Pos end = pos + parameters.size();
 			
@@ -156,7 +156,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 		{
 			ParserExpressionList columns_p;
 			ASTPtr columns_ast;
-			const char * expected = "";
+			Expected expected = "";
 			IParser::Pos pos = parameters.data();
 			IParser::Pos end = pos + parameters.size();
 

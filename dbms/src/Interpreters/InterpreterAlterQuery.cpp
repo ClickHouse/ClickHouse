@@ -180,7 +180,7 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 			{
 				/// удаляем массив из типа, т.е. Array(String) -> String
 				ParserIdentifierWithOptionalParameters type_parser;
-				const char * expected;
+				Expected expected;
 				const char * begin = new_nested_column.type->range.first + strlen("Array(");
 				const char * end = new_nested_column.type->range.second - static_cast<int>(strlen(")"));
 				if (!type_parser.parse(begin, end, new_nested_column.type, expected))

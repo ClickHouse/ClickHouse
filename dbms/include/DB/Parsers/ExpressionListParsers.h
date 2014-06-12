@@ -25,7 +25,7 @@ public:
 	}
 protected:
 	const char * getName() const { return "list of elements"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 private:
 	ParserPtr elem_parser;
 	ParserPtr separator_parser;
@@ -53,7 +53,7 @@ public:
 protected:
 	const char * getName() const { return "list, delimited by binary operators"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -76,7 +76,7 @@ public:
 protected:
 	const char * getName() const { return "list, delimited by operator of variable arity"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -99,7 +99,7 @@ public:
 	
 protected:
 	const char * getName() const { return "expression with prefix unary operator"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -114,7 +114,7 @@ public:
 protected:
 	const char * getName() const { return "access expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -130,7 +130,7 @@ private:
 protected:
 	const char * getName() const { return "unary minus expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -143,7 +143,7 @@ private:
 protected:
 	const char * getName() const { return "multiplicative expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -159,7 +159,7 @@ private:
 protected:
 	const char * getName() const { return "additive expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -175,7 +175,7 @@ private:
 protected:
 	const char * getName() const { return "comparison expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -191,7 +191,7 @@ private:
 protected:
 	const char * getName() const { return "logical-NOT expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -211,7 +211,7 @@ public:
 protected:
 	const char * getName() const { return "logical-AND expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -231,7 +231,7 @@ public:
 protected:
 	const char * getName() const { return "logical-OR expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return operator_parser.parse(pos, end, node, expected);
 	}
@@ -249,7 +249,7 @@ private:
 protected:
 	const char * getName() const { return "expression with ternary operator"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -261,7 +261,7 @@ private:
 protected:
 	const char * getName() const { return "lambda expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -274,7 +274,7 @@ protected:
 
 	const char * getName() const { return "expression with optional alias"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		return impl->parse(pos, end, node, expected);
 	}
@@ -286,7 +286,7 @@ class ParserExpressionList : public IParserBase
 {
 protected:
 	const char * getName() const { return "list of expressions"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -296,7 +296,7 @@ private:
 	ParserExpressionList nested_parser;
 protected:
 	const char * getName() const { return "not empty list of expressions"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
@@ -304,7 +304,7 @@ class ParserOrderByExpressionList : public IParserBase
 {
 protected:
 	const char * getName() const { return "order by expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 

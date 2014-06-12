@@ -25,10 +25,12 @@
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+	
 	try
 	{
-		DB::ParserSelectQuery parser;
-		DB::ASTPtr ast;
+		ParserSelectQuery parser;
+		ASTPtr ast;
 		std::string input = "SELECT x, s1, s2, "
 			"/*"
 			"2 + x * 2, x * 2, x % 3 == 1, "
@@ -37,7 +39,7 @@ int main(int argc, char ** argv)
 			"s1 <= 'abc', s1 <= s2, s1 >= 'abc', s1 >= s2, "
 			"*/"
 			"s1 < s2 AND x % 3 < x % 5";
-		const char * expected = "";
+		Expected expected = "";
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();
@@ -46,7 +48,7 @@ int main(int argc, char ** argv)
 		if (parser.parse(pos, end, ast, expected))
 		{
 			std::cout << "Success." << std::endl;
-			DB::formatAST(*ast, std::cout);
+			formatAST(*ast, std::cout);
 			std::cout << std::endl << ast->getTreeID() << std::endl;
 		}
 		else
@@ -56,30 +58,30 @@ int main(int argc, char ** argv)
 				<< ", expected " << expected << "." << std::endl;
 		}
 
-		DB::Context context;
-		DB::NamesAndTypesList columns;
-		columns.push_back(DB::NameAndTypePair("x", new DB::DataTypeInt16));
-		columns.push_back(DB::NameAndTypePair("s1", new DB::DataTypeString));
-		columns.push_back(DB::NameAndTypePair("s2", new DB::DataTypeString));
+		Context context;
+		NamesAndTypesList columns;
+		columns.push_back(NameAndTypePair("x", new DataTypeInt16));
+		columns.push_back(NameAndTypePair("s1", new DataTypeString));
+		columns.push_back(NameAndTypePair("s2", new DataTypeString));
 		context.setColumns(columns);
 		
-		DB::ExpressionAnalyzer analyzer(ast, context);
-		DB::ExpressionActionsChain chain;
+		ExpressionAnalyzer analyzer(ast, context);
+		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendProjectResult(chain, false);
 		chain.finalize();
-		DB::ExpressionActionsPtr expression = chain.getLastActions();
+		ExpressionActionsPtr expression = chain.getLastActions();
 
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
-		DB::Block block;
+		Block block;
 		
-		DB::ColumnWithNameAndType column_x;
+		ColumnWithNameAndType column_x;
 		column_x.name = "x";
-		column_x.type = new DB::DataTypeInt16;
-		DB::ColumnInt16 * x = new DB::ColumnInt16;
+		column_x.type = new DataTypeInt16;
+		ColumnInt16 * x = new ColumnInt16;
 		column_x.column = x;
-		DB::PODArray<Int16> & vec_x = x->getData();
+		PODArray<Int16> & vec_x = x->getData();
 
 		vec_x.resize(n);
 		for (size_t i = 0; i < n; ++i)
@@ -89,23 +91,23 @@ int main(int argc, char ** argv)
 
 		const char * strings[] = {"abc", "def", "abcd", "defg", "ac"};
 
-		DB::ColumnWithNameAndType column_s1;
+		ColumnWithNameAndType column_s1;
 		column_s1.name = "s1";
-		column_s1.type = new DB::DataTypeString;
-		column_s1.column = new DB::ColumnString;
+		column_s1.type = new DataTypeString;
+		column_s1.column = new ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
-			column_s1.column->insert(DB::String(strings[i % 5]));
+			column_s1.column->insert(String(strings[i % 5]));
 
 		block.insert(column_s1);
 
-		DB::ColumnWithNameAndType column_s2;
+		ColumnWithNameAndType column_s2;
 		column_s2.name = "s2";
-		column_s2.type = new DB::DataTypeString;
-		column_s2.column = new DB::ColumnString;
+		column_s2.type = new DataTypeString;
+		column_s2.column = new ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
-			column_s2.column->insert(DB::String(strings[i % 3]));
+			column_s2.column->insert(String(strings[i % 3]));
 
 		block.insert(column_s2);
 
@@ -122,15 +124,15 @@ int main(int argc, char ** argv)
 				<< std::endl;
 		}
 		
-		DB::OneBlockInputStream * is = new DB::OneBlockInputStream(block);
-		DB::LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
-		DB::WriteBufferFromOStream out_buf(std::cout);
-		DB::RowOutputStreamPtr os_ = new DB::TabSeparatedRowOutputStream(out_buf, block);
-		DB::BlockOutputStreamFromRowOutputStream os(os_);
+		OneBlockInputStream * is = new OneBlockInputStream(block);
+		LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
+		WriteBufferFromOStream out_buf(std::cout);
+		RowOutputStreamPtr os_ = new TabSeparatedRowOutputStream(out_buf, block);
+		BlockOutputStreamFromRowOutputStream os(os_);
 
-		DB::copyData(lis, os);
+		copyData(lis, os);
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.displayText() << std::endl;
 	}

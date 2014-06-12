@@ -9,10 +9,12 @@
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+	
 	try
 	{
-		DB::ParserCreateQuery parser;
-		DB::ASTPtr ast;
+		ParserCreateQuery parser;
+		ASTPtr ast;
 		std::string input = "CREATE TABLE IF NOT EXISTS hits (\n"
 			"WatchID				UInt64,\n"
 			"JavaEnable 			UInt8,\n"
@@ -72,7 +74,7 @@ int main(int argc, char ** argv)
 			"DontCountHits 			UInt8,\n"
 			"WithHash 				UInt8\n"
 			") ENGINE = Log";
-		const char * expected = "";
+		Expected expected = "";
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();
@@ -81,7 +83,7 @@ int main(int argc, char ** argv)
 		if (parser.parse(pos, end, ast, expected))
 		{
 			std::cout << "Success." << std::endl;
-			DB::formatAST(*ast, std::cout);
+			formatAST(*ast, std::cout);
 			std::cout << std::endl;
 		}
 		else
@@ -91,16 +93,16 @@ int main(int argc, char ** argv)
 				<< ", expected " << expected << "." << std::endl;
 		}
 
-		DB::Context context;
+		Context context;
 
 		context.setPath("./");
 		context.addDatabase("test");
 		context.setCurrentDatabase("test");
 
-		DB::InterpreterCreateQuery interpreter(ast, context);
+		InterpreterCreateQuery interpreter(ast, context);
 		interpreter.execute();
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.displayText() << std::endl;
 	}

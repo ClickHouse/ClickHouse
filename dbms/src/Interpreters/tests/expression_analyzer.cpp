@@ -3,11 +3,11 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 
-using namespace DB;
-
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+
 	try
 	{
 	
@@ -35,7 +35,7 @@ int main(int argc, char ** argv)
 		IParser & parser = *parsers[i];
 		const char * pos = argv[1];
 		const char * end = argv[1] + strlen(argv[1]);
-		const char * expected = "";
+		Expected expected = "";
 		if (parser.parse(pos ,end, root, expected))
 			break;
 		else

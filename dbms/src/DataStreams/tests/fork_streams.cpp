@@ -46,12 +46,14 @@ void thread2(DB::BlockInputStreamPtr in, DB::BlockOutputStreamPtr out, DB::Write
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+
 	try
 	{
-		DB::ParserSelectQuery parser;
-		DB::ASTPtr ast;
+		ParserSelectQuery parser;
+		ASTPtr ast;
 		std::string input = "SELECT number, number % 10000000 == 1";
-		const char * expected = "";
+		Expected expected = "";
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();
@@ -64,48 +66,48 @@ int main(int argc, char ** argv)
 				<< ", expected " << expected << "." << std::endl;
 		}
 
-		DB::formatAST(*ast, std::cerr);
+		formatAST(*ast, std::cerr);
 
-		DB::Context context;
-		context.getColumns().push_back(DB::NameAndTypePair("number", new DB::DataTypeUInt64));
+		Context context;
+		context.getColumns().push_back(NameAndTypePair("number", new DataTypeUInt64));
 
-		DB::ExpressionAnalyzer analyzer(ast, context);
-		DB::ExpressionActionsChain chain;
+		ExpressionAnalyzer analyzer(ast, context);
+		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendProjectResult(chain, false);
 		chain.finalize();
-		DB::ExpressionActionsPtr expression = chain.getLastActions();
+		ExpressionActionsPtr expression = chain.getLastActions();
 
-		DB::StoragePtr table = DB::StorageSystemNumbers::create("Numbers");
+		StoragePtr table = StorageSystemNumbers::create("Numbers");
 
-		DB::Names column_names;
+		Names column_names;
 		column_names.push_back("number");
 
-		DB::QueryProcessingStage::Enum stage;
+		QueryProcessingStage::Enum stage;
 
-		DB::BlockInputStreamPtr in = table->read(column_names, 0, DB::Settings(), stage)[0];
+		BlockInputStreamPtr in = table->read(column_names, 0, Settings(), stage)[0];
 
-		DB::ForkBlockInputStreams fork(in);
+		ForkBlockInputStreams fork(in);
 
-		DB::BlockInputStreamPtr in1 = fork.createInput();
-		DB::BlockInputStreamPtr in2 = fork.createInput();
+		BlockInputStreamPtr in1 = fork.createInput();
+		BlockInputStreamPtr in2 = fork.createInput();
 
-		in1 = new DB::ExpressionBlockInputStream(in1, expression);
-		in1 = new DB::FilterBlockInputStream(in1, 1);
-		in1 = new DB::LimitBlockInputStream(in1, 10, 0);
+		in1 = new ExpressionBlockInputStream(in1, expression);
+		in1 = new FilterBlockInputStream(in1, 1);
+		in1 = new LimitBlockInputStream(in1, 10, 0);
 
-		in2 = new DB::ExpressionBlockInputStream(in2, expression);
-		in2 = new DB::FilterBlockInputStream(in2, 1);
-		in2 = new DB::LimitBlockInputStream(in2, 20, 5);
+		in2 = new ExpressionBlockInputStream(in2, expression);
+		in2 = new FilterBlockInputStream(in2, 1);
+		in2 = new LimitBlockInputStream(in2, 20, 5);
 
-		DB::Block out_sample = expression->getSampleBlock();
-		DB::FormatFactory format_factory;
+		Block out_sample = expression->getSampleBlock();
+		FormatFactory format_factory;
 
-		DB::WriteBufferFromOStream ob1(std::cout);
-		DB::WriteBufferFromOStream ob2(std::cerr);
+		WriteBufferFromOStream ob1(std::cout);
+		WriteBufferFromOStream ob2(std::cerr);
 
-		DB::BlockOutputStreamPtr out1 = format_factory.getOutput("TabSeparated", ob1, out_sample);
-		DB::BlockOutputStreamPtr out2 = format_factory.getOutput("TabSeparated", ob2, out_sample);
+		BlockOutputStreamPtr out1 = format_factory.getOutput("TabSeparated", ob1, out_sample);
+		BlockOutputStreamPtr out2 = format_factory.getOutput("TabSeparated", ob2, out_sample);
 
 		boost::thread thr1(thread1, in1, out1, boost::ref(ob1));
 		boost::thread thr2(thread2, in2, out2, boost::ref(ob2));
@@ -115,7 +117,7 @@ int main(int argc, char ** argv)
 		thr1.join();
 		thr2.join();
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;

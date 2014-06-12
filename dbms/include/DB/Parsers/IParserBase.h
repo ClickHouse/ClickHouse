@@ -16,10 +16,13 @@ namespace DB
 class IParserBase : public IParser
 {
 public:
-	bool parse(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parse(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		expected = getName();
 		bool res = parseImpl(pos, end, node, expected);
+
+		if (!res)
+			node = nullptr;
 
 		if (pos > end)
 			throw Exception("Logical error: pos > end.", ErrorCodes::LOGICAL_ERROR);
@@ -27,7 +30,7 @@ public:
 		return res;
 	}
 protected:
-	virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected) = 0;
+	virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected) = 0;
 };
 
 }

@@ -4,15 +4,15 @@
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/Parsers/ParserJoin.h>
 #include <DB/Parsers/ParserSelectQuery.h>
-//#include <DB/Parsers/ParserCreateQuery.h>
 
 
 namespace DB
 {
 
 
-bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -25,6 +25,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	ParserString s_from("FROM", true, true);
 	ParserString s_array("ARRAY", true, true);
 	ParserString s_join("JOIN", true, true);
+	ParserString s_using("USING", true, true);
 	ParserString s_prewhere("PREWHERE", true, true);
 	ParserString s_where("WHERE", true, true);
 	ParserString s_final("FINAL", true, true);
@@ -37,8 +38,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 	ParserString s_order("ORDER", true, true);
 	ParserString s_limit("LIMIT", true, true);
 	ParserString s_format("FORMAT", true, true);
+
 	ParserNotEmptyExpressionList exp_list;
 	ParserExpressionWithOptionalAlias exp_elem;
+	ParserJoin join;
 	ParserOrderByExpressionList order_list;
 
 	ws.ignore(pos, end);
@@ -137,6 +140,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 
 		ws.ignore(pos, end);
 	}
+
+	/// [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery) USING (tuple)
+	join.parse(pos, end, select_query->join, expected);
 
 	/// FINAL
 	if (s_final.ignore(pos, end, expected))

@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 

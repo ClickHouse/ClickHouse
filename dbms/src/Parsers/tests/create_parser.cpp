@@ -9,10 +9,12 @@
 
 int main(int argc, char ** argv)
 {
-	DB::ParserCreateQuery parser;
-	DB::ASTPtr ast;
+	using namespace DB;
+	
+	ParserCreateQuery parser;
+	ASTPtr ast;
 	std::string input = "CREATE TABLE hits (URL String, UserAgentMinor2 FixedString(2), EventTime DateTime) ENGINE = Log";
-	const char * expected = "";
+	Expected expected = "";
 
 	const char * begin = input.data();
 	const char * end = begin + input.size();
@@ -21,7 +23,7 @@ int main(int argc, char ** argv)
 	if (parser.parse(pos, end, ast, expected))
 	{
 		std::cout << "Success." << std::endl;
-		DB::formatAST(*ast, std::cout);
+		formatAST(*ast, std::cout);
 		std::cout << std::endl;
 
 		std::cout << std::endl << ast->getTreeID() << std::endl;

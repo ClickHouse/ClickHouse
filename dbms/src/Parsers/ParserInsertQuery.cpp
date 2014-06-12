@@ -14,7 +14,7 @@ namespace DB
 {
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 

@@ -11,7 +11,7 @@ namespace DB
 
 
 /// Парсит name = value.
-static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos, IParser::Pos end, const char *& expected)
+static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos, IParser::Pos end, Expected & expected)
 {
 	ParserIdentifier name_p;
 	ParserLiteral value_p;
@@ -45,7 +45,7 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
 }
 
 	
-bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 

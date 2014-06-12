@@ -10,7 +10,7 @@
 namespace DB
 {
 	
-bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString open("(");
@@ -52,7 +52,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char 
 }
 	
 	
-bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 	
@@ -72,7 +72,7 @@ bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node
 }
 
 
-bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserIdentifier non_parametric;
 	ParserIdentifierWithParameters parametric;
@@ -98,13 +98,13 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 	return false;
 }
 
-bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	return ParserList(ParserPtr(new ParserNameTypePair), ParserPtr(new ParserString(",")), false).parse(pos, end, node, expected);
 }
 
 
-bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, const char *& expected)
+bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_engine("ENGINE", true, true);
@@ -132,7 +132,7 @@ bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, const char *&
 }
 
 
-bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
 

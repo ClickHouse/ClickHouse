@@ -18,7 +18,7 @@ namespace DB
 {
 
 
-bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserShowTablesQuery show_tables_p;
 	ParserSelectQuery select_p;

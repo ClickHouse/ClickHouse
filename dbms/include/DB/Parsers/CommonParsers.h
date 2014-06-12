@@ -35,7 +35,7 @@ public:
 protected:
 	const char * getName() const { return s; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		if (static_cast<ssize_t>(s_size) > end - pos || (case_insensitive ? strncasecmp : strncmp)(pos, s, s_size))
 			return false;
@@ -64,7 +64,7 @@ protected:
 	
 	const char * getName() const { return "white space"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		Pos begin = pos;
 		while (pos < end && (*pos == ' ' || *pos == '\t' || (allow_newlines && *pos == '\n') || *pos == '\r' || *pos == '\f'))
@@ -80,7 +80,7 @@ class ParserCStyleComment : public IParserBase
 protected:
 	const char * getName() const { return "C-style comment"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		if (end - pos >= 4 && pos[0] == '/' && pos[1] == '*')
 		{
@@ -110,7 +110,7 @@ class ParserSQLStyleComment : public IParserBase
 protected:
 	const char * getName() const { return "SQL-style comment"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		if (end - pos >= 2 && pos[0] == '-' && pos[1] == '-')
 		{
@@ -135,7 +135,7 @@ class ParserComment : public IParserBase
 protected:
 	const char * getName() const { return "comment"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		ParserCStyleComment p1;
 		ParserSQLStyleComment p2;
@@ -156,7 +156,7 @@ protected:
 	
 	const char * getName() const { return "white space or comments"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, const char *& expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 	{
 		ParserWhiteSpace p1(allow_newlines_outside_comments);
 		ParserComment p2;

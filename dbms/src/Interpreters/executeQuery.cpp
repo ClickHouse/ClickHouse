@@ -31,7 +31,7 @@ void executeQuery(
 
 	ParserQuery parser;
 	ASTPtr ast;
-	const char * expected = "";
+	Expected expected = "";
 
 	PODArray<char> parse_buf;
 	const char * begin;
@@ -129,7 +129,7 @@ BlockIO executeQuery(
 	
 	ParserQuery parser;
 	ASTPtr ast;
-	const char * expected = "";
+	Expected expected = "";
 
 	const char * begin = query.data();
 	const char * end = begin + query.size();

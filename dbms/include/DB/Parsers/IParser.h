@@ -13,6 +13,8 @@ namespace DB
 
 using Poco::SharedPtr;
 
+typedef const char * Expected;
+
 
 /** Интерфейс для классов-парсеров
   */
@@ -32,9 +34,9 @@ public:
 	  *  или что парсит этот парсер, если парсинг был успешным.
 	  * Строка, в которую входит диапазон [begin, end) может быть не 0-terminated.
 	  */
-	virtual bool parse(Pos & pos, Pos end, ASTPtr & node, const char *& expected) = 0;
+	virtual bool parse(Pos & pos, Pos end, ASTPtr & node, Expected & expected) = 0;
 
-	bool ignore(Pos & pos, Pos end, const char *& expected)
+	bool ignore(Pos & pos, Pos end, Expected & expected)
 	{
 		ASTPtr ignore_node;
 		return parse(pos, end, ignore_node, expected);
@@ -42,13 +44,13 @@ public:
 	
 	bool ignore(Pos & pos, Pos end)
 	{
-		const char * expected;
+		Expected expected;
 		return ignore(pos, end, expected);
 	}
 
 	/** То же самое, но не двигать позицию и не записывать результат в node.
 	  */
-	bool check(Pos & pos, Pos end, const char *& expected)
+	bool check(Pos & pos, Pos end, Expected & expected)
 	{
 		Pos begin = pos;
 		ASTPtr node;
@@ -93,7 +95,7 @@ inline std::string getSyntaxErrorMessage(
 	IParser::Pos begin,
 	IParser::Pos end,
 	IParser::Pos pos,
-	const char * expected,
+	Expected expected,
 	const std::string & description = "")
 {
 	std::stringstream message;

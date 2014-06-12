@@ -33,80 +33,82 @@ using Poco::SharedPtr;
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+	
 	try
 	{
-		DB::NamesAndTypesListPtr names_and_types_list = new DB::NamesAndTypesList;
+		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList;
 
 		boost::assign::push_back(*names_and_types_list)
-			("WatchID",				new DB::DataTypeUInt64)
-			("JavaEnable",			new DB::DataTypeUInt8)
-			("Title",				new DB::DataTypeString)
-			("EventTime",			new DB::DataTypeDateTime)
-			("CounterID",			new DB::DataTypeUInt32)
-			("ClientIP",			new DB::DataTypeUInt32)
-			("RegionID",			new DB::DataTypeUInt32)
-			("UniqID",				new DB::DataTypeUInt64)
-			("CounterClass",		new DB::DataTypeUInt8)
-			("OS",					new DB::DataTypeUInt8)
-			("UserAgent",			new DB::DataTypeUInt8)
-			("URL",					new DB::DataTypeString)
-			("Referer",				new DB::DataTypeString)
-			("Refresh",				new DB::DataTypeUInt8)
-			("ResolutionWidth",		new DB::DataTypeUInt16)
-			("ResolutionHeight",	new DB::DataTypeUInt16)
-			("ResolutionDepth",		new DB::DataTypeUInt8)
-			("FlashMajor",			new DB::DataTypeUInt8)
-			("FlashMinor",			new DB::DataTypeUInt8)
-			("FlashMinor2",			new DB::DataTypeString)
-			("NetMajor",			new DB::DataTypeUInt8)
-			("NetMinor",			new DB::DataTypeUInt8)
-			("UserAgentMajor",		new DB::DataTypeUInt16)
-			("UserAgentMinor",		new DB::DataTypeFixedString(2))
-			("CookieEnable",		new DB::DataTypeUInt8)
-			("JavascriptEnable",	new DB::DataTypeUInt8)
-			("IsMobile",			new DB::DataTypeUInt8)
-			("MobilePhone",			new DB::DataTypeUInt8)
-			("MobilePhoneModel",	new DB::DataTypeString)
-			("Params",				new DB::DataTypeString)
-			("IPNetworkID",			new DB::DataTypeUInt32)
-			("TraficSourceID",		new DB::DataTypeInt8)
-			("SearchEngineID",		new DB::DataTypeUInt16)
-			("SearchPhrase",		new DB::DataTypeString)
-			("AdvEngineID",			new DB::DataTypeUInt8)
-			("IsArtifical",			new DB::DataTypeUInt8)
-			("WindowClientWidth",	new DB::DataTypeUInt16)
-			("WindowClientHeight",	new DB::DataTypeUInt16)
-			("ClientTimeZone",		new DB::DataTypeInt16)
-			("ClientEventTime",		new DB::DataTypeDateTime)
-			("SilverlightVersion1",	new DB::DataTypeUInt8)
-			("SilverlightVersion2",	new DB::DataTypeUInt8)
-			("SilverlightVersion3",	new DB::DataTypeUInt32)
-			("SilverlightVersion4",	new DB::DataTypeUInt16)
-			("PageCharset",			new DB::DataTypeString)
-			("CodeVersion",			new DB::DataTypeUInt32)
-			("IsLink",				new DB::DataTypeUInt8)
-			("IsDownload",			new DB::DataTypeUInt8)
-			("IsNotBounce",			new DB::DataTypeUInt8)
-			("FUniqID",				new DB::DataTypeUInt64)
-			("OriginalURL",			new DB::DataTypeString)
-			("HID",					new DB::DataTypeUInt32)
-			("IsOldCounter",		new DB::DataTypeUInt8)
-			("IsEvent",				new DB::DataTypeUInt8)
-			("IsParameter",			new DB::DataTypeUInt8)
-			("DontCountHits",		new DB::DataTypeUInt8)
-			("WithHash",			new DB::DataTypeUInt8)
+			("WatchID",				new DataTypeUInt64)
+			("JavaEnable",			new DataTypeUInt8)
+			("Title",				new DataTypeString)
+			("EventTime",			new DataTypeDateTime)
+			("CounterID",			new DataTypeUInt32)
+			("ClientIP",			new DataTypeUInt32)
+			("RegionID",			new DataTypeUInt32)
+			("UniqID",				new DataTypeUInt64)
+			("CounterClass",		new DataTypeUInt8)
+			("OS",					new DataTypeUInt8)
+			("UserAgent",			new DataTypeUInt8)
+			("URL",					new DataTypeString)
+			("Referer",				new DataTypeString)
+			("Refresh",				new DataTypeUInt8)
+			("ResolutionWidth",		new DataTypeUInt16)
+			("ResolutionHeight",	new DataTypeUInt16)
+			("ResolutionDepth",		new DataTypeUInt8)
+			("FlashMajor",			new DataTypeUInt8)
+			("FlashMinor",			new DataTypeUInt8)
+			("FlashMinor2",			new DataTypeString)
+			("NetMajor",			new DataTypeUInt8)
+			("NetMinor",			new DataTypeUInt8)
+			("UserAgentMajor",		new DataTypeUInt16)
+			("UserAgentMinor",		new DataTypeFixedString(2))
+			("CookieEnable",		new DataTypeUInt8)
+			("JavascriptEnable",	new DataTypeUInt8)
+			("IsMobile",			new DataTypeUInt8)
+			("MobilePhone",			new DataTypeUInt8)
+			("MobilePhoneModel",	new DataTypeString)
+			("Params",				new DataTypeString)
+			("IPNetworkID",			new DataTypeUInt32)
+			("TraficSourceID",		new DataTypeInt8)
+			("SearchEngineID",		new DataTypeUInt16)
+			("SearchPhrase",		new DataTypeString)
+			("AdvEngineID",			new DataTypeUInt8)
+			("IsArtifical",			new DataTypeUInt8)
+			("WindowClientWidth",	new DataTypeUInt16)
+			("WindowClientHeight",	new DataTypeUInt16)
+			("ClientTimeZone",		new DataTypeInt16)
+			("ClientEventTime",		new DataTypeDateTime)
+			("SilverlightVersion1",	new DataTypeUInt8)
+			("SilverlightVersion2",	new DataTypeUInt8)
+			("SilverlightVersion3",	new DataTypeUInt32)
+			("SilverlightVersion4",	new DataTypeUInt16)
+			("PageCharset",			new DataTypeString)
+			("CodeVersion",			new DataTypeUInt32)
+			("IsLink",				new DataTypeUInt8)
+			("IsDownload",			new DataTypeUInt8)
+			("IsNotBounce",			new DataTypeUInt8)
+			("FUniqID",				new DataTypeUInt64)
+			("OriginalURL",			new DataTypeString)
+			("HID",					new DataTypeUInt32)
+			("IsOldCounter",		new DataTypeUInt8)
+			("IsEvent",				new DataTypeUInt8)
+			("IsParameter",			new DataTypeUInt8)
+			("DontCountHits",		new DataTypeUInt8)
+			("WithHash",			new DataTypeUInt8)
 		;
 
-		typedef std::map<DB::String, DB::DataTypePtr> NamesAndTypesMap;
+		typedef std::map<String, DataTypePtr> NamesAndTypesMap;
 		SharedPtr<NamesAndTypesMap> names_and_types_map = new NamesAndTypesMap;
 
-		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
+		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 			names_and_types_map->insert(*it);
 
-		DB::ParserSelectQuery parser;
-		DB::ASTPtr ast;
+		ParserSelectQuery parser;
+		ASTPtr ast;
 		std::string input = "SELECT UniqID, URL, CounterID, IsLink";
-		const char * expected = "";
+		Expected expected = "";
 
 		const char * begin = input.data();
 		const char * end = begin + input.size();
@@ -119,17 +121,17 @@ int main(int argc, char ** argv)
 				<< ", expected " << expected << "." << std::endl;
 		}
 
-		DB::formatAST(*ast, std::cerr);
+		formatAST(*ast, std::cerr);
 		std::cerr << std::endl;
 		std::cerr << ast->getTreeID() << std::endl;
 
 		/// создаём объект существующей таблицы хит лога
 
-		DB::StoragePtr table = DB::StorageLog::create("./", "HitLog", names_and_types_list);
+		StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list);
 
 		/// читаем из неё, сортируем, и пишем в tsv виде в консоль
 
-		DB::Names column_names;
+		Names column_names;
 		boost::assign::push_back(column_names)
 			("UniqID")
 			("URL")
@@ -137,7 +139,7 @@ int main(int argc, char ** argv)
 			("IsLink")
 		;
 
-		Poco::SharedPtr<DB::DataTypes> result_types = new DB::DataTypes;
+		Poco::SharedPtr<DataTypes> result_types = new DataTypes;
 		boost::assign::push_back(*result_types)
 			((*names_and_types_map)["UniqID"])
 			((*names_and_types_map)["URL"])
@@ -145,32 +147,32 @@ int main(int argc, char ** argv)
 			((*names_and_types_map)["IsLink"])
 		;
 
-		DB::Block sample;
-		for (DB::DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
+		Block sample;
+		for (DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
 		{
-			DB::ColumnWithNameAndType col;
+			ColumnWithNameAndType col;
 			col.type = *it;
 			sample.insert(col);
 		}
 
-		DB::SortDescription sort_columns;
-		sort_columns.push_back(DB::SortColumnDescription(1, -1));
-		sort_columns.push_back(DB::SortColumnDescription(2, 1));
-		sort_columns.push_back(DB::SortColumnDescription(0, 1));
-		sort_columns.push_back(DB::SortColumnDescription(3, 1));
+		SortDescription sort_columns;
+		sort_columns.push_back(SortColumnDescription(1, -1));
+		sort_columns.push_back(SortColumnDescription(2, 1));
+		sort_columns.push_back(SortColumnDescription(0, 1));
+		sort_columns.push_back(SortColumnDescription(3, 1));
 
-		DB::QueryProcessingStage::Enum stage;
+		QueryProcessingStage::Enum stage;
 		
-		Poco::SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
-		in = new DB::PartialSortingBlockInputStream(in, sort_columns);
-		in = new DB::MergeSortingBlockInputStream(in, sort_columns);
-		//in = new DB::LimitBlockInputStream(in, 10);
+		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
+		in = new PartialSortingBlockInputStream(in, sort_columns);
+		in = new MergeSortingBlockInputStream(in, sort_columns);
+		//in = new LimitBlockInputStream(in, 10);
 
-		DB::WriteBufferFromOStream ob(std::cout);
-		DB::RowOutputStreamPtr out_ = new DB::TabSeparatedRowOutputStream(ob, sample);
-		DB::BlockOutputStreamFromRowOutputStream out(out_);
+		WriteBufferFromOStream ob(std::cout);
+		RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(ob, sample);
+		BlockOutputStreamFromRowOutputStream out(out_);
 
-		DB::copyData(*in, out);
+		copyData(*in, out);
 
 /*		std::cerr << std::endl << "Reading: " << std::endl;
 		profiling1->getInfo().print(std::cerr);
@@ -179,7 +181,7 @@ int main(int argc, char ** argv)
 		std::cerr << std::endl << "Merging: " << std::endl;
 		profiling3->getInfo().print(std::cerr);*/
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;
