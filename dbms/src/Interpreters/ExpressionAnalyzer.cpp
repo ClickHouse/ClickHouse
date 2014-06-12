@@ -1376,42 +1376,7 @@ Sets ExpressionAnalyzer::getSetsWithSubqueries()
 
 Joins ExpressionAnalyzer::getJoinsWithSubqueries()
 {
-	std::cerr << __PRETTY_FUNCTION__ << std::endl;
-
-	if (select_query->join)
-	{
-		std::cerr << "Found JOIN" << std::endl;
-
-		auto & node = dynamic_cast<ASTJoin &>(*select_query->join);
-		auto & join_keys_expr_list = dynamic_cast<ASTExpressionList &>(*node.using_expr_list);
-
-		size_t num_join_keys = join_keys_expr_list.children.size();
-		Names join_key_names(num_join_keys);
-		for (size_t i = 0; i < num_join_keys; ++i)
-			join_key_names[i] = join_keys_expr_list.children[i]->getColumnName();
-
-		JoinPtr join = new Join(join_key_names, settings.limits);
-
-		/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
-		* Так как результат этого поздапроса - ещё не результат всего запроса.
-		* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-		* TODO: отдельные ограничения для JOIN.
-		*/
-		Context subquery_context = context;
-		Settings subquery_settings = context.getSettings();
-		subquery_settings.limits.max_result_rows = 0;
-		subquery_settings.limits.max_result_bytes = 0;
-		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
-		subquery_settings.extremes = 0;
-		subquery_context.setSettings(subquery_settings);
-
-		InterpreterSelectQuery interpreter(node.subquery->children[0], subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
-		join->setSource(interpreter.execute());
-
-		return Joins(1, join);
-	}
-
-	return Joins();
+	return joins;
 }
 
 
@@ -1548,6 +1513,7 @@ void ExpressionAnalyzer::removeUnusedColumns()
 	}
 
 	getRequiredColumnsImpl(ast, required, ignored);
+	findJoins(required);
 
 	/// Вставляем в список требуемых столбцов столбцы, нужные для вычисления ARRAY JOIN.
 	NameSet array_join_sources;
@@ -1591,6 +1557,65 @@ void ExpressionAnalyzer::removeUnusedColumns()
 	}
 }
 
+void ExpressionAnalyzer::findJoins(NameSet & required_columns)
+{
+	if (!select_query || !select_query->join)
+		return;
+
+	std::cerr << "Found JOIN" << std::endl;
+
+	auto & node = dynamic_cast<ASTJoin &>(*select_query->join);
+	auto & join_keys_expr_list = dynamic_cast<ASTExpressionList &>(*node.using_expr_list);
+
+	size_t num_join_keys = join_keys_expr_list.children.size();
+	Names join_key_names(num_join_keys);
+	NameSet join_key_names_set;
+
+	for (size_t i = 0; i < num_join_keys; ++i)
+	{
+		String name = join_keys_expr_list.children[i]->getColumnName();
+		join_key_names[i] = name;
+
+		if (!join_key_names_set.insert(name).second)
+			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+	}
+
+	JoinPtr join = new Join(join_key_names, settings.limits);
+
+	/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
+	  * Так как результат этого поздапроса - ещё не результат всего запроса.
+	  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
+	  * TODO: отдельные ограничения для JOIN.
+	  */
+	Context subquery_context = context;
+	Settings subquery_settings = context.getSettings();
+	subquery_settings.limits.max_result_rows = 0;
+	subquery_settings.limits.max_result_bytes = 0;
+	/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+	subquery_settings.extremes = 0;
+	subquery_context.setSettings(subquery_settings);
+
+	InterpreterSelectQuery interpreter(
+		node.subquery->children[0], subquery_context,
+		/// Будем использовать в подзапросе только столбцы, которые есть в required_columns.
+		Names(required_columns.begin(), required_columns.end()), true,
+		QueryProcessingStage::Complete, subquery_depth + 1);
+
+	Block right_table_sample = interpreter.getSampleBlock();
+	join->setSource(interpreter.execute());
+
+	joins.push_back(join);
+
+	/// Удаляем из required_columns столбцы, которые есть в подзапросе, но нет в USING-е.
+	for (NameSet::iterator it = required_columns.begin(); it != required_columns.end();)
+	{
+		if (right_table_sample.has(*it) && !join_key_names_set.count(*it))
+			required_columns.erase(it++);
+		else
+			++it;
+	}
+}
+
 Names ExpressionAnalyzer::getRequiredColumns()
 {
 	if (!unknown_required_columns.empty())
@@ -1605,6 +1630,14 @@ Names ExpressionAnalyzer::getRequiredColumns()
 
 void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NameSet & required_columns, NameSet & ignored_names)
 {
+	/** Найдём все идентификаторы в запросе.
+	  * Будем искать их рекурсивно, обходя в глубину AST.
+	  * При этом:
+	  * - для лямбда функций не будем брать формальные параметры;
+	  * - не опускаемся в подзапросы (там свои идентификаторы);
+	  * - некоторое исключение для секции ARRAY JOIN (в ней идентификаторы немного другие).
+	  */
+
 	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column
@@ -1629,7 +1662,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NameSet & required_c
 			if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
 				throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
 
-			/// Не нужно добавлять параметры лямбда-выражения в required_columns.
+			/// Не нужно добавлять формальные параметры лямбда-выражения в required_columns.
 			Names added_ignored;
 			for (size_t i = 0 ; i < lambda_args_tuple->arguments->children.size(); ++i)
 			{
@@ -1655,12 +1688,12 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NameSet & required_c
 
 	ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast);
 
-	for (size_t i = 0; i < ast->children.size(); ++i)
+	/// Рекурсивный обход выражения.
+	for (auto & child : ast->children)
 	{
-		ASTPtr child = ast->children[i];
-
-		/// Не пойдем в секцию ARRAY JOIN, потому что там нужно смотреть на имена не-ARRAY-JOIN-енных столбцов.
-		/// Туда removeUnusedColumns отправит нас отдельно.
+		/** Не пойдем в секцию ARRAY JOIN, потому что там нужно смотреть на имена не-ARRAY-JOIN-енных столбцов.
+		  * Туда removeUnusedColumns отправит нас отдельно.
+		  */
 		if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child) &&
 			!(select && child == select->array_join_expression_list))
 			getRequiredColumnsImpl(child, required_columns, ignored_names);

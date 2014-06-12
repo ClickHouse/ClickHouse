@@ -173,7 +173,7 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 		new_select.children.push_back(new_select.where_expression);
 
 	/// Возвращаем результат выполнения нового запроса на блоке виртуальных функций
-	InterpreterSelectQuery interpreter(new_query, context, columns, input.getColumnsList(),
+	InterpreterSelectQuery interpreter(new_query, context, columns, false, input.getColumnsList(),
 		QueryProcessingStage::Complete, 0, new OneBlockInputStream(input));
 
 	return interpreter.execute();

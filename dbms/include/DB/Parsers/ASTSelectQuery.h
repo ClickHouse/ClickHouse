@@ -33,7 +33,7 @@ public:
 
 	ASTSelectQuery() {}
 	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_) {}
-	
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "SelectQuery"; };
 
@@ -52,7 +52,7 @@ public:
 	}
 
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
-	void rewriteSelectExpressionList(const Names & column_names)
+	void rewriteSelectExpressionList(const Names & column_names, bool ignore_unknown = false)
 	{
 		ASTPtr result = new ASTExpressionList;
 		ASTs asts = select_expression_list->children;
@@ -80,11 +80,10 @@ public:
 					done = 1;
 				}
 			}
-			if (!done)
+			if (!done && !ignore_unknown)
 				throw Exception("Error while rewriting expressioin list for select query."
 					" Could not find alias: " + column_names[i],
 					DB::ErrorCodes::UNKNOWN_IDENTIFIER);
-
 		}
 
 		for (auto & child : children)

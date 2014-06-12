@@ -16,12 +16,29 @@ namespace DB
 class InterpreterSelectQuery
 {
 public:
-	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = nullptr);
+	InterpreterSelectQuery(
+		ASTPtr query_ptr_,
+		const Context & context_,
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+		size_t subquery_depth_ = 0,
+		BlockInputStreamPtr input = nullptr);
 
-	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names,
-		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = nullptr);
+	InterpreterSelectQuery(
+		ASTPtr query_ptr_,
+		const Context & context_,
+		const Names & required_column_names, bool ignore_unknown_required_columns_,
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+		size_t subquery_depth_ = 0,
+		BlockInputStreamPtr input = nullptr);
 
-	InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names, const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete, size_t subquery_depth_ = 0, BlockInputStreamPtr input = nullptr);
+	InterpreterSelectQuery(
+		ASTPtr query_ptr_,
+		const Context & context_,
+		const Names & required_column_names, bool ignore_unknown_required_columns_,
+		const NamesAndTypesList & table_column_names,
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+		size_t subquery_depth_ = 0,
+		BlockInputStreamPtr input = nullptr);
 
 	/// Выполнить запрос, получить поток блоков для чтения
 	BlockInputStreamPtr execute();
@@ -36,13 +53,13 @@ public:
 
 private:
 	typedef Poco::SharedPtr<ExpressionAnalyzer> ExpressionAnalyzerPtr;
-	
+
 	void init(BlockInputStreamPtr input, const NamesAndTypesList & table_column_names = NamesAndTypesList());
 
 	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
 	  */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
-	
+
 	/** Выбрать из списка столбцов какой-нибудь, лучше - минимального размера.
 	  */
 	String getAnyColumn();

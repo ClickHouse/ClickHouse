@@ -96,8 +96,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	init(input_);
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names_,
-		QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
+	const Names & required_column_names_, bool ignore_unknown_required_columns_,
+	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
@@ -106,13 +107,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
-		query.rewriteSelectExpressionList(required_column_names_);
+		query.rewriteSelectExpressionList(required_column_names_, ignore_unknown_required_columns_);
 
 	init(input_);
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, const Names & required_column_names_,
-		const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
+	const Names & required_column_names_, bool ignore_unknown_required_columns_,
+	const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
@@ -121,7 +123,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
-		query.rewriteSelectExpressionList(required_column_names_);
+		query.rewriteSelectExpressionList(required_column_names_, ignore_unknown_required_columns_);
 
 	init(input_, table_column_names);
 }
@@ -223,7 +225,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 		/// Столбцы из списка SELECT, до переименования в алиасы.
 		Names selected_columns;
-		
+
 		/// Нужно ли выполнять первую часть конвейера - выполняемую на удаленных серверах при распределенной обработке.
 		bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
 			&& to_stage >= QueryProcessingStage::WithMergeableState;
@@ -282,9 +284,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
 		if (has_having)
 			before_having->prependProjectInput();
-		
+
 		/// Теперь составим потоки блоков, выполняющие нужные действия.
-		
+
 		/// Нужно ли агрегировать в отдельную строку строки, не прошедшие max_rows_to_group_by.
 		bool aggregate_overflow_row =
 			need_aggregate &&
@@ -346,7 +348,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 			if (has_order_by)
 				executeOrder(streams);
-			
+
 			executeProjection(streams, final_projection);
 
 			/// На этой стадии можно считать минимумы и максимумы, если надо.
@@ -360,9 +362,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			  */
 			if (query.limit_length && streams.size() > 1 && !query.distinct)
 				executePreLimit(streams);
-			
+
 			executeUnion(streams);
-			
+
 			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 			if (need_second_distinct_pass)
 				executeDistinct(streams, false, Names());
@@ -383,7 +385,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	{
 		stream->setProgressCallback(context.getProgressCallback());
 		stream->setProcessListElement(context.getProcessListElement());
-		
+
 		/// Ограничения действуют только на конечный результат.
 		if (to_stage == QueryProcessingStage::Complete)
 		{
@@ -439,7 +441,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		subquery_context.setSettings(subquery_settings);
 
 		interpreter_subquery = new InterpreterSelectQuery(
-			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+			query.table, subquery_context, required_columns, false, QueryProcessingStage::Complete, subquery_depth + 1);
 	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
@@ -450,10 +452,10 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 	if (query.sample_size && (!storage || !storage->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
-	
+
 	if (query.final && (!storage || !storage->supportsFinal()))
 		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
-	
+
 	if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
 		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
@@ -471,7 +473,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	Settings settings_for_storage = settings;
 	if (storage && storage->isRemote())
 		settings.max_threads = settings.max_distributed_connections;
-	
+
 	/// Ограничение на количество столбцов для чтения.
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
 		throw Exception("Limit for number of columns to read exceeded. "
@@ -496,7 +498,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	}
 
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-	
+
 	query_analyzer->makeSetsForIndex();
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
@@ -537,7 +539,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		limits.timeout_before_checking_execution_speed = settings.limits.timeout_before_checking_execution_speed;
 
 		QuotaForIntervals & quota = context.getQuota();
-		
+
 		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		{
 			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&**it))
@@ -580,7 +582,7 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
 	bool separate_totals = to_stage > QueryProcessingStage::WithMergeableState;
-	
+
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
@@ -707,7 +709,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		limits.max_bytes_to_read = settings.limits.max_bytes_to_sort;
 		limits.read_overflow_mode = settings.limits.sort_overflow_mode;
 		sorting_stream->setLimits(limits);
-			
+
 		stream = maybeAsynchronous(sorting_stream, is_async);
 	}
 

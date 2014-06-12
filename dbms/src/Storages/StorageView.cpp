@@ -16,6 +16,7 @@ StoragePtr StorageView::create(const String & table_name_, const String & databa
 	return (new StorageView(table_name_, database_name_, context_, query_, columns_))->thisPtr();
 }
 
+
 StorageView::StorageView(const String & table_name_, const String & database_name_,
 	Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_):
 	table_name(table_name_), database_name(database_name_), context(context_), columns(columns_)
@@ -46,8 +47,11 @@ StorageView::StorageView(const String & table_name_, const String & database_nam
 			" Could not retrieve table name from select query.",
 			DB::ErrorCodes::LOGICAL_ERROR);
 
-	context.getGlobalContext().addDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
+	context.getGlobalContext().addDependency(
+		DatabaseAndTableName(select_database_name, select_table_name),
+		DatabaseAndTableName(database_name, table_name));
 }
+
 
 BlockInputStreams StorageView::read(
 	const Names & column_names,
@@ -57,16 +61,16 @@ BlockInputStreams StorageView::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	ASTPtr view_query = getInnerQuery();
-	InterpreterSelectQuery result (view_query, context, column_names);
-	BlockInputStreams answer;
-	answer.push_back(result.execute());
-	return answer;
+	return BlockInputStreams(1,
+		InterpreterSelectQuery(getInnerQuery(), context, column_names, false).execute());
 }
 
 
-void StorageView::drop() {
-	context.getGlobalContext().removeDependency(DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
+void StorageView::drop()
+{
+	context.getGlobalContext().removeDependency(
+		DatabaseAndTableName(select_database_name, select_table_name),
+		DatabaseAndTableName(database_name, table_name));
 }
 
 

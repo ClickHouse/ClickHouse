@@ -42,9 +42,24 @@ public:
 
 	ASTJoin() {}
 	ASTJoin(StringRange range_) : IAST(range_) {}
-	
+
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "Join"; };
+	String getID() const
+	{
+		String res;
+		{
+			WriteBufferFromString wb(res);
+
+			if (locality == Global)
+				writeString("Global", wb);
+
+			writeString(strictness == Any ? "Any" : "All", wb);
+			writeString(kind == Inner ? "Inner" : "Left", wb);
+			writeString("Join", wb);
+		}
+		return res;
+
+	};
 
 	ASTPtr clone() const
 	{

@@ -135,6 +135,7 @@ private:
 	AggregateDescriptions aggregate_descriptions;
 
 	std::unordered_map<String, SetPtr> sets_with_subqueries;
+	Joins joins;
 
 	typedef std::unordered_map<String, ASTPtr> Aliases;
 	Aliases aliases;
@@ -158,7 +159,17 @@ private:
 	static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
 	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
+	/** Из списка всех доступных столбцов таблицы (columns) удалить все ненужные.
+	  * Заодно, сформировать множество неизвестных столбцов (unknown_required_columns).
+	  */
 	void removeUnusedColumns();
+
+	/** Найти обычные (не ARRAY) JOIN-ы, записать их в joins.
+	  * Удалить из множества столбцов required_columns те, которые будут присоединены (JOIN).
+	  * То есть, столбцы, являющиеся результатом подзапроса в секции JOIN,
+	  *  но не входящие в ключи JOIN-а (USING).
+	  */
+	void findJoins(NameSet & required_columns);
 
 	/** Создать словарь алиасов.
 	  */
