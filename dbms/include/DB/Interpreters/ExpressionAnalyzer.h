@@ -104,7 +104,7 @@ public:
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
 	Tables external_tables;
 	std::map<String, BlockInputStreamPtr> external_data;
-	size_t external_table_id;
+	size_t external_table_id = 1;
 
 	/// Создаем какие сможем Set из секции In для использования индекса по ним
 	void makeSetsForIndex();
@@ -120,8 +120,11 @@ private:
 	/// Столбцы, которые упоминаются в выражении, но не были заданы в конструкторе.
 	NameSet unknown_required_columns;
 
-	/// Исходные столбцы.
+	/** Исходные столбцы.
+	  * Сначала сюда помещаются все доступные столбцы таблицы. Затем (при разборе запроса) удаляются неиспользуемые столбцы.
+	  */
 	NamesAndTypesList columns;
+
 	/// Столбцы после ARRAY JOIN и/или агрегации.
 	NamesAndTypesList aggregated_columns;
 
@@ -150,107 +153,6 @@ private:
 
 	/// Вычислять ли результат глобальных селектов при анализировании запроса.
 	bool do_global;
-
-	/** Для getActionsImpl.
-	  * Стек из ExpressionActions, соответствующих вложенным лямбда-выражениям.
-	  * Новое действие нужно добавлять на самый высокий возможный уровень.
-	  * Например, в выражении "select arrayMap(x -> x + column1 * column2, array1)"
-	  *  вычисление произведения нужно делать вне лямбда-выражения (оно не зависит от x), а вычисление суммы - внутри (зависит от x).
-	  */
-	struct ScopeStack
-	{
-		struct Level
-		{
-			ExpressionActionsPtr actions;
-			NameSet new_columns;
-		};
-
-		typedef std::vector<Level> Levels;
-
-		Levels stack;
-		Settings settings;
-
-		ScopeStack(const ExpressionActions & actions, const Settings & settings_)
-			: settings(settings_)
-		{
-			stack.push_back(Level());
-			stack.back().actions = new ExpressionActions(actions);
-			const NamesAndTypesList & input_columns = actions.getSampleBlock().getColumnsList();
-			for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-				stack.back().new_columns.insert(it->first);
-		}
-
-		void pushLevel(const NamesAndTypesList & input_columns)
-		{
-			stack.push_back(Level());
-			Level & prev = stack[stack.size() - 2];
-
-			ColumnsWithNameAndType prev_columns = prev.actions->getSampleBlock().getColumns();
-
-			ColumnsWithNameAndType all_columns;
-			NameSet new_names;
-
-			for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-			{
-				all_columns.push_back(ColumnWithNameAndType(nullptr, it->second, it->first));
-				new_names.insert(it->first);
-				stack.back().new_columns.insert(it->first);
-			}
-
-			for (ColumnsWithNameAndType::const_iterator it = prev_columns.begin(); it != prev_columns.end(); ++it)
-			{
-				if (!new_names.count(it->name))
-					all_columns.push_back(*it);
-			}
-
-			stack.back().actions = new ExpressionActions(all_columns, settings);
-		}
-
-		size_t getColumnLevel(const std::string & name)
-		{
-			for (int i = static_cast<int>(stack.size()) - 1; i >= 0; --i)
-			{
-				if (stack[i].new_columns.count(name))
-					return i;
-			}
-
-			throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
-		}
-
-		void addAction(const ExpressionAction & action, const Names & additional_required_columns = Names())
-		{
-			size_t level = 0;
-			for (size_t i = 0; i < additional_required_columns.size(); ++i)
-				level = std::max(level, getColumnLevel(additional_required_columns[i]));
-			Names required = action.getNeededColumns();
-			for (size_t i = 0; i < required.size(); ++i)
-				level = std::max(level, getColumnLevel(required[i]));
-
-			Names added;
-			stack[level].actions->add(action, added);
-
-			stack[level].new_columns.insert(added.begin(), added.end());
-
-			for (size_t i = 0; i < added.size(); ++i)
-			{
-				const ColumnWithNameAndType & col = stack[level].actions->getSampleBlock().getByName(added[i]);
-				for (size_t j = level + 1; j < stack.size(); ++j)
-					stack[j].actions->addInput(col);
-			}
-		}
-
-		ExpressionActionsPtr popLevel()
-		{
-			ExpressionActionsPtr res = stack.back().actions;
-			stack.pop_back();
-			return res;
-		}
-
-		const Block & getSampleBlock()
-		{
-			return stack.back().actions->getSampleBlock();
-		}
-	};
 
 	void init();
 
@@ -282,6 +184,7 @@ private:
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
 	void addMultipleArrayJoinAction(ExpressionActions & actions);
 
+	struct ScopeStack;
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
 
 	void getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions);
@@ -289,7 +192,7 @@ private:
 	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions, bool no_subqueries);
 
 	/// Добавить агрегатные функции в aggregate_descriptions.
-	/// Установить has_aggregation=true, если есть хоть одна агрегатная функция.
+	/// Установить has_aggregation = true, если есть хоть одна агрегатная функция.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
 
 	void getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_columns, NamesSet & ignored_names);

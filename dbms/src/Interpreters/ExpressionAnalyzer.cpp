@@ -81,8 +81,6 @@ void ExpressionAnalyzer::init()
 	select_query = dynamic_cast<ASTSelectQuery *>(&*ast);
 	has_aggregation = false;
 
-	external_table_id = 1;
-
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
 
@@ -164,10 +162,12 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
 	{
 		int new_ignore_levels = std::max(0, ignore_levels - 1);
+
 		/// Алиасы верхнего уровня в секции ARRAY JOIN имеют особый смысл, их добавлять не будем
 		///  (пропустим сам expression list и его детей).
 		if (select && *it == select->array_join_expression_list)
 			new_ignore_levels = 2;
+
 		if (!dynamic_cast<ASTSelectQuery *>(&**it))
 			createAliasesDict(*it, new_ignore_levels);
 	}
@@ -179,13 +179,9 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 	if (alias && !alias->empty())
 	{
 		if (aliases.count(*alias) && ast->getTreeID() != aliases[*alias]->getTreeID())
-		{
 			throw Exception("Different expressions with the same alias " + *alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
-		}
-		else
-		{
-			aliases[*alias] = ast;
-		}
+
+		aliases[*alias] = ast;
 	}
 }
 
@@ -196,9 +192,9 @@ StoragePtr ExpressionAnalyzer::getTable()
 	{
 		if (select->table && !dynamic_cast<const ASTSelectQuery *>(&*select->table) && !dynamic_cast<const ASTFunction *>(&*select->table))
 		{
-			String database = select->database ?
-				dynamic_cast<const ASTIdentifier &>(*select->database).name :
-				"";
+			String database = select->database
+				? dynamic_cast<const ASTIdentifier &>(*select->database).name
+				: "";
 			const String & table = dynamic_cast<const ASTIdentifier &>(*select->table).name;
 			return context.tryGetTable(database, table);
 		}
@@ -683,6 +679,108 @@ static std::string getUniqueName(const Block & block, const std::string & prefix
 		++i;
 	return prefix + toString(i);
 }
+
+
+/** Для getActionsImpl.
+  * Стек из ExpressionActions, соответствующих вложенным лямбда-выражениям.
+  * Новое действие нужно добавлять на самый высокий возможный уровень.
+  * Например, в выражении "select arrayMap(x -> x + column1 * column2, array1)"
+  *  вычисление произведения нужно делать вне лямбда-выражения (оно не зависит от x), а вычисление суммы - внутри (зависит от x).
+  */
+struct ExpressionAnalyzer::ScopeStack
+{
+	struct Level
+	{
+		ExpressionActionsPtr actions;
+		NameSet new_columns;
+	};
+
+	typedef std::vector<Level> Levels;
+
+	Levels stack;
+	Settings settings;
+
+	ScopeStack(const ExpressionActions & actions, const Settings & settings_)
+		: settings(settings_)
+	{
+		stack.push_back(Level());
+		stack.back().actions = new ExpressionActions(actions);
+		const NamesAndTypesList & input_columns = actions.getSampleBlock().getColumnsList();
+		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+			stack.back().new_columns.insert(it->first);
+	}
+
+	void pushLevel(const NamesAndTypesList & input_columns)
+	{
+		stack.push_back(Level());
+		Level & prev = stack[stack.size() - 2];
+
+		ColumnsWithNameAndType prev_columns = prev.actions->getSampleBlock().getColumns();
+
+		ColumnsWithNameAndType all_columns;
+		NameSet new_names;
+
+		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+		{
+			all_columns.push_back(ColumnWithNameAndType(nullptr, it->second, it->first));
+			new_names.insert(it->first);
+			stack.back().new_columns.insert(it->first);
+		}
+
+		for (ColumnsWithNameAndType::const_iterator it = prev_columns.begin(); it != prev_columns.end(); ++it)
+		{
+			if (!new_names.count(it->name))
+				all_columns.push_back(*it);
+		}
+
+		stack.back().actions = new ExpressionActions(all_columns, settings);
+	}
+
+	size_t getColumnLevel(const std::string & name)
+	{
+		for (int i = static_cast<int>(stack.size()) - 1; i >= 0; --i)
+		{
+			if (stack[i].new_columns.count(name))
+				return i;
+		}
+
+		throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+	}
+
+	void addAction(const ExpressionAction & action, const Names & additional_required_columns = Names())
+	{
+		size_t level = 0;
+		for (size_t i = 0; i < additional_required_columns.size(); ++i)
+			level = std::max(level, getColumnLevel(additional_required_columns[i]));
+		Names required = action.getNeededColumns();
+		for (size_t i = 0; i < required.size(); ++i)
+			level = std::max(level, getColumnLevel(required[i]));
+
+		Names added;
+		stack[level].actions->add(action, added);
+
+		stack[level].new_columns.insert(added.begin(), added.end());
+
+		for (size_t i = 0; i < added.size(); ++i)
+		{
+			const ColumnWithNameAndType & col = stack[level].actions->getSampleBlock().getByName(added[i]);
+			for (size_t j = level + 1; j < stack.size(); ++j)
+				stack[j].actions->addInput(col);
+		}
+	}
+
+	ExpressionActionsPtr popLevel()
+	{
+		ExpressionActionsPtr res = stack.back().actions;
+		stack.pop_back();
+		return res;
+	}
+
+	const Block & getSampleBlock()
+	{
+		return stack.back().actions->getSampleBlock();
+	}
+};
 
 
 void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions)
@@ -1499,7 +1597,8 @@ void ExpressionAnalyzer::removeUnusedColumns()
 		{
 			columns.push_back(storage->getColumn(*it));
 			unknown_required_columns.erase(it++);
-		} else
+		}
+		else
 			++it;
 	}
 }
@@ -1525,6 +1624,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 		{
 			required_columns.insert(node->name);
 		}
+
 		return;
 	}
 
@@ -1569,6 +1669,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast, NamesSet & required_
 	for (size_t i = 0; i < ast->children.size(); ++i)
 	{
 		ASTPtr child = ast->children[i];
+
 		/// Не пойдем в секцию ARRAY JOIN, потому что там нужно смотреть на имена не-ARRAY-JOIN-енных столбцов.
 		/// Туда removeUnusedColumns отправит нас отдельно.
 		if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child) &&
