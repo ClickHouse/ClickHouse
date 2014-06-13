@@ -137,6 +137,8 @@ private:
 
 	std::unordered_map<String, SetPtr> sets_with_subqueries;
 	Joins joins;
+
+	NameSet join_key_names_set;
 	NamesAndTypesList columns_added_by_join;
 
 	typedef std::unordered_map<String, ASTPtr> Aliases;
@@ -166,12 +168,9 @@ private:
 	  */
 	void removeUnusedColumns();
 
-	/** Найти обычные (не ARRAY) JOIN-ы, записать их в joins.
-	  * Удалить из множества столбцов required_columns те, которые будут присоединены (JOIN).
-	  * То есть, столбцы, являющиеся результатом подзапроса в секции JOIN,
-	  *  но не входящие в ключи JOIN-а (USING).
+	/** Найти столбцы, получаемые путём JOIN-а.
 	  */
-	void findJoins(NameSet & required_columns);
+	void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
 
 	/** Создать словарь алиасов.
 	  */
@@ -196,7 +195,7 @@ private:
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
 	void addMultipleArrayJoinAction(ExpressionActions & actions);
 
-	void addJoinAction(ExpressionActions & actions);
+	void addJoinAction(ExpressionActions & actions, bool only_types);
 
 	struct ScopeStack;
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
@@ -209,7 +208,14 @@ private:
 	/// Установить has_aggregation = true, если есть хоть одна агрегатная функция.
 	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
 
-	void getRequiredColumnsImpl(ASTPtr ast, NameSet & required_columns, NameSet & ignored_names);
+	/** Получить множество нужных столбцов для чтения из таблицы.
+	  * При этом, столбцы, указанные в ignored_names, считаются ненужными. И параметр ignored_names может модифицироваться.
+	  * Множество столбцов available_joined_columns - столбцы, доступные из JOIN-а, они не нужны для чтения из основной таблицы.
+	  * Положить в required_joined_columns множество столбцов, доступных из JOIN-а и востребованных.
+	  */
+	void getRequiredColumnsImpl(ASTPtr ast,
+		NameSet & required_columns, NameSet & ignored_names,
+		const NameSet & available_joined_columns, NameSet & required_joined_columns);
 
 	/// Получить таблицу, из которой идет запрос
 	StoragePtr getTable();

@@ -314,7 +314,7 @@ std::string ExpressionAction::toString() const
 			break;
 
 		case COPY_COLUMN:
-			ss << "COPY " << result_name << " " << result_type->getName() << " = " << source_name;
+			ss << "COPY " << result_name << " = " << source_name;
 			break;
 
 		case APPLY_FUNCTION:
