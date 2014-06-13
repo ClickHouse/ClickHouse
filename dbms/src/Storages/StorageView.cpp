@@ -62,7 +62,7 @@ BlockInputStreams StorageView::read(
 	unsigned threads)
 {
 	return BlockInputStreams(1,
-		InterpreterSelectQuery(getInnerQuery(), context, column_names, false).execute());
+		InterpreterSelectQuery(getInnerQuery(), context, column_names).execute());
 }
 
 
