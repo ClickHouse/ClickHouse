@@ -101,6 +101,12 @@ void ExpressionAnalyzer::init()
 		addMultipleArrayJoinAction(temp_actions);
 	}
 
+	if (select_query && select_query->join)
+	{
+		getRootActionsImpl(dynamic_cast<ASTJoin &>(*select_query->join).using_expr_list, true, false, temp_actions);
+		addJoinAction(temp_actions);
+	}
+
 	getAggregatesImpl(ast, temp_actions);
 
 	if (has_aggregation)
@@ -1229,6 +1235,28 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
 	return true;
 }
 
+void ExpressionAnalyzer::addJoinAction(ExpressionActions & actions)
+{
+	actions.add(ExpressionAction::ordinaryJoin(joins[0], columns_added_by_join));
+}
+
+bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
+{
+	assertSelect();
+
+	if (!select_query->join)
+		return false;
+
+	initChain(chain, columns);
+	ExpressionActionsChain::Step & step = chain.steps.back();
+
+	getRootActionsImpl(dynamic_cast<ASTJoin &>(*select_query->join).using_expr_list, only_types, false, *step.actions);
+
+	addJoinAction(*step.actions);
+
+	return true;
+}
+
 bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
 {
 	assertSelect();
@@ -1576,6 +1604,8 @@ void ExpressionAnalyzer::findJoins(NameSet & required_columns)
 		String name = join_keys_expr_list.children[i]->getColumnName();
 		join_key_names[i] = name;
 
+		std::cerr << "USING " << name << std::endl;
+
 		if (!join_key_names_set.insert(name).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 	}
@@ -1606,11 +1636,23 @@ void ExpressionAnalyzer::findJoins(NameSet & required_columns)
 
 	joins.push_back(join);
 
+	std::cerr << right_table_sample.dumpNames() << std::endl;
+
+	for (const auto & x : required_columns)
+		std::cerr << "Required column: " << x << std::endl;
+
 	/// Удаляем из required_columns столбцы, которые есть в подзапросе, но нет в USING-е.
 	for (NameSet::iterator it = required_columns.begin(); it != required_columns.end();)
 	{
 		if (right_table_sample.has(*it) && !join_key_names_set.count(*it))
+		{
+			ColumnWithNameAndType & added_col = right_table_sample.getByName(*it);
+			columns_added_by_join.emplace_back(added_col.name, added_col.type);
+
+			std::cerr << "Column added by JOIN: " << *it << std::endl;
+
 			required_columns.erase(it++);
+		}
 		else
 			++it;
 	}

@@ -21,6 +21,8 @@ typedef std::vector<NameWithAlias> NamesWithAliases;
 typedef std::unordered_set<String> NameSet;
 typedef std::unordered_map<String, String> NameToNameMap;
 
+class Join;
+
 
 /** Действие над блоком.
   */
@@ -67,7 +69,8 @@ public:
 	NameSet array_joined_columns;
 
 	/// Для JOIN
-	//JoinPtr join;
+	Join * join = nullptr;
+	NamesAndTypesList columns_added_by_join;
 
 	/// Для PROJECT.
 	NamesWithAliases projection;
@@ -127,6 +130,15 @@ public:
 		ExpressionAction a;
 		a.type = ARRAY_JOIN;
 		a.array_joined_columns = array_joined_columns;
+		return a;
+	}
+
+	static ExpressionAction ordinaryJoin(Join * join_, const NamesAndTypesList & columns_added_by_join_)
+	{
+		ExpressionAction a;
+		a.type = JOIN;
+		a.join = join_;
+		a.columns_added_by_join = columns_added_by_join_;
 		return a;
 	}
 

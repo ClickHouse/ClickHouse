@@ -6,7 +6,7 @@
 
 namespace DB
 {
-	
+
 size_t Join::getTotalRowCount() const
 {
 	size_t rows = 0;
@@ -32,8 +32,8 @@ size_t Join::getTotalByteCount() const
 	bytes += pool.size();
 	return bytes;
 }
-	
-	
+
+
 bool Join::checkSizeLimits() const
 {
 	if (max_rows && getTotalRowCount() > max_rows)
@@ -42,7 +42,7 @@ bool Join::checkSizeLimits() const
 		return false;
 	return true;
 }
-	
+
 
 bool Join::checkExternalSizeLimits() const
 {
@@ -104,8 +104,12 @@ bool Join::insertFromBlock(const Block & block)
 		init(Set::chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
 
 	blocks.push_back(block);
-	const Block * stored_block = &blocks.back();
-	/// TODO Удалить из stored_block ключевые столбцы, так как они не нужны.
+	Block * stored_block = &blocks.back();
+
+	/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
+	for (const auto & name : key_names)
+		stored_block->erase(stored_block->getPositionByName(name));
+
 
 	if (type == Set::KEY_64)
 	{
@@ -225,6 +229,8 @@ void Join::anyLeftJoinBlock(Block & block)
 	if (blocks.empty())
 		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
 
+	std::cerr << "!!! " << block.dumpNames() << std::endl;
+
 	size_t keys_size = key_names.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
@@ -251,7 +257,9 @@ void Join::anyLeftJoinBlock(Block & block)
 		added_columns[i]->reserve(src_column.column->size());
 	}
 
-	size_t rows = block.rows();
+	std::cerr << "??? " << block.dumpNames() << std::endl;
+
+	size_t rows = block.rowsInFirstColumn();
 
 	if (type == Set::KEY_64)
 	{

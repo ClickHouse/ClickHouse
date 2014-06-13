@@ -1,5 +1,6 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/Join.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
@@ -28,8 +29,8 @@ Names ExpressionAction::getNeededColumns() const
 }
 
 ExpressionAction ExpressionAction::applyFunction(FunctionPtr function_,
-																	const std::vector<std::string> & argument_names_,
-																	std::string result_name_)
+	const std::vector<std::string> & argument_names_,
+	std::string result_name_)
 {
 	if (result_name_ == "")
 	{
@@ -82,6 +83,8 @@ ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_blo
 
 void ExpressionAction::prepare(Block & sample_block)
 {
+	//std::cerr << "preparing: " << toString() << std::endl;
+
 	if (type == APPLY_FUNCTION)
 	{
 		if (sample_block.has(result_name))
@@ -144,6 +147,13 @@ void ExpressionAction::prepare(Block & sample_block)
 			current.column = nullptr;
 		}
 	}
+	else if (type == JOIN)
+	{
+		for (const auto & col : columns_added_by_join)
+			sample_block.insert(ColumnWithNameAndType(col.second->createColumn(), col.second, col.first));
+
+		std::cerr << sample_block.dumpNames() << std::endl;
+	}
 	else if (type == ADD_COLUMN)
 	{
 		if (sample_block.has(result_name))
@@ -162,6 +172,8 @@ void ExpressionAction::prepare(Block & sample_block)
 
 void ExpressionAction::execute(Block & block) const
 {
+	//std::cerr << "executing: " << toString() << std::endl;
+
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
 		if (!block.has(source_name))
 			throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
@@ -242,9 +254,19 @@ void ExpressionAction::execute(Block & block) const
 			break;
 		}
 
+		case JOIN:
+		{
+			/// TODO Другие виды JOIN-ов.
+			join->anyLeftJoinBlock(block);
+			std::cerr << block.dumpStructure() << std::endl;
+			break;
+		}
+
 		case PROJECT:
 		{
 			Block new_block;
+
+			//std::cerr << block.dumpNames() << std::endl;
 
 			for (size_t i = 0; i < projection.size(); ++i)
 			{
@@ -284,24 +306,28 @@ std::string ExpressionAction::toString() const
 	switch (type)
 	{
 		case ADD_COLUMN:
-			ss << "+" << result_name << "(" << result_type->getName() << ")" << "[" << added_column->getName() << "]";
+			ss << "ADD " << result_name << " " << result_type->getName() << " " << added_column->getName();
 			break;
+
 		case REMOVE_COLUMN:
-			ss << "-" << source_name;
+			ss << "REMOVE " << source_name;
 			break;
+
 		case COPY_COLUMN:
-			ss << result_name << "(" << result_type->getName() << ")" << "=" << source_name;
+			ss << "COPY " << result_name << " " << result_type->getName() << " = " << source_name;
 			break;
+
 		case APPLY_FUNCTION:
-			ss << result_name << "(" << result_type->getName() << ")" << "= " << function->getName() << " ( ";
+			ss << "FUNCTION " << result_name << " " << result_type->getName() << " = " << function->getName() << "(";
 			for (size_t i = 0; i < argument_names.size(); ++i)
 			{
 				if (i)
-					ss << " , ";
+					ss << ", ";
 				ss << argument_names[i];
 			}
-			ss << " )";
+			ss << ")";
 			break;
+
 		case ARRAY_JOIN:
 			ss << "ARRAY JOIN ";
 			for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
@@ -311,18 +337,29 @@ std::string ExpressionAction::toString() const
 				ss << *it;
 			}
 			break;
+
+		case JOIN:
+			ss << "JOIN ";
+			for (NamesAndTypesList::const_iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
+			{
+				if (it != columns_added_by_join.begin())
+					ss << ", ";
+				ss << it->first;
+			}
+			break;
+
 		case PROJECT:
-			ss << "{";
+			ss << "PROJECT ";
 			for (size_t i = 0; i < projection.size(); ++i)
 			{
 				if (i)
 					ss << ", ";
 				ss << projection[i].first;
 				if (projection[i].second != "" && projection[i].second != projection[i].first)
-					ss << "=>" << projection[i].second;
+					ss << " AS " << projection[i].second;
 			}
-			ss << "}";
 			break;
+
 		default:
 			throw Exception("Unexpected Action type", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -628,6 +665,8 @@ std::string ExpressionActions::getID() const
 			}
 			ss << "}";
 		}
+
+		/// TODO JOIN
 	}
 
 	ss << ": {";

@@ -71,6 +71,7 @@ public:
 
 	/// До агрегации:
 	bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
+	bool appendJoin(ExpressionActionsChain & chain, bool only_types);
 	bool appendWhere(ExpressionActionsChain & chain, bool only_types);
 	bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
 	void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -136,6 +137,7 @@ private:
 
 	std::unordered_map<String, SetPtr> sets_with_subqueries;
 	Joins joins;
+	NamesAndTypesList columns_added_by_join;
 
 	typedef std::unordered_map<String, ASTPtr> Aliases;
 	Aliases aliases;
@@ -194,6 +196,8 @@ private:
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
 	void addMultipleArrayJoinAction(ExpressionActions & actions);
 
+	void addJoinAction(ExpressionActions & actions);
+
 	struct ScopeStack;
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
 
@@ -210,6 +214,7 @@ private:
 	/// Получить таблицу, из которой идет запрос
 	StoragePtr getTable();
 
+	/// columns - столбцы, присутствующие до начала преобразований.
 	void initChain(ExpressionActionsChain & chain, NamesAndTypesList & columns);
 
 	void assertSelect();

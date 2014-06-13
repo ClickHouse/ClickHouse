@@ -243,6 +243,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		need_aggregate = query_analyzer->hasAggregation();
 
 		query_analyzer->appendArrayJoin(chain, !first_stage);
+		query_analyzer->appendJoin(chain, !first_stage);
 
 		if (query_analyzer->appendWhere(chain, !first_stage))
 		{
