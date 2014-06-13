@@ -1275,7 +1275,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
 		InterpreterSelectQuery interpreter(
 			dynamic_cast<ASTJoin &>(*select_query->join).subquery->children[0], subquery_context,
-			required_joined_columns, true,
+			required_joined_columns,
 			QueryProcessingStage::Complete, subquery_depth + 1);
 
 		Block right_table_sample = interpreter.getSampleBlock();
@@ -1590,7 +1590,7 @@ void ExpressionAnalyzer::removeUnusedColumns()
 	}
 
 	for (const auto & name_type : columns_added_by_join)
-		std::cerr << "JOINed column (required): " << name_type.first << std::endl;
+		std::cerr << "JOINed column (required, not key): " << name_type.first << std::endl;
 	std::cerr << std::endl;
 
 	/// Вставляем в список требуемых столбцов столбцы, нужные для вычисления ARRAY JOIN.

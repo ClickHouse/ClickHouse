@@ -97,7 +97,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
-	const Names & required_column_names_, bool ignore_unknown_required_columns_,
+	const Names & required_column_names_,
 	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
@@ -107,13 +107,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
-		query.rewriteSelectExpressionList(required_column_names_, ignore_unknown_required_columns_);
+		query.rewriteSelectExpressionList(required_column_names_);
 
 	init(input_);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
-	const Names & required_column_names_, bool ignore_unknown_required_columns_,
+	const Names & required_column_names_,
 	const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
@@ -123,7 +123,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	  * Но если используется DISTINCT, то все столбцы считаются нужными, так как иначе DISTINCT работал бы по-другому.
 	  */
 	if (!query.distinct)
-		query.rewriteSelectExpressionList(required_column_names_, ignore_unknown_required_columns_);
+		query.rewriteSelectExpressionList(required_column_names_);
 
 	init(input_, table_column_names);
 }
@@ -442,7 +442,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		subquery_context.setSettings(subquery_settings);
 
 		interpreter_subquery = new InterpreterSelectQuery(
-			query.table, subquery_context, required_columns, false, QueryProcessingStage::Complete, subquery_depth + 1);
+			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом

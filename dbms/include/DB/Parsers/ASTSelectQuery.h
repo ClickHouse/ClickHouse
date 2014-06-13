@@ -52,7 +52,7 @@ public:
 	}
 
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
-	void rewriteSelectExpressionList(const Names & column_names, bool ignore_unknown = false)
+	void rewriteSelectExpressionList(const Names & column_names)
 	{
 		ASTPtr result = new ASTExpressionList;
 		ASTs asts = select_expression_list->children;
@@ -80,7 +80,7 @@ public:
 					done = 1;
 				}
 			}
-			if (!done && !ignore_unknown)
+			if (!done)
 				throw Exception("Error while rewriting expressioin list for select query."
 					" Could not find alias: " + column_names[i],
 					DB::ErrorCodes::UNKNOWN_IDENTIFIER);

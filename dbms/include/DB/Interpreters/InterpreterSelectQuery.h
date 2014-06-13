@@ -26,7 +26,7 @@ public:
 	InterpreterSelectQuery(
 		ASTPtr query_ptr_,
 		const Context & context_,
-		const Names & required_column_names, bool ignore_unknown_required_columns_,
+		const Names & required_column_names,
 		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
 		size_t subquery_depth_ = 0,
 		BlockInputStreamPtr input = nullptr);
@@ -34,7 +34,7 @@ public:
 	InterpreterSelectQuery(
 		ASTPtr query_ptr_,
 		const Context & context_,
-		const Names & required_column_names, bool ignore_unknown_required_columns_,
+		const Names & required_column_names,
 		const NamesAndTypesList & table_column_names,
 		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
 		size_t subquery_depth_ = 0,
