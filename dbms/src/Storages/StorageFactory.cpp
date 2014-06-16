@@ -10,6 +10,7 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageTinyLog.h>
 #include <DB/Storages/StorageMemory.h>
+#include <DB/Storages/StorageNull.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
@@ -134,6 +135,10 @@ StoragePtr StorageFactory::get(
 	else if (name == "Memory")
 	{
 		return StorageMemory::create(table_name, columns);
+	}
+	else if (name == "Null")
+	{
+		return StorageNull::create(table_name, columns);
 	}
 	else if (name == "Merge")
 	{
