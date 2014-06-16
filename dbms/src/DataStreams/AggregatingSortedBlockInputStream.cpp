@@ -53,9 +53,12 @@ Block AggregatingSortedBlockInputStream::readImpl()
 				continue;
 
 			column_numbers_to_aggregate.push_back(i);
-			columns_to_aggregate.push_back(dynamic_cast<ColumnAggregateFunction *>(merged_columns[i]));
 		}
 	}
+
+	columns_to_aggregate.resize(column_numbers_to_aggregate.size());
+	for (size_t i = 0, size = columns_to_aggregate.size(); i < size; ++i)
+		columns_to_aggregate[i] = dynamic_cast<ColumnAggregateFunction *>(merged_columns[column_numbers_to_aggregate[i]]);
 
 	if (has_collation)
 		merge(merged_block, merged_columns, queue_with_collation);
