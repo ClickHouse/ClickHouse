@@ -58,13 +58,13 @@ namespace zkutil
 
 		bool tryLock()
 		{
-			zkutil::ReturnCode::type ret = zookeeper->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral);
-			if (ret == zkutil::ReturnCode::Ok)
+			int32_t ret = zookeeper->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral);
+			if (ret == ZOK)
 			{
 				locked = true;
 				return true;
 			}
-			else if (ret == zkutil::ReturnCode::NodeExists)
+			else if (ret == ZNODEEXISTS)
 				return false;
 			else
 				throw zkutil::KeeperException(ret);
