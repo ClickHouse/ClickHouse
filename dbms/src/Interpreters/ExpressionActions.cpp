@@ -83,7 +83,7 @@ ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_blo
 
 void ExpressionAction::prepare(Block & sample_block)
 {
-	std::cerr << "preparing: " << toString() << std::endl;
+//	std::cerr << "preparing: " << toString() << std::endl;
 
 	if (type == APPLY_FUNCTION)
 	{
@@ -172,7 +172,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
 void ExpressionAction::execute(Block & block) const
 {
-	std::cerr << "executing: " << toString() << std::endl;
+//	std::cerr << "executing: " << toString() << std::endl;
 
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
 		if (!block.has(source_name))
@@ -633,10 +633,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 			input_columns.erase(it0);
 		}
 	}
-
-	for (const auto & name : final_columns)
-		std::cerr << "Final column: " << name << std::endl;
-	std::cerr << std::endl;
 
 	for (int i = static_cast<int>(sample_block.columns()) - 1; i >= 0; --i)
 	{
