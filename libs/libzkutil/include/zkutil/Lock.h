@@ -14,8 +14,8 @@ namespace zkutil
 		Lock(zkutil::ZooKeeperPtr zk, const std::string & lock_prefix_, const std::string & lock_name_) :
 			zookeeper(zk), lock_path(lock_prefix_ + "/" + lock_name_), log(&Logger::get("zkutil::Lock"))
 		{
-			if (zookeeper->exists(lock_prefix_))
-				zookeeper->create(lock_prefix_, "", zkutil::CreateMode::Ephemeral);
+			if (!zookeeper->exists(lock_prefix_))
+				zookeeper->create(lock_prefix_, "", zkutil::CreateMode::Persistent);
 		}
 
 		~Lock()
