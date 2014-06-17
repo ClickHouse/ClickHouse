@@ -1,6 +1,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 
+#include <DB/Parsers/ASTJoin.h>
 #include <DB/Interpreters/Join.h>
 
 
@@ -224,12 +225,54 @@ bool Join::insertFromBlock(const Block & block)
 }
 
 
+template <typename Map>
+static void addAnyLeftRow(
+	const Map & map,
+	const typename Map::key_type & key,
+	size_t num_columns_to_add,
+	ColumnPlainPtrs & added_columns)
+{
+	typename Map::const_iterator it = map.find(key);
+
+	if (it != map.end())
+	{
+		for (size_t j = 0; j < num_columns_to_add; ++j)
+			added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(j).column.get(), it->second.row_num);
+	}
+	else
+	{
+		for (size_t j = 0; j < num_columns_to_add; ++j)
+			added_columns[j]->insertDefault();
+	}
+}
+
+template <typename Map>
+static void addAnyInnerRow(
+	const Map & map,
+	const typename Map::key_type & key,
+	size_t num_columns_to_add,
+	ColumnPlainPtrs & added_columns,
+	size_t i,
+	IColumn::Filter * filter)
+{
+	typename Map::const_iterator it = map.find(key);
+
+	if (it != map.end())
+	{
+		(*filter)[i] = 1;
+
+		for (size_t j = 0; j < num_columns_to_add; ++j)
+			added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(j).column.get(), it->second.row_num);
+	}
+	else
+		(*filter)[i] = 0;
+}
+
+
 void Join::anyLeftJoinBlock(Block & block)
 {
 	if (blocks.empty())
 		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
-
-	std::cerr << "!!! " << block.dumpNames() << std::endl;
 
 	size_t keys_size = key_names.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
@@ -257,8 +300,6 @@ void Join::anyLeftJoinBlock(Block & block)
 		added_columns[i]->reserve(src_column.column->size());
 	}
 
-	std::cerr << "??? " << block.dumpNames() << std::endl;
-
 	size_t rows = block.rowsInFirstColumn();
 
 	if (type == Set::KEY_64)
@@ -271,19 +312,55 @@ void Join::anyLeftJoinBlock(Block & block)
 		{
 			/// Строим ключ
 			UInt64 key = column.get64(i);
+			addAnyLeftRow(map, key, num_columns_to_add, added_columns);
+		}
+	}
+	else if (type == Set::KEY_STRING)
+	{
+		const MapString & map = *key_string;
+		const IColumn & column = *key_columns[0];
 
-			MapUInt64::const_iterator it = map.find(key);
+		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+		{
+			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
+			const ColumnString::Chars_t & data = column_string->getChars();
 
-			if (it != map.end())
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
 			{
-				for (size_t j = 0; j < num_columns_to_add; ++j)
-					added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(j).column.get(), it->second.row_num);
+				/// Строим ключ
+				StringRef key(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
+				addAnyLeftRow(map, key, num_columns_to_add, added_columns);
 			}
-			else
+		}
+		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+		{
+			size_t n = column_string->getN();
+			const ColumnFixedString::Chars_t & data = column_string->getChars();
+
+			/// Для всех строчек
+			for (size_t i = 0; i < rows; ++i)
 			{
-				for (size_t j = 0; j < num_columns_to_add; ++j)
-					added_columns[j]->insertDefault();
+				/// Строим ключ
+				StringRef key(&data[i * n], n);
+				addAnyLeftRow(map, key, num_columns_to_add, added_columns);
 			}
+		}
+		else
+			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+	}
+	else if (type == Set::HASHED)
+	{
+		MapHashed & map = *hashed;
+
+		/// Для всех строчек
+		for (size_t i = 0; i < rows; ++i)
+		{
+			UInt128 key = keys_fit_128_bits
+				? pack128(i, keys_size, key_columns, key_sizes)
+				: hash128(i, keys_size, key_columns);
+
+			addAnyLeftRow(map, key, num_columns_to_add, added_columns);
 		}
 	}
 	else

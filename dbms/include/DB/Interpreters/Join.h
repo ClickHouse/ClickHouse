@@ -56,6 +56,7 @@ public:
 	/** Присоединить к блоку "левой" таблицы новые столбцы из сформированного отображения.
 	  */
 	void anyLeftJoinBlock(Block & block);
+	void anyInnerJoinBlock(Block & block);
 
 	size_t size() const { return getTotalRowCount(); }
 	
