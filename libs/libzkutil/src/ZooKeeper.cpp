@@ -61,7 +61,7 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 
 void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
 {
-	log = &Logger::get("ZooKeeper");
+	log = &Logger::get("ZooKeeper"); 
 	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
 	sessionTimeoutMs = sessionTimeoutMs_;
