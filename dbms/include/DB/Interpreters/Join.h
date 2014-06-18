@@ -61,17 +61,7 @@ public:
 	void joinBlock(Block & block);
 
 	size_t size() const { return getTotalRowCount(); }
-	
-private:
-	ASTJoin::Kind kind;
-	ASTJoin::Strictness strictness;
 
-	/// Имена ключевых столбцов - по которым производится соединение.
-	const Names key_names;
-	/// Номера ключевых столбцов в "левой" таблице.
-	ColumnNumbers key_numbers_left;
-	/// Номера ключевых столбцов в "правой" таблице.
-	ColumnNumbers key_numbers_right;
 
 	/// Ссылка на строку в блоке.
 	struct RowRef
@@ -92,6 +82,23 @@ private:
 		RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 	};
 
+	/** Разные структуры данных, которые могут использоваться для соединения.
+	  */
+	typedef HashMap<UInt64, RowRef> MapUInt64;
+	typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
+	typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
+	
+private:
+	ASTJoin::Kind kind;
+	ASTJoin::Strictness strictness;
+
+	/// Имена ключевых столбцов - по которым производится соединение.
+	const Names key_names;
+	/// Номера ключевых столбцов в "левой" таблице.
+	ColumnNumbers key_numbers_left;
+	/// Номера ключевых столбцов в "правой" таблице.
+	ColumnNumbers key_numbers_right;
+
 	/** Блоки данных таблицы, с которой идёт соединение.
 	  */
 	Blocks blocks;
@@ -106,12 +113,6 @@ private:
 	size_t bytes_in_external_table;
 	size_t rows_in_external_table;
 	bool only_external;
-
-	/** Разные структуры данных, которые могут использоваться для соединения.
-	  */
-	typedef HashMap<UInt64, RowRef> MapUInt64;
-	typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
-	typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	std::unique_ptr<MapUInt64> key64;
@@ -157,7 +158,7 @@ private:
 		}
 	}
 
-	template <ASTJoin::Kind kind>
+	template <ASTJoin::Kind KIND>
 	void anyJoinBlock(Block & block);
 
 	/// Проверить не превышены ли допустимые размеры множества

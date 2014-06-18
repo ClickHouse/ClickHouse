@@ -55,6 +55,44 @@ bool Join::checkExternalSizeLimits() const
 }
 
 
+template <ASTJoin::Strictness STRICTNESS, typename Map>
+struct Inserter
+{
+	static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool);
+};
+
+template <typename Map>
+struct Inserter<ASTJoin::Any, Map>
+{
+	static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool)
+	{
+		typename Map::iterator it;
+		bool inserted;
+		map.emplace(key, it, inserted);
+
+		if (inserted)
+			new (&it->second) Join::RowRef(stored_block, i);
+	}
+};
+
+template <>
+struct Inserter<ASTJoin::Any, Join::MapString>
+{
+	static void insert(Join::MapString & map, const Join::MapString::key_type & key, Block * stored_block, size_t i, Arena & pool)
+	{
+		Join::MapString::iterator it;
+		bool inserted;
+		map.emplace(key, it, inserted);
+
+		if (inserted)
+		{
+			it->first.data = pool.insert(key.data, key.size);
+			new (&it->second) Join::RowRef(stored_block, i);
+		}
+	}
+};
+
+
 bool Join::insertFromBlock(const Block & block)
 {
 	if (external_table)
@@ -111,10 +149,10 @@ bool Join::insertFromBlock(const Block & block)
 	for (const auto & name : key_names)
 		stored_block->erase(stored_block->getPositionByName(name));
 
-
 	if (type == Set::KEY_64)
 	{
-		MapUInt64 & res = *key64;
+		typedef MapUInt64 Map;
+		Map & res = *key64;
 		const IColumn & column = *key_columns[0];
 
 		/// Для всех строчек
@@ -122,18 +160,13 @@ bool Join::insertFromBlock(const Block & block)
 		{
 			/// Строим ключ
 			UInt64 key = column.get64(i);
-
-			MapUInt64::iterator it;
-			bool inserted;
-			res.emplace(key, it, inserted);
-
-			if (inserted)
-				new (&it->second) RowRef(stored_block, i);
+			Inserter<ASTJoin::Any, Map>::insert(res, key, stored_block, i, pool);
 		}
 	}
 	else if (type == Set::KEY_STRING)
 	{
-		MapString & res = *key_string;
+		typedef MapString Map;
+		Map & res = *key_string;
 		const IColumn & column = *key_columns[0];
 
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
@@ -145,17 +178,8 @@ bool Join::insertFromBlock(const Block & block)
 			for (size_t i = 0; i < rows; ++i)
 			{
 				/// Строим ключ
-				StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-
-				MapString::iterator it;
-				bool inserted;
-				res.emplace(ref, it, inserted);
-
-				if (inserted)
-				{
-					it->first.data = pool.insert(ref.data, ref.size);
-					new (&it->second) RowRef(stored_block, i);
-				}
+				StringRef key(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
+				Inserter<ASTJoin::Any, Map>::insert(res, key, stored_block, i, pool);
 			}
 		}
 		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -167,17 +191,8 @@ bool Join::insertFromBlock(const Block & block)
 			for (size_t i = 0; i < rows; ++i)
 			{
 				/// Строим ключ
-				StringRef ref(&data[i * n], n);
-
-				MapString::iterator it;
-				bool inserted;
-				res.emplace(ref, it, inserted);
-
-				if (inserted)
-				{
-					it->first.data = pool.insert(ref.data, ref.size);
-					new (&it->second) RowRef(stored_block, i);
-				}
+				StringRef key(&data[i * n], n);
+				Inserter<ASTJoin::Any, Map>::insert(res, key, stored_block, i, pool);
 			}
 		}
 		else
@@ -185,7 +200,8 @@ bool Join::insertFromBlock(const Block & block)
 	}
 	else if (type == Set::HASHED)
 	{
-		MapHashed & res = *hashed;
+		typedef MapHashed Map;
+		Map & res = *hashed;
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
@@ -194,12 +210,7 @@ bool Join::insertFromBlock(const Block & block)
 				? pack128(i, keys_size, key_columns, key_sizes)
 				: hash128(i, keys_size, key_columns);
 
-			MapHashed::iterator it;
-			bool inserted;
-			res.emplace(key, it, inserted);
-
-			if (inserted)
-				new (&it->second) RowRef(stored_block, i);
+				Inserter<ASTJoin::Any, Map>::insert(res, key, stored_block, i, pool);
 		}
 	}
 	else
