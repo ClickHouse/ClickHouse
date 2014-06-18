@@ -84,10 +84,37 @@ public:
 
 	/** Разные структуры данных, которые могут использоваться для соединения.
 	  */
-	typedef HashMap<UInt64, RowRef> MapUInt64;
-	typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
-	typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
-	
+	struct MapsAny
+	{
+		/// Специализация для случая, когда есть один числовой ключ.
+		typedef HashMap<UInt64, RowRef> MapUInt64;
+
+		/// Специализация для случая, когда есть один строковый ключ.
+		typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
+
+		/** Сравнивает 128 битные хэши.
+		  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
+		  * Иначе - вычисляет SipHash от набора из всех ключей.
+		  * (При этом, строки, содержащие нули посередине, могут склеиться.)
+		  */
+		typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
+
+		std::unique_ptr<MapUInt64> key64;
+		std::unique_ptr<MapString> key_string;
+		std::unique_ptr<MapHashed> hashed;
+	};
+
+	struct MapsAll
+	{
+		typedef HashMap<UInt64, RowRefList> MapUInt64;
+		typedef HashMapWithSavedHash<StringRef, RowRefList> MapString;
+		typedef HashMap<UInt128, RowRefList, UInt128Hash> MapHashed;
+
+		std::unique_ptr<MapUInt64> key64;
+		std::unique_ptr<MapString> key_string;
+		std::unique_ptr<MapHashed> hashed;
+	};
+
 private:
 	ASTJoin::Kind kind;
 	ASTJoin::Strictness strictness;
@@ -114,18 +141,8 @@ private:
 	size_t rows_in_external_table;
 	bool only_external;
 
-	/// Специализация для случая, когда есть один числовой ключ.
-	std::unique_ptr<MapUInt64> key64;
-
-	/// Специализация для случая, когда есть один строковый ключ.
-	std::unique_ptr<MapString> key_string;
-
-	/** Сравнивает 128 битные хэши.
-	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
-	  * Иначе - вычисляет SipHash от набора из всех ключей.
-	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
-	  */
-	std::unique_ptr<MapHashed> hashed;
+	MapsAny maps_any;
+	MapsAll maps_all;
 
 	/// Дополнительные данные - строки, а также продолжения односвязных списков строк.
 	Arena pool;
@@ -142,21 +159,10 @@ private:
 	size_t max_bytes;
 	OverflowMode overflow_mode;
 
-	void init(Set::Type type_)
-	{
-		type = type_;
+	void init(Set::Type type_);
 
-		switch (type)
-		{
-			case Set::EMPTY:											break;
-			case Set::KEY_64:		key64		.reset(new MapUInt64); 	break;
-			case Set::KEY_STRING:	key_string	.reset(new MapString); 	break;
-			case Set::HASHED:		hashed		.reset(new MapHashed);	break;
-
-			default:
-				throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-		}
-	}
+	template <ASTJoin::Strictness STRICTNESS, typename Maps>
+	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
 
 	template <ASTJoin::Kind KIND>
 	void anyJoinBlock(Block & block);
