@@ -1250,11 +1250,12 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	initChain(chain, columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
-	getRootActionsImpl(dynamic_cast<ASTJoin &>(*select_query->join).using_expr_list, only_types, false, *step.actions);
+	ASTJoin & ast_join = dynamic_cast<ASTJoin &>(*select_query->join);
+	getRootActionsImpl(ast_join.using_expr_list, only_types, false, *step.actions);
 
 	{
 		Names join_key_names(join_key_names_set.begin(), join_key_names_set.end());
-		JoinPtr join = new Join(join_key_names, settings.limits);
+		JoinPtr join = new Join(join_key_names, settings.limits, ast_join.kind, ast_join.strictness);
 
 		/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
 		* Так как результат этого поздапроса - ещё не результат всего запроса.

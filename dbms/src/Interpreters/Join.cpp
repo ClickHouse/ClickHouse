@@ -253,23 +253,39 @@ static void addAnyInnerRow(
 	size_t num_columns_to_add,
 	ColumnPlainPtrs & added_columns,
 	size_t i,
-	IColumn::Filter * filter)
+	IColumn::Filter & filter)
 {
 	typename Map::const_iterator it = map.find(key);
 
 	if (it != map.end())
 	{
-		(*filter)[i] = 1;
+		filter[i] = 1;
 
 		for (size_t j = 0; j < num_columns_to_add; ++j)
 			added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(j).column.get(), it->second.row_num);
 	}
 	else
-		(*filter)[i] = 0;
+		filter[i] = 0;
+}
+
+template <ASTJoin::Kind KIND, typename Map>
+static void addAnyRow(
+	const Map & map,
+	const typename Map::key_type & key,
+	size_t num_columns_to_add,
+	ColumnPlainPtrs & added_columns,
+	size_t i,
+	IColumn::Filter * filter)
+{
+	if (KIND == ASTJoin::Left)
+		addAnyLeftRow(map, key, num_columns_to_add, added_columns);
+	else
+		addAnyInnerRow(map, key, num_columns_to_add, added_columns, i, *filter);
 }
 
 
-void Join::anyLeftJoinBlock(Block & block)
+template <ASTJoin::Kind KIND>
+void Join::anyJoinBlock(Block & block)
 {
 	if (blocks.empty())
 		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
@@ -291,6 +307,8 @@ void Join::anyLeftJoinBlock(Block & block)
 	size_t num_columns_to_add = first_mapped_block.columns();
 	ColumnPlainPtrs added_columns(num_columns_to_add);
 
+	size_t existing_columns = block.columns();
+
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
 		const ColumnWithNameAndType & src_column = first_mapped_block.getByPosition(i);
@@ -302,9 +320,16 @@ void Join::anyLeftJoinBlock(Block & block)
 
 	size_t rows = block.rowsInFirstColumn();
 
+	/// Используется при ANY INNER JOIN
+	std::unique_ptr<IColumn::Filter> filter;
+
+	if (kind == ASTJoin::Inner && strictness == ASTJoin::Any)
+		filter.reset(new IColumn::Filter(rows));
+
 	if (type == Set::KEY_64)
 	{
-		const MapUInt64 & map = *key64;
+		typedef MapUInt64 Map;
+		const Map & map = *key64;
 		const IColumn & column = *key_columns[0];
 
 		/// Для всех строчек
@@ -312,12 +337,13 @@ void Join::anyLeftJoinBlock(Block & block)
 		{
 			/// Строим ключ
 			UInt64 key = column.get64(i);
-			addAnyLeftRow(map, key, num_columns_to_add, added_columns);
+			addAnyRow<KIND, Map>(map, key, num_columns_to_add, added_columns, i, filter.get());
 		}
 	}
 	else if (type == Set::KEY_STRING)
 	{
-		const MapString & map = *key_string;
+		typedef MapString Map;
+		const Map & map = *key_string;
 		const IColumn & column = *key_columns[0];
 
 		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
@@ -330,7 +356,7 @@ void Join::anyLeftJoinBlock(Block & block)
 			{
 				/// Строим ключ
 				StringRef key(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-				addAnyLeftRow(map, key, num_columns_to_add, added_columns);
+				addAnyRow<KIND, Map>(map, key, num_columns_to_add, added_columns, i, filter.get());
 			}
 		}
 		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
@@ -343,7 +369,7 @@ void Join::anyLeftJoinBlock(Block & block)
 			{
 				/// Строим ключ
 				StringRef key(&data[i * n], n);
-				addAnyLeftRow(map, key, num_columns_to_add, added_columns);
+				addAnyRow<KIND, Map>(map, key, num_columns_to_add, added_columns, i, filter.get());
 			}
 		}
 		else
@@ -351,7 +377,8 @@ void Join::anyLeftJoinBlock(Block & block)
 	}
 	else if (type == Set::HASHED)
 	{
-		MapHashed & map = *hashed;
+		typedef MapHashed Map;
+		Map & map = *hashed;
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
@@ -360,11 +387,25 @@ void Join::anyLeftJoinBlock(Block & block)
 				? pack128(i, keys_size, key_columns, key_sizes)
 				: hash128(i, keys_size, key_columns);
 
-			addAnyLeftRow(map, key, num_columns_to_add, added_columns);
+			addAnyRow<KIND, Map>(map, key, num_columns_to_add, added_columns, i, filter.get());
 		}
 	}
 	else
 		throw Exception("Unknown JOIN variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+
+	/// Если ANY INNER JOIN - фильтруем все столбцы кроме новых.
+	if (kind == ASTJoin::Inner && strictness == ASTJoin::Any)
+		for (size_t i = 0; i < existing_columns; ++i)
+			block.getByPosition(i).column = block.getByPosition(i).column->filter(*filter);
+}
+
+
+void Join::joinBlock(Block & block)
+{
+	if (kind == ASTJoin::Left)
+		anyJoinBlock<ASTJoin::Left>(block);
+	else
+		anyJoinBlock<ASTJoin::Inner>(block);
 }
 
 

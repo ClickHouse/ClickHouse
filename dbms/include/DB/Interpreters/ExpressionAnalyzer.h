@@ -138,6 +138,7 @@ private:
 	std::unordered_map<String, SetPtr> sets_with_subqueries;
 	Joins joins;
 
+	/// NOTE: Пока поддерживается только один JOIN на запрос.
 	NameSet join_key_names_set;
 	NamesAndTypesList columns_added_by_join;
 

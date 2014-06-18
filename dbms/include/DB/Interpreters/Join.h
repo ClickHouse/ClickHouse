@@ -4,6 +4,8 @@
 
 #include <Yandex/logger_useful.h>
 
+#include <DB/Parsers/ASTJoin.h>
+
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Set.h>
 
@@ -23,8 +25,9 @@ namespace DB
 class Join
 {
 public:
-	Join(const Names & key_names_, const Limits & limits)
-		: key_names(key_names_),
+	Join(const Names & key_names_, const Limits & limits, ASTJoin::Kind kind_, ASTJoin::Strictness strictness_)
+		: kind(kind_), strictness(strictness_),
+		key_names(key_names_),
 		max_bytes_to_transfer(limits.max_bytes_to_transfer),
 		max_rows_to_transfer(limits.max_rows_to_transfer),
 		transfer_overflow_mode(limits.transfer_overflow_mode),
@@ -55,12 +58,14 @@ public:
 
 	/** Присоединить к блоку "левой" таблицы новые столбцы из сформированного отображения.
 	  */
-	void anyLeftJoinBlock(Block & block);
-	void anyInnerJoinBlock(Block & block);
+	void joinBlock(Block & block);
 
 	size_t size() const { return getTotalRowCount(); }
 	
 private:
+	ASTJoin::Kind kind;
+	ASTJoin::Strictness strictness;
+
 	/// Имена ключевых столбцов - по которым производится соединение.
 	const Names key_names;
 	/// Номера ключевых столбцов в "левой" таблице.
@@ -91,12 +96,6 @@ private:
 	  */
 	Blocks blocks;
 
-	/** Разные структуры данных, которые могут использоваться для соединения.
-	  */
-	typedef HashMap<UInt64, RowRef> MapUInt64;
-	typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
-	typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
-
 	BlockInputStreamPtr source;
 
 	/// Информация о внешней таблице, заполняемой этим классом
@@ -107,6 +106,12 @@ private:
 	size_t bytes_in_external_table;
 	size_t rows_in_external_table;
 	bool only_external;
+
+	/** Разные структуры данных, которые могут использоваться для соединения.
+	  */
+	typedef HashMap<UInt64, RowRef> MapUInt64;
+	typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
+	typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	std::unique_ptr<MapUInt64> key64;
@@ -151,6 +156,9 @@ private:
 				throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 		}
 	}
+
+	template <ASTJoin::Kind kind>
+	void anyJoinBlock(Block & block);
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;

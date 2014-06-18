@@ -257,7 +257,7 @@ void ExpressionAction::execute(Block & block) const
 		case JOIN:
 		{
 			/// TODO Другие виды JOIN-ов.
-			join->anyLeftJoinBlock(block);
+			join->joinBlock(block);
 			std::cerr << block.dumpStructure() << std::endl;
 			break;
 		}
