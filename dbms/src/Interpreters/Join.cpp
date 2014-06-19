@@ -162,8 +162,8 @@ struct Inserter<ASTJoin::All, Map>
 			  */
 			Join::RowRefList * elem = reinterpret_cast<Join::RowRefList *>(pool.alloc(sizeof(Join::RowRefList)));
 
-			it->second.next = elem;
 			elem->next = it->second.next;
+			it->second.next = elem;
 			elem->block = stored_block;
 			elem->row_num = i;
 		}
@@ -188,8 +188,8 @@ struct Inserter<ASTJoin::All, Join::MapsAll::MapString>
 		{
 			Join::RowRefList * elem = reinterpret_cast<Join::RowRefList *>(pool.alloc(sizeof(Join::RowRefList)));
 
-			it->second.next = elem;
 			elem->next = it->second.next;
+			it->second.next = elem;
 			elem->block = stored_block;
 			elem->row_num = i;
 		}
