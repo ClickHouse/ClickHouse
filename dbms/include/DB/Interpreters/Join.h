@@ -164,8 +164,8 @@ private:
 	template <ASTJoin::Strictness STRICTNESS, typename Maps>
 	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
 
-	template <ASTJoin::Kind KIND>
-	void anyJoinBlock(Block & block);
+	template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
+	void joinBlockImpl(Block & block, Maps & maps);
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
