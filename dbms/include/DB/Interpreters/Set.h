@@ -30,8 +30,6 @@ namespace DB
   */
 class Set
 {
-friend class Join;
-
 public:
 	Set(const Limits & limits)
 		: max_bytes_to_transfer(limits.max_bytes_to_transfer),
@@ -95,7 +93,17 @@ public:
 
 	/// проверяет есть ли в Set элементы для заданного диапазона индекса
 	BoolMask mayBeTrueInRange(const Range & range);
-	
+
+	enum Type
+	{
+		EMPTY 		= 0,
+		KEY_64		= 1,
+		KEY_STRING	= 2,
+		HASHED		= 3,
+	};
+
+	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
+
 private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
 	  *  одного или нескольких столбцов значений множеству.
@@ -129,13 +137,6 @@ private:
 	  */
 	std::unique_ptr<SetHashed> hashed;
 
-	enum Type
-	{
-		EMPTY 		= 0,
-		KEY_64		= 1,
-		KEY_STRING	= 2,
-		HASHED		= 3,
-	};
 	Type type = EMPTY;
 	
 	bool keys_fit_128_bits;
@@ -153,8 +154,6 @@ private:
 	size_t max_bytes;
 	OverflowMode overflow_mode;
 	
-	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
-
 	void init(Type type_)
 	{
 		type = type_;

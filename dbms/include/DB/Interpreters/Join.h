@@ -4,6 +4,8 @@
 
 #include <Yandex/logger_useful.h>
 
+#include <DB/Parsers/ASTJoin.h>
+
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Set.h>
 
@@ -19,12 +21,45 @@ namespace DB
 
 /** Структура данных для реализации JOIN-а.
   * По сути, хэш-таблица: ключи -> строки присоединяемой таблицы.
+  *
+  * JOIN-ы бывают четырёх типов: ANY/ALL x LEFT/INNER.
+  *
+  * Если указано ANY - выбрать из "правой" таблицы только одну, первую попавшуюся строку, даже если там более одной соответствующей строки.
+  * Если указано ALL - обычный вариант JOIN-а, при котором строки могут размножаться по числу соответствующих строк "правой" таблицы.
+  * Вариант ANY работает более оптимально.
+  *
+  * Если указано INNER - оставить только строки, для которых есть хотя бы одна строка "правой" таблицы.
+  * Если указано LEFT - в случае, если в "правой" таблице нет соответствующей строки, заполнить её значениями "по-умолчанию".
+  *
+  * Все соединения делаются по равенству кортежа столбцов "ключей" (эквисоединение).
+  * Неравенства и прочие условия не поддерживаются.
+  *
+  * Реализация такая:
+  *
+  * 1. "Правая" таблица засовывается в хэш-таблицу в оперативке.
+  * Она имеет вид keys -> row в случае ANY или keys -> [rows...] в случае ALL.
+  * Это делается в функции insertFromBlock.
+  *
+  * 2. При обработке "левой" таблицы, присоединяем к ней данные из сформированной хэш-таблицы.
+  * Это делается в функции joinBlock.
+  *
+  * В случае ANY LEFT JOIN - формируем новые столбцы с найденной строкой или значениями по-умолчанию.
+  * Самый простой вариант. Количество строк при JOIN-е не меняется.
+  *
+  * В случае ANY INNER JOIN - формируем новые столбцы с найденной строкой;
+  *  а также заполняем фильтр - для каких строк значения не нашлось.
+  * После чего, фильтруем столбцы "левой" таблицы.
+  *
+  * В случае ALL ... JOIN - формируем новые столбцы со всеми найденными строками;
+  *  а также заполняем массив offsets, описывающий, во сколько раз надо размножить строки "левой" таблицы.
+  * После чего, размножаем столбцы "левой" таблицы.
   */
 class Join
 {
 public:
-	Join(const Names & key_names_, const Limits & limits)
-		: key_names(key_names_),
+	Join(const Names & key_names_, const Limits & limits, ASTJoin::Kind kind_, ASTJoin::Strictness strictness_)
+		: kind(kind_), strictness(strictness_),
+		key_names(key_names_),
 		max_bytes_to_transfer(limits.max_bytes_to_transfer),
 		max_rows_to_transfer(limits.max_rows_to_transfer),
 		transfer_overflow_mode(limits.transfer_overflow_mode),
@@ -55,17 +90,10 @@ public:
 
 	/** Присоединить к блоку "левой" таблицы новые столбцы из сформированного отображения.
 	  */
-	void anyLeftJoinBlock(Block & block);
+	void joinBlock(Block & block);
 
 	size_t size() const { return getTotalRowCount(); }
-	
-private:
-	/// Имена ключевых столбцов - по которым производится соединение.
-	const Names key_names;
-	/// Номера ключевых столбцов в "левой" таблице.
-	ColumnNumbers key_numbers_left;
-	/// Номера ключевых столбцов в "правой" таблице.
-	ColumnNumbers key_numbers_right;
+
 
 	/// Ссылка на строку в блоке.
 	struct RowRef
@@ -86,15 +114,53 @@ private:
 		RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 	};
 
+	/** Разные структуры данных, которые могут использоваться для соединения.
+	  */
+	struct MapsAny
+	{
+		/// Специализация для случая, когда есть один числовой ключ.
+		typedef HashMap<UInt64, RowRef> MapUInt64;
+
+		/// Специализация для случая, когда есть один строковый ключ.
+		typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
+
+		/** Сравнивает 128 битные хэши.
+		  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
+		  * Иначе - вычисляет SipHash от набора из всех ключей.
+		  * (При этом, строки, содержащие нули посередине, могут склеиться.)
+		  */
+		typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
+
+		std::unique_ptr<MapUInt64> key64;
+		std::unique_ptr<MapString> key_string;
+		std::unique_ptr<MapHashed> hashed;
+	};
+
+	struct MapsAll
+	{
+		typedef HashMap<UInt64, RowRefList> MapUInt64;
+		typedef HashMapWithSavedHash<StringRef, RowRefList> MapString;
+		typedef HashMap<UInt128, RowRefList, UInt128Hash> MapHashed;
+
+		std::unique_ptr<MapUInt64> key64;
+		std::unique_ptr<MapString> key_string;
+		std::unique_ptr<MapHashed> hashed;
+	};
+
+private:
+	ASTJoin::Kind kind;
+	ASTJoin::Strictness strictness;
+
+	/// Имена ключевых столбцов - по которым производится соединение.
+	const Names key_names;
+	/// Номера ключевых столбцов в "левой" таблице.
+	ColumnNumbers key_numbers_left;
+	/// Номера ключевых столбцов в "правой" таблице.
+	ColumnNumbers key_numbers_right;
+
 	/** Блоки данных таблицы, с которой идёт соединение.
 	  */
 	Blocks blocks;
-
-	/** Разные структуры данных, которые могут использоваться для соединения.
-	  */
-	typedef HashMap<UInt64, RowRef> MapUInt64;
-	typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
-	typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
 
 	BlockInputStreamPtr source;
 
@@ -107,18 +173,8 @@ private:
 	size_t rows_in_external_table;
 	bool only_external;
 
-	/// Специализация для случая, когда есть один числовой ключ.
-	std::unique_ptr<MapUInt64> key64;
-
-	/// Специализация для случая, когда есть один строковый ключ.
-	std::unique_ptr<MapString> key_string;
-
-	/** Сравнивает 128 битные хэши.
-	  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
-	  * Иначе - вычисляет SipHash от набора из всех ключей.
-	  * (При этом, строки, содержащие нули посередине, могут склеиться.)
-	  */
-	std::unique_ptr<MapHashed> hashed;
+	MapsAny maps_any;
+	MapsAll maps_all;
 
 	/// Дополнительные данные - строки, а также продолжения односвязных списков строк.
 	Arena pool;
@@ -135,21 +191,13 @@ private:
 	size_t max_bytes;
 	OverflowMode overflow_mode;
 
-	void init(Set::Type type_)
-	{
-		type = type_;
+	void init(Set::Type type_);
 
-		switch (type)
-		{
-			case Set::EMPTY:											break;
-			case Set::KEY_64:		key64		.reset(new MapUInt64); 	break;
-			case Set::KEY_STRING:	key_string	.reset(new MapString); 	break;
-			case Set::HASHED:		hashed		.reset(new MapHashed);	break;
+	template <ASTJoin::Strictness STRICTNESS, typename Maps>
+	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
 
-			default:
-				throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-		}
-	}
+	template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
+	void joinBlockImpl(Block & block, Maps & maps);
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
