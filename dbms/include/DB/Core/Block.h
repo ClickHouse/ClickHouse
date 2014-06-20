@@ -31,8 +31,6 @@ private:
 	IndexByPosition_t index_by_position;
 	IndexByName_t index_by_name;
 
-	void rebuildIndexByPosition();
-	
 public:
 	Block() {}
 	

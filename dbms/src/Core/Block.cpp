@@ -38,28 +38,19 @@ void Block::addDefaults(NamesAndTypesListPtr required_columns)
 Block & Block::operator= (const Block & other)
 {
 	data = other.data;
-	rebuildIndexByPosition();
-	index_by_name.clear();
-	
-	for (IndexByName_t::const_iterator it = other.index_by_name.begin(); it != other.index_by_name.end(); ++it)
-	{
-		Container_t::iterator value = data.begin();
-		std::advance(value, std::distance(const_cast<Block&>(other).data.begin(), it->second));
-		index_by_name[it->first] = value;
-	}
-	
-	return *this;
-}
 
-
-void Block::rebuildIndexByPosition()
-{
 	index_by_position.resize(data.size());
+	index_by_name.clear();
+
 	size_t pos = 0;
 	for (Container_t::iterator it = data.begin(); it != data.end(); ++it, ++pos)
+	{
 		index_by_position[pos] = it;
-}
+		index_by_name[it->name] = it;
+	}
 
+	return *this;
+}
 
 void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 {
