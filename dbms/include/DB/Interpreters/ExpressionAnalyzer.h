@@ -194,20 +194,20 @@ private:
 
 	void getArrayJoinedColumns();
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
-	void addMultipleArrayJoinAction(ExpressionActions & actions);
+	void addMultipleArrayJoinAction(ExpressionActionsPtr & actions);
 
-	void addJoinAction(ExpressionActions & actions, bool only_types);
+	void addJoinAction(ExpressionActionsPtr & actions, bool only_types);
 
 	struct ScopeStack;
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
 
-	void getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions);
+	void getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 
-	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions, bool no_subqueries);
+	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries);
 
 	/// Добавить агрегатные функции в aggregate_descriptions.
 	/// Установить has_aggregation = true, если есть хоть одна агрегатная функция.
-	void getAggregatesImpl(ASTPtr ast, ExpressionActions & actions);
+	void getAggregatesImpl(ASTPtr ast, ExpressionActionsPtr & actions);
 
 	/** Получить множество нужных столбцов для чтения из таблицы.
 	  * При этом, столбцы, указанные в ignored_names, считаются ненужными. И параметр ignored_names может модифицироваться.

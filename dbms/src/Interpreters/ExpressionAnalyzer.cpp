@@ -93,7 +93,7 @@ void ExpressionAnalyzer::init()
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
 		has_aggregation = true;
 
-	ExpressionActions temp_actions(columns, settings);
+	ExpressionActionsPtr temp_actions = new ExpressionActions(columns, settings);
 
 	if (select_query && select_query->array_join_expression_list)
 	{
@@ -123,7 +123,7 @@ void ExpressionAnalyzer::init()
 				getRootActionsImpl(group_asts[i], true, false, temp_actions);
 				NameAndTypePair key;
 				key.first = group_asts[i]->getColumnName();
-				key.second = temp_actions.getSampleBlock().getByName(key.first).type;
+				key.second = temp_actions->getSampleBlock().getByName(key.first).type;
 				aggregation_keys.push_back(key);
 
 				if (!unique_keys.count(key.first))
@@ -142,7 +142,7 @@ void ExpressionAnalyzer::init()
 	}
 	else
 	{
-		aggregated_columns = temp_actions.getSampleBlock().getColumnsList();
+		aggregated_columns = temp_actions->getSampleBlock().getColumnsList();
 	}
 }
 
@@ -697,12 +697,12 @@ struct ExpressionAnalyzer::ScopeStack
 	Levels stack;
 	Settings settings;
 
-	ScopeStack(const ExpressionActions & actions, const Settings & settings_)
+	ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_)
 		: settings(settings_)
 	{
 		stack.push_back(Level());
-		stack.back().actions = new ExpressionActions(actions);
-		const NamesAndTypesList & input_columns = actions.getSampleBlock().getColumnsList();
+		stack.back().actions = actions;
+		const NamesAndTypesList & input_columns = actions->getSampleBlock().getColumnsList();
 		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 			stack.back().new_columns.insert(it->first);
 	}
@@ -778,11 +778,11 @@ struct ExpressionAnalyzer::ScopeStack
 };
 
 
-void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActions & actions)
+void ExpressionAnalyzer::getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions)
 {
 	ScopeStack scopes(actions, settings);
 	getActionsImpl(ast, no_subqueries, only_consts, scopes);
-	actions = *scopes.popLevel();
+	actions = scopes.popLevel();
 }
 
 
@@ -1124,7 +1124,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 }
 
 
-void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actions)
+void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActionsPtr & actions)
 {
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
 	if (node && node->kind == ASTFunction::AGGREGATE_FUNCTION)
@@ -1145,7 +1145,7 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActions & actio
 		{
 			getRootActionsImpl(arguments[i], true, false, actions);
 			const std::string & name = arguments[i]->getColumnName();
-			types[i] = actions.getSampleBlock().getByName(name).type;
+			types[i] = actions->getSampleBlock().getByName(name).type;
 			aggregate.argument_names[i] = name;
 		}
 
@@ -1205,17 +1205,17 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypes
 	}
 }
 
-void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActions & actions)
+void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions)
 {
 	NameSet result_columns;
 	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
 	{
 		if (it->first != it->second)
-			actions.add(ExpressionAction::copyColumn(it->second, it->first));
+			actions->add(ExpressionAction::copyColumn(it->second, it->first));
 		result_columns.insert(it->first);
 	}
 
-	actions.add(ExpressionAction::arrayJoin(result_columns));
+	actions->add(ExpressionAction::arrayJoin(result_columns));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
@@ -1228,16 +1228,16 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
 	initChain(chain, columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
-	getRootActionsImpl(select_query->array_join_expression_list, only_types, false, *step.actions);
+	getRootActionsImpl(select_query->array_join_expression_list, only_types, false, step.actions);
 
-	addMultipleArrayJoinAction(*step.actions);
+	addMultipleArrayJoinAction(step.actions);
 
 	return true;
 }
 
-void ExpressionAnalyzer::addJoinAction(ExpressionActions & actions, bool only_types)
+void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only_types)
 {
-	actions.add(ExpressionAction::ordinaryJoin(only_types ? nullptr : joins[0], columns_added_by_join));
+	actions->add(ExpressionAction::ordinaryJoin(only_types ? nullptr : joins[0], columns_added_by_join));
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -1251,7 +1251,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
 	ASTJoin & ast_join = dynamic_cast<ASTJoin &>(*select_query->join);
-	getRootActionsImpl(ast_join.using_expr_list, only_types, false, *step.actions);
+	getRootActionsImpl(ast_join.using_expr_list, only_types, false, step.actions);
 
 	{
 		Names join_key_names(join_key_names_set.begin(), join_key_names_set.end());
@@ -1285,7 +1285,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		joins.push_back(join);
 	}
 
-	addJoinAction(*step.actions, false);
+	addJoinAction(step.actions, false);
 
 	return true;
 }
@@ -1301,7 +1301,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
 	step.required_output.push_back(select_query->where_expression->getColumnName());
-	getRootActionsImpl(select_query->where_expression, only_types, false, *step.actions);
+	getRootActionsImpl(select_query->where_expression, only_types, false, step.actions);
 
 	return true;
 }
@@ -1320,7 +1320,7 @@ bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
 		step.required_output.push_back(asts[i]->getColumnName());
-		getRootActionsImpl(asts[i], only_types, false, *step.actions);
+		getRootActionsImpl(asts[i], only_types, false, step.actions);
 	}
 
 	return true;
@@ -1341,13 +1341,13 @@ void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChai
 		}
 	}
 
-	getActionsBeforeAggregationImpl(select_query->select_expression_list, *step.actions, only_types);
+	getActionsBeforeAggregationImpl(select_query->select_expression_list, step.actions, only_types);
 
 	if (select_query->having_expression)
-		getActionsBeforeAggregationImpl(select_query->having_expression, *step.actions, only_types);
+		getActionsBeforeAggregationImpl(select_query->having_expression, step.actions, only_types);
 
 	if (select_query->order_expression_list)
-		getActionsBeforeAggregationImpl(select_query->order_expression_list, *step.actions, only_types);
+		getActionsBeforeAggregationImpl(select_query->order_expression_list, step.actions, only_types);
 }
 
 bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
@@ -1361,7 +1361,7 @@ bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
 	step.required_output.push_back(select_query->having_expression->getColumnName());
-	getRootActionsImpl(select_query->having_expression, only_types, false, *step.actions);
+	getRootActionsImpl(select_query->having_expression, only_types, false, step.actions);
 
 	return true;
 }
@@ -1373,7 +1373,7 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_
 	initChain(chain, aggregated_columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
-	getRootActionsImpl(select_query->select_expression_list, only_types, false, *step.actions);
+	getRootActionsImpl(select_query->select_expression_list, only_types, false, step.actions);
 
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
@@ -1392,7 +1392,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
 	initChain(chain, aggregated_columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
-	getRootActionsImpl(select_query->order_expression_list, only_types, false, *step.actions);
+	getRootActionsImpl(select_query->order_expression_list, only_types, false, step.actions);
 
 	ASTs asts = select_query->order_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
@@ -1445,7 +1445,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 {
 	assertSelect();
 
-	ExpressionActions temp_actions(aggregated_columns, settings);
+	ExpressionActionsPtr temp_actions = new ExpressionActions(aggregated_columns, settings);
 	NamesWithAliases result_columns;
 
 	ASTs asts = select_query->select_expression_list->children;
@@ -1455,12 +1455,12 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 		getRootActionsImpl(asts[i], true, false, temp_actions);
 	}
 
-	temp_actions.add(ExpressionAction::project(result_columns));
+	temp_actions->add(ExpressionAction::project(result_columns));
 
-	return temp_actions.getSampleBlock();
+	return temp_actions->getSampleBlock();
 }
 
-void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActions & actions, bool no_subqueries)
+void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries)
 {
 	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
 	if (node && node->kind == ASTFunction::AGGREGATE_FUNCTION)
@@ -1505,7 +1505,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 			alias = name;
 		result_columns.push_back(NameWithAlias(name, alias));
 		result_names.push_back(alias);
-		getRootActionsImpl(asts[i], false, false, *actions);
+		getRootActionsImpl(asts[i], false, false, actions);
 	}
 
 	if (project_result)
@@ -1529,7 +1529,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
 	ExpressionActionsPtr actions = new ExpressionActions(NamesAndTypesList(), settings);
 
-	getRootActionsImpl(ast, true, true, *actions);
+	getRootActionsImpl(ast, true, true, actions);
 
 	return actions;
 }
