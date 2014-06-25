@@ -164,7 +164,6 @@ class ExpressionActions
 public:
 	typedef std::vector<ExpressionAction> Actions;
 
-
 	ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
 		: input_columns(input_columns_), settings(settings_)
 	{

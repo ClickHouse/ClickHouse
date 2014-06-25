@@ -725,7 +725,8 @@ void MergeTreeData::delayInsertIfNeeded()
 	{
 		double delay = std::pow(settings.insert_delay_step, parts_count - settings.parts_to_delay_insert);
 		delay /= 1000;
-		delay = std::min(delay, 5 * 60.); /// Ограничим задержку 5 минутами.
+		delay = std::min(delay, DBMS_MAX_DELAY_OF_INSERT);
+
 		LOG_INFO(log, "Delaying inserting block by "
 			<< std::fixed << std::setprecision(4) << delay << "s because there are " << parts_count << " parts");
 		std::this_thread::sleep_for(std::chrono::duration<double>(delay));

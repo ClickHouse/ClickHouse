@@ -55,16 +55,9 @@ void NativeBlockOutputStream::write(const Block & block)
 	writeVarUInt(columns, ostr);
 	writeVarUInt(rows, ostr);
 
-	/** Если есть столбцы-константы - то материализуем их.
-	  * (Так как тип данных не умеет сериализовывать/десериализовывать константы.)
-	  */
-	Block materialized_block = block;
-
 	for (size_t i = 0; i < columns; ++i)
 	{
-		ColumnWithNameAndType & column = materialized_block.getByPosition(i);
-		if (column.column->isConst())
-			column.column = dynamic_cast<const IColumnConst &>(*column.column).convertToFullColumn();
+		const ColumnWithNameAndType & column = block.getByPosition(i);
 
 		/// Имя
 		writeStringBinary(column.name, ostr);
@@ -73,7 +66,15 @@ void NativeBlockOutputStream::write(const Block & block)
 		writeStringBinary(column.type->getName(), ostr);
 
 		/// Данные
-		writeData(*column.type, *column.column, ostr);
+
+		/** Если есть столбцы-константы - то материализуем их.
+		  * (Так как тип данных не умеет сериализовывать/десериализовывать константы.)
+		  */
+		ColumnPtr col = column.column->isConst()
+			? static_cast<const IColumnConst &>(*column.column).convertToFullColumn()
+			: column.column;
+
+		writeData(*column.type, *col, ostr);
 	}
 }
 
