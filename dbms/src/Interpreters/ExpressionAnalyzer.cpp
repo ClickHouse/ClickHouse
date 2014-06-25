@@ -702,17 +702,16 @@ struct ExpressionAnalyzer::ScopeStack
 	{
 		stack.push_back(Level());
 		stack.back().actions = actions;
-		const NamesAndTypesList & input_columns = actions->getSampleBlock().getColumnsList();
-		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-			stack.back().new_columns.insert(it->first);
+
+		const Block & sample_block = actions->getSampleBlock();
+		for (size_t i = 0, size = sample_block.columns(); i < size; ++i)
+			stack.back().new_columns.insert(sample_block.unsafeGetByPosition(i).name);
 	}
 
 	void pushLevel(const NamesAndTypesList & input_columns)
 	{
 		stack.push_back(Level());
 		Level & prev = stack[stack.size() - 2];
-
-		ColumnsWithNameAndType prev_columns = prev.actions->getSampleBlock().getColumns();
 
 		ColumnsWithNameAndType all_columns;
 		NameSet new_names;
@@ -724,10 +723,12 @@ struct ExpressionAnalyzer::ScopeStack
 			stack.back().new_columns.insert(it->first);
 		}
 
-		for (ColumnsWithNameAndType::const_iterator it = prev_columns.begin(); it != prev_columns.end(); ++it)
+		const Block & prev_sample_block = prev.actions->getSampleBlock();
+		for (size_t i = 0, size = prev_sample_block.columns(); i < size; ++i)
 		{
-			if (!new_names.count(it->name))
-				all_columns.push_back(*it);
+			const ColumnWithNameAndType & col = prev_sample_block.unsafeGetByPosition(i);
+			if (!new_names.count(col.name))
+				all_columns.push_back(col);
 		}
 
 		stack.back().actions = new ExpressionActions(all_columns, settings);

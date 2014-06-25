@@ -63,7 +63,7 @@ void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 		insert(elem);
 		return;
 	}
-		
+
 	Container_t::iterator it = data.insert(index_by_position[position], elem);
 	index_by_name[elem.name] = it;
 
@@ -95,7 +95,7 @@ void Block::erase(size_t position)
 	if (position >= index_by_position.size())
 		throw Exception("Position out of bound in Block::erase(), max position = "
 			+ toString(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
-		
+
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
 	data.erase(it);
@@ -113,12 +113,12 @@ void Block::erase(const String & name)
 	if (index_it == index_by_name.end())
 		throw Exception("No such name in Block::erase(): '"
 			+ name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-	
+
 	Container_t::iterator it = index_it->second;
 	index_by_name.erase(index_it);
 	size_t position = std::distance(data.begin(), it);
 	data.erase(it);
-	
+
 	for (size_t i = position, size = index_by_position.size() - 1; i < size; ++i)
 		index_by_position[i] = index_by_position[i + 1];
 
@@ -133,7 +133,7 @@ ColumnWithNameAndType & Block::getByPosition(size_t position)
 			+ " is out of bound in Block::getByPosition(), max position = "
 			+ toString(index_by_position.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
-		
+
 	return *index_by_position[position];
 }
 
@@ -145,7 +145,7 @@ const ColumnWithNameAndType & Block::getByPosition(size_t position) const
 			+ " is out of bound in Block::getByPosition(), max position = "
 			+ toString(index_by_position.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
-		
+
 	return *index_by_position[position];
 }
 
@@ -218,12 +218,6 @@ size_t Block::rowsInFirstColumn() const
 }
 
 
-size_t Block::columns() const
-{
-	return data.size();
-}
-
-
 size_t Block::bytes() const
 {
 	size_t res = 0;
@@ -293,15 +287,15 @@ void Block::checkNestedArraysOffsets() const
 	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
 	typedef std::map<String, const ColumnArray *> ArrayColumns;
 	ArrayColumns array_columns;
-	
+
 	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
 	{
 		const ColumnWithNameAndType & column = *it;
-		
+
 		if (const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*column.column))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
-			
+
 			ArrayColumns::const_iterator it = array_columns.find(name);
 			if (array_columns.end() == it)
 				array_columns[name] = column_array;
@@ -320,15 +314,15 @@ void Block::optimizeNestedArraysOffsets()
 	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
 	typedef std::map<String, ColumnArray *> ArrayColumns;
 	ArrayColumns array_columns;
-	
+
 	for (Container_t::iterator it = data.begin(); it != data.end(); ++it)
 	{
 		ColumnWithNameAndType & column = *it;
-		
+
 		if (ColumnArray * column_array = dynamic_cast<ColumnArray *>(&*column.column))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
-			
+
 			ArrayColumns::const_iterator it = array_columns.find(name);
 			if (array_columns.end() == it)
 				array_columns[name] = column_array;
@@ -336,7 +330,7 @@ void Block::optimizeNestedArraysOffsets()
 			{
 				if (!it->second->hasEqualOffsets(*column_array))
 					throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-				
+
 				/// делаем так, чтобы столбцы смещений массивов внутри одной вложенной таблицы указывали в одно место
 				column_array->getOffsetsColumn() = it->second->getOffsetsColumn();
 			}

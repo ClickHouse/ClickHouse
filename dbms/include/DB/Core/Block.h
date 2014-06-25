@@ -25,7 +25,7 @@ public:
 	typedef std::list<ColumnWithNameAndType> Container_t;
 	typedef std::vector<Container_t::iterator> IndexByPosition_t;
 	typedef std::map<String, Container_t::iterator> IndexByName_t;
-	
+
 private:
 	Container_t data;
 	IndexByPosition_t index_by_position;
@@ -33,7 +33,7 @@ private:
 
 public:
 	Block() {}
-	
+
 	/// нужны, чтобы правильно скопировались индексы
 	Block(const Block & other);
 	Block(Block && other) = default;
@@ -77,14 +77,14 @@ public:
 	/** То же самое, но без проверки - берёт количество строк из первого столбца, если он есть или возвращает 0.
 	  */
 	size_t rowsInFirstColumn() const;
-	
-	size_t columns() const;
+
+	size_t columns() const { return index_by_position.size(); }
 
 	/// Приблизительное количество байт в оперативке - для профайлинга.
 	size_t bytes() const;
 
-	operator bool() const { return !data.empty(); }
-	bool operator!() const { return data.empty(); }
+	operator bool() const { return !index_by_position.empty(); }
+	bool operator!() const { return index_by_position.empty(); }
 
 	/** Получить список имён столбцов через запятую. */
 	std::string dumpNames() const;
@@ -94,7 +94,7 @@ public:
 
 	/** Получить такой же блок, но пустой. */
 	Block cloneEmpty() const;
-	
+
 	/** Заменяет столбцы смещений внутри вложенных таблиц на один общий для таблицы.
 	 *  Кидает исключение, если эти смещения вдруг оказались неодинаковы.
 	 */
