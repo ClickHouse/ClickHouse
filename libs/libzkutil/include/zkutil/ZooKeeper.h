@@ -17,8 +17,12 @@ typedef WatchWithPromise * WatchWithPromisePtr;
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
   * Вместо callback-ов для watch-ей используются std::future.
-  * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке кроме OperationTimeout.
-  * При OperationTimeout пытаемся попробоватть еще retry_num раз.
+  *
+  * Методы на чтение при восстанавливаемых ошибках OperationTimeout, ConnectionLoss пытаются еще retry_num раз.
+  * Методы на запись не пытаются повторить при восстанавливаемых ошибках, т.к. это приводит к проблеммам типа удаления дважды одного и того же.
+  *
+  * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке.
+  *
   * Методы с названиями, начинающимися с try, не бросают исключение только при перечисленных видах ошибок.
   * Например, исключение бросается в любом случае, если сессия разорвалась или если не хватает прав или ресурсов.
   */
@@ -75,6 +79,8 @@ public:
 	  *  - Нет родителя создаваемой ноды.
 	  *  - Родитель эфемерный.
 	  *  - Такая нода уже есть.
+	  *  - ZCONNECTIONLOSS
+	  *  - ZOPERATIONTIMEOUT
 	  * При остальных ошибках бросает исключение.
 	  */
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
@@ -88,6 +94,8 @@ public:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
 	  *  - У ноды есть дети.
+	  *  - ZCONNECTIONLOSS
+	  *  - ZOPERATIONTIMEOUT
 	  */
 	int32_t tryRemove(const std::string & path, int32_t version = -1);
 
@@ -106,6 +114,8 @@ public:
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
+	  *  - ZCONNECTIONLOSS
+	  *  - ZOPERATIONTIMEOUT
 	  */
 	int32_t trySet(const std::string & path, const std::string & data,
 							int32_t version = -1, Stat * stat = nullptr);
@@ -153,7 +163,7 @@ private:
 	int32_t retry(const T & operation)
 	{
 		int32_t code = operation();
-		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT); ++i)
+		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
 		{
 			code = operation();
 		}
@@ -182,7 +192,7 @@ private:
 	WatchFunction * state_watch;
 	std::unordered_set<WatchWithPromise *> watch_store;
 
-	/// Количество попыток повторить операцию при OperationTimeout
+	/// Количество попыток повторить операцию чтения при OperationTimeout, ConnectionLoss
 	size_t retry_num = 3;
 };
 

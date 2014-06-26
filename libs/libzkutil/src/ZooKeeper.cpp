@@ -203,12 +203,14 @@ std::string ZooKeeper::create(const std::string & path, const std::string & data
 
 int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated)
 {
-	int code = retry(boost::bind(&ZooKeeper::createImpl, this, boost::ref(path), boost::ref(data), mode, boost::ref(pathCreated)));
+	int code = createImpl(path, data, mode, pathCreated);
 
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZNODEEXISTS ||
-			code == ZNOCHILDRENFOREPHEMERALS))
+			code == ZNOCHILDRENFOREPHEMERALS ||
+			code == ZCONNECTIONLOSS ||
+			code == ZOPERATIONTIMEOUT))
 		throw KeeperException(code, path);
 
 	return code;
@@ -233,11 +235,13 @@ void ZooKeeper::remove(const std::string & path, int32_t version)
 
 int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::removeImpl, this, boost::ref(path), version));
+	int32_t code = removeImpl(path, version);
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZBADVERSION ||
-			code == ZNOTEMPTY))
+			code == ZNOTEMPTY ||
+			code == ZCONNECTIONLOSS ||
+			code == ZOPERATIONTIMEOUT))
 		throw KeeperException(code, path);
 	return code;
 }
@@ -337,11 +341,13 @@ void ZooKeeper::set(const std::string & path, const std::string & data, int32_t 
 int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
 									int32_t version, Stat * stat_)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::setImpl, this, boost::ref(path), boost::ref(data), version, stat_));
+	int32_t code = setImpl(path, data, version, stat_);
 
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
-			code == ZBADVERSION))
+			code == ZBADVERSION ||
+			code == ZCONNECTIONLOSS ||
+			code == ZOPERATIONTIMEOUT))
 		throw KeeperException(code, path);
 	return code;
 }
@@ -377,14 +383,16 @@ OpResultsPtr ZooKeeper::multi(const Ops & ops)
 
 int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::multiImpl, this, boost::ref(ops_), out_results_));
+	int32_t code = multiImpl(ops_, out_results_);
 
 	if (code != ZOK &&
 		code != ZNONODE &&
 		code != ZNODEEXISTS &&
 		code != ZNOCHILDRENFOREPHEMERALS &&
 		code != ZBADVERSION &&
-		code != ZNOTEMPTY)
+		code != ZNOTEMPTY &&
+		code != ZCONNECTIONLOSS &&
+		code != ZOPERATIONTIMEOUT)
 			throw KeeperException(code);
 	return code;
 }
