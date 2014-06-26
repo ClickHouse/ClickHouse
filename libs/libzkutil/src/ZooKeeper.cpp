@@ -262,7 +262,7 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchFutur
 
 bool ZooKeeper::exists(const std::string & path, Stat * stat_, WatchFuture * watch)
 {
-	int32_t code = existsImpl(path, stat_, watch);
+	int32_t code = retry(boost::bind(&ZooKeeper::existsImpl, this, path, stat_, watch));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
