@@ -33,7 +33,7 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expect
 	ParserOptimizeQuery optimize_p;
 	ParserTablePropertiesQuery table_p;
 	ParserShowProcesslistQuery show_processlist_p;
-	ParserMultiQuery multi_p;
+//	ParserMultiQuery multi_p;
 
 	bool res = show_tables_p.parse(pos, end, node, expected)
 		|| select_p.parse(pos, end, node, expected)
