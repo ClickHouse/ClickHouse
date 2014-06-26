@@ -17,24 +17,24 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 		if (!pk_columns.count(name))
 			pk_columns[name] = i;
 	}
-	
+
 	/** Вычисление выражений, зависящих только от констант.
 	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
 	 */
 	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(query, context_, all_columns).getConstActions();
 	Block block_with_constants;
-	
+
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
 	ColumnWithNameAndType dummy_column;
 	dummy_column.name = "_dummy";
 	dummy_column.type = new DataTypeUInt8;
 	dummy_column.column = new ColumnConstUInt8(1, 0);
 	block_with_constants.insert(dummy_column);
-	
+
 	expr_for_constant_folding->execute(block_with_constants);
-	
+
 	/// Преобразуем секцию WHERE в обратную польскую строку.
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*query);
+	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query);
 	if (select.where_expression)
 	{
 		traverseAST(select.where_expression, block_with_constants);
@@ -70,8 +70,8 @@ bool PKCondition::addCondition(const String & column, const Range & range)
 static bool getConstant(ASTPtr & expr, Block & block_with_constants, Field & value)
 {
 	String column_name = expr->getColumnName();
-	
-	if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*expr))
+
+	if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*expr))
 	{
 		/// литерал
 		value = lit->value;
@@ -90,41 +90,41 @@ static bool getConstant(ASTPtr & expr, Block & block_with_constants, Field & val
 void PKCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 {
 	RPNElement element;
-	
-	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
+
+	if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
 	{
 		if (operatorFromAST(func, element))
 		{
-			ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
+			ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 			for (size_t i = 0; i < args.size(); ++i)
 			{
 				traverseAST(args[i], block_with_constants);
 				if (i)
 					rpn.push_back(element);
 			}
-			
+
 			return;
 		}
 	}
-	
+
 	if (!atomFromAST(node, block_with_constants, element))
 	{
 		element.function = RPNElement::FUNCTION_UNKNOWN;
 	}
-	
+
 	rpn.push_back(element);
 }
 
 bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
 	/// Фнукции < > = != <= >= in , у которых один агрумент константа, другой - один из столбцов первичного ключа.
-	if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
+	if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
 	{
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-		
+		ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+
 		if (args.size() != 2)
 			return false;
-		
+
 		/// Если true, слева константа.
 		bool inverted;
 		size_t column;
@@ -140,7 +140,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			inverted = true;
 			column = pk_columns[args[1]->getColumnName()];
 		}
-		else if (pk_columns.count(args[0]->getColumnName()) && dynamic_cast<ASTSet *>(args[1].get()))
+		else if (pk_columns.count(args[0]->getColumnName()) && typeid_cast<ASTSet *>(args[1].get()))
 		{
 			inverted = false;
 			column = pk_columns[args[0]->getColumnName()];
@@ -149,7 +149,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			return false;
 
 		std::string func_name = func->name;
-		
+
 		/// Заменим <const> <sign> <column> на <column> <-sign> <const>
 		if (inverted)
 		{
@@ -162,10 +162,10 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 			else if (func_name == "lessOrEquals")
 				func_name = "greaterOrEquals";
 		}
-		
+
 		out.function = RPNElement::FUNCTION_IN_RANGE;
 		out.key_column = column;
-		
+
 		if (func_name == "notEquals")
 		{
 			out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
@@ -188,23 +188,23 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		}
 		else
 			return false;
-		
+
 		return true;
 	}
-	
+
 	return false;
 }
 
 bool PKCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 {
 	/// Фнукции AND, OR, NOT.
-	ASTs & args = dynamic_cast<ASTExpressionList &>(*func->arguments).children;
-	
+	ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+
 	if (func->name == "not")
 	{
 		if (args.size() != 1)
 			return false;
-		
+
 		out.function = RPNElement::FUNCTION_NOT;
 	}
 	else
@@ -216,7 +216,7 @@ bool PKCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 		else
 			return false;
 	}
-	
+
 	return true;
 }
 
@@ -236,7 +236,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 {
 	/// Найдем диапазоны элементов ключа.
 	std::vector<Range> key_ranges(sort_descr.size(), Range());
-	
+
 	if (right_bounded)
 	{
 		for (size_t i = 0; i < sort_descr.size(); ++i)
@@ -277,9 +277,9 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		}
 		else if (element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET)
 		{
-			ASTFunction * in_func = dynamic_cast<ASTFunction *>(element.in_function.get());
-			ASTs & args = dynamic_cast<ASTExpressionList &>(*in_func->arguments).children;
-			ASTSet * ast_set = dynamic_cast<ASTSet *>(args[1].get());
+			ASTFunction * in_func = typeid_cast<ASTFunction *>(element.in_function.get());
+			ASTs & args = typeid_cast<ASTExpressionList &>(*in_func->arguments).children;
+			ASTSet * ast_set = typeid_cast<ASTSet *>(args[1].get());
 			if (in_func && ast_set)
 			{
 				const Range & key_range = key_ranges[element.key_column];
@@ -314,10 +314,10 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		else
 			throw Exception("Unexpected function type in PKCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
 	}
-	
+
 	if (rpn_stack.size() != 1)
 		throw Exception("Unexpected stack size in PkCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
-	
+
 	return rpn_stack[0].can_be_true;
 }
 
@@ -333,11 +333,11 @@ bool PKCondition::mayBeTrueAfter(const Field * left_pk)
 
 ASTSet * PKCondition::RPNElement::inFunctionToSet()
 {
-	ASTFunction * in_func = dynamic_cast<ASTFunction *>(in_function.get());
+	ASTFunction * in_func = typeid_cast<ASTFunction *>(in_function.get());
 	if (!in_func)
 		return nullptr;
-	ASTs & args = dynamic_cast<ASTExpressionList &>(*in_func->arguments).children;
-	ASTSet * ast_set = dynamic_cast<ASTSet *>(args[1].get());
+	ASTs & args = typeid_cast<ASTExpressionList &>(*in_func->arguments).children;
+	ASTSet * ast_set = typeid_cast<ASTSet *>(args[1].get());
 	return ast_set;
 }
 

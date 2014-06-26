@@ -18,7 +18,7 @@ public:
 
 	void execute()
 	{
-		ASTSetQuery & ast = dynamic_cast<ASTSetQuery &>(*query_ptr);
+		ASTSetQuery & ast = typeid_cast<ASTSetQuery &>(*query_ptr);
 
 		Context & target = ast.global ? context.getGlobalContext() : context.getSessionContext();
 

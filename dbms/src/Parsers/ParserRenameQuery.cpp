@@ -15,7 +15,7 @@ static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser:
 	ParserIdentifier name_p;
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_dot(".");
-	
+
 	ASTPtr database;
 	ASTPtr table;
 
@@ -35,13 +35,13 @@ static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser:
 		ws.ignore(pos, end);
 	}
 
-	db_and_table.database = database ? dynamic_cast<const ASTIdentifier &>(*database).name : "";
-	db_and_table.table = dynamic_cast<const ASTIdentifier &>(*table).name;
+	db_and_table.database = database ? typeid_cast<const ASTIdentifier &>(*database).name : "";
+	db_and_table.table = typeid_cast<const ASTIdentifier &>(*table).name;
 
 	return true;
 }
 
-	
+
 bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
@@ -51,7 +51,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	ParserString s_table("TABLE", true, true);
 	ParserString s_to("TO", true, true);
 	ParserString s_comma(",");
-	
+
 	ws.ignore(pos, end);
 
 	if (!s_rename.ignore(pos, end, expected))
@@ -67,7 +67,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	while (true)
 	{
 		ws.ignore(pos, end);
-		
+
 		if (!elements.empty() && !s_comma.ignore(pos, end))
 			break;
 

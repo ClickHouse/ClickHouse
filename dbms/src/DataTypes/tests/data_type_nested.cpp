@@ -31,7 +31,7 @@ int main(int argc, char ** argv)
 	try
 	{
 		Poco::Stopwatch stopwatch;
-		
+
 		/// Nested(uint8 UInt8, uint64 UInt64, string String)
 		Nested nested[n];
 		for (size_t i = 0; i < n; ++i)
@@ -53,20 +53,20 @@ int main(int argc, char ** argv)
 		types->push_back(DB::NameAndTypePair("uint8", new DB::DataTypeUInt8));
 		types->push_back(DB::NameAndTypePair("uint64", new DB::DataTypeUInt64));
 		types->push_back(DB::NameAndTypePair("string", new DB::DataTypeString));
-		
+
 		DB::DataTypeNested data_type(types);
 
 		{
 			DB::ColumnPtr column_p = data_type.createColumn();
-			DB::ColumnNested * column = dynamic_cast<DB::ColumnNested *>(&*column_p);
+			DB::ColumnNested * column = typeid_cast<DB::ColumnNested *>(&*column_p);
 			DB::Columns & data = column->getData();
 			DB::ColumnNested::Offsets_t & offsets = column->getOffsets();
-			
+
 			data.resize(3);
 			data[0] = new DB::ColumnUInt8;
 			data[1] = new DB::ColumnUInt64;
 			data[2] = new DB::ColumnString;
-			
+
 			for (size_t i = 0; i < n; ++i)
 			{
 				for (size_t j = 0; j < sizes[i]; ++j)
@@ -96,7 +96,7 @@ int main(int argc, char ** argv)
 
 		{
 			DB::ColumnPtr column_p = data_type.createColumn();
-			DB::ColumnNested * column = dynamic_cast<DB::ColumnNested *>(&*column_p);
+			DB::ColumnNested * column = typeid_cast<DB::ColumnNested *>(&*column_p);
 
 			std::ifstream istr("test");
 			DB::ReadBufferFromIStream in_buf(istr);
@@ -117,15 +117,15 @@ int main(int argc, char ** argv)
 			std::cout << "Reading, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;
 
 			std::cout << std::endl;
-			
+
 			DB::Columns & data = column->getData();
 			DB::ColumnNested::Offsets_t & offsets = column->getOffsets();
-			
+
 			Nested res;
-			res.uint8.assign(dynamic_cast<DB::ColumnUInt8 &>(*data[0]).getData());
-			res.uint64.assign(dynamic_cast<DB::ColumnUInt64 &>(*data[1]).getData());
-			DB::ColumnString & res_string = dynamic_cast<DB::ColumnString &>(*data[2]);
-			
+			res.uint8.assign(typeid_cast<DB::ColumnUInt8 &>(*data[0]).getData());
+			res.uint64.assign(typeid_cast<DB::ColumnUInt64 &>(*data[1]).getData());
+			DB::ColumnString & res_string = typeid_cast<DB::ColumnString &>(*data[2]);
+
 			std::cout << "offsets: [";
 			for (size_t i = 0; i < offsets.size(); ++i)
 			{
@@ -133,11 +133,11 @@ int main(int argc, char ** argv)
 				std::cout << offsets[i];
 			}
 			std::cout << "]\n" << std::endl;
-			
+
 			for (size_t i = 0; i < n; ++i)
 			{
 				size_t sh = i ? offsets[i - 1] : 0;
-				
+
 				std::cout << "[";
 				for (size_t j = 0; j < sizes[i]; ++j)
 				{
@@ -145,7 +145,7 @@ int main(int argc, char ** argv)
 					std::cout << int(res.uint8[sh + j]);
 				}
 				std::cout << "]\n";
-				
+
 				std::cout << "[";
 				for (size_t j = 0; j < sizes[i]; ++j)
 				{
@@ -153,7 +153,7 @@ int main(int argc, char ** argv)
 					std::cout << res.uint64[sh + j];
 				}
 				std::cout << "]\n";
-				
+
 				std::cout << "[";
 				for (size_t j = 0; j < sizes[i]; ++j)
 				{
@@ -161,7 +161,7 @@ int main(int argc, char ** argv)
 					std::cout << '"' << res_string.getDataAt(sh + j).toString() << '"';
 				}
 				std::cout << "]\n";
-				
+
 				std::cout << std::endl;
 			}
 		}

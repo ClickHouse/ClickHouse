@@ -28,6 +28,8 @@
 
 #include <DB/DataStreams/copyData.h>
 
+#include <DB/Common/typeid_cast.h>
+
 #include <DB/Parsers/formatAST.h>
 
 
@@ -37,15 +39,15 @@ namespace DB
 
 static std::string * getAlias(ASTPtr & ast)
 {
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
 	{
 		return &node->alias;
 	}
-	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
 		return &node->alias;
 	}
-	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
+	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
 	{
 		return &node->alias;
 	}
@@ -57,15 +59,15 @@ static std::string * getAlias(ASTPtr & ast)
 
 static void setAlias(ASTPtr & ast, const std::string & alias)
 {
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
 	{
 		node->alias = alias;
 	}
-	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
 		node->alias = alias;
 	}
-	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
+	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
 	{
 		node->alias = alias;
 	}
@@ -78,7 +80,7 @@ static void setAlias(ASTPtr & ast, const std::string & alias)
 
 void ExpressionAnalyzer::init()
 {
-	select_query = dynamic_cast<ASTSelectQuery *>(&*ast);
+	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
 	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation=true.
 	normalizeTree();
@@ -103,7 +105,7 @@ void ExpressionAnalyzer::init()
 
 	if (select_query && select_query->join)
 	{
-		getRootActionsImpl(dynamic_cast<ASTJoin &>(*select_query->join).using_expr_list, true, false, temp_actions);
+		getRootActionsImpl(typeid_cast<ASTJoin &>(*select_query->join).using_expr_list, true, false, temp_actions);
 		addJoinAction(temp_actions, true);
 	}
 
@@ -158,7 +160,7 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 /// Например, при ignore_levels=1 ast не может быть занесен в словарь, но его дети могут.
 void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 {
-	ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast);
+	ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast);
 
 	/// Обход снизу-вверх. Не опускаемся в подзапросы.
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
@@ -170,7 +172,7 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 		if (select && *it == select->array_join_expression_list)
 			new_ignore_levels = 2;
 
-		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+		if (!typeid_cast<ASTSelectQuery *>(&**it))
 			createAliasesDict(*it, new_ignore_levels);
 	}
 
@@ -190,14 +192,14 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 
 StoragePtr ExpressionAnalyzer::getTable()
 {
-	if (const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*ast))
+	if (const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(&*ast))
 	{
-		if (select->table && !dynamic_cast<const ASTSelectQuery *>(&*select->table) && !dynamic_cast<const ASTFunction *>(&*select->table))
+		if (select->table && !typeid_cast<const ASTSelectQuery *>(&*select->table) && !typeid_cast<const ASTFunction *>(&*select->table))
 		{
 			String database = select->database
-				? dynamic_cast<const ASTIdentifier &>(*select->database).name
+				? typeid_cast<const ASTIdentifier &>(*select->database).name
 				: "";
-			const String & table = dynamic_cast<const ASTIdentifier &>(*select->table).name;
+			const String & table = typeid_cast<const ASTIdentifier &>(*select->table).name;
 			return context.tryGetTable(database, table);
 		}
 	}
@@ -235,7 +237,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	bool replaced = false;
 
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
 	{
 		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
 		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
@@ -251,10 +253,10 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 		}
 		/// может быть указано in t, где t - таблица, что равносильно select * from t.
 		if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
-			if (ASTIdentifier * right = dynamic_cast<ASTIdentifier *>(&*node->arguments->children[1]))
+			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*node->arguments->children[1]))
 				right->kind = ASTIdentifier::Table;
 	}
-	else if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column)
 		{
@@ -280,13 +282,13 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			}
 		}
 	}
-	else if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
+	else if (ASTExpressionList * node = typeid_cast<ASTExpressionList *>(&*ast))
 	{
 		/// Заменим * на список столбцов.
 		ASTs & asts = node->children;
 		for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
 		{
-			if (ASTAsterisk * asterisk = dynamic_cast<ASTAsterisk *>(&*asts[i]))
+			if (ASTAsterisk * asterisk = typeid_cast<ASTAsterisk *>(&*asts[i]))
 			{
 				ASTs all_columns;
 				for (const auto & column_name_type : columns)
@@ -311,11 +313,11 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
 
 	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		if (!dynamic_cast<ASTSelectQuery *>(&**it))
+		if (!typeid_cast<ASTSelectQuery *>(&**it))
 			normalizeTreeImpl(*it, finished_asts, current_asts, current_alias);
 
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
-	if (ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast))
+	if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast))
 	{
 		if (select->prewhere_expression)
 			normalizeTreeImpl(select->prewhere_expression, finished_asts, current_asts, current_alias);
@@ -327,7 +329,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 	/// Действия, выполняемые снизу вверх.
 
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
 	{
 		if (node->kind == ASTFunction::TABLE_FUNCTION)
 		{
@@ -370,13 +372,13 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 	for (auto & child : node->children)
 		makeSetsForIndexImpl(child, sample_block);
 
-	ASTFunction * func = dynamic_cast<ASTFunction *>(node.get());
+	ASTFunction * func = typeid_cast<ASTFunction *>(node.get());
 	if (func && func->kind == ASTFunction::FUNCTION && (func->name == "in" || func->name == "notIn"))
 	{
 		IAST & args = *func->arguments;
 		ASTPtr & arg = args.children[1];
 
-		if (!dynamic_cast<ASTSet *>(&*arg) && !dynamic_cast<ASTSubquery *>(&*arg) && !dynamic_cast<ASTIdentifier *>(&*arg))
+		if (!typeid_cast<ASTSet *>(&*arg) && !typeid_cast<ASTSubquery *>(&*arg) && !typeid_cast<ASTIdentifier *>(&*arg))
 		{
 			try
 			{
@@ -401,19 +403,19 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 
 	/// Если идентификатор типа таблица
 	StoragePtr external_storage;
-	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 		if (node->kind == ASTIdentifier::Kind::Table)
 			if ((external_storage = context.tryGetExternalTable(node->name)))
 				external_tables[node->name] = external_storage;
 
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
 	{
 		if (node->name == "globalIn" || node->name == "globalNotIn" || node->name == "In" || node->name == "NotIn")
 		{
 			IAST & args = *node->arguments;
 			ASTPtr & arg = args.children[1];
 			/// Если имя таблицы для селекта
-			if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*arg))
+			if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(&*arg))
 				if ((external_storage = context.tryGetExternalTable(id->name)))
 					external_tables[id->name] = external_storage;
 		}
@@ -433,7 +435,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 	StoragePtr external_storage;
 
 	/// Если подзапрос или имя таблицы для селекта
-	if (dynamic_cast<const ASTSubquery *>(&*arg) || dynamic_cast<const ASTIdentifier *>(&*arg))
+	if (typeid_cast<const ASTSubquery *>(&*arg) || typeid_cast<const ASTIdentifier *>(&*arg))
 	{
 		/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
 			* Так как результат этого поздапроса - ещё не результат всего запроса.
@@ -448,7 +450,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 		subquery_context.setSettings(subquery_settings);
 
 		ASTPtr subquery;
-		if (const ASTIdentifier * table = dynamic_cast<const ASTIdentifier *>(&*arg))
+		if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*arg))
 		{
 			ParserSelectQuery parser;
 
@@ -512,11 +514,11 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	IAST & args = *node->arguments;
 	ASTPtr & arg = args.children[1];
 
-	if (dynamic_cast<ASTSet *>(&*arg))
+	if (typeid_cast<ASTSet *>(&*arg))
 		return;
 
 	/// Если подзапрос или имя таблицы для селекта
-	if (dynamic_cast<ASTSubquery *>(&*arg) || dynamic_cast<ASTIdentifier *>(&*arg))
+	if (typeid_cast<ASTSubquery *>(&*arg) || typeid_cast<ASTIdentifier *>(&*arg))
 	{
 		/// Получаем поток блоков для подзапроса, отдаем его множеству, и кладём это множество на место подзапроса.
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
@@ -542,7 +544,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			/** В правой части IN-а может стоять подзапрос или имя таблицы.
 			  * Во втором случае, это эквивалентно подзапросу (SELECT * FROM t).
 			  */
-			if (ASTIdentifier * table = dynamic_cast<ASTIdentifier *>(&*arg))
+			if (ASTIdentifier * table = typeid_cast<ASTIdentifier *>(&*arg))
 			{
 				if (external_data.count(table->name))
 				{
@@ -609,7 +611,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 		DataTypes set_element_types;
 		ASTPtr & left_arg = args.children[0];
 
-		ASTFunction * left_arg_tuple = dynamic_cast<ASTFunction *>(&*left_arg);
+		ASTFunction * left_arg_tuple = typeid_cast<ASTFunction *>(&*left_arg);
 
 		if (left_arg_tuple && left_arg_tuple->name == "tuple")
 		{
@@ -621,7 +623,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 		else
 		{
 			DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-			if (DataTypeArray * array_type = dynamic_cast<DataTypeArray *>(&*left_type))
+			if (DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*left_type))
 				set_element_types.push_back(array_type->getNestedType());
 			else
 				set_element_types.push_back(left_type);
@@ -631,20 +633,20 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 		bool single_value = false;
 		ASTPtr elements_ast = arg;
 
-		if (ASTFunction * set_func = dynamic_cast<ASTFunction *>(&*arg))
+		if (ASTFunction * set_func = typeid_cast<ASTFunction *>(&*arg))
 		{
 			if (set_func->name != "tuple")
 				throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
 								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
-			ASTFunction * any_element = dynamic_cast<ASTFunction *>(&*set_func->arguments->children[0]);
+			ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children[0]);
 			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
 				single_value = true;
 			else
 				elements_ast = set_func->arguments;
 		}
-		else if (dynamic_cast<ASTLiteral *>(&*arg))
+		else if (typeid_cast<ASTLiteral *>(&*arg))
 		{
 			single_value = true;
 		}
@@ -798,7 +800,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 
 			String nested_table_name = ast->getColumnName();
 			String nested_table_alias = ast->getAlias();
-			if (nested_table_alias == nested_table_name && !dynamic_cast<ASTIdentifier *>(&*ast))
+			if (nested_table_alias == nested_table_name && !typeid_cast<ASTIdentifier *>(&*ast))
 				throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
 			if (array_join_alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
@@ -824,7 +826,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 			String result_name = expr->getAlias();
 
 			/// Это массив.
-			if (!dynamic_cast<ASTIdentifier *>(&*expr) || findColumn(source_name, columns) != columns.end())
+			if (!typeid_cast<ASTIdentifier *>(&*expr) || findColumn(source_name, columns) != columns.end())
 			{
 				array_join_result_to_source[result_name] = source_name;
 			}
@@ -852,7 +854,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 
 void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 {
-	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column)
 		{
@@ -870,7 +872,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 	else
 	{
 		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			if (!dynamic_cast<ASTSelectQuery *>(&**it))
+			if (!typeid_cast<ASTSelectQuery *>(&**it))
 				getArrayJoinedColumnsImpl(*it);
 	}
 }
@@ -879,11 +881,11 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack)
 {
 	/// Если результат вычисления уже есть в блоке.
-	if ((dynamic_cast<ASTFunction *>(&*ast) || dynamic_cast<ASTLiteral *>(&*ast))
+	if ((typeid_cast<ASTFunction *>(&*ast) || typeid_cast<ASTLiteral *>(&*ast))
 		&& actions_stack.getSampleBlock().has(ast->getColumnName()))
 		return;
 
-	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
 		std::string name = node->getColumnName();
 		if (!only_consts && !actions_stack.getSampleBlock().has(name))
@@ -901,7 +903,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					ErrorCodes::NOT_AN_AGGREGATE);
 		}
 	}
-	else if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	else if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
 	{
 		if (node->kind == ASTFunction::LAMBDA_EXPRESSION)
 			throw Exception("Unexpected expression", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -965,15 +967,15 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 			{
 				ASTPtr child = node->arguments->children[i];
 
-				ASTFunction * lambda = dynamic_cast<ASTFunction *>(&*child);
-				ASTSet * set = dynamic_cast<ASTSet *>(&*child);
+				ASTFunction * lambda = typeid_cast<ASTFunction *>(&*child);
+				ASTSet * set = typeid_cast<ASTSet *>(&*child);
 				if (lambda && lambda->name == "lambda")
 				{
 					/// Если аргумент - лямбда-выражение, только запомним его примерный тип.
 					if (lambda->arguments->children.size() != 2)
 						throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-					ASTFunction * lambda_args_tuple = dynamic_cast<ASTFunction *>(&*lambda->arguments->children[0]);
+					ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(&*lambda->arguments->children[0]);
 
 					if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
 						throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -1043,17 +1045,17 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				{
 					ASTPtr child = node->arguments->children[i];
 
-					ASTFunction * lambda = dynamic_cast<ASTFunction *>(&*child);
+					ASTFunction * lambda = typeid_cast<ASTFunction *>(&*child);
 					if (lambda && lambda->name == "lambda")
 					{
-						DataTypeExpression * lambda_type = dynamic_cast<DataTypeExpression *>(&*argument_types[i]);
-						ASTFunction * lambda_args_tuple = dynamic_cast<ASTFunction *>(&*lambda->arguments->children[0]);
+						DataTypeExpression * lambda_type = typeid_cast<DataTypeExpression *>(&*argument_types[i]);
+						ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(&*lambda->arguments->children[0]);
 						ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
 						NamesAndTypesList lambda_arguments;
 
 						for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
 						{
-							ASTIdentifier * identifier = dynamic_cast<ASTIdentifier *>(&*lambda_arg_asts[j]);
+							ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*lambda_arg_asts[j]);
 							if (!identifier)
 								throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
@@ -1107,7 +1109,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 										additional_requirements);
 		}
 	}
-	else if (ASTLiteral * node = dynamic_cast<ASTLiteral *>(&*ast))
+	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
 	{
 		DataTypePtr type = apply_visitor(FieldToDataType(), node->value);
 		ColumnWithNameAndType column;
@@ -1127,7 +1129,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActionsPtr & actions)
 {
-	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
+	ASTFunction * node = typeid_cast<ASTFunction *>(&*ast);
 	if (node && node->kind == ASTFunction::AGGREGATE_FUNCTION)
 	{
 		has_aggregation = true;
@@ -1154,12 +1156,12 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActionsPtr & ac
 
 		if (node->parameters)
 		{
-			ASTs & parameters = dynamic_cast<ASTExpressionList &>(*node->parameters).children;
+			ASTs & parameters = typeid_cast<ASTExpressionList &>(*node->parameters).children;
 			Array params_row(parameters.size());
 
 			for (size_t i = 0; i < parameters.size(); ++i)
 			{
-				ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*parameters[i]);
+				ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*parameters[i]);
 				if (!lit)
 					throw Exception("Parameters to aggregate functions must be literals", ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
 
@@ -1179,7 +1181,7 @@ void ExpressionAnalyzer::getAggregatesImpl(ASTPtr ast, ExpressionActionsPtr & ac
 		for (size_t i = 0; i < ast->children.size(); ++i)
 		{
 			ASTPtr child = ast->children[i];
-			if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child))
+			if (!typeid_cast<ASTSubquery *>(&*child) && !typeid_cast<ASTSelectQuery *>(&*child))
 				getAggregatesImpl(child, actions);
 		}
 	}
@@ -1251,7 +1253,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	initChain(chain, columns);
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
-	ASTJoin & ast_join = dynamic_cast<ASTJoin &>(*select_query->join);
+	ASTJoin & ast_join = typeid_cast<ASTJoin &>(*select_query->join);
 	getRootActionsImpl(ast_join.using_expr_list, only_types, false, step.actions);
 
 	{
@@ -1276,7 +1278,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 			required_joined_columns.push_back(name_type.first);
 
 		InterpreterSelectQuery interpreter(
-			dynamic_cast<ASTJoin &>(*select_query->join).subquery->children[0], subquery_context,
+			typeid_cast<ASTJoin &>(*select_query->join).subquery->children[0], subquery_context,
 			required_joined_columns,
 			QueryProcessingStage::Complete, subquery_depth + 1);
 
@@ -1398,7 +1400,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
 	ASTs asts = select_query->order_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
-		ASTOrderByElement * ast = dynamic_cast<ASTOrderByElement *>(&*asts[i]);
+		ASTOrderByElement * ast = typeid_cast<ASTOrderByElement *>(&*asts[i]);
 		if (!ast || ast->children.size() != 1)
 			throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 		ASTPtr order_expression = ast->children[0];
@@ -1463,7 +1465,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 
 void ExpressionAnalyzer::getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries)
 {
-	ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast);
+	ASTFunction * node = typeid_cast<ASTFunction *>(&*ast);
 	if (node && node->kind == ASTFunction::AGGREGATE_FUNCTION)
 	{
 		ASTs & arguments = node->arguments->children;
@@ -1491,7 +1493,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 	ASTs asts;
 
-	if (ASTExpressionList * node = dynamic_cast<ASTExpressionList *>(&*ast))
+	if (ASTExpressionList * node = typeid_cast<ASTExpressionList *>(&*ast))
 		asts = node->children;
 	else
 		asts = ASTs(1, ast);
@@ -1559,7 +1561,7 @@ void ExpressionAnalyzer::removeUnusedColumns()
 		{
 			/// Игнорируем идентификаторы верхнего уровня из секции ARRAY JOIN.
 			/// Их потом добавим отдельно.
-			if (dynamic_cast<ASTIdentifier *>(&*expressions[i]))
+			if (typeid_cast<ASTIdentifier *>(&*expressions[i]))
 			{
 				ignored.insert(expressions[i]->getColumnName());
 			}
@@ -1644,8 +1646,8 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 
 	std::cerr << "collectJoinedColumns" << std::endl;
 
-	auto & node = dynamic_cast<ASTJoin &>(*select_query->join);
-	auto & keys = dynamic_cast<ASTExpressionList &>(*node.using_expr_list);
+	auto & node = typeid_cast<ASTJoin &>(*select_query->join);
+	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
 	auto & select = node.subquery->children[0];
 
 	size_t num_join_keys = keys.children.size();
@@ -1700,7 +1702,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 	  * - идентификаторы, доступные из JOIN-а, кладём в required_joined_columns.
 	  */
 
-	if (ASTIdentifier * node = dynamic_cast<ASTIdentifier *>(&*ast))
+	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
 		if (node->kind == ASTIdentifier::Column
 			&& !ignored_names.count(node->name)
@@ -1715,14 +1717,14 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 		return;
 	}
 
-	if (ASTFunction * node = dynamic_cast<ASTFunction *>(&*ast))
+	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
 	{
 		if (node->kind == ASTFunction::LAMBDA_EXPRESSION)
 		{
 			if (node->arguments->children.size() != 2)
 				throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			ASTFunction * lambda_args_tuple = dynamic_cast<ASTFunction *>(&*node->arguments->children[0]);
+			ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(&*node->arguments->children[0]);
 
 			if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
 				throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -1731,7 +1733,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 			Names added_ignored;
 			for (size_t i = 0 ; i < lambda_args_tuple->arguments->children.size(); ++i)
 			{
-				ASTIdentifier * identifier = dynamic_cast<ASTIdentifier *>(&*lambda_args_tuple->arguments->children[i]);
+				ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*lambda_args_tuple->arguments->children[i]);
 				if (!identifier)
 					throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
@@ -1754,7 +1756,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 		}
 	}
 
-	ASTSelectQuery * select = dynamic_cast<ASTSelectQuery *>(&*ast);
+	ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast);
 
 	/// Рекурсивный обход выражения.
 	for (auto & child : ast->children)
@@ -1762,7 +1764,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 		/** Не пойдем в секцию ARRAY JOIN, потому что там нужно смотреть на имена не-ARRAY-JOIN-енных столбцов.
 		  * Туда removeUnusedColumns отправит нас отдельно.
 		  */
-		if (!dynamic_cast<ASTSubquery *>(&*child) && !dynamic_cast<ASTSelectQuery *>(&*child) &&
+		if (!typeid_cast<ASTSubquery *>(&*child) && !typeid_cast<ASTSelectQuery *>(&*child) &&
 			!(select && child == select->array_join_expression_list))
 			getRequiredColumnsImpl(child, required_columns, ignored_names, available_joined_columns, required_joined_columns);
     }

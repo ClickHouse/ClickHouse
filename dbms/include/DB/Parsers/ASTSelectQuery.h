@@ -40,7 +40,7 @@ public:
 	/// Проверить наличие функции arrayJoin. (Не большого ARRAY JOIN.)
 	static bool hasArrayJoin(const ASTPtr & ast)
 	{
-		if (const ASTFunction * function = dynamic_cast<const ASTFunction *>(&*ast))
+		if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
 		{
 			if (function->kind == ASTFunction::ARRAY_JOIN)
 				return true;

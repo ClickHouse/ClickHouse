@@ -67,7 +67,7 @@ BlockInputStreams StorageMerge::read(
 	getSelectedTables(selected_tables);
 
 	/// Если в запросе используется PREWHERE, надо убедиться, что все таблицы это поддерживают.
-	if (dynamic_cast<const ASTSelectQuery &>(*query).prewhere_expression)
+	if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
 		for (const auto & table : selected_tables)
 			if (!table->supportsPrewhere())
 				throw Exception("Storage " + table->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);

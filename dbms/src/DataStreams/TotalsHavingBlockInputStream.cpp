@@ -10,7 +10,7 @@ static void finalize(Block & block)
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		ColumnWithNameAndType & current = block.getByPosition(i);
-		ColumnAggregateFunction * unfinalized_column = dynamic_cast<ColumnAggregateFunction *>(&*current.column);
+		ColumnAggregateFunction * unfinalized_column = typeid_cast<ColumnAggregateFunction *>(&*current.column);
 		if (unfinalized_column)
 		{
 			current.type = unfinalized_column->getAggregateFunction()->getReturnType();
@@ -73,11 +73,11 @@ Block TotalsHavingBlockInputStream::readImpl()
 			size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
 			ColumnPtr filter_column_ptr = finalized.getByPosition(filter_column_pos).column;
 
-			ColumnConstUInt8 * column_const = dynamic_cast<ColumnConstUInt8 *>(&*filter_column_ptr);
+			ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*filter_column_ptr);
 			if (column_const)
 				filter_column_ptr = column_const->convertToFullColumn();
 
-			ColumnUInt8 * filter_column = dynamic_cast<ColumnUInt8 *>(&*filter_column_ptr);
+			ColumnUInt8 * filter_column = typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
 			if (!filter_column)
 				throw Exception("Filter column must have type UInt8, found " +
 					finalized.getByPosition(filter_column_pos).type->getName(),
@@ -150,7 +150,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		const ColumnWithNameAndType & current = block.getByPosition(i);
-		const ColumnAggregateFunction * column = dynamic_cast<const ColumnAggregateFunction *>(&*current.column);
+		const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(&*current.column);
 
 		if (!column)
 		{
@@ -179,7 +179,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 		}
 		else
 		{
-			target = dynamic_cast<ColumnAggregateFunction *>(&*totals.getByPosition(i).column);
+			target = typeid_cast<ColumnAggregateFunction *>(&*totals.getByPosition(i).column);
 			if (!target)
 				throw Exception("Unexpected type of column: " + totals.getByPosition(i).column->getName(),
 					ErrorCodes::ILLEGAL_COLUMN);

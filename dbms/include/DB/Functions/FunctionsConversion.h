@@ -29,10 +29,10 @@ struct ConvertImpl
 {
 	typedef typename FromDataType::FieldType FromFieldType;
 	typedef typename ToDataType::FieldType ToFieldType;
-	
+
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<FromFieldType> * col_from = dynamic_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;
@@ -45,7 +45,7 @@ struct ConvertImpl
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = vec_from[i];
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), col_from->getData());
 		}
@@ -70,7 +70,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 		typedef DataTypeDate::FieldType FromFieldType;
 		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
-		if (const ColumnVector<FromFieldType> * col_from = dynamic_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;
@@ -85,7 +85,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 				vec_to[i] = date_lut.fromDayNum(DayNum_t(vec_from[i]));
 			}
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.fromDayNum(DayNum_t(col_from->getData())));
 		}
@@ -109,7 +109,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 	{
 		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
-		if (const ColumnVector<FromFieldType> * col_from = dynamic_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;
@@ -122,7 +122,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = date_lut.toDayNum(vec_from[i]);
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.toDayNum(col_from->getData()));
 		}
@@ -147,7 +147,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<FromFieldType> * col_from = dynamic_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnString * col_to = new ColumnString;
 			block.getByPosition(result).column = col_to;
@@ -169,7 +169,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 			}
 			data_to.resize(write_buffer.count());
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = dynamic_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			std::vector<char> buf;
 			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
@@ -209,7 +209,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnString * col_from = dynamic_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;
@@ -230,7 +230,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
 			}
 		}
-		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			const String & s = col_from->getData();
 			ReadBufferFromString read_buffer(s);
@@ -266,7 +266,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnFixedString * col_from = dynamic_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;
@@ -294,7 +294,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 				}
 			}
 		}
-		else if (dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ConvertImpl<DataTypeString, ToDataType, Name>::execute(block, arguments, result);
 		}
@@ -313,7 +313,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnFixedString * col_from = dynamic_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnString * col_to = new ColumnString;
 			block.getByPosition(result).column = col_to;
@@ -344,7 +344,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
 			data_to.resize(offset_to);
 		}
-		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			const String & s = col_from->getData();
 
@@ -387,21 +387,21 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
-		
-		if      (dynamic_cast<const DataTypeUInt8 *		>(from_type)) ConvertImpl<DataTypeUInt8, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeUInt16 *	>(from_type)) ConvertImpl<DataTypeUInt16, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeUInt32 *	>(from_type)) ConvertImpl<DataTypeUInt32, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeUInt64 *	>(from_type)) ConvertImpl<DataTypeUInt64, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt8 *		>(from_type)) ConvertImpl<DataTypeInt8, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt16 *		>(from_type)) ConvertImpl<DataTypeInt16, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt32 *		>(from_type)) ConvertImpl<DataTypeInt32, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt64 *		>(from_type)) ConvertImpl<DataTypeInt64, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeFloat32 *	>(from_type)) ConvertImpl<DataTypeFloat32, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeFloat64 *	>(from_type)) ConvertImpl<DataTypeFloat64, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeDate *		>(from_type)) ConvertImpl<DataTypeDate, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeDateTime *	>(from_type)) ConvertImpl<DataTypeDateTime,	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeString *	>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
+
+		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) ConvertImpl<DataTypeUInt8, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt16 *	>(from_type)) ConvertImpl<DataTypeUInt16, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt32 *	>(from_type)) ConvertImpl<DataTypeUInt32, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt64 *	>(from_type)) ConvertImpl<DataTypeUInt64, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt8 *		>(from_type)) ConvertImpl<DataTypeInt8, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt16 *		>(from_type)) ConvertImpl<DataTypeInt16, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt32 *		>(from_type)) ConvertImpl<DataTypeInt32, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt64 *		>(from_type)) ConvertImpl<DataTypeInt64, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeFloat32 *	>(from_type)) ConvertImpl<DataTypeFloat32, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeFloat64 *	>(from_type)) ConvertImpl<DataTypeFloat64, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeDate *		>(from_type)) ConvertImpl<DataTypeDate, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) ConvertImpl<DataTypeDateTime,	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeString *	>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -434,7 +434,7 @@ public:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		if (!arguments[1].column)
 			throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0].type))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0].type))
 			throw Exception(getName() + " is only implemented for type String", ErrorCodes::NOT_IMPLEMENTED);
 
 		size_t n = getSize(arguments[1]);
@@ -448,14 +448,14 @@ public:
 		ColumnPtr column = block.getByPosition(arguments[0]).column;
 		size_t n = getSize(block.getByPosition(arguments[1]));
 
-		if (const ColumnConstString * column_const = dynamic_cast<const ColumnConstString *>(&*column))
+		if (const ColumnConstString * column_const = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			if (column_const->getData().size() > n)
 				throw Exception("String too long for type FixedString(" + toString(n) + ")",
 					ErrorCodes::TOO_LARGE_STRING_SIZE);
 			block.getByPosition(result).column = new ColumnConst<String>(column_const->size(), column_const->getData(), new DataTypeFixedString(n));
 		}
-		else if(const ColumnString * column_string = dynamic_cast<const ColumnString *>(&*column))
+		else if(const ColumnString * column_string = typeid_cast<const ColumnString *>(&*column))
 		{
 			ColumnFixedString * column_fixed = new ColumnFixedString(n);
 			ColumnPtr result_ptr = column_fixed;
@@ -482,9 +482,9 @@ private:
 	template <typename T>
 	bool getSizeTyped(const ColumnWithNameAndType & column, size_t & out_size)
 	{
-		if (!dynamic_cast<const typename DataTypeFromFieldType<T>::Type *>(&*column.type))
+		if (!typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&*column.type))
 			return false;
-		const ColumnConst<T> * column_const = dynamic_cast<const ColumnConst<T> *>(&*column.column);
+		const ColumnConst<T> * column_const = typeid_cast<const ColumnConst<T> *>(&*column.column);
 		if (!column_const)
 			throw Exception("Unexpected type of column for FixedString length: " + column.column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 		T s = column_const->getData();

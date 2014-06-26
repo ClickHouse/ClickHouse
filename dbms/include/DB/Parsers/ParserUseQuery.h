@@ -41,7 +41,7 @@ protected:
 		ASTUseQuery * query = new ASTUseQuery(StringRange(begin, pos));
 		node = query;
 
-		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+		query->database = typeid_cast<ASTIdentifier &>(*database).name;
 
 		return true;
 	}

@@ -220,7 +220,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 		Map & res = *maps.key_string;
 		const IColumn & column = *key_columns[0];
 
-		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
 		{
 			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
 			const ColumnString::Chars_t & data = column_string->getChars();
@@ -233,7 +233,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 				Inserter<STRICTNESS, Map>::insert(res, key, stored_block, i, pool);
 			}
 		}
-		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
 		{
 			size_t n = column_string->getN();
 			const ColumnFixedString::Chars_t & data = column_string->getChars();
@@ -508,7 +508,7 @@ void Join::joinBlockImpl(Block & block, Maps & maps)
 		const Map & map = *maps.key_string;
 		const IColumn & column = *key_columns[0];
 
-		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
 		{
 			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
 			const ColumnString::Chars_t & data = column_string->getChars();
@@ -521,7 +521,7 @@ void Join::joinBlockImpl(Block & block, Maps & maps)
 				Adder<KIND, STRICTNESS, Map>::add(map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
 			}
 		}
-		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
 		{
 			size_t n = column_string->getN();
 			const ColumnFixedString::Chars_t & data = column_string->getChars();

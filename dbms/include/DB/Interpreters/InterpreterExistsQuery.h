@@ -30,12 +30,12 @@ public:
 
 		return res;
 	}
-	
+
 	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf)
 	{
 		Block sample = getSampleBlock();
-		ASTPtr format_ast = dynamic_cast<ASTExistsQuery &>(*query_ptr).format;
-		String format_name = format_ast ? dynamic_cast<ASTIdentifier &>(*format_ast).name : context.getDefaultFormat();
+		ASTPtr format_ast = typeid_cast<ASTExistsQuery &>(*query_ptr).format;
+		String format_name = format_ast ? typeid_cast<ASTIdentifier &>(*format_ast).name : context.getDefaultFormat();
 
 		BlockInputStreamPtr in = executeImpl();
 		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
@@ -64,10 +64,10 @@ private:
 
 	BlockInputStreamPtr executeImpl()
 	{
-		const ASTExistsQuery & ast = dynamic_cast<const ASTExistsQuery &>(*query_ptr);
+		const ASTExistsQuery & ast = typeid_cast<const ASTExistsQuery &>(*query_ptr);
 
 		bool res = context.isTableExist(ast.database, ast.table);
-		
+
 		ColumnWithNameAndType col;
 		col.name = "result";
 		col.type = new DataTypeUInt8;

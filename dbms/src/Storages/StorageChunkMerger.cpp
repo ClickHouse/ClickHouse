@@ -19,7 +19,7 @@
 
 namespace DB
 {
-	
+
 const int SLEEP_AFTER_MERGE = 1;
 const int SLEEP_NO_WORK = 10;
 const int SLEEP_AFTER_ERROR = 60;
@@ -64,24 +64,24 @@ BlockInputStreams StorageChunkMerger::read(
 
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-		
+
 		typedef std::set<std::string> StringSet;
 		StringSet chunks_table_names;
-		
+
 		Databases & databases = context.getDatabases();
-		
+
 		if (!databases.count(source_database))
 			throw Exception("No database " + source_database, ErrorCodes::UNKNOWN_DATABASE);
-		
+
 		Tables & tables = databases[source_database];
 		for (Tables::iterator it = tables.begin(); it != tables.end(); ++it)
 		{
 			StoragePtr table = it->second;
 			if (table_name_regexp.match(it->first) &&
-				!dynamic_cast<StorageChunks *>(&*table) &&
-				!dynamic_cast<StorageChunkMerger *>(&*table))
+				!typeid_cast<StorageChunks *>(&*table) &&
+				!typeid_cast<StorageChunkMerger *>(&*table))
 			{
-				if (StorageChunkRef * chunk_ref = dynamic_cast<StorageChunkRef *>(&*table))
+				if (StorageChunkRef * chunk_ref = typeid_cast<StorageChunkRef *>(&*table))
 				{
 					if (chunk_ref->source_database_name != source_database)
 					{
@@ -118,7 +118,7 @@ BlockInputStreams StorageChunkMerger::read(
 	}
 
 	BlockInputStreams res;
-	
+
 	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
 	processed_stage = QueryProcessingStage::Complete;
 	QueryProcessingStage::Enum tmp_processed_stage = QueryProcessingStage::Complete;
@@ -140,7 +140,7 @@ BlockInputStreams StorageChunkMerger::read(
 
 	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
 	bool all_inclusive = (values.size() == virtual_columns_block.rows());
-	
+
 	for (size_t i = 0; i < selected_tables.size(); ++i)
 	{
 		StoragePtr table = selected_tables[i];
@@ -194,16 +194,16 @@ BlockInputStreams StorageChunkMerger::read(
 
 		for (BlockInputStreams::iterator jt = source_streams.begin(); jt != source_streams.end(); ++jt)
 			res.push_back(*jt);
-		
+
 		if (tmp_processed_stage < processed_stage)
 			processed_stage = tmp_processed_stage;
 	}
-	
+
 	/** Если истчоников слишком много, то склеим их в threads источников.
 	 */
 	if (res.size() > threads)
 		res = narrowBlockInputStreams(res, threads);
-	
+
 	return res;
 }
 
@@ -284,7 +284,7 @@ void StorageChunkMerger::mergeThread()
 		{
 			LOG_ERROR(log, "StorageChunkMerger at " << this_database << "." << name << " failed to merge: unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
 		}
-		
+
 		unsigned sleep_ammount = error ? SLEEP_AFTER_ERROR : (merged ? SLEEP_AFTER_MERGE : SLEEP_NO_WORK);
 		if (shutdown_called || cancel_merge_thread.tryWait(1000 * sleep_ammount))
 			break;
@@ -314,7 +314,7 @@ StorageChunkMerger::Storages StorageChunkMerger::selectChunksToMerge()
 	Storages res;
 
 	Databases & databases = context.getDatabases();
-	
+
 	if (!databases.count(source_database))
 		throw Exception("No database " + source_database, ErrorCodes::UNKNOWN_DATABASE);
 
@@ -323,12 +323,12 @@ StorageChunkMerger::Storages StorageChunkMerger::selectChunksToMerge()
 	{
 		StoragePtr table = it->second;
 		if (table_name_regexp.match(it->first) &&
-			!dynamic_cast<StorageChunks *>(&*table) &&
-			!dynamic_cast<StorageChunkMerger *>(&*table) &&
-			!dynamic_cast<StorageChunkRef *>(&*table))
+			!typeid_cast<StorageChunks *>(&*table) &&
+			!typeid_cast<StorageChunkMerger *>(&*table) &&
+			!typeid_cast<StorageChunkRef *>(&*table))
 		{
 			res.push_back(table);
-			
+
 			if (res.size() >= chunks_to_merge)
 				break;
 		}
@@ -336,7 +336,7 @@ StorageChunkMerger::Storages StorageChunkMerger::selectChunksToMerge()
 
 	if (res.size() < chunks_to_merge)
 		res.clear();
-	
+
 	return res;
 }
 
@@ -359,16 +359,16 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 	{
 		table_locks.push_back(table->lockStructure(false));
 	}
-	
+
 	/// Объединим множества столбцов сливаемых чанков.
 	ColumnsMap known_columns_types(columns->begin(), columns->end());
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
 	*required_columns = *columns;
-	
+
 	for (size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index)
 	{
 		const NamesAndTypesList & current_columns = chunks[chunk_index]->getColumnsList();
-		
+
 		for (NamesAndTypesList::const_iterator it = current_columns.begin(); it != current_columns.end(); ++it)
 		{
 			const std::string & name = it->first;
@@ -387,32 +387,32 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			}
 		}
 	}
-	
+
 	std::string formatted_columns = formatColumnsForCreateQuery(*required_columns);
-	
+
 	std::string new_table_name = makeName(destination_name_prefix, chunks.front()->getTableName(), chunks.back()->getTableName());
 	std::string new_table_full_name = backQuoteIfNeed(source_database) + "." + backQuoteIfNeed(new_table_name);
 	StoragePtr new_storage_ptr;
-	
+
 	try
 	{
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-			
+
 			if (!context.getDatabases().count(source_database))
 				throw Exception("Destination database " + source_database + " for table " + name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-			
+
 			LOG_TRACE(log, "Will merge " << chunks.size() << " chunks: from " << chunks[0]->getTableName() << " to " << chunks.back()->getTableName() << " to new table " << new_table_name << ".");
-			
+
 			if (currently_written_groups.count(new_table_full_name))
 			{
 				LOG_WARNING(log, "Table " + new_table_full_name + " is already being written. Aborting merge.");
 				return false;
 			}
-			
+
 			currently_written_groups.insert(new_table_full_name);
 		}
-			
+
 		/// Уроним Chunks таблицу с таким именем, если она есть. Она могла остаться в результате прерванного слияния той же группы чанков.
 		executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
 
@@ -422,19 +422,19 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		new_storage_ptr = context.getTable(source_database, new_table_name);
 
 		/// Скопируем данные в новую таблицу.
-		StorageChunks & new_storage = dynamic_cast<StorageChunks &>(*new_storage_ptr);
-		
+		StorageChunks & new_storage = typeid_cast<StorageChunks &>(*new_storage_ptr);
+
 		for (size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index)
 		{
 			StoragePtr src_storage = chunks[chunk_index];
 			BlockOutputStreamPtr output = new_storage.writeToNewChunk(src_storage->getTableName());
-			
+
 			const NamesAndTypesList & src_columns = src_storage->getColumnsList();
 			Names src_column_names;
-			
+
 			ASTSelectQuery * select_query = new ASTSelectQuery;
 			ASTPtr select_query_ptr = select_query;
-			
+
 			/// Запрос, вынимающий нужные столбцы.
 			ASTPtr select_expression_list;
 			ASTPtr database;
@@ -448,7 +448,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				src_column_names.push_back(it->first);
 				select_list->children.push_back(newIdentifier(it->first, ASTIdentifier::Column));
 			}
-			
+
 			QueryProcessingStage::Enum processed_stage = QueryProcessingStage::Complete;
 
 			BlockInputStreams input_streams = src_storage->read(
@@ -457,7 +457,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				settings,
 				processed_stage,
 				DEFAULT_MERGE_BLOCK_SIZE);
-			
+
 			BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
 
 			input->readPrefix();
@@ -477,14 +477,14 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			input->readSuffix();
 			output->writeSuffix();
 		}
-		
+
 		/// Атомарно подменим исходные таблицы ссылками на новую.
 		/// При этом удалять таблицы под мьютексом контекста нельзя, пока только отцепим их.
 		Storages tables_to_drop;
 
 		{
 			Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-			
+
 			/// Если БД успели удалить, ничего не делаем.
 			if (context.getDatabases().count(source_database))
 			{
@@ -492,11 +492,11 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				{
 					StoragePtr src_storage = chunks[chunk_index];
 					std::string src_name = src_storage->getTableName();
-					
+
 					/// Если таблицу успели удалить, ничего не делаем.
 					if (!context.isTableExist(source_database, src_name))
 						continue;
-					
+
 					/// Отцепляем исходную таблицу. Ее данные и метаданные остаются на диске.
 					tables_to_drop.push_back(context.detachTable(source_database, src_name));
 
@@ -508,7 +508,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 					catch (...)
 					{
 						LOG_ERROR(log, "Chunk " + src_name + " was removed but not replaced. Its data is stored in table " << new_table_name << ". You may need to resolve this manually.");
-						
+
 						throw;
 					}
 				}
@@ -530,17 +530,17 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 		new_storage.removeReference();
 
 		LOG_TRACE(log, "Merged chunks.");
-		
+
 		return true;
 	}
 	catch(...)
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-		
+
 		currently_written_groups.erase(new_table_full_name);
-		
+
 		throw;
 	}
 }
-	
+
 }

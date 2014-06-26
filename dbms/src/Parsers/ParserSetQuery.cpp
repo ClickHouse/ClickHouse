@@ -17,7 +17,7 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
 	ParserLiteral value_p;
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_eq("=");
-	
+
 	ASTPtr name;
 	ASTPtr value;
 
@@ -38,13 +38,13 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
 
 	ws.ignore(pos, end);
 
-	change.name = dynamic_cast<const ASTIdentifier &>(*name).name;
-	change.value = dynamic_cast<const ASTLiteral &>(*value).value;
+	change.name = typeid_cast<const ASTIdentifier &>(*name).name;
+	change.value = typeid_cast<const ASTLiteral &>(*value).value;
 
 	return true;
 }
 
-	
+
 bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
@@ -53,7 +53,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	ParserString s_set("SET", true, true);
 	ParserString s_global("GLOBAL", true, true);
 	ParserString s_comma(",");
-	
+
 	ws.ignore(pos, end);
 
 	if (!s_set.ignore(pos, end, expected))
@@ -68,7 +68,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	while (true)
 	{
 		ws.ignore(pos, end);
-		
+
 		if (!changes.empty() && !s_comma.ignore(pos, end))
 			break;
 
@@ -85,7 +85,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 
 	query->changes = changes;
 	query->global = global;
-	
+
 	return true;
 }
 

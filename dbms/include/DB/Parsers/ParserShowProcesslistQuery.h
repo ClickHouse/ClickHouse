@@ -48,7 +48,7 @@ protected:
 
 			if (!format_p.parse(pos, end, format, expected))
 				return false;
-			dynamic_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
+			typeid_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
 
 			ws.ignore(pos, end);
 		}

@@ -21,19 +21,19 @@ static void writeData(const IDataType & type, const IColumn & column, WriteBuffe
 {
 	/** Для массивов требуется сначала сериализовать смещения, а потом значения.
 	  */
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		type_arr->getOffsetsType()->serializeBinary(*dynamic_cast<const ColumnArray &>(column).getOffsetsColumn(), ostr);
+		type_arr->getOffsetsType()->serializeBinary(*typeid_cast<const ColumnArray &>(column).getOffsetsColumn(), ostr);
 
-		if (!dynamic_cast<const ColumnArray &>(column).getData().empty())
-			writeData(*type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), ostr);
+		if (!typeid_cast<const ColumnArray &>(column).getData().empty())
+			writeData(*type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), ostr);
 	}
-	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 	{
-		const ColumnNested & column_nested = dynamic_cast<const ColumnNested &>(column);
-		
+		const ColumnNested & column_nested = typeid_cast<const ColumnNested &>(column);
+
 		type_nested->getOffsetsType()->serializeBinary(*column_nested.getOffsetsColumn(), ostr);
-		
+
 		NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
 		for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 		{

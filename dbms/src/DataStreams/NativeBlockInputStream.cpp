@@ -20,9 +20,9 @@ static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr
 {
 	/** Для массивов требуется сначала десериализовать смещения, а потом значения.
 	  */
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		IColumn & offsets_column = *dynamic_cast<ColumnArray &>(column).getOffsetsColumn();
+		IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
 		type_arr->getOffsetsType()->deserializeBinary(offsets_column, istr, rows);
 
 		if (offsets_column.size() != rows)
@@ -31,13 +31,13 @@ static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr
 		if (rows)
 			readData(
 				*type_arr->getNestedType(),
-				dynamic_cast<ColumnArray &>(column).getData(),
+				typeid_cast<ColumnArray &>(column).getData(),
 				istr,
-				dynamic_cast<const ColumnArray &>(column).getOffsets()[rows - 1]);
+				typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1]);
 	}
-	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 	{
-		ColumnNested & column_nested = dynamic_cast<ColumnNested &>(column);
+		ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
 		IColumn & offsets_column = *column_nested.getOffsetsColumn();
 		type_nested->getOffsetsType()->deserializeBinary(offsets_column, istr, rows);
 
@@ -71,7 +71,7 @@ Block NativeBlockInputStream::readImpl()
 
 	if (istr.eof())
 		return res;
-	
+
 	/// Размеры
 	size_t columns = 0;
 	size_t rows = 0;

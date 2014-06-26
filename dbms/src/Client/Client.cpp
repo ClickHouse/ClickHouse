@@ -100,7 +100,7 @@ private:
 	String home_path;
 
 	String current_profile;
-	
+
 	/// Путь к файлу истории команд.
 	String history_file;
 
@@ -109,7 +109,7 @@ private:
 
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
-	
+
 	/// Последнее полученное от сервера исключение.
 	ExceptionPtr last_exception;
 
@@ -165,14 +165,14 @@ private:
 		catch (const Exception & e)
 		{
 			std::string text = e.displayText();
-			
+
  			std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
 
 			/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
 			if (std::string::npos == text.find("Stack trace"))
 				std::cerr << "Stack trace:" << std::endl
 					<< e.getStackTrace().toString();
-			
+
 			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
 			return e.code() ? e.code() : -1;
 		}
@@ -192,7 +192,7 @@ private:
 			return ErrorCodes::UNKNOWN_EXCEPTION;
 		}
 	}
-	
+
 
 	int mainImpl(const std::vector<std::string> & args)
 	{
@@ -208,7 +208,7 @@ private:
 
 		std::cout << std::fixed << std::setprecision(3);
 		std::cerr << std::fixed << std::setprecision(3);
-		
+
 		if (is_interactive)
 			std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
 				<< "." << DBMS_VERSION_MINOR
@@ -252,16 +252,16 @@ private:
 			loop();
 
 			std::cout << "Bye." << std::endl;
-			
+
 			return 0;
 		}
 		else
 		{
 			nonInteractive();
-			
+
 			if (last_exception)
 				return last_exception->code();
-			
+
 			return 0;
 		}
 	}
@@ -274,7 +274,7 @@ private:
 		String default_database = config().getString("database", "");
 		String user = config().getString("user", "");
 		String password = config().getString("password", "");
-		
+
 		Protocol::Compression::Enum compression = config().getBool("compression", true)
 			? Protocol::Compression::Enable
 			: Protocol::Compression::Disable;
@@ -308,12 +308,12 @@ private:
 		}
 	}
 
-	
+
 	static bool isWhitespace(char c)
 	{
 		return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
 	}
-	
+
 
 	void loop()
 	{
@@ -323,22 +323,22 @@ private:
 		{
 			String line = line_;
 			free(line_);
-			
+
 			size_t ws = line.size();
 			while (ws > 0 && isWhitespace(line[ws - 1]))
 				--ws;
-			
+
 			if (ws == 0 && query.empty())
 				continue;
-			
+
 			bool ends_with_semicolon = line[ws - 1] == ';';
 			bool ends_with_backslash = line[ws - 1] == '\\';
-			
+
 			if (ends_with_backslash)
 				line = line.substr(0, ws - 1);
-			
+
 			query += line;
-			
+
 			if (!ends_with_backslash && (ends_with_semicolon || !config().has("multiline")))
 			{
 				if (query != prev_query)
@@ -390,7 +390,7 @@ private:
 			  * При этом, запрос будет читаться не потоково (целиком в оперативку).
 			  * Поддерживается только один запрос в stdin.
 			  */
-			
+
 			ReadBufferFromFileDescriptor in(STDIN_FILENO);
 			WriteBufferFromString out(line);
 			copyData(in, out);
@@ -410,7 +410,7 @@ private:
 			{
 				const char * pos = begin;
 				ASTPtr ast = parseQuery(pos, end);
-				ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*ast);
+				ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
 				if (insert && insert->data)
 				{
@@ -465,10 +465,10 @@ private:
 		written_progress_chars = 0;
 		written_first_block = false;
 
-		const ASTSetQuery * set_query = dynamic_cast<const ASTSetQuery *>(&*parsed_query);
-		const ASTUseQuery * use_query = dynamic_cast<const ASTUseQuery *>(&*parsed_query);
+		const ASTSetQuery * set_query = typeid_cast<const ASTSetQuery *>(&*parsed_query);
+		const ASTUseQuery * use_query = typeid_cast<const ASTUseQuery *>(&*parsed_query);
 		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
-		const ASTInsertQuery * insert = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
+		const ASTInsertQuery * insert = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
 
 		if (insert && !insert->select)
 			processInsertQuery();
@@ -514,7 +514,7 @@ private:
 	/// Преобразовать внешние таблицы к ExternalTableData и переслать через connection
 	void sendExternalTables()
 	{
-		const ASTSelectQuery * select = dynamic_cast<const ASTSelectQuery *>(&*parsed_query);
+		const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(&*parsed_query);
 		if (!select && !external_tables.empty())
 			throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
@@ -539,7 +539,7 @@ private:
 	void processInsertQuery()
 	{
 		/// Отправляем часть запроса - без данных, так как данные будут отправлены отдельно.
-		const ASTInsertQuery & parsed_insert_query = dynamic_cast<const ASTInsertQuery &>(*parsed_query);
+		const ASTInsertQuery & parsed_insert_query = typeid_cast<const ASTInsertQuery &>(*parsed_query);
 		String query_without_data = parsed_insert_query.data
 			? query.substr(0, parsed_insert_query.data - query.data())
 			: query;
@@ -587,7 +587,7 @@ private:
 			formatAST(*res, std::cout);
 			std::cout << std::endl << std::endl;
 		}
-		
+
 		return res;
 	}
 
@@ -595,7 +595,7 @@ private:
 	void sendData(Block & sample)
 	{
 		/// Если нужно отправить данные INSERT-а.
-		const ASTInsertQuery * parsed_insert_query = dynamic_cast<const ASTInsertQuery *>(&*parsed_query);
+		const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
 		if (!parsed_insert_query)
 			return;
 
@@ -620,7 +620,7 @@ private:
 		String current_format = insert_format;
 
 		/// Формат может быть указан в INSERT запросе.
-		if (ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*parsed_query))
+		if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*parsed_query))
 			if (!insert->format.empty())
 				current_format = insert->format;
 
@@ -637,7 +637,7 @@ private:
 			if (!block)
 				break;
 		}
-		
+
 		block_std_in->readSuffix();
 	}
 
@@ -698,7 +698,7 @@ private:
 			case Protocol::Server::Progress:
 				onProgress(packet.progress);
 				return true;
-				
+
 			case Protocol::Server::ProfileInfo:
 				onProfileInfo(packet.profile_info);
 				return true;
@@ -765,7 +765,7 @@ private:
 			/// Формат может быть указан в запросе.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
 				if (query_with_output->format)
-					if (ASTIdentifier * id = dynamic_cast<ASTIdentifier *>(&*query_with_output->format))
+					if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(&*query_with_output->format))
 						current_format = id->name;
 
 			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
@@ -818,7 +818,7 @@ private:
 			"\033[1;36m↑\033[0m",
 			"\033[1;37m↗\033[0m",
 		};
-		
+
 		if (is_interactive)
 		{
 			std::cerr << std::string(written_progress_chars, '\b');
@@ -835,7 +835,7 @@ private:
 					<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 			else
 				message << ". ";
-			
+
 			written_progress_chars = message.str().size() - 13;
 			std::cerr << message.rdbuf();
 			++increment;
@@ -862,8 +862,8 @@ private:
 		std::cerr << "Received exception from server:" << std::endl
 			<< "Code: " << e.code() << ". " << e.displayText();
 	}
-	
-	
+
+
 	void onProfileInfo(const BlockStreamProfileInfo & profile_info)
 	{
 		if (profile_info.hasAppliedLimit() && block_std_out)

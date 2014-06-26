@@ -27,7 +27,7 @@ public:
 
 	StoragePtr execute(ASTPtr ast_function, Context & context) const override
 	{
-		ASTs & args_func = dynamic_cast<ASTFunction &>(*ast_function).children;
+		ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
 		const char * err = "Storage Distributed requires 2 to 5 parameters"
 				" - name of configuration section with list of remote servers, name of remote database {,|.} name of remote table, "
@@ -36,18 +36,18 @@ public:
 		if (args_func.size() != 1)
 			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		if (args.size() < 2 || args.size() > 5)
 			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String descripton	 	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[0]).value);
-		String remote_database 	= dynamic_cast<ASTIdentifier &>(*args[1]).name;
-		String remote_table 	= args.size() % 2 ? dynamic_cast<ASTIdentifier &>(*args[2]).name : "";
+		String descripton	 	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[0]).value);
+		String remote_database 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+		String remote_table 	= args.size() % 2 ? typeid_cast<ASTIdentifier &>(*args[2]).name : "";
 		String username = args.size() >= 4
-			? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[args.size() - 2]).value) : "default";
+			? safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[args.size() - 2]).value) : "default";
 		String password = args.size() >= 4
-			? safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[args.size() - 1]).value) : "";
+			? safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[args.size() - 1]).value) : "";
 
 		if (remote_table.empty())
 		{
@@ -60,9 +60,9 @@ public:
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на эти Identifier.
 		/// Нам необходимо их пометить как имя базы данных и таблицы поскольку по умолчанию стоит значение column
-		dynamic_cast<ASTIdentifier &>(*args[1]).kind = ASTIdentifier::Database;
+		typeid_cast<ASTIdentifier &>(*args[1]).kind = ASTIdentifier::Database;
 		if (args.size() % 2)
-			dynamic_cast<ASTIdentifier &>(*args[2]).kind = ASTIdentifier::Table;
+			typeid_cast<ASTIdentifier &>(*args[2]).kind = ASTIdentifier::Table;
 
 		std::vector <std::vector< String> > names;
 		std::vector<String> shards = parseDescription(descripton, 0, descripton.size(), ',');

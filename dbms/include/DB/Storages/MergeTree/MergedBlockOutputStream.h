@@ -81,7 +81,7 @@ protected:
 			escaped_column_name = escapeForFileName(name);
 
 		/// Для массивов используются отдельные потоки для размеров.
-		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
 			String size_name = DataTypeNested::extractNestedTableName(name)
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
@@ -111,7 +111,7 @@ protected:
 		size_t size = column.size();
 
 		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
-		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
 			String size_name = DataTypeNested::extractNestedTableName(name)
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
@@ -207,10 +207,10 @@ public:
 		: IMergedBlockOutputStream(storage_, storage_.context.getSettings().min_compress_block_size, storage_.context.getSettings().max_compress_block_size), columns_list(columns_list_), part_path(part_path_), marks_count(0)
 	{
 		Poco::File(part_path).createDirectories();
-		
+
 		index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 		index_stream = new HashingWriteBuffer(*index_file_stream);
-		
+
 		columns_list = storage.getColumnsList();
 		for (const auto & it : columns_list)
 			addStream(part_path, it.first, *it.second);
@@ -219,17 +219,17 @@ public:
 	void write(const Block & block)
 	{
 		size_t rows = block.rows();
-		
+
 		/// Сначала пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
 		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
 		PrimaryColumns primary_columns;
-		
+
 		for (const auto & descr : storage.getSortDescription())
 			primary_columns.push_back(
 				!descr.column_name.empty()
 				? &block.getByName(descr.column_name)
 				: &block.getByPosition(descr.column_number));
-			
+
 		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 		{
 			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
@@ -237,13 +237,13 @@ public:
 				index_vec.push_back((*(*it)->column)[i]);
 				(*it)->type->serializeBinary(index_vec.back(), *index_stream);
 			}
-			
+
 			++marks_count;
 		}
-		
+
 		/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
 		OffsetColumns offset_columns;
-		
+
 		/// Теперь пишем данные.
 		for (const auto & it : columns_list)
 		{
@@ -259,7 +259,7 @@ public:
 	{
 		throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 	}
-	
+
 	MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums()
 	{
 		/// Заканчиваем запись и достаем чексуммы.
@@ -298,7 +298,7 @@ public:
 	{
 		return index_vec;
 	}
-	
+
 	/// Сколько засечек уже записано.
 	size_t marksCount()
 	{
@@ -388,5 +388,5 @@ private:
 
 	bool sync;
 };
-	
+
 }

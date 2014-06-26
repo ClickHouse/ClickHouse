@@ -32,7 +32,7 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
 
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnAggregateFunction & real_column = dynamic_cast<const ColumnAggregateFunction &>(column);
+	const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
 	const ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
 	ColumnAggregateFunction::Container_t::const_iterator it = vec.begin() + offset;
@@ -47,7 +47,7 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 
 void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnAggregateFunction & real_column = dynamic_cast<ColumnAggregateFunction &>(column);
+	ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
 	ColumnAggregateFunction::Container_t & vec = real_column.getData();
 
 	Arena * arena = new Arena;
@@ -66,7 +66,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 
 		function->create(place);
 		function->deserializeMerge(place, istr);
-		
+
 		vec.push_back(place);
 	}
 }

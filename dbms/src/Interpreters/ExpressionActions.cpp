@@ -140,7 +140,7 @@ void ExpressionAction::prepare(Block & sample_block)
 		for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 		{
 			ColumnWithNameAndType & current = sample_block.getByName(*it);
-			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*current.type);
+			const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
 			if (!array_type)
 				throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 			current.type = array_type->getNestedType();
@@ -220,7 +220,7 @@ void ExpressionAction::execute(Block & block) const
 			ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
 			if (any_array_ptr->isConst())
 				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
-			const ColumnArray * any_array = dynamic_cast<const ColumnArray *>(&*any_array_ptr);
+			const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
 			if (!any_array)
 				throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
 
@@ -231,19 +231,19 @@ void ExpressionAction::execute(Block & block) const
 
 				if (array_joined_columns.count(current.name))
 				{
-					if (!dynamic_cast<const DataTypeArray *>(&*current.type))
+					if (!typeid_cast<const DataTypeArray *>(&*current.type))
 						throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 
 					ColumnPtr array_ptr = current.column;
 					if (array_ptr->isConst())
 						array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
 
-					const ColumnArray & array = dynamic_cast<const ColumnArray &>(*array_ptr);
-					if (!array.hasEqualOffsets(dynamic_cast<const ColumnArray &>(*any_array_ptr)))
+					const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
+					if (!array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
 						throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-					current.column = dynamic_cast<const ColumnArray &>(*array_ptr).getDataPtr();
-					current.type = dynamic_cast<const DataTypeArray &>(*current.type).getNestedType();
+					current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
+					current.type = typeid_cast<const DataTypeArray &>(*current.type).getNestedType();
 				}
 				else
 				{

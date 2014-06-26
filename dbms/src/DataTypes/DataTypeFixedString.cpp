@@ -38,7 +38,7 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
 
 void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnFixedString::Chars_t & data = dynamic_cast<const ColumnFixedString &>(column).getChars();
+	const ColumnFixedString::Chars_t & data = typeid_cast<const ColumnFixedString &>(column).getChars();
 
 	size_t size = data.size() / n;
 
@@ -51,7 +51,7 @@ void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & 
 
 void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnFixedString::Chars_t & data = dynamic_cast<ColumnFixedString &>(column).getChars();
+	ColumnFixedString::Chars_t & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
 	size_t initial_size = data.size();
 	size_t max_bytes = limit * n;

@@ -41,17 +41,17 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-	if (query.table && dynamic_cast<ASTSelectQuery *>(&*query.table))
+	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
 			context.setColumns(InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
 	}
 	else
 	{
-		if (query.table && dynamic_cast<const ASTFunction *>(&*query.table))
+		if (query.table && typeid_cast<const ASTFunction *>(&*query.table))
 		{
 			/// Получить табличную функцию
-			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(dynamic_cast<const ASTFunction *>(&*query.table)->name, context);
+			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(&*query.table)->name, context);
 			/// Выполнить ее и запомнить результат
 			storage = table_function_ptr->execute(query.table, context);
 		}
@@ -89,7 +89,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
 	size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
+	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -99,7 +99,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
 	const Names & required_column_names_,
 	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
+	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -115,7 +115,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
 	const Names & required_column_names_,
 	const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(dynamic_cast<ASTSelectQuery &>(*query_ptr)),
+	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -134,9 +134,9 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 	  * Если база данных не указана - используем текущую базу данных.
 	  */
 	if (query.database)
-		database_name = dynamic_cast<ASTIdentifier &>(*query.database).name;
+		database_name = typeid_cast<ASTIdentifier &>(*query.database).name;
 	if (query.table)
-		table_name = dynamic_cast<ASTIdentifier &>(*query.table).name;
+		table_name = typeid_cast<ASTIdentifier &>(*query.table).name;
 
 	if (!query.table)
 	{
@@ -411,9 +411,9 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 	offset = 0;
 	if (query.limit_length)
 	{
-		length = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_length).value);
+		length = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
 		if (query.limit_offset)
-			offset = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*query.limit_offset).value);
+			offset = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_offset).value);
 	}
 }
 
@@ -428,7 +428,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
 
-	if (query.table && dynamic_cast<ASTSelectQuery *>(&*query.table))
+	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		  * Так как результат поздапроса - ещё не результат всего запроса.
@@ -684,7 +684,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		++it)
 	{
 		String name = (*it)->children.front()->getColumnName();
-		order_descr.push_back(SortColumnDescription(name, dynamic_cast<ASTOrderByElement &>(**it).direction));
+		order_descr.push_back(SortColumnDescription(name, typeid_cast<ASTOrderByElement &>(**it).direction));
 	}
 
 	/// Если есть LIMIT и нет DISTINCT - можно делать частичную сортировку.
@@ -818,7 +818,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams &
 BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 {
 	Block sample = getSampleBlock();
-	String format_name = query.format ? dynamic_cast<ASTIdentifier &>(*query.format).name : context.getDefaultFormat();
+	String format_name = query.format ? typeid_cast<ASTIdentifier &>(*query.format).name : context.getDefaultFormat();
 
 	BlockInputStreamPtr in = execute();
 	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);

@@ -47,7 +47,7 @@ private:
 	template <typename T0, typename T1>
 	bool checkRightType(DataTypePtr left, DataTypePtr right, DataTypePtr & type_res) const
 	{
-		if (dynamic_cast<const T1 *>(&*right))
+		if (typeid_cast<const T1 *>(&*right))
 		{
 			typedef typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type ResultType;
 			type_res = DataTypeFromFieldTypeOrError<ResultType>::getDataType();
@@ -62,7 +62,7 @@ private:
 	template <typename T0>
 	bool checkLeftType(DataTypePtr left, DataTypePtr right, DataTypePtr & type_res) const
 	{
-		if (dynamic_cast<const T0 *>(&*left))
+		if (typeid_cast<const T0 *>(&*left))
 		{
 			if (	checkRightType<T0, DataTypeUInt8>(left, right, type_res)
 				||	checkRightType<T0, DataTypeUInt16>(left, right, type_res)
@@ -85,7 +85,7 @@ private:
 	template <typename T0, typename T1>
 	bool tryAddField(DataTypePtr type_res, const Field & f, Array & arr) const
 	{
-		if (dynamic_cast<const T0 *>(&*type_res))
+		if (typeid_cast<const T0 *>(&*type_res))
 		{
 			arr.push_back(apply_visitor(FieldVisitorConvertToNumber<typename T1::FieldType>(), f));
 			return true;
@@ -290,7 +290,7 @@ struct ArrayElementStringImpl
 					: string_offsets[current_offset + adjusted_index - 1];
 
 				ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
-				
+
 				result_data.resize(current_result_offset + string_size);
 				memcpy(&result_data[current_result_offset], &data[string_pos], string_size);
 				current_result_offset += string_size;
@@ -384,16 +384,16 @@ private:
 	template <typename T>
 	bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
-		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
 
-		const ColumnVector<T> * col_nested = dynamic_cast<const ColumnVector<T> *>(&col_array->getData());
+		const ColumnVector<T> * col_nested = typeid_cast<const ColumnVector<T> *>(&col_array->getData());
 
 		if (!col_nested)
 			return false;
-		
+
 		ColumnVector<T> * col_res = new ColumnVector<T>;
 		block.getByPosition(result).column = col_res;
 
@@ -410,12 +410,12 @@ private:
 	template <typename index_type, typename data_type>
 	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<index_type> & index)
 	{
-		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
 
-		const ColumnVector<data_type> * col_nested = dynamic_cast<const ColumnVector<data_type> *>(&col_array->getData());
+		const ColumnVector<data_type> * col_nested = typeid_cast<const ColumnVector<data_type> *>(&col_array->getData());
 
 		if (!col_nested)
 			return false;
@@ -430,12 +430,12 @@ private:
 
 	bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
-		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
 
-		const ColumnString * col_nested = dynamic_cast<const ColumnString *>(&col_array->getData());
+		const ColumnString * col_nested = typeid_cast<const ColumnString *>(&col_array->getData());
 
 		if (!col_nested)
 			return false;
@@ -468,12 +468,12 @@ private:
 	template <typename index_type>
 	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<index_type> & index)
 	{
-		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
 
-		const ColumnString * col_nested = dynamic_cast<const ColumnString *>(&col_array->getData());
+		const ColumnString * col_nested = typeid_cast<const ColumnString *>(&col_array->getData());
 
 		if (!col_nested)
 			return false;
@@ -494,7 +494,7 @@ private:
 
 	bool executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
 	{
-		const ColumnConstArray * col_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
@@ -522,7 +522,7 @@ private:
 	template <typename index_type>
 	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<index_type> & index)
 	{
-		const ColumnConstArray * col_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
@@ -562,7 +562,7 @@ private:
 	template <typename index_type>
 	bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnVector<index_type> * index = dynamic_cast<const ColumnVector<index_type> *> (&*block.getByPosition(arguments[1]).column);
+		const ColumnVector<index_type> * index = typeid_cast<const ColumnVector<index_type> *> (&*block.getByPosition(arguments[1]).column);
 
 		if (!index)
 			return false;
@@ -599,7 +599,7 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
+		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[0]);
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -692,7 +692,7 @@ struct ArrayIndexNumImpl
 		{
 			size_t array_size = offsets[i] - current_offset;
 			typename IndexConv::ResultType current = 0;
-			
+
 			for (size_t j = 0; j < array_size; ++j)
 			{
 				if (data[current_offset + j] == value)
@@ -701,7 +701,7 @@ struct ArrayIndexNumImpl
 						break;
 				}
 			}
-			
+
 			result[i] = current;
 			current_offset = offsets[i];
 		}
@@ -753,16 +753,16 @@ class FunctionArrayIndex : public IFunction
 {
 private:
 	typedef ColumnVector<typename IndexConv::ResultType> ResultColumnType;
-	
+
 	template <typename T>
 	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const Field & value)
 	{
-		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
 
-		const ColumnVector<T> * col_nested = dynamic_cast<const ColumnVector<T> *>(&col_array->getData());
+		const ColumnVector<T> * col_nested = typeid_cast<const ColumnVector<T> *>(&col_array->getData());
 
 		if (!col_nested)
 			return false;
@@ -781,12 +781,12 @@ private:
 
 	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const Field & value)
 	{
-		const ColumnArray * col_array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
 
-		const ColumnString * col_nested = dynamic_cast<const ColumnString *>(&col_array->getData());
+		const ColumnString * col_nested = typeid_cast<const ColumnString *>(&col_array->getData());
 
 		if (!col_nested)
 			return false;
@@ -806,7 +806,7 @@ private:
 
 	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & value)
 	{
-		const ColumnConstArray * col_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
 			return false;
@@ -816,7 +816,7 @@ private:
 		size_t i = 0;
 		size_t size = arr.size();
 		typename IndexConv::ResultType current = 0;
-		
+
 		for (; i < size; ++i)
 		{
 			if (arr[i] == value)
@@ -849,7 +849,7 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
+		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[0]);
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -903,7 +903,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
+		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[0]);
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -913,7 +913,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column))
 		{
 			const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
@@ -934,7 +934,7 @@ public:
 				prev_off = off;
 			}
 		}
-		else if (const ColumnConstArray * array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstArray * array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column))
 		{
 			const Array & values = array->getData();
 
@@ -975,7 +975,7 @@ public:
 
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[i]);
+			const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[i]);
 			if (!array_type)
 				throw Exception("All arguments for function " + getName() + " must be arrays; argument " + toString(i + 1) + " isn't.",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -997,16 +997,16 @@ public:
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
 			ColumnPtr array_ptr = block.getByPosition(arguments[i]).column;
-			const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*array_ptr);
+			const ColumnArray * array = typeid_cast<const ColumnArray *>(&*array_ptr);
 			if (!array)
 			{
-				const ColumnConstArray * const_array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[i]).column);
+				const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[i]).column);
 				if (!const_array)
 					throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
 						+ " of " + toString(i + 1) + "-th argument of function " + getName(),
 						ErrorCodes::ILLEGAL_COLUMN);
 				array_ptr = const_array->convertToFullColumn();
-				array = dynamic_cast<const ColumnArray *>(&*array_ptr);
+				array = typeid_cast<const ColumnArray *>(&*array_ptr);
 			}
 			array_columns[i] = array_ptr;
 			const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
@@ -1018,7 +1018,7 @@ public:
 			data_columns[i] = &array->getData();
 		}
 
-		const ColumnArray * first_array = dynamic_cast<const ColumnArray *>(&*array_columns[0]);
+		const ColumnArray * first_array = typeid_cast<const ColumnArray *>(&*array_columns[0]);
 		ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
 		ColumnArray * res_array = new ColumnArray(res_nested, first_array->getOffsetsColumn());
 		block.getByPosition(result).column = res_array;
@@ -1058,7 +1058,7 @@ private:
 	template <typename T>
 	bool executeNumber(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
 	{
-		const ColumnVector<T> * nested = dynamic_cast<const ColumnVector<T> *>(&*array->getDataPtr());
+		const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(&*array->getDataPtr());
 		if (!nested)
 			return false;
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1084,7 +1084,7 @@ private:
 
 	bool executeString(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
 	{
-		const ColumnString * nested = dynamic_cast<const ColumnString *>(&*array->getDataPtr());
+		const ColumnString * nested = typeid_cast<const ColumnString *>(&*array->getDataPtr());
 		if (!nested)
 			return false;
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1109,7 +1109,7 @@ private:
 
 	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnConstArray * array = dynamic_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstArray * array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
 		if (!array)
 			return false;
 		const Array & values = array->getData();

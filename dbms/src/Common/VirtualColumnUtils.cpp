@@ -68,8 +68,8 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*ast);
-	ASTExpressionList & node = dynamic_cast<ASTExpressionList &>(*select.select_expression_list);
+	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+	ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
 	ASTs & asts = node.children;
 	ASTLiteral * cur = new ASTLiteral(StringRange(), value);
 	cur->alias = column_name;
@@ -77,7 +77,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 	bool is_replaced = false;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
-		if (const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(&* asts[i]))
+		if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
 		{
 			if (identifier->kind == ASTIdentifier::Kind::Column && identifier->name == column_name)
 			{
@@ -97,7 +97,7 @@ static bool isValidFunction(ASTPtr expression, const std::vector<String> & colum
 		if (!isValidFunction(expression->children[i], columns))
 			return false;
 
-	if (const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(&* expression))
+	if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* expression))
 	{
 		if (identifier->kind == ASTIdentifier::Kind::Column)
 		{
@@ -113,7 +113,7 @@ static bool isValidFunction(ASTPtr expression, const std::vector<String> & colum
 /// Извлечь все подфункции главной конъюнкции, но зависящие только от заданных столбцов
 static void extractFunctions(ASTPtr expression, const std::vector<String> & columns, std::vector<ASTPtr> & result)
 {
-	if (const ASTFunction * function = dynamic_cast<const ASTFunction *>(&* expression))
+	if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&* expression))
 	{
 		if (function->name == "and")
 		{
@@ -134,7 +134,7 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 	if (functions.size() == 0) return nullptr;
 	if (functions.size() == 1) return functions[0];
 	ASTPtr new_query = new ASTFunction();
-	ASTFunction & new_function = dynamic_cast<ASTFunction & >(*new_query);
+	ASTFunction & new_function = typeid_cast<ASTFunction & >(*new_query);
 	new_function.name = "and";
 	new_function.arguments = new ASTExpressionList();
 	new_function.arguments->children = functions;
@@ -144,7 +144,7 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 
 BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, const Context & context)
 {
-	const ASTSelectQuery & select = dynamic_cast<ASTSelectQuery & >(*query);
+	const ASTSelectQuery & select = typeid_cast<ASTSelectQuery & >(*query);
 	if (!select.where_expression)
 		return new OneBlockInputStream(input);
 
@@ -156,10 +156,10 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 		columns.push_back(it.first);
 
 	/// Формируем запрос и записываем имена виртуальных столбцов
-	ASTSelectQuery & new_select = dynamic_cast<ASTSelectQuery & >(*new_query);
+	ASTSelectQuery & new_select = typeid_cast<ASTSelectQuery & >(*new_query);
 
 	new_select.select_expression_list = new ASTExpressionList();
-	ASTExpressionList & select_list = dynamic_cast<ASTExpressionList & >(*new_select.select_expression_list);
+	ASTExpressionList & select_list = typeid_cast<ASTExpressionList & >(*new_select.select_expression_list);
 	for (size_t i = 0; i < columns.size(); ++i)
 		select_list.children.push_back(new ASTIdentifier(StringRange(), columns[i]));
 

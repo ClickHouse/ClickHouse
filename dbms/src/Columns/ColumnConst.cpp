@@ -13,7 +13,7 @@ namespace DB
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 {
-	if (!data_type || dynamic_cast<const DataTypeString *>(&*data_type))
+	if (!data_type || typeid_cast<const DataTypeString *>(&*data_type))
 	{
 		ColumnString * res = new ColumnString;
 		ColumnPtr res_ptr = res;
@@ -34,7 +34,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 
 		return res_ptr;
 	}
-	else if (const DataTypeFixedString * type = dynamic_cast<const DataTypeFixedString *>(&*data_type))
+	else if (const DataTypeFixedString * type = typeid_cast<const DataTypeFixedString *>(&*data_type))
 	{
 		size_t n = type->getN();
 
@@ -65,11 +65,11 @@ template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 {
 	if (!data_type)
 		throw Exception("No data type specified for ColumnConstArray", ErrorCodes::LOGICAL_ERROR);
-	
-	const DataTypeArray * type = dynamic_cast<const DataTypeArray *>(&*data_type);
+
+	const DataTypeArray * type = typeid_cast<const DataTypeArray *>(&*data_type);
 	if (!type)
 		throw Exception("Non-array data type specified for ColumnConstArray", ErrorCodes::LOGICAL_ERROR);
-	
+
 	size_t array_size = data.size();
 	ColumnPtr nested_column = type->getNestedType()->createColumn();
 

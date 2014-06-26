@@ -26,13 +26,13 @@ namespace DB
   *  SEToRoot,
   *  categoryToRoot,
   *  categoryToSecondLevel
-  * 
+  *
   * Преобразовать значения в столбце
   *  regionToName
   *
   * Является ли первый идентификатор потомком второго.
   *  regionIn, SEIn, OSIn, categoryIn.
-  * 
+  *
   * Получить массив идентификаторов регионов, состоящий из исходного и цепочки родителей. Порядок implementation defined.
   *  regionHierarchy, OSHierarchy, SEHierarchy, categoryHierarchy.
   */
@@ -158,7 +158,7 @@ class FunctionTransformWithDictionary : public IFunction
 {
 private:
 	const SharedPtr<typename DictGetter::Src> owned_dict;
-	
+
 public:
 	FunctionTransformWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
 		: owned_dict(owned_dict_)
@@ -166,7 +166,7 @@ public:
 		if (!owned_dict)
 			throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
 	}
-	
+
 	/// Получить имя функции.
 	String getName() const
 	{
@@ -202,7 +202,7 @@ public:
 
 		if (arguments.size() == 2)
 		{
-			const ColumnConstString * key_col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -215,7 +215,7 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		if (const ColumnVector<T> * col_from = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<T> * col_to = new ColumnVector<T>;
 			block.getByPosition(result).column = col_to;
@@ -228,7 +228,7 @@ public:
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::apply(vec_from[i], dict);
 		}
-		else if (const ColumnConst<T> * col_from = dynamic_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConst<T>(col_from->size(), Transform::apply(col_from->getData(), dict));
 		}
@@ -295,7 +295,7 @@ public:
 
 		if (arguments.size() == 3)
 		{
-			const ColumnConstString * key_col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[2]).column);
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[2]).column);
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
@@ -308,11 +308,11 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		const ColumnVector<T> * col_vec1 = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnVector<T> * col_vec2 = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[1]).column);
-		const ColumnConst<T> * col_const1 = dynamic_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConst<T> * col_const2 = dynamic_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[1]).column);
-		
+		const ColumnVector<T> * col_vec1 = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnVector<T> * col_vec2 = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnConst<T> * col_const1 = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConst<T> * col_const2 = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[1]).column);
+
 		if (col_vec1 && col_vec2)
 		{
 			ColumnVector<UInt8> * col_to = new ColumnVector<UInt8>;
@@ -375,7 +375,7 @@ class FunctionHierarchyWithDictionary : public IFunction
 {
 private:
 	const SharedPtr<typename DictGetter::Src> owned_dict;
-	
+
 public:
 	FunctionHierarchyWithDictionary(const SharedPtr<typename DictGetter::Src> & owned_dict_)
 	: owned_dict(owned_dict_)
@@ -383,13 +383,13 @@ public:
 		if (!owned_dict)
 			throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
 	}
-	
+
 	/// Получить имя функции.
 	String getName() const
 	{
 		return Name::get();
 	}
-	
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
@@ -397,7 +397,7 @@ public:
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
+
 		if (arguments[0]->getName() != TypeName<T>::get())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
 			+ " (must be " + TypeName<T>::get() + ")",
@@ -407,10 +407,10 @@ public:
 			throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
 				+ " (must be " + TypeName<String>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
+
 		return new DataTypeArray(arguments[0]);
 	}
-	
+
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -419,7 +419,7 @@ public:
 
 		if (arguments.size() == 2)
 		{
-			const ColumnConstString * key_col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -432,20 +432,20 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		if (const ColumnVector<T> * col_from = dynamic_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<T> * col_values = new ColumnVector<T>;
 			ColumnArray * col_array = new ColumnArray(col_values);
 			block.getByPosition(result).column = col_array;
-			
+
 			ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
 			typename ColumnVector<T>::Container_t & res_values = col_values->getData();
-			
+
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
 			size_t size = vec_from.size();
 			res_offsets.resize(size);
 			res_values.reserve(size * 4);
-			
+
 			for (size_t i = 0; i < size; ++i)
 			{
 				T cur = vec_from[i];
@@ -457,17 +457,17 @@ public:
 				res_offsets[i] = res_values.size();
 			}
 		}
-		else if (const ColumnConst<T> * col_from = dynamic_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			Array res;
-			
+
 			T cur = col_from->getData();
 			while (cur)
 			{
 				res.push_back(static_cast<typename NearestFieldType<T>::Type>(cur));
 				cur = Transform::toParent(cur, dict);
 			}
-			
+
 			block.getByPosition(result).column = new ColumnConstArray(col_from->size(), res, new DataTypeArray(new typename DataTypeFromFieldType<T>::Type));
 		}
 		else
@@ -552,7 +552,7 @@ class FunctionRegionToName : public IFunction
 {
 private:
 	const SharedPtr<RegionsNames> owned_dict;
-	
+
 public:
 	FunctionRegionToName(const SharedPtr<RegionsNames> & owned_dict_)
 		: owned_dict(owned_dict_)
@@ -560,7 +560,7 @@ public:
 		if (!owned_dict)
 			throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
 	}
-	
+
 	/// Получить имя функции.
 	String getName() const
 	{
@@ -579,7 +579,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName()
 				+ " (must be " + TypeName<UInt32>::get() + ")",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
+
 		if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of the second argument of function " + getName()
 				+ " (must be " + TypeName<String>::get() + ")",
@@ -592,11 +592,11 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		RegionsNames::SupportedLanguages::Enum language = RegionsNames::SupportedLanguages::RU;
-		
+
 		/// Если указан язык результата
 		if (arguments.size() == 2)
 		{
-			if (const ColumnConstString * col_language = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column))
+			if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column))
 				language = RegionsNames::getLanguageEnum(col_language->getData());
 			else
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -606,7 +606,7 @@ public:
 
 		const RegionsNames & dict = *owned_dict;
 
-		if (const ColumnVector<UInt32> * col_from = dynamic_cast<const ColumnVector<UInt32> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<UInt32> * col_from = typeid_cast<const ColumnVector<UInt32> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnString * col_to = new ColumnString;
 			block.getByPosition(result).column = col_to;
@@ -619,11 +619,11 @@ public:
 				col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
 			}
 		}
-		else if (const ColumnConst<UInt32> * col_from = dynamic_cast<const ColumnConst<UInt32> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<UInt32> * col_from = typeid_cast<const ColumnConst<UInt32> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			UInt32 region_id = col_from->getData();
 			const StringRef & name_ref = dict.getRegionName(region_id, language);
-			
+
 			block.getByPosition(result).column = new ColumnConstString(col_from->size(), name_ref.toString());
 		}
 		else

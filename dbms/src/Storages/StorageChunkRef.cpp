@@ -5,7 +5,7 @@
 
 namespace DB
 {
-	
+
 StoragePtr StorageChunkRef::create(const std::string & name_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach)
 {
 	return (new StorageChunkRef(name_, context_, source_database_name_, source_table_name_, attach))->thisPtr();
@@ -26,7 +26,7 @@ ASTPtr StorageChunkRef::getCustomCreateQuery(const Context & context) const
 {
 	/// Берём CREATE запрос для таблицы, на которую эта ссылается, и меняем в ней имя и движок.
 	ASTPtr res = context.getCreateQuery(source_database_name, source_table_name);
-	ASTCreateQuery & res_create = dynamic_cast<ASTCreateQuery &>(*res);
+	ASTCreateQuery & res_create = typeid_cast<ASTCreateQuery &>(*res);
 
 	res_create.database.clear();
 	res_create.table = name;
@@ -68,18 +68,18 @@ StorageChunkRef::StorageChunkRef(const std::string & name_, const Context & cont
 
 StorageChunks & StorageChunkRef::getSource()
 {
-	return dynamic_cast<StorageChunks &>(*context.getTable(source_database_name, source_table_name));
+	return typeid_cast<StorageChunks &>(*context.getTable(source_database_name, source_table_name));
 }
 
 const StorageChunks & StorageChunkRef::getSource() const
 {
 	const StoragePtr table_ptr = context.getTable(source_database_name, source_table_name);
-	const StorageChunks * chunks = dynamic_cast<const StorageChunks *>(&*table_ptr);
+	const StorageChunks * chunks = typeid_cast<const StorageChunks *>(&*table_ptr);
 
 	if (chunks == nullptr)
 		throw Exception("Referenced table " + source_table_name + " in database " + source_database_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
 	return *chunks;
 }
-	
+
 }

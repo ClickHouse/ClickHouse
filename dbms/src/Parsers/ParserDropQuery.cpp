@@ -89,9 +89,9 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & ex
 	query->detach = detach;
 	query->if_exists = if_exists;
 	if (database)
-		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+		query->database = typeid_cast<ASTIdentifier &>(*database).name;
 	if (table)
-		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+		query->table = typeid_cast<ASTIdentifier &>(*table).name;
 
 	return true;
 }

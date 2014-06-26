@@ -39,7 +39,7 @@ public:
 			throw Exception("Passed " + toString(arguments.size()) + " arguments to unary aggregate function " + this->getName(),
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const DataTypeAggregateFunction * data_type = dynamic_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
+		const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
 
 		if (!data_type || data_type->getFunctionName() != nested_func->getName())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + getName(),

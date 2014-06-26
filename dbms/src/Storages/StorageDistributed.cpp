@@ -64,7 +64,7 @@ ASTPtr StorageDistributed::rewriteQuery(ASTPtr query)
 	ASTPtr modified_query_ast = query->clone();
 
 	/// Меняем имена таблицы и базы данных
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*modified_query_ast);
+	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
 	select.database = new ASTIdentifier(StringRange(), remote_database, ASTIdentifier::Database);
 	select.table 	= new ASTIdentifier(StringRange(), remote_table, 	ASTIdentifier::Table);
 
@@ -73,7 +73,7 @@ ASTPtr StorageDistributed::rewriteQuery(ASTPtr query)
 
 static String selectToString(ASTPtr query)
 {
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*query);
+	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query);
 	std::stringstream s;
 	formatAST(select, s, 0, false, true);
 	return s.str();

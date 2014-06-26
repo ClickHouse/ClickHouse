@@ -190,7 +190,7 @@ void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, N
 		NamesAndTypesList::iterator insert_it = columns->end();
 		if (params.column)
 		{
-			String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
+			String column_name = typeid_cast<const ASTIdentifier &>(*params.column).name;
 
 			/// Пытаемся найти первую с конца колонку с именем column_name или с именем, начинающимся с column_name и ".".
 			/// Например "fruits.bananas"
@@ -205,7 +205,7 @@ void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, N
 			}
 		}
 
-		const ASTNameTypePair & ast_name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+		const ASTNameTypePair & ast_name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
 		StringRange type_range = ast_name_type.type->range;
 		String type_string = String(type_range.first, type_range.second - type_range.first);
 
@@ -219,7 +219,7 @@ void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, N
 	}
 	else if (params.type == ASTAlterQuery::DROP)
 	{
-		String column_name = dynamic_cast<const ASTIdentifier &>(*(params.column)).name;
+		String column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
 		/// Удаляем колонки из листа columns
 		bool is_first = true;
@@ -241,7 +241,7 @@ void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, N
 	}
 	else if (params.type == ASTAlterQuery::MODIFY)
 	{
-		const ASTNameTypePair & ast_name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+		const ASTNameTypePair & ast_name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
 		StringRange type_range = ast_name_type.type->range;
 		String type_string = String(type_range.first, type_range.second - type_range.first);
 

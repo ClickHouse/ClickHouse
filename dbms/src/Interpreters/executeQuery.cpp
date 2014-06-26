@@ -17,7 +17,7 @@ static void checkLimits(const IAST & ast, const Limits & limits)
 	if (limits.max_ast_elements)
 		ast.checkSize(limits.max_ast_elements);
 }
-	
+
 
 void executeQuery(
 	ReadBuffer & istr,
@@ -72,7 +72,7 @@ void executeQuery(
 			ErrorCodes::SYNTAX_ERROR);
 
 	/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
-	auto insert = dynamic_cast<const ASTInsertQuery *>(&*ast);
+	auto insert = typeid_cast<const ASTInsertQuery *>(&*ast);
 	size_t query_size = (insert && insert->data) ? (insert->data - begin) : (pos - begin);
 
 	if (query_size > max_query_size)
@@ -85,7 +85,7 @@ void executeQuery(
 
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
-	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
@@ -101,7 +101,7 @@ void executeQuery(
 
 	QuotaForIntervals & quota = context.getQuota();
 	time_t current_time = time(0);
-	
+
 	quota.checkExceeded(current_time);
 
 	try
@@ -126,7 +126,7 @@ BlockIO executeQuery(
 	QueryProcessingStage::Enum stage)
 {
 	ProfileEvents::increment(ProfileEvents::Query);
-	
+
 	ParserQuery parser;
 	ASTPtr ast;
 	Expected expected = "";
@@ -154,10 +154,10 @@ BlockIO executeQuery(
 	quota.checkExceeded(current_time);
 
 	BlockIO res;
-	
+
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
-	if (!internal && nullptr == dynamic_cast<const ASTShowProcesslistQuery *>(&*ast))
+	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),

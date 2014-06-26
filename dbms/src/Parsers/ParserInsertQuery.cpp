@@ -32,7 +32,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	ParserString s_rparen(")");
 	ParserIdentifier name_p;
 	ParserList columns_p(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(",")), false);
-	
+
 	ASTPtr database;
 	ASTPtr table;
 	ASTPtr columns;
@@ -103,7 +103,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	else if (s_format.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
-		
+
 		if (!name_p.parse(pos, end, format, expected))
 			return false;
 
@@ -113,7 +113,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		ws_without_nl.ignore(pos, end);
 		if (pos != end && *pos == '\n')
 			++pos;
-		
+
 		data = pos;
 		pos = end;
 	}
@@ -133,16 +133,16 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	node = query;
 
 	if (database)
-		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
-	
-	query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+		query->database = typeid_cast<ASTIdentifier &>(*database).name;
+
+	query->table = typeid_cast<ASTIdentifier &>(*table).name;
 
 	if (id)
-		query->insert_id = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*id).value);
+		query->insert_id = safeGet<const String &>(typeid_cast<ASTLiteral &>(*id).value);
 
 	if (format)
-		query->format = dynamic_cast<ASTIdentifier &>(*format).name;
-	
+		query->format = typeid_cast<ASTIdentifier &>(*format).name;
+
 	query->columns = columns;
 	query->select = select;
 	query->data = data != end ? data : NULL;

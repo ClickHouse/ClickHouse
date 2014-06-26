@@ -6,6 +6,7 @@
 
 #include <DB/Core/Row.h>
 #include <DB/DataTypes/IDataType.h>
+#include <DB/Common/typeid_cast.h>
 
 
 namespace DB
@@ -98,10 +99,10 @@ class IAggregateFunctionHelper : public IAggregateFunction
 {
 protected:
 	typedef T Data;
-	
+
 	static Data & data(AggregateDataPtr place) 				{ return *reinterpret_cast<Data*>(place); }
 	static const Data & data(ConstAggregateDataPtr place) 	{ return *reinterpret_cast<const Data*>(place); }
-	
+
 public:
 	void create(AggregateDataPtr place) const
 	{

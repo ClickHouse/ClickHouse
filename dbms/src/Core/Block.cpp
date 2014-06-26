@@ -292,7 +292,7 @@ void Block::checkNestedArraysOffsets() const
 	{
 		const ColumnWithNameAndType & column = *it;
 
-		if (const ColumnArray * column_array = dynamic_cast<const ColumnArray *>(&*column.column))
+		if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column.column))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
 
@@ -319,7 +319,7 @@ void Block::optimizeNestedArraysOffsets()
 	{
 		ColumnWithNameAndType & column = *it;
 
-		if (ColumnArray * column_array = dynamic_cast<ColumnArray *>(&*column.column))
+		if (ColumnArray * column_array = typeid_cast<ColumnArray *>(&*column.column))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
 

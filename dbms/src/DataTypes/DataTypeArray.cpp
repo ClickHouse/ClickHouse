@@ -19,7 +19,7 @@ DataTypeArray::DataTypeArray(DataTypePtr nested_) : nested(nested_)
 	offsets = new DataTypeFromFieldType<ColumnArray::Offset_t>::Type;
 }
 
-	
+
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
 	const Array & a = get<const Array &>(field);
@@ -44,7 +44,7 @@ void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
+	const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
 	if (offset > offsets.size())
@@ -72,7 +72,7 @@ void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, 
 
 void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
+	ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 	IColumn & nested_column = column_array.getData();
 
@@ -90,7 +90,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_
 
 void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnArray & column_array = dynamic_cast<const ColumnArray &>(column);
+	const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 	size_t size = offsets.size();
 
@@ -114,7 +114,7 @@ void DataTypeArray::serializeOffsets(const IColumn & column, WriteBuffer & ostr,
 
 void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnArray & column_array = dynamic_cast<ColumnArray &>(column);
+	ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 	size_t initial_size = offsets.size();
 	offsets.resize(initial_size + limit);

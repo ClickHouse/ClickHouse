@@ -19,7 +19,7 @@ using Poco::SharedPtr;
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
+
 	try
 	{
 		const size_t rows = 12345;
@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
 		Context context;
 
 		/// создаём таблицу с парой столбцов
-	
+
 		NamesAndTypesListPtr names_and_types = new NamesAndTypesList;
 		names_and_types->push_back(NameAndTypePair("d", new DataTypeDate));
 		names_and_types->push_back(NameAndTypePair("a", new DataTypeArray(new DataTypeUInt32)));
@@ -51,7 +51,7 @@ int main(int argc, char ** argv)
 			column1.name = "d";
 			column1.type = table->getDataTypeByName("d");
 			column1.column = column1.type->createColumn();
-			ColumnUInt16::Container_t & vec1 = dynamic_cast<ColumnUInt16 &>(*column1.column).getData();
+			ColumnUInt16::Container_t & vec1 = typeid_cast<ColumnUInt16 &>(*column1.column).getData();
 
 			vec1.resize(rows);
 			for (size_t i = 0; i < rows; ++i)
@@ -72,7 +72,7 @@ int main(int argc, char ** argv)
 			SharedPtr<IBlockOutputStream> out = table->write(nullptr);
 			out->write(block);
 		}
-	
+
 		/// читаем из неё
 		{
 			Names column_names;
@@ -105,10 +105,10 @@ int main(int argc, char ** argv)
 			}
 
 			WriteBufferFromFileDescriptor out_buf(STDOUT_FILENO);
-			
+
 			RowOutputStreamPtr output_ = new TabSeparatedRowOutputStream(out_buf, sample);
 			BlockOutputStreamFromRowOutputStream output(output_);
-			
+
 			copyData(*in, output);
 		}
 	}

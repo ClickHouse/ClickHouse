@@ -10,8 +10,8 @@
 
 namespace DB
 {
-	
-	
+
+
 /** Вернуть список запросов, исполняющихся прямо сейчас.
   */
 class InterpreterShowProcesslistQuery
@@ -46,7 +46,7 @@ private:
 		rewritten_query << "SELECT * FROM system.processes";
 
 		if (query.format)
-			rewritten_query << " FORMAT " << dynamic_cast<const ASTIdentifier &>(*query.format).name;
+			rewritten_query << " FORMAT " << typeid_cast<const ASTIdentifier &>(*query.format).name;
 
 		return rewritten_query.str();
 	}

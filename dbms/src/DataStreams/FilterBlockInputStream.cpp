@@ -6,7 +6,7 @@
 namespace DB
 {
 
-	
+
 FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_)
 	: filter_column(filter_column_)
 {
@@ -23,7 +23,7 @@ FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, const
 Block FilterBlockInputStream::readImpl()
 {
 	Block res;
-	
+
 	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
 	while (1)
 	{
@@ -41,7 +41,7 @@ Block FilterBlockInputStream::readImpl()
 		/** Если фильтр - константа (например, написано WHERE 1),
 		  *  то либо вернём пустой блок, либо вернём блок без изменений.
 		  */
-		ColumnConstUInt8 * column_const = dynamic_cast<ColumnConstUInt8 *>(&*column);
+		ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column);
 		if (column_const)
 		{
 			if (!column_const->getData())
@@ -50,7 +50,7 @@ Block FilterBlockInputStream::readImpl()
 			return res;
 		}
 
-		ColumnUInt8 * column_vec = dynamic_cast<ColumnUInt8 *>(&*column);
+		ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(&*column);
 		if (!column_vec)
 			throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
@@ -71,7 +71,7 @@ Block FilterBlockInputStream::readImpl()
 
 			/// Заменяем этот столбец на столбец с константой 1, нужного размера.
 			res.getByPosition(filter_column).column = new ColumnConstUInt8(filtered_rows, 1);
-			
+
 			return res;
 		}
 

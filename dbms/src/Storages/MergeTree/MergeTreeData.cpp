@@ -417,7 +417,7 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 
 	if (params.type == ASTAlterQuery::DROP)
 	{
-		String column_name = dynamic_cast<const ASTIdentifier &>(*params.column).name;
+		String column_name = typeid_cast<const ASTIdentifier &>(*params.column).name;
 
 		/// Если нет колонок вида nested_name.*, то удалим столбцы размера массивов
 		bool remove_array_size_files = false;
@@ -441,13 +441,13 @@ void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 	}
 
 	Names column_name;
-	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+	const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
 	StringRange type_range = name_type.type->range;
 	String type(type_range.first, type_range.second - type_range.first);
 	DataTypePtr old_type_ptr = DB::getDataTypeByName(name_type.name, *columns);
 	DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
-	if (dynamic_cast<DataTypeNested *>(old_type_ptr.get()) || dynamic_cast<DataTypeArray *>(old_type_ptr.get()) ||
-		dynamic_cast<DataTypeNested *>(new_type_ptr.get()) || dynamic_cast<DataTypeArray *>(new_type_ptr.get()))
+	if (typeid_cast<DataTypeNested *>(old_type_ptr.get()) || typeid_cast<DataTypeArray *>(old_type_ptr.get()) ||
+		typeid_cast<DataTypeNested *>(new_type_ptr.get()) || typeid_cast<DataTypeArray *>(new_type_ptr.get()))
 		throw Exception("ALTER MODIFY not supported for nested and array types");
 
 	column_name.push_back(name_type.name);
@@ -502,7 +502,7 @@ void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
 		parts = DataPartsVector(data_parts.begin(), data_parts.end());
 	}
 
-	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+	const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
 	StringRange type_range = name_type.type->range;
 	String type(type_range.first, type_range.second - type_range.first);
 

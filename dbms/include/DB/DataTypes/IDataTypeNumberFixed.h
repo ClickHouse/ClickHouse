@@ -31,17 +31,17 @@ public:
 		typename ColumnType::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
 		writeBinary(x, ostr);
 	}
-	
+
 	void deserializeBinary(Field & field, ReadBuffer & istr) const
 	{
 		typename ColumnType::value_type x;
 		readBinary(x, istr);
 		field = typename NearestFieldType<FieldType>::Type(x);
 	}
-	
+
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const
 	{
-		const typename ColumnType::Container_t & x = dynamic_cast<const ColumnType &>(column).getData();
+		const typename ColumnType::Container_t & x = typeid_cast<const ColumnType &>(column).getData();
 
 		size_t size = x.size();
 
@@ -50,10 +50,10 @@ public:
 
 		ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnType::value_type) * limit);
 	}
-	
+
 	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 	{
-		typename ColumnType::Container_t & x = dynamic_cast<ColumnType &>(column).getData();
+		typename ColumnType::Container_t & x = typeid_cast<ColumnType &>(column).getData();
 		size_t initial_size = x.size();
 		x.resize(initial_size + limit);
 		size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnType::value_type) * limit);

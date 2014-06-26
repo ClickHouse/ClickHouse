@@ -54,9 +54,9 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected 
 	node = query;
 
 	if (database)
-		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+		query->database = typeid_cast<ASTIdentifier &>(*database).name;
 	if (table)
-		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+		query->table = typeid_cast<ASTIdentifier &>(*table).name;
 
 	return true;
 }

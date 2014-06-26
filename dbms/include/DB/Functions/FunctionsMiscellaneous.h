@@ -29,13 +29,13 @@ namespace DB
 /** Вспомогательные функции:
   *
   * visibleWidth(x)	- вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.
-  * 
+  *
   * toTypeName(x)	- получить имя типа
   * blockSize()		- получить размер блока
   * materialize(x)	- материализовать константу
   * ignore(...)		- функция, принимающая любые аргументы, и всегда возвращающая 0.
   * sleep(seconds)	- спит указанное количество секунд каждый блок.
-  * 
+  *
   * in(x, set)		- функция для вычисления оператора IN
   * notIn(x, set)	-  и NOT IN.
   *
@@ -191,7 +191,7 @@ public:
 	{
 		return "sleep";
 	}
-	
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
@@ -199,51 +199,51 @@ public:
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 			+ toString(arguments.size()) + ", should be 1.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		if (!dynamic_cast<const DataTypeFloat64 *>(&*arguments[0]) &&
-			!dynamic_cast<const DataTypeFloat32 *>(&*arguments[0]) &&
-			!dynamic_cast<const DataTypeUInt64 *>(&*arguments[0]) &&
-			!dynamic_cast<const DataTypeUInt32 *>(&*arguments[0]) &&
-			!dynamic_cast<const DataTypeUInt16 *>(&*arguments[0]) &&
-			!dynamic_cast<const DataTypeUInt8 *>(&*arguments[0]))
+
+		if (!typeid_cast<const DataTypeFloat64 *>(&*arguments[0]) &&
+			!typeid_cast<const DataTypeFloat32 *>(&*arguments[0]) &&
+			!typeid_cast<const DataTypeUInt64 *>(&*arguments[0]) &&
+			!typeid_cast<const DataTypeUInt32 *>(&*arguments[0]) &&
+			!typeid_cast<const DataTypeUInt16 *>(&*arguments[0]) &&
+			!typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
+
 		return new DataTypeUInt8;
 	}
-	
+
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IColumn * col = &*block.getByPosition(arguments[0]).column;
 		double seconds;
 		size_t size = col->size();
-		
-		if (ColumnConst<Float64> * column = dynamic_cast<ColumnConst<Float64> *>(col))
+
+		if (ColumnConst<Float64> * column = typeid_cast<ColumnConst<Float64> *>(col))
 			seconds = column->getData();
-		
-		else if (ColumnConst<Float32> * column = dynamic_cast<ColumnConst<Float32> *>(col))
+
+		else if (ColumnConst<Float32> * column = typeid_cast<ColumnConst<Float32> *>(col))
 			seconds = static_cast<double>(column->getData());
-		
-		else if (ColumnConst<UInt64> * column = dynamic_cast<ColumnConst<UInt64> *>(col))
+
+		else if (ColumnConst<UInt64> * column = typeid_cast<ColumnConst<UInt64> *>(col))
 			seconds = static_cast<double>(column->getData());
-		
-		else if (ColumnConst<UInt32> * column = dynamic_cast<ColumnConst<UInt32> *>(col))
+
+		else if (ColumnConst<UInt32> * column = typeid_cast<ColumnConst<UInt32> *>(col))
 			seconds = static_cast<double>(column->getData());
-		
-		else if (ColumnConst<UInt16> * column = dynamic_cast<ColumnConst<UInt16> *>(col))
+
+		else if (ColumnConst<UInt16> * column = typeid_cast<ColumnConst<UInt16> *>(col))
 			seconds = static_cast<double>(column->getData());
-		
-		else if (ColumnConst<UInt8> * column = dynamic_cast<ColumnConst<UInt8> *>(col))
+
+		else if (ColumnConst<UInt8> * column = typeid_cast<ColumnConst<UInt8> *>(col))
 			seconds = static_cast<double>(column->getData());
-		
+
 		else
 			throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
-		
+
 		/// Не спим, если блок пустой.
 		if (size > 0)
 			usleep(static_cast<unsigned>(seconds * 1e6));
-		
+
 		block.getByPosition(result).column = ColumnConst<UInt8>(size, 0).convertToFullColumn();
 	}
 };
@@ -275,7 +275,7 @@ public:
 		const IColumn & argument = *block.getByPosition(arguments[0]).column;
 		if (!argument.isConst())
 			throw Exception("Argument for function 'materialize' must be constant.", ErrorCodes::ILLEGAL_COLUMN);
-		
+
 		block.getByPosition(result).column = dynamic_cast<const IColumnConst &>(argument).convertToFullColumn();
 	}
 };
@@ -286,10 +286,10 @@ class FunctionIn : public IFunction
 private:
 	bool negative;
 	bool global;
-	
+
 public:
 	FunctionIn(bool negative_ = false, bool global_ = false) : negative(negative_), global(global_) {}
-	
+
 	/// Получить имя функции.
 	String getName() const
 	{
@@ -315,7 +315,7 @@ public:
 	{
 		/// Второй аргумент - обязательно ColumnSet.
 		ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
-		const ColumnSet * column_set = dynamic_cast<const ColumnSet *>(&*column_set_ptr);
+		const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&*column_set_ptr);
 		if (!column_set)
 			throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
@@ -324,7 +324,7 @@ public:
 		ColumnNumbers left_arguments;
 
 		/// Первый аргумент может быть tuple или одиночным столбцом.
-		const ColumnTuple * tuple = dynamic_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
 		if (tuple)
 		{
 			/// Находим в блоке столбцы из tuple.
@@ -366,7 +366,7 @@ public:
 
 		for (ColumnNumbers::const_iterator it = arguments.begin(); it != arguments.end(); ++it)
 			tuple_block.insert(block.getByPosition(*it));
-		
+
 		block.getByPosition(result).column = new ColumnTuple(tuple_block);
 	}
 };
@@ -388,33 +388,33 @@ public:
 		if (arguments.size() != 2)
 			throw Exception("Function tupleElement requires exactly two arguments: tuple and element index.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		const ColumnConstUInt8 * index_col = dynamic_cast<const ColumnConstUInt8 *>(&*arguments[1].column);
+
+		const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*arguments[1].column);
 		if (!index_col)
 			throw Exception("Second argument to tupleElement must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
+
 		size_t index = index_col->getData();
-		
-		const DataTypeTuple * tuple = dynamic_cast<const DataTypeTuple *>(&*arguments[0].type);
+
+		const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(&*arguments[0].type);
 		if (!tuple)
 			throw Exception("First argument for function tupleElement must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
+
 		if (index == 0)
 			throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
-		
+
 		const DataTypes & elems = tuple->getElements();
-		
+
 		if (index > elems.size())
 			throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-		
+
 		out_return_type = elems[index - 1]->clone();
 	}
-	
+
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnTuple * tuple_col = dynamic_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConstUInt8 * index_col = dynamic_cast<const ColumnConstUInt8 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*block.getByPosition(arguments[1]).column);
 
 		if (!tuple_col)
 			throw Exception("First argument for function tupleElement must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
@@ -474,10 +474,10 @@ public:
 		if (arguments.size() != 1)
 			throw Exception("Function arrayJoin requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const DataTypeArray * arr = dynamic_cast<const DataTypeArray *>(&*arguments[0]);
+		const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(&*arguments[0]);
 		if (!arr)
 			throw Exception("Argument for function arrayJoin must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
+
 		return arr->getNestedType()->clone();
 	}
 
@@ -511,7 +511,7 @@ class FunctionReplicate : public IFunction
 							+ toString(arguments.size()) + ", should be 2.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		const DataTypeArray * array_type = dynamic_cast<const DataTypeArray *>(&*arguments[1]);
+		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[1]);
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -523,16 +523,16 @@ class FunctionReplicate : public IFunction
 	{
 		ColumnPtr first_column = block.getByPosition(arguments[0]).column;
 
-		ColumnArray * array_column = dynamic_cast<ColumnArray *>(&*block.getByPosition(arguments[1]).column);
+		ColumnArray * array_column = typeid_cast<ColumnArray *>(&*block.getByPosition(arguments[1]).column);
 		ColumnPtr temp_column;
 
 		if (!array_column)
 		{
-			ColumnConstArray * const_array_column = dynamic_cast<ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
+			ColumnConstArray * const_array_column = typeid_cast<ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
 			if (!const_array_column)
 				throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
 			temp_column = const_array_column->convertToFullColumn();
-			array_column = dynamic_cast<ColumnArray *>(&*temp_column);
+			array_column = typeid_cast<ColumnArray *>(&*temp_column);
 		}
 
 		block.getByPosition(result).column = new ColumnReplicated(first_column->size(), first_column->replicate(array_column->getOffsets()));

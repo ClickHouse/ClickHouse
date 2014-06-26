@@ -107,7 +107,7 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 
 	return true;
 }
-	
+
 
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
@@ -176,7 +176,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			if (0 == strcmp(it[0], "["))
 			{
 				ParserString rest_p("]");
-			
+
 				ws.ignore(pos, end);
 				if (!rest_p.ignore(pos, end, expected))
 					return false;
@@ -246,7 +246,7 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 	ASTPtr elem_else;
 
 	Pos begin = pos;
-		
+
 	if (!elem_parser.parse(pos, end, elem_cond, expected))
 		return false;
 
@@ -260,7 +260,7 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 
 		if (!elem_parser.parse(pos, end, elem_then, expected))
 			return false;
-		
+
 		ws.ignore(pos, end);
 
 		if (!symbol2.ignore(pos, end, expected))
@@ -306,65 +306,65 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expect
 	ParserString arrow("->");
 	ParserString open("(");
 	ParserString close(")");
-	
+
 	Pos begin = pos;
-	
+
 	do
 	{
 		ASTPtr inner_arguments;
 		ASTPtr expression;
-		
+
 		bool was_open = false;
-		
+
 		if (open.ignore(pos, end, expected))
 		{
 			ws.ignore(pos, end, expected);
 			was_open = true;
 		}
-		
+
 		if (!ParserList(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(","))).parse(pos, end, inner_arguments, expected))
 			break;
 		ws.ignore(pos, end, expected);
-		
+
 		if (was_open)
 		{
 			if (!close.ignore(pos, end, expected))
 				break;
 			ws.ignore(pos, end, expected);
 		}
-		
+
 		if (!arrow.ignore(pos, end, expected))
 			break;
 		ws.ignore(pos, end, expected);
-		
+
 		if (!elem_parser.parse(pos, end, expression, expected))
 		{
 			pos = begin;
 			return false;
 		}
-		
+
 		/// lambda(tuple(inner_arguments), expression)
-		
+
 		ASTFunction * lambda = new ASTFunction;
 		node = lambda;
 		lambda->name = "lambda";
-		
+
 		ASTExpressionList * outer_arguments = new ASTExpressionList;
 		lambda->arguments = outer_arguments;
 		lambda->children.push_back(lambda->arguments);
-		
+
 		ASTFunction * tuple = new ASTFunction;
 		outer_arguments->children.push_back(tuple);
 		tuple->name = "tuple";
 		tuple->arguments = inner_arguments;
 		tuple->children.push_back(inner_arguments);
-		
+
 		outer_arguments->children.push_back(expression);
-		
+
 		return true;
 	}
 	while (false);
-	
+
 	pos = begin;
 	return elem_parser.parse(pos, end, node, expected);
 }
@@ -463,7 +463,7 @@ bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected
 bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	return nested_parser.parse(pos, end, node, expected)
-		&& !dynamic_cast<ASTExpressionList &>(*node).children.empty();
+		&& !typeid_cast<ASTExpressionList &>(*node).children.empty();
 }
 
 

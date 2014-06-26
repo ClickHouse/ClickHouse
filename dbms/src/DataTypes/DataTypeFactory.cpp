@@ -66,7 +66,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 		if (base_name == "Array")
 			return new DataTypeArray(get(parameters));
-		
+
 		if (base_name == "AggregateFunction")
 		{
 			String function_name;
@@ -83,24 +83,24 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			if (!(args_parser.parse(pos, end, args_ast, expected) && pos == end))
 				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
 
-			ASTExpressionList & args_list = dynamic_cast<ASTExpressionList &>(*args_ast);
-			
+			ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
+
 			if (args_list.children.empty())
 				throw Exception("Data type AggregateFunction requires parameters: "
 					"name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-			if (ASTFunction * parametric = dynamic_cast<ASTFunction *>(&*args_list.children[0]))
+			if (ASTFunction * parametric = typeid_cast<ASTFunction *>(&*args_list.children[0]))
 			{
 				if (parametric->parameters)
 					throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
 				function_name = parametric->name;
 
-				ASTs & parameters = dynamic_cast<ASTExpressionList &>(*parametric->arguments).children;
+				ASTs & parameters = typeid_cast<ASTExpressionList &>(*parametric->arguments).children;
 				params_row.resize(parameters.size());
 
 				for (size_t i = 0; i < parameters.size(); ++i)
 				{
-					ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*parameters[i]);
+					ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*parameters[i]);
 					if (!lit)
 						throw Exception("Parameters to aggregate functions must be literals",
 							ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
@@ -122,7 +122,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			function->setArguments(argument_types);
 			return new DataTypeAggregateFunction(function, argument_types, params_row);
 		}
-		
+
 		if (base_name == "Nested")
 		{
 			ParserNameTypePairList columns_p;
@@ -130,25 +130,25 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			Expected expected = "";
 			IParser::Pos pos = parameters.data();
 			IParser::Pos end = pos + parameters.size();
-			
+
 			if (!(columns_p.parse(pos, end, columns_ast, expected) && pos == end))
 				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
-			
+
 			NamesAndTypesListPtr columns = new NamesAndTypesList;
 
-			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*columns_ast);
+			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
 			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
 			{
-				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
+				ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(**it);
 				StringRange type_range = name_and_type_pair.type->range;
 				DataTypePtr type = get(String(type_range.first, type_range.second - type_range.first));
-				if (dynamic_cast<const DataTypeNested*>(&*type))
+				if (typeid_cast<const DataTypeNested *>(&*type))
 					throw Exception("Nested inside Nested is not allowed", ErrorCodes::NESTED_TYPE_TOO_DEEP);
 				columns->push_back(NameAndTypePair(
 					name_and_type_pair.name,
 					type));
 			}
-			
+
 			return new DataTypeNested(columns);
 		}
 
@@ -165,7 +165,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 			DataTypes elems;
 
-			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*columns_ast);
+			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
 			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
 			{
 				StringRange range = (*it)->range;
@@ -174,7 +174,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 			return new DataTypeTuple(elems);
 		}
-		
+
 		throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);
 	}
 

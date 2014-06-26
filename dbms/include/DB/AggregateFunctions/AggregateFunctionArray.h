@@ -41,7 +41,7 @@ public:
 		DataTypes nested_arguments;
 		for (int i = 0; i < num_agruments; ++i)
 		{
-			if (const DataTypeArray * array = dynamic_cast<const DataTypeArray *>(&*arguments[i]))
+			if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*arguments[i]))
 				nested_arguments.push_back(array->getNestedType());
 			else
 				throw Exception("Illegal type " + arguments[i]->getName() + " of argument #" + toString(i + 1) + " for aggregate function " + getName() + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

@@ -181,7 +181,7 @@ private:
 	template <typename T>
 	bool convertTypeToUInt8(const IColumn * column, UInt8Container & res)
 	{
-		auto col = dynamic_cast<const ColumnVector<T> *>(column);
+		auto col = typeid_cast<const ColumnVector<T> *>(column);
 		if (!col)
 			return false;
 		const typename ColumnVector<T>::Container_t & vec = col->getData();
@@ -210,7 +210,7 @@ private:
 	template <typename T>
 	bool executeUInt8Type(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
 	{
-		auto col = dynamic_cast<const ColumnVector<T> *>(column);
+		auto col = typeid_cast<const ColumnVector<T> *>(column);
 		if (!col)
 			return false;
 		const typename ColumnVector<T>::Container_t & other_vec = col->getData();
@@ -311,7 +311,7 @@ public:
 		ColumnPlainPtrs other_in;
 		for (IColumn * column : in)
 		{
-			if (auto uint8_column = dynamic_cast<const ColumnVector<UInt8> *>(column))
+			if (auto uint8_column = typeid_cast<const ColumnVector<UInt8> *>(column))
 				uint8_in.push_back(uint8_column);
 			else
 				other_in.push_back(column);
@@ -362,7 +362,7 @@ private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<T> * col = dynamic_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<UInt8> * col_res = new ColumnVector<UInt8>;
 			block.getByPosition(result).column = col_res;
@@ -373,7 +373,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T> * col = dynamic_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			UInt8 res = 0;
 			UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);

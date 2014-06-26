@@ -51,7 +51,7 @@ public:
 			<< ", up to " << (all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity
 			<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 	}
-	
+
 	String getName() const { return "MergeTreeBlockInputStream"; }
 
 	String getID() const
@@ -70,7 +70,7 @@ public:
 		res << ")";
 		return res.str();
 	}
-	
+
 protected:
 	/// Будем вызывать progressImpl самостоятельно.
 	void progress(size_t rows, size_t bytes) {}
@@ -125,7 +125,7 @@ protected:
 				/** Если фильтр - константа (например, написано PREWHERE 1),
 				*  то либо вернём пустой блок, либо вернём блок без изменений.
 				*/
-				if (ColumnConstUInt8 * column_const = dynamic_cast<ColumnConstUInt8 *>(&*column))
+				if (ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column))
 				{
 					if (!column_const->getData())
 					{
@@ -141,7 +141,7 @@ protected:
 
 					progressImpl(0, res.bytes() - pre_bytes);
 				}
-				else if (ColumnUInt8 * column_vec = dynamic_cast<ColumnUInt8 *>(&*column))
+				else if (ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(&*column))
 				{
 					size_t index_granularity = storage.index_granularity;
 
@@ -250,7 +250,7 @@ protected:
 
 		return res;
 	}
-	
+
 private:
 	const String path;
 	size_t block_size;

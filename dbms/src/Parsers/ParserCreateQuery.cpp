@@ -9,7 +9,7 @@
 
 namespace DB
 {
-	
+
 bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
@@ -17,57 +17,57 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	ParserString close(")");
 	ParserIdentifier name_p;
 	ParserNameTypePairList columns_p;
-	
+
 	ASTPtr name;
 	ASTPtr columns;
-	
+
 	Pos begin = pos;
-	
+
 	/// Пока name == 'Nested', возможно потом появятся альтернативные вложенные структуры данных
 	if (!name_p.parse(pos, end, name, expected))
 		return false;
-	
+
 	ws.ignore(pos, end);
-	
+
 	if (!open.ignore(pos, end))
 		return false;
-	
+
 	ws.ignore(pos, end);
-	
+
 	if (!columns_p.parse(pos, end, columns, expected))
 		return false;
-	
+
 	ws.ignore(pos, end);
-	
+
 	if (!close.ignore(pos, end))
 		return false;
-	
+
 	ASTFunction * func = new ASTFunction(StringRange(begin, pos));
 	node = func;
-	func->name = dynamic_cast<ASTIdentifier &>(*name).name;
+	func->name = typeid_cast<ASTIdentifier &>(*name).name;
 	func->arguments = columns;
 	func->children.push_back(columns);
-	
+
 	return true;
 }
-	
-	
+
+
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
 	Pos begin = pos;
-	
+
 	ParserFunction function_or_array;
 	if (function_or_array.parse(pos, end, node, expected))
 		return true;
-	
+
 	pos = begin;
-	
-	ParserNestedTable nested;	
+
+	ParserNestedTable nested;
 	if (nested.parse(pos, end, node, expected))
 		return true;
-	
+
 	pos = begin;
-	
+
 	return false;
 }
 
@@ -76,7 +76,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 {
 	ParserIdentifier non_parametric;
 	ParserIdentifierWithParameters parametric;
-	
+
 	Pos begin = pos;
 
 	if (parametric.parse(pos, end, node, expected))
@@ -90,7 +90,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 	{
 		ASTFunction * func = new ASTFunction(StringRange(begin, pos));
 		node = func;
-		func->name = dynamic_cast<ASTIdentifier &>(*ident).name;
+		func->name = typeid_cast<ASTIdentifier &>(*ident).name;
 		return true;
 	}
 	pos = begin;
@@ -112,7 +112,7 @@ bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, Expected & ex
 	ParserIdentifierWithOptionalParameters storage_p;
 
 	ws.ignore(pos, end);
-	
+
 	if (s_engine.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
@@ -251,8 +251,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 				return false;
 
 			/// Для engine VIEW необходимо так же считать запрос AS SELECT
-			if (storage && (dynamic_cast<ASTFunction &>(*storage).name == "View"
-						|| dynamic_cast<ASTFunction &>(*storage).name == "MaterializedView"))
+			if (storage && (typeid_cast<ASTFunction &>(*storage).name == "View"
+						|| typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
 			{
 				if (!s_as.ignore(pos, end, expected))
 					return false;
@@ -385,20 +385,20 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	query->is_materialized_view = is_materialized_view;
 	query->is_populate = is_populate;
 	query->is_temporary = is_temporary;
-	
+
 	if (database)
-		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+		query->database = typeid_cast<ASTIdentifier &>(*database).name;
 	if (table)
-		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+		query->table = typeid_cast<ASTIdentifier &>(*table).name;
 	if (inner_storage)
 		query->inner_storage = inner_storage;
 
 	query->columns = columns;
 	query->storage = storage;
 	if (as_database)
-		query->as_database = dynamic_cast<ASTIdentifier &>(*as_database).name;
+		query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
 	if (as_table)
-		query->as_table = dynamic_cast<ASTIdentifier &>(*as_table).name;
+		query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
 	query->select = select;
 
 	if (columns)

@@ -75,7 +75,7 @@ struct CityHash64Impl
 struct IntHash32Impl
 {
 	typedef UInt32 ReturnType;
-	
+
 	static UInt32 apply(UInt64 x)
 	{
 		/// seed взят из /dev/urandom. Он позволяет избежать нежелательных зависимостей с хэшами в разных структурах данных.
@@ -112,7 +112,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -122,7 +122,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnString * col_from = dynamic_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnUInt64 * col_to = new ColumnUInt64;
 			block.getByPosition(result).column = col_to;
@@ -138,7 +138,7 @@ public:
 					reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
 					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
 		}
-		else if (const ColumnConstString * col_from = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConstUInt64(
 				col_from->size(),
@@ -157,11 +157,11 @@ class FunctionIntHash : public IFunction
 {
 private:
 	typedef typename Impl::ReturnType ToType;
-	
+
 	template <typename FromType>
 	void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<FromType> * col_from = dynamic_cast<ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
 			block.getByPosition(result).column = col_to;
@@ -174,7 +174,7 @@ private:
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Impl::apply(vec_from[i]);
 		}
-		else if (ColumnConst<FromType> * col_from = dynamic_cast<ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConst<ToType>(col_from->size(), Impl::apply(col_from->getData()));
 		}
@@ -210,17 +210,17 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
-		
-		if      (dynamic_cast<const DataTypeUInt8 *		>(from_type)) executeType<UInt8	>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeUInt16 *	>(from_type)) executeType<UInt16>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeUInt32 *	>(from_type)) executeType<UInt32>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeUInt64 *	>(from_type)) executeType<UInt64>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt8 *		>(from_type)) executeType<Int8	>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt16 *		>(from_type)) executeType<Int16	>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt32 *		>(from_type)) executeType<Int32	>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeInt64 *		>(from_type)) executeType<Int64	>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeDate *		>(from_type)) executeType<UInt16>(block, arguments, result);
-		else if (dynamic_cast<const DataTypeDateTime *	>(from_type)) executeType<UInt32>(block, arguments, result);
+
+		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeType<UInt8	>(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt16 *	>(from_type)) executeType<UInt16>(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt32 *	>(from_type)) executeType<UInt32>(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt64 *	>(from_type)) executeType<UInt64>(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt8 *		>(from_type)) executeType<Int8	>(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt16 *		>(from_type)) executeType<Int16	>(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt32 *		>(from_type)) executeType<Int32	>(block, arguments, result);
+		else if (typeid_cast<const DataTypeInt64 *		>(from_type)) executeType<Int64	>(block, arguments, result);
+		else if (typeid_cast<const DataTypeDate *		>(from_type)) executeType<UInt16>(block, arguments, result);
+		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) executeType<UInt32>(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

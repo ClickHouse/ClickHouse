@@ -21,7 +21,7 @@ namespace DB
   * toTime,
   * now
   * TODO: makeDate, makeDateTime
-  * 
+  *
   * (toDate - расположена в файле FunctionsConversion.h)
   *
   * Возвращаемые типы:
@@ -34,7 +34,7 @@ namespace DB
   *
   * timeSlot(EventTime)
   * - округляет время до получаса.
-  * 
+  *
   * timeSlots(StartTime, Duration)
   * - для интервала времени, начинающегося в StartTime и продолжающегося Duration секунд,
   *   возвращает массив моментов времени, состоящий из округлений вниз до получаса точек из этого интервала.
@@ -210,7 +210,7 @@ struct DateTimeTransformImpl
 	{
 		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
 
-		if (const ColumnVector<FromType> * col_from = dynamic_cast<const ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
 			block.getByPosition(result).column = col_to;
@@ -223,7 +223,7 @@ struct DateTimeTransformImpl
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::execute(vec_from[i], date_lut);
 		}
-		else if (const ColumnConst<FromType> * col_from = dynamic_cast<const ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<FromType> * col_from = typeid_cast<const ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConst<ToType>(col_from->size(), Transform::execute(col_from->getData(), date_lut));
 		}
@@ -260,10 +260,10 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
-		
-		if (dynamic_cast<const DataTypeDate *>(from_type))
+
+		if (typeid_cast<const DataTypeDate *>(from_type))
 			DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
-		else if (dynamic_cast<const DataTypeDateTime * >(from_type))
+		else if (typeid_cast<const DataTypeDateTime * >(from_type))
 			DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
@@ -320,7 +320,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeDateTime *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeDateTime *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -330,12 +330,12 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnUInt32 * times = dynamic_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnUInt32 * res = new ColumnUInt32;
 			ColumnUInt32::Container_t & res_vec = res->getData();
 			const ColumnUInt32::Container_t & vec = times->getData();
-						
+
 			size_t size = vec.size();
 			res_vec.resize(size);
 
@@ -344,7 +344,7 @@ public:
 
 			block.getByPosition(result).column = res;
 		}
-		else if (const ColumnConstUInt32 * const_times = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
 			block.getByPosition(result).column = new ColumnConstUInt32(block.rowsInFirstColumn(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
 		}
@@ -367,7 +367,7 @@ struct TimeSlotsImpl
 
 		result_offsets.resize(size);
 		result_values.reserve(size);
-		
+
 		ColumnArray::Offset_t current_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -452,11 +452,11 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeDateTime *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeDateTime *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!dynamic_cast<const DataTypeUInt32 *>(&*arguments[1]))
+		if (!typeid_cast<const DataTypeUInt32 *>(&*arguments[1]))
 			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -466,14 +466,14 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnUInt32 * starts = dynamic_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConstUInt32 * const_starts = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnUInt32 * starts = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstUInt32 * const_starts = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column);
 
-		const ColumnUInt32 * durations = dynamic_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[1]).column);
-		const ColumnConstUInt32 * const_durations = dynamic_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnUInt32 * durations = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnConstUInt32 * const_durations = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[1]).column);
 
 		ColumnArray * res = new ColumnArray(new ColumnUInt32);
-		ColumnUInt32::Container_t & res_values = dynamic_cast<ColumnUInt32 &>(res->getData()).getData();
+		ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
 		if (starts && durations)
 		{

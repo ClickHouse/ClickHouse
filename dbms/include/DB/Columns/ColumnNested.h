@@ -19,10 +19,10 @@ using Poco::SharedPtr;
 /** Cтолбeц значений типа вложенная таблица.
   * В памяти это выглядит, как столбцы вложенных типов одинковой длины, равной сумме размеров всех массивов с общим именем,
   *  и как общий для всех столбцов массив смещений, который позволяет достать каждый элемент.
-  * 
+  *
   * Не предназначен для возвращения результа в запросах SELECT. Предполагается, что для SELECT'а будут отдаваться
   * столбцы вида ColumnArray, ссылающиеся на один массив Offset'ов и соответствующий массив с данными.
-  * 
+  *
   * Используется для сериализации вложенной таблицы.
   */
 class ColumnNested final : public IColumn
@@ -41,7 +41,7 @@ public:
 		}
 		else
 		{
-			if (!dynamic_cast<ColumnOffsets_t *>(&*offsets_column))
+			if (!typeid_cast<ColumnOffsets_t *>(&*offsets_column))
 				throw Exception("offsets_column must be a ColumnVector<UInt64>", ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
@@ -51,7 +51,7 @@ public:
 		std::string res;
 		{
 			WriteBufferFromString out(res);
-			
+
 			for (Columns::const_iterator it = data.begin(); it != data.end(); ++it)
 			{
 				if (it != data.begin())
@@ -69,12 +69,12 @@ public:
 			res[i] = data[i]->cloneEmpty();
 		return new ColumnNested(res);
 	}
-	
+
 	size_t size() const
 	{
 		return getOffsets().size();
 	}
-	
+
 	Field operator[](size_t n) const
 	{
 		throw Exception("Method operator[] is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -99,7 +99,7 @@ public:
 	{
 		if (length == 0)
 			return new ColumnNested(data);
-		
+
 		if (start + length > getOffsets().size())
 			throw Exception("Parameter out of bound in ColumnNested::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
@@ -109,10 +109,10 @@ public:
 
 		ColumnNested * res_ = new ColumnNested(data);
 		ColumnPtr res = res_;
-		
+
 		for (size_t i = 0; i < data.size(); ++i)
 			res_->data[i] = data[i]->cut(nested_offset, nested_length);
-		
+
 		Offsets_t & res_offsets = res_->getOffsets();
 
 		if (start == 0)
@@ -138,10 +138,10 @@ public:
 	void insertFrom(const IColumn & src_, size_t n)
 	{
 		const ColumnNested & src = static_cast<const ColumnNested &>(src_);
-		
+
 		if (data.size() != src.getData().size())
 			throw Exception("Number of columns in nested tables do not match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-		
+
 		size_t size = src.sizeAt(n);
 		size_t offset = src.offsetAt(n);
 
@@ -149,11 +149,11 @@ public:
 		{
 			if (data[i]->getName() != src.getData()[i]->getName())
 				throw Exception("Types of columns in nested tables do not match.", ErrorCodes::TYPE_MISMATCH);
-				
+
 			for (size_t j = 0; j < size; ++j)
 				data[i]->insertFrom(*src.getData()[i], offset + j);
 		}
-		
+
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
@@ -231,7 +231,7 @@ public:
 		Columns cloned_columns(data.size());
 		for (size_t i = 0; i < data.size(); ++i)
 			cloned_columns[i] = data[i]->cloneEmpty();
-		
+
 		ColumnNested * res_ = new ColumnNested(cloned_columns);
 		ColumnPtr res = res_;
 

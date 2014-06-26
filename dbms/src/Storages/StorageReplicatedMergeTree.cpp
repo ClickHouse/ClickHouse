@@ -1367,7 +1367,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 		throw Exception("Table is in read only mode", ErrorCodes::TABLE_IS_READ_ONLY);
 
 	String insert_id;
-	if (ASTInsertQuery * insert = dynamic_cast<ASTInsertQuery *>(&*query))
+	if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*query))
 		insert_id = insert->insert_id;
 
 	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id);

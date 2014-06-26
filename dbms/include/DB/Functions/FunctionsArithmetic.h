@@ -68,7 +68,7 @@ template<typename A, typename B>
 struct PlusImpl
 {
 	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
-		
+
 	static inline ResultType apply(A a, B b)
 	{
 		/// Далее везде, static_cast - чтобы не было неправильного результата в выражениях вида Int64 c = UInt32(a) * Int32(-1).
@@ -117,7 +117,7 @@ template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
 	/// Возможно, лучше вместо проверок использовать siglongjmp?
-	
+
 	if (unlikely(b == 0))
 		throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
@@ -158,7 +158,7 @@ template<typename A, typename B>
 struct BitAndImpl
 {
 	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
-	
+
 	static inline ResultType apply(A a, B b)
 	{
 		return static_cast<ResultType>(a)
@@ -170,7 +170,7 @@ template<typename A, typename B>
 struct BitOrImpl
 {
 	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
-	
+
 	static inline ResultType apply(A a, B b)
 	{
 		return static_cast<ResultType>(a)
@@ -245,7 +245,7 @@ private:
 	template <typename T0, typename T1>
 	bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
 	{
-		if (dynamic_cast<const T1 *>(&*arguments[1]))
+		if (typeid_cast<const T1 *>(&*arguments[1]))
 		{
 			type_res = new typename DataTypeFromFieldType<
 				typename Op<typename T0::FieldType, typename T1::FieldType>::ResultType>::Type;
@@ -257,7 +257,7 @@ private:
 	template <typename T0>
 	bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
 	{
-		if (dynamic_cast<const T0 *>(&*arguments[0]))
+		if (typeid_cast<const T0 *>(&*arguments[0]))
 		{
 			if (	checkRightType<T0, DataTypeUInt8>(arguments, type_res)
 				||	checkRightType<T0, DataTypeUInt16>(arguments, type_res)
@@ -281,7 +281,7 @@ private:
 	template <typename T0, typename T1>
 	bool executeRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
 	{
-		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			typedef typename Op<T0, T1>::ResultType ResultType;
 
@@ -294,7 +294,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			typedef typename Op<T0, T1>::ResultType ResultType;
 
@@ -307,14 +307,14 @@ private:
 
 			return true;
 		}
-			
+
 		return false;
 	}
 
 	template <typename T0, typename T1>
 	bool executeConstRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
 	{
-		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			typedef typename Op<T0, T1>::ResultType ResultType;
 
@@ -327,13 +327,13 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			typedef typename Op<T0, T1>::ResultType ResultType;
 
 			ResultType res = 0;
 			BinaryOperationImpl<T0, T1, Op<T0, T1> >::constant_constant(col_left->getData(), col_right->getData(), res);
-			
+
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_left->size(), res);
 			block.getByPosition(result).column = col_res;
 
@@ -346,7 +346,7 @@ private:
 	template <typename T0>
 	bool executeLeftType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<T0> * col_left = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<T0> * col_left = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			if (	executeRightType<T0, UInt8>(block, arguments, result, col_left)
 				||	executeRightType<T0, UInt16>(block, arguments, result, col_left)
@@ -364,7 +364,7 @@ private:
 					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (ColumnConst<T0> * col_left = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<T0> * col_left = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			if (	executeConstRightType<T0, UInt8>(block, arguments, result, col_left)
 				||	executeConstRightType<T0, UInt16>(block, arguments, result, col_left)
@@ -382,10 +382,10 @@ private:
 					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		
+
 		return false;
 	}
-	
+
 public:
 	/// Получить имя функции.
 	String getName() const
@@ -446,7 +446,7 @@ private:
 	template <typename T0>
 	bool checkType(const DataTypes & arguments, DataTypePtr & result) const
 	{
-		if (dynamic_cast<const T0 *>(&*arguments[0]))
+		if (typeid_cast<const T0 *>(&*arguments[0]))
 		{
 			result = new typename DataTypeFromFieldType<
 				typename Op<typename T0::FieldType>::ResultType>::Type;
@@ -458,7 +458,7 @@ private:
 	template <typename T0>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<T0> * col = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<T0> * col = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			typedef typename Op<T0>::ResultType ResultType;
 
@@ -471,7 +471,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T0> * col = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<T0> * col = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			typedef typename Op<T0>::ResultType ResultType;
 

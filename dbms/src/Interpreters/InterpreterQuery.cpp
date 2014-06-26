@@ -39,78 +39,78 @@ InterpreterQuery::InterpreterQuery(ASTPtr query_ptr_, Context & context_, QueryP
 
 void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_istr, BlockInputStreamPtr & query_plan)
 {
-	if (dynamic_cast<ASTSelectQuery *>(&*query_ptr))
+	if (typeid_cast<ASTSelectQuery *>(&*query_ptr))
 	{
 		InterpreterSelectQuery interpreter(query_ptr, context, stage);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
-	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTInsertQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterInsertQuery interpreter(query_ptr, context);
 		interpreter.execute(remaining_data_istr);
 	}
-	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTCreateQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterCreateQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTDropQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterDropQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTRenameQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTRenameQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterRenameQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTShowTablesQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTShowTablesQuery *>(&*query_ptr))
 	{
 		InterpreterShowTablesQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
-	else if (dynamic_cast<ASTUseQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTUseQuery *>(&*query_ptr))
 	{
 		InterpreterUseQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTSetQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTSetQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterSetQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTOptimizeQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTOptimizeQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterOptimizeQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTExistsQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTExistsQuery *>(&*query_ptr))
 	{
 		InterpreterExistsQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
-	else if (dynamic_cast<ASTShowCreateQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTShowCreateQuery *>(&*query_ptr))
 	{
 		InterpreterShowCreateQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
-	else if (dynamic_cast<ASTDescribeQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTDescribeQuery *>(&*query_ptr))
 	{
 		InterpreterDescribeQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
-	else if (dynamic_cast<ASTShowProcesslistQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTShowProcesslistQuery *>(&*query_ptr))
 	{
 		InterpreterShowProcesslistQuery interpreter(query_ptr, context);
 		query_plan = interpreter.executeAndFormat(ostr);
 	}
-	else if (dynamic_cast<ASTAlterQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTAlterQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterAlterQuery interpreter(query_ptr, context);
@@ -124,80 +124,80 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 BlockIO InterpreterQuery::execute()
 {
 	BlockIO res;
-	
-	if (dynamic_cast<ASTSelectQuery *>(&*query_ptr))
+
+	if (typeid_cast<ASTSelectQuery *>(&*query_ptr))
 	{
 		InterpreterSelectQuery interpreter(query_ptr, context, stage);
 		res.in = interpreter.execute();
 		res.in_sample = interpreter.getSampleBlock();
 	}
-	else if (dynamic_cast<ASTInsertQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTInsertQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterInsertQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
-	else if (dynamic_cast<ASTCreateQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTCreateQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterCreateQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTDropQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTDropQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterDropQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTRenameQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTRenameQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterRenameQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTShowTablesQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTShowTablesQuery *>(&*query_ptr))
 	{
 		InterpreterShowTablesQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
-	else if (dynamic_cast<ASTUseQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTUseQuery *>(&*query_ptr))
 	{
 		InterpreterUseQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTSetQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTSetQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterSetQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTOptimizeQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTOptimizeQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterOptimizeQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
-	else if (dynamic_cast<ASTExistsQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTExistsQuery *>(&*query_ptr))
 	{
 		InterpreterExistsQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
-	else if (dynamic_cast<ASTShowCreateQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTShowCreateQuery *>(&*query_ptr))
 	{
 		InterpreterShowCreateQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
-	else if (dynamic_cast<ASTDescribeQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTDescribeQuery *>(&*query_ptr))
 	{
 		InterpreterDescribeQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
-	else if (dynamic_cast<ASTShowProcesslistQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTShowProcesslistQuery *>(&*query_ptr))
 	{
 		InterpreterShowProcesslistQuery interpreter(query_ptr, context);
 		res = interpreter.execute();
 	}
-	else if (dynamic_cast<ASTAlterQuery *>(&*query_ptr))
+	else if (typeid_cast<ASTAlterQuery *>(&*query_ptr))
 	{
 		throwIfReadOnly();
 		InterpreterAlterQuery interpreter(query_ptr, context);

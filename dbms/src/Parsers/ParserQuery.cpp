@@ -12,6 +12,7 @@
 #include <DB/Parsers/ParserTablePropertiesQuery.h>
 #include <DB/Parsers/ParserAlterQuery.h>
 #include <DB/Parsers/ParserShowProcesslistQuery.h>
+//#include <DB/Parsers/ParserMultiQuery.h>
 
 
 namespace DB
@@ -32,7 +33,8 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expect
 	ParserOptimizeQuery optimize_p;
 	ParserTablePropertiesQuery table_p;
 	ParserShowProcesslistQuery show_processlist_p;
-	
+	ParserMultiQuery multi_p;
+
 	bool res = show_tables_p.parse(pos, end, node, expected)
 		|| select_p.parse(pos, end, node, expected)
 		|| insert_p.parse(pos, end, node, expected)
@@ -44,10 +46,11 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expect
 		|| set_p.parse(pos, end, node, expected)
 		|| optimize_p.parse(pos, end, node, expected)
 		|| table_p.parse(pos, end, node, expected)
-		|| show_processlist_p.parse(pos, end, node, expected);
+		|| show_processlist_p.parse(pos, end, node, expected)
+	/*	|| multi_p.parse(pos, end, node, expected)*/;
 
 	if (!res)
-		expected = "One of: SHOW TABLES, SHOW DATABASES, SHOW CREATE TABLE, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE, EXISTS, DESCRIBE, DESC, ALTER, SHOW PROCESSLIST";
+		expected = "One of: SHOW TABLES, SHOW DATABASES, SHOW CREATE TABLE, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE, EXISTS, DESCRIBE, DESC, ALTER, SHOW PROCESSLIST, opening curly brace";
 
 	return res;
 }

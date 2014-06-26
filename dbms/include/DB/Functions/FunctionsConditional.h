@@ -26,10 +26,10 @@ private:
 	{
 		ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 		block.getByPosition(result).column = col_res;
-		
+
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 		vec_res.resize(size);
-		
+
 		return vec_res;
 	}
 public:
@@ -99,7 +99,7 @@ public:
 	{
 		throw_error();
 	}
-	
+
 	static void vector_constant(
 		const PODArray<UInt8> & cond,
 		const PODArray<A> & a, B b,
@@ -108,7 +108,7 @@ public:
 	{
 		throw_error();
 	}
-	
+
 	static void constant_vector(
 		const PODArray<UInt8> & cond,
 		A a, const PODArray<B> & b,
@@ -117,7 +117,7 @@ public:
 	{
 		throw_error();
 	}
-	
+
 	static void constant_constant(
 		const PODArray<UInt8> & cond,
 		A a, B b,
@@ -140,11 +140,11 @@ struct StringIfImpl
 		size_t size = cond.size();
 		c_offsets.resize(size);
 		c_data.reserve(std::max(a_data.size(), b_data.size()));
-		
+
 		ColumnString::Offset_t a_prev_offset = 0;
 		ColumnString::Offset_t b_prev_offset = 0;
 		ColumnString::Offset_t c_prev_offset = 0;
-		
+
 		for (size_t i = 0; i < size; ++i)
 		{
 			if (cond[i])
@@ -300,7 +300,7 @@ private:
 	template <typename T0, typename T1>
 	bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
 	{
-		if (dynamic_cast<const T1 *>(&*arguments[2]))
+		if (typeid_cast<const T1 *>(&*arguments[2]))
 		{
 			typedef typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type ResultType;
 			type_res = DataTypeFromFieldTypeOrError<ResultType>::getDataType();
@@ -311,11 +311,11 @@ private:
 		}
 		return false;
 	}
-	
+
 	template <typename T0>
 	bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
 	{
-		if (dynamic_cast<const T0 *>(&*arguments[1]))
+		if (typeid_cast<const T0 *>(&*arguments[1]))
 		{
 			if (	checkRightType<T0, DataTypeUInt8>(arguments, type_res)
 				||	checkRightType<T0, DataTypeUInt16>(arguments, type_res)
@@ -334,7 +334,7 @@ private:
 		}
 		return false;
 	}
-	
+
 	template <typename T0, typename T1>
 	bool executeRightType(
 		const ColumnVector<UInt8> * cond_col,
@@ -343,22 +343,22 @@ private:
 		size_t result,
 		const ColumnVector<T0> * col_left)
 	{
-		ColumnVector<T1> * col_right_vec = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[2]).column);
-		ColumnConst<T1> * col_right_const = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[2]).column);
-		
+		ColumnVector<T1> * col_right_vec = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[2]).column);
+		ColumnConst<T1> * col_right_const = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[2]).column);
+
 		if (!col_right_vec && !col_right_const)
 			return false;
-		
+
 		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
-		
+
 		if (col_right_vec)
 			NumIfImpl<T0, T1, ResultType>::vector_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
 		else
 			NumIfImpl<T0, T1, ResultType>::vector_constant(cond_col->getData(), col_left->getData(), col_right_const->getData(), block, result);
-		
+
 		return true;
 	}
-	
+
 	template <typename T0, typename T1>
 	bool executeConstRightType(
 		const ColumnVector<UInt8> * cond_col,
@@ -367,26 +367,26 @@ private:
 		size_t result,
 		const ColumnConst<T0> * col_left)
 	{
-		ColumnVector<T1> * col_right_vec = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[2]).column);
-		ColumnConst<T1> * col_right_const = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[2]).column);
-		
+		ColumnVector<T1> * col_right_vec = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[2]).column);
+		ColumnConst<T1> * col_right_const = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[2]).column);
+
 		if (!col_right_vec && !col_right_const)
 			return false;
-		
+
 		typedef typename NumberTraits::ResultOfIf<T0, T1>::Type ResultType;
-		
+
 		if (col_right_vec)
 			NumIfImpl<T0, T1, ResultType>::constant_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
 		else
 			NumIfImpl<T0, T1, ResultType>::constant_constant(cond_col->getData(), col_left->getData(), col_right_const->getData(), block, result);
-		
+
 		return true;
 	}
-	
+
 	template <typename T0>
 	bool executeLeftType(const ColumnVector<UInt8> * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<T0> * col_left = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[1]).column))
+		if (ColumnVector<T0> * col_left = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			if (	executeRightType<T0, UInt8>(cond_col, block, arguments, result, col_left)
 				||	executeRightType<T0, UInt16>(cond_col, block, arguments, result, col_left)
@@ -404,7 +404,7 @@ private:
 				+ " of third argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (ColumnConst<T0> * col_left = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[1]).column))
+		else if (ColumnConst<T0> * col_left = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			if (	executeConstRightType<T0, UInt8>(cond_col, block, arguments, result, col_left)
 				||	executeConstRightType<T0, UInt16>(cond_col, block, arguments, result, col_left)
@@ -422,23 +422,23 @@ private:
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		
+
 		return false;
 	}
-	
+
 	bool executeString(const ColumnVector<UInt8> * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		ColumnString * col_then = dynamic_cast<ColumnString *>(&*block.getByPosition(arguments[1]).column);
-		ColumnString * col_else = dynamic_cast<ColumnString *>(&*block.getByPosition(arguments[2]).column);
-		ColumnConstString * col_then_const = dynamic_cast<ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
-		ColumnConstString * col_else_const = dynamic_cast<ColumnConstString *>(&*block.getByPosition(arguments[2]).column);
-		
+		ColumnString * col_then = typeid_cast<ColumnString *>(&*block.getByPosition(arguments[1]).column);
+		ColumnString * col_else = typeid_cast<ColumnString *>(&*block.getByPosition(arguments[2]).column);
+		ColumnConstString * col_then_const = typeid_cast<ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+		ColumnConstString * col_else_const = typeid_cast<ColumnConstString *>(&*block.getByPosition(arguments[2]).column);
+
 		ColumnString * col_res = new ColumnString;
 		block.getByPosition(result).column = col_res;
-		
+
 		ColumnString::Chars_t & res_vec = col_res->getChars();
 		ColumnString::Offsets_t & res_offsets = col_res->getOffsets();
-		
+
 		if (col_then && col_else)
 			StringIfImpl::vector_vector(
 				cond_col->getData(),
@@ -465,17 +465,17 @@ private:
 														res_vec, res_offsets);
 						else
 							return false;
-						
+
 						return true;
 	}
-	
+
 public:
 	/// Получить имя функции.
 	String getName() const
 	{
 		return "if";
 	}
-	
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
@@ -483,11 +483,11 @@ public:
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 				+ toString(arguments.size()) + ", should be 3.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-			
-		if (!dynamic_cast<const DataTypeUInt8 *>(&*arguments[0]))
+
+		if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
 			throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-			
+
 		if (arguments[1]->behavesAsNumber() && arguments[2]->behavesAsNumber())
 		{
 			DataTypePtr type_res;
@@ -511,17 +511,17 @@ public:
 				+ arguments[1]->getName() + " and " + arguments[2]->getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
-		
+
 		return arguments[1];
 	}
-	
+
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnVector<UInt8> * cond_col = dynamic_cast<const ColumnVector<UInt8> *>(&*block.getByPosition(arguments[0]).column);
-		const ColumnConst<UInt8> * cond_const_col = dynamic_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnVector<UInt8> * cond_col = typeid_cast<const ColumnVector<UInt8> *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);
 		ColumnPtr materialized_cond_col;
-		
+
 		if (cond_const_col)
 		{
 			if (block.getByPosition(arguments[1]).type->getName() ==
@@ -535,7 +535,7 @@ public:
 			else
 			{
 				materialized_cond_col = cond_const_col->convertToFullColumn();
-				cond_col = dynamic_cast<const ColumnVector<UInt8> *>(&*materialized_cond_col);
+				cond_col = typeid_cast<const ColumnVector<UInt8> *>(&*materialized_cond_col);
 			}
 		}
 		if (cond_col)

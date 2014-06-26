@@ -3,7 +3,7 @@
 
 namespace DB
 {
-	
+
 typedef std::vector<std::pair<const IColumn *, SortColumnDescription> > ColumnsWithSortDescriptions;
 
 
@@ -16,7 +16,7 @@ static inline bool needCollation(const IColumn * column, const SortColumnDescrip
 struct PartialSortingLess
 {
 	const ColumnsWithSortDescriptions & columns;
-	
+
 	PartialSortingLess(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
 
 	bool operator() (size_t a, size_t b) const
@@ -36,7 +36,7 @@ struct PartialSortingLess
 struct PartialSortingLessWithCollation
 {
 	const ColumnsWithSortDescriptions & columns;
-	
+
 	PartialSortingLessWithCollation(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
 
 	bool operator() (size_t a, size_t b) const
@@ -46,12 +46,12 @@ struct PartialSortingLessWithCollation
 			int res;
 			if (needCollation(it->first, it->second))
 			{
-				const ColumnString & column_string = dynamic_cast<const ColumnString &>(*it->first);
+				const ColumnString & column_string = typeid_cast<const ColumnString &>(*it->first);
 				res = column_string.compareAtWithCollation(a, b, *it->first, *it->second.collator);
 			}
 			else
 				res = it->first->compareAt(a, b, *it->first, it->second.direction);
-			
+
 			res *= it->second.direction;
 			if (res < 0)
 				return true;
@@ -67,7 +67,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 {
 	if (!block)
 		return;
-	
+
 	/// Если столбец сортировки один
 	if (description.size() == 1)
 	{
@@ -80,7 +80,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 		IColumn::Permutation perm;
 		if (needCollation(column, description[0]))
 		{
-			const ColumnString & column_string = dynamic_cast<const ColumnString &>(*column);
+			const ColumnString & column_string = typeid_cast<const ColumnString &>(*column);
 			column_string.getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
 		}
 		else
@@ -99,18 +99,18 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 
 		if (limit >= size)
 			limit = 0;
-		
+
 		bool need_collation = false;
 		ColumnsWithSortDescriptions columns_with_sort_desc;
-		
+
 		for (size_t i = 0, size = description.size(); i < size; ++i)
 		{
 			IColumn * column = !description[i].column_name.empty()
 				? block.getByName(description[i].column_name).column
 				: block.getByPosition(description[i].column_number).column;
-			
+
 			columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
-			
+
 			if (needCollation(column, description[i]))
 				need_collation = true;
 		}

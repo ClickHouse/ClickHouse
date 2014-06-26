@@ -43,7 +43,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 {
 
 #define DISPATCH(NAME) \
-	else if (const AST ## NAME * concrete = dynamic_cast<const AST ## NAME *>(&ast)) \
+	else if (const AST ## NAME * concrete = typeid_cast<const AST ## NAME *>(&ast)) \
 		formatAST(*concrete, s, indent, hilite, one_line, need_parens);
 
 	if (false) {}
@@ -70,13 +70,14 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(AlterQuery)
 	DISPATCH(ShowProcesslistQuery)
 	DISPATCH(Join)
+//	DISPATCH(MultiQuery)
 	else
 		throw Exception("Unknown element in AST: " + ast.getID()
 			+ ((ast.range.first && (ast.range.second > ast.range.first))
 				? " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'"
 				: ""),
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
-	
+
 #undef DISPATCH
 }
 
@@ -114,14 +115,14 @@ static void formatExpressionListMultiline(const ASTExpressionList & ast, std::os
 void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	std::string nl_or_nothing = one_line ? "" : "\n";
-		
+
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_ws = one_line ? " " : "\n";
-			
+
 	s << (hilite ? hilite_keyword : "") << indent_str << "SELECT " << (ast.distinct ? "DISTINCT " : "") << (hilite ? hilite_none : "");
 	one_line
 		? formatAST(*ast.select_expression_list, s, indent, hilite, one_line)
-		: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.select_expression_list), s, indent, hilite);
+		: formatExpressionListMultiline(typeid_cast<const ASTExpressionList &>(*ast.select_expression_list), s, indent, hilite);
 
 	if (ast.table)
 	{
@@ -132,13 +133,13 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 			s << ".";
 		}
 
-		if (dynamic_cast<const ASTSelectQuery *>(&*ast.table))
+		if (typeid_cast<const ASTSelectQuery *>(&*ast.table))
 		{
 			if (one_line)
 				s << " (";
 			else
 				s << "\n" << indent_str << "(\n";
-			
+
 			formatAST(*ast.table, s, indent + 1, hilite, one_line);
 
 			if (one_line)
@@ -149,13 +150,13 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		else
 			formatAST(*ast.table, s, indent, hilite, one_line);
 	}
-	
+
 	if (ast.array_join_expression_list)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "ARRAY JOIN " << (hilite ? hilite_none : "");
 		one_line
 			? formatAST(*ast.array_join_expression_list, s, indent, hilite, one_line)
-			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.array_join_expression_list), s, indent, hilite);
+			: formatExpressionListMultiline(typeid_cast<const ASTExpressionList &>(*ast.array_join_expression_list), s, indent, hilite);
 	}
 
 	if (ast.join)
@@ -163,12 +164,12 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		s << " ";
 		formatAST(*ast.join, s, indent, hilite, one_line);
 	}
-	
+
 	if (ast.final)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "FINAL" << (hilite ? hilite_none : "");
 	}
-	
+
 	if (ast.sample_size)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "SAMPLE " << (hilite ? hilite_none : "");
@@ -192,7 +193,7 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "GROUP BY " << (hilite ? hilite_none : "");
 		one_line
 			? formatAST(*ast.group_expression_list, s, indent, hilite, one_line)
-			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.group_expression_list), s, indent, hilite);
+			: formatExpressionListMultiline(typeid_cast<const ASTExpressionList &>(*ast.group_expression_list), s, indent, hilite);
 
 		if (ast.group_by_with_totals)
 			s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << (one_line ? "" : "    ") << "WITH TOTALS" << (hilite ? hilite_none : "");
@@ -209,7 +210,7 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "ORDER BY " << (hilite ? hilite_none : "");
 		one_line
 			? formatAST(*ast.order_expression_list, s, indent, hilite, one_line)
-			: formatExpressionListMultiline(dynamic_cast<const ASTExpressionList &>(*ast.order_expression_list), s, indent, hilite);
+			: formatExpressionListMultiline(typeid_cast<const ASTExpressionList &>(*ast.order_expression_list), s, indent, hilite);
 	}
 
 	if (ast.limit_length)
@@ -243,14 +244,14 @@ void formatAST(const ASTSubquery 			& ast, std::ostream & s, size_t indent, bool
 void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	std::string nl_or_ws = one_line ? " " : "\n";
-	
+
 	if (!ast.database.empty() && ast.table.empty())
 	{
 		s << (hilite ? hilite_keyword : "") << (ast.attach ? "ATTACH DATABASE " : "CREATE DATABASE ") << (ast.if_not_exists ? "IF NOT EXISTS " : "") << (hilite ? hilite_none : "")
 			<< backQuoteIfNeed(ast.database);
 		return;
 	}
-	
+
 	{
 		std::string what = "TABLE";
 		if (ast.is_view)
@@ -321,7 +322,7 @@ void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::os
 {
 	s << (hilite ? hilite_keyword : "") << name << " " << (hilite ? hilite_none : "")
 	<< (!ast.database.empty() ? backQuoteIfNeed(ast.database) + "." : "") << backQuoteIfNeed(ast.table);
-	
+
 	if (ast.format)
 	{
 		std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
@@ -392,7 +393,7 @@ void formatAST(const ASTShowTablesQuery		& ast, std::ostream & s, size_t indent,
 			s << (hilite ? hilite_keyword : "") << " LIKE " << (hilite ? hilite_none : "")
 				<< mysqlxx::quote << ast.like;
 	}
-			
+
 	if (ast.format)
 	{
 		std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
@@ -451,11 +452,11 @@ void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bo
 static void writeAlias(const String & name, std::ostream & s, bool hilite, bool one_line)
 {
 	s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
-	
+
 	WriteBufferFromOStream wb(s, 32);
 	writeProbablyBackQuotedString(name, wb);
 	wb.next();
-	
+
 	s << (hilite ? hilite_none : "");
 }
 
@@ -674,7 +675,7 @@ void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bo
 {
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_ws = one_line ? " " : "\n";
-	
+
 	s << nl_or_ws << indent_str << backQuoteIfNeed(ast.name) << " ";
 	formatAST(*ast.type, s, indent, hilite, one_line);
 }
@@ -759,6 +760,21 @@ void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite
 
 	formatAST(*ast.using_expr_list, s, indent, hilite, one_line, need_parens);
 }
+
+/*
+void formatAST(const ASTMultiQuery & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+	s << (hilite ? hilite_keyword : "") << "{" << (hilite ? hilite_none : "");
+
+	for (const auto & child : ast.children)
+	{
+		s << "\n";
+		formatAST(*child, s, indent + 1, hilite, one_line, need_parens);
+		s << ";\n";
+	}
+
+	s << (hilite ? hilite_keyword : "") << "}" << (hilite ? hilite_none : "");
+}*/
 
 
 String formatColumnsForCreateQuery(NamesAndTypesList & columns)

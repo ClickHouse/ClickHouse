@@ -25,15 +25,15 @@ InterpreterInsertQuery::InterpreterInsertQuery(ASTPtr query_ptr_, Context & cont
 
 StoragePtr InterpreterInsertQuery::getTable()
 {
-	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
-	
+	ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+
 	/// В какую таблицу писать.
 	return context.getTable(query.database, query.table);
 }
 
 Block InterpreterInsertQuery::getSampleBlock()
 {
-	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
+	ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
 	Block db_sample = getTable()->getSampleBlock();
 
 	/// Если в запросе не указана информация о столбцах
@@ -56,13 +56,13 @@ Block InterpreterInsertQuery::getSampleBlock()
 		col.column = col.type->createColumn();
 		res.insert(col);
 	}
-	
+
 	return res;
 }
 
 void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 {
-	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
+	ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
 
 	auto table_lock = table->lockStructure(true);
@@ -116,7 +116,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 
 BlockIO InterpreterInsertQuery::execute()
 {
-	ASTInsertQuery & query = dynamic_cast<ASTInsertQuery &>(*query_ptr);
+	ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
 	StoragePtr table = getTable();
 
 	auto table_lock = table->lockStructure(true);

@@ -48,10 +48,10 @@ std::string DataTypeNested::extractNestedColumnName(const std::string & nested_n
 std::string DataTypeNested::getName() const
 {
 	std::string res;
-	WriteBufferFromString out(res);	
-	
+	WriteBufferFromString out(res);
+
 	writeCString("Nested(", out);
-	
+
 	for (NamesAndTypesList::const_iterator it = nested->begin(); it != nested->end(); ++it)
 	{
 		if (it != nested->begin())
@@ -60,13 +60,13 @@ std::string DataTypeNested::getName() const
 		writeChar(' ', out);
 		writeString(it->second->getName(), out);
 	}
-	
+
 	writeChar(')', out);
-	
+
 	return res;
 }
 
-	
+
 void DataTypeNested::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
 	throw Exception("Method serializeBinary(const Field &, WriteBuffer &) is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -81,7 +81,7 @@ void DataTypeNested::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeNested::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnNested & column_nested = dynamic_cast<const ColumnNested &>(column);
+	const ColumnNested & column_nested = typeid_cast<const ColumnNested &>(column);
 	const ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
 
 	if (offset > offsets.size())
@@ -113,7 +113,7 @@ void DataTypeNested::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 
 void DataTypeNested::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnNested & column_nested = dynamic_cast<ColumnNested &>(column);
+	ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
 	ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
 
 	/// Должно быть считано согласованное с offsets количество значений.
@@ -134,7 +134,7 @@ void DataTypeNested::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 
 void DataTypeNested::serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnNested & column_nested = dynamic_cast<const ColumnNested &>(column);
+	const ColumnNested & column_nested = typeid_cast<const ColumnNested &>(column);
 	const ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
 	size_t size = offsets.size();
 
@@ -158,7 +158,7 @@ void DataTypeNested::serializeOffsets(const IColumn & column, WriteBuffer & ostr
 
 void DataTypeNested::deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnNested & column_nested = dynamic_cast<ColumnNested &>(column);
+	ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
 	ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
 	size_t initial_size = offsets.size();
 	offsets.resize(initial_size + limit);
@@ -240,7 +240,7 @@ NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
 	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
 	{
-		if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&*it->second))
+		if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&*it->second))
 		{
 			const NamesAndTypesList & nested = *type_nested->getNestedTypesList();
 			for (NamesAndTypesList::const_iterator jt = nested.begin(); jt != nested.end(); ++jt)

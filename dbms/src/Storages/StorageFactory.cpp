@@ -47,7 +47,7 @@ static bool startsWith(const std::string & s, const std::string & prefix)
   */
 static ASTPtr extractPrimaryKey(const ASTPtr & node, const std::string & storage_name)
 {
-	const ASTFunction * primary_expr_func = dynamic_cast<const ASTFunction *>(&*node);
+	const ASTFunction * primary_expr_func = typeid_cast<const ASTFunction *>(&*node);
 
 	if (primary_expr_func && primary_expr_func->name == "tuple")
 	{
@@ -99,27 +99,27 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "ChunkMerger")
 	{
-		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
 		do
 		{
 			if (args_func.size() != 1)
 				break;
 
-			ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+			ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 			if (args.size() < 3 || args.size() > 4)
 				break;
 
-			String source_database = dynamic_cast<ASTIdentifier &>(*args[0]).name;
-			String source_table_name_regexp = safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
-			size_t chunks_to_merge = safeGet<UInt64>(dynamic_cast<ASTLiteral &>(*args[2]).value);
+			String source_database = typeid_cast<ASTIdentifier &>(*args[0]).name;
+			String source_table_name_regexp = safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
+			size_t chunks_to_merge = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*args[2]).value);
 
 			String destination_name_prefix = "group_";
 			String destination_database = source_database;
 
 			if (args.size() > 3)
-				destination_name_prefix = dynamic_cast<ASTIdentifier &>(*args[3]).name;
+				destination_name_prefix = typeid_cast<ASTIdentifier &>(*args[3]).name;
 
 			return StorageChunkMerger::create(database_name, table_name, columns, source_database, source_table_name_regexp, destination_name_prefix, chunks_to_merge, context);
 		} while(false);
@@ -145,22 +145,22 @@ StoragePtr StorageFactory::get(
 		/** В запросе в качестве аргумента для движка указано имя БД, в которой находятся таблицы-источники,
 		  *  а также регексп для имён таблиц-источников.
 		  */
-		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
 		if (args_func.size() != 1)
 			throw Exception("Storage Merge requires exactly 2 parameters"
 				" - name of source database and regexp for table names.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		if (args.size() != 2)
 			throw Exception("Storage Merge requires exactly 2 parameters"
 				" - name of source database and regexp for table names.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String source_database 		= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String table_name_regexp	= safeGet<const String &>(dynamic_cast<ASTLiteral &>(*args[1]).value);
+		String source_database 		= typeid_cast<ASTIdentifier &>(*args[0]).name;
+		String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
 
 		return StorageMerge::create(table_name, columns, source_database, table_name_regexp, context);
 	}
@@ -169,23 +169,23 @@ StoragePtr StorageFactory::get(
 		/** В запросе в качестве аргумента для движка указано имя конфигурационной секции,
 		  *  в которой задан список удалённых серверов, а также имя удалённой БД и имя удалённой таблицы.
 		  */
-		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
 		if (args_func.size() != 1)
 			throw Exception("Storage Distributed requires 3 parameters"
 				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		ASTs & args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		if (args.size() != 3)
 			throw Exception("Storage Distributed requires 3 parameters"
 				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String cluster_name 	= dynamic_cast<ASTIdentifier &>(*args[0]).name;
-		String remote_database 	= dynamic_cast<ASTIdentifier &>(*args[1]).name;
-		String remote_table 	= dynamic_cast<ASTIdentifier &>(*args[2]).name;
+		String cluster_name 	= typeid_cast<ASTIdentifier &>(*args[0]).name;
+		String remote_database 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
 
 		return StorageDistributed::create(table_name, columns, remote_database, remote_table, cluster_name, context);
 	}
@@ -220,12 +220,12 @@ StoragePtr StorageFactory::get(
 		else if (!name_part.empty())
 			throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);
 
-		ASTs & args_func = dynamic_cast<ASTFunction &>(*dynamic_cast<ASTCreateQuery &>(*query).storage).children;
+		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
 		ASTs args;
 
 		if (args_func.size() == 1)
-			args = dynamic_cast<ASTExpressionList &>(*args_func.at(0)).children;
+			args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		size_t additional_params = (replicated ? 2 : 0) + (mode == MergeTreeData::Collapsing ? 1 : 0);
 		if (args.size() != additional_params + 3 && args.size() != additional_params + 4)
@@ -253,13 +253,13 @@ StoragePtr StorageFactory::get(
 
 		if (replicated)
 		{
-			auto ast = dynamic_cast<ASTLiteral *>(&*args[0]);
+			auto ast = typeid_cast<ASTLiteral *>(&*args[0]);
 			if (ast && ast->value.getType() == Field::Types::String)
 				zookeeper_path = safeGet<String>(ast->value);
 			else
 				throw Exception("Path in ZooKeeper must be a string literal", ErrorCodes::BAD_ARGUMENTS);
 
-			ast = dynamic_cast<ASTLiteral *>(&*args[1]);
+			ast = typeid_cast<ASTLiteral *>(&*args[1]);
 			if (ast && ast->value.getType() == Field::Types::String)
 				replica_name = safeGet<String>(ast->value);
 			else
@@ -277,7 +277,7 @@ StoragePtr StorageFactory::get(
 
 		if (mode == MergeTreeData::Collapsing)
 		{
-			if (auto ast = dynamic_cast<ASTIdentifier *>(&*args.back()))
+			if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
 				sign_column_name = ast->name;
 			else
 				throw Exception("Sign column name must be an unquoted string", ErrorCodes::BAD_ARGUMENTS);
@@ -291,14 +291,14 @@ StoragePtr StorageFactory::get(
 			args.erase(args.begin() + 1);
 		}
 
-		if (auto ast = dynamic_cast<ASTIdentifier *>(&*args[0]))
+		if (auto ast = typeid_cast<ASTIdentifier *>(&*args[0]))
 			date_column_name = ast->name;
 		else
 			throw Exception("Date column name must be an unquoted string", ErrorCodes::BAD_ARGUMENTS);
 
 		primary_expr_list = extractPrimaryKey(args[1], name);
 
-		auto ast = dynamic_cast<ASTLiteral *>(&*args[2]);
+		auto ast = typeid_cast<ASTLiteral *>(&*args[2]);
 		if (ast && ast->value.getType() == Field::Types::UInt64)
 				index_granularity = safeGet<UInt64>(ast->value);
 		else

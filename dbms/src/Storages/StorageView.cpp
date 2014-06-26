@@ -21,8 +21,8 @@ StorageView::StorageView(const String & table_name_, const String & database_nam
 	Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_):
 	table_name(table_name_), database_name(database_name_), context(context_), columns(columns_)
 {
-	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_);
-	ASTSelectQuery & select = dynamic_cast<ASTSelectQuery &>(*create.select);
+	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
+	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
 
 	/// Если во внутреннем запросе не указана база данных, получить ее из контекста и записать в запрос.
 	if (!select.database)
@@ -34,14 +34,14 @@ StorageView::StorageView(const String & table_name_, const String & database_nam
 	inner_query = select;
 
 	if (inner_query.database)
-		select_database_name = dynamic_cast<const ASTIdentifier &>(*inner_query.database).name;
+		select_database_name = typeid_cast<const ASTIdentifier &>(*inner_query.database).name;
 	else
 		throw Exception("Logical error while creating StorageView."
 			" Could not retrieve database name from select query.",
 			DB::ErrorCodes::LOGICAL_ERROR);
 
 	if (inner_query.table)
-		select_table_name = dynamic_cast<const ASTIdentifier &>(*inner_query.table).name;
+		select_table_name = typeid_cast<const ASTIdentifier &>(*inner_query.table).name;
 	else
 		throw Exception("Logical error while creating StorageView."
 			" Could not retrieve table name from select query.",

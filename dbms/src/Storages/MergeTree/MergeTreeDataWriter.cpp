@@ -19,7 +19,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 	/// Достаём столбец с датой.
 	const ColumnUInt16::Container_t & dates =
-		dynamic_cast<const ColumnUInt16 &>(*block.getByName(data.date_column_name).column).getData();
+		typeid_cast<const ColumnUInt16 &>(*block.getByName(data.date_column_name).column).getData();
 
 	/// Минимальная и максимальная дата.
 	UInt16 min_date = std::numeric_limits<UInt16>::max();

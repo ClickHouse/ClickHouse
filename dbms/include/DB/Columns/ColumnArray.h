@@ -37,7 +37,7 @@ public:
 		}
 		else
 		{
-			if (!dynamic_cast<ColumnOffsets_t *>(&*offsets_column))
+			if (!typeid_cast<ColumnOffsets_t *>(&*offsets_column))
 				throw Exception("offsets_column must be a ColumnVector<UInt64>", ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
@@ -48,21 +48,21 @@ public:
 	{
 		return new ColumnArray(data->cloneEmpty());
 	}
-	
+
 	size_t size() const
 	{
 		return getOffsets().size();
 	}
-	
+
 	Field operator[](size_t n) const
 	{
 		size_t offset = offsetAt(n);
 		size_t size = sizeAt(n);
 		Array res(size);
-		
+
 		for (size_t i = 0; i < size; ++i)
 			res[i] = (*data)[offset + i];
-			
+
 		return res;
 	}
 
@@ -72,7 +72,7 @@ public:
 		size_t size = sizeAt(n);
 		res = Array(size);
 		Array & res_arr = DB::get<Array &>(res);
-		
+
 		for (size_t i = 0; i < size; ++i)
 			data->get(offset + i, res_arr[i]);
 	}
@@ -109,7 +109,7 @@ public:
 	{
 		if (length == 0)
 			return new ColumnArray(data);
-		
+
 		if (start + length > getOffsets().size())
 			throw Exception("Parameter out of bound in IColumnArray::cut() method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
@@ -119,7 +119,7 @@ public:
 
 		ColumnArray * res_ = new ColumnArray(data);
 		ColumnPtr res = res_;
-		
+
 		res_->data = data->cut(nested_offset, nested_length);
 		Offsets_t & res_offsets = res_->getOffsets();
 
@@ -155,7 +155,7 @@ public:
 
 		for (size_t i = 0; i < size; ++i)
 			data->insertFrom(src.getData(), offset + i);
-		
+
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
@@ -319,12 +319,12 @@ public:
 		min = Array();
 		max = Array();
 	}
-	
+
 	bool hasEqualOffsets(const ColumnArray & other) const
 	{
 		if (offsets == other.offsets)
 			return true;
-		
+
 		const Offsets_t & offsets1 = getOffsets();
 		const Offsets_t & offsets2 = other.getOffsets();
 		return offsets1.size() == offsets2.size() && 0 == memcmp(&offsets1[0], &offsets2[0], sizeof(offsets1[0]) * offsets1.size());
@@ -354,18 +354,18 @@ public:
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const
 	{
 		/// Не получается реализовать в общем случае.
-		
-		if (dynamic_cast<const ColumnUInt8 *>(&*data))		return replicate<UInt8>(replicate_offsets);
-		if (dynamic_cast<const ColumnUInt16 *>(&*data))		return replicate<UInt16>(replicate_offsets);
-		if (dynamic_cast<const ColumnUInt32 *>(&*data))		return replicate<UInt32>(replicate_offsets);
-		if (dynamic_cast<const ColumnUInt64 *>(&*data))		return replicate<UInt64>(replicate_offsets);
-		if (dynamic_cast<const ColumnInt8 *>(&*data))		return replicate<Int8>(replicate_offsets);
-		if (dynamic_cast<const ColumnInt16 *>(&*data))		return replicate<Int16>(replicate_offsets);
-		if (dynamic_cast<const ColumnInt32 *>(&*data))		return replicate<Int32>(replicate_offsets);
-		if (dynamic_cast<const ColumnInt64 *>(&*data))		return replicate<Int64>(replicate_offsets);
-		if (dynamic_cast<const ColumnFloat32 *>(&*data))	return replicate<Float32>(replicate_offsets);
-		if (dynamic_cast<const ColumnFloat64 *>(&*data))	return replicate<Float64>(replicate_offsets);
-		if (dynamic_cast<const ColumnString *>(&*data))		return replicateString(replicate_offsets);
+
+		if (typeid_cast<const ColumnUInt8 *>(&*data))		return replicate<UInt8>(replicate_offsets);
+		if (typeid_cast<const ColumnUInt16 *>(&*data))		return replicate<UInt16>(replicate_offsets);
+		if (typeid_cast<const ColumnUInt32 *>(&*data))		return replicate<UInt32>(replicate_offsets);
+		if (typeid_cast<const ColumnUInt64 *>(&*data))		return replicate<UInt64>(replicate_offsets);
+		if (typeid_cast<const ColumnInt8 *>(&*data))		return replicate<Int8>(replicate_offsets);
+		if (typeid_cast<const ColumnInt16 *>(&*data))		return replicate<Int16>(replicate_offsets);
+		if (typeid_cast<const ColumnInt32 *>(&*data))		return replicate<Int32>(replicate_offsets);
+		if (typeid_cast<const ColumnInt64 *>(&*data))		return replicate<Int64>(replicate_offsets);
+		if (typeid_cast<const ColumnFloat32 *>(&*data))		return replicate<Float32>(replicate_offsets);
+		if (typeid_cast<const ColumnFloat64 *>(&*data))		return replicate<Float64>(replicate_offsets);
+		if (typeid_cast<const ColumnString *>(&*data))		return replicateString(replicate_offsets);
 
 		throw Exception("Replication of column " + getName() + " is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -385,16 +385,16 @@ private:
 		size_t col_size = size();
 		if (col_size != replicate_offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-		
-		ColumnPtr res = cloneEmpty();
-		ColumnArray & res_ = dynamic_cast<ColumnArray &>(*res);
 
-		const typename ColumnVector<T>::Container_t & cur_data = dynamic_cast<const ColumnVector<T> &>(*data).getData();
+		ColumnPtr res = cloneEmpty();
+		ColumnArray & res_ = typeid_cast<ColumnArray &>(*res);
+
+		const typename ColumnVector<T>::Container_t & cur_data = typeid_cast<const ColumnVector<T> &>(*data).getData();
 		const Offsets_t & cur_offsets = getOffsets();
-		
-		typename ColumnVector<T>::Container_t & res_data = dynamic_cast<ColumnVector<T> &>(res_.getData()).getData();
+
+		typename ColumnVector<T>::Container_t & res_data = typeid_cast<ColumnVector<T> &>(res_.getData()).getData();
 		Offsets_t & res_offsets = res_.getOffsets();
-		
+
 		res_data.reserve(data->size() / col_size * replicate_offsets.back());
 		res_offsets.reserve(replicate_offsets.back());
 
@@ -431,15 +431,15 @@ private:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		ColumnPtr res = cloneEmpty();
-		ColumnArray & res_ = dynamic_cast<ColumnArray &>(*res);
+		ColumnArray & res_ = typeid_cast<ColumnArray &>(*res);
 
-		const ColumnString & cur_string = dynamic_cast<const ColumnString &>(*data);
+		const ColumnString & cur_string = typeid_cast<const ColumnString &>(*data);
 		const ColumnString::Chars_t & cur_chars = cur_string.getChars();
 		const Offsets_t & cur_string_offsets = cur_string.getOffsets();
 		const Offsets_t & cur_offsets = getOffsets();
 
-		ColumnString::Chars_t & res_chars = dynamic_cast<ColumnString &>(res_.getData()).getChars();
-		Offsets_t & res_string_offsets = dynamic_cast<ColumnString &>(res_.getData()).getOffsets();
+		ColumnString::Chars_t & res_chars = typeid_cast<ColumnString &>(res_.getData()).getChars();
+		Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res_.getData()).getOffsets();
 		Offsets_t & res_offsets = res_.getOffsets();
 
 		res_chars.reserve(cur_chars.size() / col_size * replicate_offsets.back());
@@ -450,7 +450,7 @@ private:
 
 		Offset_t prev_cur_offset = 0;
 		Offset_t prev_cur_string_offset = 0;
-		
+
 		Offset_t current_res_offset = 0;
 		Offset_t current_res_string_offset = 0;
 

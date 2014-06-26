@@ -20,8 +20,8 @@ void InterpreterDropQuery::execute()
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
-	
-	ASTDropQuery & drop = dynamic_cast<ASTDropQuery &>(*query_ptr);
+
+	ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
 
 	String database_name = drop.database.empty() ? current_database : drop.database;
 	String database_name_escaped = escapeForFileName(database_name);

@@ -56,18 +56,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
 
-	ASTSelectQuery & select = *dynamic_cast<ASTSelectQuery*>(&*query);
+	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
 	if (select.sample_size)
 	{
 		double size = apply_visitor(FieldVisitorConvertToNumber<double>(),
-			dynamic_cast<ASTLiteral&>(*select.sample_size).value);
+			typeid_cast<ASTLiteral&>(*select.sample_size).value);
 
 		if (size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
 		if (size > 1)
 		{
-			size_t requested_count = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), dynamic_cast<ASTLiteral&>(*select.sample_size).value);
+			size_t requested_count = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral&>(*select.sample_size).value);
 
 			/// Узнаем, сколько строк мы бы прочли без семплирования.
 			LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());

@@ -20,7 +20,7 @@ StorageMaterializedView::StorageMaterializedView(const String & table_name_, con
 	Context & context_, ASTPtr & query_, NamesAndTypesListPtr columns_,	bool attach_):
 	StorageView(table_name_, database_name_, context_, query_, columns_)
 {
-	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_);
+	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
 
 	/// Если запрос ATTACH, то к этому моменту внутренняя таблица уже должна быть подключена.
 	if (attach_)

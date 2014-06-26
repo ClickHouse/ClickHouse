@@ -30,7 +30,7 @@ namespace DB
 
 /** Игнорируем warning о сравнении signed и unsigned.
   * (Результат может быть некорректным.)
-  */ 
+  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
@@ -1129,7 +1129,7 @@ private:
 	template <typename T0, typename T1>
 	bool executeNumRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
 	{
-		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
 			block.getByPosition(result).column = col_res;
@@ -1140,7 +1140,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
 			block.getByPosition(result).column = col_res;
@@ -1151,14 +1151,14 @@ private:
 
 			return true;
 		}
-			
+
 		return false;
 	}
 
 	template <typename T0, typename T1>
 	bool executeNumConstRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
 	{
-		if (ColumnVector<T1> * col_right = dynamic_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
 			block.getByPosition(result).column = col_res;
@@ -1169,11 +1169,11 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = dynamic_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			UInt8 res = 0;
 			NumImpl<T0, T1>::constant_constant(col_left->getData(), col_right->getData(), res);
-			
+
 			ColumnConstUInt8 * col_res = new ColumnConstUInt8(col_left->size(), res);
 			block.getByPosition(result).column = col_res;
 
@@ -1186,7 +1186,7 @@ private:
 	template <typename T0>
 	bool executeNumLeftType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<T0> * col_left = dynamic_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<T0> * col_left = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			if (	executeNumRightType<T0, UInt8>(block, arguments, result, col_left)
 				||	executeNumRightType<T0, UInt16>(block, arguments, result, col_left)
@@ -1204,7 +1204,7 @@ private:
 					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (ColumnConst<T0> * col_left = dynamic_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<T0> * col_left = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			if (	executeNumConstRightType<T0, UInt8>(block, arguments, result, col_left)
 				||	executeNumConstRightType<T0, UInt16>(block, arguments, result, col_left)
@@ -1222,7 +1222,7 @@ private:
 					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		
+
 		return false;
 	}
 
@@ -1231,12 +1231,12 @@ private:
 		IColumn * c0 = &*block.getByPosition(arguments[0]).column;
 		IColumn * c1 = &*block.getByPosition(arguments[1]).column;
 
-		ColumnString * c0_string = dynamic_cast<ColumnString *>(c0);
-		ColumnString * c1_string = dynamic_cast<ColumnString *>(c1);
-		ColumnFixedString * c0_fixed_string = dynamic_cast<ColumnFixedString *>(c0);
-		ColumnFixedString * c1_fixed_string = dynamic_cast<ColumnFixedString *>(c1);
-		ColumnConstString * c0_const = dynamic_cast<ColumnConstString *>(c0);
-		ColumnConstString * c1_const = dynamic_cast<ColumnConstString *>(c1);
+		ColumnString * c0_string = typeid_cast<ColumnString *>(c0);
+		ColumnString * c1_string = typeid_cast<ColumnString *>(c1);
+		ColumnFixedString * c0_fixed_string = typeid_cast<ColumnFixedString *>(c0);
+		ColumnFixedString * c1_fixed_string = typeid_cast<ColumnFixedString *>(c1);
+		ColumnConstString * c0_const = typeid_cast<ColumnConstString *>(c0);
+		ColumnConstString * c1_const = typeid_cast<ColumnConstString *>(c1);
 
 		if (c0_const && c1_const)
 		{
@@ -1299,7 +1299,7 @@ private:
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
-	
+
 public:
 	/// Получить имя функции.
 	String getName() const
@@ -1323,7 +1323,7 @@ public:
 			||	(arguments[0]->getName() == "DateTime" && arguments[1]->getName() == "DateTime")))
 			throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
 				" of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-			
+
 		return new DataTypeUInt8;
 	}
 

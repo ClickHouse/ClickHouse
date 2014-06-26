@@ -62,7 +62,7 @@ Block LogBlockInputStream::readImpl()
 	if (streams.empty())
 	{
 		Poco::ScopedReadRWLock lock(storage.rwlock);
-		
+
 		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 			if (*it != storage._table_column_name) /// Для виртуального столбца не надо ничего открывать
 				addStream(*it, *storage.getDataTypeByName(*it));
@@ -105,24 +105,24 @@ Block LogBlockInputStream::readImpl()
 		ColumnWithNameAndType column;
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
-		
+
 		bool read_offsets = true;
-		
+
 		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
-		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&*column.type))
+		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
-			
+
 			if (offset_columns.count(name) == 0)
 				offset_columns[name] = new ColumnArray::ColumnOffsets_t;
 			else
 				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
-			
+
 			column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
 		}
 		else
 			column.column = column.type->createColumn();
-		
+
 		readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
 
 		if (column.column->size())
@@ -154,7 +154,7 @@ Block LogBlockInputStream::readImpl()
 		  */
 		streams.clear();
 	}
-		
+
 	return res;
 }
 
@@ -162,7 +162,7 @@ Block LogBlockInputStream::readImpl()
 void LogBlockInputStream::addStream(const String & name, const IDataType & type, size_t level)
 {
 	/// Для массивов используются отдельные потоки для размеров.
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
@@ -174,7 +174,7 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
-	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		streams[size_name].reset(new Stream(
@@ -200,7 +200,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 									size_t level, bool read_offsets)
 {
 	/// Для массивов требуется сначала десериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		if (read_offsets)
 		{
@@ -214,11 +214,11 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 			readData(
 				name,
 				*type_arr->getNestedType(),
-				dynamic_cast<ColumnArray &>(column).getData(),
-				dynamic_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
+				typeid_cast<ColumnArray &>(column).getData(),
+				typeid_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
 				level + 1);
 	}
-	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 	{
 		type_nested->deserializeOffsets(
 			column,
@@ -227,8 +227,8 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 
 		if (column.size())
 		{
-			ColumnNested & column_nested = dynamic_cast<ColumnNested &>(column);
-			
+			ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
+
 			NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
 			for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 			{
@@ -258,7 +258,7 @@ LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
 void LogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block, true);
-	
+
 	/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
 	OffsetColumns offset_columns;
 
@@ -288,7 +288,7 @@ void LogBlockOutputStream::writeSuffix()
 void LogBlockOutputStream::addStream(const String & name, const IDataType & type, size_t level)
 {
 	/// Для массивов используются отдельные потоки для размеров.
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
@@ -297,7 +297,7 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
-	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size));
@@ -315,27 +315,27 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 										OffsetColumns & offset_columns, size_t level)
 {
 	/// Для массивов требуется сначала сериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		
+
 		if (offset_columns.count(size_name) == 0)
 		{
 			offset_columns.insert(size_name);
-			
+
 			Mark mark;
 			mark.rows = (storage.files[size_name].marks.empty() ? 0 : storage.files[size_name].marks.back().rows) + column.size();
 			mark.offset = streams[size_name]->plain_offset + streams[size_name]->plain.count();
 
 			out_marks.push_back(std::make_pair(storage.files[size_name].column_index, mark));
-			
+
 			type_arr->serializeOffsets(column, streams[size_name]->compressed);
 			streams[size_name]->compressed.next();
 		}
 
-		writeData(name, *type_arr->getNestedType(), dynamic_cast<const ColumnArray &>(column).getData(), out_marks, offset_columns, level + 1);
+		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), out_marks, offset_columns, level + 1);
 	}
-	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 	{
 		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
@@ -344,12 +344,12 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 		mark.offset = streams[size_name]->plain_offset + streams[size_name]->plain.count();
 
 		out_marks.push_back(std::make_pair(storage.files[size_name].column_index, mark));
-		
+
 		type_nested->serializeOffsets(column, streams[size_name]->compressed);
 		streams[size_name]->compressed.next();
-		
-		const ColumnNested & column_nested = dynamic_cast<const ColumnNested &>(column);
-			
+
+		const ColumnNested & column_nested = typeid_cast<const ColumnNested &>(column);
+
 		NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
 		for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 		{
@@ -384,19 +384,19 @@ void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 {
 	if (marks.size() != storage.files.size())
 		throw Exception("Wrong number of marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
-	
+
 	sort(marks.begin(), marks.end(), ColumnIndexLess);
-	
+
 	for (size_t i = 0; i < marks.size(); ++i)
 	{
 		if (marks[i].first != i)
 			throw Exception("Invalid marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
-		
+
 		Mark mark = marks[i].second;
-		
+
 		writeIntBinary(mark.rows, marks_stream);
 		writeIntBinary(mark.offset, marks_stream);
-		
+
 		storage.files[storage.column_names[i]].marks.push_back(mark);
 	}
 }
@@ -407,13 +407,13 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-	
+
 	/// создаём файлы, если их нет
 	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 		addFile(it->first, *it->second);
-	
+
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
@@ -429,7 +429,7 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 		throw Exception("Duplicate column with name " + column_name + " in constructor of StorageLog.",
 			ErrorCodes::DUPLICATE_COLUMN);
 
-	if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		String size_name = DataTypeNested::extractNestedTableName(column_name) + size_column_suffix;
@@ -440,13 +440,13 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 			column_data.column_index = column_names.size();
 			column_data.data_file = Poco::File(
 				path + escapeForFileName(name) + '/' + escapeForFileName(DataTypeNested::extractNestedTableName(column_name)) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
-			
+
 			column_names.push_back(size_name);
 		}
 
 		addFile(column_name, *type_arr->getNestedType(), level + 1);
 	}
-	else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 	{
 		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
@@ -454,7 +454,7 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 		column_data.column_index = column_names.size();
 		column_data.data_file = Poco::File(
 			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
-		
+
 		column_names.push_back(column_name + size_column_suffix);
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
@@ -467,7 +467,7 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 		column_data.column_index = column_names.size();
 		column_data.data_file = Poco::File(
 			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
-		
+
 		column_names.push_back(column_name);
 	}
 }
@@ -476,30 +476,30 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 void StorageLog::loadMarks()
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
-	
+
 	if (loaded_marks)
 		return;
-	
+
 	typedef std::vector<Files_t::iterator> FilesByIndex;
 	FilesByIndex files_by_index(files.size());
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
 		files_by_index[it->second.column_index] = it;
 	}
-	
+
 	if (marks_file.exists())
 	{
 		size_t file_size = marks_file.getSize();
 		if (file_size % (files.size() * sizeof(Mark)) != 0)
 			throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
-		
+
 		int marks_count = file_size / (files.size() * sizeof(Mark));
 
 		for (size_t i = 0; i < files_by_index.size(); ++i)
 		{
 			files_by_index[i]->second.marks.reserve(marks_count);
 		}
-		
+
 		ReadBufferFromFile marks_rb(marks_file.path(), 32768);
 		while (!marks_rb.eof())
 		{
@@ -526,10 +526,10 @@ size_t StorageLog::marksCount()
 void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
-	
+
 	/// Переименовываем директорию с данными.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_name));
-	
+
 	path = new_path_to_db;
 	name = new_name;
 
@@ -537,7 +537,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_name)
 	{
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
 	}
-	
+
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
@@ -552,11 +552,11 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 	  * Если это - массив, то берём засечки, соответствующие размерам, а не внутренностям массивов.
 	  */
 
-	if (dynamic_cast<const DataTypeArray *>(&column_type))
+	if (typeid_cast<const DataTypeArray *>(&column_type))
 	{
 		file_name = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
 	}
-	else if (dynamic_cast<const DataTypeNested *>(&column_type))
+	else if (typeid_cast<const DataTypeNested *>(&column_type))
 	{
 		file_name = column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
 	}
@@ -589,7 +589,7 @@ BlockInputStreams StorageLog::read(
 	bool read_all_data_in_one_thread = (threads == 1 && from_mark == 0 && to_mark == std::numeric_limits<size_t>::max());
 	if (!read_all_data_in_one_thread)
 		loadMarks();
-	
+
 	bool has_virtual_column = false;
 	Names real_column_names;
 	for (const auto & column : column_names)
@@ -607,7 +607,7 @@ BlockInputStreams StorageLog::read(
 	Poco::ScopedReadRWLock lock(rwlock);
 
 	BlockInputStreams res;
-	
+
 	if (read_all_data_in_one_thread)
 	{
 		res.push_back(new LogBlockInputStream(

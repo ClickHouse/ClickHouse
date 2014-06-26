@@ -81,7 +81,7 @@ public:
 			bool read_offsets = true;
 
 			/// Для вложенных структур запоминаем указатели на столбцы со смещениями
-			if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&*column.type))
+			if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
 			{
 				String name = DataTypeNested::extractNestedTableName(column.name);
 
@@ -133,7 +133,7 @@ public:
 			for (size_t i = 0; i < res.columns(); ++i)
 			{
 				const ColumnWithNameAndType & column = res.getByPosition(i);
-				if (const ColumnArray * array = dynamic_cast<const ColumnArray *>(&*column.column))
+				if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*column.column))
 				{
 					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
 					offset_columns[offsets_name] = array->getOffsetsColumn();
@@ -153,9 +153,9 @@ public:
 					if (offset_columns.count(offsets_name))
 					{
 						ColumnPtr offsets_column = offset_columns[offsets_name];
-						DataTypePtr nested_type = dynamic_cast<DataTypeArray &>(*column.type).getNestedType();
+						DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column.type).getNestedType();
 						size_t nested_rows = offsets_column->empty() ? 0
-							: dynamic_cast<ColumnUInt64 &>(*offsets_column).getData().back();
+							: typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
 
 						ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
 							nested_rows, nested_type->getDefault())).convertToFullColumn();
@@ -315,7 +315,7 @@ private:
 		MarkCache * mark_cache = storage.context.getMarkCache();
 
 		/// Для массивов используются отдельные потоки для размеров.
-		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
 			String size_name = DataTypeNested::extractNestedTableName(name)
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
@@ -336,7 +336,7 @@ private:
 					size_t level = 0, bool read_offsets = true)
 	{
 		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
-		if (const DataTypeArray * type_arr = dynamic_cast<const DataTypeArray *>(&type))
+		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
 			if (read_offsets)
 			{
@@ -350,7 +350,7 @@ private:
 
 			if (column.size())
 			{
-				ColumnArray & array = dynamic_cast<ColumnArray &>(column);
+				ColumnArray & array = typeid_cast<ColumnArray &>(column);
 				readData(
 					name,
 					*type_arr->getNestedType(),
@@ -360,7 +360,7 @@ private:
 					level + 1);
 			}
 		}
-		else if (const DataTypeNested * type_nested = dynamic_cast<const DataTypeNested *>(&type))
+		else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
 		{
 			Stream & stream = *streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
 			stream.seekToMark(from_mark);
@@ -371,7 +371,7 @@ private:
 
 			if (column.size())
 			{
-				ColumnNested & column_nested = dynamic_cast<ColumnNested &>(column);
+				ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
 
 				NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
 				for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)

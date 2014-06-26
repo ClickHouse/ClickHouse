@@ -70,7 +70,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, E
 	if (!close.ignore(pos, end, expected))
 		return false;
 
-	ASTExpressionList & expr_list = dynamic_cast<ASTExpressionList &>(*contents_node);
+	ASTExpressionList & expr_list = typeid_cast<ASTExpressionList &>(*contents_node);
 
 	/// пустое выражение в скобках недопустимо
 	if (expr_list.children.empty())
@@ -115,10 +115,10 @@ bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 		return false;
 
 	node = new ASTSubquery(StringRange(begin, pos));
-	dynamic_cast<ASTSubquery &>(*node).children.push_back(select_node);
+	typeid_cast<ASTSubquery &>(*node).children.push_back(select_node);
 	return true;
 }
-	
+
 
 bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
 {
@@ -178,7 +178,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expe
 					|| (*pos == '_')
 					|| (pos != begin && *pos >= '0' && *pos <= '9')))
 				++pos;
-			
+
 			/// Если следующий символ - точка '.' и за ней следует, не цифра,
 			/// то продолжаем парсинг имени идентификатора
 			if (pos != begin && pos + 1 < end && *pos == '.' &&
@@ -234,7 +234,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	  * Если не сообщить, что первый вариант - ошибка, то аргумент будет проинтерпретирован как 2014 - 01 - 01 - некоторое число,
 	  *  и запрос тихо вернёт неожиданный результат.
 	  */
-	if (dynamic_cast<const ASTIdentifier &>(*identifier).name == "toDate"
+	if (typeid_cast<const ASTIdentifier &>(*identifier).name == "toDate"
 		&& contents_end - contents_begin == strlen("2014-01-01")
 		&& contents_begin[0] >= '2' && contents_begin[0] <= '3'
 		&& contents_begin[1] >= '0' && contents_begin[1] <= '9'
@@ -257,7 +257,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	{
 		expr_list_params = expr_list_args;
 		expr_list_args = nullptr;
-		
+
 		ws.ignore(pos, end);
 		contents.parse(pos, end, expr_list_args, expected);
 		ws.ignore(pos, end);
@@ -267,7 +267,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	}
 
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
-	function_node->name = dynamic_cast<ASTIdentifier &>(*identifier).name;
+	function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
 
 	function_node->arguments = expr_list_args;
 	function_node->children.push_back(function_node->arguments);
@@ -277,7 +277,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 		function_node->parameters = expr_list_params;
 		function_node->children.push_back(function_node->parameters);
 	}
-	
+
 	node = function_node;
 	return true;
 }
@@ -500,13 +500,13 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expec
 	ASTPtr alias_node;
 	if (alias_p.parse(pos, end, alias_node, expected))
 	{
-		String alias_name = dynamic_cast<ASTIdentifier &>(*alias_node).name;
-		
-		if (ASTFunction * func = dynamic_cast<ASTFunction *>(&*node))
+		String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
+
+		if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
 			func->alias = alias_name;
-		else if (ASTIdentifier * ident = dynamic_cast<ASTIdentifier *>(&*node))
+		else if (ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(&*node))
 			ident->alias = alias_name;
-		else if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*node))
+		else if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*node))
 			lit->alias = alias_name;
 		else
 		{
@@ -543,19 +543,19 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected
 		direction = -1;
 	else
 		ascending.ignore(pos, end) || asc.ignore(pos, end);
-	
+
 	ws.ignore(pos, end);
-	
+
 	Poco::SharedPtr<Collator> collator = nullptr;
 	if (collate.ignore(pos, end))
 	{
 		ws.ignore(pos, end);
-		
+
 		ASTPtr locale_node;
 		if (!collate_locale_parser.parse(pos, end, locale_node, expected))
 			return false;
-		
-		const String & locale = dynamic_cast<const ASTLiteral &>(*locale_node).value.safeGet<String>();
+
+		const String & locale = typeid_cast<const ASTLiteral &>(*locale_node).value.safeGet<String>();
 		collator = new Collator(locale);
 	}
 

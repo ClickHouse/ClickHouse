@@ -22,12 +22,12 @@ private:
 	int num_agruments;
 public:
 	AggregateFunctionIf(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
-	
+
 	String getName() const
 	{
 		return nested_func->getName() + "If";
 	}
-	
+
 	DataTypePtr getReturnType() const
 	{
 		return nested_func->getReturnType();
@@ -37,7 +37,7 @@ public:
 	{
 		num_agruments = arguments.size();
 
-		if (!dynamic_cast<const DataTypeUInt8 *>(&*arguments[num_agruments - 1]))
+		if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[num_agruments - 1]))
 			throw Exception("Illegal type " + arguments[num_agruments - 1]->getName() + " of second argument for aggregate function " + getName() + ". Must be UInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

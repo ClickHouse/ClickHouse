@@ -58,15 +58,15 @@ struct SortCursorImpl
 	  * Даёт возможность предпочитать строки из нужного курсора.
 	  */
 	size_t order;
-	
+
 	typedef std::vector<UInt8> NeedCollationFlags;
-	
+
 	/** Нужно ли использовать Collator для сортировки столбца */
 	NeedCollationFlags need_collation;
-	
+
 	/** Есть ли хотя бы один столбец с Collator. */
 	bool has_collation;
-	
+
 	SortCursorImpl() : sort_columns(0), pos(0), rows(0) {}
 
 	SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0)
@@ -82,7 +82,7 @@ struct SortCursorImpl
 	{
 		all_columns.clear();
 		sort_columns.clear();
-		
+
 		size_t num_columns = block.columns();
 
 		for (size_t j = 0; j < num_columns; ++j)
@@ -95,7 +95,7 @@ struct SortCursorImpl
 				: desc[j].column_number;
 
 			sort_columns.push_back(&*block.getByPosition(column_number).column);
-			
+
 			need_collation[j] = !desc[j].collator.isNull() && sort_columns.back()->getName() == "ColumnString";
 			has_collation |= need_collation[j];
 		}
@@ -153,12 +153,12 @@ struct SortCursorWithCollation
 			int res;
 			if (impl->need_collation[i])
 			{
-				const ColumnString & column_string = dynamic_cast<const ColumnString &>(*impl->sort_columns[i]);
+				const ColumnString & column_string = typeid_cast<const ColumnString &>(*impl->sort_columns[i]);
 				res = column_string.compareAtWithCollation(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
 			}
 			else
 				res = impl->sort_columns[i]->compareAt(impl->pos, rhs.impl->pos, *(rhs.impl->sort_columns[i]), direction);
-			
+
 			res *= direction;
 			if (res > 0)
 				return true;

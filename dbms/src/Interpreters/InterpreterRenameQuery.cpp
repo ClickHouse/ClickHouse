@@ -29,8 +29,8 @@ void InterpreterRenameQuery::execute()
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
-	
-	ASTRenameQuery & rename = dynamic_cast<ASTRenameQuery &>(*query_ptr);
+
+	ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
 
 	/** Если в процессе переименования произошла ошибка, то может быть переименована только часть таблиц,
 	  *  или состояние может стать неконсистентным. (Это имеет смысл исправить.)
@@ -49,7 +49,7 @@ void InterpreterRenameQuery::execute()
 		String to_table_name = it->to.table;
 		String to_table_name_escaped = escapeForFileName(to_table_name);
 		String to_metadata_path = path + "metadata/" + to_database_name_escaped + "/" + (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
-		
+
 		/// Заблокировать таблицу нужно при незаблокированном контексте.
 		StoragePtr table = context.getTable(from_database_name, from_table_name);
 		auto table_lock = table->lockForAlter();
@@ -84,7 +84,7 @@ void InterpreterRenameQuery::execute()
 				throw Exception(getSyntaxErrorMessage(parse_res, create_query.data(), end, pos, expected, "in file " + from_metadata_path),
 					ErrorCodes::SYNTAX_ERROR);
 
-			dynamic_cast<ASTCreateQuery &>(*ast).table = to_table_name;
+			typeid_cast<ASTCreateQuery &>(*ast).table = to_table_name;
 
 			Poco::FileOutputStream ostr(to_metadata_path);
 			formatAST(*ast, ostr, 0, false);

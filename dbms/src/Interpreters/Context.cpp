@@ -116,7 +116,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
-		
+
 	Databases::const_iterator it;
 	if (shared->databases.end() == (it = shared->databases.find(db)))
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
@@ -236,15 +236,15 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 			return res;
 	}
 	String db = database_name.empty() ? current_database : database_name;
-	
+
 	Databases::const_iterator it;
 	if (shared->databases.end() == (it = shared->databases.find(db)))
 		return StoragePtr();
-	
+
 	Tables::const_iterator jt;
 	if (it->second.end() == (jt = it->second.find(table_name)))
 		return StoragePtr();
-	
+
 	return jt->second;
 }
 
@@ -320,7 +320,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 	/// Здесь хранится определение таблицы
 	String metadata_path = shared->path + "metadata/" + escapeForFileName(db) + "/" + escapeForFileName(table_name) + ".sql";
-	
+
 	if (!Poco::File(metadata_path).exists())
 	{
 		try
@@ -356,7 +356,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + metadata_path),
 			DB::ErrorCodes::SYNTAX_ERROR);
 
-	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);
+	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;
 	ast_create_query.database = db;
 	ast_create_query.query_string = query;
@@ -479,10 +479,10 @@ Context & Context::getGlobalContext()
 const Dictionaries & Context::getDictionaries() const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	
+
 	if (!shared->dictionaries)
 		shared->dictionaries = new Dictionaries;
-	
+
 	return *shared->dictionaries;
 }
 

@@ -19,7 +19,7 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
-	
+
 /** Параметрический тип или Storage. Например:
  * 		FixedString(10) или
  * 		Partitioned(Log, ChunkID) или
@@ -74,7 +74,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 	{
 		ASTNameTypePair * name_type_pair = new ASTNameTypePair(StringRange(begin, pos));
 		node = name_type_pair;
-		name_type_pair->name = dynamic_cast<ASTIdentifier &>(*name).name;
+		name_type_pair->name = typeid_cast<ASTIdentifier &>(*name).name;
 		name_type_pair->type = type;
 		name_type_pair->children.push_back(type);
 		return true;

@@ -20,7 +20,7 @@
 
 namespace DB
 {
-	
+
 size_t Set::getTotalRowCount() const
 {
 	size_t rows = 0;
@@ -46,8 +46,8 @@ size_t Set::getTotalByteCount() const
 	bytes += string_pool.size();
 	return bytes;
 }
-	
-	
+
+
 bool Set::checkSetSizeLimits() const
 {
 	if (max_rows && getTotalRowCount() > max_rows)
@@ -56,7 +56,7 @@ bool Set::checkSetSizeLimits() const
 		return false;
 	return true;
 }
-	
+
 
 bool Set::checkExternalSizeLimits() const
 {
@@ -94,9 +94,9 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1
-		&& (dynamic_cast<const ColumnString *>(key_columns[0])
-		|| dynamic_cast<const ColumnConstString *>(key_columns[0])
-		|| (dynamic_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
+		&& (typeid_cast<const ColumnString *>(key_columns[0])
+		|| typeid_cast<const ColumnConstString *>(key_columns[0])
+		|| (typeid_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
 		return KEY_STRING;
 	/// Если много ключей - будем строить множество хэшей от них
 	return HASHED;
@@ -172,7 +172,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 		SetString & res = *key_string;
 		const IColumn & column = *key_columns[0];
 
-		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
 		{
 			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
 			const ColumnString::Chars_t & data = column_string->getChars();
@@ -194,7 +194,7 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 					ordered_set_elements->push_back(std::string(ref.data, ref.size));
 			}
 		}
-		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
 		{
 			size_t n = column_string->getN();
 			const ColumnFixedString::Chars_t & data = column_string->getChars();
@@ -266,17 +266,17 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 		block.insert(col);
 	}
 
-	ASTExpressionList & list = dynamic_cast<ASTExpressionList &>(*node);
+	ASTExpressionList & list = typeid_cast<ASTExpressionList &>(*node);
 	for (ASTs::iterator it = list.children.begin(); it != list.children.end(); ++it)
 	{
 		if (data_types.size() == 1)
 		{
-			if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&**it))
+			if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&**it))
 				block.getByPosition(0).column->insert(lit->value);
 			else
 				throw Exception("Incorrect element of set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 		}
-		else if (ASTFunction * func = dynamic_cast<ASTFunction *>(&**it))
+		else if (ASTFunction * func = typeid_cast<ASTFunction *>(&**it))
 		{
 			if (func->name != "tuple")
 				throw Exception("Incorrect element of set. Must be tuple.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -284,10 +284,10 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 			size_t tuple_size = func->arguments->children.size();
 			if (tuple_size != data_types.size())
 				throw Exception("Incorrect size of tuple in set.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-			
+
 			for (size_t j = 0; j < tuple_size; ++j)
 			{
-				if (ASTLiteral * lit = dynamic_cast<ASTLiteral *>(&*func->arguments->children[j]))
+				if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*func->arguments->children[j]))
 					block.getByPosition(j).column->insert(lit->value);
 				else
 					throw Exception("Incorrect element of tuple in set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -328,20 +328,20 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			memset(&vec_res[0], 0, vec_res.size());
 		return;
 	}
-	
-	DataTypeArray * array_type = dynamic_cast<DataTypeArray *>(&*block.getByPosition(arguments[0]).type);
-	
+
+	DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*block.getByPosition(arguments[0]).type);
+
 	if (array_type)
 	{
 		if (data_types.size() != 1 || arguments.size() != 1)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 		if (array_type->getNestedType()->getName() != data_types[0]->getName())
 			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
-		
+
 		IColumn * in_column = &*block.getByPosition(arguments[0]).column;
-		if (ColumnConstArray * col = dynamic_cast<ColumnConstArray *>(in_column))
+		if (ColumnConstArray * col = typeid_cast<ColumnConstArray *>(in_column))
 			executeConstArray(col, vec_res, negative);
-		else if (ColumnArray * col = dynamic_cast<ColumnArray *>(in_column))
+		else if (ColumnArray * col = typeid_cast<ColumnArray *>(in_column))
 			executeArray(col, vec_res, negative);
 		else
 			throw Exception("Unexpeced array column type: " + in_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -350,17 +350,17 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	{
 		if (data_types.size() != arguments.size())
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-		
+
 		/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
 		ConstColumnPlainPtrs key_columns(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
 			key_columns[i] = block.getByPosition(arguments[i]).column;
-			
+
 			if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
 				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: " + data_types[i]->getName() + " on the right, " + block.getByPosition(arguments[i]).type->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 		}
-		
+
 		executeOrdinary(key_columns, vec_res, negative);
 	}
 }
@@ -375,7 +375,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 	{
 		const SetUInt64 & set = *key64;
 		const IColumn & column = *key_columns[0];
-		
+
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
 		{
@@ -388,12 +388,12 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 	{
 		const SetString & set = *key_string;
 		const IColumn & column = *key_columns[0];
-		
-		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&column))
+
+		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
 		{
 			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
 			const ColumnString::Chars_t & data = column_string->getChars();
-			
+
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -402,11 +402,11 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 				vec_res[i] = negative ^ (set.end() != set.find(ref));
 			}
 		}
-		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&column))
+		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
 		{
 			size_t n = column_string->getN();
 			const ColumnFixedString::Chars_t & data = column_string->getChars();
-			
+
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
@@ -415,10 +415,10 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 				vec_res[i] = negative ^ (set.end() != set.find(ref));
 			}
 		}
-		else if (const ColumnConstString * column_string = dynamic_cast<const ColumnConstString *>(&column))
+		else if (const ColumnConstString * column_string = typeid_cast<const ColumnConstString *>(&column))
 		{
 			bool res = negative ^ (set.end() != set.find(StringRef(column_string->getData())));
-			
+
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 				vec_res[i] = res;
@@ -429,7 +429,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 	else if (type == HASHED)
 	{
 		const SetHashed & set = *hashed;
-		
+
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
 			vec_res[i] = negative ^ (set.end() != set.find(keys_fit_128_bits ? pack128(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns)));
@@ -443,7 +443,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	size_t rows = key_column->size();
 	const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
 	const IColumn & nested_column = key_column->getData();
-	
+
 	if (type == KEY_64)
 	{
 		const SetUInt64 & set = *key64;
@@ -469,12 +469,12 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	else if (type == KEY_STRING)
 	{
 		const SetString & set = *key_string;
-		
-		if (const ColumnString * column_string = dynamic_cast<const ColumnString *>(&nested_column))
+
+		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&nested_column))
 		{
 			const ColumnString::Offsets_t & nested_offsets = column_string->getOffsets();
 			const ColumnString::Chars_t & data = column_string->getChars();
-			
+
 			size_t prev_offset = 0;
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -495,11 +495,11 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 				prev_offset = offsets[i];
 			}
 		}
-		else if (const ColumnFixedString * column_string = dynamic_cast<const ColumnFixedString *>(&nested_column))
+		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&nested_column))
 		{
 			size_t n = column_string->getN();
 			const ColumnFixedString::Chars_t & data = column_string->getChars();
-			
+
 			size_t prev_offset = 0;
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
@@ -525,7 +525,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	{
 		const SetHashed & set = *hashed;
 		ConstColumnPlainPtrs nested_columns(1, &nested_column);
-		
+
 		size_t prev_offset = 0;
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
@@ -552,14 +552,14 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 	if (type == HASHED)
 	{
 		ColumnPtr full_column = key_column->convertToFullColumn();
-		executeArray(dynamic_cast<ColumnArray *>(&*full_column), vec_res, negative);
+		executeArray(typeid_cast<ColumnArray *>(&*full_column), vec_res, negative);
 		return;
 	}
-	
+
 	size_t rows = key_column->size();
 	Array values = key_column->getData();
 	UInt8 res = 0;
-	
+
 	/// Для всех элементов
 	for (size_t j = 0; j < values.size(); ++j)
 	{
@@ -580,7 +580,7 @@ void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Co
 		if (res)
 			break;
 	}
-	
+
 	/// Для всех строчек
 	for (size_t i = 0; i < rows; ++i)
 		vec_res[i] = res;
@@ -590,7 +590,7 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 {
 	if (!ordered_set_elements)
 		throw DB::Exception("Ordered set in not created.");
-	
+
 	if (ordered_set_elements->empty())
 		return BoolMask(false, true);
 

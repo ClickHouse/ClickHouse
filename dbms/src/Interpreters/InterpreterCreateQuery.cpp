@@ -30,14 +30,14 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 	: query_ptr(query_ptr_), context(context_)
 {
 }
-	
+
 
 StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
-	
-	ASTCreateQuery & create = dynamic_cast<ASTCreateQuery &>(*query_ptr);
+
+	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
 
 	String database_name = create.database.empty() ? current_database : create.database;
 	String database_name_escaped = escapeForFileName(database_name);
@@ -45,7 +45,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	String table_name_escaped = escapeForFileName(table_name);
 	String as_database_name = create.as_database.empty() ? current_database : create.as_database;
 	String as_table_name = create.as_table;
-	
+
 	String data_path = path + "data/" + database_name_escaped + "/";
 	String metadata_path = path + "metadata/" + database_name_escaped + "/" + (!table_name.empty() ?  table_name_escaped + ".sql" : "");
 
@@ -63,14 +63,14 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				throw Exception("Directory " + metadata_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 			if (!create.if_not_exists && Poco::File(data_path).exists())
 				throw Exception("Directory " + data_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-			
+
 			Poco::File(metadata_path).createDirectory();
 			Poco::File(data_path).createDirectory();
 		}
 
 		if (!create.if_not_exists || !context.isDatabaseExist(database_name))
 			context.addDatabase(database_name);
-		
+
 		return StoragePtr();
 	}
 
@@ -114,10 +114,10 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		/// Получаем список столбцов
 		if (create.columns)
 		{
-			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*create.columns);
+			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*create.columns);
 			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
 			{
-				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(**it);
+				ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(**it);
 				StringRange type_range = name_and_type_pair.type->range;
 				columns->push_back(NameAndTypePair(
 					name_and_type_pair.name,
@@ -139,12 +139,12 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		if (!create.columns)
 		{
 			ASTPtr columns_list_ptr = new ASTExpressionList;
-			ASTExpressionList & columns_list = dynamic_cast<ASTExpressionList &>(*columns_list_ptr);
+			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
 
 			for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 			{
 				ASTPtr name_and_type_pair_ptr = new ASTNameTypePair;
-				ASTNameTypePair & name_and_type_pair = dynamic_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
+				ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
 				name_and_type_pair.name = it->first;
 				StringPtr type_name = new String(it->second->getName());
 
@@ -167,12 +167,12 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		/// Выбор нужного движка таблицы
 		if (create.storage)
 		{
-			storage_name = dynamic_cast<ASTFunction &>(*create.storage).name;
+			storage_name = typeid_cast<ASTFunction &>(*create.storage).name;
 		}
 		else if (!create.as_table.empty())
 		{
 			storage_name = as_storage->getName();
-			create.storage = dynamic_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
+			create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
 		}
 		else if (create.is_temporary)
 		{
@@ -217,7 +217,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			{
 				/// Меняем CREATE на ATTACH и пишем запрос в файл.
 				ASTPtr attach_ptr = query_ptr->clone();
-				ASTCreateQuery & attach = dynamic_cast<ASTCreateQuery &>(*attach_ptr);
+				ASTCreateQuery & attach = typeid_cast<ASTCreateQuery &>(*attach_ptr);
 
 				attach.attach = true;
 				attach.database.clear();
@@ -225,7 +225,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 				attach.as_table.clear();
 				attach.if_not_exists = false;
 				attach.is_populate = false;
-				
+
 				/// Для engine VIEW необходимо сохранить сам селект запрос, для остальных - наоборот
 				if (storage_name != "View" && storage_name != "MaterializedView")
 					attach.select = nullptr;
@@ -251,7 +251,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
 		copyData(*from, *res->write(query_ptr));
 	}
-	
+
 	return res;
 }
 

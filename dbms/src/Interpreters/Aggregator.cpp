@@ -61,7 +61,7 @@ void Aggregator::initialize(Block & block)
 	  */
 	if (!block)
 		return;
-	
+
 	/// Преобразуем имена столбцов в номера, если номера не заданы
 	if (keys.empty() && !key_names.empty())
 		for (Names::const_iterator it = key_names.begin(); it != key_names.end(); ++it)
@@ -132,10 +132,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 		return AggregatedDataVariants::KEYS_128;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
-	if (keys_size == 1 && dynamic_cast<const ColumnString *>(key_columns[0]))
+	if (keys_size == 1 && typeid_cast<const ColumnString *>(key_columns[0]))
 		return AggregatedDataVariants::KEY_STRING;
 
-	if (keys_size == 1 && dynamic_cast<const ColumnFixedString *>(key_columns[0]))
+	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return AggregatedDataVariants::KEY_FIXED_STRING;
 
 	/// Иначе будем агрегировать по хэшу от ключей.
@@ -416,7 +416,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 		/// Оптимизация в случае единственной агрегатной функции count.
 		AggregateFunctionCount * agg_count = aggregates_size == 1
-			? dynamic_cast<AggregateFunctionCount *>(aggregate_functions[0])
+			? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
 			: NULL;
 
 		if (agg_count)
@@ -713,7 +713,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 	double elapsed_seconds = watch.elapsedSeconds();
 	size_t res_rows = res->size();
-	
+
 	LOG_TRACE(log, std::fixed << std::setprecision(3)
 		<< "Merged aggregated data. "
 		<< "From " << rows << " to " << res_rows << " rows (efficiency: " << static_cast<double>(rows) / res_rows << ")"
@@ -741,24 +741,24 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	while (Block block = stream->read())
 	{
 		LOG_TRACE(log, "Merging aggregated block");
-		
+
 		if (!sample)
 			for (size_t i = 0; i < keys_size + aggregates_size; ++i)
 				sample.insert(block.getByPosition(i).cloneEmpty());
-		
+
 		/// Запоминаем столбцы, с которыми будем работать
 		for (size_t i = 0; i < keys_size; ++i)
 			key_columns[i] = block.getByPosition(i).column;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_columns[i] = &dynamic_cast<ColumnAggregateFunction &>(*block.getByPosition(keys_size + i).column).getData();
+			aggregate_columns[i] = &typeid_cast<ColumnAggregateFunction &>(*block.getByPosition(keys_size + i).column).getData();
 
 		size_t rows = block.rows();
 
 		/// Каким способом выполнять агрегацию?
 		Sizes key_sizes;
 		AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
-		
+
 		if (result.empty())
 		{
 			result.init(method);
@@ -836,7 +836,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 String Aggregator::getID() const
 {
 	std::stringstream res;
-	
+
 	if (keys.empty())
 	{
 		res << "key_names";

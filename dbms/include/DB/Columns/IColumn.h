@@ -3,6 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Common/PODArray.h>
+#include <DB/Common/typeid_cast.h>
 
 #include <DB/Core/Field.h>
 #include <DB/Core/Exception.h>
@@ -30,8 +31,8 @@ public:
 	/** Имя столбца. Для информационных сообщений.
 	  */
 	virtual std::string getName() const = 0;
-	
-	/** Столбец представляет собой вектор чисел или числовую константу. 
+
+	/** Столбец представляет собой вектор чисел или числовую константу.
 	  */
 	virtual bool isNumeric() const { return false; }
 
@@ -46,10 +47,10 @@ public:
 	/** Для столбцов фиксированной длины - вернуть длину значения.
 	  */
 	virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
-	
+
 	/** Создать пустой столбец такого же типа */
 	virtual SharedPtr<IColumn> cloneEmpty() const { return cloneResized(0); }
-	
+
 	/** Создать столбец такого же типа и указанного размера.
 	  * Если размер меньше текущего, данные обрезаются.
 	  * Если больше - добавляются значения по умолчанию.

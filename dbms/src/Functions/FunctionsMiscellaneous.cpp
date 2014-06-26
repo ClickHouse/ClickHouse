@@ -41,7 +41,7 @@ inline UInt64 floatWidth(double x)
 
 	if (res >= static_cast<int>(size) || res <= 0)
 		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-	
+
 	return res;
 }
 
@@ -90,7 +90,7 @@ namespace VisibleWidth
 	template <typename T>
 	static bool executeConstNumber(Block & block, const ColumnPtr & column, size_t result)
 	{
-		if (const ColumnConst<T> * col = dynamic_cast<const ColumnConst<T> *>(&*column))
+		if (const ColumnConst<T> * col = typeid_cast<const ColumnConst<T> *>(&*column))
 		{
 			UInt64 res = 0;
 			numWidthConstant(col->getData(), res);
@@ -104,7 +104,7 @@ namespace VisibleWidth
 	template <typename T>
 	static bool executeNumber(Block & block, const ColumnPtr & column, size_t result)
 	{
-		if (const ColumnVector<T> * col = dynamic_cast<const ColumnVector<T> *>(&*column))
+		if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&*column))
 		{
 			ColumnUInt64 * res = new ColumnUInt64(column->size());
 			numWidthVector(col->getData(), res->getData());
@@ -115,7 +115,7 @@ namespace VisibleWidth
 			return false;
 	}
 }
-	
+
 
 void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & arguments, size_t result)
 {
@@ -123,11 +123,11 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	const DataTypePtr type = block.getByPosition(arguments[0]).type;
 	size_t rows = column->size();
 
-	if (dynamic_cast<const DataTypeDate *>(&*type))
+	if (typeid_cast<const DataTypeDate *>(&*type))
 	{
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00"));
 	}
-	else if (dynamic_cast<const DataTypeDateTime *>(&*type))
+	else if (typeid_cast<const DataTypeDateTime *>(&*type))
 	{
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00 00:00:00"));
 	}
@@ -153,30 +153,30 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		|| VisibleWidth::executeNumber<Float64>(block, column, result))
 	{
 	}
-	else if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
+	else if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 	{
 		ColumnUInt64 * res = new ColumnUInt64(rows);
 		stringWidthVector(col->getChars(), col->getOffsets(), res->getData());
 		block.getByPosition(result).column = res;
 	}
-	else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
+	else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 	{
 		ColumnUInt64 * res = new ColumnUInt64(rows);
 		stringWidthFixedVector(col->getChars(), col->getN(), res->getData());
 		block.getByPosition(result).column = res;
 	}
-	else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
+	else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 	{
 		UInt64 res = 0;
 		stringWidthConstant(col->getData(), res);
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, res);
 	}
-	else if (const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*column))
+	else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
 	{
 		/// Вычисляем видимую ширину для значений массива.
 		Block nested_block;
 		ColumnWithNameAndType nested_values;
-		nested_values.type = dynamic_cast<const DataTypeArray &>(*type).getNestedType();
+		nested_values.type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
 		nested_values.column = col->getDataPtr();
 		nested_block.insert(nested_values);
 
@@ -192,13 +192,13 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		ColumnUInt64::Container_t & vec = res->getData();
 
 		size_t additional_symbols = 0;	/// Кавычки.
-		if (dynamic_cast<const DataTypeDate *>(&*nested_values.type)
-			|| dynamic_cast<const DataTypeDateTime *>(&*nested_values.type)
-			|| dynamic_cast<const DataTypeString *>(&*nested_values.type)
-			|| dynamic_cast<const DataTypeFixedString *>(&*nested_values.type))
+		if (typeid_cast<const DataTypeDate *>(&*nested_values.type)
+			|| typeid_cast<const DataTypeDateTime *>(&*nested_values.type)
+			|| typeid_cast<const DataTypeString *>(&*nested_values.type)
+			|| typeid_cast<const DataTypeFixedString *>(&*nested_values.type))
 			additional_symbols = 2;
 
-		if (ColumnUInt64 * nested_result_column = dynamic_cast<ColumnUInt64 *>(&*nested_block.getByPosition(1).column))
+		if (ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(&*nested_block.getByPosition(1).column))
 		{
 			ColumnUInt64::Container_t & nested_res = nested_result_column->getData();
 
@@ -214,7 +214,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 					vec[i] += 1 + additional_symbols + nested_res[j];
 			}
 		}
-		else if (ColumnConstUInt64 * nested_result_column = dynamic_cast<ColumnConstUInt64 *>(&*nested_block.getByPosition(1).column))
+		else if (ColumnConstUInt64 * nested_result_column = typeid_cast<ColumnConstUInt64 *>(&*nested_block.getByPosition(1).column))
 		{
 			size_t nested_length = nested_result_column->getData() + additional_symbols + 1;
 			for (size_t i = 0; i < rows; ++i)
@@ -224,7 +224,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 
 		block.getByPosition(result).column = res;
 	}
-	else if (const ColumnTuple * col = dynamic_cast<const ColumnTuple *>(&*column))
+	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(&*column))
 	{
 		/// Посчитаем видимую ширину для каждого вложенного столбца по-отдельности, и просуммируем.
 		Block nested_block = col->getData();
@@ -235,7 +235,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		for (size_t i = 0; i < columns; ++i)
 		{
 			nested_block.getByPosition(i).type = static_cast<const DataTypeTuple &>(*type).getElements()[i];
-			
+
 			/** nested_block будет состоять из следующих столбцов:
 			  * x1, x2, x3... , width1, width2, width1 + width2, width3, width1 + width2 + width3, ...
 			  */
@@ -265,14 +265,14 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		size_t additional_symbols = columns - 1;	/// Запятые.
 		for (size_t i = 0; i < columns; ++i)
 		{
-			if (dynamic_cast<const DataTypeDate *>(&*nested_block.getByPosition(i).type)
-				|| dynamic_cast<const DataTypeDateTime *>(&*nested_block.getByPosition(i).type)
-				|| dynamic_cast<const DataTypeString *>(&*nested_block.getByPosition(i).type)
-				|| dynamic_cast<const DataTypeFixedString *>(&*nested_block.getByPosition(i).type))
+			if (typeid_cast<const DataTypeDate *>(&*nested_block.getByPosition(i).type)
+				|| typeid_cast<const DataTypeDateTime *>(&*nested_block.getByPosition(i).type)
+				|| typeid_cast<const DataTypeString *>(&*nested_block.getByPosition(i).type)
+				|| typeid_cast<const DataTypeFixedString *>(&*nested_block.getByPosition(i).type))
 				additional_symbols += 2;			/// Кавычки.
 		}
 
-		ColumnUInt64 * nested_result_column = dynamic_cast<ColumnUInt64 *>(&*nested_block.getByPosition(nested_block.columns() - 1).column);
+		ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(&*nested_block.getByPosition(nested_block.columns() - 1).column);
 		ColumnUInt64::Container_t & nested_res = nested_result_column->getData();
 
 		for (size_t i = 0; i < rows; ++i)
@@ -280,7 +280,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 
 		block.getByPosition(result).column = nested_block.getByPosition(nested_block.columns() - 1).column;
 	}
-	else if (const ColumnConstArray * col = dynamic_cast<const ColumnConstArray *>(&*column))
+	else if (const ColumnConstArray * col = typeid_cast<const ColumnConstArray *>(&*column))
 	{
 		String s;
 		{

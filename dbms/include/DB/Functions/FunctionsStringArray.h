@@ -25,9 +25,9 @@ namespace DB
   *
   * join(sep, arr)
   * join(arr)
-  * 
+  *
   * alphaTokens(s)			- выделить из строки подпоследовательности [a-zA-Z]+.
-  * 
+  *
   * Функции работы с URL расположены отдельно.
   */
 
@@ -46,7 +46,7 @@ private:
 public:
 	/// Получить имя фукнции.
 	static String getName() { return "alphaTokens"; }
-	
+
 	/// Проверить типы агрументов функции.
 	static void checkArguments(const DataTypes & arguments)
 	{
@@ -55,11 +55,11 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
-	
+
 	/// Инициализировать по аргументам функции.
 	void init(Block & block, const ColumnNumbers & arguments) {}
 
@@ -116,18 +116,18 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[1]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
 			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	void init(Block & block, const ColumnNumbers & arguments)
 	{
-		const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col)
 			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
@@ -192,7 +192,7 @@ public:
 
 	void init(Block & block, const ColumnNumbers & arguments)
 	{
-		const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
+		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col)
 			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
@@ -257,7 +257,7 @@ public:
 	/// Инициализировать по аргументам функции.
 	void init(Block & block, const ColumnNumbers & arguments)
 	{
-		const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
+		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
 
 		if (!col)
 			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
@@ -315,7 +315,7 @@ public:
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		Generator::checkArguments(arguments);
-		
+
 		return new DataTypeArray(new DataTypeString);
 	}
 
@@ -326,12 +326,12 @@ public:
 		generator.init(block, arguments);
 		size_t arrayArgumentPosition = arguments[generator.getStringsArgumentPosition()];
 
-		const ColumnString * col_str = dynamic_cast<const ColumnString *>(&*block.getByPosition(arrayArgumentPosition).column);
+		const ColumnString * col_str = typeid_cast<const ColumnString *>(&*block.getByPosition(arrayArgumentPosition).column);
 		const ColumnConstString * col_const_str =
-				dynamic_cast<const ColumnConstString *>(&*block.getByPosition(arrayArgumentPosition).column);
+				typeid_cast<const ColumnConstString *>(&*block.getByPosition(arrayArgumentPosition).column);
 
 		ColumnArray * col_res = new ColumnArray(new ColumnString);
-		ColumnString & res_strings = dynamic_cast<ColumnString &>(col_res->getData());
+		ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
 		ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
 		ColumnString::Chars_t & res_strings_chars = res_strings.getChars();
 		ColumnString::Offsets_t & res_strings_offsets = res_strings.getOffsets();

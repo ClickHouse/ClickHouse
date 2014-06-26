@@ -57,13 +57,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 		if (!table_parser.parse(pos, end, table, expected))
 			return false;
 
-		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
-		query->database = dynamic_cast<ASTIdentifier &>(*database).name;
+		query->table = typeid_cast<ASTIdentifier &>(*table).name;
+		query->database = typeid_cast<ASTIdentifier &>(*database).name;
 	}
 	else
 	{
 		table = database;
-		query->table = dynamic_cast<ASTIdentifier &>(*table).name;
+		query->table = typeid_cast<ASTIdentifier &>(*table).name;
 	}
 
 	bool parsing_finished = false;

@@ -18,7 +18,7 @@ public:
 
 	void execute()
 	{
-		const String & new_database = dynamic_cast<const ASTUseQuery &>(*query_ptr).database;
+		const String & new_database = typeid_cast<const ASTUseQuery &>(*query_ptr).database;
 		context.getSessionContext().setCurrentDatabase(new_database);
 	}
 

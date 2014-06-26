@@ -29,14 +29,14 @@ InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & contex
 
 static bool namesEqual(const String &name, const ASTPtr & name_type_)
 {
-	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*name_type_);
+	const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*name_type_);
 	return name_type.name == name;
 }
 
 /// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
 static bool namesEqualIgnoreAfterDot(const String & name_without_dot, const ASTPtr & name_type_)
 {
-	const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*name_type_);
+	const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*name_type_);
 
 	String name_with_dot = name_without_dot + ".";
 	return (name_without_dot == name_type.name || name_with_dot == name_type.name.substr(0, name_with_dot.length()));
@@ -70,11 +70,11 @@ void InterpreterAlterQuery::dropColumnFromAST(const ASTIdentifier & drop_column,
 				if ((**nested_it).children.size() != 1)
 					throw e;
 
-				ASTFunction & f = dynamic_cast<ASTFunction &>(*(**nested_it).children.back());
+				ASTFunction & f = typeid_cast<ASTFunction &>(*(**nested_it).children.back());
 				if (f.name != "Nested")
 					throw e;
 
-				ASTs & nested_columns = dynamic_cast<ASTExpressionList &>(*f.arguments).children;
+				ASTs & nested_columns = typeid_cast<ASTExpressionList &>(*f.arguments).children;
 
 				drop_it = std::find_if(nested_columns.begin(), nested_columns.end(), boost::bind(namesEqual, drop_column.name.substr(dot_pos + 1), _1));
 				if (drop_it == nested_columns.end())
@@ -103,8 +103,8 @@ void InterpreterAlterQuery::dropColumnFromAST(const ASTIdentifier & drop_column,
 
 void addColumnToAST1(ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr & after_column_ptr)
 {
-	const ASTNameTypePair & add_column = dynamic_cast<const ASTNameTypePair &>(*add_column_ptr);
-	const ASTIdentifier * col_after = after_column_ptr ? &dynamic_cast<const ASTIdentifier &>(*after_column_ptr) : nullptr;
+	const ASTNameTypePair & add_column = typeid_cast<const ASTNameTypePair &>(*add_column_ptr);
+	const ASTIdentifier * col_after = after_column_ptr ? &typeid_cast<const ASTIdentifier &>(*after_column_ptr) : nullptr;
 
 	if (std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, add_column.name, _1)) != columns.end())
 	{
@@ -127,8 +127,8 @@ void addColumnToAST1(ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr
 void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, const ASTPtr & add_column_ptr, const ASTPtr & after_column_ptr)
 {
 	/// хотим исключение если приведение зафейлится
-	const ASTNameTypePair & add_column = dynamic_cast<const ASTNameTypePair &>(*add_column_ptr);
-	const ASTIdentifier * after_col = after_column_ptr ? &dynamic_cast<const ASTIdentifier &>(*after_column_ptr) : nullptr;
+	const ASTNameTypePair & add_column = typeid_cast<const ASTNameTypePair &>(*add_column_ptr);
+	const ASTIdentifier * after_col = after_column_ptr ? &typeid_cast<const ASTIdentifier &>(*after_column_ptr) : nullptr;
 
 	size_t dot_pos = add_column.name.find('.');
 	bool insert_nested_column = dot_pos != std::string::npos;
@@ -139,13 +139,13 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 	DataTypePtr datatype = data_type_factory.get(type);
 	if (insert_nested_column)
 	{
-		if (!dynamic_cast<DataTypeArray *>(datatype.get()))
+		if (!typeid_cast<DataTypeArray *>(datatype.get()))
 		{
 			throw Exception("Cannot add column " + add_column.name + ". Because it is not an array. Only arrays could be nested and consist '.' in their names");
 		}
 	}
 
-	if ((dynamic_cast<StorageMergeTree *>(table.get()) || dynamic_cast<StorageReplicatedMergeTree *>(table.get())) && insert_nested_column)
+	if ((typeid_cast<StorageMergeTree *>(table.get()) || typeid_cast<StorageReplicatedMergeTree *>(table.get())) && insert_nested_column)
 	{
 		/// специальный случай для вставки nested столбцов в MergeTree
 		/// в MergeTree таблицах есть ASTFunction "Nested" в аргументах которой записаны столбцы
@@ -155,14 +155,14 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 		if (nested_it != columns.end())
 		{
 			/// нужно добавить колонку в уже существующий nested столбец
-			ASTFunction * nested_func = dynamic_cast<ASTFunction *>((*nested_it)->children.back().get());
+			ASTFunction * nested_func = typeid_cast<ASTFunction *>((*nested_it)->children.back().get());
 			if (!(**nested_it).children.size() || !nested_func || nested_func->name != "Nested")
 				throw Exception("Column with name " + nested_base_name + " already exists. But it is not nested.");
 
-			ASTs & nested_columns = dynamic_cast<ASTExpressionList &>(*nested_func->arguments).children;
+			ASTs & nested_columns = typeid_cast<ASTExpressionList &>(*nested_func->arguments).children;
 
 			ASTPtr new_nested_column_ptr = add_column_ptr->clone();
-			ASTNameTypePair& new_nested_column = dynamic_cast<ASTNameTypePair &>(*new_nested_column_ptr);
+			ASTNameTypePair& new_nested_column = typeid_cast<ASTNameTypePair &>(*new_nested_column_ptr);
 			new_nested_column.name = add_column.name.substr(dot_pos + 1);
 			ASTPtr new_after_column = after_column_ptr ? after_column_ptr->clone() : nullptr;
 
@@ -174,7 +174,7 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 				if (add_column.name.substr(0, dot_pos) != after_col->name.substr(0, after_dot_pos))
 					throw Exception("Nested column " + add_column.name + "should be inserted after column with the same name before the '.'");
 
-				dynamic_cast<ASTIdentifier &>(*new_after_column).name = after_col->name.substr(after_dot_pos + 1);
+				typeid_cast<ASTIdentifier &>(*new_after_column).name = after_col->name.substr(after_dot_pos + 1);
 			}
 
 			{
@@ -203,7 +203,7 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 
 void InterpreterAlterQuery::execute()
 {
-	ASTAlterQuery & alter = dynamic_cast<ASTAlterQuery &>(*query_ptr);
+	ASTAlterQuery & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
 	String & table_name = alter.table;
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
 
@@ -219,9 +219,9 @@ void InterpreterAlterQuery::execute()
 	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 
 	ASTPtr attach_ptr = context.getCreateQuery(database_name, table_name);
-	ASTCreateQuery & attach = dynamic_cast< ASTCreateQuery &>(*attach_ptr);
+	ASTCreateQuery & attach = typeid_cast<ASTCreateQuery &>(*attach_ptr);
 	attach.attach = true;
-	ASTs & columns = dynamic_cast<ASTExpressionList &>(*attach.columns).children;
+	ASTs & columns = typeid_cast<ASTExpressionList &>(*attach.columns).children;
 
 	/// Различные проверки, на возможность выполнения запроса
 	ASTs columns_copy;
@@ -241,7 +241,7 @@ void InterpreterAlterQuery::execute()
 		}
 		else if (params.type == ASTAlterQuery::DROP)
 		{
-			const ASTIdentifier & drop_column = dynamic_cast <const ASTIdentifier &>(*params.column);
+			const ASTIdentifier & drop_column = typeid_cast<const ASTIdentifier &>(*params.column);
 
 			/// Проверяем, что поле не является ключевым
 			if (identifier_names.find(drop_column.name) != identifier_names.end())
@@ -251,7 +251,7 @@ void InterpreterAlterQuery::execute()
 		}
 		else if (params.type == ASTAlterQuery::MODIFY)
 		{
-			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+			const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
 			StringRange type_range = name_type.type->range;
 
 			/// проверяем корректность типа. В случае некоректного типа будет исключение
@@ -298,21 +298,21 @@ void InterpreterAlterQuery::execute()
 
 			table->alter(params);
 		}
-		
+
 		if (params.type == ASTAlterQuery::ADD)
 		{
 			addColumnToAST(table, columns, params.name_type, params.column);
 		}
 		else if (params.type == ASTAlterQuery::DROP)
 		{
-			const ASTIdentifier & drop_column = dynamic_cast <const ASTIdentifier &>(*params.column);
+			const ASTIdentifier & drop_column = typeid_cast<const ASTIdentifier &>(*params.column);
 			dropColumnFromAST(drop_column, columns);
 		}
 		else if (params.type == ASTAlterQuery::MODIFY)
 		{
-			const ASTNameTypePair & name_type = dynamic_cast<const ASTNameTypePair &>(*params.name_type);
+			const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
 			ASTs::iterator modify_it = std::find_if(columns.begin(), columns.end(), boost::bind(namesEqual, name_type.name, _1));
-			ASTNameTypePair & modified_column = dynamic_cast<ASTNameTypePair &>(**modify_it);
+			ASTNameTypePair & modified_column = typeid_cast<ASTNameTypePair &>(**modify_it);
 			modified_column.type = name_type.type;
 		}
 

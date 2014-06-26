@@ -33,7 +33,7 @@ namespace DB
   * s, c1 			-> s:		left, right, leftUTF8, rightUTF8
   * s, c1, s2		-> s:		insert, insertUTF8, pad, padLeft, padUTF8, padLeftUTF8
   * s, c1, c2, s2	-> s:		replace, replaceUTF8
-  * 
+  *
   * Функции поиска строк и регулярных выражений расположены отдельно.
   * Функции работы с URL расположены отдельно.
   * Функции кодирования строк, конвертации в другие типы расположены отдельно.
@@ -268,7 +268,7 @@ private:
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
 		static Poco::UTF8Encoding utf8;
-		
+
 		while (src < src_end)
 		{
 			int chars = utf8.convert(F(utf8.convert(src)), dst, src_end - src);
@@ -368,7 +368,7 @@ struct ReverseUTF8Impl
 					j += 1;
 				}
 			}
-			
+
 			res_data[offsets[i] - 1] = 0;
 			prev_offset = offsets[i];
 		}
@@ -434,10 +434,10 @@ struct ConcatImpl
 			offset += a_offsets[i] - a_offset - 1;
 			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
 			offset += b_offsets[i] - b_offset;
-			
+
 			a_offset = a_offsets[i];
 			b_offset = b_offsets[i];
-			
+
 			c_offsets[i] = offset;
 		}
 	}
@@ -668,7 +668,7 @@ struct SubstringImpl
 	{
 		if (length == 0 || start + length > n + 1)
 			throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		
+
 		size_t size = data.size() / n;
 		res_offsets.resize(size);
 		res_data.resize(length * size + size);
@@ -690,7 +690,7 @@ struct SubstringImpl
 	{
 		if (start + length > data.size() + 1)
 			throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		
+
 		res_data = data.substr(start - 1, length);
 	}
 };
@@ -730,7 +730,7 @@ struct SubstringUTF8Impl
 					j += 3;
 				else
 					j += 1;
-				
+
 				if (pos >= start && pos < start + length)
 					bytes_length = j - prev_offset + 1 - bytes_start;
 				else if (pos >= start + length)
@@ -794,7 +794,7 @@ struct SubstringUTF8Impl
 				bytes_length = j + 1 - bytes_start;
 			else if (pos >= start + length)
 				break;
-			
+
 			++pos;
 		}
 
@@ -822,8 +822,8 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0])
-			&& !dynamic_cast<const DataTypeArray *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0])
+			&& !typeid_cast<const DataTypeArray *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -834,7 +834,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
-		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
+		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
@@ -843,7 +843,7 @@ public:
 			vec_res.resize(col->size());
 			Impl::vector(col->getChars(), col->getOffsets(), vec_res);
 		}
-		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
+		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 		{
 			/// Для фиксированной строки, только функция lengthUTF8 возвращает не константу.
 			if ("lengthUTF8" != getName())
@@ -864,7 +864,7 @@ public:
 				Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
 			}
 		}
-		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
+		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			ResultType res = 0;
 			Impl::constant(col->getData(), res);
@@ -872,7 +872,7 @@ public:
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}
-		else if (const ColumnArray * col = dynamic_cast<const ColumnArray *>(&*column))
+		else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
 		{
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
@@ -881,7 +881,7 @@ public:
 			vec_res.resize(col->size());
 			Impl::array(col->getOffsets(), vec_res);
 		}
-		else if (const ColumnConstArray * col = dynamic_cast<const ColumnConstArray *>(&*column))
+		else if (const ColumnConstArray * col = typeid_cast<const ColumnConstArray *>(&*column))
 		{
 			ResultType res = 0;
 			Impl::constant_array(col->getData(), res);
@@ -915,7 +915,7 @@ public:
 				+ toString(arguments.size()) + ", should be 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -926,21 +926,21 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
-		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
+		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				col_res->getChars(), col_res->getOffsets());
 		}
-		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column))
+		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 		{
 			ColumnFixedString * col_res = new ColumnFixedString(col->getN());
 			block.getByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				col_res->getChars());
 		}
-		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
+		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			String res;
 			Impl::constant(col->getData(), res);
@@ -973,11 +973,11 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[1]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[1]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[1]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[1]))
 			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -990,12 +990,12 @@ public:
 		const IColumn * c0 = &*block.getByPosition(arguments[0]).column;
 		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
 
-		const ColumnString * c0_string = dynamic_cast<const ColumnString *>(c0);
-		const ColumnString * c1_string = dynamic_cast<const ColumnString *>(c1);
-		const ColumnFixedString * c0_fixed_string = dynamic_cast<const ColumnFixedString *>(c0);
-		const ColumnFixedString * c1_fixed_string = dynamic_cast<const ColumnFixedString *>(c1);
-		const ColumnConstString * c0_const = dynamic_cast<const ColumnConstString *>(c0);
-		const ColumnConstString * c1_const = dynamic_cast<const ColumnConstString *>(c1);
+		const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
+		const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);
+		const ColumnFixedString * c0_fixed_string = typeid_cast<const ColumnFixedString *>(c0);
+		const ColumnFixedString * c1_fixed_string = typeid_cast<const ColumnFixedString *>(c1);
+		const ColumnConstString * c0_const = typeid_cast<const ColumnConstString *>(c0);
+		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
 
 		/// Результат - const string
 		if (c0_const && c1_const)
@@ -1080,7 +1080,7 @@ public:
 				+ toString(arguments.size()) + ", should be 3.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1110,7 +1110,7 @@ public:
 		if (start == 0)
 			throw Exception("Second argument of function substring must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column_string))
+		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
@@ -1118,7 +1118,7 @@ public:
 				start, length,
 				col_res->getChars(), col_res->getOffsets());
 		}
-		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column_string))
+		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_string))
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
@@ -1126,7 +1126,7 @@ public:
 				start, length,
 				col_res->getChars(), col_res->getOffsets());
 		}
-		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column_string))
+		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_string))
 		{
 			String res;
 			Impl::constant(col->getData(), start, length, res);

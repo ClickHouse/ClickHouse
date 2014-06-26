@@ -21,12 +21,12 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(ASTPtr query_ptr_, Contex
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
 {
-	const ASTShowTablesQuery & query = dynamic_cast<const ASTShowTablesQuery &>(*query_ptr);
-	
+	const ASTShowTablesQuery & query = typeid_cast<const ASTShowTablesQuery &>(*query_ptr);
+
 	String format_or_nothing;
 	if (query.format)
-		format_or_nothing = " FORMAT " + dynamic_cast<const ASTIdentifier &>(*query.format).name;
-	
+		format_or_nothing = " FORMAT " + typeid_cast<const ASTIdentifier &>(*query.format).name;
+
 	/// SHOW DATABASES
 	if (query.databases)
 		return "SELECT name FROM system.databases" + format_or_nothing;
@@ -39,7 +39,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 	if (!query.like.empty())
 		rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << mysqlxx::quote << query.like;
-	
+
 	rewritten_query << format_or_nothing;
 
 	return rewritten_query.str();

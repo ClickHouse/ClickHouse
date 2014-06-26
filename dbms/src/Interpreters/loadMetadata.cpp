@@ -36,7 +36,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + file_name),
 			DB::ErrorCodes::SYNTAX_ERROR);
 
-	ASTCreateQuery & ast_create_query = dynamic_cast<ASTCreateQuery &>(*ast);
+	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = true;
 	ast_create_query.database = database;
 
@@ -51,7 +51,7 @@ void loadMetadata(Context & context)
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
 	Logger * log = &Logger::get("loadMetadata");
-	
+
 	/// Здесь хранятся определения таблиц
 	String path = context.getPath() + "metadata";
 
@@ -73,12 +73,12 @@ void loadMetadata(Context & context)
 		/// Цикл по таблицам
 		typedef std::vector<std::string> Tables;
 		Tables tables;
-			
+
 		for (Poco::DirectoryIterator jt(it->path()); jt != dir_end; ++jt)
 		{
 			if (jt.name() == ".svn")
 				continue;
-			
+
 			/// Файлы имеют имена вида table_name.sql
 			if (jt.name().compare(jt.name().size() - 4, 4, ".sql"))
 				throw Exception("Incorrect file extension: " + jt.name() + " in metadata directory " + it->path(), ErrorCodes::INCORRECT_FILE_NAME);
@@ -104,7 +104,7 @@ void loadMetadata(Context & context)
 				LOG_INFO(log, std::fixed << std::setprecision(2) << j * 100.0 / size << "%");
 				watch.restart();
 			}
-			
+
 			String s;
 			{
 				static const size_t in_buf_size = 32768;

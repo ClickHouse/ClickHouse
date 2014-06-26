@@ -20,7 +20,7 @@ namespace DB
   *
   * position(haystack, needle)	- обычный поиск подстроки в строке, возвращает позицию (в байтах) найденной подстроки, начиная с 1, или 0, если подстрока не найдена.
   * positionUTF8(haystack, needle) - то же самое, но позиция вычисляется в кодовых точках, при условии, что строка в кодировке UTF-8.
-  * 
+  *
   * like(haystack, pattern)		- поиск по регулярному выражению LIKE; возвращает 0 или 1. Регистронезависимое, но только для латиницы.
   * notLike(haystack, pattern)
   *
@@ -97,7 +97,7 @@ struct PositionImpl
 struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
-	
+
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
 		PODArray<UInt64> & res)
@@ -348,7 +348,7 @@ struct ExtractImpl
 	{
 		res_data.reserve(data.size() / 5);
 		res_offsets.resize(offsets.size());
-		
+
 		const OptimizedRegularExpression & regexp = Regexps::get(pattern);
 
 		unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
@@ -360,7 +360,7 @@ struct ExtractImpl
 		for (size_t i = 0; i < offsets.size(); ++i)
 		{
 			size_t cur_offset = offsets[i];
-			
+
 			unsigned count = regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
 			if (count > capture && matches[capture].offset != std::string::npos)
 			{
@@ -373,7 +373,7 @@ struct ExtractImpl
 			{
 				res_data.resize(res_offset + 1);
 			}
-			
+
 			res_data[res_offset] = 0;
 			++res_offset;
 			res_offsets[i] = res_offset;
@@ -836,15 +836,15 @@ public:
 				+ toString(arguments.size()) + ", should be 3.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]) && !dynamic_cast<const DataTypeFixedString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -863,15 +863,15 @@ public:
 
 		const IColumn * c1 = &*block.getByPosition(arguments[1]).column;
 		const IColumn * c2 = &*block.getByPosition(arguments[2]).column;
-		const ColumnConstString * c1_const = dynamic_cast<const ColumnConstString *>(c1);
-		const ColumnConstString * c2_const = dynamic_cast<const ColumnConstString *>(c2);
+		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
+		const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
 		String needle = c1_const->getData();
 		String replacement = c2_const->getData();
 
 		if (needle.size() == 0)
 			throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column_src))
+		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
@@ -879,7 +879,7 @@ public:
 				needle, replacement,
 				col_res->getChars(), col_res->getOffsets());
 		}
-		else if (const ColumnFixedString * col = dynamic_cast<const ColumnFixedString *>(&*column_src))
+		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
@@ -887,7 +887,7 @@ public:
 				needle, replacement,
 				col_res->getChars(), col_res->getOffsets());
 		}
-		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column_src))
+		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_src))
 		{
 			String res;
 			Impl::constant(col->getData(), needle, replacement, res);
@@ -920,11 +920,11 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[1]))
+		if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
 			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -935,15 +935,15 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		typedef typename Impl::ResultType ResultType;
-		
+
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
 
-		const ColumnConstString * col_needle = dynamic_cast<const ColumnConstString *>(&*column_needle);
+		const ColumnConstString * col_needle = typeid_cast<const ColumnConstString *>(&*column_needle);
 		if (!col_needle)
 			throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
-		
-		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
+
+		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
 			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
@@ -952,7 +952,7 @@ public:
 			vec_res.resize(col->size());
 			Impl::vector(col->getChars(), col->getOffsets(), col_needle->getData(), vec_res);
 		}
-		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
+		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			ResultType res = 0;
 			Impl::constant(col->getData(), col_needle->getData(), res);
@@ -977,7 +977,7 @@ public:
 	{
 		return Name::get();
 	}
-	
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
@@ -985,38 +985,38 @@ public:
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 			+ toString(arguments.size()) + ", should be 2.",
 							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[0]))
+
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
-		if (!dynamic_cast<const DataTypeString *>(&*arguments[1]))
+
+		if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
 			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		
+
 		return new DataTypeString;
 	}
-	
+
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
-		
-		const ColumnConstString * col_needle = dynamic_cast<const ColumnConstString *>(&*column_needle);
+
+		const ColumnConstString * col_needle = typeid_cast<const ColumnConstString *>(&*column_needle);
 		if (!col_needle)
 			throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
-		
-		if (const ColumnString * col = dynamic_cast<const ColumnString *>(&*column))
+
+		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
 			ColumnString * col_res = new ColumnString;
 			block.getByPosition(result).column = col_res;
-			
+
 			ColumnString::Chars_t & vec_res = col_res->getChars();
 			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 			Impl::vector(col->getChars(), col->getOffsets(), col_needle->getData(), vec_res, offsets_res);
 		}
-		else if (const ColumnConstString * col = dynamic_cast<const ColumnConstString *>(&*column))
+		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			const std::string & data = col->getData();
 			ColumnString::Chars_t vdata(
@@ -1026,12 +1026,12 @@ public:
 			ColumnString::Chars_t res_vdata;
 			ColumnString::Offsets_t res_offsets;
 			Impl::vector(vdata, offsets, col_needle->getData(), res_vdata, res_offsets);
-			
+
 			std::string res;
 
 			if (!res_offsets.empty())
 				res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
-			
+
 			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
 			block.getByPosition(result).column = col_res;
 		}

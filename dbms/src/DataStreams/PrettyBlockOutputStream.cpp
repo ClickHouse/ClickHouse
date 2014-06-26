@@ -22,7 +22,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 {
 	size_t rows = block.rows();
 	size_t columns = block.columns();
-	
+
 	max_widths.resize(columns);
 	name_widths.resize(columns);
 
@@ -46,14 +46,14 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 
 		column.column = block.getByPosition(i + columns).column;
 
-		if (const ColumnUInt64 * col = dynamic_cast<const ColumnUInt64 *>(&*column.column))
+		if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(&*column.column))
 		{
 			const ColumnUInt64::Container_t & res = col->getData();
 			for (size_t j = 0; j < rows; ++j)
 				if (res[j] > max_widths[i])
 					max_widths[i] = res[j];
 		}
-		else if (const ColumnConstUInt64 * col = dynamic_cast<const ColumnConstUInt64 *>(&*column.column))
+		else if (const ColumnConstUInt64 * col = typeid_cast<const ColumnConstUInt64 *>(&*column.column))
 		{
 			UInt64 res = col->getData();
 			max_widths[i] = res;
@@ -78,10 +78,10 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		total_rows += block_.rows();
 		return;
 	}
-		
+
 	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
 	Block block = block_;
-	
+
 	size_t rows = block.rows();
 	size_t columns = block.columns();
 
@@ -141,7 +141,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 
 		if (!no_escapes)
 			writeCString("\033[1;37m", ostr);
-		
+
 		if (col.type->isNumeric())
 		{
 			for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
@@ -183,7 +183,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 				size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[i]);
 				for (size_t k = 0; k < max_widths[j] - width; ++k)
 					writeChar(' ', ostr);
-					
+
 				col.type->serializeTextEscaped((*col.column)[i], ostr);
 			}
 			else
@@ -198,7 +198,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 
 		writeCString(" │\n", ostr);
 	}
-	
+
 	writeString(bottom_separator_s, ostr);
 
 	total_rows += rows;

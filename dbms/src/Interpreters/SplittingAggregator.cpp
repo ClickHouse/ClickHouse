@@ -26,7 +26,7 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 			aggregate_columns[i].resize(aggregates[i].arguments.size());
-		
+
 		/// Запоминаем столбцы, с которыми будем работать
 		for (size_t i = 0; i < keys_size; ++i)
 			key_columns[i] = block.getByPosition(keys[i]).column;
@@ -178,7 +178,7 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 		else if (method == AggregatedDataVariants::KEY_STRING)
 		{
 			const IColumn & column = *key_columns[0];
-			const ColumnString & column_string = dynamic_cast<const ColumnString &>(column);
+			const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
 
 			const ColumnString::Offsets_t & offsets = column_string.getOffsets();
 			const ColumnString::Chars_t & data = column_string.getChars();
@@ -193,7 +193,7 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 		else if (method == AggregatedDataVariants::KEY_FIXED_STRING)
 		{
 			const IColumn & column = *key_columns[0];
-			const ColumnFixedString & column_string = dynamic_cast<const ColumnFixedString &>(column);
+			const ColumnFixedString & column_string = typeid_cast<const ColumnFixedString &>(column);
 
 			size_t n = column_string.getN();
 			const ColumnFixedString::Chars_t & data = column_string.getChars();
@@ -307,7 +307,7 @@ void SplittingAggregator::aggregateThread(
 					if (res.end() == it)
 						continue;
 				}
-				
+
 				if (inserted)
 				{
 					it->first.data = result.aggregates_pool->insert(ref.data, ref.size);

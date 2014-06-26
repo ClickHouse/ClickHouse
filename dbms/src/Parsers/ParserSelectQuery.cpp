@@ -89,7 +89,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 			if (!s_rparen.ignore(pos, end, expected))
 				return false;
-			
+
 			ws.ignore(pos, end);
 		}
 		else if (ident.parse(pos, end, select_query->table, expected))
@@ -101,7 +101,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 				if (!table_function.parse(pos, end, select_query->table, expected))
 					return false;
 				if (select_query->table)
-					dynamic_cast<ASTFunction &>(*select_query->table).kind = ASTFunction::TABLE_FUNCTION;
+					typeid_cast<ASTFunction &>(*select_query->table).kind = ASTFunction::TABLE_FUNCTION;
 				ws.ignore(pos, end);
 			}
 			else
@@ -117,14 +117,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 				}
 
 				if (select_query->database)
-					dynamic_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
-				dynamic_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
+					typeid_cast<ASTIdentifier &>(*select_query->database).kind = ASTIdentifier::Database;
+				typeid_cast<ASTIdentifier &>(*select_query->table).kind = ASTIdentifier::Table;
 			}
 		}
 		else
 			return false;
 	}
-	
+
 	/// ARRAY JOIN expr list
 	if (s_array.ignore(pos, end, expected))
 	{
@@ -148,7 +148,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	if (s_final.ignore(pos, end, expected))
 	{
 		select_query->final = true;
-		
+
 		ws.ignore(pos, end);
 	}
 
@@ -156,15 +156,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	if (s_sample.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
-		
+
 		ParserNumber num;
-		
+
 		if (!num.parse(pos, end, select_query->sample_size, expected))
 			return false;
-		
+
 		ws.ignore(pos, end);
 	}
-	
+
 	/// PREWHERE expr
 	if (s_prewhere.ignore(pos, end, expected))
 	{
@@ -268,7 +268,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 		if (!format_p.parse(pos, end, select_query->format, expected))
 			return false;
-		dynamic_cast<ASTIdentifier &>(*select_query->format).kind = ASTIdentifier::Format;
+		typeid_cast<ASTIdentifier &>(*select_query->format).kind = ASTIdentifier::Format;
 
 		ws.ignore(pos, end);
 	}

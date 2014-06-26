@@ -40,7 +40,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-	const ColumnString & column_string = dynamic_cast<const ColumnString &>(column);
+	const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
 	const ColumnString::Chars_t & data = column_string.getChars();
 	const ColumnString::Offsets_t & offsets = column_string.getOffsets();
 
@@ -57,10 +57,10 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 		UInt64 str_size = offsets[0] - 1;
 		writeVarUInt(str_size, ostr);
 		ostr.write(reinterpret_cast<const char *>(&data[0]), str_size);
-		
+
 		++offset;
 	}
-	
+
 	for (size_t i = offset; i < end; ++i)
 	{
 		UInt64 str_size = offsets[i] - offsets[i - 1] - 1;
@@ -72,7 +72,7 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 
 void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
 {
-	ColumnString & column_string = dynamic_cast<ColumnString &>(column);
+	ColumnString & column_string = typeid_cast<ColumnString &>(column);
 	ColumnString::Chars_t & data = column_string.getChars();
 	ColumnString::Offsets_t & offsets = column_string.getOffsets();
 
@@ -92,7 +92,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 		offsets.push_back(offset);
 
 		data.resize(offset);
-		
+
 		istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), sizeof(ColumnUInt8::value_type) * size);
 		data[offset - 1] = 0;
 	}
