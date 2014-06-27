@@ -428,6 +428,10 @@ public:
 	  */
 	void renameAndDetachPart(DataPartPtr part, const String & prefix);
 
+	/** Убрать кусок из рабочего набора. Его данные удалятся при вызове clearOldParts, когда их перестанут читать.
+	  */
+	void deletePart(DataPartPtr part);
+
 	/** Удалить неактуальные куски. Возвращает имена удаленных кусков.
 	  */
 	Strings clearOldParts();

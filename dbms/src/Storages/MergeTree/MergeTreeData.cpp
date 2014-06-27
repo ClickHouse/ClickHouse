@@ -678,6 +678,12 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
 	part->renameAddPrefix(prefix);
 }
 
+void MergeTreeData::deletePart(DataPartPtr part)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	data_parts.erase(part);
+}
+
 MergeTreeData::DataParts MergeTreeData::getDataParts()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
