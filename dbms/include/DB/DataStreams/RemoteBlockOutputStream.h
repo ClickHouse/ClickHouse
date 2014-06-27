@@ -31,7 +31,7 @@ public:
 		Connection::Packet packet = connection.receivePacket();
 
 		if (Protocol::Server::Data == packet.type)
-			return packet.block;
+			return sample_block = packet.block;
 		else if (Protocol::Server::Exception == packet.type)
 		{
 			packet.exception->rethrow();
@@ -47,6 +47,15 @@ public:
 	{
 		if (!sent_query)
 			sendQueryAndGetSampleBlock();
+
+		if (!blocksHaveEqualStructure(block, sample_block))
+		{
+			std::stringstream message;
+			message << "Block structure is different from table structure.\n"
+				<< "\nTable structure:\n(" << sample_block.dumpStructure() << ")\nBlock structure:\n(" << block.dumpStructure() << ")\n";
+
+			throw DB::Exception(message.str());
+		}
 
 		connection.sendData(block);
 	}
@@ -74,8 +83,9 @@ public:
 private:
 	Connection & connection;
 	String query;
+	Block sample_block;
 
-	bool sent_query;
+	bool sent_query = false;
 };
 
 }

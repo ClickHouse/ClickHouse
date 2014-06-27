@@ -29,7 +29,7 @@ void Connection::connect()
 		if (connected)
 			disconnect();
 		
-		LOG_TRACE(log, "Connecting");
+		LOG_TRACE(log, "Connecting to " << default_database << "@" << host << ":" << port);
 
 		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
 		socket.setReceiveTimeout(receive_timeout);

@@ -596,7 +596,7 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment)
 {
-	LOG_TRACE(log, "Renaming.");
+	LOG_TRACE(log, "Renaming " << part->name << ".");
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
@@ -676,6 +676,12 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
 	data_parts.erase(part);
 	part->renameAddPrefix(prefix);
+}
+
+void MergeTreeData::deletePart(DataPartPtr part)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	data_parts.erase(part);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()
