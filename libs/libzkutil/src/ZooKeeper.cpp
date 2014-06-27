@@ -272,7 +272,7 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, WatchFuture * wat
 	return true;
 }
 
-bool ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchFuture * watch)
+int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchFuture * watch)
 {
 	char buffer[MAX_NODE_SIZE];
 	int buffer_len = MAX_NODE_SIZE;

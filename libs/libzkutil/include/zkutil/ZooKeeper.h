@@ -165,7 +165,7 @@ private:
 	/// методы не бросают исключений, а возвращают коды ошибок
 	int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
 	int32_t removeImpl(const std::string & path, int32_t version = -1);
-	bool getImpl(const std::string & path, std::string & res, Stat * stat = nullptr, WatchFuture * watch = nullptr);
+	int32_t getImpl(const std::string & path, std::string & res, Stat * stat = nullptr, WatchFuture * watch = nullptr);
 	int32_t setImpl(const std::string & path, const std::string & data,
 							int32_t version = -1, Stat * stat = nullptr);
 	int32_t getChildrenImpl(const std::string & path, Strings & res,
