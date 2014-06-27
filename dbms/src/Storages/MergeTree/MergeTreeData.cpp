@@ -596,7 +596,7 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment)
 {
-	LOG_TRACE(log, "Renaming.");
+	LOG_TRACE(log, "Renaming " << part->name << ".");
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);

@@ -351,7 +351,7 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 	size_t count = ops_.size();
 	OpResultsPtr out_results(new OpResults(count));
 
-	/// копируем структуру содержащую указатели дефолтным конструктором копирования
+	/// копируем структуру, содержащую указатели, дефолтным конструктором копирования
 	/// это безопасно, т.к. у нее нет деструктора
 	std::vector<zoo_op_t> ops;
 	for (const Op & op : ops_)
