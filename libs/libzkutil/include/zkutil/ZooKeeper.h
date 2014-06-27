@@ -9,6 +9,7 @@ namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 DEFAULT_RETRY_NUM = 3;
 
 struct WatchWithPromise;
 
@@ -85,6 +86,12 @@ public:
 	  */
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode);
+
+	/** создает Persistent ноду.
+	 *  Игнорирует, если нода уже создана.
+	 *  Пытается сделать retry при ConnectionLoss или OperationTimeout
+	 */
+	void createIfNotExists(const std::string & path, const std::string & data);
 
 	/** Удалить ноду, если ее версия равна version (если -1, подойдет любая версия).
 	  */

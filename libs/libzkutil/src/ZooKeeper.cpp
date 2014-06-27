@@ -222,6 +222,27 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 	return tryCreate(path, data, mode, pathCreated);
 }
 
+void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
+{
+	int32_t code = tryCreate(path, "", zkutil::CreateMode::Persistent);
+
+	if (code == ZOK || code == ZNODEEXISTS)
+		return;
+
+	if (!(code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS))
+		throw KeeperException(code, path);
+
+	for (size_t attempt = 0; attempt < retry_num && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++attempt)
+	{
+		code = tryCreate(path, "", zkutil::CreateMode::Persistent);
+	};
+
+	if (code == ZOK || code == ZNODEEXISTS)
+		return;
+	else
+		throw KeeperException(code, path);
+}
+
 int32_t ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
 	int32_t code = zoo_delete(impl, path.c_str(), version);
