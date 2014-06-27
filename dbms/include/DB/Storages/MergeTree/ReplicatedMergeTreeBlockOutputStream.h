@@ -35,7 +35,6 @@ public:
 
 			UInt64 part_number = block_number_lock.getNumber();
 
-			LOG_DEBUG(log, "Writing block " << part_number << " with ID " << block_id);
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, part_number);
 
 			/// Если в запросе не указан ID, возьмем в качестве ID хеш от данных. То есть, не вставляем одинаковые данные дважды.
@@ -43,6 +42,8 @@ public:
 			///       Можно для этого сделать настройку или синтаксис в запросе (например, ID=null).
 			if (block_id.empty())
 				block_id = part->checksums.summaryDataChecksum();
+
+			LOG_DEBUG(log, "Wrote block " << part_number << " with ID " << block_id);
 
 			String expected_checksums_str;
 			if (!block_id.empty() && storage.zookeeper->tryGet(
