@@ -123,9 +123,13 @@ void ExpressionAnalyzer::init()
 			for (size_t i = 0; i < group_asts.size(); ++i)
 			{
 				getRootActionsImpl(group_asts[i], true, false, temp_actions);
+
 				NameAndTypePair key;
 				key.first = group_asts[i]->getColumnName();
-				key.second = temp_actions->getSampleBlock().getByName(key.first).type;
+				key.second = temp_actions->getSampleBlock().has(key.first)
+					? temp_actions->getSampleBlock().getByName(key.first).type
+					: throw Exception("Unknown identifier (in GROUP BY): " + key.first, ErrorCodes::UNKNOWN_IDENTIFIER);
+
 				aggregation_keys.push_back(key);
 
 				if (!unique_keys.count(key.first))
