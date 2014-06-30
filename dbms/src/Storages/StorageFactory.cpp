@@ -235,7 +235,7 @@ StoragePtr StorageFactory::get(
 				params += "path in ZooKeeper, replica name or '', ";
 			params += "name of column with date, [name of column for sampling], primary key expression, index granularity";
 			if (mode == MergeTreeData::Collapsing)
-				params += "sign column";
+				params += ", sign column";
 			throw Exception("Storage " + name + " requires " + toString(additional_params + 3) + " or "
 				+ toString(additional_params + 4) +" parameters: " + params,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
