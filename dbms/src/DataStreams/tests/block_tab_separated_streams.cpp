@@ -45,7 +45,6 @@ int main(int argc, char ** argv)
 			("UserAgent",			new DB::DataTypeUInt8)
 			("URL",					new DB::DataTypeString)
 			("Referer",				new DB::DataTypeString)
-			("Refresh",				new DB::DataTypeUInt8)
 			("ResolutionWidth",		new DB::DataTypeUInt16)
 			("ResolutionHeight",	new DB::DataTypeUInt16)
 			("ResolutionDepth",		new DB::DataTypeUInt8)
@@ -77,7 +76,7 @@ int main(int argc, char ** argv)
 			("SilverlightVersion3",	new DB::DataTypeUInt32)
 			("SilverlightVersion4",	new DB::DataTypeUInt16)
 			("PageCharset",			new DB::DataTypeString)
-			("CodeVersion",			new DB::DataTypeUInt32) 
+			("CodeVersion",			new DB::DataTypeUInt32)
 			("IsLink",				new DB::DataTypeUInt8)
 			("IsDownload",			new DB::DataTypeUInt8)
 			("IsNotBounce",			new DB::DataTypeUInt8)
@@ -107,12 +106,12 @@ int main(int argc, char ** argv)
 			elem.column = elem.type->createColumn();
 			sample.insert(elem);
 		}
-		
+
 		/// читаем данные из строчного tsv файла и одновременно пишем в блочный tsv файл
 		{
 			DB::ReadBufferFromIStream in_buf(std::cin);
 			DB::WriteBufferFromOStream out_buf(std::cout);
-		
+
 			DB::RowInputStreamPtr row_in = new DB::TabSeparatedRowInputStream(in_buf, sample);
 			DB::BlockInputStreamFromRowInputStream in(row_in, sample);
 			DB::TabSeparatedBlockOutputStream out(out_buf);

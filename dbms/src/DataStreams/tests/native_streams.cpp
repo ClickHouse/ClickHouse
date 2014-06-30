@@ -27,7 +27,7 @@
 int main(int argc, char ** argv)
 {
 	using Poco::SharedPtr;
-	
+
 	try
 	{
 		DB::NamesAndTypesListPtr names_and_types_list = new DB::NamesAndTypesList;
@@ -46,7 +46,6 @@ int main(int argc, char ** argv)
 			("UserAgent",			new DB::DataTypeUInt8)
 			("URL",					new DB::DataTypeString)
 			("Referer",				new DB::DataTypeString)
-			("Refresh",				new DB::DataTypeUInt8)
 			("ResolutionWidth",		new DB::DataTypeUInt16)
 			("ResolutionHeight",	new DB::DataTypeUInt16)
 			("ResolutionDepth",		new DB::DataTypeUInt8)
@@ -116,7 +115,7 @@ int main(int argc, char ** argv)
 		if (argc == 2 && 0 == strcmp(argv[1], "write"))
 		{
 			DB::DataTypeFactory factory;
-			
+
 			DB::ReadBufferFromIStream in1(std::cin);
 			DB::CompressedReadBuffer in2(in1);
 			DB::NativeBlockInputStream in3(in2, factory);

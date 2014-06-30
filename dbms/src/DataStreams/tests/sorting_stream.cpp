@@ -34,7 +34,7 @@ using Poco::SharedPtr;
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
+
 	try
 	{
 		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList;
@@ -53,7 +53,6 @@ int main(int argc, char ** argv)
 			("UserAgent",			new DataTypeUInt8)
 			("URL",					new DataTypeString)
 			("Referer",				new DataTypeString)
-			("Refresh",				new DataTypeUInt8)
 			("ResolutionWidth",		new DataTypeUInt16)
 			("ResolutionHeight",	new DataTypeUInt16)
 			("ResolutionDepth",		new DataTypeUInt8)
@@ -162,7 +161,7 @@ int main(int argc, char ** argv)
 		sort_columns.push_back(SortColumnDescription(3, 1));
 
 		QueryProcessingStage::Enum stage;
-		
+
 		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
 		in = new PartialSortingBlockInputStream(in, sort_columns);
 		in = new MergeSortingBlockInputStream(in, sort_columns);

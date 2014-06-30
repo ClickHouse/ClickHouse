@@ -46,7 +46,6 @@ int main(int argc, char ** argv)
 			("UserAgent",			new DB::DataTypeUInt8)
 			("URL",					new DB::DataTypeString)
 			("Referer",				new DB::DataTypeString)
-			("Refresh",				new DB::DataTypeUInt8)
 			("ResolutionWidth",		new DB::DataTypeUInt16)
 			("ResolutionHeight",	new DB::DataTypeUInt16)
 			("ResolutionDepth",		new DB::DataTypeUInt8)
@@ -78,7 +77,7 @@ int main(int argc, char ** argv)
 			("SilverlightVersion3",	new DB::DataTypeUInt32)
 			("SilverlightVersion4",	new DB::DataTypeUInt16)
 			("PageCharset",			new DB::DataTypeString)
-			("CodeVersion",			new DB::DataTypeUInt32) 
+			("CodeVersion",			new DB::DataTypeUInt32)
 			("IsLink",				new DB::DataTypeUInt8)
 			("IsDownload",			new DB::DataTypeUInt8)
 			("IsNotBounce",			new DB::DataTypeUInt8)
@@ -94,7 +93,7 @@ int main(int argc, char ** argv)
 
 		SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
 		DB::Names column_names;
-		
+
 		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 		{
 			data_types->push_back(it->second);
@@ -102,7 +101,7 @@ int main(int argc, char ** argv)
 		}
 
 		/// создаём таблицу хит лога
-		
+
 		DB::StoragePtr table = DB::StorageLog::create("./", "HitLog", names_and_types_list);
 
 		/// создаём описание, как читать данные из tab separated дампа
@@ -116,12 +115,12 @@ int main(int argc, char ** argv)
 			elem.column = elem.type->createColumn();
 			sample.insert(elem);
 		}
-		
+
 		/// читаем данные из tsv файла и одновременно пишем в таблицу
 		if (argc == 2 && 0 == strcmp(argv[1], "write"))
 		{
 			DB::ReadBufferFromIStream in_buf(std::cin);
-		
+
 			DB::RowInputStreamPtr in_ = new DB::TabSeparatedRowInputStream(in_buf, sample);
 			DB::BlockInputStreamFromRowInputStream in(in_, sample);
 			DB::BlockOutputStreamPtr out = table->write(0);

@@ -34,7 +34,7 @@ using Poco::SharedPtr;
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
+
 	try
 	{
 		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList;
@@ -53,7 +53,6 @@ int main(int argc, char ** argv)
 			("UserAgent",			new DataTypeUInt8)
 			("URL",					new DataTypeString)
 			("Referer",				new DataTypeString)
-			("Refresh",				new DataTypeUInt8)
 			("ResolutionWidth",		new DataTypeUInt16)
 			("ResolutionHeight",	new DataTypeUInt16)
 			("ResolutionDepth",		new DataTypeUInt8)
@@ -150,7 +149,7 @@ int main(int argc, char ** argv)
 		in = new ExpressionBlockInputStream(in, expression);
 		in = new FilterBlockInputStream(in, 4);
 		//in = new LimitBlockInputStream(in, 10);
-		
+
 		WriteBufferFromOStream ob(std::cout);
 		RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(ob, expression->getSampleBlock());
 		BlockOutputStreamFromRowOutputStream out(out_);

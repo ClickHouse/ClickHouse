@@ -10,7 +10,7 @@
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
+
 	try
 	{
 		ParserCreateQuery parser;
@@ -29,7 +29,6 @@ int main(int argc, char ** argv)
 			"UserAgent 				UInt8,\n"
 			"URL 					String,\n"
 			"Referer 				String,\n"
-			"Refresh 				UInt8,\n"
 			"ResolutionWidth 		UInt16,\n"
 			"ResolutionHeight 		UInt16,\n"
 			"ResolutionDepth 		UInt8,\n"
