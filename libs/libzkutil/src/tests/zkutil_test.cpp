@@ -209,8 +209,6 @@ int main(int argc, char ** argv)
 				std::cerr << "KeeperException: " << e.displayText() << std::endl;
 			}
 		}
-
-		zk.close();
 	}
 	catch (zkutil::KeeperException & e)
 	{

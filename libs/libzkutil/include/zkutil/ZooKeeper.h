@@ -121,8 +121,6 @@ public:
 						Stat * stat = nullptr,
 						WatchFuture * watch = nullptr);
 
-	void close();
-
 	/** Транзакционно выполняет несколько операций. При любой ошибке бросает исключение.
 	  */
 	OpResultsPtr multi(const Ops & ops);
