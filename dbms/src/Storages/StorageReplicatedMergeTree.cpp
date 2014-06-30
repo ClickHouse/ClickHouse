@@ -1114,6 +1114,11 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 		virtual_parts.getContainingPart(right->name) != right->name)
 		return false;
 
+	/// Если о каком-то из кусков нет информации в ZK, не будем сливать.
+	if (!zookeeper->exists(replica_path + "/parts/" + left->name) ||
+		!zookeeper->exists(replica_path + "/parts/" + right->name))
+		return false;
+
 	String month_name = left->name.substr(0, 6);
 
 	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
@@ -1193,7 +1198,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
-	LOG_DEBUG(log, "Fetched part");
+	LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_name);
 }
 
 void StorageReplicatedMergeTree::shutdown()
