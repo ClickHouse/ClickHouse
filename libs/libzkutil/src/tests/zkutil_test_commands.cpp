@@ -3,9 +3,6 @@
 #include <unistd.h>
 
 using namespace zkutil;
-/** Проверяет, правда ли, что вызовы при просроченной сессии блокируются навсегда.
-  * Разорвать сессию можно, например, так: `./nozk.sh && sleep 6s && ./yeszk.sh`
-  */
 
 void watcher(zhandle_t *zh, int type, int state, const char *path,void *watcherCtx)
 {
@@ -20,15 +17,14 @@ int main()
 		std::cout << "create path" << std::endl;
 		zk.create("/test", "old", zkutil::CreateMode::Persistent);
 		zkutil::Stat stat;
-		zkutil::WatchFuture watch;
+		zkutil::EventPtr watch = new Poco::Event;
 
 		std::cout << "get path" << std::endl;
-		zk.get("/test", &stat, &watch);
+		zk.get("/test", &stat, watch);
 		std::cout << "set path" << std::endl;
 		zk.set("/test", "new");
-		watch.wait();
-		WatchEventInfo event_info = watch.get();
-		std::cout << "watch happened for path: " << event_info.path << " " << event_info.event << std::endl;
+		watch->wait();
+		std::cout << "watch happened" << std::endl;
 		std::cout << "remove path" << std::endl;
 		zk.remove("/test");
 
