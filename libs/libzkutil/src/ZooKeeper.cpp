@@ -22,49 +22,35 @@ void check(int32_t code, const std::string path = "")
 	}
 }
 
-typedef std::promise<WatchEventInfo> WatchPromise;
-
-struct WatchWithPromise
+struct WatchWithEvent
 {
-	WatchPromise promise;
-	bool notified;
-	/// существует все время существования WatchWithPromise
+	/// существует все время существования WatchWithEvent
 	ZooKeeper & zk;
+	EventPtr event;
 
-	WatchWithPromise(ZooKeeper & zk_) : notified(false), zk(zk_) {}
-
-	void process(zhandle_t * zh, int32_t event, int32_t state, const char * path)
+	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_)
 	{
-		if (notified)
-		{
-			LOG_WARNING(&Logger::get("WatchWithPromise"), "Ignoring event " << event << " with state "
-				<< state << (path ? std::string(" for path ") + path : ""));
-			return;
-		}
-		promise.set_value(WatchEventInfo(event, state, path));
-		notified = true;
+		zk.watch_store.insert(this);
+	}
+
+	~WatchWithEvent()
+	{
+		zk.watch_store.erase(this);
+	}
+
+	void process(zhandle_t * zh, int32_t event_type, int32_t state, const char * path)
+	{
+		event->set();
 	}
 };
 
-WatchWithPromisePtr ZooKeeper::watchForFuture(WatchFuture * future)
-{
-	if (!future)
-		return nullptr;
-	WatchWithPromisePtr res = new WatchWithPromise(*this);
-	watch_store.insert(res);
-	*future = res->promise.get_future();
-	return res;
-}
-
-
-void ZooKeeper::processPromise(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx)
+void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx)
 {
 	if (watcherCtx)
 	{
-		WatchWithPromise * watch = reinterpret_cast<WatchWithPromise *>(watcherCtx);
+		WatchWithEvent * watch = reinterpret_cast<WatchWithEvent *>(watcherCtx);
 		watch->process(zh, type, state, path);
 		delete watch;
-		watch->zk.watch_store.erase(watch);
 	}
 }
 
@@ -127,21 +113,24 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 	init(args.hosts, args.session_timeout_ms, watch);
 }
 
+void * ZooKeeper::watchForEvent(EventPtr event)
+{
+	return event ? reinterpret_cast<void *>(new WatchWithEvent(*this, event)) : nullptr;
+}
+
+watcher_fn ZooKeeper::callbackForEvent(EventPtr event)
+{
+	return event ? processEvent : nullptr;
+}
+
 int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 					Stat * stat_,
-					WatchFuture * watch)
+					EventPtr watch)
 {
 	String_vector strings;
 	int code;
 	Stat stat;
-	if (watch)
-	{
-		code = zoo_wget_children2(impl, path.c_str(), processPromise, reinterpret_cast<void *>(watchForFuture(watch)), &strings, &stat);
-	}
-	else
-	{
-		code = zoo_wget_children2(impl, path.c_str(), nullptr, nullptr, &strings, &stat);
-	}
+	code = zoo_wget_children2(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &strings, &stat);
 
 	if (code == ZOK)
 	{
@@ -156,7 +145,7 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 	return code;
 }
 Strings ZooKeeper::getChildren(
-	const std::string & path, Stat * stat, WatchFuture * watch)
+	const std::string & path, Stat * stat, EventPtr watch)
 {
 	Strings res;
 	check(tryGetChildren(path, res, stat, watch), path);
@@ -164,7 +153,7 @@ Strings ZooKeeper::getChildren(
 }
 
 int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
-								Stat * stat_, WatchFuture * watch)
+								Stat * stat_, EventPtr watch)
 {
 	int32_t code = retry(boost::bind(&ZooKeeper::getChildrenImpl, this, boost::ref(path), boost::ref(res), stat_, watch));
 
@@ -242,14 +231,11 @@ int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 	return code;
 }
 
-int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchFuture * watch)
+int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr watch)
 {
 	int32_t code;
 	Stat stat;
-	if (watch)
-		code = zoo_wexists(impl, path.c_str(), processPromise, reinterpret_cast<void *>(watchForFuture(watch)), &stat);
-	else
-		code = zoo_wexists(impl, path.c_str(), nullptr, nullptr, &stat);
+	code = zoo_wexists(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &stat);
 
 	if (code == ZOK)
 	{
@@ -260,7 +246,7 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchFutur
 	return code;
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat_, WatchFuture * watch)
+bool ZooKeeper::exists(const std::string & path, Stat * stat_, EventPtr watch)
 {
 	int32_t code = existsImpl(path, stat_, watch);
 
@@ -272,16 +258,13 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, WatchFuture * wat
 	return true;
 }
 
-int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchFuture * watch)
+int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, EventPtr watch)
 {
 	char buffer[MAX_NODE_SIZE];
 	int buffer_len = MAX_NODE_SIZE;
 	int32_t code;
 	Stat stat;
-	if (watch)
-		code = zoo_wget(impl, path.c_str(), processPromise, reinterpret_cast<void *>(watchForFuture(watch)), buffer, &buffer_len, &stat);
-	else
-		code = zoo_wget(impl, path.c_str(), nullptr, nullptr, buffer, &buffer_len, &stat);
+	code = zoo_wget(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), buffer, &buffer_len, &stat);
 
 	if (code == ZOK)
 	{
@@ -293,7 +276,7 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 	return code;
 }
 
-std::string ZooKeeper::get(const std::string & path, Stat * stat, WatchFuture * watch)
+std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch)
 {
 	std::string res;
 	if (tryGet(path, res, stat, watch))
@@ -302,7 +285,7 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, WatchFuture * 
 		throw KeeperException("Fail to get data for node " + path);
 }
 
-bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, WatchFuture * watch)
+bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, EventPtr watch)
 {
 	int32_t code = retry(boost::bind(&ZooKeeper::getImpl, this, boost::ref(path), boost::ref(res), stat_, watch));
 
@@ -417,10 +400,10 @@ ZooKeeper::~ZooKeeper()
 		LOG_ERROR(&Logger::get("~ZooKeeper"), "Failed to close ZooKeeper session: " << zerror(code));
 	}
 
-	/// удаляем WatchWithPromise которые уже никогда не будут обработаны
-	for (WatchWithPromise * watch : watch_store)
+	/// удаляем WatchWithEvent которые уже никогда не будут обработаны
+	auto watch_store_snapshot = watch_store;
+	for (WatchWithEvent * watch : watch_store_snapshot)
 		delete watch;
-	watch_store.clear();
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const

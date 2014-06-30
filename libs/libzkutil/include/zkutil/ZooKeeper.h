@@ -10,13 +10,13 @@ namespace zkutil
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 
-struct WatchWithPromise;
+struct WatchWithEvent;
 
 /// Из-за вызова С кода легче самому явно управлять памятью
-typedef WatchWithPromise * WatchWithPromisePtr;
+typedef WatchWithEvent * WatchWithEventPtr;
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
-  * Вместо callback-ов для watch-ей используются std::future.
+  * Вместо callback-ов для watch-ей используются Poco::Event.
   * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке кроме OperationTimeout.
   * При OperationTimeout пытаемся попробоватть еще retry_num раз.
   * Методы с названиями, начинающимися с try, не бросают исключение только при перечисленных видах ошибок.
@@ -91,14 +91,14 @@ public:
 	  */
 	int32_t tryRemove(const std::string & path, int32_t version = -1);
 
-	bool exists(const std::string & path, Stat * stat = nullptr, WatchFuture * watch = nullptr);
+	bool exists(const std::string & path, Stat * stat = nullptr, EventPtr watch = nullptr);
 
-	std::string get(const std::string & path, Stat * stat = nullptr, WatchFuture * watch = nullptr);
+	std::string get(const std::string & path, Stat * stat = nullptr, EventPtr watch = nullptr);
 
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет. В таком случае возвращает false.
 	  */
-	bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, WatchFuture * watch = nullptr);
+	bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, EventPtr watch = nullptr);
 
 	void set(const std::string & path, const std::string & data,
 			int32_t version = -1, Stat * stat = nullptr);
@@ -112,14 +112,14 @@ public:
 
 	Strings getChildren(const std::string & path,
 						Stat * stat = nullptr,
-						WatchFuture * watch = nullptr);
+						EventPtr watch = nullptr);
 
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.
 	  */
 	int32_t tryGetChildren(const std::string & path, Strings & res,
 						Stat * stat = nullptr,
-						WatchFuture * watch = nullptr);
+						EventPtr watch = nullptr);
 
 	/** Транзакционно выполняет несколько операций. При любой ошибке бросает исключение.
 	  */
@@ -144,10 +144,13 @@ public:
 	/// На самом деле размер меньше, но для удобства округлим в верхнюю сторону
 	static const size_t SEQUENTIAL_SUFFIX_SIZE = 64;
 private:
+	friend struct WatchWithEvent;
+
 	void init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_);
 	void removeChildrenRecursive(const std::string & path);
-	WatchWithPromisePtr watchForFuture(WatchFuture * future);
-	static void processPromise(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);
+	void * watchForEvent(EventPtr event);
+	watcher_fn callbackForEvent(EventPtr event);
+	static void processEvent(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);
 
 	template <class T>
 	int32_t retry(const T & operation)
@@ -163,14 +166,14 @@ private:
 	/// методы не бросают исключений, а возвращают коды ошибок
 	int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
 	int32_t removeImpl(const std::string & path, int32_t version = -1);
-	int32_t getImpl(const std::string & path, std::string & res, Stat * stat = nullptr, WatchFuture * watch = nullptr);
+	int32_t getImpl(const std::string & path, std::string & res, Stat * stat = nullptr, EventPtr watch = nullptr);
 	int32_t setImpl(const std::string & path, const std::string & data,
 							int32_t version = -1, Stat * stat = nullptr);
 	int32_t getChildrenImpl(const std::string & path, Strings & res,
 						Stat * stat = nullptr,
-						WatchFuture * watch = nullptr);
+						EventPtr watch = nullptr);
 	int32_t multiImpl(const Ops & ops, OpResultsPtr * out_results = nullptr);
-	int32_t existsImpl(const std::string & path, Stat * stat_, WatchFuture * watch = nullptr);
+	int32_t existsImpl(const std::string & path, Stat * stat_, EventPtr watch = nullptr);
 
 	std::string hosts;
 	int32_t sessionTimeoutMs;
@@ -180,7 +183,7 @@ private:
 	zhandle_t * impl;
 
 	WatchFunction * state_watch;
-	std::unordered_set<WatchWithPromise *> watch_store;
+	std::unordered_set<WatchWithEvent *> watch_store;
 
 	/// Количество попыток повторить операцию при OperationTimeout
 	size_t retry_num = 3;
