@@ -88,6 +88,7 @@ public:
 
 		size_t files;
 		readBinary(files, in);
+		MergeTreeData::DataPart::Checksums checksums;
 		for (size_t i = 0; i < files; ++i)
 		{
 			String file_name;
@@ -105,6 +106,9 @@ public:
 
 			if (expected_hash != hashing_out.getHash())
 				throw Exception("Checksum mismatch for file " + part_path + file_name + " transferred from " + replica_path);
+
+			if (file_name != "checksums.txt")
+				checksums.addFile(file_name, file_size, expected_hash);
 		}
 
 		assertEOF(in);
@@ -115,6 +119,8 @@ public:
 		new_data_part->modification_time = time(0);
 		new_data_part->loadIndex();
 		new_data_part->loadChecksums();
+
+		new_data_part->checksums.checkEqual(checksums, false);
 
 		return new_data_part;
 	}

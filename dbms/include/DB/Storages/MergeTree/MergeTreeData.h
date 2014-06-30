@@ -134,12 +134,20 @@ public:
 				size_t uncompressed_size;
 				uint128 uncompressed_hash;
 
+				Checksum() {}
+				Checksum(size_t file_size_, uint128 file_hash_) : file_size(file_size_), file_hash(file_hash_) {}
+
 				void checkEqual(const Checksum & rhs, bool have_uncompressed, const String & name) const;
 				void checkSize(const String & path) const;
 			};
 
 			typedef std::map<String, Checksum> FileChecksums;
 			FileChecksums files;
+
+			void addFile(const String & file_name, size_t file_size, uint128 file_hash)
+			{
+				files[file_name] = Checksum(file_size, file_hash);
+			}
 
 			/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
 			/// Если have_uncompressed, для сжатых файлов сравнивает чексуммы разжатых данных. Иначе сравнивает только чексуммы файлов.
