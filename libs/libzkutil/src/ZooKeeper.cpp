@@ -70,6 +70,7 @@ void ZooKeeper::processPromise(zhandle_t * zh, int type, int state, const char *
 
 void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, WatchFunction * watch_)
 {
+	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
 	sessionTimeoutMs = sessionTimeoutMs_;
 	state_watch = watch_;
@@ -87,7 +88,6 @@ void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, Watc
 
 ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
 {
-	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	init(hosts, sessionTimeoutMs, watch_);
 }
 
