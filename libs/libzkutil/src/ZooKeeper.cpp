@@ -386,11 +386,8 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 
 	int32_t code = zoo_multi(impl, ops.size(), ops.data(), out_results->data());
 
-	if (code == ZOK)
-	{
-		if (out_results_)
-			*out_results_ = out_results;
-	}
+	if (out_results_)
+		*out_results_ = out_results;
 
 	return code;
 }
@@ -416,6 +413,11 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 		code != ZOPERATIONTIMEOUT)
 			throw KeeperException(code);
 	return code;
+}
+
+int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results)
+{
+	return retry(boost::bind(&ZooKeeper::tryMulti, this, boost::ref(ops), out_results));
 }
 
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
