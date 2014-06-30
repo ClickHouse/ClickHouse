@@ -79,7 +79,7 @@ private:
 
 	std::thread thread;
 	volatile bool shutdown;
-	zkutil::EventPtr event;
+	zkutil::EventPtr event = new Poco::Event();
 
 	State state;
 
