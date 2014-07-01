@@ -70,6 +70,8 @@ void ZooKeeper::processPromise(zhandle_t * zh, int type, int state, const char *
 
 void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, WatchFunction * watch_)
 {
+	log = &Logger::get("ZooKeeper");
+	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
 	sessionTimeoutMs = sessionTimeoutMs_;
 	state_watch = watch_;
@@ -87,7 +89,6 @@ void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, Watc
 
 ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
 {
-	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	init(hosts, sessionTimeoutMs, watch_);
 }
 
@@ -203,12 +204,14 @@ std::string ZooKeeper::create(const std::string & path, const std::string & data
 
 int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated)
 {
-	int code = retry(boost::bind(&ZooKeeper::createImpl, this, boost::ref(path), boost::ref(data), mode, boost::ref(pathCreated)));
+	int code = createImpl(path, data, mode, pathCreated);
 
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZNODEEXISTS ||
-			code == ZNOCHILDRENFOREPHEMERALS))
+			code == ZNOCHILDRENFOREPHEMERALS ||
+			code == ZCONNECTIONLOSS ||
+			code == ZOPERATIONTIMEOUT))
 		throw KeeperException(code, path);
 
 	return code;
@@ -218,6 +221,27 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 {
 	std::string pathCreated;
 	return tryCreate(path, data, mode, pathCreated);
+}
+
+void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
+{
+	int32_t code = tryCreate(path, "", zkutil::CreateMode::Persistent);
+
+	if (code == ZOK || code == ZNODEEXISTS)
+		return;
+
+	if (!(code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS))
+		throw KeeperException(code, path);
+
+	for (size_t attempt = 0; attempt < retry_num && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++attempt)
+	{
+		code = tryCreate(path, "", zkutil::CreateMode::Persistent);
+	};
+
+	if (code == ZOK || code == ZNODEEXISTS)
+		return;
+	else
+		throw KeeperException(code, path);
 }
 
 int32_t ZooKeeper::removeImpl(const std::string & path, int32_t version)
@@ -233,11 +257,13 @@ void ZooKeeper::remove(const std::string & path, int32_t version)
 
 int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::removeImpl, this, boost::ref(path), version));
+	int32_t code = removeImpl(path, version);
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZBADVERSION ||
-			code == ZNOTEMPTY))
+			code == ZNOTEMPTY ||
+			code == ZCONNECTIONLOSS ||
+			code == ZOPERATIONTIMEOUT))
 		throw KeeperException(code, path);
 	return code;
 }
@@ -262,7 +288,7 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchFutur
 
 bool ZooKeeper::exists(const std::string & path, Stat * stat_, WatchFuture * watch)
 {
-	int32_t code = existsImpl(path, stat_, watch);
+	int32_t code = retry(boost::bind(&ZooKeeper::existsImpl, this, path, stat_, watch));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -337,11 +363,13 @@ void ZooKeeper::set(const std::string & path, const std::string & data, int32_t 
 int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
 									int32_t version, Stat * stat_)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::setImpl, this, boost::ref(path), boost::ref(data), version, stat_));
+	int32_t code = setImpl(path, data, version, stat_);
 
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
-			code == ZBADVERSION))
+			code == ZBADVERSION ||
+			code == ZCONNECTIONLOSS ||
+			code == ZOPERATIONTIMEOUT))
 		throw KeeperException(code, path);
 	return code;
 }
@@ -359,11 +387,8 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 
 	int32_t code = zoo_multi(impl, ops.size(), ops.data(), out_results->data());
 
-	if (code == ZOK)
-	{
-		if (out_results_)
-			*out_results_ = out_results;
-	}
+	if (out_results_)
+		*out_results_ = out_results;
 
 	return code;
 }
@@ -377,16 +402,23 @@ OpResultsPtr ZooKeeper::multi(const Ops & ops)
 
 int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::multiImpl, this, boost::ref(ops_), out_results_));
+	int32_t code = multiImpl(ops_, out_results_);
 
 	if (code != ZOK &&
 		code != ZNONODE &&
 		code != ZNODEEXISTS &&
 		code != ZNOCHILDRENFOREPHEMERALS &&
 		code != ZBADVERSION &&
-		code != ZNOTEMPTY)
+		code != ZNOTEMPTY &&
+		code != ZCONNECTIONLOSS &&
+		code != ZOPERATIONTIMEOUT)
 			throw KeeperException(code);
 	return code;
+}
+
+int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results)
+{
+	return retry(boost::bind(&ZooKeeper::tryMulti, this, boost::ref(ops), out_results));
 }
 
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
