@@ -50,71 +50,69 @@ public:
 	  * В блоке должно быть либо ни одного столбца из column_names, либо все, для которых есть файлы. */
 	void readRange(size_t from_mark, size_t to_mark, Block & res)
 	{
-		size_t max_rows_to_read = (to_mark - from_mark) * storage.index_granularity;
-
-		/** Для некоторых столбцов файлы с данными могут отсутствовать.
-			* Это бывает для старых кусков, после добавления новых столбцов в структуру таблицы.
-			*/
-		bool has_missing_columns = false;
-
-		/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
-		/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
-		OffsetColumns offset_columns;
-
-		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+		try
 		{
-			if (streams.end() == streams.find(*it))
+			size_t max_rows_to_read = (to_mark - from_mark) * storage.index_granularity;
+
+			/** Для некоторых столбцов файлы с данными могут отсутствовать.
+				* Это бывает для старых кусков, после добавления новых столбцов в структуру таблицы.
+				*/
+			bool has_missing_columns = false;
+
+			/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
+			/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
+			OffsetColumns offset_columns;
+
+			for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 			{
-				has_missing_columns = true;
-				continue;
-			}
+				if (streams.end() == streams.find(*it))
+				{
+					has_missing_columns = true;
+					continue;
+				}
 
-			/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
-			bool append = res.has(*it);
+				/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
+				bool append = res.has(*it);
 
-			ColumnWithNameAndType column;
-			column.name = *it;
-			column.type = storage.getDataTypeByName(*it);
-			if (append)
-				column.column = res.getByName(column.name).column;
+				ColumnWithNameAndType column;
+				column.name = *it;
+				column.type = storage.getDataTypeByName(*it);
+				if (append)
+					column.column = res.getByName(column.name).column;
 
-			bool read_offsets = true;
+				bool read_offsets = true;
 
-			/// Для вложенных структур запоминаем указатели на столбцы со смещениями
-			if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
-			{
-				String name = DataTypeNested::extractNestedTableName(column.name);
+				/// Для вложенных структур запоминаем указатели на столбцы со смещениями
+				if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
+				{
+					String name = DataTypeNested::extractNestedTableName(column.name);
 
-				if (offset_columns.count(name) == 0)
-					offset_columns[name] = append ? NULL : new ColumnArray::ColumnOffsets_t;
-				else
-					read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
+					if (offset_columns.count(name) == 0)
+						offset_columns[name] = append ? NULL : new ColumnArray::ColumnOffsets_t;
+					else
+						read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
-				if (!append)
-					column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
-			}
-			else if (!append)
-				column.column = column.type->createColumn();
+					if (!append)
+						column.column = new ColumnArray(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+				}
+				else if (!append)
+					column.column = column.type->createColumn();
 
-			try
-			{
 				readData(column.name, *column.type, *column.column, from_mark, max_rows_to_read, 0, read_offsets);
-			}
-			catch (const Exception & e)
-			{
-				/// Более хорошая диагностика.
-				if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH || e.code() == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED)
-					throw Exception(e.message() + " (while reading column " + *it + " from part " + path + ")", e.code());
-				else
-					throw;
+
+				if (!append && column.column->size())
+					res.insert(column);
 			}
 
-			if (!append && column.column->size())
-				res.insert(column);
+			if (has_missing_columns && !res)
+				throw Exception("All requested columns are missing", ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING);
 		}
-
-		if (has_missing_columns && !res)
-			throw Exception("All requested columns are missing", ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING);
+		catch (const Exception & e)
+		{
+			/// Более хорошая диагностика.
+			throw Exception(e.message() + " (while reading from part " + path + " from mark " + toString(from_mark) + " to "
+				+ toString(to_mark) + ")", e.code());
+		}
 	}
 
 	/// Заполняет столбцы, которых нет в блоке, значениями по умолчанию.
@@ -178,10 +176,7 @@ public:
 		catch (const Exception & e)
 		{
 			/// Более хорошая диагностика.
-			if (e.code() == ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH)
-				throw Exception(e.message() + " (while reading from part " + path + ")", e.code());
-			else
-				throw;
+			throw Exception(e.message() + " (while reading from part " + path + ")", e.code());
 		}
 	}
 
