@@ -16,7 +16,7 @@ struct WatchWithEvent;
 typedef WatchWithEvent * WatchWithEventPtr;
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
-  * Вместо callback-ов для watch-ей используются Poco::Event.
+  * Вместо callback-ов для watch-ей используются Poco::Event. Для указанного события вызывается set() только при первом вызове watch.
   * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке кроме OperationTimeout.
   * При OperationTimeout пытаемся попробоватть еще retry_num раз.
   * Методы с названиями, начинающимися с try, не бросают исключение только при перечисленных видах ошибок.

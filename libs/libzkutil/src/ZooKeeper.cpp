@@ -27,20 +27,17 @@ struct WatchWithEvent
 	/// существует все время существования WatchWithEvent
 	ZooKeeper & zk;
 	EventPtr event;
+	bool notified = false;
 
-	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_)
-	{
-		zk.watch_store.insert(this);
-	}
-
-	~WatchWithEvent()
-	{
-		zk.watch_store.erase(this);
-	}
+	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
 
 	void process(zhandle_t * zh, int32_t event_type, int32_t state, const char * path)
 	{
-		event->set();
+		if (!notified)
+		{
+			notified = true;
+			event->set();
+		}
 	}
 };
 
@@ -50,7 +47,13 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 	{
 		WatchWithEvent * watch = reinterpret_cast<WatchWithEvent *>(watcherCtx);
 		watch->process(zh, type, state, path);
-		delete watch;
+
+		/// Гарантируется, что не-ZOO_SESSION_EVENT событие придет ровно один раз (https://issues.apache.org/jira/browse/ZOOKEEPER-890).
+		if (type != ZOO_SESSION_EVENT)
+		{
+			watch->zk.watch_store.erase(watch);
+			delete watch;
+		}
 	}
 }
 
@@ -115,7 +118,16 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 
 void * ZooKeeper::watchForEvent(EventPtr event)
 {
-	return event ? reinterpret_cast<void *>(new WatchWithEvent(*this, event)) : nullptr;
+	if (event)
+	{
+		WatchWithEvent * res = new WatchWithEvent(*this, event);
+		watch_store.insert(res);
+		return reinterpret_cast<void *>(res);
+	}
+	else
+	{
+		return nullptr;
+	}
 }
 
 watcher_fn ZooKeeper::callbackForEvent(EventPtr event)
@@ -401,8 +413,7 @@ ZooKeeper::~ZooKeeper()
 	}
 
 	/// удаляем WatchWithEvent которые уже никогда не будут обработаны
-	auto watch_store_snapshot = watch_store;
-	for (WatchWithEvent * watch : watch_store_snapshot)
+	for (WatchWithEvent * watch : watch_store)
 		delete watch;
 }
 
