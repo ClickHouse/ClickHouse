@@ -248,7 +248,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 
 /// parts должны быть отсортированы.
-MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name)
+MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
+	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeTreeData::Transaction * out_transaction)
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
@@ -329,7 +330,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(const MergeTreeData::
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
 
 	/// Переименовываем новый кусок, добавляем в набор и убираем исходные куски.
-	auto replaced_parts = data.renameTempPartAndReplace(new_data_part);
+	auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, out_transaction);
 
 	if (new_data_part->name != merged_name)
 		LOG_ERROR(log, "Unexpected part name: " << new_data_part->name << " instead of " << merged_name);

@@ -584,9 +584,9 @@ void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
 }
 
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment)
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment, Transaction * out_transaction)
 {
-	auto removed = renameTempPartAndReplace(part, increment);
+	auto removed = renameTempPartAndReplace(part, increment, out_transaction);
 	if (!removed.empty())
 	{
 		LOG_ERROR(log, "Added part " << part->name << + " covers " << toString(removed.size())
@@ -594,8 +594,12 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 	}
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment)
+MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
+	MutableDataPartPtr part, Increment * increment, Transaction * out_transaction)
 {
+	if (out_transaction && out_transaction->data)
+		throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid");
+
 	LOG_TRACE(log, "Renaming " << part->name << ".");
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
@@ -665,7 +669,31 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(MutableDa
 
 	all_data_parts.insert(part);
 
+	if (out_transaction)
+	{
+		out_transaction->data = this;
+		out_transaction->added_parts = res;
+		out_transaction->removed_parts = DataPartsVector(1, part);
+	}
+
 	return res;
+}
+
+void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add)
+{
+	LOG_TRACE(log, "Removing " << remove.size() << " parts and adding " << add.size() << " parts.");
+
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	for (const DataPartPtr & part : remove)
+	{
+		part->remove_time = time(0);
+		data_parts.erase(part);
+	}
+	for (const DataPartPtr & part : add)
+	{
+		data_parts.insert(part);
+	}
 }
 
 void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)

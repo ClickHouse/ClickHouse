@@ -45,7 +45,8 @@ public:
 
 			LOG_DEBUG(log, "Wrote block " << part_number << " with ID " << block_id);
 
-			storage.data.renameTempPartAndAdd(part);
+			MergeTreeData::Transaction transaction; /// Если не получится добавить кусок в ZK, снова уберем его из рабочего набора.
+			storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
 			StorageReplicatedMergeTree::LogEntry log_entry;
 			log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
@@ -81,38 +82,34 @@ public:
 			block_number_lock.getUnlockOps(ops);
 
 			auto code = storage.zookeeper->tryMulti(ops);
-			if (code != ZOK)
+			if (code == ZOK)
 			{
-				if (code == ZNODEEXISTS)
+				transaction.commit();
+			}
+			else if (code == ZNODEEXISTS)
+			{
+				/// Если блок с таким ID уже есть в таблице, откатим его вставку.
+				String expected_checksums_str;
+				if (!block_id.empty() && storage.zookeeper->tryGet(
+					storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
 				{
-					/// Если блок с таким ID уже есть в таблице, не будем его вставлять, и удалим только что записанные данные.
-					/// NOTE: В короткое время между renameTempPartAndAdd и deletePart в таблице на этой реплике доступны
-					///  продублированные данные.
-					String expected_checksums_str;
-					if (!block_id.empty() && storage.zookeeper->tryGet(
-						storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
-					{
-						LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+					LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
 
-						auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
-						auto found_checksums = part->checksums;
+					auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
 
-						storage.data.deletePart(part);
-
-						/// Если данные отличались от тех, что были вставлены ранее с тем же ID, бросим исключение.
-						expected_checksums.checkEqual(part->checksums, true);
-					}
-					else
-					{
-						throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID " + block_id + ": "
-							+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
-					}
+					/// Если данные отличались от тех, что были вставлены ранее с тем же ID, бросим исключение.
+					expected_checksums.checkEqual(part->checksums, true);
 				}
 				else
 				{
-					throw Exception("Unexpected error while adding block " + toString(part_number) + " with ID " + block_id + ": "
+					throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID " + block_id + ": "
 						+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
 				}
+			}
+			else
+			{
+				throw Exception("Unexpected error while adding block " + toString(part_number) + " with ID " + block_id + ": "
+					+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
 			}
 		}
 	}

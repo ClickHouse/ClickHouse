@@ -776,12 +776,14 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		}
 		else
 		{
-			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name);
+			MergeTreeData::Transaction transaction;
+			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, &transaction);
 
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
 
 			zookeeper->multi(ops);
+			transaction.commit();
 
 			ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 		}
@@ -1183,12 +1185,15 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	assertEOF(buf);
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, zookeeper_path + "/replicas/" + replica_name, host, port);
-	auto removed_parts = data.renameTempPartAndReplace(part);
+
+	MergeTreeData::Transaction transaction;
+	auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
 
 	zkutil::Ops ops;
 	checkPartAndAddToZooKeeper(part, ops);
 
 	zookeeper->multi(ops);
+	transaction.commit();
 
 	for (const auto & removed_part : removed_parts)
 	{

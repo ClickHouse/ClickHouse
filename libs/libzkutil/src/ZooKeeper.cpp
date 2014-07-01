@@ -294,7 +294,7 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch
 	if (tryGet(path, res, stat, watch))
 		return res;
 	else
-		throw KeeperException("Fail to get data for node " + path);
+		throw KeeperException("Can't get data for node " + path + ": node doesn't exist");
 }
 
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, EventPtr watch)

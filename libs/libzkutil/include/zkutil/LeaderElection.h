@@ -89,6 +89,8 @@ private:
 	{
 		while (!shutdown)
 		{
+			bool success = false;
+
 			try
 			{
 				Strings children = zookeeper.getChildren(path);
@@ -106,6 +108,8 @@ private:
 
 				if (zookeeper.exists(path + "/" + *(it - 1), nullptr, event))
 					event->tryWait(60 * 1000);
+
+				success = true;
 			}
 			catch (const DB::Exception & e)
 			{
@@ -126,6 +130,9 @@ private:
 			{
 				LOG_ERROR(log, "Unknown exception in LeaderElection");
 			}
+
+			if (!success)
+				std::this_thread::sleep_for(std::chrono::seconds(10));
 		}
 	}
 };
