@@ -1,5 +1,3 @@
-#include <boost/assign/list_inserter.hpp>
-
 #include <DB/TableFunctions/TableFunctionMerge.h>
 #include <DB/TableFunctions/TableFunctionRemote.h>
 

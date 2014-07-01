@@ -1,5 +1,3 @@
-#include <boost/assign/list_inserter.hpp>
-
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsComparison.h>
 #include <DB/Functions/FunctionsLogical.h>
@@ -34,7 +32,7 @@ FunctionPtr FunctionFactory::get(
 	const Context & context) const
 {
 	/// Немного неоптимально.
-	
+
 		 if (name == "plus")						return new FunctionPlus;
 	else if (name == "minus")						return new FunctionMinus;
 	else if (name == "multiply")					return new FunctionMultiply;
@@ -151,7 +149,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "cityHash64")					return new FunctionCityHash64;
 	else if (name == "intHash32")					return new FunctionIntHash32;
 	else if (name == "intHash64")					return new FunctionIntHash64;
-	
+
 	else if (name == "IPv4NumToString")			return new FunctionIPv4NumToString;
 	else if (name == "IPv4StringToNum")			return new FunctionIPv4StringToNum;
 	else if (name == "hex")							return new FunctionHex;
@@ -211,7 +209,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "arrayExists")				return new FunctionArrayExists;
 	else if (name == "arrayAll")					return new FunctionArrayAll;
 	else if (name == "arraySum")					return new FunctionArraySum;
-	
+
 	else if (name == "alphaTokens")				return new FunctionAlphaTokens;
 	else if (name == "splitByChar")				return new FunctionSplitByChar;
 	else if (name == "splitByString")				return new FunctionSplitByString;
@@ -235,7 +233,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "SEHierarchy")				return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
 	else if (name == "categoryHierarchy")			return new FunctionCategoryHierarchy(context.getDictionaries().getCategoriesHierarchy());
 	else if (name == "regionToName")				return new FunctionRegionToName(context.getDictionaries().getRegionsNames());
-	
+
 	else if (name == "visitParamHas")				return new FunctionVisitParamHas;
 	else if (name == "visitParamExtractUInt")		return new FunctionVisitParamExtractUInt;
 	else if (name == "visitParamExtractInt")		return new FunctionVisitParamExtractInt;

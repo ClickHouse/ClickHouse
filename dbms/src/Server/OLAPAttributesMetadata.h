@@ -3,7 +3,6 @@
 #include <math.h>	// log2()
 
 #include <boost/algorithm/string.hpp>
-#include <boost/assign/list_of.hpp>
 
 #include <Poco/NumberParser.h>
 #include <Poco/StringTokenizer.h>
@@ -68,14 +67,14 @@ struct AttributeDateTimeBase : public IAttributeMetadata
 	BinaryData parse(const std::string & s) const
 	{
 		struct tm tm;
-		
+
 		memset(&tm, 0, sizeof(tm));
 		sscanf(s.c_str(), "%04d-%02d-%02d %02d:%02d:%02d",
 			   &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec);
 		tm.tm_mon--;
 		tm.tm_year -= 1900;
 		tm.tm_isdst = -1;
-		
+
 		time_t res = mktime(&tm);
 		return res >= 0 ? res : 0;
 	}
@@ -87,14 +86,14 @@ struct AttributeDateBase : public IAttributeMetadata
 	BinaryData parse(const std::string & s) const
 	{
 		struct tm tm;
-		
+
 		memset(&tm, 0, sizeof(tm));
 		sscanf(s.c_str(), "%04d-%02d-%02d",
 			   &tm.tm_year, &tm.tm_mon, &tm.tm_mday);
 		tm.tm_mon--;
 		tm.tm_year -= 1900;
 		tm.tm_isdst = -1;
-		
+
 		time_t res = mktime(&tm);
 		return res >= 0 ? res : 0;
 	}
@@ -106,11 +105,11 @@ struct AttributeTimeBase : public IAttributeMetadata
 	BinaryData parse(const std::string & s) const
 	{
 		struct tm tm;
-		
+
 		memset(&tm, 0, sizeof(tm));
 		sscanf(s.c_str(), "%02d:%02d:%02d",
 			   &tm.tm_hour, &tm.tm_min, &tm.tm_sec);
-		
+
 		time_t res = mktime(&tm);
 		return res >= 0 ? res : 0;
 	}
@@ -550,7 +549,7 @@ struct Interests : public IAttributeMetadata
 			return 0;
 		using namespace boost::algorithm;
 		BinaryData value = 0;
-		
+
 		///коряво
 		for(split_iterator<std::string::const_iterator> i
 			= make_split_iterator(s, token_finder(is_any_of(","),
@@ -563,7 +562,7 @@ struct Interests : public IAttributeMetadata
 			(interest == 0x400 ? 0x400 :
 			(interest == 0x200 ? 0x200 :
 			(interest == 0x100 ? 0x100 :
-			(interest == 0x80 ? 0x80 : 
+			(interest == 0x80 ? 0x80 :
 			(interest == 0x40 ? 0x40 :
 			(interest == 0x20 ? 0x20 :
 			(interest == 0x10 ? 0x10 :
@@ -572,7 +571,7 @@ struct Interests : public IAttributeMetadata
 			(interest == 2 ? 2 :
 			(interest == 1 ? 1 : 0))))))))))))));
 		}
-		
+
 		return value;
 	}
 };
@@ -617,190 +616,191 @@ typedef std::map<std::string, Poco::SharedPtr<IAttributeMetadata> > AttributeMet
 
 inline AttributeMetadatas GetOLAPAttributeMetadata()
 {
-	return boost::assign::map_list_of<AttributeMetadatas::key_type, AttributeMetadatas::mapped_type>
-		("DummyAttribute", 						new DummyAttribute)
-		("VisitStartDateTime",					new VisitStartDateTime)
-		("VisitStartDateTimeRoundedToMinute",	new VisitStartDateTimeRoundedToMinute)
-		("VisitStartDateTimeRoundedToHour",		new VisitStartDateTimeRoundedToHour)
-		("VisitStartDate",						new VisitStartDate)
-		("VisitStartDateRoundedToMonth",		new VisitStartDateRoundedToMonth)
-		("VisitStartTime",						new VisitStartTime)
-		("VisitStartTimeRoundedToMinute",		new VisitStartTimeRoundedToMinute)
-		("VisitStartYear",			new VisitStartYear)
-		("VisitStartMonth",			new VisitStartMonth)
-		("VisitStartDayOfWeek",		new VisitStartDayOfWeek)
-		("VisitStartDayOfMonth",	new VisitStartDayOfMonth)
-		("VisitStartHour",			new VisitStartHour)
-		("VisitStartMinute",		new VisitStartMinute)
-		("VisitStartSecond",		new VisitStartSecond)
-		("VisitStartWeek",			new VisitStartWeek)
-		("FirstVisitDateTime",		new FirstVisitDateTime)
-		("FirstVisitDate",			new FirstVisitDate)
-		("FirstVisitTime",			new FirstVisitTime)
-		("FirstVisitYear",			new FirstVisitYear)
-		("FirstVisitMonth",			new FirstVisitMonth)
-		("FirstVisitDayOfWeek",		new FirstVisitDayOfWeek)
-		("FirstVisitDayOfMonth",	new FirstVisitDayOfMonth)
-		("FirstVisitHour",			new FirstVisitHour)
-		("FirstVisitMinute",		new FirstVisitMinute)
-		("FirstVisitSecond",		new FirstVisitSecond)
-		("FirstVisitWeek",			new FirstVisitWeek)
-		("PredLastVisitDate",		new PredLastVisitDate)
-		("PredLastVisitYear",		new PredLastVisitYear)
-		("PredLastVisitMonth",		new PredLastVisitMonth)
-		("PredLastVisitDayOfWeek",	new PredLastVisitDayOfWeek)
-		("PredLastVisitDayOfMonth",	new PredLastVisitDayOfMonth)
-		("PredLastVisitWeek",		new PredLastVisitWeek)
-		("RegionID", 				new RegionID)
-		("RegionCity", 				new RegionCity)
-		("RegionArea", 				new RegionArea)
-		("RegionCountry",			new RegionCountry)
-		("TraficSourceID", 			new TraficSourceID)
-		("UserNewness", 			new UserNewness)
-		("UserNewnessInterval", 	new UserNewnessInterval)
-		("UserReturnTime", 			new UserReturnTime)
-		("UserReturnTimeInterval", 	new UserReturnTimeInterval)
-		("UserVisitsPeriod",		new UserVisitsPeriod)
-		("UserVisitsPeriodInterval",new UserVisitsPeriodInterval)
-		("VisitTime", 				new VisitTime)
-		("VisitTimeInterval",		new VisitTimeInterval)
-		("PageViews", 				new PageViews)
-		("PageViewsInterval",		new PageViewsInterval)
-		("UserID", 					new UserID)
-		("TotalVisits", 			new TotalVisits)
-		("TotalVisitsInterval",		new TotalVisitsInterval)
-		("Age", 					new Age)
-		("AgeInterval",				new AgeInterval)
-		("Sex", 					new Sex)
-		("Income", 					new Income)
-		("AdvEngineID", 			new AdvEngineID)
-		("DotNet", 					new DotNet)
-		("DotNetMajor",				new DotNetMajor)
-		("EndURLHash",				new EndURLHash)
-		("Flash", 					new Flash)
-		("FlashMajor",				new FlashMajor)
-		("FlashExists",				new FlashExists)
-		("Hits", 					new Hits)
-		("HitsInterval",			new HitsInterval)
-		("JavaEnable",				new JavaEnable)
-		("OSID", 					new OSID)
-		("ClientIP",				new ClientIP)
-		("RefererHash",				new RefererHash)
-		("RefererDomainHash",		new RefererDomainHash)
-		("Resolution",				new Resolution)
-		("ResolutionWidthHeight",	new ResolutionWidthHeight)
-		("ResolutionWidth",			new ResolutionWidth)
-		("ResolutionHeight",		new ResolutionHeight)
-		("ResolutionWidthInterval",	new ResolutionWidthInterval)
-		("ResolutionHeightInterval",new ResolutionHeightInterval)
-		("ResolutionColor",			new ResolutionColor)
-		("CookieEnable",			new CookieEnable)
-		("JavascriptEnable",		new JavascriptEnable)
-		("IsMobile",				new IsMobile)
-		("MobilePhoneID",			new MobilePhoneID)
-		("MobilePhoneModel",		new MobilePhoneModel)
-		("MobilePhoneModelHash",	new MobilePhoneModelHash)
-		("IPNetworkID",				new IPNetworkID)
-		("WindowClientArea",		new WindowClientArea)
-		("WindowClientWidth",		new WindowClientWidth)
-		("WindowClientHeight",		new WindowClientHeight)
-		("WindowClientAreaInterval",new WindowClientAreaInterval)
-		("WindowClientWidthInterval",new WindowClientWidthInterval)
-		("WindowClientHeightInterval",new WindowClientHeightInterval)
-		("ClientTimeZone",			new ClientTimeZone)
-		("ClientDateTime",			new ClientDateTime)
-		("ClientTime",				new ClientTime)
-		("ClientTimeHour",			new ClientTimeHour)
-		("ClientTimeMinute",		new ClientTimeMinute)
-		("ClientTimeSecond",		new ClientTimeSecond)
-		("Silverlight",				new Silverlight)
-		("SilverlightMajor",		new SilverlightMajor)
-		("SearchEngineID",			new SearchEngineID)
-		("SearchPhraseHash",		new SearchPhraseHash)
-		("StartURLHash",			new StartURLHash)
-		("StartURLDomainHash",		new StartURLDomainHash)
-		("UserAgent",				new UserAgent)
-		("UserAgentVersion",		new UserAgentVersion)
-		("UserAgentMajor",			new UserAgentMajor)
-		("UserAgentID",				new UserAgentID)
-		("ClickGoodEvent",			new ClickGoodEvent)
-		("ClickPriorityID",			new ClickPriorityID)
-		("ClickBannerID",			new ClickBannerID)
-		("ClickPageID",				new ClickPageID)
-		("ClickPlaceID",			new ClickPlaceID)
-		("ClickTypeID",				new ClickTypeID)
-		("ClickResourceID",			new ClickResourceID)
-		("ClickDomainID",			new ClickDomainID)
-		("ClickCost",				new ClickCost)
-		("ClickURLHash",			new ClickURLHash)
-		("ClickOrderID",			new ClickOrderID)
-		("GoalReaches",				new GoalReaches)
-		("GoalReachesAny",			new GoalReachesAny)
-		("GoalReachesDepth",		new GoalReachesDepth)
-		("GoalReachesURL",			new GoalReachesURL)
-		("Converted",				new Converted)
-		("ConvertedAny",			new ConvertedAny)
-		("ConvertedDepth",			new ConvertedDepth)
-		("ConvertedURL",			new ConvertedURL)
-		("Bounce",					new Bounce)
-		("BouncePrecise",			new BouncePrecise)
-		("IsNewUser",				new IsNewUser)
-		("CodeVersion",				new CodeVersion)
-		("CounterID",				new CounterID)
-		("VisitID",					new VisitID)
-		("IsYandex",				new IsYandex)
-		("TopLevelDomain",			new TopLevelDomain)
-		("URLScheme",				new URLScheme)
-		("UserIDCreateDateTime",	new UserIDCreateDateTime)
-		("UserIDCreateDate",		new UserIDCreateDate)
-		("UserIDAge",				new UserIDAge)
-		("UserIDAgeInterval",		new UserIDAgeInterval)
-		("OSMostAncestor",			new OSMostAncestor)
-		("SearchEngineMostAncestor",new SearchEngineMostAncestor)
-		("BrowserLanguage",			new BrowserLanguage)
-		("BrowserCountry",			new BrowserCountry)
-		("Interests",				new Interests)
-		("HasInterestPhoto",		new HasInterestPhoto)
-		("HasInterestMoviePremieres",	new HasInterestMoviePremieres)
-		("HasInterestMobileAndInternetCommunications",	new HasInterestMobileAndInternetCommunications)
-		("HasInterestFinance",		new HasInterestFinance)
-		("HasInterestFamilyAndChildren",	new HasInterestFamilyAndChildren)
-		("HasInterestCars",			new HasInterestCars)
-		("HasInterestB2B",			new HasInterestB2B)
-		("HasInterestTourism",		new HasInterestTourism)
-		("HasInterestBuilding",		new HasInterestBuilding)
-		("HasInterestCulinary",		new HasInterestCulinary)
-		("HasInterestSoftware",		new HasInterestSoftware)
-		("HasInterestEstate",		new HasInterestEstate)
-		("HasInterestHealthyLifestyle",	new HasInterestHealthyLifestyle)
-		("HasInterestLiterature",	new HasInterestLiterature)
+	return
+	{
+		{"DummyAttribute", 						new DummyAttribute},
+		{"VisitStartDateTime",					new VisitStartDateTime},
+		{"VisitStartDateTimeRoundedToMinute",	new VisitStartDateTimeRoundedToMinute},
+		{"VisitStartDateTimeRoundedToHour",		new VisitStartDateTimeRoundedToHour},
+		{"VisitStartDate",						new VisitStartDate},
+		{"VisitStartDateRoundedToMonth",		new VisitStartDateRoundedToMonth},
+		{"VisitStartTime",						new VisitStartTime},
+		{"VisitStartTimeRoundedToMinute",		new VisitStartTimeRoundedToMinute},
+		{"VisitStartYear",			new VisitStartYear},
+		{"VisitStartMonth",			new VisitStartMonth},
+		{"VisitStartDayOfWeek",		new VisitStartDayOfWeek},
+		{"VisitStartDayOfMonth",	new VisitStartDayOfMonth},
+		{"VisitStartHour",			new VisitStartHour},
+		{"VisitStartMinute",		new VisitStartMinute},
+		{"VisitStartSecond",		new VisitStartSecond},
+		{"VisitStartWeek",			new VisitStartWeek},
+		{"FirstVisitDateTime",		new FirstVisitDateTime},
+		{"FirstVisitDate",			new FirstVisitDate},
+		{"FirstVisitTime",			new FirstVisitTime},
+		{"FirstVisitYear",			new FirstVisitYear},
+		{"FirstVisitMonth",			new FirstVisitMonth},
+		{"FirstVisitDayOfWeek",		new FirstVisitDayOfWeek},
+		{"FirstVisitDayOfMonth",	new FirstVisitDayOfMonth},
+		{"FirstVisitHour",			new FirstVisitHour},
+		{"FirstVisitMinute",		new FirstVisitMinute},
+		{"FirstVisitSecond",		new FirstVisitSecond},
+		{"FirstVisitWeek",			new FirstVisitWeek},
+		{"PredLastVisitDate",		new PredLastVisitDate},
+		{"PredLastVisitYear",		new PredLastVisitYear},
+		{"PredLastVisitMonth",		new PredLastVisitMonth},
+		{"PredLastVisitDayOfWeek",	new PredLastVisitDayOfWeek},
+		{"PredLastVisitDayOfMonth",	new PredLastVisitDayOfMonth},
+		{"PredLastVisitWeek",		new PredLastVisitWeek},
+		{"RegionID", 				new RegionID},
+		{"RegionCity", 				new RegionCity},
+		{"RegionArea", 				new RegionArea},
+		{"RegionCountry",			new RegionCountry},
+		{"TraficSourceID", 			new TraficSourceID},
+		{"UserNewness", 			new UserNewness},
+		{"UserNewnessInterval", 	new UserNewnessInterval},
+		{"UserReturnTime", 			new UserReturnTime},
+		{"UserReturnTimeInterval", 	new UserReturnTimeInterval},
+		{"UserVisitsPeriod",		new UserVisitsPeriod},
+		{"UserVisitsPeriodInterval",new UserVisitsPeriodInterval},
+		{"VisitTime", 				new VisitTime},
+		{"VisitTimeInterval",		new VisitTimeInterval},
+		{"PageViews", 				new PageViews},
+		{"PageViewsInterval",		new PageViewsInterval},
+		{"UserID", 					new UserID},
+		{"TotalVisits", 			new TotalVisits},
+		{"TotalVisitsInterval",		new TotalVisitsInterval},
+		{"Age", 					new Age},
+		{"AgeInterval",				new AgeInterval},
+		{"Sex", 					new Sex},
+		{"Income", 					new Income},
+		{"AdvEngineID", 			new AdvEngineID},
+		{"DotNet", 					new DotNet},
+		{"DotNetMajor",				new DotNetMajor},
+		{"EndURLHash",				new EndURLHash},
+		{"Flash", 					new Flash},
+		{"FlashMajor",				new FlashMajor},
+		{"FlashExists",				new FlashExists},
+		{"Hits", 					new Hits},
+		{"HitsInterval",			new HitsInterval},
+		{"JavaEnable",				new JavaEnable},
+		{"OSID", 					new OSID},
+		{"ClientIP",				new ClientIP},
+		{"RefererHash",				new RefererHash},
+		{"RefererDomainHash",		new RefererDomainHash},
+		{"Resolution",				new Resolution},
+		{"ResolutionWidthHeight",	new ResolutionWidthHeight},
+		{"ResolutionWidth",			new ResolutionWidth},
+		{"ResolutionHeight",		new ResolutionHeight},
+		{"ResolutionWidthInterval",	new ResolutionWidthInterval},
+		{"ResolutionHeightInterval",new ResolutionHeightInterval},
+		{"ResolutionColor",			new ResolutionColor},
+		{"CookieEnable",			new CookieEnable},
+		{"JavascriptEnable",		new JavascriptEnable},
+		{"IsMobile",				new IsMobile},
+		{"MobilePhoneID",			new MobilePhoneID},
+		{"MobilePhoneModel",		new MobilePhoneModel},
+		{"MobilePhoneModelHash",	new MobilePhoneModelHash},
+		{"IPNetworkID",				new IPNetworkID},
+		{"WindowClientArea",		new WindowClientArea},
+		{"WindowClientWidth",		new WindowClientWidth},
+		{"WindowClientHeight",		new WindowClientHeight},
+		{"WindowClientAreaInterval",new WindowClientAreaInterval},
+		{"WindowClientWidthInterval",new WindowClientWidthInterval},
+		{"WindowClientHeightInterval",new WindowClientHeightInterval},
+		{"ClientTimeZone",			new ClientTimeZone},
+		{"ClientDateTime",			new ClientDateTime},
+		{"ClientTime",				new ClientTime},
+		{"ClientTimeHour",			new ClientTimeHour},
+		{"ClientTimeMinute",		new ClientTimeMinute},
+		{"ClientTimeSecond",		new ClientTimeSecond},
+		{"Silverlight",				new Silverlight},
+		{"SilverlightMajor",		new SilverlightMajor},
+		{"SearchEngineID",			new SearchEngineID},
+		{"SearchPhraseHash",		new SearchPhraseHash},
+		{"StartURLHash",			new StartURLHash},
+		{"StartURLDomainHash",		new StartURLDomainHash},
+		{"UserAgent",				new UserAgent},
+		{"UserAgentVersion",		new UserAgentVersion},
+		{"UserAgentMajor",			new UserAgentMajor},
+		{"UserAgentID",				new UserAgentID},
+		{"ClickGoodEvent",			new ClickGoodEvent},
+		{"ClickPriorityID",			new ClickPriorityID},
+		{"ClickBannerID",			new ClickBannerID},
+		{"ClickPageID",				new ClickPageID},
+		{"ClickPlaceID",			new ClickPlaceID},
+		{"ClickTypeID",				new ClickTypeID},
+		{"ClickResourceID",			new ClickResourceID},
+		{"ClickDomainID",			new ClickDomainID},
+		{"ClickCost",				new ClickCost},
+		{"ClickURLHash",			new ClickURLHash},
+		{"ClickOrderID",			new ClickOrderID},
+		{"GoalReaches",				new GoalReaches},
+		{"GoalReachesAny",			new GoalReachesAny},
+		{"GoalReachesDepth",		new GoalReachesDepth},
+		{"GoalReachesURL",			new GoalReachesURL},
+		{"Converted",				new Converted},
+		{"ConvertedAny",			new ConvertedAny},
+		{"ConvertedDepth",			new ConvertedDepth},
+		{"ConvertedURL",			new ConvertedURL},
+		{"Bounce",					new Bounce},
+		{"BouncePrecise",			new BouncePrecise},
+		{"IsNewUser",				new IsNewUser},
+		{"CodeVersion",				new CodeVersion},
+		{"CounterID",				new CounterID},
+		{"VisitID",					new VisitID},
+		{"IsYandex",				new IsYandex},
+		{"TopLevelDomain",			new TopLevelDomain},
+		{"URLScheme",				new URLScheme},
+		{"UserIDCreateDateTime",	new UserIDCreateDateTime},
+		{"UserIDCreateDate",		new UserIDCreateDate},
+		{"UserIDAge",				new UserIDAge},
+		{"UserIDAgeInterval",		new UserIDAgeInterval},
+		{"OSMostAncestor",			new OSMostAncestor},
+		{"SearchEngineMostAncestor",new SearchEngineMostAncestor},
+		{"BrowserLanguage",			new BrowserLanguage},
+		{"BrowserCountry",			new BrowserCountry},
+		{"Interests",				new Interests},
+		{"HasInterestPhoto",		new HasInterestPhoto},
+		{"HasInterestMoviePremieres",	new HasInterestMoviePremieres},
+		{"HasInterestMobileAndInternetCommunications",	new HasInterestMobileAndInternetCommunications},
+		{"HasInterestFinance",		new HasInterestFinance},
+		{"HasInterestFamilyAndChildren",	new HasInterestFamilyAndChildren},
+		{"HasInterestCars",			new HasInterestCars},
+		{"HasInterestB2B",			new HasInterestB2B},
+		{"HasInterestTourism",		new HasInterestTourism},
+		{"HasInterestBuilding",		new HasInterestBuilding},
+		{"HasInterestCulinary",		new HasInterestCulinary},
+		{"HasInterestSoftware",		new HasInterestSoftware},
+		{"HasInterestEstate",		new HasInterestEstate},
+		{"HasInterestHealthyLifestyle",	new HasInterestHealthyLifestyle},
+		{"HasInterestLiterature",	new HasInterestLiterature},
 
-		("OpenstatServiceNameHash",new OpenstatServiceNameHash)
-		("OpenstatCampaignIDHash",	new OpenstatCampaignIDHash)
-		("OpenstatAdIDHash",		new OpenstatAdIDHash)
-		("OpenstatSourceIDHash",	new OpenstatSourceIDHash)
+		{"OpenstatServiceNameHash",new OpenstatServiceNameHash},
+		{"OpenstatCampaignIDHash",	new OpenstatCampaignIDHash},
+		{"OpenstatAdIDHash",		new OpenstatAdIDHash},
+		{"OpenstatSourceIDHash",	new OpenstatSourceIDHash},
 
-		("UTMSourceHash",			new UTMSourceHash)
-		("UTMMediumHash",			new UTMMediumHash)
-		("UTMCampaignHash",			new UTMCampaignHash)
-		("UTMContentHash",			new UTMContentHash)
-		("UTMTermHash",				new UTMTermHash)
+		{"UTMSourceHash",			new UTMSourceHash},
+		{"UTMMediumHash",			new UTMMediumHash},
+		{"UTMCampaignHash",			new UTMCampaignHash},
+		{"UTMContentHash",			new UTMContentHash},
+		{"UTMTermHash",				new UTMTermHash},
 
-		("FromHash",				new FromHash)
-		("CLID",					new CLID)
+		{"FromHash",				new FromHash},
+		{"CLID",					new CLID},
 
-		("SocialSourceNetworkID",	new SocialSourceNetworkID)
+		{"SocialSourceNetworkID",	new SocialSourceNetworkID},
 
-		("URLCategoryID",			new URLCategoryID)
-		("URLCategoryMostAncestor",	new URLCategoryMostAncestor)
-		("URLCategorySecondLevel",	new URLCategorySecondLevel)
-		("URLRegionID",				new URLRegionID)
-		("URLRegionCity", 			new URLRegionCity)
-		("URLRegionArea", 			new URLRegionArea)
-		("URLRegionCountry",		new URLRegionCountry)
-		("CorrectedTraficSourceID",	new CorrectedTraficSourceID)
-		("CorrectedSearchEngineID", new CorrectedSearchEngineID)
-		;
+		{"URLCategoryID",			new URLCategoryID},
+		{"URLCategoryMostAncestor",	new URLCategoryMostAncestor},
+		{"URLCategorySecondLevel",	new URLCategorySecondLevel},
+		{"URLRegionID",				new URLRegionID},
+		{"URLRegionCity", 			new URLRegionCity},
+		{"URLRegionArea", 			new URLRegionArea},
+		{"URLRegionCountry",		new URLRegionCountry},
+		{"CorrectedTraficSourceID",	new CorrectedTraficSourceID},
+		{"CorrectedSearchEngineID", new CorrectedSearchEngineID},
+	};
 }
 
 }

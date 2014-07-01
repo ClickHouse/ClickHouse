@@ -3,8 +3,6 @@
 #include <iostream>
 #include <fstream>
 
-#include <boost/assign/list_inserter.hpp>
-
 #include <Poco/SharedPtr.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
@@ -27,57 +25,57 @@
 
 
 using Poco::SharedPtr;
+using namespace DB;
 
 
 int main(int argc, char ** argv)
 {
 	try
 	{
-		DB::NamesAndTypesListPtr names_and_types_list = new DB::NamesAndTypesList;
+		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList
+		{
+			{"WatchID",				new DataTypeUInt64},
+			{"ClientIP",			new DataTypeUInt32},
+			{"Referer",				new DataTypeString},
+			{"URL",					new DataTypeString},
+			{"IsLink",				new DataTypeUInt8},
+			{"OriginalUserAgent",	new DataTypeString},
+			{"EventTime",			new DataTypeDateTime},
+		};
 
-		boost::assign::push_back(*names_and_types_list)
-			("WatchID",				new DB::DataTypeUInt64)
-			("ClientIP",			new DB::DataTypeUInt32)
-			("Referer",				new DB::DataTypeString)
-			("URL",					new DB::DataTypeString)
-			("IsLink",				new DB::DataTypeUInt8)
-			("OriginalUserAgent",	new DB::DataTypeString)
-			("EventTime",			new DB::DataTypeDateTime)
-		;
+		SharedPtr<DataTypes> data_types = new DataTypes;
 
-		SharedPtr<DB::DataTypes> data_types = new DB::DataTypes;
-
-		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
+		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 			data_types->push_back(it->second);
 
-		DB::Block sample;
-		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
+		Block sample;
+		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 		{
-			DB::ColumnWithNameAndType elem;
+			ColumnWithNameAndType elem;
 			elem.name = it->first;
 			elem.type = it->second;
 			elem.column = elem.type->createColumn();
 			sample.insert(elem);
 		}
-		
+
 		{
 			std::ifstream istr("json_test.in");
 			std::ofstream ostr("json_test.out");
 
-			DB::ReadBufferFromIStream in_buf(istr);
-			DB::WriteBufferFromOStream out_buf(ostr);
+			ReadBufferFromIStream in_buf(istr);
+			WriteBufferFromOStream out_buf(ostr);
 
-			//DB::TabSeparatedRowInputStream row_input(in_buf, sample, true, true);
-			//DB::JSONRowOutputStream row_output(out_buf, sample);
-			//DB::JSONCompactRowOutputStream row_output(out_buf, sample);
-			//DB::copyData(row_input, row_output);
-			
-			DB::BlockInputStreamFromRowInputStream in(new DB::TabSeparatedRowInputStream (in_buf, sample, true, true), sample);
-			DB::BlockOutputStreamFromRowOutputStream out(new DB::JSONRowOutputStream(out_buf, sample));
-			DB::copyData(in, out);
+			//TabSeparatedRowInputStream row_input(in_buf, sample, true, true);
+			//JSONRowOutputStream row_output(out_buf, sample);
+			//JSONCompactRowOutputStream row_output(out_buf, sample);
+			//copyData(row_input, row_output);
+
+			BlockInputStreamFromRowInputStream in(new TabSeparatedRowInputStream (in_buf, sample, true, true), sample);
+			BlockOutputStreamFromRowOutputStream out(new JSONRowOutputStream(out_buf, sample));
+			copyData(in, out);
 		}
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;
