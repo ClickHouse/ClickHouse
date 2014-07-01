@@ -3,6 +3,7 @@
 #include <zkutil/KeeperException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
+#include <Yandex/logger_useful.h>
 
 
 namespace zkutil
@@ -174,6 +175,11 @@ private:
 		int32_t code = operation();
 		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
 		{
+			/// если потеряно соединение подождем timeout/3, авось восстановится
+			if (code == ZCONNECTIONLOSS)
+				usleep(sessionTimeoutMs*1000/3);
+
+			LOG_WARNING(log, "Error happened " << error2string(code)  << ". Retry");
 			code = operation();
 		}
 		return code;
@@ -203,6 +209,7 @@ private:
 
 	/// Количество попыток повторить операцию чтения при OperationTimeout, ConnectionLoss
 	size_t retry_num = 3;
+	Logger * log = nullptr;
 };
 
 typedef ZooKeeper::Ptr ZooKeeperPtr;
