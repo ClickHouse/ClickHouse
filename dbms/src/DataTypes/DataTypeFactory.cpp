@@ -1,7 +1,3 @@
-#include <boost/assign/list_inserter.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/classification.hpp>
-
 #include <mysqlxx/Value.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -26,26 +22,24 @@
 namespace DB
 {
 
-
 DataTypeFactory::DataTypeFactory()
-	: fixed_string_regexp(R"--(^FixedString\s*\(\s*(\d+)\s*\)$)--"),
-	nested_regexp(R"--(^(\w+)\s*\(\s*(.+)\s*\)$)--", Poco::RegularExpression::RE_MULTILINE | Poco::RegularExpression::RE_DOTALL)
+	: non_parametric_data_types
+	{
+		{"UInt8",				new DataTypeUInt8},
+		{"UInt16",				new DataTypeUInt16},
+		{"UInt32",				new DataTypeUInt32},
+		{"UInt64",				new DataTypeUInt64},
+		{"Int8",				new DataTypeInt8},
+		{"Int16",				new DataTypeInt16},
+		{"Int32",				new DataTypeInt32},
+		{"Int64",				new DataTypeInt64},
+		{"Float32",				new DataTypeFloat32},
+		{"Float64",				new DataTypeFloat64},
+		{"Date",				new DataTypeDate},
+		{"DateTime",			new DataTypeDateTime},
+		{"String",				new DataTypeString},
+	}
 {
-	boost::assign::insert(non_parametric_data_types)
-		("UInt8",				new DataTypeUInt8)
-		("UInt16",				new DataTypeUInt16)
-		("UInt32",				new DataTypeUInt32)
-		("UInt64",				new DataTypeUInt64)
-		("Int8",				new DataTypeInt8)
-		("Int16",				new DataTypeInt16)
-		("Int32",				new DataTypeInt32)
-		("Int64",				new DataTypeInt64)
-		("Float32",				new DataTypeFloat32)
-		("Float64",				new DataTypeFloat64)
-		("Date",				new DataTypeDate)
-		("DateTime",			new DataTypeDateTime)
-		("String",				new DataTypeString)
-		;
 }
 
 

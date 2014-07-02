@@ -3,8 +3,6 @@
 #include <iostream>
 #include <fstream>
 
-#include <boost/assign/list_inserter.hpp>
-
 #include <Poco/Stopwatch.h>
 #include <Poco/SharedPtr.h>
 
@@ -27,104 +25,103 @@
 int main(int argc, char ** argv)
 {
 	using Poco::SharedPtr;
-	
+	using namespace DB;
+
 	try
 	{
-		DB::NamesAndTypesListPtr names_and_types_list = new DB::NamesAndTypesList;
+		NamesAndTypesListPtr names_and_types_list = new NamesAndTypesList
+		{
+			{"WatchID",				new DataTypeUInt64},
+			{"JavaEnable",			new DataTypeUInt8},
+			{"Title",				new DataTypeString},
+			{"EventTime",			new DataTypeDateTime},
+			{"CounterID",			new DataTypeUInt32},
+			{"ClientIP",			new DataTypeUInt32},
+			{"RegionID",			new DataTypeUInt32},
+			{"UniqID",				new DataTypeUInt64},
+			{"CounterClass",		new DataTypeUInt8},
+			{"OS",					new DataTypeUInt8},
+			{"UserAgent",			new DataTypeUInt8},
+			{"URL",					new DataTypeString},
+			{"Referer",				new DataTypeString},
+			{"ResolutionWidth",		new DataTypeUInt16},
+			{"ResolutionHeight",	new DataTypeUInt16},
+			{"ResolutionDepth",		new DataTypeUInt8},
+			{"FlashMajor",			new DataTypeUInt8},
+			{"FlashMinor",			new DataTypeUInt8},
+			{"FlashMinor2",			new DataTypeString},
+			{"NetMajor",			new DataTypeUInt8},
+			{"NetMinor",			new DataTypeUInt8},
+			{"UserAgentMajor",		new DataTypeUInt16},
+			{"UserAgentMinor",		new DataTypeFixedString(2)},
+			{"CookieEnable",		new DataTypeUInt8},
+			{"JavascriptEnable",	new DataTypeUInt8},
+			{"IsMobile",			new DataTypeUInt8},
+			{"MobilePhone",			new DataTypeUInt8},
+			{"MobilePhoneModel",	new DataTypeString},
+			{"Params",				new DataTypeString},
+			{"IPNetworkID",			new DataTypeUInt32},
+			{"TraficSourceID",		new DataTypeInt8},
+			{"SearchEngineID",		new DataTypeUInt16},
+			{"SearchPhrase",		new DataTypeString},
+			{"AdvEngineID",			new DataTypeUInt8},
+			{"IsArtifical",			new DataTypeUInt8},
+			{"WindowClientWidth",	new DataTypeUInt16},
+			{"WindowClientHeight",	new DataTypeUInt16},
+			{"ClientTimeZone",		new DataTypeInt16},
+			{"ClientEventTime",		new DataTypeDateTime},
+			{"SilverlightVersion1",	new DataTypeUInt8},
+			{"SilverlightVersion2",	new DataTypeUInt8},
+			{"SilverlightVersion3",	new DataTypeUInt32},
+			{"SilverlightVersion4",	new DataTypeUInt16},
+			{"PageCharset",			new DataTypeString},
+			{"CodeVersion",			new DataTypeUInt32},
+			{"IsLink",				new DataTypeUInt8},
+			{"IsDownload",			new DataTypeUInt8},
+			{"IsNotBounce",			new DataTypeUInt8},
+			{"FUniqID",				new DataTypeUInt64},
+			{"OriginalURL",			new DataTypeString},
+			{"HID",					new DataTypeUInt32},
+			{"IsOldCounter",		new DataTypeUInt8},
+			{"IsEvent",				new DataTypeUInt8},
+			{"IsParameter",			new DataTypeUInt8},
+			{"DontCountHits",		new DataTypeUInt8},
+			{"WithHash",			new DataTypeUInt8},
+		};
 
-		boost::assign::push_back(*names_and_types_list)
-			("WatchID",				new DB::DataTypeUInt64)
-			("JavaEnable",			new DB::DataTypeUInt8)
-			("Title",				new DB::DataTypeString)
-			("EventTime",			new DB::DataTypeDateTime)
-			("CounterID",			new DB::DataTypeUInt32)
-			("ClientIP",			new DB::DataTypeUInt32)
-			("RegionID",			new DB::DataTypeUInt32)
-			("UniqID",				new DB::DataTypeUInt64)
-			("CounterClass",		new DB::DataTypeUInt8)
-			("OS",					new DB::DataTypeUInt8)
-			("UserAgent",			new DB::DataTypeUInt8)
-			("URL",					new DB::DataTypeString)
-			("Referer",				new DB::DataTypeString)
-			("Refresh",				new DB::DataTypeUInt8)
-			("ResolutionWidth",		new DB::DataTypeUInt16)
-			("ResolutionHeight",	new DB::DataTypeUInt16)
-			("ResolutionDepth",		new DB::DataTypeUInt8)
-			("FlashMajor",			new DB::DataTypeUInt8)
-			("FlashMinor",			new DB::DataTypeUInt8)
-			("FlashMinor2",			new DB::DataTypeString)
-			("NetMajor",			new DB::DataTypeUInt8)
-			("NetMinor",			new DB::DataTypeUInt8)
-			("UserAgentMajor",		new DB::DataTypeUInt16)
-			("UserAgentMinor",		new DB::DataTypeFixedString(2))
-			("CookieEnable",		new DB::DataTypeUInt8)
-			("JavascriptEnable",	new DB::DataTypeUInt8)
-			("IsMobile",			new DB::DataTypeUInt8)
-			("MobilePhone",			new DB::DataTypeUInt8)
-			("MobilePhoneModel",	new DB::DataTypeString)
-			("Params",				new DB::DataTypeString)
-			("IPNetworkID",			new DB::DataTypeUInt32)
-			("TraficSourceID",		new DB::DataTypeInt8)
-			("SearchEngineID",		new DB::DataTypeUInt16)
-			("SearchPhrase",		new DB::DataTypeString)
-			("AdvEngineID",			new DB::DataTypeUInt8)
-			("IsArtifical",			new DB::DataTypeUInt8)
-			("WindowClientWidth",	new DB::DataTypeUInt16)
-			("WindowClientHeight",	new DB::DataTypeUInt16)
-			("ClientTimeZone",		new DB::DataTypeInt16)
-			("ClientEventTime",		new DB::DataTypeDateTime)
-			("SilverlightVersion1",	new DB::DataTypeUInt8)
-			("SilverlightVersion2",	new DB::DataTypeUInt8)
-			("SilverlightVersion3",	new DB::DataTypeUInt32)
-			("SilverlightVersion4",	new DB::DataTypeUInt16)
-			("PageCharset",			new DB::DataTypeString)
-			("CodeVersion",			new DB::DataTypeUInt32)
-			("IsLink",				new DB::DataTypeUInt8)
-			("IsDownload",			new DB::DataTypeUInt8)
-			("IsNotBounce",			new DB::DataTypeUInt8)
-			("FUniqID",				new DB::DataTypeUInt64)
-			("OriginalURL",			new DB::DataTypeString)
-			("HID",					new DB::DataTypeUInt32)
-			("IsOldCounter",		new DB::DataTypeUInt8)
-			("IsEvent",				new DB::DataTypeUInt8)
-			("IsParameter",			new DB::DataTypeUInt8)
-			("DontCountHits",		new DB::DataTypeUInt8)
-			("WithHash",			new DB::DataTypeUInt8)
-		;
+		Names column_names;
 
-		DB::Names column_names;
-
-		for (DB::NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
+		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 			column_names.push_back(it->first);
 
 		/// создаём объект существующей таблицы хит лога
 
-		DB::StoragePtr table = DB::StorageLog::create("./", "HitLog", names_and_types_list);
+		StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list);
 
 		/// читаем из неё
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
-			DB::QueryProcessingStage::Enum stage;
-			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
-			DB::WriteBufferFromOStream out1(std::cout);
-			DB::CompressedWriteBuffer out2(out1);
-			DB::NativeBlockOutputStream out3(out2);
-			DB::copyData(*in, out3);
+			QueryProcessingStage::Enum stage;
+			SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Settings(), stage)[0];
+			WriteBufferFromOStream out1(std::cout);
+			CompressedWriteBuffer out2(out1);
+			NativeBlockOutputStream out3(out2);
+			copyData(*in, out3);
 		}
 
 		/// читаем данные из native файла и одновременно пишем в таблицу
 		if (argc == 2 && 0 == strcmp(argv[1], "write"))
 		{
-			DB::DataTypeFactory factory;
-			
-			DB::ReadBufferFromIStream in1(std::cin);
-			DB::CompressedReadBuffer in2(in1);
-			DB::NativeBlockInputStream in3(in2, factory);
-			SharedPtr<DB::IBlockOutputStream> out = table->write(0);
-			DB::copyData(in3, *out);
+			DataTypeFactory factory;
+
+			ReadBufferFromIStream in1(std::cin);
+			CompressedReadBuffer in2(in1);
+			NativeBlockInputStream in3(in2, factory);
+			SharedPtr<IBlockOutputStream> out = table->write(0);
+			copyData(in3, *out);
 		}
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;

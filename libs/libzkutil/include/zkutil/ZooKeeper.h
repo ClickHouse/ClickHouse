@@ -3,12 +3,14 @@
 #include <zkutil/KeeperException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
+#include <Yandex/logger_useful.h>
 
 
 namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 DEFAULT_RETRY_NUM = 3;
 
 struct WatchWithEvent;
 
@@ -17,10 +19,10 @@ typedef WatchWithEvent * WatchWithEventPtr;
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
   * Вместо callback-ов для watch-ей используются Poco::Event. Для указанного события вызывается set() только при первом вызове watch.
-  * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке кроме OperationTimeout.
-  * При OperationTimeout пытаемся попробоватть еще retry_num раз.
-  * Методы с названиями, начинающимися с try, не бросают исключение только при перечисленных видах ошибок.
-  * Например, исключение бросается в любом случае, если сессия разорвалась или если не хватает прав или ресурсов.
+  * Методы на чтение при восстанавливаемых ошибках OperationTimeout, ConnectionLoss пытаются еще retry_num раз.
+  * Методы на запись не пытаются повторить при восстанавливаемых ошибках, т.к. это приводит к проблеммам типа удаления дважды одного и того же.
+  *
+  * Методы с названиями, не начинающимися с try, бросают исключение при любой ошибке.
   */
 class ZooKeeper
 {
@@ -75,10 +77,18 @@ public:
 	  *  - Нет родителя создаваемой ноды.
 	  *  - Родитель эфемерный.
 	  *  - Такая нода уже есть.
+	  *  - ZCONNECTIONLOSS
+	  *  - ZOPERATIONTIMEOUT
 	  * При остальных ошибках бросает исключение.
 	  */
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode);
+
+	/** создает Persistent ноду.
+	 *  Игнорирует, если нода уже создана.
+	 *  Пытается сделать retry при ConnectionLoss или OperationTimeout
+	 */
+	void createIfNotExists(const std::string & path, const std::string & data);
 
 	/** Удалить ноду, если ее версия равна version (если -1, подойдет любая версия).
 	  */
@@ -88,6 +98,8 @@ public:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
 	  *  - У ноды есть дети.
+	  *  - ZCONNECTIONLOSS
+	  *  - ZOPERATIONTIMEOUT
 	  */
 	int32_t tryRemove(const std::string & path, int32_t version = -1);
 
@@ -106,6 +118,8 @@ public:
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
+	  *  - ZCONNECTIONLOSS
+	  *  - ZOPERATIONTIMEOUT
 	  */
 	int32_t trySet(const std::string & path, const std::string & data,
 							int32_t version = -1, Stat * stat = nullptr);
@@ -128,6 +142,8 @@ public:
 	/** Бросает исключение только если какая-нибудь операция вернула "неожиданную" ошибку - такую ошибку,
 	  *  увидев которую соответствующий метод try* бросил бы исключение. */
 	int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
+	/** Использовать только для методов на чтение */
+	int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr);
 
 
 	/** Удаляет ноду вместе с поддеревом. Если в это время кто-то добавит иили удалит ноду в поддереве, результат не определен.
@@ -156,8 +172,13 @@ private:
 	int32_t retry(const T & operation)
 	{
 		int32_t code = operation();
-		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT); ++i)
+		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
 		{
+			/// если потеряно соединение подождем timeout/3, авось восстановится
+			if (code == ZCONNECTIONLOSS)
+				usleep(sessionTimeoutMs*1000/3);
+
+			LOG_WARNING(log, "Error happened " << error2string(code)  << ". Retry");
 			code = operation();
 		}
 		return code;
@@ -185,8 +206,9 @@ private:
 	WatchFunction * state_watch;
 	std::unordered_set<WatchWithEvent *> watch_store;
 
-	/// Количество попыток повторить операцию при OperationTimeout
+	/// Количество попыток повторить операцию чтения при OperationTimeout, ConnectionLoss
 	size_t retry_num = 3;
+	Logger * log = nullptr;
 };
 
 typedef ZooKeeper::Ptr ZooKeeperPtr;

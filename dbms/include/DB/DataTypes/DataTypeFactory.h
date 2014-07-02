@@ -22,8 +22,10 @@ private:
 	typedef std::map<String, DataTypePtr> NonParametricDataTypes;
 	NonParametricDataTypes non_parametric_data_types;
 
-	Poco::RegularExpression fixed_string_regexp;
-	Poco::RegularExpression nested_regexp;
+	Poco::RegularExpression fixed_string_regexp {R"--(^FixedString\s*\(\s*(\d+)\s*\)$)--"};
+
+	Poco::RegularExpression nested_regexp {R"--(^(\w+)\s*\(\s*(.+)\s*\)$)--",
+		Poco::RegularExpression::RE_MULTILINE | Poco::RegularExpression::RE_DOTALL};
 };
 
 }

@@ -1,8 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <boost/assign/list_inserter.hpp>
-
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
 #include <Poco/ConsoleChannel.h>
@@ -28,14 +26,14 @@ int main(int argc, char ** argv)
 	{
 		Logger::root().setChannel(new Poco::ConsoleChannel(std::cout));
 		Logger::root().setLevel("trace");
-		
+
 		/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 		DateLUTSingleton::instance();
-		
+
 		DB::Context context;
 
 		context.setPath("./");
-		
+
 		DB::loadMetadata(context);
 
 		context.addDatabase("system");
@@ -46,7 +44,7 @@ int main(int argc, char ** argv)
 		DB::ReadBufferFromIStream in(std::cin);
 		DB::WriteBufferFromOStream out(std::cout);
 		DB::BlockInputStreamPtr query_plan;
-		
+
 		DB::executeQuery(in, out, context, query_plan);
 
 		if (query_plan)

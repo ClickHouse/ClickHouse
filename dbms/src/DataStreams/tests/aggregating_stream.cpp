@@ -1,8 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <boost/assign/list_inserter.hpp>
-
 #include <Poco/Stopwatch.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -30,7 +28,7 @@ int main(int argc, char ** argv)
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
 		DB::Block block;
-		
+
 		DB::ColumnWithNameAndType column_x;
 		column_x.name = "x";
 		column_x.type = new DB::DataTypeInt16;
@@ -77,12 +75,12 @@ int main(int argc, char ** argv)
 		DB::DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		Poco::SharedPtr<DB::DataTypes> result_types = new DB::DataTypes;
-		boost::assign::push_back(*result_types)
-			(new DB::DataTypeInt16)
-		//	(new DB::DataTypeString)
-			(new DB::DataTypeUInt64)
-			;
+		Poco::SharedPtr<DB::DataTypes> result_types = new DB::DataTypes
+		{
+			new DB::DataTypeInt16,
+		//	new DB::DataTypeString,
+			new DB::DataTypeUInt64,
+		};
 
 		DB::Block sample;
 		for (DB::DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
@@ -98,7 +96,7 @@ int main(int argc, char ** argv)
 		DB::WriteBufferFromOStream ob(std::cout);
 		DB::RowOutputStreamPtr row_out = new DB::TabSeparatedRowOutputStream(ob, sample);
 		DB::BlockOutputStreamPtr out = new DB::BlockOutputStreamFromRowOutputStream(row_out);
-		
+
 		{
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
