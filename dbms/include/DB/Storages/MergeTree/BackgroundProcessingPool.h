@@ -8,6 +8,7 @@
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -48,10 +49,13 @@ public:
 
 	typedef std::shared_ptr<void> TaskHandle;
 
-	BackgroundProcessingPool() : size(1), sleep_seconds(1), shutdown(false) {}
+	BackgroundProcessingPool(int size_) : size(size_), sleep_seconds(10), shutdown(false) {}
 
 	void setNumberOfThreads(int size_)
 	{
+		if (size_ <= 0)
+			throw Exception("Invalid number of threads: " + toString(size_), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
 		Poco::ScopedLock<Poco::FastMutex> tlock(threads_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
@@ -256,5 +260,7 @@ private:
 		}
 	}
 };
+
+typedef Poco::SharedPtr<BackgroundProcessingPool> BackgroundProcessingPoolPtr;
 
 }

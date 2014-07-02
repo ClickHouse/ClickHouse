@@ -79,13 +79,8 @@ struct MergeTreeSettings
 	/// Во столько раз ночью увеличиваем коэффициент.
 	size_t merge_parts_at_night_inc = 10;
 
-	/// Сколько потоков использовать для объединения кусков (для MergeTree).
-	/// Пул потоков общий на весь сервер.
-	size_t merging_threads = 6;
-
-	/// Сколько потоков использовать для загрузки кусков с других реплик и объединения кусков (для ReplicatedMergeTree).
-	/// Пул потоков на каждую таблицу свой.
-	size_t replication_threads = 4;
+	/// Сколько заданий на слияние кусков разрешено одновременно иметь в очереди ReplicatedMergeTree.
+	size_t max_replicated_merges_in_queue = 6;
 
 	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
 	size_t min_rows_for_concurrent_read = 20 * 8192;

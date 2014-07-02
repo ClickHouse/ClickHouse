@@ -720,7 +720,7 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 	return true;
 }
 
-void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
+void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context)
 {
 	if (entry.type == LogEntry::GET_PART ||
 		entry.type == LogEntry::MERGE_PARTS)
@@ -776,6 +776,17 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		}
 		else
 		{
+			/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
+			for (const auto & part : parts)
+			{
+				if (part->size * data.index_granularity > 25 * 1024 * 1024)
+				{
+					pool_context.incrementCounter("big merges");
+					pool_context.incrementCounter("replicated big merges");
+					break;
+				}
+			}
+
 			MergeTreeData::Transaction transaction;
 			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, &transaction);
 
@@ -892,87 +903,73 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 	}
 }
 
-void StorageReplicatedMergeTree::queueThread()
+bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
 {
-	while (!shutdown_called)
-	{
-		LogEntry entry;
-		bool have_work = false;
+	LogEntry entry;
+	bool have_work = false;
 
-		try
+	try
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+		bool empty = queue.empty();
+		if (!empty)
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
-			bool empty = queue.empty();
-			if (!empty)
+			for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
 			{
-				for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
+				if (shouldExecuteLogEntry(*it))
 				{
-					if (shouldExecuteLogEntry(*it))
-					{
-						entry = *it;
-						entry.tagPartAsFuture(*this);
-						queue.erase(it);
-						have_work = true;
-						break;
-					}
+					entry = *it;
+					entry.tagPartAsFuture(*this);
+					queue.erase(it);
+					have_work = true;
+					break;
 				}
 			}
 		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-
-		if (!have_work)
-		{
-			std::this_thread::sleep_for(QUEUE_NO_WORK_SLEEP);
-			continue;
-		}
-
-		bool success = false;
-
-		try
-		{
-			executeLogEntry(entry);
-
-			auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
-			if (code != ZOK)
-				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
-					<< zkutil::ZooKeeper::error2string(code) + ". There must be a bug somewhere. Ignoring it.");
-
-			success = true;
-		}
-		catch (Exception & e)
-		{
-			if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
-				/// Если ни у кого нет нужного куска, это нормальная ситуация; не будем писать в лог с уровнем Error.
-				LOG_INFO(log, e.displayText());
-			else
-				tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-
-		if (shutdown_called)
-			break;
-
-		if (success)
-		{
-			std::this_thread::sleep_for(QUEUE_AFTER_WORK_SLEEP);
-		}
-		else
-		{
-			{
-				/// Добавим действие, которое не получилось выполнить, в конец очереди.
-				entry.future_part_tagger = nullptr;
-				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
-				queue.push_back(entry);
-			}
-			std::this_thread::sleep_for(QUEUE_ERROR_SLEEP);
-		}
 	}
+	catch (...)
+	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
+
+	if (!have_work)
+		return false;
+
+	bool success = false;
+
+	try
+	{
+		executeLogEntry(entry, pool_context);
+
+		auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
+		if (code != ZOK)
+			LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
+				<< zkutil::ZooKeeper::error2string(code) + ". There must be a bug somewhere. Ignoring it.");
+
+		success = true;
+	}
+	catch (Exception & e)
+	{
+		if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
+			/// Если ни у кого нет нужного куска, это нормальная ситуация; не будем писать в лог с уровнем Error.
+			LOG_INFO(log, e.displayText());
+		else
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
+	catch (...)
+	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
+
+	if (!success)
+	{
+		/// Добавим действие, которое не получилось выполнить, в конец очереди.
+		entry.future_part_tagger = nullptr;
+		Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+		queue.push_back(entry);
+	}
+
+	return success;
 }
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
@@ -988,8 +985,9 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 			size_t merges_queued = 0;
 			/// Есть ли в очереди мердж крупных кусков.
 			/// TODO: Если мердж уже выполняется, его нет в очереди, но здесь нужно все равно как-то о нем узнать.
-			bool has_big_merge = false;
+			bool has_big_merge = context.getBackgroundPool().getCounter("replicated big merges") > 0;
 
+			if (!has_big_merge)
 			{
 				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
 
@@ -1019,7 +1017,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 			do
 			{
-				if (merges_queued >= data.settings.merging_threads)
+				if (merges_queued >= data.settings.max_replicated_merges_in_queue)
 					break;
 
 				MergeTreeData::DataPartsVector parts;
@@ -1238,9 +1236,8 @@ void StorageReplicatedMergeTree::partialShutdown()
 	}
 	if (queue_updating_thread.joinable())
 		queue_updating_thread.join();
-	for (auto & thread : queue_threads)
-		thread.join();
-	queue_threads.clear();
+	context.getBackgroundPool().removeTask(queue_task_handle);
+	queue_task_handle.reset();
 	LOG_TRACE(log, "Threads finished");
 }
 
@@ -1269,9 +1266,8 @@ void StorageReplicatedMergeTree::goReadOnly()
 	}
 	if (queue_updating_thread.joinable())
 		queue_updating_thread.join();
-	for (auto & thread : queue_threads)
-		thread.join();
-	queue_threads.clear();
+	context.getBackgroundPool().removeTask(queue_task_handle);
+	queue_task_handle.reset();
 	LOG_TRACE(log, "Threads finished");
 }
 
@@ -1289,8 +1285,7 @@ void StorageReplicatedMergeTree::startup()
 		std::bind(&StorageReplicatedMergeTree::becomeLeader, this), replica_name);
 
 	queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
-	for (size_t i = 0; i < data.settings.replication_threads; ++i)
-		queue_threads.push_back(std::thread(&StorageReplicatedMergeTree::queueThread, this));
+	queue_task_handle = context.getBackgroundPool().addTask(std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
 }
 
 void StorageReplicatedMergeTree::restartingThread()
@@ -1413,6 +1408,8 @@ void StorageReplicatedMergeTree::drop()
 		LOG_INFO(log, "Removing table " << zookeeper_path << " (this might take several minutes)");
 		zookeeper->removeRecursive(zookeeper_path);
 	}
+
+	data.dropAllData();
 }
 
 void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const

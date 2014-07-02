@@ -49,6 +49,7 @@
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 	3
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	300 /// каждый период уменьшаем счетчик ошибок в 2 раза
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 						5000	/// Максимальное время ожидания в очереди запросов.
+#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE					6
 
 /// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.
 #define DBMS_APPROX_STRING_SIZE 64

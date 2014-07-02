@@ -17,6 +17,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
@@ -95,6 +96,7 @@ struct ContextShared
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	String default_replica_name;							/// Имя реплики из конфига.
+	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -316,6 +318,8 @@ public:
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);
 	MarkCachePtr getMarkCache() const;
+
+	BackgroundProcessingPool & getBackgroundPool();
 
 	/** Очистить кэши разжатых блоков и засечек.
 	  * Обычно это делается при переименовании таблиц, изменении типа столбцов, удалении таблицы.

@@ -5,7 +5,6 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
-#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 
 namespace DB
 {
@@ -27,7 +26,7 @@ public:
 	  */
 	static StoragePtr create(const String & path_, const String & database_name_, const String & name_,
 		NamesAndTypesListPtr columns_,
-		const Context & context_,
+		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
@@ -84,6 +83,8 @@ private:
 	String full_path;
 	Increment increment;
 
+	BackgroundProcessingPool & background_pool;
+
 	MergeTreeData data;
 	MergeTreeDataSelectExecutor reader;
 	MergeTreeDataWriter writer;
@@ -96,7 +97,6 @@ private:
 
 	volatile bool shutdown_called;
 
-	static BackgroundProcessingPool merge_pool;
 	BackgroundProcessingPool::TaskHandle merge_task_handle;
 
 	/// Пока существует, помечает части как currently_merging и держит резерв места.
@@ -143,7 +143,7 @@ private:
 
 	StorageMergeTree(const String & path_, const String & database_name_, const String & name_,
 					NamesAndTypesListPtr columns_,
-					const Context & context_,
+					Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,
 					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
