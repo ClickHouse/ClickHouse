@@ -106,6 +106,8 @@ public:
 	  *  - ZOPERATIONTIMEOUT
 	  */
 	int32_t tryRemove(const std::string & path, int32_t version = -1);
+	/// Если есть проблемы с сетью может сам удалить ноду и вернуть ZNONODE
+	int32_t tryRemoveWithRetries(const std::string & path, int32_t version = -1);
 
 	bool exists(const std::string & path, Stat * stat = nullptr, WatchFuture * watch = nullptr);
 

@@ -225,18 +225,7 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 
 void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
 {
-	int32_t code = tryCreate(path, "", zkutil::CreateMode::Persistent);
-
-	if (code == ZOK || code == ZNODEEXISTS)
-		return;
-
-	if (!(code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS))
-		throw KeeperException(code, path);
-
-	for (size_t attempt = 0; attempt < retry_num && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++attempt)
-	{
-		code = tryCreate(path, "", zkutil::CreateMode::Persistent);
-	};
+	int32_t code = retry(boost::bind(&ZooKeeper::tryCreate, this, boost::ref(path), boost::ref(data), zkutil::CreateMode::Persistent));
 
 	if (code == ZOK || code == ZNODEEXISTS)
 		return;
@@ -266,6 +255,11 @@ int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 			code == ZOPERATIONTIMEOUT))
 		throw KeeperException(code, path);
 	return code;
+}
+
+int32_t ZooKeeper::tryRemoveWithRetries(const std::string & path, int32_t version)
+{
+	return retry(boost::bind(&ZooKeeper::tryRemove, this, boost::ref(path), version));
 }
 
 int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchFuture * watch)
@@ -404,14 +398,14 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 {
 	int32_t code = multiImpl(ops_, out_results_);
 
-	if (code != ZOK &&
-		code != ZNONODE &&
-		code != ZNODEEXISTS &&
-		code != ZNOCHILDRENFOREPHEMERALS &&
-		code != ZBADVERSION &&
-		code != ZNOTEMPTY &&
-		code != ZCONNECTIONLOSS &&
-		code != ZOPERATIONTIMEOUT)
+	if (!(code == ZOK ||
+		code == ZNONODE ||
+		code == ZNODEEXISTS ||
+		code == ZNOCHILDRENFOREPHEMERALS ||
+		code == ZBADVERSION ||
+		code == ZNOTEMPTY ||
+		code == ZCONNECTIONLOSS ||
+		code == ZOPERATIONTIMEOUT))
 			throw KeeperException(code);
 	return code;
 }
