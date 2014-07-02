@@ -85,6 +85,7 @@ public:
 			if (code == ZOK)
 			{
 				transaction.commit();
+				storage.merge_selecting_event.set();
 			}
 			else if (code == ZNODEEXISTS)
 			{

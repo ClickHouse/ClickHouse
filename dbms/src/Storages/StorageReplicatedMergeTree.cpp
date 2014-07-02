@@ -14,7 +14,7 @@ const auto QUEUE_UPDATE_SLEEP = std::chrono::seconds(5);
 const auto QUEUE_NO_WORK_SLEEP = std::chrono::seconds(5);
 const auto QUEUE_ERROR_SLEEP = std::chrono::seconds(1);
 const auto QUEUE_AFTER_WORK_SLEEP = std::chrono::seconds(0);
-const auto MERGE_SELECTING_SLEEP = std::chrono::seconds(5);
+const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
@@ -784,6 +784,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 			zookeeper->multi(ops);
 			transaction.commit();
+			merge_selecting_event.set();
 
 			ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 		}
@@ -1016,42 +1017,35 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				}
 			}
 
-			if (merges_queued >= data.settings.merging_threads)
+			do
 			{
-				std::this_thread::sleep_for(MERGE_SELECTING_SLEEP);
-				continue;
-			}
+				if (merges_queued >= data.settings.merging_threads)
+					break;
 
-			MergeTreeData::DataPartsVector parts;
+				MergeTreeData::DataPartsVector parts;
 
-			{
 				String merged_name;
 				auto can_merge = std::bind(
 					&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 
-				if (merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
-												false, false, has_big_merge, can_merge) ||
-					merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
+				if (!merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
+												false, false, has_big_merge, can_merge) &&
+					!merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
 												true, false, has_big_merge, can_merge))
+					break;
+
+				LogEntry entry;
+				entry.type = LogEntry::MERGE_PARTS;
+				entry.source_replica = replica_name;
+				entry.new_part_name = merged_name;
+
+				for (const auto & part : parts)
 				{
-					LogEntry entry;
-					entry.type = LogEntry::MERGE_PARTS;
-					entry.source_replica = replica_name;
-					entry.new_part_name = merged_name;
-
-					for (const auto & part : parts)
-					{
-						entry.parts_to_merge.push_back(part->name);
-					}
-
-					zookeeper->create(replica_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
-
-					success = true;
+					entry.parts_to_merge.push_back(part->name);
 				}
-			}
 
-			if (success)
-			{
+				zookeeper->create(replica_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+
 				/// Нужно загрузить новую запись в очередь перед тем, как в следующий раз выбирать куски для слияния.
 				///  (чтобы кусок добавился в virtual_parts).
 				pullLogsToQueue();
@@ -1070,7 +1064,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 						zookeeper->tryRemove(path);
 					}
 				}
+
+				success = true;
 			}
+			while(false);
 		}
 		catch (...)
 		{
@@ -1081,7 +1078,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 			break;
 
 		if (!success)
-			std::this_thread::sleep_for(MERGE_SELECTING_SLEEP);
+			merge_selecting_event.tryWait(MERGE_SELECTING_SLEEP_MS);
 	}
 }
 
@@ -1194,6 +1191,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	zookeeper->multi(ops);
 	transaction.commit();
+	merge_selecting_event.set();
 
 	for (const auto & removed_part : removed_parts)
 	{
@@ -1232,6 +1230,7 @@ void StorageReplicatedMergeTree::partialShutdown()
 	if (is_leader_node)
 	{
 		is_leader_node = false;
+		merge_selecting_event.set();
 		if (merge_selecting_thread.joinable())
 			merge_selecting_thread.join();
 		if (clear_old_blocks_thread.joinable())

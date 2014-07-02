@@ -219,6 +219,8 @@ private:
 
 	/// Поток, выбирающий куски для слияния.
 	std::thread merge_selecting_thread;
+	Poco::Event merge_selecting_event;
+
 	/// Поток, удаляющий информацию о старых блоках из ZooKeeper.
 	std::thread clear_old_blocks_thread;
 
