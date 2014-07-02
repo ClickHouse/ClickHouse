@@ -298,12 +298,12 @@ bool Join::insertFromBlock(const Block & block)
 	if (only_external)
 		return true;
 
-	size_t keys_size = key_names.size();
+	size_t keys_size = key_names_right.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
 	/// Переводим имена столбцов в номера, если они ещё не вычислены.
 	if (key_numbers_right.empty())
-		for (const auto & name : key_names)
+		for (const auto & name : key_names_right)
 			key_numbers_right.push_back(block.getPositionByName(name));
 
 	/// Запоминаем столбцы ключей, с которыми будем работать
@@ -322,7 +322,7 @@ bool Join::insertFromBlock(const Block & block)
 	Block * stored_block = &blocks.back();
 
 	/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
-	for (const auto & name : key_names)
+	for (const auto & name : key_names_right)
 		stored_block->erase(stored_block->getPositionByName(name));
 
 	if (strictness == ASTJoin::Any)
@@ -445,12 +445,12 @@ void Join::joinBlockImpl(Block & block, Maps & maps)
 	if (blocks.empty())
 		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
 
-	size_t keys_size = key_names.size();
+	size_t keys_size = key_names_left.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
 	/// Переводим имена столбцов в номера, если они ещё не вычислены.
 	if (key_numbers_left.empty())
-		for (const auto & name : key_names)
+		for (const auto & name : key_names_left)
 			key_numbers_left.push_back(block.getPositionByName(name));
 
 	/// Запоминаем столбцы ключей, с которыми будем работать

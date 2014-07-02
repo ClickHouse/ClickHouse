@@ -57,9 +57,11 @@ namespace DB
 class Join
 {
 public:
-	Join(const Names & key_names_, const Limits & limits, ASTJoin::Kind kind_, ASTJoin::Strictness strictness_)
+	Join(const Names & key_names_left_, const Names & key_names_right_,
+		 const Limits & limits, ASTJoin::Kind kind_, ASTJoin::Strictness strictness_)
 		: kind(kind_), strictness(strictness_),
-		key_names(key_names_),
+		key_names_left(key_names_left_),
+		key_names_right(key_names_right_),
 		max_bytes_to_transfer(limits.max_bytes_to_transfer),
 		max_rows_to_transfer(limits.max_rows_to_transfer),
 		transfer_overflow_mode(limits.transfer_overflow_mode),
@@ -151,11 +153,11 @@ private:
 	ASTJoin::Kind kind;
 	ASTJoin::Strictness strictness;
 
-	/// Имена ключевых столбцов - по которым производится соединение.
-	const Names key_names;
-	/// Номера ключевых столбцов в "левой" таблице.
+	/// Имена и номера ключевых столбцов (по которым производится соединение) в "левой" таблице.
+	const Names key_names_left;
 	ColumnNumbers key_numbers_left;
-	/// Номера ключевых столбцов в "правой" таблице.
+	/// Имена и номера ключевых столбцов (по которым производится соединение) в "правой" таблице.
+	const Names key_names_right;
 	ColumnNumbers key_numbers_right;
 
 	/** Блоки данных таблицы, с которой идёт соединение.
