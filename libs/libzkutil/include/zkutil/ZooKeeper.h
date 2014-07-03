@@ -77,6 +77,8 @@ public:
 	  */
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode);
+	int32_t tryCreateWithRetries(const std::string & path, const std::string & data, int32_t mode,
+								 std::string & pathCreated, size_t * attempt = nullptr);
 
 	/** создает Persistent ноду.
 	 *  Игнорирует, если нода уже создана.
@@ -95,7 +97,7 @@ public:
 	  */
 	int32_t tryRemove(const std::string & path, int32_t version = -1);
 	/// Если есть проблемы с сетью может сам удалить ноду и вернуть ZNONODE
-	int32_t tryRemoveWithRetries(const std::string & path, int32_t version = -1);
+	int32_t tryRemoveWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
 
 	bool exists(const std::string & path, Stat * stat = nullptr, EventPtr watch = nullptr);
 
@@ -137,6 +139,7 @@ public:
 	/** Использовать только для методов на чтение */
 	int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr, size_t * attempt = nullptr);
 
+	int64_t getClientID();
 
 	/** Удаляет ноду вместе с поддеревом. Если в это время кто-то добавит иили удалит ноду в поддереве, результат не определен.
 	  */
@@ -172,7 +175,7 @@ private:
 		int32_t code = operation();
 		if (attempt)
 			*attempt = 0;
-		for (size_t i = 0;; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
+		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
 		{
 			if (attempt)
 				*attempt = i;

@@ -14,8 +14,7 @@ namespace zkutil
 		Lock(zkutil::ZooKeeperPtr zk, const std::string & lock_prefix_, const std::string & lock_name_) :
 			zookeeper(zk), lock_path(lock_prefix_ + "/" + lock_name_), log(&Logger::get("zkutil::Lock"))
 		{
-			if (!zookeeper->exists(lock_prefix_))
-				zookeeper->create(lock_prefix_, "", zkutil::CreateMode::Persistent);
+			zookeeper->createIfNotExists(lock_prefix_, "");
 		}
 
 		~Lock()
@@ -33,47 +32,26 @@ namespace zkutil
 		enum Status
 		{
 			UNLOCKED,
-			LOCKED,
+			LOCKED_BY_ME,
+			LOCKED_BY_OTHER,
+			END
 		};
+		std::string status2String(Status status);
 
-		/// проверяет создана ли эфемерная нода.
+		/// проверяет создана ли эфемерная нода и кто ее владелец.
 		/// если мы сами создавали эфемерную ноду, то надо вызывать этот метод, чтобы убедится,
 		/// что сессия с зукипером не порвалось
-		Status check()
-		{
-			if (zookeeper->exists(lock_path))
-				return LOCKED;
-			else
-				return UNLOCKED;
-		}
+		Status check();
 
-		void unlock()
-		{
-			if (locked)
-			{
-				zookeeper->remove(lock_path);
-				locked = false;
-			}
-		}
+		void unlock();
 
-		bool tryLock()
-		{
-			int32_t ret = zookeeper->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral);
-			if (ret == ZOK)
-			{
-				locked = true;
-				return true;
-			}
-			else if (ret == ZNODEEXISTS)
-				return false;
-			else
-				throw zkutil::KeeperException(ret);
-		}
+		bool tryLock();
 
 		/// путь к ноде блокировки в zookeeper
 		const std::string & getPath() { return lock_path; }
 
 	private:
+		Status checkImpl();
 		zkutil::ZooKeeperPtr zookeeper;
 		std::string lock_path;
 		Logger * log;

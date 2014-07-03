@@ -226,6 +226,12 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 	return tryCreate(path, data, mode, pathCreated);
 }
 
+int32_t ZooKeeper::tryCreateWithRetries(const std::string& path, const std::string& data, int32_t mode, std::string& pathCreated, size_t* attempt)
+{
+	return retry(boost::bind(&ZooKeeper::tryCreate, this, boost::ref(path), boost::ref(data), mode, boost::ref(pathCreated)), attempt);
+}
+
+
 void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
 {
 	int32_t code = retry(boost::bind(&ZooKeeper::tryCreate, this, boost::ref(path), boost::ref(data), zkutil::CreateMode::Persistent));
@@ -258,9 +264,9 @@ int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 	return code;
 }
 
-int32_t ZooKeeper::tryRemoveWithRetries(const std::string & path, int32_t version)
+int32_t ZooKeeper::tryRemoveWithRetries(const std::string & path, int32_t version, size_t * attempt)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::removeImpl, this, boost::ref(path), version));
+	int32_t code = retry(boost::bind(&ZooKeeper::removeImpl, this, boost::ref(path), version), attempt);
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZBADVERSION ||
@@ -530,4 +536,10 @@ bool ZooKeeper::expired()
 {
 	return state() == ZOO_EXPIRED_SESSION_STATE;
 }
+
+int64_t ZooKeeper::getClientID()
+{
+	return zoo_client_id(impl)->client_id;
+}
+
 }

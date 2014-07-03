@@ -80,6 +80,8 @@ private:
 
 struct OpResult : public zoo_op_result_t, boost::noncopyable
 {
+	/// Указатели в этой структуре указывают на поля в классе Op.
+	/// Поэтому деструктор не нужен
 };
 
 typedef boost::ptr_vector<Op> Ops;
