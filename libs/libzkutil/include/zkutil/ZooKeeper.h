@@ -135,7 +135,7 @@ public:
 	  *  увидев которую соответствующий метод try* бросил бы исключение. */
 	int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
 	/** Использовать только для методов на чтение */
-	int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr);
+	int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr, size_t * attempt = nullptr);
 
 
 	/** Удаляет ноду вместе с поддеревом. Если в это время кто-то добавит иили удалит ноду в поддереве, результат не определен.
@@ -167,11 +167,16 @@ private:
 	static void processEvent(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);
 
 	template <class T>
-	int32_t retry(const T & operation)
+	int32_t retry(const T & operation, size_t * attempt = nullptr)
 	{
 		int32_t code = operation();
-		for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
+		if (attempt)
+			*attempt = 0;
+		for (size_t i = 0;; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
 		{
+			if (attempt)
+				*attempt = i;
+
 			/// если потеряно соединение подождем timeout/3, авось восстановится
 			if (code == ZCONNECTIONLOSS)
 				usleep(sessionTimeoutMs*1000/3);
@@ -179,6 +184,7 @@ private:
 			LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
 			code = operation();
 		}
+
 		return code;
 	}
 

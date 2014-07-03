@@ -407,9 +407,9 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 	return code;
 }
 
-int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results)
+int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results, size_t * attempt)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::multiImpl, this, boost::ref(ops), out_results));
+	int32_t code = retry(boost::bind(&ZooKeeper::multiImpl, this, boost::ref(ops), out_results), attempt);
 	if (!(code == ZOK ||
 		code == ZNONODE ||
 		code == ZNODEEXISTS ||
