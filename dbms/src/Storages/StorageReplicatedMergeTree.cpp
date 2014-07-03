@@ -513,7 +513,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
 		int32_t code = zookeeper->tryMulti(ops);
 		if (code != ZOK)
-			LOG_WARNING(log, "Couldn't remove part " << name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
+			LOG_DEBUG(log, "Couldn't remove part " << name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
 	}
 
 	if (!parts.empty())
@@ -669,6 +669,9 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 			priority_queue.push(iterator);
 	}
 
+	if (priority_queue.empty())
+		return;
+
 	size_t count = 0;
 
 	while (!priority_queue.empty())
@@ -697,8 +700,8 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 			priority_queue.push(iterator);
 	}
 
-	if (count > 0)
-		LOG_DEBUG(log, "Pulled " << count << " entries to queue");
+	queue_task_handle->wake();
+	LOG_DEBUG(log, "Pulled " << count << " entries to queue");
 }
 
 bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
@@ -986,8 +989,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 		try
 		{
 			size_t merges_queued = 0;
-			/// Есть ли в очереди мердж крупных кусков.
-			/// TODO: Если мердж уже выполняется, его нет в очереди, но здесь нужно все равно как-то о нем узнать.
+			/// Есть ли в очереди или в фоновом потоке мердж крупных кусков.
 			bool has_big_merge = context.getBackgroundPool().getCounter("replicated big merges") > 0;
 
 			if (!has_big_merge)
