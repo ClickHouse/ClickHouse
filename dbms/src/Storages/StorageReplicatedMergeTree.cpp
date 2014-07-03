@@ -232,14 +232,16 @@ void StorageReplicatedMergeTree::createReplica()
 		bool active = true;
 		while(true)
 		{
-			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+			zkutil::EventPtr event = new Poco::Event;
+			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active", nullptr, event))
 			{
 				active = false;
 				break;
 			}
-			if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/log_pointers/" + replica_name))
+			if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/log_pointers/" + replica_name, nullptr, event))
 				break;
-			std::this_thread::sleep_for(std::chrono::seconds(1));
+
+			event->tryWait(5 * 1000);
 		}
 
 		/// Будем предпочитать активную реплику в качестве эталонной.
@@ -256,8 +258,9 @@ void StorageReplicatedMergeTree::createReplica()
 	/// Скопируем у эталонной реплики ссылки на все логи.
 	for (const String & replica : replicas)
 	{
-		String pointer = zookeeper->get(source_path + "/log_pointers/" + replica);
-		zookeeper->create(replica_path + "/log_pointers/" + replica, pointer, zkutil::CreateMode::Persistent);
+		String pointer;
+		if (zookeeper->tryGet(source_path + "/log_pointers/" + replica, pointer))
+			zookeeper->create(replica_path + "/log_pointers/" + replica, pointer, zkutil::CreateMode::Persistent);
 	}
 
 	/// Запомним очередь эталонной реплики.
