@@ -32,7 +32,7 @@ public:
 	typedef std::vector<SharedPtr<IAST> > ASTs;
 	ASTs children;
 	StringRange range;
-	
+
 	/** Строка с полным запросом.
 	  * Этот указатель не дает ее удалить, пока range в нее ссылается.
 	  */
@@ -45,9 +45,18 @@ public:
 	/** Получить каноническое имя столбца, если элемент является столбцом */
 	virtual String getColumnName() const { throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN); }
 
-	/** Получить алиас, если он есть, или каноническое имя столбца; если элемент является столбцом */
-	virtual String getAlias() const { return getColumnName(); }
-		
+	/** Получить алиас, если он есть, или каноническое имя столбца, если его нет. */
+	virtual String getAliasOrColumnName() const { return getColumnName(); }
+
+	/** Получить алиас, если он есть, или пустую строку, если его нет, или если элемент не поддерживает алиасы. */
+	virtual String tryGetAlias() const { return String(); }
+
+	/** Установить алиас. */
+	virtual void setAlias(const String & to)
+	{
+		throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+	}
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	virtual String getID() const = 0;
 
@@ -55,7 +64,7 @@ public:
 	virtual SharedPtr<IAST> clone() const = 0;
 
 	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
-	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей. 
+	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей.
 	  */
 	String getTreeID() const
 	{
@@ -93,7 +102,7 @@ public:
 	{
 		return checkDepthImpl(max_depth, 0);
 	}
-	
+
 	/** То же самое для общего количества элементов дерева.
 	  */
 	size_t checkSize(size_t max_size) const
@@ -104,7 +113,7 @@ public:
 
 		if (res > max_size)
 			throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
-		
+
 		return res;
 	}
 

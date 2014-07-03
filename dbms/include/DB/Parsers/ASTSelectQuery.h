@@ -73,7 +73,7 @@ public:
 			bool done = 0;
 			for (size_t j = 0; j < asts.size(); ++j)
 			{
-				if (asts[j]->getAlias() == column_names[i])
+				if (asts[j]->getAliasOrColumnName() == column_names[i])
 				{
 					if (!unremovable_asts.count(asts[j]))
 						result->children.push_back(asts[j]->clone());

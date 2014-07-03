@@ -37,31 +37,6 @@ namespace DB
 {
 
 
-static std::string * tryGetAlias(ASTPtr & ast)
-{
-	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
-		return &node->alias;
-	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
-		return &node->alias;
-	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
-		return &node->alias;
-	else
-		return nullptr;
-}
-
-static void setAlias(ASTPtr & ast, const std::string & alias)
-{
-	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
-		node->alias = alias;
-	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
-		node->alias = alias;
-	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
-		node->alias = alias;
-	else
-		throw Exception("Can't set alias of " + ast->getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
-}
-
-
 void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
@@ -167,13 +142,13 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 	if (ignore_levels > 0)
 		return;
 
-	std::string * alias = tryGetAlias(ast);
-	if (alias && !alias->empty())
+	String alias = ast->tryGetAlias();
+	if (!alias.empty())
 	{
-		if (aliases.count(*alias) && ast->getTreeID() != aliases[*alias]->getTreeID())
-			throw Exception("Different expressions with the same alias " + *alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+		if (aliases.count(alias) && ast->getTreeID() != aliases[alias]->getTreeID())
+			throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
-		aliases[*alias] = ast;
+		aliases[alias] = ast;
 	}
 }
 
@@ -218,9 +193,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	ASTPtr initial_ast = ast;
 	current_asts.insert(initial_ast);
 
-	std::string * my_alias = tryGetAlias(ast);
-	if (my_alias && !my_alias->empty())
-		current_alias = *my_alias;
+	String my_alias = ast->tryGetAlias();
+	if (!my_alias.empty())
+		current_alias = my_alias;
 
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	bool replaced = false;
@@ -256,11 +231,11 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 				/// Заменим его на соответствующий узел дерева.
 				if (current_asts.count(jt->second))
 					throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
-				if (my_alias && !my_alias->empty() && *my_alias != jt->second->getAlias())
+				if (!my_alias.empty() && my_alias != jt->second->getAliasOrColumnName())
 				{
 					/// В конструкции вроде "a AS b", где a - алиас, нужно перевесить алиас b на результат подстановки алиаса a.
 					ast = jt->second->clone();
-					setAlias(ast, *my_alias);
+					ast->setAlias(my_alias);
 				}
 				else
 				{
@@ -800,7 +775,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 			ASTPtr ast = array_join_asts [i];
 
 			String nested_table_name = ast->getColumnName();
-			String nested_table_alias = ast->getAlias();
+			String nested_table_alias = ast->getAliasOrColumnName();
 			if (nested_table_alias == nested_table_name && !typeid_cast<ASTIdentifier *>(&*ast))
 				throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
@@ -824,7 +799,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 		{
 			ASTPtr expr = select_query->array_join_expression_list->children[0];
 			String source_name = expr->getColumnName();
-			String result_name = expr->getAlias();
+			String result_name = expr->getAliasOrColumnName();
 
 			/// Это массив.
 			if (!typeid_cast<ASTIdentifier *>(&*expr) || findColumn(source_name, columns) != columns.end())
@@ -1428,7 +1403,7 @@ void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain,
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
-		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
+		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName()));
 		step.required_output.push_back(result_columns.back().second);
 	}
 
@@ -1460,7 +1435,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
-		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAlias()));
+		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName()));
 		getRootActionsImpl(asts[i], true, false, temp_actions);
 	}
 
@@ -1509,7 +1484,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 		std::string name = asts[i]->getColumnName();
 		std::string alias;
 		if (project_result)
-			alias = asts[i]->getAlias();
+			alias = asts[i]->getAliasOrColumnName();
 		else
 			alias = name;
 		result_columns.push_back(NameWithAlias(name, alias));
@@ -1578,7 +1553,7 @@ void ExpressionAnalyzer::removeUnusedColumns()
 				getRequiredColumnsImpl(expressions[i], required, empty, empty, empty);
 			}
 
-			ignored.insert(expressions[i]->getAlias());
+			ignored.insert(expressions[i]->getAliasOrColumnName());
 		}
 	}
 
@@ -1663,7 +1638,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 		if (!join_key_names_left_set.insert(keys.children[i]->getColumnName()).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 
-		if (!join_key_names_right_set.insert(keys.children[i]->getAlias()).second)
+		if (!join_key_names_right_set.insert(keys.children[i]->getAliasOrColumnName()).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 	}
 
