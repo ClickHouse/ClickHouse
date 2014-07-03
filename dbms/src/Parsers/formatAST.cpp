@@ -754,7 +754,7 @@ void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite
 		<< "JOIN"
 		<< (hilite ? hilite_none : "");
 
-	formatAST(*ast.subquery, s, indent, hilite, one_line, need_parens);
+	formatAST(*ast.table, s, indent, hilite, one_line, need_parens);
 
 	s << (hilite ? hilite_keyword : "") << " USING " << (hilite ? hilite_none : "");
 

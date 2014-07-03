@@ -52,21 +52,13 @@ static std::string * tryGetAlias(ASTPtr & ast)
 static void setAlias(ASTPtr & ast, const std::string & alias)
 {
 	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
-	{
 		node->alias = alias;
-	}
 	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
-	{
 		node->alias = alias;
-	}
 	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
-	{
 		node->alias = alias;
-	}
 	else
-	{
 		throw Exception("Can't set alias of " + ast->getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
-	}
 }
 
 
@@ -247,7 +239,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			current_asts.insert(ast);
 			replaced = true;
 		}
-		/// может быть указано in t, где t - таблица, что равносильно select * from t.
+
+		/// может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
 		if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
 			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*node->arguments->children[1]))
 				right->kind = ASTIdentifier::Table;
@@ -351,6 +344,16 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			addExternalStorage(node);
 	}
 
+	if (ASTJoin * node = typeid_cast<ASTJoin *>(&*ast))
+	{
+		/// может быть указано JOIN t, где t - таблица, что равносильно JOIN (SELECT * FROM t).
+		if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*node->table))
+			right->kind = ASTIdentifier::Table;
+
+/*		if (do_global && node->locality == ASTJoin::Global)
+			addExternalStorage(node->table);*/
+	}
+
 	current_asts.erase(initial_ast);
 	current_asts.erase(ast);
 	finished_asts[initial_ast] = ast;
@@ -433,10 +436,12 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 	/// Если подзапрос или имя таблицы для селекта
 	if (typeid_cast<const ASTSubquery *>(&*arg) || typeid_cast<const ASTIdentifier *>(&*arg))
 	{
-		/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
-			* Так как результат этого поздапроса - ещё не результат всего запроса.
-			* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-			*/
+		/** Для подзапроса в секции IN/JOIN не действуют ограничения на максимальный размер результата.
+		  * Так как результат этого поздапроса - ещё не результат всего запроса.
+		  * Вместо этого работают ограничения
+		  *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
+		  *  max_rows_in_join, max_bytes_in_join, join_overflow_mode.
+		  */
 		Context subquery_context = context;
 		Settings subquery_settings = context.getSettings();
 		subquery_settings.limits.max_result_rows = 0;
@@ -467,7 +472,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 
 			bool parse_res = parser.parse(pos, end, subquery, expected);
 			if (!parse_res)
-				throw Exception("Error in parsing SELECT query while creating set for table " + table->name + ".",
+				throw Exception("Error in parsing SELECT query while creating set or join for table " + table->name + ".",
 					ErrorCodes::LOGICAL_ERROR);
 		}
 		else
@@ -497,7 +502,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTFunction * node)
 		sets_with_subqueries[ast_set->getColumnName()] = ast_set->set;
 	}
 	else
-		throw Exception("GLOBAL [NOT] IN supports only SELECT data.", ErrorCodes::BAD_ARGUMENTS);
+		throw Exception("IN/JOIN supports only SELECT subqueries.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 
@@ -1277,8 +1282,9 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		for (const auto & name_type : columns_added_by_join)
 			required_joined_columns.push_back(name_type.first);
 
+		/// TODO: поддержка идентификаторов вместо подзапросов.
 		InterpreterSelectQuery interpreter(
-			typeid_cast<ASTJoin &>(*select_query->join).subquery->children[0], subquery_context,
+			typeid_cast<ASTJoin &>(*select_query->join).table->children[0], subquery_context,
 			required_joined_columns,
 			QueryProcessingStage::Complete, subquery_depth + 1);
 
@@ -1648,7 +1654,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 
 	auto & node = typeid_cast<ASTJoin &>(*select_query->join);
 	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
-	auto & select = node.subquery->children[0];
+	auto & table = node.table->children[0];		/// TODO: поддержка идентификаторов.
 
 	size_t num_join_keys = keys.children.size();
 
@@ -1661,7 +1667,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 	}
 
-	Block nested_result_sample = ExpressionAnalyzer(select, context, subquery_depth + 1).getSelectSampleBlock();
+	Block nested_result_sample = ExpressionAnalyzer(table, context, subquery_depth + 1).getSelectSampleBlock();
 
 	size_t nested_result_columns = nested_result_sample.columns();
 	for (size_t i = 0; i < nested_result_columns; ++i)
