@@ -149,6 +149,7 @@ FunctionPtr FunctionFactory::get(
 	else if (name == "cityHash64")					return new FunctionCityHash64;
 	else if (name == "intHash32")					return new FunctionIntHash32;
 	else if (name == "intHash64")					return new FunctionIntHash64;
+	else if (name == "anyHash64")					return new FunctionAnyHash64;
 
 	else if (name == "IPv4NumToString")			return new FunctionIPv4NumToString;
 	else if (name == "IPv4StringToNum")			return new FunctionIPv4StringToNum;

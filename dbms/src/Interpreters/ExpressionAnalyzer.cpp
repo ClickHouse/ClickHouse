@@ -37,24 +37,16 @@ namespace DB
 {
 
 
-static std::string * getAlias(ASTPtr & ast)
+static std::string * tryGetAlias(ASTPtr & ast)
 {
 	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
-	{
 		return &node->alias;
-	}
 	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
-	{
 		return &node->alias;
-	}
 	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
-	{
 		return &node->alias;
-	}
 	else
-	{
 		return nullptr;
-	}
 }
 
 static void setAlias(ASTPtr & ast, const std::string & alias)
@@ -183,7 +175,7 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 	if (ignore_levels > 0)
 		return;
 
-	std::string * alias = getAlias(ast);
+	std::string * alias = tryGetAlias(ast);
 	if (alias && !alias->empty())
 	{
 		if (aliases.count(*alias) && ast->getTreeID() != aliases[*alias]->getTreeID())
@@ -234,7 +226,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	ASTPtr initial_ast = ast;
 	current_asts.insert(initial_ast);
 
-	std::string * my_alias = getAlias(ast);
+	std::string * my_alias = tryGetAlias(ast);
 	if (my_alias && !my_alias->empty())
 		current_alias = *my_alias;
 
@@ -1261,8 +1253,9 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	getRootActionsImpl(ast_join.using_expr_list, only_types, false, step.actions);
 
 	{
-		Names join_key_names(join_key_names_set.begin(), join_key_names_set.end());
-		JoinPtr join = new Join(join_key_names, settings.limits, ast_join.kind, ast_join.strictness);
+		Names join_key_names_left(join_key_names_left_set.begin(), join_key_names_left_set.end());
+		Names join_key_names_right(join_key_names_right_set.begin(), join_key_names_right_set.end());
+		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
 
 		/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
 		* Так как результат этого поздапроса - ещё не результат всего запроса.
@@ -1277,7 +1270,10 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		subquery_settings.extremes = 0;
 		subquery_context.setSettings(subquery_settings);
 
-		Names required_joined_columns(join_key_names.begin(), join_key_names.end());
+		for (const auto & name_type : columns_added_by_join)
+			std::cerr << "! Column added by JOIN: " << name_type.first << std::endl;
+
+		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
 		for (const auto & name_type : columns_added_by_join)
 			required_joined_columns.push_back(name_type.first);
 
@@ -1657,8 +1653,13 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	size_t num_join_keys = keys.children.size();
 
 	for (size_t i = 0; i < num_join_keys; ++i)
-		if (!join_key_names_set.insert(keys.children[i]->getColumnName()).second)
+	{
+		if (!join_key_names_left_set.insert(keys.children[i]->getColumnName()).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+
+		if (!join_key_names_right_set.insert(keys.children[i]->getAlias()).second)
+			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+	}
 
 	Block nested_result_sample = ExpressionAnalyzer(select, context, subquery_depth + 1).getSelectSampleBlock();
 
@@ -1666,15 +1667,17 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	for (size_t i = 0; i < nested_result_columns; ++i)
 	{
 		auto col = nested_result_sample.getByPosition(i);
-		if (!join_key_names_set.count(col.name))
+		if (!join_key_names_right_set.count(col.name))
 		{
 			joined_columns.insert(col.name);
 			joined_columns_name_type.emplace_back(col.name, col.type);
 		}
 	}
 
-	for (const auto & name : join_key_names_set)
-		std::cerr << "JOIN key: " << name << std::endl;
+	for (const auto & name : join_key_names_left_set)
+		std::cerr << "JOIN key (left): " << name << std::endl;
+	for (const auto & name : join_key_names_right_set)
+		std::cerr << "JOIN key (right): " << name << std::endl;
 	std::cerr << std::endl;
 	for (const auto & name : joined_columns)
 		std::cerr << "JOINed column: " << name << std::endl;

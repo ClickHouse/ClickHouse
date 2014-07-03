@@ -139,7 +139,17 @@ private:
 	Joins joins;
 
 	/// NOTE: Пока поддерживается только один JOIN на запрос.
-	NameSet join_key_names_set;
+
+	/** Запрос вида SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k
+	  * Соединение делается по столбцу k.
+	  * Во время JOIN-а,
+	  *  - в "правой" таблице, он будет доступен по алиасу k, так как было выполнено действие Project для подзапроса.
+	  *  - в "левой" таблице, он будет доступен по имени expr(x), так как ещё не было выполнено действие Project.
+	  * Надо запомнить оба этих варианта.
+	  */
+	NameSet join_key_names_left_set;
+	NameSet join_key_names_right_set;
+
 	NamesAndTypesList columns_added_by_join;
 
 	typedef std::unordered_map<String, ASTPtr> Aliases;

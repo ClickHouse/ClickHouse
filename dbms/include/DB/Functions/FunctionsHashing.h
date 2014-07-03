@@ -10,8 +10,12 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/Functions/IFunction.h>
 
@@ -35,6 +39,9 @@ namespace DB
   * Быстрая некриптографическая хэш функция от любого целого числа:
   * intHash32:	number -> UInt32
   * intHash64:  number -> UInt64
+  *
+  * Некриптографический хеш от кортежа значений любых типов (использует cityHash64 для строк и intHash64 для чисел):
+  * anyHash64:  any* -> UInt64
   */
 
 struct HalfMD5Impl
@@ -224,6 +231,184 @@ public:
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+};
+
+
+template <typename T>
+static UInt64 toInteger(T x)
+{
+	return x;
+}
+
+template <>
+UInt64 toInteger<Float32>(Float32 x)
+{
+	UInt32 res;
+	memcpy(&res, &x, sizeof(x));
+	return res;
+}
+
+template <>
+UInt64 toInteger<Float64>(Float64 x)
+{
+	UInt64 res;
+	memcpy(&res, &x, sizeof(x));
+	return res;
+}
+
+
+class FunctionAnyHash64 : public IFunction
+{
+private:
+	template <typename FromType>
+	void executeIntType(const IColumn * column, ColumnUInt64::Container_t & vec_to)
+	{
+		if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(column))
+		{
+			const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
+			size_t size = vec_from.size();
+			for (size_t i = 0; i < size; ++i)
+				vec_to[i] = Hash128to64(uint128(vec_to[i], IntHash64Impl::apply(toInteger(vec_from[i]))));
+		}
+		else if (const ColumnConst<FromType> * col_from = typeid_cast<const ColumnConst<FromType> *>(column))
+		{
+			UInt64 hash = IntHash64Impl::apply(toInteger(col_from->getData()));
+			size_t size = vec_to.size();
+			for (size_t i = 0; i < size; ++i)
+				vec_to[i] = Hash128to64(uint128(vec_to[i], hash));
+		}
+		else
+			throw Exception("Illegal column " + column->getName()
+				+ " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	void executeString(const IColumn * column, ColumnUInt64::Container_t & vec_to)
+	{
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(column))
+		{
+			const typename ColumnString::Chars_t & data = col_from->getChars();
+			const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
+			size_t size = offsets.size();
+
+			for (size_t i = 0; i < size; ++i)
+				vec_to[i] = Hash128to64(uint128(vec_to[i], CityHash64Impl::apply(
+					reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
+					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]))));
+		}
+		else if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(column))
+		{
+			const typename ColumnString::Chars_t & data = col_from->getChars();
+			size_t n = col_from->getN();
+			size_t size = data.size() / n;
+
+			for (size_t i = 0; i < size; ++i)
+				vec_to[i] = Hash128to64(uint128(vec_to[i], CityHash64Impl::apply(
+					reinterpret_cast<const char *>(&data[i * n]), n)));
+		}
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(column))
+		{
+			UInt64 hash = CityHash64Impl::apply(col_from->getData().data(), col_from->getData().size());
+			size_t size = vec_to.size();
+			for (size_t i = 0; i < size; ++i)
+				vec_to[i] = Hash128to64(uint128(vec_to[i], hash));
+		}
+		else
+			throw Exception("Illegal column " + column->getName()
+					+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	void executeArray(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to)
+	{
+		const IDataType * nested_type = &*typeid_cast<const DataTypeArray *>(type)->getNestedType();
+
+		if (const ColumnArray * col_from = typeid_cast<const ColumnArray *>(column))
+		{
+			const IColumn * nested_column = &col_from->getData();
+			const ColumnArray::Offsets_t & offsets = col_from->getOffsets();
+			size_t nested_size = nested_column->size();
+
+			ColumnUInt64::Container_t vec_temp(nested_size, 0);
+			executeAny(nested_type, nested_column, vec_temp);
+
+			size_t size = offsets.size();
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				size_t begin = i == 0 ? 0 : offsets[i - 1];
+				size_t end = offsets[i];
+				vec_to[i] = Hash128to64(uint128(vec_to[i], IntHash64Impl::apply(end - begin)));
+				for (size_t j = begin; j < end; ++j)
+					vec_to[i] = Hash128to64(uint128(vec_to[i], vec_temp[j]));
+			}
+		}
+		else if (const ColumnConstArray * col_from = typeid_cast<const ColumnConstArray *>(column))
+		{
+			/// NOTE: тут, конечно, можно обойтись без материалиации столбца.
+			ColumnPtr full_column = col_from->convertToFullColumn();
+			executeArray(type, &*full_column, vec_to);
+		}
+		else
+			throw Exception("Illegal column " + column->getName()
+					+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container_t & vec_to)
+	{
+		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeIntType<UInt8	>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeUInt16 *		>(from_type)) executeIntType<UInt16>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeUInt32 *		>(from_type)) executeIntType<UInt32>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeUInt64 *		>(from_type)) executeIntType<UInt64>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeInt8 *		>(from_type)) executeIntType<Int8	>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeInt16 *		>(from_type)) executeIntType<Int16	>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeInt32 *		>(from_type)) executeIntType<Int32	>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeInt64 *		>(from_type)) executeIntType<Int64	>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeDate *		>(from_type)) executeIntType<UInt16>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) executeIntType<UInt32>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeFloat32 *	>(from_type)) executeIntType<Float32>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeFloat64 *	>(from_type)) executeIntType<Float64>(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeString *		>(from_type)) executeString(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeFixedString *		>(from_type)) executeString(icolumn, vec_to);
+		else if (typeid_cast<const DataTypeArray *		>(from_type)) executeArray(from_type, icolumn, vec_to);
+		else
+			throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "anyHash64";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		return new DataTypeUInt64;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		size_t rows = block.rowsInFirstColumn();
+		ColumnUInt64 * col_to = new ColumnUInt64(rows);
+		block.getByPosition(result).column = col_to;
+
+		ColumnUInt64::Container_t & vec_to = col_to->getData();
+		vec_to.assign(rows, 0ul);
+
+		for (size_t index : arguments)
+		{
+			const ColumnWithNameAndType & column = block.getByPosition(index);
+			const IDataType * from_type = &*column.type;
+			const IColumn * icolumn = &*column.column;
+
+			executeAny(from_type, icolumn, vec_to);
+		}
 	}
 };
 
