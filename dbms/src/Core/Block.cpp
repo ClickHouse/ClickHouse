@@ -211,10 +211,15 @@ size_t Block::rows() const
 
 size_t Block::rowsInFirstColumn() const
 {
-	if (data.empty() || data.front().column.isNull())
+	if (data.empty())
 		return 0;
+	for (const ColumnWithNameAndType & column : data)
+	{
+		if (!column.column.isNull())
+			return column.column->size();
+	}
 
-	return data.front().column->size();
+	return 0;
 }
 
 
