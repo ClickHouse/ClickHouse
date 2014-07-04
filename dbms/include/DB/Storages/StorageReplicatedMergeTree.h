@@ -233,8 +233,10 @@ private:
 
 	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
 	volatile bool shutdown_called = false;
+	Poco::Event shutdown_event;
 	/// Нужно ли завершить restarting_thread.
 	volatile bool permanent_shutdown_called = false;
+	Poco::Event permanent_shutdown_event;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
