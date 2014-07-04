@@ -75,17 +75,21 @@ $CLIENT2 -n --query="
 	CREATE TABLE test.half2 ENGINE = Memory AS SELECT number FROM system.numbers WHERE number % 2 = 1 LIMIT 5;
 	"
 
-$CLIENT1 --query="SELECT count() FROM remote('localhost:{9000,9001}', test, half1) 
-	WHERE number IN (SELECT * FROM test.half2)"
-	
-$CLIENT1 --query="SELECT count() FROM remote('localhost:{9000,9001}', test, half1) 
-	WHERE number IN (SELECT * FROM remote('localhost:{9000,9001}', test, half2))"
-	
-$CLIENT1 --query="SELECT count() FROM remote('localhost:{9000,9001}', test, half1) 
-	WHERE number GLOBAL IN (SELECT * FROM remote('localhost:{9000,9001}', test, half2))"
+$CLIENT1 -n --query="
+	SELECT count() FROM remote('localhost:{9000,9001}', test, half1)
+		WHERE number IN (SELECT * FROM test.half2);
 
-$CLIENT1 --query="DROP TABLE test.half1"
-$CLIENT2 --query="DROP TABLE test.half1"
+	SELECT count() FROM remote('localhost:{9000,9001}', test, half1)
+		WHERE number IN (SELECT * FROM remote('localhost:{9000,9001}', test, half2));
 
-$CLIENT1 --query="DROP TABLE test.half2"
-$CLIENT2 --query="DROP TABLE test.half2"
+	SELECT count() FROM remote('localhost:{9000,9001}', test, half1)
+		WHERE number GLOBAL IN (SELECT * FROM remote('localhost:{9000,9001}', test, half2));
+	"
+
+$CLIENT1 -n --query="
+	DROP TABLE test.half1;
+	DROP TABLE test.half2;"
+
+$CLIENT2 -n --query="
+	DROP TABLE test.half1;
+	DROP TABLE test.half2;"
