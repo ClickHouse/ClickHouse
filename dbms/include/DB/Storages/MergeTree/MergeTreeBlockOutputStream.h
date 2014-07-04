@@ -22,6 +22,7 @@ public:
 			UInt64 temp_index = storage.increment.get();
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, temp_index);
 			storage.data.renameTempPartAndAdd(part, &storage.increment);
+			storage.merge_task_handle->wake();
 		}
 	}
 

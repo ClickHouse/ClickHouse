@@ -66,6 +66,9 @@ struct Settings
 	M(SettingBool, use_splitting_aggregator, false) \
 	/** Следует ли отменять выполняющийся запрос с таким же id, как новый. */ \
 	M(SettingBool, replace_running_query, false) \
+	/** Количество потоков, выполняющих фоновую работу для таблиц (например, слияние в merge tree). \
+	  * TODO: Сейчас применяется только при запуске сервера. Можно сделать изменяемым динамически. */ \
+	M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
 	\
 	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
 	\

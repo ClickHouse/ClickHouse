@@ -156,7 +156,6 @@ private:
 	typedef std::list<LogEntry> LogEntries;
 
 	typedef std::set<String> StringSet;
-	typedef std::vector<std::thread> Threads;
 
 	Context & context;
 	zkutil::ZooKeeperPtr zookeeper;
@@ -214,11 +213,13 @@ private:
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
 
-	/// Потоки, выполняющие действия из очереди.
-	Threads queue_threads;
+	/// Задание, выполняющее действия из очереди.
+	BackgroundProcessingPool::TaskHandle queue_task_handle;
 
 	/// Поток, выбирающий куски для слияния.
 	std::thread merge_selecting_thread;
+	Poco::Event merge_selecting_event;
+
 	/// Поток, удаляющий информацию о старых блоках из ZooKeeper.
 	std::thread clear_old_blocks_thread;
 
@@ -232,8 +233,10 @@ private:
 
 	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
 	volatile bool shutdown_called = false;
+	Poco::Event shutdown_event;
 	/// Нужно ли завершить restarting_thread.
 	volatile bool permanent_shutdown_called = false;
+	Poco::Event permanent_shutdown_event;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
@@ -319,15 +322,15 @@ private:
 
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  */
-	void executeLogEntry(const LogEntry & entry);
+	void executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
 
 	/** В бесконечном цикле обновляет очередь.
 	  */
 	void queueUpdatingThread();
 
-	/** В бесконечном цикле выполняет действия из очереди.
+	/** Выполняет действия из очереди.
 	  */
-	void queueThread();
+	bool queueTask(BackgroundProcessingPool::Context & context);
 
 	/// Выбор кусков для слияния.
 

@@ -79,13 +79,8 @@ struct MergeTreeSettings
 	/// Во столько раз ночью увеличиваем коэффициент.
 	size_t merge_parts_at_night_inc = 10;
 
-	/// Сколько потоков использовать для объединения кусков (для MergeTree).
-	/// Пул потоков общий на весь сервер.
-	size_t merging_threads = 6;
-
-	/// Сколько потоков использовать для загрузки кусков с других реплик и объединения кусков (для ReplicatedMergeTree).
-	/// Пул потоков на каждую таблицу свой.
-	size_t replication_threads = 4;
+	/// Сколько заданий на слияние кусков разрешено одновременно иметь в очереди ReplicatedMergeTree.
+	size_t max_replicated_merges_in_queue = 6;
 
 	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
 	size_t min_rows_for_concurrent_read = 20 * 8192;
@@ -353,6 +348,43 @@ public:
 	typedef std::vector<DataPartPtr> DataPartsVector;
 
 
+	/// Некоторые операции над множеством кусков могут возвращать такой объект.
+	/// Если не был вызван commit, деструктор откатывает операцию.
+	class Transaction : private boost::noncopyable
+	{
+	public:
+		Transaction() {}
+
+		void commit()
+		{
+			data = nullptr;
+			removed_parts.clear();
+			added_parts.clear();
+		}
+
+		~Transaction()
+		{
+			try
+			{
+				if (data && (!removed_parts.empty() || !added_parts.empty()))
+				{
+					LOG_DEBUG(data->log, "Undoing transaction");
+					data->replaceParts(removed_parts, added_parts);
+				}
+			}
+			catch(...)
+			{
+				tryLogCurrentException("~MergeTreeData::Transaction");
+			}
+		}
+	private:
+		friend class MergeTreeData;
+
+		MergeTreeData * data = nullptr;
+		DataPartsVector removed_parts;
+		DataPartsVector added_parts;
+	};
+
 	/// Режим работы. См. выше.
 	enum Mode
 	{
@@ -422,13 +454,18 @@ public:
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
 	  * Предполагается, что кусок не пересекается с существующими.
+	  * Если out_transaction не nullptr, присваивает туда объект, позволяющий откатить добавление куска (но не переименование).
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment = nullptr);
+	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
 	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
 	  */
-	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr);
+	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
+
+	/** Убирает из рабочего набора куски remove и добавляет куски add.
+	  */
+	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add);
 
 	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
 	  * Лучше использовать только когда никто не может читать или писать этот кусок

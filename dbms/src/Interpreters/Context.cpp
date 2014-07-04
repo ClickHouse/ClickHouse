@@ -544,6 +544,14 @@ MarkCachePtr Context::getMarkCache() const
 	return shared->mark_cache;
 }
 
+BackgroundProcessingPool & Context::getBackgroundPool()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	if (!shared->background_pool)
+		shared->background_pool = new BackgroundProcessingPool(settings.background_pool_size);
+	return *shared->background_pool;
+}
+
 void Context::resetCaches() const
 {
 	/// Исходим из допущения, что функции setUncompressedCache, setMarkCache, если вызывались, то раньше (при старте сервера). Иначе поставьте mutex.

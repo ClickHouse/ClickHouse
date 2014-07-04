@@ -89,12 +89,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	Poco::File(part_tmp_path).createDirectories();
 
-	LOG_TRACE(log, "Calculating primary expression.");
-
 	/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
 	data.getPrimaryExpression()->execute(block);
-
-	LOG_TRACE(log, "Sorting by primary key.");
 
 	SortDescription sort_descr = data.getSortDescription();
 

@@ -64,6 +64,7 @@ public:
 	~LeaderElection()
 	{
 		shutdown = true;
+		event->set();
 		thread.join();
 	}
 
@@ -78,6 +79,7 @@ private:
 
 	std::thread thread;
 	volatile bool shutdown;
+	zkutil::EventPtr event = new Poco::Event();
 
 	State state;
 
@@ -85,9 +87,11 @@ private:
 
 	void threadFunction()
 	{
-		try
+		while (!shutdown)
 		{
-			while (!shutdown)
+			bool success = false;
+
+			try
 			{
 				Strings children = zookeeper.getChildren(path);
 				std::sort(children.begin(), children.end());
@@ -102,33 +106,33 @@ private:
 					return;
 				}
 
-				WatchFuture future;
-				if (zookeeper.exists(path + "/" + *(it - 1), nullptr, &future))
-				{
-					while (!shutdown)
-						if (future.wait_for(std::chrono::seconds(2)) != std::future_status::timeout)
-							break;
-				}
+				if (zookeeper.exists(path + "/" + *(it - 1), nullptr, event))
+					event->tryWait(60 * 1000);
+
+				success = true;
 			}
-		}
-		catch (const DB::Exception & e)
-		{
-			LOG_ERROR(log, "Exception in LeaderElection: Code: " << e.code() << ". " << e.displayText() << std::endl
-				<< std::endl
-				<< "Stack trace:" << std::endl
-				<< e.getStackTrace().toString());
-		}
-		catch (const Poco::Exception & e)
-		{
-			LOG_ERROR(log, "Poco::Exception in LeaderElection: " << e.code() << ". " << e.displayText());
-		}
-		catch (const std::exception & e)
-		{
-			LOG_ERROR(log, "std::exception in LeaderElection: " << e.what());
-		}
-		catch (...)
-		{
-			LOG_ERROR(log, "Unknown exception in LeaderElection");
+			catch (const DB::Exception & e)
+			{
+				LOG_ERROR(log, "Exception in LeaderElection: Code: " << e.code() << ". " << e.displayText() << std::endl
+					<< std::endl
+					<< "Stack trace:" << std::endl
+					<< e.getStackTrace().toString());
+			}
+			catch (const Poco::Exception & e)
+			{
+				LOG_ERROR(log, "Poco::Exception in LeaderElection: " << e.code() << ". " << e.displayText());
+			}
+			catch (const std::exception & e)
+			{
+				LOG_ERROR(log, "std::exception in LeaderElection: " << e.what());
+			}
+			catch (...)
+			{
+				LOG_ERROR(log, "Unknown exception in LeaderElection");
+			}
+
+			if (!success)
+				std::this_thread::sleep_for(std::chrono::seconds(10));
 		}
 	}
 };

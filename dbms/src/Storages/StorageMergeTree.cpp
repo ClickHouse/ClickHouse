@@ -6,12 +6,9 @@
 namespace DB
 {
 
-BackgroundProcessingPool StorageMergeTree::merge_pool;
-
-
 StorageMergeTree::StorageMergeTree(const String & path_, const String & database_name_, const String & name_,
 				NamesAndTypesListPtr columns_,
-				const Context & context_,
+				Context & context_,
 				ASTPtr & primary_expr_ast_,
 				const String & date_column_name_,
 				const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
@@ -20,6 +17,7 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 				const String & sign_column_,
 				const MergeTreeSettings & settings_)
 	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), increment(full_path + "increment.txt"),
+	background_pool(context_.getBackgroundPool()),
 	data(full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 	index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + name),
 	reader(data), writer(data), merger(data),
@@ -34,7 +32,7 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 StoragePtr StorageMergeTree::create(
 	const String & path_, const String & database_name_, const String & name_,
 	NamesAndTypesListPtr columns_,
-	const Context & context_,
+	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
 	const ASTPtr & sampling_expression_,
@@ -48,9 +46,7 @@ StoragePtr StorageMergeTree::create(
 		sampling_expression_, index_granularity_, mode_, sign_column_, settings_);
 	StoragePtr res_ptr = res->thisPtr();
 
-	merge_pool.setNumberOfThreads(res->data.settings.merging_threads);
-	merge_pool.setSleepTime(5);
-	res->merge_task_handle = merge_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res, std::placeholders::_1));
+	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res, std::placeholders::_1));
 
 	return res_ptr;
 }
@@ -61,7 +57,7 @@ void StorageMergeTree::shutdown()
 		return;
 	shutdown_called = true;
 	merger.cancelAll();
-	merge_pool.removeTask(merge_task_handle);
+	background_pool.removeTask(merge_task_handle);
 }
 
 
@@ -142,8 +138,8 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 		auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 		/// Если слияние запущено из пула потоков, и хотя бы половина потоков сливает большие куски,
 		///  не будем сливать большие куски.
-		int big_merges = merge_pool.getCounter("big merges");
-		bool only_small = pool_context && big_merges * 2 >= merge_pool.getNumberOfThreads();
+		int big_merges = background_pool.getCounter("big merges");
+		bool only_small = pool_context && big_merges * 2 >= background_pool.getNumberOfThreads();
 
 		if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
 			!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))

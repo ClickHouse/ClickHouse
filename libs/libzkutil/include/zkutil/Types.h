@@ -5,6 +5,8 @@
 #include <boost/noncopyable.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <zookeeper/zookeeper.h>
+#include <Poco/SharedPtr.h>
+#include <Poco/Event.h>
 
 namespace zkutil
 {
@@ -95,16 +97,6 @@ namespace CreateMode
 	extern const int PersistentSequential;
 }
 
-struct WatchEventInfo
-{
-	int32_t event;
-	int32_t state;
-	std::string path;
+typedef Poco::SharedPtr<Poco::Event> EventPtr;
 
-	WatchEventInfo() {}
-	WatchEventInfo(int32_t event_, int32_t state_, const char * path_)
-		: event(event_), state(state_), path(path_) {}
-};
-
-typedef std::future<WatchEventInfo> WatchFuture;
 }

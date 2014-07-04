@@ -26,11 +26,11 @@ void printStat(const zkutil::Stat & s)
 	std::cout << "  pzxid: " << s.pzxid << std::endl;
 }
 
-void waitForWatch(zkutil::WatchFuture & future)
+void waitForWatch(zkutil::EventPtr event)
 {
 	std::cout << "waiting for watch" << std::endl;
-	zkutil::WatchEventInfo res = future.get();
-	std::cout << "event: " << res.event << std::endl;
+	event->wait();
+	std::cout << "watch event was signalled" << std::endl;
 }
 
 
@@ -93,14 +93,14 @@ int main(int argc, char ** argv)
 					std::string w;
 					ss >> w;
 					bool watch = w == "w";
-					zkutil::WatchFuture future;
-					std::vector<std::string> v = zk.getChildren(path, nullptr, watch ? &future : nullptr);
+					zkutil::EventPtr event = watch ? new Poco::Event() : nullptr;
+					std::vector<std::string> v = zk.getChildren(path, nullptr, event);
 					for (size_t i = 0; i < v.size(); ++i)
 					{
 						std::cout << v[i] << std::endl;
 					}
 					if (watch)
-						waitForWatch(future);
+						waitForWatch(event);
 				}
 				else if (cmd == "create")
 				{
@@ -147,28 +147,28 @@ int main(int argc, char ** argv)
 					std::string w;
 					ss >> w;
 					bool watch = w == "w";
-					zkutil::WatchFuture future;
+					zkutil::EventPtr event = watch ? new Poco::Event() : nullptr;
 					zkutil::Stat stat;
-					bool e = zk.exists(path, &stat, watch ? &future : nullptr);
+					bool e = zk.exists(path, &stat, event);
 					if (e)
 						printStat(stat);
 					else
 						std::cout << path << " does not exist" << std::endl;
 					if (watch)
-						waitForWatch(future);
+						waitForWatch(event);
 				}
 				else if (cmd == "get")
 				{
 					std::string w;
 					ss >> w;
 					bool watch = w == "w";
-					zkutil::WatchFuture future;
+					zkutil::EventPtr event = watch ? new Poco::Event() : nullptr;
 					zkutil::Stat stat;
-					std::string data = zk.get(path, &stat, watch ? &future : nullptr);
+					std::string data = zk.get(path, &stat, event);
 					std::cout << "Data: " << data << std::endl;
 					printStat(stat);
 					if (watch)
-						waitForWatch(future);
+						waitForWatch(event);
 				}
 				else if (cmd == "set")
 				{

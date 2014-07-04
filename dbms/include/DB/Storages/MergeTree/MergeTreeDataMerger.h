@@ -35,7 +35,8 @@ public:
 		const AllowedMergingPredicate & can_merge);
 
 	/// Сливает куски.
-	MergeTreeData::DataPartPtr mergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name);
+	MergeTreeData::DataPartPtr mergeParts(
+		const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeTreeData::Transaction * out_transaction = nullptr);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
