@@ -81,7 +81,7 @@ private:
 		if (head->size() < linear_growth_threshold)
 			size_after_grow = head->size() * growth_factor;
 		else
-			size_after_grow = head->size() + linear_growth_threshold;
+			size_after_grow = linear_growth_threshold;
 
 		if (size_after_grow < min_next_size)
 			size_after_grow = min_next_size;
