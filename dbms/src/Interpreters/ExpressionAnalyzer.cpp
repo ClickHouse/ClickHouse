@@ -44,11 +44,8 @@ void ExpressionAnalyzer::init()
 	/// Создаёт словарь aliases: alias -> ASTPtr
 	createAliasesDict(ast);
 
-	/// Common subexpression elimination. Rewrite rules. addExternalStorage.
+	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
-
-	/// Создаёт словарь external_tables: name -> StoragePtr.
-	findExternalTables(ast);
 
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
@@ -58,6 +55,10 @@ void ExpressionAnalyzer::init()
 
 	/// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
 	analyzeAggregation();
+
+	/// external_tables, external_data.
+	/// Заменяет глобальные подзапросы на сгенерированные имена временных таблиц, которые будут отправлены на удалённые серверы.
+	initGlobalSubqueriesAndExternalTables();
 }
 
 
@@ -131,6 +132,56 @@ void ExpressionAnalyzer::analyzeAggregation()
 }
 
 
+void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
+{
+	initGlobalSubqueries(ast);
+
+	/// Создаёт словарь external_tables: name -> StoragePtr.
+	findExternalTables(ast);
+}
+
+
+void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
+{
+	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
+
+	for (auto & child : ast->children)
+		if (!typeid_cast<ASTSelectQuery *>(&*child))
+			initGlobalSubqueries(child);
+
+	/// Действия, выполняемые снизу вверх.
+
+	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
+	{
+		/// Для GLOBAL IN.
+		if (do_global && (node->name == "globalIn" || node->name == "globalNotIn"))
+			addExternalStorage(node->arguments->children.at(1));
+	}
+	else if (ASTJoin * node = typeid_cast<ASTJoin *>(&*ast))
+	{
+		/// Для GLOBAL JOIN.
+		if (do_global && node->locality == ASTJoin::Global)
+			addExternalStorage(node->table);
+	}
+}
+
+
+void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
+{
+	/// Обход снизу. Намеренно опускаемся в подзапросы.
+	for (auto & child : ast->children)
+		findExternalTables(child);
+
+	/// Если идентификатор типа таблица
+	StoragePtr external_storage;
+
+	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
+		if (node->kind == ASTIdentifier::Kind::Table)
+			if ((external_storage = context.tryGetExternalTable(node->name)))
+				external_tables[node->name] = external_storage;
+}
+
+
 NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypesList & cols)
 {
 	return std::find_if(cols.begin(), cols.end(),
@@ -145,17 +196,17 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 	ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast);
 
 	/// Обход снизу-вверх. Не опускаемся в подзапросы.
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
+	for (auto & child : ast->children)
 	{
 		int new_ignore_levels = std::max(0, ignore_levels - 1);
 
 		/// Алиасы верхнего уровня в секции ARRAY JOIN имеют особый смысл, их добавлять не будем
 		///  (пропустим сам expression list и его детей).
-		if (select && *it == select->array_join_expression_list)
+		if (select && child == select->array_join_expression_list)
 			new_ignore_levels = 2;
 
-		if (!typeid_cast<ASTSelectQuery *>(&**it))
-			createAliasesDict(*it, new_ignore_levels);
+		if (!typeid_cast<ASTSelectQuery *>(&*child))
+			createAliasesDict(child, new_ignore_levels);
 	}
 
 	if (ignore_levels > 0)
@@ -295,9 +346,9 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
 
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		if (!typeid_cast<ASTSelectQuery *>(&**it))
-			normalizeTreeImpl(*it, finished_asts, current_asts, current_alias);
+	for (auto & child : ast->children)
+		if (!typeid_cast<ASTSelectQuery *>(&*child))
+			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
 
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast))
@@ -333,21 +384,12 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 		{
 			node->kind = ASTFunction::FUNCTION;
 		}
-
-		/// Для GLOBAL IN.
-		if (do_global && (node->name == "globalIn" || node->name == "globalNotIn"))
-			addExternalStorage(node->arguments->children.at(1));
 	}
-
-	if (ASTJoin * node = typeid_cast<ASTJoin *>(&*ast))
+	else if (ASTJoin * node = typeid_cast<ASTJoin *>(&*ast))
 	{
 		/// может быть указано JOIN t, где t - таблица, что равносильно JOIN (SELECT * FROM t).
 		if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*node->table))
 			right->kind = ASTIdentifier::Table;
-
-		/// Для GLOBAL JOIN.
-		if (do_global && node->locality == ASTJoin::Global)
-			addExternalStorage(node->table);
 	}
 
 	current_asts.erase(initial_ast);
@@ -387,22 +429,6 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 			}
 		}
 	}
-}
-
-
-void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
-{
-	/// Обход снизу. Намеренно опускаемся в подзапросы.
-	for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-		findExternalTables(*it);
-
-	/// Если идентификатор типа таблица
-	StoragePtr external_storage;
-
-	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
-		if (node->kind == ASTIdentifier::Kind::Table)
-			if ((external_storage = context.tryGetExternalTable(node->name)))
-				external_tables[node->name] = external_storage;
 }
 
 
@@ -500,7 +526,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	if (typeid_cast<ASTSet *>(&*arg))
 		return;
 
-	/// Если подзапрос или имя таблицы для селекта
+	/// Если подзапрос или имя таблицы для SELECT.
 	if (typeid_cast<ASTSubquery *>(&*arg) || typeid_cast<ASTIdentifier *>(&*arg))
 	{
 		/// Получаем поток блоков для подзапроса, отдаем его множеству, и кладём это множество на место подзапроса.
@@ -854,9 +880,9 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 	}
 	else
 	{
-		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			if (!typeid_cast<ASTSelectQuery *>(&**it))
-				getArrayJoinedColumnsImpl(*it);
+		for (auto & child : ast->children)
+			if (!typeid_cast<ASTSelectQuery *>(&*child))
+				getArrayJoinedColumnsImpl(child);
 	}
 }
 
@@ -917,6 +943,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				{
 					/// Найдем тип первого аргумента (потом getActionsImpl вызовется для него снова и ни на что не повлияет).
 					getActionsImpl(node->arguments->children[0], no_subqueries, only_consts, actions_stack);
+
 					/// Превратим tuple или подзапрос в множество.
 					makeSet(node, actions_stack.getSampleBlock());
 				}
@@ -1104,8 +1131,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	}
 	else
 	{
-		for (ASTs::iterator it = ast->children.begin(); it != ast->children.end(); ++it)
-			getActionsImpl(*it, no_subqueries, only_consts, actions_stack);
+		for (auto & child : ast->children)
+			getActionsImpl(child, no_subqueries, only_consts, actions_stack);
 	}
 }
 

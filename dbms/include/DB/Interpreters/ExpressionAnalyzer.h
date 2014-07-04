@@ -98,14 +98,11 @@ public:
 	  */
 	Sets getSetsWithSubqueries();
 	Joins getJoinsWithSubqueries();
+	
+	const Tables & getExternalTables() { return external_tables; }
 
 	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
 	Block getSelectSampleBlock();
-
-	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN.
-	Tables external_tables;
-	std::unordered_map<String, BlockInputStreamPtr> external_data;
-	size_t external_table_id = 1;
 
 	/// Создаем какие сможем Set из секции In для использования индекса по ним
 	void makeSetsForIndex();
@@ -169,6 +166,12 @@ private:
 	/// Нужно ли подготавливать к выполнению глобальные подзапросы при анализировании запроса.
 	bool do_global;
 
+	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN/JOIN.
+	Tables external_tables;
+	std::unordered_map<String, BlockInputStreamPtr> external_data;
+	size_t external_table_id = 1;
+
+
 	void init();
 
 	static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
@@ -194,13 +197,19 @@ private:
 	void normalizeTree();
 	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias);
 
-	/// Находит в запросе использования внешних таблиц. Заполняет external_tables.
-	void findExternalTables(ASTPtr & ast);
-
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 
-	/// Запустить подзапрос в секции GLOBAL IN/JOIN, создать временную таблицу типа Memory и запомнить эту пару в переменной external_tables.
+	/// Находит глобальные подзапросы в секциях GLOBAL IN/JOIN. Заполняет external_tables, external_data.
+	void initGlobalSubqueriesAndExternalTables();
+	void initGlobalSubqueries(ASTPtr & ast);
+
+	/// Находит в запросе использования внешних таблиц (в виде идентификаторов таблиц). Заполняет external_tables.
+	void findExternalTables(ASTPtr & ast);
+
+	/** Инициализировать InterpreterSelectQuery для подзапроса в секции GLOBAL IN/JOIN,
+	  * создать временную таблицу типа Memory и запомнить это в словаре external_tables, external_data.
+	  */
 	void addExternalStorage(ASTPtr & subquery_or_table_name);
 
 	void getArrayJoinedColumns();
