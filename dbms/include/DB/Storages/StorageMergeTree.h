@@ -110,7 +110,7 @@ private:
 		CurrentlyMergingPartsTagger(const MergeTreeData::DataPartsVector & parts_, size_t total_size, StorageMergeTree & storage_)
 			: parts(parts_), storage(storage_)
 		{
-			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри mergeThread, где он уже залочен.
+			/// Здесь не лочится мьютекс, так как конструктор вызывается внутри mergeTask, где он уже залочен.
 			reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// Может бросить исключение.
 			for (const auto & part : parts)
 			{

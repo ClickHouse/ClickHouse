@@ -706,6 +706,13 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 
 bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 {
+	if ((entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART) &&future_parts.count(entry.new_part_name))
+	{
+		LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name <<
+			" because another log entry for the same part is being processed. This shouldn't happen often.");
+		return false;
+	}
+
 	if (entry.type == LogEntry::MERGE_PARTS)
 	{
 		/** Если какая-то из нужных частей сейчас передается или мерджится, подождем окончания этой операции.
