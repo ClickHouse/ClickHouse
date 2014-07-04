@@ -199,8 +199,8 @@ private:
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 
-	/// Запустить подзапрос в секции GLOBAL IN, создать временную таблицу типа Memory и запомнить эту пару в переменной external_tables.
-	void addExternalStorage(ASTFunction * node);
+	/// Запустить подзапрос в секции GLOBAL IN/JOIN, создать временную таблицу типа Memory и запомнить эту пару в переменной external_tables.
+	void addExternalStorage(ASTPtr & subquery_or_table_name);
 
 	void getArrayJoinedColumns();
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
@@ -211,13 +211,13 @@ private:
 	struct ScopeStack;
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
 
-	void getRootActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
+	void getRootActions(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 
-	void getActionsBeforeAggregationImpl(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries);
+	void getActionsBeforeAggregation(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries);
 
 	/// Добавить агрегатные функции в aggregate_descriptions.
 	/// Установить has_aggregation = true, если есть хоть одна агрегатная функция.
-	void getAggregatesImpl(ASTPtr ast, ExpressionActionsPtr & actions);
+	void getAggregates(ASTPtr ast, ExpressionActionsPtr & actions);
 
 	/** Получить множество нужных столбцов для чтения из таблицы.
 	  * При этом, столбцы, указанные в ignored_names, считаются ненужными. И параметр ignored_names может модифицироваться.

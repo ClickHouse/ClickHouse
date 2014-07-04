@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTWithAlias.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -11,7 +11,7 @@ namespace DB
 
 /** Применение функции или оператора
   */
-class ASTFunction : public IAST
+class ASTFunction : public ASTWithAlias
 {
 public:
 	enum FunctionKind
@@ -23,20 +23,18 @@ public:
 		LAMBDA_EXPRESSION,
 		ARRAY_JOIN,
 	};
-	
+
 	/// имя функции
 	String name;
 	/// аргументы
 	ASTPtr arguments;
 	/// параметры - для параметрических агрегатных функций. Пример: quantile(0.9)(x) - то, что в первых скобках - параметры.
 	ASTPtr parameters;
-	/// алиас, если есть
-	String alias;
-	
+
 	FunctionKind kind;
 
 	ASTFunction() : kind(UNKNOWN) {}
-	ASTFunction(StringRange range_) : IAST(range_), kind(UNKNOWN) {}
+	ASTFunction(StringRange range_) : ASTWithAlias(range_), kind(UNKNOWN) {}
 
 	String getColumnName() const
 	{
@@ -67,8 +65,6 @@ public:
 
 		return res;
 	}
-
-	String getAlias() const { return alias.empty() ? getColumnName() : alias; }
 
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const { return "Function_" + name; }

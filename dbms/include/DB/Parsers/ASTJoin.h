@@ -37,7 +37,7 @@ public:
 	Strictness strictness = Any;
 	Kind kind = Inner;
 
-	ASTPtr subquery;			/// Подзапрос - "правая" таблица для соединения.
+	ASTPtr table;				/// "Правая" таблица для соединения - подзапрос или имя таблицы.
 	ASTPtr using_expr_list;		/// По каким столбцам выполнять соединение.
 
 	ASTJoin() {}
@@ -66,7 +66,7 @@ public:
 		ASTJoin * res = new ASTJoin(*this);
 		res->children.clear();
 
-		if (subquery) 			{ res->subquery 		= subquery->clone(); 		res->children.push_back(res->subquery); }
+		if (table) 				{ res->table 			= table->clone(); 			res->children.push_back(res->table); }
 		if (using_expr_list) 	{ res->using_expr_list 	= using_expr_list->clone(); res->children.push_back(res->using_expr_list); }
 
 		return res;

@@ -73,7 +73,7 @@ public:
 			bool done = 0;
 			for (size_t j = 0; j < asts.size(); ++j)
 			{
-				if (asts[j]->getAlias() == column_names[i])
+				if (asts[j]->getAliasOrColumnName() == column_names[i])
 				{
 					if (!unremovable_asts.count(asts[j]))
 						result->children.push_back(asts[j]->clone());
@@ -81,7 +81,7 @@ public:
 				}
 			}
 			if (!done)
-				throw Exception("Error while rewriting expressioin list for select query."
+				throw Exception("Error while rewriting expression list for select query."
 					" Could not find alias: " + column_names[i],
 					DB::ErrorCodes::UNKNOWN_IDENTIFIER);
 		}

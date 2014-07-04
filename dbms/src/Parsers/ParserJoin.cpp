@@ -27,6 +27,7 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 
 	ParserNotEmptyExpressionList exp_list;
 	ParserSubquery subquery;
+	ParserIdentifier identifier;
 
 	ws.ignore(pos, end);
 
@@ -66,7 +67,8 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 
 	ws.ignore(pos, end);
 
-	if (!subquery.parse(pos, end, join->subquery, expected))
+	if (!identifier.parse(pos, end, join->table, expected)
+		&& !subquery.parse(pos, end, join->table, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -81,7 +83,7 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 
 	ws.ignore(pos, end);
 
-	join->children.push_back(join->subquery);
+	join->children.push_back(join->table);
 	join->children.push_back(join->using_expr_list);
 
 	return true;
