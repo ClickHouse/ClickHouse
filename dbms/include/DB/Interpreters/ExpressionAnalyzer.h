@@ -175,9 +175,10 @@ private:
 	NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
 	/** Из списка всех доступных столбцов таблицы (columns) удалить все ненужные.
-	  * Заодно, сформировать множество неизвестных столбцов (unknown_required_columns).
+	  * Заодно, сформировать множество неизвестных столбцов (unknown_required_columns),
+	  * а также столбцов, добавленных JOIN-ом (columns_added_by_join).
 	  */
-	void removeUnusedColumns();
+	void collectUsedColumns();
 
 	/** Найти столбцы, получаемые путём JOIN-а.
 	  */
@@ -215,8 +216,12 @@ private:
 
 	void getActionsBeforeAggregation(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries);
 
-	/// Добавить агрегатные функции в aggregate_descriptions.
-	/// Установить has_aggregation = true, если есть хоть одна агрегатная функция.
+	/** Добавить ключи агрегации в aggregation_keys, агрегатные функции в aggregate_descriptions,
+	  * Создать набор столбцов aggregated_columns, получаемых после агрегации, если она есть,
+	  *  или после всех действий, которые обычно выполняются до агрегации.
+	  * Установить has_aggregation = true, если есть GROUP BY или хотя бы одна агрегатная функция.
+	  */
+	void analyzeAggregation();
 	void getAggregates(ASTPtr ast, ExpressionActionsPtr & actions);
 
 	/** Получить множество нужных столбцов для чтения из таблицы.

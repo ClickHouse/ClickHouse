@@ -41,16 +41,35 @@ void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
-	createAliasesDict(ast); /// Если есть агрегатные функции, присвоит has_aggregation = true.
+	/// Создаёт словарь aliases: alias -> ASTPtr
+	createAliasesDict(ast);
+
+	/// Common subexpression elimination. Rewrite rules. addExternalStorage.
 	normalizeTree();
 
+	/// Создаёт словарь external_tables: name -> StoragePtr.
 	findExternalTables(ast);
 
+	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
 
-	removeUnusedColumns();
+	/// Удалить ненужное из списка columns. Создать unknown_required_columns. Сформировать columns_added_by_join.
+	collectUsedColumns();
 
-	/// Найдем агрегатные функции.
+	/// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
+	analyzeAggregation();
+}
+
+
+void ExpressionAnalyzer::analyzeAggregation()
+{
+	/** Найдем ключи агрегации (aggregation_keys), информацию об агрегатных функциях (aggregate_descriptions),
+	 *  а также набор столбцов, получаемых после агрегации, если она есть,
+	 *  или после всех действий, которые обычно выполняются до агрегации (aggregated_columns).
+	 *
+	 * Всё, что ниже (составление временных ExpressionActions) - только в целях анализа запроса (вывода типов).
+	 */
+
 	if (select_query && (select_query->group_expression_list || select_query->having_expression))
 		has_aggregation = true;
 
@@ -1504,7 +1523,7 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
 	aggregates = aggregate_descriptions;
 }
 
-void ExpressionAnalyzer::removeUnusedColumns()
+void ExpressionAnalyzer::collectUsedColumns()
 {
 	/** Вычислим, какие столбцы требуются для выполнения выражения.
 	  * Затем, удалим все остальные столбцы из списка доступных столбцов.
@@ -1729,7 +1748,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 	for (auto & child : ast->children)
 	{
 		/** Не пойдем в секцию ARRAY JOIN, потому что там нужно смотреть на имена не-ARRAY-JOIN-енных столбцов.
-		  * Туда removeUnusedColumns отправит нас отдельно.
+		  * Туда collectUsedColumns отправит нас отдельно.
 		  */
 		if (!typeid_cast<ASTSubquery *>(&*child) && !typeid_cast<ASTSelectQuery *>(&*child) &&
 			!(select && child == select->array_join_expression_list))
