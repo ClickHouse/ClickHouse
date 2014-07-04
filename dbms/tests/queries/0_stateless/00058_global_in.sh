@@ -23,6 +23,7 @@ cat "$CONFIG" | sed -r \
 	's/<path>.+<\/path>/<path>'${PATH2//\//\\/}'<\/path>/;
 	 s/<http_port>[0-9]+/<http_port>8124/;
 	 s/<tcp_port>[0-9]+/<tcp_port>9001/;
+	 s/<interserver_http_port>[0-9]+/<interserver_http_port>9010/;
 	 s/<use_olap_http_server>true/<use_olap_http_server>false/' > $CONFIG2
 
 cp ${CONFIG/config-preprocessed/users} .
