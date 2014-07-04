@@ -81,7 +81,7 @@ public:
 				}
 			}
 			if (!done)
-				throw Exception("Error while rewriting expressioin list for select query."
+				throw Exception("Error while rewriting expression list for select query."
 					" Could not find alias: " + column_names[i],
 					DB::ErrorCodes::UNKNOWN_IDENTIFIER);
 		}
