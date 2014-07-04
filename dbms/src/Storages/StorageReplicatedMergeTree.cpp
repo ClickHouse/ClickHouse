@@ -242,7 +242,7 @@ void StorageReplicatedMergeTree::createReplica()
 			if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/log_pointers/" + replica_name, nullptr, event))
 				break;
 
-			event->wait(5 * 1000);
+			event->wait();
 		}
 
 		/// Будем предпочитать активную реплику в качестве эталонной.
