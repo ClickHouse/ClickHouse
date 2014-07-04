@@ -28,7 +28,7 @@ cat "$CONFIG" | sed -r \
 cp ${CONFIG/config-preprocessed/users} .
 
 # Запустим второй сервер.
-BINARY=/proc/$(pidof clickhouse-server | tr ' ' '\n' | head -n1)/exe
+BINARY=$(readlink /proc/$(pidof clickhouse-server | tr ' ' '\n' | head -n1)/exe || echo "/usr/bin/clickhouse-server")
 
 $BINARY --config-file=${CONFIG2} 2>$LOG &
 PID=$!
