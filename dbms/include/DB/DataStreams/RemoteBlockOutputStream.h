@@ -3,6 +3,7 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Client/Connection.h>
+#include <Yandex/logger_useful.h>
 
 
 namespace DB
@@ -54,6 +55,7 @@ public:
 			message << "Block structure is different from table structure.\n"
 				<< "\nTable structure:\n(" << sample_block.dumpStructure() << ")\nBlock structure:\n(" << block.dumpStructure() << ")\n";
 
+			LOG_ERROR(&Logger::get("RemoteBlockOutputStream"), message.str());
 			throw DB::Exception(message.str());
 		}
 
