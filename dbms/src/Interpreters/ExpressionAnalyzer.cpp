@@ -1214,9 +1214,12 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
 
 void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only_types)
 {
-	for (auto & subquery_for_set : subqueries_for_sets)
-		if (subquery_for_set.second.join)
-			actions->add(ExpressionAction::ordinaryJoin(only_types ? nullptr : subquery_for_set.second.join, columns_added_by_join));
+	if (only_types)
+		actions->add(ExpressionAction::ordinaryJoin(nullptr, columns_added_by_join));
+	else
+		for (auto & subquery_for_set : subqueries_for_sets)
+			if (subquery_for_set.second.join)
+				actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, columns_added_by_join));
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
