@@ -92,16 +92,6 @@ bool Join::checkSizeLimits() const
 }
 
 
-bool Join::checkExternalSizeLimits() const
-{
-	if (max_rows_to_transfer && rows_in_external_table > max_rows_to_transfer)
-		return false;
-	if (max_bytes_to_transfer && bytes_in_external_table > max_bytes_to_transfer)
-		return false;
-	return true;
-}
-
-
 /// Вставка элемента в хэш-таблицу вида ключ -> ссылка на строку, которая затем будет использоваться при JOIN-е.
 template <ASTJoin::Strictness STRICTNESS, typename Map>
 struct Inserter
@@ -271,33 +261,6 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 
 bool Join::insertFromBlock(const Block & block)
 {
-	if (external_table)
-	{
-		BlockOutputStreamPtr output = external_table->write(ASTPtr());
-		output->write(block);
-		bytes_in_external_table += block.bytes();
-		rows_in_external_table += block.rows();
-
-		if (!checkExternalSizeLimits())
-		{
-			if (transfer_overflow_mode == OverflowMode::THROW)
-				throw Exception("JOIN external table size limit exceeded."
-					" Rows: " + toString(rows_in_external_table) +
-					", limit: " + toString(max_rows_to_transfer) +
-					". Bytes: " + toString(bytes_in_external_table) +
-					", limit: " + toString(max_bytes_to_transfer) + ".",
-					ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-
-			if (transfer_overflow_mode == OverflowMode::BREAK)
-				return false;
-
-			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-		}
-	}
-
-	if (only_external)
-		return true;
-
 	size_t keys_size = key_names_right.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 

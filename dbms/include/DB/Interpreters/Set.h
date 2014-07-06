@@ -31,20 +31,14 @@ namespace DB
 class Set
 {
 public:
-	Set(const Limits & limits)
-		: max_bytes_to_transfer(limits.max_bytes_to_transfer),
-		max_rows_to_transfer(limits.max_rows_to_transfer),
-		transfer_overflow_mode(limits.transfer_overflow_mode),
-		bytes_in_external_table(0),
-		rows_in_external_table(0),
-		only_external(false),
+	Set(const Limits & limits) :
 		log(&Logger::get("Set")),
 		max_rows(limits.max_rows_in_set),
 		max_bytes(limits.max_bytes_in_set),
 		overflow_mode(limits.set_overflow_mode)
 	{
 	}
-	
+
 	bool empty() { return type == EMPTY; }
 
 	/** Создать множество по выражению (для перечисления в самом запросе).
@@ -53,15 +47,6 @@ public:
 	  * create_ordered_set - создавать ли вектор упорядоченных элементов. Нужен для работы индекса
 	  */
 	void createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set);
-
-	/** Запомнить поток блоков (для подзапросов), чтобы потом его можно было прочитать и создать множество.
-	  */
-	void setSource(BlockInputStreamPtr stream) { source = stream; }
-
-	void setExternalOutput(StoragePtr storage) { external_table = storage; }
-	void setOnlyExternal(bool flag) { only_external = flag; }
-
-	BlockInputStreamPtr getSource() { return source; }
 
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
 	bool insertFromBlock(Block & block, bool create_ordered_set = false);
@@ -77,10 +62,10 @@ public:
 	{
 		if (!ordered_set_elements)
 			return "{}";
-		
+
 		bool first = true;
 		std::stringstream ss;
-		
+
 		ss << "{";
 		for (const Field & f : *ordered_set_elements)
 		{
@@ -112,17 +97,6 @@ private:
 	typedef HashSetWithSavedHash<StringRef> SetString;
 	typedef HashSet<UInt128, UInt128Hash> SetHashed;
 
-	BlockInputStreamPtr source;
-
-	/// Информация о внешней таблице, заполняемой этим классом
-	StoragePtr external_table;
-	size_t max_bytes_to_transfer;
-	size_t max_rows_to_transfer;
-	OverflowMode transfer_overflow_mode;
-	size_t bytes_in_external_table;
-	size_t rows_in_external_table;
-	bool only_external;
-
 	/// Специализация для случая, когда есть один числовой ключ.
 	std::unique_ptr<SetUInt64> key64;
 
@@ -138,7 +112,7 @@ private:
 	std::unique_ptr<SetHashed> hashed;
 
 	Type type = EMPTY;
-	
+
 	bool keys_fit_128_bits;
 	Sizes key_sizes;
 
@@ -146,14 +120,14 @@ private:
 	  * При проверке на принадлежность множеству, типы проверяемых столбцов должны с ними совпадать.
 	  */
 	DataTypes data_types;
-	
+
 	Logger * log;
-	
+
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;
 	size_t max_bytes;
 	OverflowMode overflow_mode;
-	
+
 	void init(Type type_)
 	{
 		type = type_;
@@ -173,14 +147,12 @@ private:
 	/// Если в левой части IN стоит массив. Проверяем, что хоть один элемент массива лежит в множестве.
 	void executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
 	void executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
-	
+
 	/// Если в левой части набор столбцов тех же типов, что элементы множества.
 	void executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const;
-	
+
 	/// Проверить не превышены ли допустимые размеры множества ключей
 	bool checkSetSizeLimits() const;
-	/// Проверить не превышены ли допустимые размеры внешней таблицы для передачи данных
-	bool checkExternalSizeLimits() const;
 
 	/// Считает суммарное число ключей во всех Set'ах
 	size_t getTotalRowCount() const;

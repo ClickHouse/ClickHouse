@@ -15,7 +15,8 @@ class ASTSet : public IAST
 public:
 	SetPtr set;
 	String column_name;
-	
+	bool is_explicit = false;
+
 	ASTSet(const String & column_name_) : column_name(column_name_) {}
 	ASTSet(StringRange range_, const String & column_name_) : IAST(range_), column_name(column_name_) {}
 	String getID() const { return "Set_" + getColumnName(); }

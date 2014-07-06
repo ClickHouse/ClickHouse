@@ -15,6 +15,29 @@
 namespace DB
 {
 
+
+/** Информация о том, что делать при выполнении подзапроса в секции [GLOBAL] IN/JOIN.
+  */
+struct SubqueryForSet
+{
+	/// Источник - получен с помощью InterpreterSelectQuery подзапроса.
+	BlockInputStreamPtr source;
+
+	/// Если задано - создать из результата Set.
+	SetPtr set;
+
+	/// Если задано - создать из результата Join.
+	JoinPtr join;
+
+	/// Если задано - положить результат в таблицу.
+	/// Это - временная таблица для передачи на удалённые серверы при распределённой обработке запроса.
+	StoragePtr table;
+};
+
+/// ID подзапроса -> что с ним делать.
+typedef std::unordered_map<String, SubqueryForSet> SubqueriesForSets;
+
+
 /** Превращает выражение из синтаксического дерева в последовательность действий для его выполнения.
   *
   * NOTE: если ast - запрос SELECT из таблицы, структура этой таблицы не должна меняться во все время жизни ExpressionAnalyzer-а.
@@ -65,7 +88,7 @@ public:
 	  *   analyzer.appendOrderBy(chain);
 	  *   chain.finalize();
 	  *
-	  * Если указано only_types=true, не выполняет подзапросы в соответствующих частях запроса. Полученные таким
+	  * Если указано only_types = true, не выполняет подзапросы в соответствующих частях запроса. Полученные таким
 	  *  образом действия не следует выполнять, они нужны только чтобы получить список столбцов с их типами.
 	  */
 
@@ -94,17 +117,19 @@ public:
 
 	/** Множества, для создания которых нужно будет выполнить подзапрос.
 	  * Только множества, нужные для выполнения действий, возвращенных из уже вызванных append* или getActions.
-	  * То есть, нужно вызвать getSubquerySets после всех вызовов append* или getActions и создать все возвращенные множества перед выполнением действий.
+	  * То есть, нужно вызвать getSetsWithSubqueries после всех вызовов append* или getActions
+	  *  и создать все возвращенные множества перед выполнением действий.
 	  */
-	Sets getSetsWithSubqueries();
-	Joins getJoinsWithSubqueries();
-	
+	SubqueriesForSets getSubqueriesForSets();
+
+	/** Таблицы, которые надо будет отправить на удалённые серверы при распределённой обработке запроса.
+	  */
 	const Tables & getExternalTables() { return external_tables; }
 
 	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
 	Block getSelectSampleBlock();
 
-	/// Создаем какие сможем Set из секции In для использования индекса по ним
+	/// Создаем какие сможем Set из секции IN для использования индекса по ним.
 	void makeSetsForIndex();
 
 private:
@@ -132,8 +157,7 @@ private:
 	NamesAndTypesList aggregation_keys;
 	AggregateDescriptions aggregate_descriptions;
 
-	std::unordered_map<String, SetPtr> sets_with_subqueries;
-	Joins joins;
+	SubqueriesForSets subqueries_for_sets;
 
 	/// NOTE: Пока поддерживается только один JOIN на запрос.
 
@@ -168,7 +192,6 @@ private:
 
 	/// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN/JOIN.
 	Tables external_tables;
-	std::unordered_map<String, BlockInputStreamPtr> external_data;
 	size_t external_table_id = 1;
 
 
@@ -200,7 +223,7 @@ private:
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 
-	/// Находит глобальные подзапросы в секциях GLOBAL IN/JOIN. Заполняет external_tables, external_data.
+	/// Находит глобальные подзапросы в секциях GLOBAL IN/JOIN. Заполняет external_tables.
 	void initGlobalSubqueriesAndExternalTables();
 	void initGlobalSubqueries(ASTPtr & ast);
 
@@ -208,7 +231,7 @@ private:
 	void findExternalTables(ASTPtr & ast);
 
 	/** Инициализировать InterpreterSelectQuery для подзапроса в секции GLOBAL IN/JOIN,
-	  * создать временную таблицу типа Memory и запомнить это в словаре external_tables, external_data.
+	  * создать временную таблицу типа Memory и запомнить это в словаре external_tables.
 	  */
 	void addExternalStorage(ASTPtr & subquery_or_table_name);
 

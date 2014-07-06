@@ -62,28 +62,14 @@ public:
 		: kind(kind_), strictness(strictness_),
 		key_names_left(key_names_left_),
 		key_names_right(key_names_right_),
-		max_bytes_to_transfer(limits.max_bytes_to_transfer),
-		max_rows_to_transfer(limits.max_rows_to_transfer),
-		transfer_overflow_mode(limits.transfer_overflow_mode),
-		bytes_in_external_table(0),
-		rows_in_external_table(0),
-		only_external(false),
 		log(&Logger::get("Join")),
 		max_rows(limits.max_rows_in_set),
 		max_bytes(limits.max_bytes_in_set),
 		overflow_mode(limits.set_overflow_mode)
 	{
 	}
-	
+
 	bool empty() { return type == Set::EMPTY; }
-
-	/** Запомнить поток блоков, чтобы потом его можно было прочитать и создать отображение.
-	  */
-	void setSource(BlockInputStreamPtr stream) { source = stream; }
-	BlockInputStreamPtr getSource() { return source; }
-
-	void setExternalOutput(StoragePtr storage) { external_table = storage; }
-	void setOnlyExternal(bool flag) { only_external = flag; }
 
 	/** Добавить в отображение для соединения блок "правой" таблицы.
 	  * Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
@@ -164,17 +150,6 @@ private:
 	  */
 	Blocks blocks;
 
-	BlockInputStreamPtr source;
-
-	/// Информация о внешней таблице, заполняемой этим классом
-	StoragePtr external_table;
-	size_t max_bytes_to_transfer;
-	size_t max_rows_to_transfer;
-	OverflowMode transfer_overflow_mode;
-	size_t bytes_in_external_table;
-	size_t rows_in_external_table;
-	bool only_external;
-
 	MapsAny maps_any;
 	MapsAll maps_all;
 
@@ -182,12 +157,12 @@ private:
 	Arena pool;
 
 	Set::Type type = Set::EMPTY;
-	
+
 	bool keys_fit_128_bits;
 	Sizes key_sizes;
 
 	Logger * log;
-	
+
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;
 	size_t max_bytes;
@@ -203,12 +178,10 @@ private:
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
-	/// Проверить не превышены ли допустимые размеры внешней таблицы для передачи данных
-	bool checkExternalSizeLimits() const;
 
-	/// Считает суммарное число ключей во всех Set'ах
+	/// Считает суммарное число ключей во всех Join'ах
 	size_t getTotalRowCount() const;
-	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
+	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
 	size_t getTotalByteCount() const;
 };
 

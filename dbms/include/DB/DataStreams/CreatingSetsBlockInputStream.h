@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/Set.h>
 #include <DB/Interpreters/Join.h>
 
@@ -13,14 +14,17 @@ namespace DB
 class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	CreatingSetsBlockInputStream(BlockInputStreamPtr input, const Sets & sets_, const Joins & joins_)
-		: sets(sets_), joins(joins_)
+	CreatingSetsBlockInputStream(
+		BlockInputStreamPtr input,
+		SubqueriesForSets & subqueries_for_sets_,
+		const Limits & limits)
+		: subqueries_for_sets(subqueries_for_sets_),
+		max_rows_to_transfer(limits.max_rows_to_transfer),
+		max_bytes_to_transfer(limits.max_bytes_to_transfer),
+		transfer_overflow_mode(limits.transfer_overflow_mode)
 	{
-		for (auto & set : sets)
-			children.push_back(set->getSource());
-
-		for (auto & join : joins)
-			children.push_back(join->getSource());
+		for (auto & elem : subqueries_for_sets)
+			children.push_back(elem.second.source);
 
 		children.push_back(input);
 	}
@@ -50,15 +54,19 @@ protected:
 	Block readImpl();
 
 private:
-	Sets sets;
-	Joins joins;
+	SubqueriesForSets subqueries_for_sets;
 	bool created = false;
+
+	size_t max_rows_to_transfer;
+	size_t max_bytes_to_transfer;
+	OverflowMode transfer_overflow_mode;
+
+	size_t rows_to_transfer = 0;
+	size_t bytes_to_transfer = 0;
 
 	Logger * log = &Logger::get("CreatingSetsBlockInputStream");
 
-	void createSet(SetPtr & set);
-	void createJoin(JoinPtr & join);
-	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in, size_t entries);
+	void create(SubqueryForSet & subquery);
 };
 
 }

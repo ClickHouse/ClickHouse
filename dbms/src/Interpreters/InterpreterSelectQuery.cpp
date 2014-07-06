@@ -376,10 +376,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 	executeUnion(streams);
 
-	Sets sets_with_subqueries = query_analyzer->getSetsWithSubqueries();
-	Joins joins_with_subqueries = query_analyzer->getJoinsWithSubqueries();
-	if (!sets_with_subqueries.empty() || !joins_with_subqueries.empty())
-		executeSubqueriesInSetsAndJoins(streams, sets_with_subqueries, joins_with_subqueries);
+	SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+	if (!subqueries_for_sets.empty())
+		executeSubqueriesInSetsAndJoins(streams, subqueries_for_sets);
 
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
@@ -501,16 +500,20 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
 	query_analyzer->makeSetsForIndex();
+
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
 	{
+		/** При распределённой обработке запроса, на все удалённые серверы отправляются временные таблицы,
+		  *  полученные из глобальных подзапросов - GLOBAL IN/JOIN.
+		  */
 		if (storage->isRemote())
 			storage->storeExternalTables(query_analyzer->getExternalTables());
- 		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
- 		for (auto stream : streams)
- 		{
+
+		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
+
+		for (auto & stream : streams)
 			stream->addTableLock(table_lock);
- 		}
  	}
 	else
 	{
@@ -809,9 +812,9 @@ void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams)
 }
 
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, const Sets & sets, const Joins & joins)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets)
 {
-	streams[0] = new CreatingSetsBlockInputStream(streams[0], sets, joins);
+	streams[0] = new CreatingSetsBlockInputStream(streams[0], subqueries_for_sets, settings.limits);
 }
 
 

@@ -56,7 +56,7 @@ void ExpressionAnalyzer::init()
 	/// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
 	analyzeAggregation();
 
-	/// external_tables, external_data.
+	/// external_tables, subqueries_for_sets для глобальных подзапросов.
 	/// Заменяет глобальные подзапросы на сгенерированные имена временных таблиц, которые будут отправлены на удалённые серверы.
 	initGlobalSubqueriesAndExternalTables();
 }
@@ -432,14 +432,9 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 }
 
 
-void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
+static SharedPtr<InterpreterSelectQuery> interpretSubquery(
+	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns = Names())
 {
-	/// Сгенерируем имя для внешней таблицы.
-	while (context.tryGetExternalTable("_data" + toString(external_table_id)))
-		++external_table_id;
-
-	StoragePtr external_storage;
-
 	/// Подзапрос или имя таблицы. Имя таблицы аналогично подзапросу SELECT * FROM t.
 	const ASTSubquery * subquery = typeid_cast<const ASTSubquery *>(&*subquery_or_table_name);
 	const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name);
@@ -464,24 +459,13 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	ASTPtr query;
 	if (table)
 	{
-		ParserSelectQuery parser;
-
-		StoragePtr existing_storage;
-
-		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
-		if ((existing_storage = context.tryGetExternalTable(table->name)))
-		{
-			external_tables[table->name] = existing_storage;
-			return;
-		}
-
-		String query_str = "SELECT * FROM " + table->name;
+		String query_str = "SELECT * FROM " + backQuoteIfNeed(table->name);
 		const char * begin = query_str.data();
 		const char * end = begin + query_str.size();
 		const char * pos = begin;
 		Expected expected = "";
 
-		bool parse_res = parser.parse(pos, end, query, expected);
+		bool parse_res = ParserSelectQuery().parse(pos, end, query, expected);
 		if (!parse_res)
 			throw Exception("Error in parsing SELECT query while creating set or join for table " + table->name + ".",
 				ErrorCodes::LOGICAL_ERROR);
@@ -489,28 +473,54 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	else
 		query = subquery->children.at(0);
 
-	InterpreterSelectQuery interpreter(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+	if (required_columns.empty())
+		return new InterpreterSelectQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
+	else
+		return new InterpreterSelectQuery(query, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+}
 
-	Block sample = interpreter.getSampleBlock();
+
+void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
+{
+	/// Сгенерируем имя для внешней таблицы.
+	while (context.tryGetExternalTable("_data" + toString(external_table_id)))
+		++external_table_id;
+
+	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
+	{
+		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
+		if (StoragePtr existing_storage = context.tryGetExternalTable(table->name))
+		{
+			external_tables[table->name] = existing_storage;
+			return;
+		}
+	}
+
+	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth);
+
+	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
 
 	String external_table_name = "_data" + toString(external_table_id);
 	++external_table_id;
-	external_storage = StorageMemory::create(external_table_name, columns);
 
-	ASTIdentifier * ast_ident = new ASTIdentifier;
-	ast_ident->kind = ASTIdentifier::Table;
-	ast_ident->name = external_storage->getTableName();
-	subquery_or_table_name = ast_ident;
+	/** Заменяем подзапрос на имя временной таблицы.
+	  * Именно в таком виде, запрос отправится на удалённый сервер.
+	  * На удалённый сервер отправится эта временная таблица, и на его стороне,
+	  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
+	  */
+	subquery_or_table_name = new ASTIdentifier(StringRange(), external_table_name, ASTIdentifier::Table);
+
+	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
+
 	external_tables[external_table_name] = external_storage;
-	external_data[external_table_name] = interpreter.execute();
+	subqueries_for_sets[external_table_name].source = interpreter->execute();
 
-	/// Добавляем множество, при обработке которого будет заполнена внешняя таблица. // TODO JOIN
-	SetPtr set = new Set(settings.limits);
-	set->setSource(external_data[external_table_name]);
-	set->setExternalOutput(external_tables[external_table_name]);
-	set->setOnlyExternal(true);
-	sets_with_subqueries["external_" + subquery_or_table_name->getColumnName()] = set;
+	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
+	  *  то здесь будет создана новая временная таблица (например, _data1),
+	  *  и данные будут затем в неё скопированы.
+	  * Может быть, этого можно избежать.
+	  */
 }
 
 
@@ -523,85 +533,32 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 	IAST & args = *node->arguments;
 	ASTPtr & arg = args.children.at(1);
 
+	/// Уже преобразовали.
 	if (typeid_cast<ASTSet *>(&*arg))
 		return;
 
 	/// Если подзапрос или имя таблицы для SELECT.
 	if (typeid_cast<ASTSubquery *>(&*arg) || typeid_cast<ASTIdentifier *>(&*arg))
 	{
-		/// Получаем поток блоков для подзапроса, отдаем его множеству, и кладём это множество на место подзапроса.
-		ASTSet * ast_set = new ASTSet(arg->getColumnName());
+		/// Получаем поток блоков для подзапроса. Создаём Set и кладём на место подзапроса.
+		String set_id = arg->getColumnName();
+		ASTSet * ast_set = new ASTSet(set_id);
 		ASTPtr ast_set_ptr = ast_set;
 
-		String set_id = ast_set->getColumnName();
+		SubqueryForSet & subquery_for_set = subqueries_for_sets[set_id];
 
-		/// Удаляем множество, которое могло быть создано, чтобы заполнить внешнюю таблицу
-		/// Вместо него будет добавлено множество, так же заполняющее себя и помогающее отвечать на зарос.
-		sets_with_subqueries.erase("external_" + set_id);
-
-		if (sets_with_subqueries.count(set_id))
+		/// Если уже создали Set с таким же подзапросом.
+		if (subquery_for_set.set)
 		{
-			ast_set->set = sets_with_subqueries[set_id];
-		}
-		else
-		{
-			ast_set->set = new Set(settings.limits);
-
-			ASTPtr subquery;
-			bool external = false;
-
-			/** В правой части IN-а может стоять подзапрос или имя таблицы.
-			  * Во втором случае, это эквивалентно подзапросу (SELECT * FROM t).
-			  */
-			if (ASTIdentifier * table = typeid_cast<ASTIdentifier *>(&*arg))
-			{
-				if (external_data.count(table->name))
-				{
-					external = true;
-					ast_set->set->setExternalOutput(external_tables[table->name]);
-					ast_set->set->setSource(external_data[table->name]);
-				}
-				else
-				{
-					ParserSelectQuery parser;
-
-					String query = "SELECT * FROM " + table->name;
-					const char * begin = query.data();
-					const char * end = begin + query.size();
-					const char * pos = begin;
-					Expected expected = "";
-
-					bool parse_res = parser.parse(pos, end, subquery, expected);
-					if (!parse_res)
-						throw Exception("Error in parsing select query while creating set for table " + table->name + ".",
-										ErrorCodes::LOGICAL_ERROR);
-				}
-			}
-			else
-				subquery = arg->children.at(0);
-
-			/// Если чтение из внешней таблицы, то источник данных уже вычислен.
-			if (!external)
-			{
-				/** Для подзапроса в секции IN не действуют ограничения на максимальный размер результата.
-				  * Так как результат этого поздапроса - ещё не результат всего запроса.
-				  * Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-				  */
-				Context subquery_context = context;
-				Settings subquery_settings = context.getSettings();
-				subquery_settings.limits.max_result_rows = 0;
-				subquery_settings.limits.max_result_bytes = 0;
-				/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
-				subquery_settings.extremes = 0;
-				subquery_context.setSettings(subquery_settings);
-
-				InterpreterSelectQuery interpreter(subquery, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
-				ast_set->set->setSource(interpreter.execute());
-			}
-
-			sets_with_subqueries[set_id] = ast_set->set;
+			ast_set->set = subquery_for_set.set;
+			arg = ast_set_ptr;
+			return;
 		}
 
+		ast_set->set = new Set(settings.limits);
+
+		subquery_for_set.source = interpretSubquery(arg, context, subquery_depth)->execute();
+		subquery_for_set.set = ast_set->set;
 		arg = ast_set_ptr;
 	}
 	else
@@ -675,6 +632,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 		ASTSet * ast_set = new ASTSet(arg->getColumnName());
 		ASTPtr ast_set_ptr = ast_set;
 		ast_set->set = new Set(settings.limits);
+		ast_set->is_explicit = true;
 		ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
 		arg = ast_set_ptr;
 }
@@ -1000,7 +958,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 					/// Если аргумент - множество, заданное перечислением значений, дадим ему уникальное имя,
 					///  чтобы множества с одинаковой записью не склеивались (у них может быть разный тип).
-					if (!set->set->getSource())
+					if (set->is_explicit)
 						column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
 					else
 						column.name = set->getColumnName();
@@ -1248,7 +1206,9 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
 
 void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only_types)
 {
-	actions->add(ExpressionAction::ordinaryJoin(only_types ? nullptr : joins[0], columns_added_by_join));
+	for (auto & subquery_for_set : subqueries_for_sets)
+		if (subquery_for_set.second.join)
+			actions->add(ExpressionAction::ordinaryJoin(only_types ? nullptr : subquery_for_set.second.join, columns_added_by_join));
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -1264,23 +1224,15 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	ASTJoin & ast_join = typeid_cast<ASTJoin &>(*select_query->join);
 	getRootActions(ast_join.using_expr_list, only_types, false, step.actions);
 
+	/// Не поддерживается два JOIN-а с одинаковым подзапросом, но разными USING-ами.
+	String join_id = ast_join.table->getColumnName();
+
+	SubqueryForSet & subquery_for_set = subqueries_for_sets[join_id];
+	if (!subquery_for_set.join)
 	{
 		Names join_key_names_left(join_key_names_left_set.begin(), join_key_names_left_set.end());
 		Names join_key_names_right(join_key_names_right_set.begin(), join_key_names_right_set.end());
 		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
-
-		/** Для подзапроса в секции JOIN не действуют ограничения на максимальный размер результата.
-		* Так как результат этого поздапроса - ещё не результат всего запроса.
-		* Вместо этого работают ограничения max_rows_in_set, max_bytes_in_set, set_overflow_mode.
-		* TODO: отдельные ограничения для JOIN.
-		*/
-		Context subquery_context = context;
-		Settings subquery_settings = context.getSettings();
-		subquery_settings.limits.max_result_rows = 0;
-		subquery_settings.limits.max_result_bytes = 0;
-		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
-		subquery_settings.extremes = 0;
-		subquery_context.setSettings(subquery_settings);
 
 		for (const auto & name_type : columns_added_by_join)
 			std::cerr << "! Column added by JOIN: " << name_type.first << std::endl;
@@ -1289,16 +1241,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		for (const auto & name_type : columns_added_by_join)
 			required_joined_columns.push_back(name_type.first);
 
-		/// TODO: поддержка идентификаторов вместо подзапросов.
-		InterpreterSelectQuery interpreter(
-			typeid_cast<ASTJoin &>(*select_query->join).table->children.at(0), subquery_context,
-			required_joined_columns,
-			QueryProcessingStage::Complete, subquery_depth + 1);
-
-		Block right_table_sample = interpreter.getSampleBlock();
-		join->setSource(interpreter.execute());
-
-		joins.push_back(join);
+		subquery_for_set.source = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns)->execute();
+		subquery_for_set.join = join;
 	}
 
 	addJoinAction(step.actions, false);
@@ -1440,20 +1384,6 @@ void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain,
 	}
 
 	step.actions->add(ExpressionAction::project(result_columns));
-}
-
-
-Sets ExpressionAnalyzer::getSetsWithSubqueries()
-{
-	Sets res;
-	for (auto & s : sets_with_subqueries)
-		res.push_back(s.second);
-	return res;
-}
-
-Joins ExpressionAnalyzer::getJoinsWithSubqueries()
-{
-	return joins;
 }
 
 
