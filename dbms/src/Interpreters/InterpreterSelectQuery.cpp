@@ -80,7 +80,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->getExternalTables())
-		if (!(context.tryGetExternalTable(it.first)))
+		if (!context.tryGetExternalTable(it.first))
 			context.addExternalTable(it.first, it.second);
 
 	if (input_)

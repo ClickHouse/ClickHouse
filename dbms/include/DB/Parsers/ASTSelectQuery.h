@@ -41,13 +41,13 @@ public:
 	static bool hasArrayJoin(const ASTPtr & ast)
 	{
 		if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
-		{
 			if (function->kind == ASTFunction::ARRAY_JOIN)
 				return true;
-		}
+
 		for (const auto & child : ast->children)
 			if (hasArrayJoin(child))
 				return true;
+
 		return false;
 	}
 
@@ -68,21 +68,21 @@ public:
 			}
 		}
 
-		for (size_t i = 0; i < column_names.size(); ++i)
+		for (const auto & column_name : column_names)
 		{
-			bool done = 0;
+			bool done = false;
 			for (size_t j = 0; j < asts.size(); ++j)
 			{
-				if (asts[j]->getAliasOrColumnName() == column_names[i])
+				if (asts[j]->getAliasOrColumnName() == column_name)
 				{
 					if (!unremovable_asts.count(asts[j]))
 						result->children.push_back(asts[j]->clone());
-					done = 1;
+					done = true;
 				}
 			}
 			if (!done)
 				throw Exception("Error while rewriting expression list for select query."
-					" Could not find alias: " + column_names[i],
+					" Could not find alias: " + column_name,
 					DB::ErrorCodes::UNKNOWN_IDENTIFIER);
 		}
 

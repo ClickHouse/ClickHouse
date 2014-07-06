@@ -122,7 +122,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 		for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
 		{
 			AggregateDescription & desc = aggregate_descriptions[i];
-			aggregated_columns.push_back(NameAndTypePair(desc.column_name, desc.function->getReturnType()));
+			aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
 		}
 	}
 	else
@@ -326,7 +326,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			{
 				ASTs all_columns;
 				for (const auto & column_name_type : columns)
-					all_columns.push_back(new ASTIdentifier(asterisk->range, column_name_type.first));
+					all_columns.emplace_back(new ASTIdentifier(asterisk->range, column_name_type.first));
 
 				asts.erase(asts.begin() + i);
 				asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
@@ -680,7 +680,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 }
 
 
-static std::string getUniqueName(const Block & block, const std::string & prefix)
+static String getUniqueName(const Block & block, const String & prefix)
 {
 	int i = 1;
 	while (block.has(prefix + toString(i)))
@@ -711,7 +711,7 @@ struct ExpressionAnalyzer::ScopeStack
 	ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_)
 		: settings(settings_)
 	{
-		stack.push_back(Level());
+		stack.emplace_back();
 		stack.back().actions = actions;
 
 		const Block & sample_block = actions->getSampleBlock();
@@ -721,7 +721,7 @@ struct ExpressionAnalyzer::ScopeStack
 
 	void pushLevel(const NamesAndTypesList & input_columns)
 	{
-		stack.push_back(Level());
+		stack.emplace_back();
 		Level & prev = stack[stack.size() - 2];
 
 		ColumnsWithNameAndType all_columns;
@@ -729,7 +729,7 @@ struct ExpressionAnalyzer::ScopeStack
 
 		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 		{
-			all_columns.push_back(ColumnWithNameAndType(nullptr, it->second, it->first));
+			all_columns.emplace_back(nullptr, it->second, it->first);
 			new_names.insert(it->first);
 			stack.back().new_columns.insert(it->first);
 		}
@@ -991,9 +991,9 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
 
 					has_lambda_arguments = true;
-					argument_types.push_back(new DataTypeExpression(DataTypes(lambda_args_tuple->arguments->children.size())));
+					argument_types.emplace_back(new DataTypeExpression(DataTypes(lambda_args_tuple->arguments->children.size())));
 					/// Выберем название в следующем цикле.
-					argument_names.push_back("");
+					argument_names.emplace_back();
 				}
 				else if (set)
 				{
@@ -1214,7 +1214,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypes
 	if (chain.steps.empty())
 	{
 		chain.settings = settings;
-		chain.steps.push_back(ExpressionActionsChain::Step(new ExpressionActions(columns, settings)));
+		chain.steps.emplace_back(new ExpressionActions(columns, settings));
 	}
 }
 
@@ -1437,7 +1437,7 @@ void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain,
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
-		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName()));
+		result_columns.emplace_back(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName());
 		step.required_output.push_back(result_columns.back().second);
 	}
 
@@ -1469,7 +1469,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 	ASTs asts = select_query->select_expression_list->children;
 	for (size_t i = 0; i < asts.size(); ++i)
 	{
-		result_columns.push_back(NameWithAlias(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName()));
+		result_columns.emplace_back(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName());
 		getRootActions(asts[i], true, false, temp_actions);
 	}
 
@@ -1512,7 +1512,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 			alias = asts[i]->getAliasOrColumnName();
 		else
 			alias = name;
-		result_columns.push_back(NameWithAlias(name, alias));
+		result_columns.emplace_back(name, alias);
 		result_names.push_back(alias);
 		getRootActions(asts[i], false, false, actions);
 	}
