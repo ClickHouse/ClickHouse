@@ -124,13 +124,13 @@ void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
 		msg << "Created. ";
 
 		if (subquery.set)
-			msg << "Set with " << subquery.set->size() << " entries from " << head_rows << " rows.";
+			msg << "Set with " << subquery.set->size() << " entries from " << head_rows << " rows. ";
 		if (subquery.join)
-			msg << "Join with " << subquery.join->size() << " entries from " << head_rows << " rows.";
+			msg << "Join with " << subquery.join->size() << " entries from " << head_rows << " rows. ";
 		if (subquery.table)
 			msg << "Table with " << head_rows << " rows. ";
 
-		msg << " Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
+		msg << "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
 			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.";
 
 		LOG_DEBUG(log, msg.rdbuf());

@@ -120,7 +120,7 @@ public:
 	  * То есть, нужно вызвать getSetsWithSubqueries после всех вызовов append* или getActions
 	  *  и создать все возвращенные множества перед выполнением действий.
 	  */
-	SubqueriesForSets getSubqueriesForSets();
+	SubqueriesForSets getSubqueriesForSets() { return subqueries_for_sets; }
 
 	/** Таблицы, которые надо будет отправить на удалённые серверы при распределённой обработке запроса.
 	  */

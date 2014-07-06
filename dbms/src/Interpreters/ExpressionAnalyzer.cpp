@@ -515,6 +515,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 
 	external_tables[external_table_name] = external_storage;
 	subqueries_for_sets[external_table_name].source = interpreter->execute();
+	subqueries_for_sets[external_table_name].table = external_storage;
 
 	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
 	  *  то здесь будет создана новая временная таблица (например, _data1),
@@ -557,7 +558,14 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 
 		ast_set->set = new Set(settings.limits);
 
-		subquery_for_set.source = interpretSubquery(arg, context, subquery_depth)->execute();
+		/** Для GLOBAL IN-ов происходит следующее:
+		  * - в функции addExternalStorage подзапрос IN (SELECT ...) заменяется на IN _data1,
+		  *   в объекте subquery_for_set выставляется этот подзапрос в качестве source и временная таблица _data1 в качестве table.
+		  * - в этой функции видно выражение IN _data1.
+		  */
+		if (!subquery_for_set.source)
+			subquery_for_set.source = interpretSubquery(arg, context, subquery_depth)->execute();
+
 		subquery_for_set.set = ast_set->set;
 		arg = ast_set_ptr;
 	}
@@ -1241,7 +1249,14 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		for (const auto & name_type : columns_added_by_join)
 			required_joined_columns.push_back(name_type.first);
 
-		subquery_for_set.source = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns)->execute();
+		/** Для GLOBAL JOIN-ов происходит следующее:
+		  * - в функции addExternalStorage подзапрос JOIN (SELECT ...) заменяется на JOIN _data1,
+		  *   в объекте subquery_for_set выставляется этот подзапрос в качестве source и временная таблица _data1 в качестве table.
+		  * - в этой функции видно выражение JOIN _data1.
+		  */
+		if (!subquery_for_set.source)
+			subquery_for_set.source = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns)->execute();
+
 		subquery_for_set.join = join;
 	}
 
