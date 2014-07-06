@@ -103,7 +103,7 @@ void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
 		}
 	}
 
-	subquery.source->readSuffix();
+//	subquery.source->readSuffix();	/// TODO Блокируется в RemoteBlockInputStream::readSuffixImpl при запросе SELECT number FROM system.numbers WHERE number IN (SELECT number FROM remote('127.0.0.{1,2}', system, numbers) WHERE number % 2 = 1 LIMIT 10) LIMIT 10
 	if (table_out)
 		table_out->writeSuffix();
 

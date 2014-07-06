@@ -507,7 +507,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		/** При распределённой обработке запроса, на все удалённые серверы отправляются временные таблицы,
 		  *  полученные из глобальных подзапросов - GLOBAL IN/JOIN.
 		  */
-		if (storage->isRemote())
+		if (storage && storage->isRemote())
 			storage->storeExternalTables(query_analyzer->getExternalTables());
 
 		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
@@ -814,6 +814,11 @@ void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets)
 {
+	/// Если запрос не распределённый, то удалим создание временных таблиц из подзапросов (предназначавшихся для отправки на удалённые серверы).
+	if (!(storage && storage->isRemote()))
+		for (auto & elem : subqueries_for_sets)
+			elem.second.table.reset();
+
 	streams[0] = new CreatingSetsBlockInputStream(streams[0], subqueries_for_sets, settings.limits);
 }
 

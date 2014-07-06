@@ -1,3 +1,5 @@
+#include <iomanip>
+
 #include <Poco/Net/NetException.h>
 
 #include <Yandex/Revision.h>
@@ -28,7 +30,7 @@ void Connection::connect()
 	{
 		if (connected)
 			disconnect();
-		
+
 		LOG_TRACE(log, "Connecting to " << default_database << "@" << host << ":" << port);
 
 		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
@@ -70,7 +72,7 @@ void Connection::connect()
 void Connection::disconnect()
 {
 	//LOG_TRACE(log, "Disconnecting (" << getServerAddress() << ")");
-	
+
 	socket.close();
 	in = nullptr;
 	out = nullptr;
@@ -90,7 +92,7 @@ void Connection::sendHello()
 	writeStringBinary(default_database, *out);
 	writeStringBinary(user, *out);
 	writeStringBinary(password, *out);
-	
+
 	out->next();
 }
 
@@ -98,7 +100,7 @@ void Connection::sendHello()
 void Connection::receiveHello()
 {
 	//LOG_TRACE(log, "Receiving hello (" << getServerAddress() << ")");
-	
+
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
 
@@ -138,7 +140,7 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
 {
 	if (!connected)
 		connect();
-	
+
 	name = server_name;
 	version_major = server_version_major;
 	version_minor = server_version_minor;
@@ -163,7 +165,7 @@ void Connection::forceConnected()
 bool Connection::ping()
 {
 	LOG_TRACE(log, "Ping (" << getServerAddress() << ")");
-	
+
 	try
 	{
 		UInt64 pong = 0;
@@ -206,7 +208,7 @@ bool Connection::ping()
 void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
 {
 	forceConnected();
-	
+
 	query_id = query_id_;
 
 	//LOG_TRACE(log, "Sending query (" << getServerAddress() << ")");
@@ -226,7 +228,7 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 		else
 			writeStringBinary("", *out);
 	}
-	
+
 	writeVarUInt(stage, *out);
 	writeVarUInt(compression, *out);
 
@@ -258,7 +260,7 @@ void Connection::sendCancel()
 void Connection::sendData(const Block & block, const String & name)
 {
 	//LOG_TRACE(log, "Sending data (" << getServerAddress() << ")");
-	
+
 	if (!block_out)
 	{
 		if (compression == Protocol::Compression::Enable)
@@ -290,16 +292,49 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 		return;
 	}
 
-	for (size_t i = 0; i < data.size(); ++i)
+	if (data.empty())
 	{
-		data[i].first->readPrefix();
-		while(Block block = data[i].first->read())
-			sendData(block, data[i].second);
-		data[i].first->readSuffix();
+		/// Отправляем пустой блок, символизируя конец передачи данных
+		sendData(Block());
+		return;
+	}
+
+	Stopwatch watch;
+	size_t out_bytes = out ? out->count() : 0;
+	size_t maybe_compressed_out_bytes = maybe_compressed_out ? maybe_compressed_out->count() : 0;
+	size_t rows = 0;
+
+	for (auto & elem : data)
+	{
+		elem.first->readPrefix();
+		while (Block block = elem.first->read())
+		{
+			rows += block.rowsInFirstColumn();
+			sendData(block, elem.second);
+		}
+		elem.first->readSuffix();
 	}
 
 	/// Отправляем пустой блок, символизируя конец передачи данных
 	sendData(Block());
+
+	out_bytes = out->count() - out_bytes;
+	maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
+	double elapsed = watch.elapsedSeconds();
+
+	std::stringstream msg;
+	msg << std::fixed << std::setprecision(3);
+	msg << "Sent data for " << data.size() << " external tables, total " << rows << " rows in " << elapsed << " sec., "
+		<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
+		<< maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+
+	if (compression == Protocol::Compression::Enable)
+		msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
+			<< out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+	else
+		msg << ", no compression.";
+
+	LOG_DEBUG(log, msg.rdbuf());
 }
 
 
@@ -371,7 +406,7 @@ Connection::Packet Connection::receivePacket()
 Block Connection::receiveData()
 {
 	//LOG_TRACE(log, "Receiving data (" << getServerAddress() << ")");
-		
+
 	initBlockInput();
 
 	String external_table_name;
@@ -407,7 +442,7 @@ String Connection::getServerAddress() const
 SharedPtr<Exception> Connection::receiveException()
 {
 	//LOG_TRACE(log, "Receiving exception (" << getServerAddress() << ")");
-	
+
 	Exception e;
 	readException(e, *in, "Received from " + getServerAddress());
 	return e.clone();
@@ -417,7 +452,7 @@ SharedPtr<Exception> Connection::receiveException()
 Progress Connection::receiveProgress()
 {
 	//LOG_TRACE(log, "Receiving progress (" << getServerAddress() << ")");
-	
+
 	Progress progress;
 	progress.read(*in);
 	return progress;

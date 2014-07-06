@@ -99,16 +99,15 @@ protected:
 	void sendExternalTables()
 	{
 		ExternalTablesData res;
-		Tables::const_iterator it;
-		for (it = external_tables.begin(); it != external_tables.end(); it ++)
+		for (const auto & table : external_tables)
 		{
-			StoragePtr cur = it->second;
+			StoragePtr cur = table.second;
 			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
 			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), settings, stage, DEFAULT_BLOCK_SIZE, 1);
 			if (input.size() == 0)
-				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), it->first));
+				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
 			else
-				res.push_back(std::make_pair(input[0], it->first));
+				res.push_back(std::make_pair(input[0], table.first));
 		}
 		connection->sendExternalTablesData(res);
 	}
@@ -250,14 +249,14 @@ private:
 
 	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query = false;
-	
+
 	/** Получили все данные от сервера, до пакета EndOfStream.
 	  * Если при уничтожении объекта, ещё не все данные считаны,
 	  *  то для того, чтобы не было рассинхронизации, на сервер отправляется просьба прервать выполнение запроса,
 	  *  и после этого считываются все пакеты до EndOfStream.
 	  */
 	bool finished = false;
-	
+
 	/** На сервер была отправлена просьба прервать выполенение запроса, так как данные больше не нужны.
 	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
 	  *  или если на стороне клиента произошло исключение.

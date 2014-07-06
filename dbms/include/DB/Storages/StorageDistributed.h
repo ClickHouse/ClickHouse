@@ -44,7 +44,7 @@ public:
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
 	bool isRemote() const { return true; }
-	/// Сохранить временные таблицы, чтобы при следующем вызове метода read переслать их на удаленные сервера
+	/// Сохранить временные таблицы, чтобы при следующем вызове метода read переслать их на удаленные серверы.
 	void storeExternalTables(const Tables & tables_) { external_tables = tables_; }
 
 	BlockInputStreams read(
