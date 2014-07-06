@@ -45,7 +45,7 @@ class PODArray : private boost::noncopyable, private std::allocator<char>	/// em
 {
 private:
 	typedef std::allocator<char> Allocator;
-	static const size_t initial_size;
+	static constexpr size_t initial_size = 4096;
 
 	char * c_start;
 	char * c_end;
@@ -56,7 +56,7 @@ private:
 	T * t_start() 						{ return reinterpret_cast<T *>(c_start); }
 	T * t_end() 						{ return reinterpret_cast<T *>(c_end); }
 	T * t_end_of_storage() 				{ return reinterpret_cast<T *>(c_end_of_storage); }
-	
+
 	const T * t_start() const 			{ return reinterpret_cast<const T *>(c_start); }
 	const T * t_end() const 			{ return reinterpret_cast<const T *>(c_end); }
 	const T * t_end_of_storage() const 	{ return reinterpret_cast<const T *>(c_end_of_storage); }
@@ -77,9 +77,9 @@ private:
 
 		return n;
 	}
-	
+
 	static size_t to_size(size_t n) { return byte_size(std::max(initial_size, round_up_to_power_of_two(n))); }
-	
+
 	void alloc(size_t n)
 	{
 		if (n == 0)
@@ -87,7 +87,7 @@ private:
 			c_start = c_end = c_end_of_storage = nullptr;
 			return;
 		}
-		
+
 		size_t bytes_to_alloc = to_size(n);
 
 		if (current_memory_tracker)
@@ -101,7 +101,7 @@ private:
 	{
 		if (c_start == nullptr)
 			return;
-		
+
 		if (use_libc_realloc)
 			::free(c_start);
 		else
@@ -118,7 +118,7 @@ private:
 			alloc(n);
 			return;
 		}
-		
+
 		ptrdiff_t end_diff = c_end - c_start;
 		size_t bytes_to_alloc = to_size(n);
 
@@ -296,11 +296,11 @@ public:
 		{
 			if (*this_it != *that_it)
 				return false;
-			
+
 			++this_it;
 			++that_it;
 		}
-		
+
 		return true;
 	}
 
@@ -309,10 +309,6 @@ public:
 		return !operator==(other);
 	}
 };
-
-template <typename T>
-const size_t PODArray<T>::initial_size = 4096;
-
 
 
 }
