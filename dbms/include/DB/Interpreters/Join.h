@@ -63,9 +63,9 @@ public:
 		key_names_left(key_names_left_),
 		key_names_right(key_names_right_),
 		log(&Logger::get("Join")),
-		max_rows(limits.max_rows_in_set),
-		max_bytes(limits.max_bytes_in_set),
-		overflow_mode(limits.set_overflow_mode)
+		max_rows(limits.max_rows_in_join),
+		max_bytes(limits.max_bytes_in_join),
+		overflow_mode(limits.join_overflow_mode)
 	{
 	}
 

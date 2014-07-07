@@ -69,7 +69,12 @@ struct Limits
 	M(SettingUInt64, max_bytes_in_set, 0) \
 	M(SettingOverflowMode<false>, set_overflow_mode, OverflowMode::THROW) \
 	\
-	/** Ограничения для максимального размера передаваемой внешней таблицы, получающейся при выполнении секции Global IN. */ \
+	/** Ограничения для максимального размера множества, получающегося при выполнении секции IN. */ \
+	M(SettingUInt64, max_rows_in_join, 0) \
+	M(SettingUInt64, max_bytes_in_join, 0) \
+	M(SettingOverflowMode<false>, join_overflow_mode, OverflowMode::THROW) \
+	\
+	/** Ограничения для максимального размера передаваемой внешней таблицы, получающейся при выполнении секции GLOBAL IN/JOIN. */ \
 	M(SettingUInt64, max_rows_to_transfer, 0) \
 	M(SettingUInt64, max_bytes_to_transfer, 0) \
 	M(SettingOverflowMode<false>, transfer_overflow_mode, OverflowMode::THROW) \
