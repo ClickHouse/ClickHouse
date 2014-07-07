@@ -679,7 +679,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	return res;
 }
 
-void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add)
+void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout)
 {
 	LOG_TRACE(log, "Removing " << remove.size() << " parts and adding " << add.size() << " parts.");
 
@@ -687,7 +687,7 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 
 	for (const DataPartPtr & part : remove)
 	{
-		part->remove_time = time(0);
+		part->remove_time = clear_without_timeout ? 0 : time(0);
 		data_parts.erase(part);
 	}
 	for (const DataPartPtr & part : add)

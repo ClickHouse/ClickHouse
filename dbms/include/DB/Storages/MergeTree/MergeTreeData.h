@@ -369,7 +369,7 @@ public:
 				if (data && (!removed_parts.empty() || !added_parts.empty()))
 				{
 					LOG_DEBUG(data->log, "Undoing transaction");
-					data->replaceParts(removed_parts, added_parts);
+					data->replaceParts(removed_parts, added_parts, true);
 				}
 			}
 			catch(...)
@@ -464,8 +464,9 @@ public:
 	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add.
+	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
 	  */
-	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add);
+	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
 	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
 	  * Лучше использовать только когда никто не может читать или писать этот кусок

@@ -43,7 +43,7 @@ public:
 			if (block_id.empty())
 				block_id = part->checksums.summaryDataChecksum();
 
-			LOG_DEBUG(log, "Wrote block " << part_number << " with ID " << block_id);
+			LOG_DEBUG(log, "Wrote block " << part_number << " with ID " << block_id << ", " << current_block.block.rows() << " rows");
 
 			MergeTreeData::Transaction transaction; /// Если не получится добавить кусок в ZK, снова уберем его из рабочего набора.
 			storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
