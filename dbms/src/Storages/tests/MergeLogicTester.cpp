@@ -253,7 +253,7 @@ void updateStat(int time)
 
 /// выбрать кого мерджить, оценить время и добавить событие об окончании
 bool makeMerge(int cur_time) {
-	if (getThreads(data_parts) >= settings.merging_threads) return 0;
+	if (getThreads(data_parts) >= DBMS_DEFAULT_BACKGROUND_POOL_SIZE) return 0;
 	if (mergeScheduled == 0) return 0;
 	mergeScheduled --;
 	std::vector<DataPtr> e;
