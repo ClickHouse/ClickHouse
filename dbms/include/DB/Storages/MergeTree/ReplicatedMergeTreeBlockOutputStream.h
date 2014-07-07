@@ -27,8 +27,7 @@ public:
 			time_t min_date_time = DateLUTSingleton::instance().fromDayNum(DayNum_t(current_block.min_date));
 			String month_name = toString(Date2OrderedIdentifier(min_date_time) / 100);
 
-			storage.zookeeper->createIfNotExists(storage.zookeeper_path + "/block_numbers/" + month_name, "",
-												 zkutil::CreateMode::Persistent);
+			storage.zookeeper->createIfNotExists(storage.zookeeper_path + "/block_numbers/" + month_name, "");
 
 			AbandonableLockInZooKeeper block_number_lock(
 				storage.zookeeper_path + "/block_numbers/" + month_name + "/block-",
