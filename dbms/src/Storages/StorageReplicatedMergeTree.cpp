@@ -1416,7 +1416,7 @@ void StorageReplicatedMergeTree::drop()
 	replica_is_active_node = nullptr;
 	zookeeper->tryRemoveRecursive(replica_path);
 
-	/// Проверяем, что zookeeper_pathсуществует: его могла удалить другая реплика после выполнения предыдущей строки.
+	/// Проверяем, что zookeeper_path существует: его могла удалить другая реплика после выполнения предыдущей строки.
 	Strings replicas;
 	if (zookeeper->tryGetChildren(zookeeper_path + "/replicas", replicas) == ZOK && replicas.empty())
 	{
