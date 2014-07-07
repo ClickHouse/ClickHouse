@@ -3,7 +3,6 @@
 
 # Выводит список активных кусков - кусков, не покрытых никаким другим куском.
 # Использование: `ls /opt/clickhouse/data/merge/visits | active_parts.py`
-# TODO: O(N^2) -> O(N log N)
 
 import sys
 import re
@@ -25,20 +24,13 @@ for s in sys.stdin.read().split():
 	parts[m1].append((i1, i2, l, s))
 
 for m in parts:
+	parts[m].sort(key=lambda (i1, i2, l, s): (i1, -i2, -l))
+	(x2, y2, l2, s2) = (-1, -1, -1, -1)
 	for x1, y1, l1, s1 in parts[m]:
-		contained = False
-		for x2, y2, l2, s2 in parts[m]:
-			if x1 >= x2 and y1 <= y2 and l1 < l2: # 2 contains 1
-				contained = True
-				continue
-			if x1 <= x2 and y1 >= y2 and l1 > l2: # 1 contains 2
-				continue
-			if x1 == x1 and y1 == y2 and l1 == l2: # 1 and 2 coincide
-				continue
-			if x1 > y2: # 1 is to the right of 2
-				continue
-			if x2 > y1: # 2 is to the right of 1
-				continue
-			raise Exception('invalid parts intersection: ' + s1 + ' and ' + s2)
-		if not contained:
+		if x1 >= x2 and y1 <= y2 and l1 < l2 and (x1, y1) != (x2, y2): # 2 contains 1
+			pass
+		elif x1 > y2: # 1 is to the right of 2
+			(x2, y2, l2, s2) = (x1, y1, l1, s1)
 			print s1
+		else:
+			raise Exception('invalid parts intersection: ' + s1 + ' and ' + s2)
