@@ -27,16 +27,15 @@ struct WatchWithEvent
 	/// существует все время существования WatchWithEvent
 	ZooKeeper & zk;
 	EventPtr event;
-	bool notified = false;
 
 	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
 
 	void process(zhandle_t * zh, int32_t event_type, int32_t state, const char * path)
 	{
-		if (!notified)
+		if (!event)
 		{
-			notified = true;
 			event->set();
+			event = nullptr;
 		}
 	}
 };
