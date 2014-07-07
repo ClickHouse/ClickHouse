@@ -362,10 +362,12 @@ void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size
 				continue;
 
 			for (auto it = part->checksums.files.lower_bound(column_name);
-				(it != part->checksums.files.end()) && (it->first.substr(0, column_name.size()) == column_name); ++it)
+				(it != part->checksums.files.end()) && (it->first.substr(0, column_name.size()) == column_name);)
 			{
 				if (re.match(it->first))
-					const_cast<DataPart::Checksums::FileChecksums &>(part->checksums.files).erase(it);
+					it = const_cast<DataPart::Checksums::FileChecksums &>(part->checksums.files).erase(it);
+				else
+					++it;
 			}
 			/// Записываем файл с чексуммами.
 			WriteBufferFromFile out(full_path + part->name + "/" + "checksums.txt", 1024);
