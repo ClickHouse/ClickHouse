@@ -152,6 +152,11 @@ public:
 	  */
 	void removeRecursive(const std::string & path);
 
+	/** Удаляет ноду вместе с поддеревом. Если в это время кто-то будет тоже удалять какие-нибудь ноды в поддереве, не будет ошибок.
+	  * Например, можно вызвать одновременно дважды для одной ноды, и результат будет тот же, как если вызвать один раз.
+	  */
+	void tryRemoveRecursive(const std::string & path);
+
 	static std::string error2string(int32_t code);
 
 	/// максимальный размер данных в узле в байтах
@@ -166,6 +171,7 @@ private:
 
 	void init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_);
 	void removeChildrenRecursive(const std::string & path);
+	void tryRemoveChildrenRecursive(const std::string & path);
 	void * watchForEvent(EventPtr event);
 	watcher_fn callbackForEvent(EventPtr event);
 	static void processEvent(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);

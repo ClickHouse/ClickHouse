@@ -1414,11 +1414,14 @@ void StorageReplicatedMergeTree::drop()
 
 	LOG_INFO(log, "Removing replica " << replica_path);
 	replica_is_active_node = nullptr;
-	zookeeper->removeRecursive(replica_path);
-	if (zookeeper->getChildren(zookeeper_path + "/replicas").empty())
+	zookeeper->tryRemoveRecursive(replica_path);
+
+	/// Проверяем, что zookeeper_pathсуществует: его могла удалить другая реплика после выполнения предыдущей строки.
+	Strings replicas;
+	if (zookeeper->tryGetChildren(zookeeper_path + "/replicas", replicas) == ZOK && replicas.empty())
 	{
 		LOG_INFO(log, "Removing table " << zookeeper_path << " (this might take several minutes)");
-		zookeeper->removeRecursive(zookeeper_path);
+		zookeeper->tryRemoveRecursive(zookeeper_path);
 	}
 
 	data.dropAllData();

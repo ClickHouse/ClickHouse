@@ -424,10 +424,42 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path)
 	multi(ops);
 }
 
+void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
+{
+	Strings children;
+	if (tryGetChildren(path, children) != ZOK)
+		return;
+	zkutil::Ops ops;
+	Strings strings;
+	for (const std::string & child : children)
+	{
+		tryRemoveChildrenRecursive(path + "/" + child);
+		strings.push_back(path + "/" + child);
+		ops.push_back(new Op::Remove(strings.back(), -1));
+	}
+
+	/** Сначала пытаемся удалить детей более быстрым способом - всех сразу. Если не получилось,
+	  *  значит кто-то кроме нас удаляет этих детей, и придется удалять их по одному.
+	  */
+	if (tryMulti(ops) != ZOK)
+	{
+		for (const std::string & child : children)
+		{
+			tryRemove(child);
+		}
+	}
+}
+
 void ZooKeeper::removeRecursive(const std::string & path)
 {
 	removeChildrenRecursive(path);
 	remove(path);
+}
+
+void ZooKeeper::tryRemoveRecursive(const std::string & path)
+{
+	tryRemoveChildrenRecursive(path);
+	tryRemove(path);
 }
 
 ZooKeeper::~ZooKeeper()
