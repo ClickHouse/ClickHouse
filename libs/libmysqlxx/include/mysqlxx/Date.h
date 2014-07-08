@@ -29,7 +29,7 @@ private:
 
 	void init(time_t time)
 	{
-		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+		DateLUT & date_lut = DateLUT::instance();
 		const DateLUT::Values & values = date_lut.getValues(time);
 
 		m_year = values.year;
@@ -66,7 +66,7 @@ public:
 
 	Date(DayNum_t day_num)
 	{
-		const DateLUT::Values & values = DateLUTSingleton::instance().getValues(day_num);
+		const DateLUT::Values & values = DateLUT::instance().getValues(day_num);
 		m_year 	= values.year;
 		m_month = values.month;
 		m_day 	= values.day_of_month;
@@ -113,12 +113,12 @@ public:
 
 	operator time_t() const
 	{
-		return DateLUTSingleton::instance().makeDate(m_year, m_month, m_day);
+		return DateLUT::instance().makeDate(m_year, m_month, m_day);
 	}
 
 	DayNum_t getDayNum() const
 	{
-		return DateLUTSingleton::instance().makeDayNum(m_year, m_month, m_day);
+		return DateLUT::instance().makeDayNum(m_year, m_month, m_day);
 	}
 
 	operator DayNum_t() const

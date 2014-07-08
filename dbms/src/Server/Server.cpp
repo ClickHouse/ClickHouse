@@ -225,7 +225,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 	LOG_DEBUG(log, "Initializing DateLUT.");
-	DateLUTSingleton::instance();
+	DateLUT::instance();
 	LOG_TRACE(log, "Initialized DateLUT.");
 
 	global_context = new Context;

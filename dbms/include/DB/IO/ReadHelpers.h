@@ -341,7 +341,7 @@ inline void readDateText(DayNum_t & date, ReadBuffer & buf)
 	UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
 	UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-	date = DateLUTSingleton::instance().makeDayNum(year, month, day);
+	date = DateLUT::instance().makeDayNum(year, month, day);
 }
 
 inline void readDateText(mysqlxx::Date & date, ReadBuffer & buf)
@@ -382,7 +382,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 	if (unlikely(year == 0))
 		datetime = 0;
 	else
-		datetime = DateLUTSingleton::instance().makeDateTime(year, month, day, hour, minute, second);
+		datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
 }
 
 inline void readDateTimeText(mysqlxx::DateTime & datetime, ReadBuffer & buf)
