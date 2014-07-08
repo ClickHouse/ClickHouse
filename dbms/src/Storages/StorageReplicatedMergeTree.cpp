@@ -701,7 +701,8 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 			priority_queue.push(iterator);
 	}
 
-	queue_task_handle->wake();
+	if (queue_task_handle)
+		queue_task_handle->wake();
 	LOG_DEBUG(log, "Pulled " << count << " entries to queue");
 }
 
@@ -1244,7 +1245,8 @@ void StorageReplicatedMergeTree::partialShutdown()
 	}
 	if (queue_updating_thread.joinable())
 		queue_updating_thread.join();
-	context.getBackgroundPool().removeTask(queue_task_handle);
+	if (queue_task_handle)
+		context.getBackgroundPool().removeTask(queue_task_handle);
 	queue_task_handle.reset();
 	LOG_TRACE(log, "Threads finished");
 }
@@ -1277,7 +1279,8 @@ void StorageReplicatedMergeTree::goReadOnly()
 	}
 	if (queue_updating_thread.joinable())
 		queue_updating_thread.join();
-	context.getBackgroundPool().removeTask(queue_task_handle);
+	if (queue_task_handle)
+		context.getBackgroundPool().removeTask(queue_task_handle);
 	queue_task_handle.reset();
 	LOG_TRACE(log, "Threads finished");
 }
@@ -1297,7 +1300,8 @@ void StorageReplicatedMergeTree::startup()
 		std::bind(&StorageReplicatedMergeTree::becomeLeader, this), replica_name);
 
 	queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
-	queue_task_handle = context.getBackgroundPool().addTask(std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
+	queue_task_handle = context.getBackgroundPool().addTask(
+		std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
 }
 
 void StorageReplicatedMergeTree::restartingThread()
