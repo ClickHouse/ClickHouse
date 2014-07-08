@@ -32,7 +32,7 @@ struct WatchWithEvent
 
 	void process(zhandle_t * zh, int32_t event_type, int32_t state, const char * path)
 	{
-		if (!event)
+		if (event)
 		{
 			event->set();
 			event = nullptr;
@@ -56,18 +56,14 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 	}
 }
 
-void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, WatchFunction * watch_)
+void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
 {
 	log = &Logger::get("ZooKeeper");
 	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
 	sessionTimeoutMs = sessionTimeoutMs_;
-	state_watch = watch_;
 
-	if (watch_)
-		impl = zookeeper_init(hosts.c_str(), *watch_, sessionTimeoutMs, nullptr, nullptr, 0);
-	else
-		impl = zookeeper_init(hosts.c_str(), nullptr, sessionTimeoutMs, nullptr, nullptr, 0);
+	impl = zookeeper_init(hosts.c_str(), nullptr, sessionTimeoutMs, nullptr, nullptr, 0);
 
 	if (!impl)
 		throw KeeperException("Fail to initialize zookeeper. Hosts are " + hosts);
@@ -75,9 +71,9 @@ void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_, Watc
 	default_acl = &ZOO_OPEN_ACL_UNSAFE;
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_)
+ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs)
 {
-	init(hosts, sessionTimeoutMs, watch_);
+	init(hosts, sessionTimeoutMs);
 }
 
 struct ZooKeeperArgs
@@ -109,11 +105,10 @@ struct ZooKeeperArgs
 	size_t session_timeout_ms;
 };
 
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
-			  WatchFunction * watch)
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
 	ZooKeeperArgs args(config, config_name);
-	init(args.hosts, args.session_timeout_ms, watch);
+	init(args.hosts, args.session_timeout_ms);
 }
 
 void * ZooKeeper::watchForEvent(EventPtr event)
@@ -476,7 +471,7 @@ ZooKeeper::~ZooKeeper()
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-	return new ZooKeeper(hosts, sessionTimeoutMs, state_watch);
+	return new ZooKeeper(hosts, sessionTimeoutMs);
 }
 
 Op::Create::Create(const std::string & path_, const std::string & value_, AclPtr acl, int32_t flags)

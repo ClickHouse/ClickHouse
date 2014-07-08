@@ -164,11 +164,15 @@ public:
 		return !(*this == other);
 	}
 
-	std::string toString()
+	std::string toString(char separator = '-') const
 	{
 		std::stringstream ss;
-		ss << year() << '-' << (month() / 10) << (month() % 10)
-			<< '-' << (day() / 10) << (day() % 10);
+		if (separator)
+			ss << year() << separator << (month() / 10) << (month() % 10)
+				<< separator << (day() / 10) << (day() % 10);
+		else
+			ss << year() << (month() / 10) << (month() % 10)
+				<< (day() / 10) << (day() % 10);
 		return ss.str();
 	}
 };

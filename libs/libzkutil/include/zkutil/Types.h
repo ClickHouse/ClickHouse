@@ -87,8 +87,6 @@ typedef std::vector<OpResult> OpResults;
 typedef std::shared_ptr<OpResults> OpResultsPtr;
 typedef std::vector<std::string> Strings;
 
-typedef void (*WatchFunction)(zhandle_t *zh, int type, int state, const char *path, void *watcherCtx);
-
 namespace CreateMode
 {
 	extern const int Persistent;
