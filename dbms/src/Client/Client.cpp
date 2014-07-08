@@ -247,7 +247,7 @@ private:
 			}
 
 			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
-			DateLUTSingleton::instance();
+			DateLUT::instance();
 
 			loop();
 

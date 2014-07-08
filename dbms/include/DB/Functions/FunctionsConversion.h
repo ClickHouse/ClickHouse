@@ -68,7 +68,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		typedef DataTypeDate::FieldType FromFieldType;
-		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+		DateLUT & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -107,7 +107,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+		DateLUT & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{

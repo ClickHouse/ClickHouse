@@ -401,8 +401,8 @@ std::string QueryConverter::convertDateRange(time_t date_first, time_t date_last
 	{
 		WriteBufferFromString first_buf(first_str);
 		WriteBufferFromString last_buf(last_str);
-		writeDateText(DateLUTSingleton::instance().toDayNum(date_first), first_buf);
-		writeDateText(DateLUTSingleton::instance().toDayNum(date_last), last_buf);
+		writeDateText(DateLUT::instance().toDayNum(date_first), first_buf);
+		writeDateText(DateLUT::instance().toDayNum(date_last), last_buf);
 	}
 	return "StartDate >= toDate('" + first_str + "') AND StartDate <= toDate('" + last_str + "')";
 }

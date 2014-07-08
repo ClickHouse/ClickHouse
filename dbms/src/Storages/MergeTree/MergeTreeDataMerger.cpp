@@ -41,7 +41,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 {
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
-	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+	DateLUT & date_lut = DateLUT::instance();
 
 	size_t min_max = -1U;
 	size_t min_min = -1U;

@@ -28,7 +28,7 @@ int main(int argc, char ** argv)
 		Logger::root().setLevel("trace");
 
 		/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
-		DateLUTSingleton::instance();
+		DateLUT::instance();
 
 		DB::Context context;
 

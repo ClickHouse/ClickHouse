@@ -24,7 +24,7 @@ public:
 
 			++block_index;
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
-			time_t min_date_time = DateLUTSingleton::instance().fromDayNum(DayNum_t(current_block.min_date));
+			time_t min_date_time = DateLUT::instance().fromDayNum(DayNum_t(current_block.min_date));
 			String month_name = toString(Date2OrderedIdentifier(min_date_time) / 100);
 
 			storage.zookeeper->createIfNotExists(storage.zookeeper_path + "/block_numbers/" + month_name, "");
