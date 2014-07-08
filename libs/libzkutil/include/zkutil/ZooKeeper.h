@@ -29,7 +29,7 @@ class ZooKeeper
 public:
 	typedef Poco::SharedPtr<ZooKeeper> Ptr;
 
-	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT, WatchFunction * watch = nullptr);
+	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT);
 
 	/** конфиг вида
 		<zookeeper>
@@ -44,8 +44,7 @@ public:
 			<session_timeout_ms>30000</session_timeout_ms>
 		</zookeeper>
 	*/
-	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
-			  WatchFunction * watch = nullptr);
+	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
 
 	~ZooKeeper();
 
@@ -169,7 +168,7 @@ public:
 private:
 	friend struct WatchWithEvent;
 
-	void init(const std::string & hosts, int32_t sessionTimeoutMs, WatchFunction * watch_);
+	void init(const std::string & hosts, int32_t sessionTimeoutMs);
 	void removeChildrenRecursive(const std::string & path);
 	void tryRemoveChildrenRecursive(const std::string & path);
 	void * watchForEvent(EventPtr event);
@@ -211,7 +210,6 @@ private:
 	AclPtr default_acl;
 	zhandle_t * impl;
 
-	WatchFunction * state_watch;
 	std::unordered_set<WatchWithEvent *> watch_store;
 
 	/// Количество попыток повторить операцию чтения при OperationTimeout, ConnectionLoss
