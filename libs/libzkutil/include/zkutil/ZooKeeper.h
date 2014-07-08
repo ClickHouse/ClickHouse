@@ -14,9 +14,6 @@ const UInt32 DEFAULT_RETRY_NUM = 3;
 
 struct WatchWithEvent;
 
-/// Из-за вызова С кода легче самому явно управлять памятью
-typedef WatchWithEvent * WatchWithEventPtr;
-
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
   * Вместо callback-ов для watch-ей используются Poco::Event. Для указанного события вызывается set() только при первом вызове watch.
   * Методы на чтение при восстанавливаемых ошибках OperationTimeout, ConnectionLoss пытаются еще retry_num раз.
