@@ -61,7 +61,12 @@ void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfi
 	config.keys(elem, config_keys);
 
 	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
-		set(*it, config.getString(elem + "." + *it));
+	{
+		if (*it == "profile")	/// Наследование одного профиля от другого.
+			setProfile(config.getString(elem + "." + *it), config);
+		else
+			set(*it, config.getString(elem + "." + *it));
+	}
 }
 
 /// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
