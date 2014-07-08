@@ -186,7 +186,7 @@ private:
 			if (code == ZCONNECTIONLOSS)
 				usleep(sessionTimeoutMs*1000/3);
 
-			LOG_WARNING(log, "Error happened " << error2string(code)  << ". Retry");
+			LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
 			code = operation();
 		}
 		return code;
