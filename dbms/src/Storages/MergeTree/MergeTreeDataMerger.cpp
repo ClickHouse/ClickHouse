@@ -304,7 +304,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, data.getColumnsList());
+	NamesAndTypesList columns = data.getColumnsList();
+	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, columns);
 
 	merged_stream->readPrefix();
 	to->writePrefix();
@@ -317,8 +318,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		throw Exception("Canceled merging parts", ErrorCodes::ABORTED);
 
 	merged_stream->readSuffix();
+	new_data_part->columns = columns;
 	new_data_part->checksums = to->writeSuffixAndGetChecksums();
-
 	new_data_part->index.swap(to->getIndex());
 
 	/// Для удобства, даже CollapsingSortedBlockInputStream не может выдать ноль строк.

@@ -36,7 +36,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
 	replica_name(replica_name_),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-			index_granularity_, mode_, sign_column_, settings_, database_name_ + "." + table_name),
+			index_granularity_, mode_, sign_column_, settings_, database_name_ + "." + table_name, true),
 	reader(data), writer(data), merger(data), fetcher(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)")),
 	shutdown_event(false), permanent_shutdown_event(false)
@@ -74,7 +74,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		LOG_INFO(log, "Have unreplicated data");
 		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_, context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_,
-			database_name_ + "." + table_name + "[unreplicated]"));
+			database_name_ + "." + table_name + "[unreplicated]", false));
 		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
 		unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
 	}

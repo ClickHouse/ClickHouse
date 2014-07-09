@@ -211,7 +211,6 @@ public:
 		index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 		index_stream = new HashingWriteBuffer(*index_file_stream);
 
-		columns_list = storage.getColumnsList();
 		for (const auto & it : columns_list)
 			addStream(part_path, it.name, *it.type);
 	}
@@ -283,11 +282,18 @@ public:
 			/// Кусок пустой - все записи удалились.
 			Poco::File(part_path).remove(true);
 			checksums.files.clear();
+			return checksums;
 		}
-		else
+
+		{
+			/// Записываем файл с описанием столбцов.
+			WriteBufferFromFile out(part_path + "columns.txt", 4096);
+			columns_list.writeText(out);
+		}
+
 		{
 			/// Записываем файл с чексуммами.
-			WriteBufferFromFile out(part_path + "checksums.txt", 1024);
+			WriteBufferFromFile out(part_path + "checksums.txt", 4096);
 			checksums.writeText(out);
 		}
 

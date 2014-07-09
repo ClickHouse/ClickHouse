@@ -40,6 +40,7 @@ namespace DB
   *  / min-date _ max-date _ min-id _ max-id _ level / - директория с куском.
   * Внутри директории с куском:
   *  checksums.txt - список файлов с их размерами и контрольными суммами.
+  *  columns.txt - список столбцов с их типами.
   *  primary.idx - индексный файл.
   *  Column.bin - данные столбца
   *  Column.mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
@@ -220,6 +221,10 @@ public:
 
 		Checksums checksums;
 
+		/// Описание столбцов.
+		NamesAndTypesList columns;
+		Poco::RWLock columns_lock;
+
 		/// NOTE можно загружать засечки тоже в оперативку
 
 		/// Вычисляем сумарный размер всей директории со всеми файлами
@@ -261,7 +266,7 @@ public:
 		{
 			/// Размер - в количестве засечек.
 			if (!size)
-				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(storage.columns->front().name) + ".mrk")
+				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(columns.front().name) + ".mrk")
 					.getSize() / MERGE_TREE_MARK_SIZE;
 
 			size_t key_size = storage.sort_descr.size();
@@ -282,15 +287,34 @@ public:
 		}
 
 		/// Прочитать контрольные суммы, если есть.
-		bool loadChecksums()
+		void loadChecksums()
 		{
 			String path = storage.full_path + name + "/checksums.txt";
 			if (!Poco::File(path).exists())
-				return false;
+			{
+				if (storage.require_part_metadata)
+					throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+
+				return;
+			}
 			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 			if (checksums.readText(file))
 				assertEOF(file);
-			return true;
+		}
+
+		void loadColumns()
+		{
+			String path = storage.full_path + name + "/columns.txt";
+			if (!Poco::File(path).exists())
+			{
+				if (storage.require_part_metadata)
+					throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+				columns = *storage.columns;
+				return;
+			}
+
+			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+			columns.readText(file, storage.context.getDataTypeFactory());
 		}
 
 		void checkNotBroken()
@@ -299,6 +323,17 @@ public:
 
 			if (!checksums.empty())
 			{
+				if (!checksums.files.count("primary.idx"))
+					throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
+
+				for (const NameAndTypePair & it : columns)
+				{
+					String name = escapeForFileName(it.name);
+					if (!checksums.files.count(name + ".idx") ||
+						!checksums.files.count(name + ".bin"))
+						throw Exception("No .idx or .bin file checksum for column " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+				}
+
 				checksums.checkSizes(path + "/");
 			}
 			else
@@ -313,9 +348,9 @@ public:
 				/// Проверяем, что все засечки непусты и имеют одинаковый размер.
 
 				ssize_t marks_size = -1;
-				for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
+				for (const NameAndTypePair & it : columns)
 				{
-					Poco::File marks_file(path + "/" + escapeForFileName(it->name) + ".mrk");
+					Poco::File marks_file(path + "/" + escapeForFileName(it.name) + ".mrk");
 
 					/// При добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
 					if (!marks_file.exists())
@@ -401,6 +436,7 @@ public:
 	  * primary_expr_ast	- выражение для сортировки;
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
+	  * require_part_metadata - обязательно ли в директории с куском должны быть checksums.txt и columns.txt
 	  */
 	MergeTreeData(	const String & full_path_, NamesAndTypesListPtr columns_,
 					const Context & context_,
@@ -411,7 +447,9 @@ public:
 					Mode mode_,
 					const String & sign_column_,
 					const MergeTreeSettings & settings_,
-					const String & log_name_);
+					const String & log_name_,
+					bool require_part_metadata_
+ 				);
 
 	std::string getModePrefix() const;
 
@@ -422,7 +460,7 @@ public:
 	UInt64 getMaxDataPartIndex();
 
 	std::string getTableName() const {
-		return "abc";//throw Exception("Logical error: calling method getTableName of not a table.",	ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Logical error: calling method getTableName of not a table.",	ErrorCodes::LOGICAL_ERROR);
 	}
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
@@ -515,6 +553,8 @@ public:
 	const ASTPtr primary_expr_ast;
 
 private:
+	bool require_part_metadata;
+
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 	Block primary_key_sample;

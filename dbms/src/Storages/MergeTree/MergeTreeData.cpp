@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <algorithm>
 
 
@@ -25,12 +26,14 @@ MergeTreeData::MergeTreeData(
 	Mode mode_,
 	const String & sign_column_,
 	const MergeTreeSettings & settings_,
-	const String & log_name_)
+	const String & log_name_,
+	bool require_part_metadata_)
 	: context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
+	require_part_metadata(require_part_metadata_),
 	full_path(full_path_), columns(columns_), log_name(log_name_),
 	log(&Logger::get(log_name + " (Data)"))
 {
@@ -128,8 +131,9 @@ void MergeTreeData::loadDataParts()
 
 		try
 		{
-			part->loadIndex();
+			part->loadColumns();
 			part->loadChecksums();
+			part->loadIndex();
 			part->checkNotBroken();
 		}
 		catch (...)
@@ -318,6 +322,8 @@ void MergeTreeData::dropAllData()
 
 void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size_files)
 {
+	throw Exception("removeColumnFiles is closed for reconstruction. Please come back later.", ErrorCodes::NOT_IMPLEMENTED);
+
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
@@ -335,44 +341,32 @@ void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size
 	Poco::RegularExpression re(column_name + "(?:(?:\\.|\\%2E).+){0,1}" +"(?:\\.mrk|\\.bin|\\.size\\d+\\.bin|\\.size\\d+\\.mrk)");
 	/// Цикл по всем директориям кусочков
 	Poco::RegularExpression::MatchVec matches;
-	Poco::DirectoryIterator end;
-	for (Poco::DirectoryIterator it_dir = Poco::DirectoryIterator(full_path); it_dir != end; ++it_dir)
+	for (auto & part : all_data_parts)
 	{
-		std::string dir_name = it_dir.name();
-
-		if (!ActiveDataPartSet::isPartDirectory(dir_name, matches))
-			continue;
-
 		/// Цикл по каждому из файлов в директории кусочков
-		String full_dir_name = full_path + dir_name + "/";
-		for (Poco::DirectoryIterator it_file(full_dir_name); it_file != end; ++it_file)
+		String full_dir_name = full_path + part->name + "/";
+		for (Poco::DirectoryIterator it_file(full_dir_name); it_file != Poco::DirectoryIterator(); ++it_file)
 		{
 			if (re.match(it_file.name()))
 			{
 				Poco::File file(full_dir_name + it_file.name());
-				if (file.exists())
-					file.remove();
+				file.remove();
 			}
 		}
 
 		/// Удаляем лишние столбцы из checksums.txt
-		for (auto & part : all_data_parts)
+		for (auto it = part->checksums.files.lower_bound(column_name);
+			(it != part->checksums.files.end()) && (it->first.substr(0, column_name.size()) == column_name);)
 		{
-			if (!part)
-				continue;
-
-			for (auto it = part->checksums.files.lower_bound(column_name);
-				(it != part->checksums.files.end()) && (it->first.substr(0, column_name.size()) == column_name);)
-			{
-				if (re.match(it->first))
-					it = const_cast<DataPart::Checksums::FileChecksums &>(part->checksums.files).erase(it);
-				else
-					++it;
-			}
-			/// Записываем файл с чексуммами.
-			WriteBufferFromFile out(full_path + part->name + "/" + "checksums.txt", 1024);
-			part->checksums.writeText(out);
+			if (re.match(it->first))
+				it = const_cast<DataPart::Checksums::FileChecksums &>(part->checksums.files).erase(it);
+			else
+				++it;
 		}
+
+		/// Записываем файл с чексуммами.
+		WriteBufferFromFile out(full_path + part->name + "/" + "checksums.txt", 1024);
+		part->checksums.writeText(out);
 	}
 }
 
@@ -411,6 +405,8 @@ static bool namesWithDotEqual(const String & name_with_dot, const NameAndTypePai
 
 void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 {
+	throw Exception("ALTER is closed for reconstruction. Please come back later.", ErrorCodes::NOT_IMPLEMENTED);
+
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
@@ -436,6 +432,8 @@ void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
 
 void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
 {
+	throw Exception("ALTER is closed for reconstruction. Please come back later.", ErrorCodes::NOT_IMPLEMENTED);
+
 	DataPartsVector parts;
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
