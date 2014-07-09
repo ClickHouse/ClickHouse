@@ -90,8 +90,8 @@ private:
 
 		for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
 		{
-			name_column->insert(it->first);
-			type_column->insert(it->second->getName());
+			name_column->insert(it->name);
+			type_column->insert(it->type->getName());
 		}
 
 		return new OneBlockInputStream(block);

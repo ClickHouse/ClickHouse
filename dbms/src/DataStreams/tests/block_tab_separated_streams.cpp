@@ -91,7 +91,7 @@ int main(int argc, char ** argv)
 		SharedPtr<DataTypes> data_types = new DataTypes;
 
 		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
-			data_types->push_back(it->second);
+			data_types->push_back(it->type);
 
 		/// создаём описание, как читать данные из tab separated дампа
 
@@ -99,8 +99,8 @@ int main(int argc, char ** argv)
 		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 		{
 			ColumnWithNameAndType elem;
-			elem.name = it->first;
-			elem.type = it->second;
+			elem.name = it->name;
+			elem.type = it->type;
 			elem.column = elem.type->createColumn();
 			sample.insert(elem);
 		}

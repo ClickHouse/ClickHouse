@@ -256,7 +256,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	Names all_column_names;
 	NamesAndTypesList columns_list = data.getColumnsList();
 	for (const auto & it : columns_list)
-		all_column_names.push_back(it.first);
+		all_column_names.push_back(it.name);
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);

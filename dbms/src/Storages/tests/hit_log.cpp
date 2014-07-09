@@ -94,8 +94,8 @@ int main(int argc, char ** argv)
 
 		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 		{
-			data_types->push_back(it->second);
-			column_names.push_back(it->first);
+			data_types->push_back(it->type);
+			column_names.push_back(it->name);
 		}
 
 		/// создаём таблицу хит лога
@@ -108,8 +108,8 @@ int main(int argc, char ** argv)
 		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
 		{
 			ColumnWithNameAndType elem;
-			elem.name = it->first;
-			elem.type = it->second;
+			elem.name = it->name;
+			elem.type = it->type;
 			elem.column = elem.type->createColumn();
 			sample.insert(elem);
 		}

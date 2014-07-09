@@ -213,7 +213,7 @@ public:
 
 		columns_list = storage.getColumnsList();
 		for (const auto & it : columns_list)
-			addStream(part_path, it.first, *it.second);
+			addStream(part_path, it.name, *it.type);
 	}
 
 	void write(const Block & block)
@@ -247,7 +247,7 @@ public:
 		/// Теперь пишем данные.
 		for (const auto & it : columns_list)
 		{
-			const ColumnWithNameAndType & column = block.getByName(it.first);
+			const ColumnWithNameAndType & column = block.getByName(it.name);
 			writeData(column.name, *column.type, *column.column, offset_columns);
 		}
 

@@ -144,9 +144,9 @@ void StorageReplicatedMergeTree::createTable()
 	WriteBufferFromOStream buf(metadata);
 	for (auto & it : data.getColumnsList())
 	{
-		writeBackQuotedString(it.first, buf);
+		writeBackQuotedString(it.name, buf);
 		writeChar(' ', buf);
-		writeString(it.second->getName(), buf);
+		writeString(it.type->getName(), buf);
 		writeChar('\n', buf);
 	}
 	buf.next();
@@ -185,11 +185,11 @@ void StorageReplicatedMergeTree::checkTableStructure()
 	{
 		String name;
 		readBackQuotedString(name, buf);
-		if (name != it.first)
-			throw Exception("Unexpected column name in ZooKeeper: expected " + it.first + ", found " + name,
+		if (name != it.name)
+			throw Exception("Unexpected column name in ZooKeeper: expected " + it.name + ", found " + name,
 				ErrorCodes::UNKNOWN_IDENTIFIER);
 		assertString(" ", buf);
-		assertString(it.second->getName(), buf);
+		assertString(it.type->getName(), buf);
 		assertString("\n", buf);
 	}
 	assertEOF(buf);

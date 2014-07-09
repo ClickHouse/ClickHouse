@@ -15,7 +15,7 @@ bool ITableDeclaration::hasRealColumn(const String & column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
-		if (it.first == column_name)
+		if (it.name == column_name)
 			return true;
 	return false;
 }
@@ -26,7 +26,7 @@ Names ITableDeclaration::getColumnNamesList() const
 	const NamesAndTypesList & real_columns = getColumnsList();
 	Names res;
 	for (auto & it : real_columns)
-		res.push_back(it.first);
+		res.push_back(it.name);
 	return res;
 }
 
@@ -35,7 +35,7 @@ NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) con
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
 	for (auto & it : real_columns)
-		if (it.first == column_name)
+		if (it.name == column_name)
 			return it;
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
@@ -57,8 +57,8 @@ const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_nam
 {
 	const NamesAndTypesList & names_and_types = getColumnsList();
 	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
-		if (it->first == column_name)
-			return it->second;
+		if (it->name == column_name)
+			return it->type;
 
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
@@ -72,8 +72,8 @@ Block ITableDeclaration::getSampleBlock() const
 	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
 	{
 		ColumnWithNameAndType col;
-		col.name = it->first;
-		col.type = it->second;
+		col.name = it->name;
+		col.type = it->type;
 		col.column = col.type->createColumn();
 		res.insert(col);
 	}
@@ -89,7 +89,7 @@ static std::string listOfColumns(const NamesAndTypesList & available_columns)
 	{
 		if (it != available_columns.begin())
 			s << ", ";
-		s << it->first;
+		s << it->name;
 	}
 	return s.str();
 }
@@ -104,7 +104,7 @@ static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_column
 	res.set_empty_key(StringRef());
 
 	for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
-		res.insert(NamesAndTypesMap::value_type(it->first, &*it->second));
+		res.insert(NamesAndTypesMap::value_type(it->name, &*it->type));
 
 	return res;
 }
@@ -170,8 +170,8 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 	{
 		for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
 		{
-			if (!names_in_block.count(it->first))
-				throw Exception("Expected column " + it->first, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+			if (!names_in_block.count(it->name))
+				throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 		}
 	}
 }
@@ -180,7 +180,7 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
 {
 	String name_with_dot = name_without_dot + ".";
-	return (name_with_dot == name_type.first.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.first);
+	return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
 }
 
 void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context)
@@ -250,7 +250,7 @@ void ITableDeclaration::alterColumns(const ASTAlterQuery::Parameters & params, N
 		NamesAndTypesList::iterator column_it = std::find_if(columns->begin(), columns->end(), boost::bind(namesEqual, ast_name_type.name, _1) );
 		if (column_it == columns->end())
 			throw Exception("Wrong column name. Cannot find column " + ast_name_type.name + " to modify.",  DB::ErrorCodes::ILLEGAL_COLUMN);
-		column_it->second = data_type;
+		column_it->type = data_type;
 	}
 	else
 		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

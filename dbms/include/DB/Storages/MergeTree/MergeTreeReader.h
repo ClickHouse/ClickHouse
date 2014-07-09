@@ -372,8 +372,8 @@ private:
 				for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 				{
 					readData(
-						DataTypeNested::concatenateNestedName(name, it->first),
-						*it->second,
+						DataTypeNested::concatenateNestedName(name, it->name),
+						*it->type,
 						*column_nested.getData()[i],
 						from_mark,
 						column_nested.getOffsets()[column.size() - 1] - column_nested.getData()[i]->size(),

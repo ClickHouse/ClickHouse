@@ -169,7 +169,7 @@ public:
 	{
 		for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 		{
-			sample_block.insert(ColumnWithNameAndType(nullptr, it->second, it->first));
+			sample_block.insert(ColumnWithNameAndType(nullptr, it->type, it->name));
 		}
 	}
 
@@ -220,7 +220,7 @@ public:
 	{
 		Names names;
 		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-			names.push_back(it->first);
+			names.push_back(it->name);
 		return names;
 	}
 

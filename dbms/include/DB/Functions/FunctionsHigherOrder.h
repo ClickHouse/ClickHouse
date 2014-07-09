@@ -436,8 +436,8 @@ public:
 
 			for (size_t i = 0; i < expression_arguments.size(); ++i)
 			{
-				const std::string & argument_name = expression_arguments[i].first;
-				DataTypePtr argument_type = expression_arguments[i].second;
+				const std::string & argument_name = expression_arguments[i].name;
+				DataTypePtr argument_type = expression_arguments[i].type;
 
 				ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
 				const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);

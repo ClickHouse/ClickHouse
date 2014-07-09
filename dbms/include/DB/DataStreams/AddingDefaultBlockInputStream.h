@@ -33,7 +33,7 @@ public:
 		res << "AddingDefault(" << children.back()->getID();
 
 		for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
-			res << ", " << it->first << ", " << it->second->getName();
+			res << ", " << it->name << ", " << it->type->getName();
 
 		res << ")";
 		return res.str();

@@ -28,7 +28,7 @@ StoragePtr StorageMerge::create(
 
 NameAndTypePair StorageMerge::getColumn(const String &column_name) const
 {
-	if (column_name == _table_column_name) return std::make_pair(_table_column_name, new DataTypeString);
+	if (column_name == _table_column_name) return NameAndTypePair(_table_column_name, new DataTypeString);
 	return getRealColumn(column_name);
 }
 

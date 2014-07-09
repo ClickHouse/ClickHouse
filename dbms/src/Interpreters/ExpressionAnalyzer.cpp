@@ -104,17 +104,17 @@ void ExpressionAnalyzer::analyzeAggregation()
 				getRootActions(group_asts[i], true, false, temp_actions);
 
 				NameAndTypePair key;
-				key.first = group_asts[i]->getColumnName();
-				key.second = temp_actions->getSampleBlock().has(key.first)
-					? temp_actions->getSampleBlock().getByName(key.first).type
-					: throw Exception("Unknown identifier (in GROUP BY): " + key.first, ErrorCodes::UNKNOWN_IDENTIFIER);
+				key.name = group_asts[i]->getColumnName();
+				key.type = temp_actions->getSampleBlock().has(key.name)
+					? temp_actions->getSampleBlock().getByName(key.name).type
+					: throw Exception("Unknown identifier (in GROUP BY): " + key.name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
 				aggregation_keys.push_back(key);
 
-				if (!unique_keys.count(key.first))
+				if (!unique_keys.count(key.name))
 				{
 					aggregated_columns.push_back(key);
-					unique_keys.insert(key.first);
+					unique_keys.insert(key.name);
 				}
 			}
 		}
@@ -185,7 +185,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypesList & cols)
 {
 	return std::find_if(cols.begin(), cols.end(),
-		[&](const NamesAndTypesList::value_type & val) { return val.first == name; });
+		[&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
 
@@ -326,7 +326,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 			{
 				ASTs all_columns;
 				for (const auto & column_name_type : columns)
-					all_columns.emplace_back(new ASTIdentifier(asterisk->range, column_name_type.first));
+					all_columns.emplace_back(new ASTIdentifier(asterisk->range, column_name_type.name));
 
 				asts.erase(asts.begin() + i);
 				asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
@@ -695,9 +695,9 @@ struct ExpressionAnalyzer::ScopeStack
 
 		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
 		{
-			all_columns.emplace_back(nullptr, it->second, it->first);
-			new_names.insert(it->first);
-			stack.back().new_columns.insert(it->first);
+			all_columns.emplace_back(nullptr, it->type, it->name);
+			new_names.insert(it->name);
+			stack.back().new_columns.insert(it->name);
 		}
 
 		const Block & prev_sample_block = prev.actions->getSampleBlock();
@@ -810,11 +810,11 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 				bool found = false;
 				for (const auto & column_name_type : columns)
 				{
-					String table_name = DataTypeNested::extractNestedTableName(column_name_type.first);
-					String column_name = DataTypeNested::extractNestedColumnName(column_name_type.first);
+					String table_name = DataTypeNested::extractNestedTableName(column_name_type.name);
+					String column_name = DataTypeNested::extractNestedColumnName(column_name_type.name);
 					if (table_name == source_name)
 					{
-						array_join_result_to_source[DataTypeNested::concatenateNestedName(result_name, column_name)] = column_name_type.first;
+						array_join_result_to_source[DataTypeNested::concatenateNestedName(result_name, column_name)] = column_name_type.name;
 						found = true;
 						break;
 					}
@@ -870,7 +870,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 			bool found = false;
 			for (const auto & column_name_type : columns)
-				if (column_name_type.first == name)
+				if (column_name_type.name == name)
 					found = true;
 
 			if (found)
@@ -1246,11 +1246,11 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
 
 		for (const auto & name_type : columns_added_by_join)
-			std::cerr << "! Column added by JOIN: " << name_type.first << std::endl;
+			std::cerr << "! Column added by JOIN: " << name_type.name << std::endl;
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
 		for (const auto & name_type : columns_added_by_join)
-			required_joined_columns.push_back(name_type.first);
+			required_joined_columns.push_back(name_type.name);
 
 		/** Для GLOBAL JOIN-ов происходит следующее:
 		  * - в функции addExternalStorage подзапрос JOIN (SELECT ...) заменяется на JOIN _data1,
@@ -1471,7 +1471,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 	{
 		/// Не будем удалять исходные столбцы.
 		for (const auto & column_name_type : columns)
-			result_names.push_back(column_name_type.first);
+			result_names.push_back(column_name_type.name);
 	}
 
 	actions->finalize(result_names);
@@ -1492,7 +1492,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates)
 {
 	for (NamesAndTypesList::iterator it = aggregation_keys.begin(); it != aggregation_keys.end(); ++it)
-		key_names.push_back(it->first);
+		key_names.push_back(it->name);
 	aggregates = aggregate_descriptions;
 }
 
@@ -1539,7 +1539,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 
 	for (NamesAndTypesList::iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
 	{
-		if (required_joined_columns.count(it->first))
+		if (required_joined_columns.count(it->name))
 			++it;
 		else
 			columns_added_by_join.erase(it++);
@@ -1555,8 +1555,8 @@ void ExpressionAnalyzer::collectUsedColumns()
 		array_join_sources.insert(result_source.second);
 
 	for (const auto & column_name_type : columns)
-		if (array_join_sources.count(column_name_type.first))
-			required.insert(column_name_type.first);
+		if (array_join_sources.count(column_name_type.name))
+			required.insert(column_name_type.name);
 
 	/// Нужно прочитать хоть один столбец, чтобы узнать количество строк.
 	if (required.empty())
@@ -1566,11 +1566,11 @@ void ExpressionAnalyzer::collectUsedColumns()
 
 	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
 	{
-		unknown_required_columns.erase(it->first);
+		unknown_required_columns.erase(it->name);
 
-		if (!required.count(it->first))
+		if (!required.count(it->name))
 		{
-			required.erase(it->first);
+			required.erase(it->name);
 			columns.erase(it++);
 		}
 		else
@@ -1643,7 +1643,7 @@ Names ExpressionAnalyzer::getRequiredColumns()
 
 	Names res;
 	for (const auto & column_name_type : columns)
-		res.push_back(column_name_type.first);
+		res.push_back(column_name_type.name);
 
 	return res;
 }

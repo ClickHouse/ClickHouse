@@ -19,6 +19,9 @@ struct NameAndTypePair
 	String name;
 	DataTypePtr type;
 
+	NameAndTypePair() {}
+	NameAndTypePair(const String & name_, const DataTypePtr & type_) : name(name_), type(type_) {}
+
 	bool operator<(const NameAndTypePair & rhs) const
 	{
 		return std::make_pair(name, type->getName()) < std::make_pair(rhs.name, rhs.type->getName());
