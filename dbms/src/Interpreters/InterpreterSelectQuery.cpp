@@ -159,7 +159,7 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 	NamesAndTypesList columns = query_analyzer->getSelectSampleBlock().getColumnsList();
 	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
 	{
-		res.push_back(it->second);
+		res.push_back(it->type);
 	}
 	return res;
 }

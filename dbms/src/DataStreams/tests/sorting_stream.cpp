@@ -99,7 +99,7 @@ int main(int argc, char ** argv)
 		SharedPtr<NamesAndTypesMap> names_and_types_map = new NamesAndTypesMap;
 
 		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
-			names_and_types_map->insert(*it);
+			names_and_types_map->insert(std::make_pair(it->name, it->type));
 
 		ParserSelectQuery parser;
 		ASTPtr ast;

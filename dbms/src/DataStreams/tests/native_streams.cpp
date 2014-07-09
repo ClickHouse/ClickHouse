@@ -92,7 +92,7 @@ int main(int argc, char ** argv)
 		Names column_names;
 
 		for (NamesAndTypesList::const_iterator it = names_and_types_list->begin(); it != names_and_types_list->end(); ++it)
-			column_names.push_back(it->first);
+			column_names.push_back(it->name);
 
 		/// создаём объект существующей таблицы хит лога
 

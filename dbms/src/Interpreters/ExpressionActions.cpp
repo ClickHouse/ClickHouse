@@ -150,7 +150,7 @@ void ExpressionAction::prepare(Block & sample_block)
 	else if (type == JOIN)
 	{
 		for (const auto & col : columns_added_by_join)
-			sample_block.insert(ColumnWithNameAndType(col.second->createColumn(), col.second, col.first));
+			sample_block.insert(ColumnWithNameAndType(col.type->createColumn(), col.type, col.name));
 
 		std::cerr << sample_block.dumpNames() << std::endl;
 	}
@@ -342,7 +342,7 @@ std::string ExpressionAction::toString() const
 			{
 				if (it != columns_added_by_join.begin())
 					ss << ", ";
-				ss << it->first;
+				ss << it->name;
 			}
 			break;
 
@@ -399,7 +399,7 @@ void ExpressionActions::addInput(const ColumnWithNameAndType & column)
 
 void ExpressionActions::addInput(const NameAndTypePair & column)
 {
-	addInput(ColumnWithNameAndType(nullptr, column.second, column.first));
+	addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
 }
 
 void ExpressionActions::add(const ExpressionAction & action, Names & out_new_columns)
@@ -453,10 +453,10 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
 	NameSet array_join_set(action.array_joined_columns.begin(), action.array_joined_columns.end());
 	for (auto & it : input_columns)
 	{
-		if (array_join_set.count(it.first))
+		if (array_join_set.count(it.name))
 		{
-			array_join_set.erase(it.first);
-			it.second = new DataTypeArray(it.second);
+			array_join_set.erase(it.name);
+			it.type = new DataTypeArray(it.type);
 		}
 	}
 	for (const std::string & name : array_join_set)
@@ -505,15 +505,15 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 	if (it == columns.end())
 		throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
 
-	size_t min_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
-	String res = it->first;
+	size_t min_size = it->type->isNumeric() ? it->type->getSizeOfField() : 100;
+	String res = it->name;
 	for (; it != columns.end(); ++it)
 	{
-		size_t current_size = it->second->isNumeric() ? it->second->getSizeOfField() : 100;
+		size_t current_size = it->type->isNumeric() ? it->type->getSizeOfField() : 100;
 		if (current_size < min_size)
 		{
 			min_size = current_size;
-			res = it->first;
+			res = it->name;
 		}
 	}
 
@@ -540,7 +540,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 	{
 		NamesAndTypesList sample_columns = sample_block.getColumnsList();
 		for (NamesAndTypesList::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
-			unmodified_columns.insert(it->first);
+			unmodified_columns.insert(it->name);
 	}
 
 	/// Будем идти с конца и поодерживать множество нужных на данном этапе столбцов.
@@ -624,10 +624,10 @@ void ExpressionActions::finalize(const Names & output_columns)
 	{
 		NamesAndTypesList::iterator it0 = it;
 		++it;
-		if (!needed_columns.count(it0->first))
+		if (!needed_columns.count(it0->name))
 		{
-			if (unmodified_columns.count(it0->first))
-				sample_block.erase(it0->first);
+			if (unmodified_columns.count(it0->name))
+				sample_block.erase(it0->name);
 			input_columns.erase(it0);
 		}
 	}
@@ -675,7 +675,7 @@ std::string ExpressionActions::getID() const
 	{
 		if (it != output_columns.begin())
 			ss << ", ";
-		ss << it->first;
+		ss << it->name;
 	}
 	ss << "}";
 
@@ -688,7 +688,7 @@ std::string ExpressionActions::dumpActions() const
 
 	ss << "input:\n";
 	for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-		ss << it->first << " " << it->second->getName() << "\n";
+		ss << it->name << " " << it->type->getName() << "\n";
 
 	ss << "\nactions:\n";
 	for (size_t i = 0; i < actions.size(); ++i)
@@ -697,7 +697,7 @@ std::string ExpressionActions::dumpActions() const
 	ss << "\noutput:\n";
 	NamesAndTypesList output_columns = sample_block.getColumnsList();
 	for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
-		ss << it->first << " " << it->second->getName() << "\n";
+		ss << it->name << " " << it->type->getName() << "\n";
 
 	return ss.str();
 }
@@ -807,7 +807,7 @@ void ExpressionActionsChain::finalize()
 		if (i + 1 < static_cast<int>(steps.size()))
 		{
 			for (const auto & it : steps[i + 1].actions->getRequiredColumnsWithTypes())
-				required_output.push_back(it.first);
+				required_output.push_back(it.name);
 		}
 		steps[i].actions->finalize(required_output);
 	}

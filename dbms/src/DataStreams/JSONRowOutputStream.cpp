@@ -28,10 +28,10 @@ void JSONRowOutputStream::writePrefix()
 		writeCString("\t\t{\n", ostr);
 		
 		writeCString("\t\t\t\"name\": ", ostr);
-		writeDoubleQuotedString(fields[i].first, ostr);
+		writeDoubleQuotedString(fields[i].name, ostr);
 		writeCString(",\n", ostr);
 		writeCString("\t\t\t\"type\": ", ostr);
-		writeDoubleQuotedString(fields[i].second->getName(), ostr);
+		writeDoubleQuotedString(fields[i].type->getName(), ostr);
 		writeChar('\n', ostr);
 		
 		writeCString("\t\t}", ostr);
@@ -52,9 +52,9 @@ void JSONRowOutputStream::writePrefix()
 void JSONRowOutputStream::writeField(const Field & field)
 {
 	writeCString("\t\t\t", ostr);
-	writeDoubleQuotedString(fields[field_number].first, ostr);
+	writeDoubleQuotedString(fields[field_number].name, ostr);
 	writeCString(": ", ostr);
-	fields[field_number].second->serializeTextJSON(field, ostr);
+	fields[field_number].type->serializeTextJSON(field, ostr);
 	++field_number;
 }
 

@@ -41,14 +41,12 @@ protected:
 	virtual void writeTotals();
 	virtual void writeExtremes();
 	
-	typedef std::vector<NameAndTypePair> NamesAndTypesVector;
-	
 	WriteBufferValidUTF8 ostr;
 	size_t field_number;
 	size_t row_count;
 	bool applied_limit;
 	size_t rows_before_limit;
-	NamesAndTypesVector fields;
+	NamesAndTypes fields;
 	Block totals;
 	Block extremes;
 };

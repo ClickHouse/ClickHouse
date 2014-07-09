@@ -56,9 +56,9 @@ std::string DataTypeNested::getName() const
 	{
 		if (it != nested->begin())
 			writeCString(", ", out);
-		writeString(it->first, out);
+		writeString(it->name, out);
 		writeChar(' ', out);
-		writeString(it->second->getName(), out);
+		writeString(it->type->getName(), out);
 	}
 
 	writeChar(')', out);
@@ -106,7 +106,7 @@ void DataTypeNested::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 	{
 		NamesAndTypesList::const_iterator it = nested->begin();
 		for (size_t i = 0; i < nested->size(); ++i, ++it)
-			it->second->serializeBinary(*column_nested.getData()[i], ostr, nested_offset, nested_limit);
+			it->type->serializeBinary(*column_nested.getData()[i], ostr, nested_offset, nested_limit);
 	}
 }
 
@@ -125,7 +125,7 @@ void DataTypeNested::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	NamesAndTypesList::const_iterator it = nested->begin();
 	for (size_t i = 0; i < nested->size(); ++i, ++it)
 	{
-		it->second->deserializeBinary(*column_nested.getData()[i], istr, nested_limit);
+		it->type->deserializeBinary(*column_nested.getData()[i], istr, nested_limit);
 		if (column_nested.getData()[i]->size() != last_offset)
 			throw Exception("Cannot read all nested column values", ErrorCodes::CANNOT_READ_ALL_DATA);
 	}
@@ -225,7 +225,7 @@ ColumnPtr DataTypeNested::createColumn() const
 	Columns columns;
 	columns.reserve(nested->size());
 	for (NamesAndTypesList::const_iterator it = nested->begin(); it != nested->end(); ++it)
-		columns.push_back(it->second->createColumn());
+		columns.push_back(it->type->createColumn());
 	return new ColumnNested(columns);
 }
 
@@ -240,13 +240,13 @@ NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
 	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
 	{
-		if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&*it->second))
+		if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&*it->type))
 		{
 			const NamesAndTypesList & nested = *type_nested->getNestedTypesList();
 			for (NamesAndTypesList::const_iterator jt = nested.begin(); jt != nested.end(); ++jt)
 			{
-				String nested_name = DataTypeNested::concatenateNestedName(it->first, jt->first);
-				columns->push_back(NameAndTypePair(nested_name, new DataTypeArray(jt->second)));
+				String nested_name = DataTypeNested::concatenateNestedName(it->name, jt->name);
+				columns->push_back(NameAndTypePair(nested_name, new DataTypeArray(jt->type)));
 			}
 		}
 		else

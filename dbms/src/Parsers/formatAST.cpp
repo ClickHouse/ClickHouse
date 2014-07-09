@@ -785,9 +785,9 @@ String formatColumnsForCreateQuery(NamesAndTypesList & columns)
 	{
 		if (it != columns.begin())
 			res += ", ";
-		res += backQuoteIfNeed(it->first);
+		res += backQuoteIfNeed(it->name);
 		res += " ";
-		res += it->second->getName();
+		res += it->type->getName();
 	}
 	res += ")";
 	return res;

@@ -397,8 +397,8 @@ static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesLis
 {
 	for (const auto & it : columns)
 	{
-		if (it.first == name)
-			return it.second;
+		if (it.name == name)
+			return it.type;
 	}
 	throw Exception("No column " + name + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
@@ -406,7 +406,7 @@ static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesLis
 /// одинаковыми считаются имена, вида "name.*"
 static bool namesWithDotEqual(const String & name_with_dot, const NameAndTypePair & name_type)
 {
-	return (name_with_dot == name_type.first.substr(0, name_with_dot.length()));
+	return (name_with_dot == name_type.name.substr(0, name_with_dot.length()));
 }
 
 void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)

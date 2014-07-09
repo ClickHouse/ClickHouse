@@ -39,7 +39,7 @@ static void writeData(const IDataType & type, const IColumn & column, WriteBuffe
 		{
 			if (column_nested.getData()[i]->empty())
 				break;
-			writeData(*it->second, *column_nested.getData()[i], ostr);
+			writeData(*it->type, *column_nested.getData()[i], ostr);
 		}
 	}
 	else

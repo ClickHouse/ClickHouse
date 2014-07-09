@@ -127,7 +127,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
+			addStream(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
 	}
 	else
 		streams[name].reset(new Stream(storage.files[name].data_file.path()));
@@ -172,8 +172,8 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 			for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 			{
 				readData(
-					DataTypeNested::concatenateNestedName(name, it->first),
-					*it->second,
+					DataTypeNested::concatenateNestedName(name, it->name),
+					*it->type,
 					*column_nested.getData()[i],
 					column_nested.getOffsets()[column.size() - 1],
 					level + 1);
@@ -189,7 +189,7 @@ TinyLogBlockOutputStream::TinyLogBlockOutputStream(StorageTinyLog & storage_)
 	: storage(storage_)
 {
 	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		addStream(it->first, *it->second);
+		addStream(it->name, *it->type);
 }
 
 
@@ -211,7 +211,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
+			addStream(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
 	}
 	else
 		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
@@ -248,8 +248,8 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 		{
 			writeData(
-				DataTypeNested::concatenateNestedName(name, it->first),
-				*it->second,
+				DataTypeNested::concatenateNestedName(name, it->name),
+				*it->type,
 				*column_nested.getData()[i],
 				offset_columns,
 				level + 1);
@@ -300,7 +300,7 @@ StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & na
 	}
 
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-		addFile(it->first, *it->second);
+		addFile(it->name, *it->type);
 }
 
 StoragePtr StorageTinyLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
@@ -341,7 +341,7 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 
 		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
 		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addFile(DataTypeNested::concatenateNestedName(name, it->first), *it->second, level + 1);
+			addFile(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
 	}
 	else
 	{

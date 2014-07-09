@@ -50,7 +50,7 @@ static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr
 			for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
 			{
 				readData(
-					*it->second,
+					*it->type,
 					*column_nested.getData()[i],
 					istr,
 					column_nested.getOffsets()[rows - 1]);

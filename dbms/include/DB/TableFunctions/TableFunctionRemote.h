@@ -105,9 +105,7 @@ private:
 				String column_name = (*name)[i].get<const String &>();
 				String data_type_name = (*type)[i].get<const String &>();
 
-				res.emplace_back(std::piecewise_construct,
-					std::forward_as_tuple(column_name),
-					std::forward_as_tuple(context.getDataTypeFactory().get(data_type_name)));
+				res.emplace_back(column_name, context.getDataTypeFactory().get(data_type_name));
 			}
 		}
 

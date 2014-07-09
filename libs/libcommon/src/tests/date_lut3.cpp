@@ -8,7 +8,7 @@
 
 void loop(time_t begin, time_t end, int step)
 {
-	DateLUTSingleton & date_lut = DateLUTSingleton::instance();
+	DateLUT & date_lut = DateLUT::instance();
 	
 	for (time_t t = begin; t < end; t += step)
 	{

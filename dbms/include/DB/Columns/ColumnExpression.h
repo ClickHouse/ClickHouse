@@ -32,7 +32,7 @@ public:
 	{
 		Names res(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)
-			res[i] = arguments[i].first;
+			res[i] = arguments[i].name;
 		return res;
 	}
 	

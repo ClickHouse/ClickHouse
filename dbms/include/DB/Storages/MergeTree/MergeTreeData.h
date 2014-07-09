@@ -261,7 +261,7 @@ public:
 		{
 			/// Размер - в количестве засечек.
 			if (!size)
-				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(storage.columns->front().first) + ".mrk")
+				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(storage.columns->front().name) + ".mrk")
 					.getSize() / MERGE_TREE_MARK_SIZE;
 
 			size_t key_size = storage.sort_descr.size();
@@ -315,7 +315,7 @@ public:
 				ssize_t marks_size = -1;
 				for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
 				{
-					Poco::File marks_file(path + "/" + escapeForFileName(it->first) + ".mrk");
+					Poco::File marks_file(path + "/" + escapeForFileName(it->name) + ".mrk");
 
 					/// При добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
 					if (!marks_file.exists())

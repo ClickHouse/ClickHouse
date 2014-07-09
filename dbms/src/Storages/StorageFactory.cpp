@@ -315,7 +315,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "SystemNumbers")
 	{
-		if (columns->size() != 1 || columns->begin()->first != "number" || columns->begin()->second->getName() != "UInt64")
+		if (columns->size() != 1 || columns->begin()->name != "number" || columns->begin()->type->getName() != "UInt64")
 			throw Exception("Storage SystemNumbers only allows one column with name 'number' and type 'UInt64'",
 				ErrorCodes::ILLEGAL_COLUMN);
 
@@ -323,7 +323,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "SystemOne")
 	{
-		if (columns->size() != 1 || columns->begin()->first != "dummy" || columns->begin()->second->getName() != "UInt8")
+		if (columns->size() != 1 || columns->begin()->name != "dummy" || columns->begin()->type->getName() != "UInt8")
 			throw Exception("Storage SystemOne only allows one column with name 'dummy' and type 'UInt8'",
 				ErrorCodes::ILLEGAL_COLUMN);
 

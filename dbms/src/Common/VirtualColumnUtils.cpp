@@ -26,7 +26,7 @@ String chooseSuffix(const NamesAndTypesList & columns, const String & name)
 	{
 		bool done = true;
 		for (const auto & it : columns)
-			if (it.first == name + current_suffix)
+			if (it.name == name + current_suffix)
 			{
 				done = false;
 				break;
@@ -49,7 +49,7 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 		{
 			for (size_t i = 0; i < names.size(); ++i)
 			{
-				if (it.first == names[i] + current_suffix)
+				if (it.name == names[i] + current_suffix)
 				{
 					done = false;
 					break;
@@ -153,7 +153,7 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 	/// Вычисляем имена виртуальных столбцов
 	std::vector<String> columns;
 	for (const auto & it : input.getColumnsList())
-		columns.push_back(it.first);
+		columns.push_back(it.name);
 
 	/// Формируем запрос и записываем имена виртуальных столбцов
 	ASTSelectQuery & new_select = typeid_cast<ASTSelectQuery & >(*new_query);

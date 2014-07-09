@@ -41,7 +41,7 @@ StoragePtr StorageChunkMerger::create(
 
 NameAndTypePair StorageChunkMerger::getColumn(const String &column_name) const
 {
-	if (column_name == _table_column_name) return std::make_pair(_table_column_name, new DataTypeString);
+	if (column_name == _table_column_name) return NameAndTypePair(_table_column_name, new DataTypeString);
 	return getRealColumn(column_name);
 }
 
@@ -361,7 +361,10 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 	}
 
 	/// Объединим множества столбцов сливаемых чанков.
-	ColumnsMap known_columns_types(columns->begin(), columns->end());
+	ColumnsMap known_columns_types;
+	for (const NameAndTypePair & column : *columns)
+		known_columns_types.insert(std::make_pair(column.name, column.type));
+
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
 	*required_columns = *columns;
 
@@ -371,8 +374,8 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 
 		for (NamesAndTypesList::const_iterator it = current_columns.begin(); it != current_columns.end(); ++it)
 		{
-			const std::string & name = it->first;
-			const DataTypePtr & type = it->second;
+			const std::string & name = it->name;
+			const DataTypePtr & type = it->type;
 			if (known_columns_types.count(name))
 			{
 				String current_type_name = type->getName();
@@ -445,8 +448,8 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			select_query->select_expression_list = select_list;
 			for (NamesAndTypesList::const_iterator it = src_columns.begin(); it != src_columns.end(); ++it)
 			{
-				src_column_names.push_back(it->first);
-				select_list->children.push_back(newIdentifier(it->first, ASTIdentifier::Column));
+				src_column_names.push_back(it->name);
+				select_list->children.push_back(newIdentifier(it->name, ASTIdentifier::Column));
 			}
 
 			QueryProcessingStage::Enum processed_stage = QueryProcessingStage::Complete;
