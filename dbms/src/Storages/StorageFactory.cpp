@@ -75,8 +75,6 @@ StoragePtr StorageFactory::get(
 	NamesAndTypesListPtr columns,
 	bool attach) const
 {
-	columns = DataTypeNested::expandNestedColumns(*columns);
-
 	if (name == "Log")
 	{
 		return StorageLog::create(data_path, table_name, columns, context.getSettings().max_compress_block_size);

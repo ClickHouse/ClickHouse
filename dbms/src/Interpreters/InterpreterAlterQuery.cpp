@@ -141,7 +141,7 @@ void InterpreterAlterQuery::addColumnToAST(StoragePtr table, ASTs & columns, con
 	{
 		if (!typeid_cast<DataTypeArray *>(datatype.get()))
 		{
-			throw Exception("Cannot add column " + add_column.name + ". Because it is not an array. Only arrays could be nested and consist '.' in their names");
+			throw Exception("Cannot add column " + add_column.name + ". Because it is not an array. Only arrays could be nested and contain '.' in their names");
 		}
 	}
 
