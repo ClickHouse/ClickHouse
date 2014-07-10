@@ -126,7 +126,10 @@ public:
 	void * alloc(size_t size)
 	{
 		if (size <= N)
+		{
+			memset(stack_memory, 0, N);
 			return stack_memory;
+		}
 
 		return HashTableAllocator::alloc(size);
 	}
