@@ -23,8 +23,8 @@ int main(int argc, char ** argv)
 	for (int i = 2; i + 1 < argc; i += 2)
 	{
 		NameAndTypePair col;
-		col.first = argv[i];
-		col.second = context.getDataTypeFactory().get(argv[i + 1]);
+		col.name = argv[i];
+		col.type = context.getDataTypeFactory().get(argv[i + 1]);
 		columns.push_back(col);
 	}
 

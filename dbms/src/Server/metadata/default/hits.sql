@@ -28,6 +28,7 @@ ATTACH TABLE hits
 ,     CookieEnable UInt8
 ,     JavascriptEnable UInt8
 ,     IsMobile UInt8
+,     IsTablet UInt8
 ,     MobilePhone UInt8
 ,     MobilePhoneModel String
 ,     Params String

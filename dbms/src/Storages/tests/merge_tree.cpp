@@ -95,12 +95,12 @@ int main(int argc, char ** argv)
 			Block sample;
 			{
 				ColumnWithNameAndType col;
-				col.type = names_and_types->front().second;
+				col.type = names_and_types->front().type;
 				sample.insert(col);
 			}
 			{
 				ColumnWithNameAndType col;
-				col.type = names_and_types->back().second;
+				col.type = names_and_types->back().type;
 				sample.insert(col);
 			}
 

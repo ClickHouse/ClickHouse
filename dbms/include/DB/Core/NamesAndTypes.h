@@ -26,7 +26,7 @@ struct NameAndTypePair
 
 	bool operator<(const NameAndTypePair & rhs) const
 	{
-		return std::make_pair(name, type->getName()) < std::make_pair(rhs.name, rhs.type->getName());
+		return std::tie(name, type->getName()) < std::tie(rhs.name, rhs.type->getName());
 	}
 
 	bool operator==(const NameAndTypePair & rhs) const
