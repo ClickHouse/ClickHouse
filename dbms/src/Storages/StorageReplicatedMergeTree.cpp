@@ -4,6 +4,7 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <time.h>
 
 namespace DB
@@ -57,7 +58,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			createTable();
 
 		checkTableStructure(false);
-		createReplica(false);
+		createReplica();
 	}
 	else
 	{
@@ -67,11 +68,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			skip_sanity_checks = true;
 			zookeeper->remove(replica_path + "/flags/force_restore_data");
 
-			if (skip_sanity_checks)
-			{
-				LOG_WARNING(log, "Skipping the limits on severity of changes to data parts (flag "
-					<< replica_path << "/flags/force_restore_data). " << sanity_report);
-			}
+			LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
+				<< replica_path << "/flags/force_restore_data).");
 		}
 
 		checkTableStructure(skip_sanity_checks);
@@ -144,7 +142,7 @@ void StorageReplicatedMergeTree::createTable()
 
 	zookeeper->create(zookeeper_path, "", zkutil::CreateMode::Persistent);
 
-	/// Запишем метаданные таблицы, чтобы реплики могли сверять с ними свою локальную структуру таблицы.
+	/// Запишем метаданные таблицы, чтобы реплики могли сверять с ними параметры таблицы.
 	std::stringstream metadata;
 	metadata << "metadata format version: 1" << std::endl;
 	metadata << "date column: " << data.date_column_name << std::endl;
@@ -153,19 +151,16 @@ void StorageReplicatedMergeTree::createTable()
 	metadata << "mode: " << static_cast<int>(data.mode) << std::endl;
 	metadata << "sign column: " << data.sign_column << std::endl;
 	metadata << "primary key: " << formattedAST(data.primary_expr_ast) << std::endl;
-	metadata << "columns:" << std::endl;
-	{
-		WriteBufferFromOStream buf(metadata);
-		data.getColumnsList().writeText(buf);
-	}
 
 	zookeeper->create(zookeeper_path + "/metadata", metadata.str(), zkutil::CreateMode::Persistent);
+	zookeeper->create(zookeeper_path + "/columns", data.getColumnsList().toString(), zkutil::CreateMode::Persistent);
 
-	zookeeper->create(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/blocks", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/block_numbers", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/leader_election", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/temp", "", zkutil::CreateMode::Persistent);
+	/// Создадим replicas в последнюю очередь, чтобы нельзя было добавить реплику, пока все эти ноды не созданы.
+	zookeeper->create(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent);
 }
 
 /** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
@@ -187,19 +182,29 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
 	assertString("\nsign column: ", buf);
 	assertString(data.sign_column, buf);
 	assertString("\nprimary key: ", buf);
+	/// NOTE: Можно сделать менее строгую проверку совпадения выражений, чтобы таблицы не ломались от небольших изменений
+	///       в коде formatAST.
 	assertString(formattedAST(data.primary_expr_ast), buf);
-	assertString("\ncolumns:\n", buf);
-	NamesAndTypesList columns;
-	columns.readText(buf);
 	assertEOF(buf);
+
+	zkutil::Stat stat;
+	auto columns = NamesAndTypesList::parse(zookeeper->get(zookeeper_path + "/columns", &stat), context.getDataTypeFactory());
+	columns_version = stat.version;
 	if (columns != data.getColumnsList())
 	{
 		if (data.getColumnsList().sizeOfDifference(columns) <= 2 || skip_sanity_checks)
+		{
 			LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
+			do alter here (and update data.columns)
+		}
 		else
+		{
 			throw Exception("Table structure in ZooKeeper is very different from local table structure.",
 							ErrorCodes::INCOMPATIBLE_COLUMNS);
+		}
 	}
+
+	columns_version = stat.version;
 }
 
 void StorageReplicatedMergeTree::createReplica()
@@ -416,6 +421,11 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 	}
 
+	if (insane)
+	{
+		LOG_WARNING(log, sanity_report);
+	}
+
 	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
 	for (MergeTreeData::DataPartPtr part : parts_to_add)
 	{
@@ -477,21 +487,46 @@ void StorageReplicatedMergeTree::initVirtualParts()
 
 void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops)
 {
-	asdqwe check columns (how to get data for multiple nodes simultaneously?)
-	String another_replica = findReplicaHavingPart(part->name, false);
-	if (!another_replica.empty())
+	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+	std::random_shuffle(replicas.begin(), replicas.end());
+	String expected_columns_str = part->columns.toString();
+
+	for (const String & replica : replicas)
 	{
-		String checksums_str;
-		if (zookeeper->tryGet(zookeeper_path + "/replicas/" + another_replica + "/parts/" + part->name + "/checksums", checksums_str))
+		zkutil::Stat stat_before, stat_after;
+		String columns_str;
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part->name + "/columns", columns_str, &stat_before))
+			continue;
+		if (columns_str != expected_columns_str)
 		{
-			auto checksums = MergeTreeData::DataPart::Checksums::parse(checksums_str);
-			checksums.checkEqual(part->checksums, true);
+			LOG_INFO(log, "Not checking checksums of part " << part->name << " with replica " << replica
+				<< " because columns are different");
+			continue;
 		}
+		String checksums_str;
+		/// Проверим, что версия ноды со столбцами не изменилась, пока мы читали checksums.
+		/// Это гарантирует, что столбцы и чексуммы относятся к одним и тем же данным.
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part->name + "/checksums", checksums_str) ||
+			!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part->name + "/columns", &stat_after) ||
+			stat_before.version != stat_after.version)
+		{
+			LOG_INFO(log, "Not checking checksums of part " << part->name << " with replica " << replica
+				<< " because part changed while we were reading its checksums");
+			continue;
+		}
+
+		auto checksums = MergeTreeData::DataPart::Checksums::parse(checksums_str);
+		checksums.checkEqual(part->checksums, true);
 	}
 
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part->name,
 		"",
+		zookeeper->getDefaultACL(),
+		zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(
+		replica_path + "/parts/" + part->name + "/columns",
+		part->columns.toString(),
 		zookeeper->getDefaultACL(),
 		zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(

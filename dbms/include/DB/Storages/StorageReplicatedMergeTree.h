@@ -188,6 +188,11 @@ private:
 	  */
 	zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
+	/** Версия ноды /columns в ZooKeeper, соответствующая текущим data.columns.
+	  * Читать и изменять вместе с data.columns - под TableStructureLock.
+	  */
+	int columns_version = -1;
+
 	/** Случайные данные, которые мы записали в /replicas/me/is_active.
 	  */
 	String active_node_identifier;
@@ -225,6 +230,10 @@ private:
 
 	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
 	std::thread restarting_thread;
+
+	/// Поток, следящий за изменениями списка столбцов в ZooKeeper и обновляющего куски в соответствии с этими изменениями.
+	std::thread alter_thread;
+	zkutil::EventPtr alter_thread_event = zkutil::EventPtr(new Poco::Event);
 
 	/// Когда последний раз выбрасывали старые логи из ZooKeeper.
 	time_t clear_old_logs_time = 0;
@@ -294,8 +303,9 @@ private:
 	  * Если ни у кого нет такого куска, ничего не проверяет.
 	  * Не очень надежно: если две реплики добавляют кусок почти одновременно, ни одной проверки не произойдет.
 	  * Кладет в ops действия, добавляющие данные о куске в ZooKeeper.
+	  * columns_version - версия ноды /table/columns, которая нужна для добавления куска. Если -1, возьмет последнюю автоматически.
 	  */
-	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops);
+	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, int columns_version, zkutil::Ops & ops);
 
 	void clearOldParts();
 
@@ -360,7 +370,6 @@ private:
 	/** Скачать указанный кусок с указанной реплики.
 	  */
 	void fetchPart(const String & part_name, const String & replica_name);
-
 };
 
 }

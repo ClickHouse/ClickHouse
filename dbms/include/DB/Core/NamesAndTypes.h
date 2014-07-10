@@ -9,6 +9,7 @@
 
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -60,7 +61,7 @@ public:
 		}
 	}
 
-	void writeText(WriteBuffer & buf)
+	void writeText(WriteBuffer & buf) const
 	{
 		DB::writeString("columns format version: 1\n", buf);
 		DB::writeText(size(), buf);
@@ -84,11 +85,11 @@ public:
 		return s;
 	}
 
-	static NamesAndTypesList parse(const String & s)
+	static NamesAndTypesList parse(const String & s, const DataTypeFactory & data_type_factory)
 	{
 		ReadBufferFromString in(s);
 		NamesAndTypesList res;
-		res.readText(in);
+		res.readText(in, data_type_factory);
 		assertEOF(in);
 		return res;
 	}
