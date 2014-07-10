@@ -120,7 +120,7 @@ template <size_t N = 64>
 class HashTableAllocatorWithStackMemory : private HashTableAllocator
 {
 private:
-	char stack_memory[N]{};
+	char stack_memory[N];
 
 public:
 	void * alloc(size_t size)
