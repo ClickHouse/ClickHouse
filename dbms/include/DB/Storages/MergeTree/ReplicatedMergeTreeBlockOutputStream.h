@@ -68,6 +68,11 @@ public:
 					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
+					storage.zookeeper_path + "/blocks/" + block_id + "/columns",
+					part->columns.toString(),
+					storage.zookeeper->getDefaultACL(),
+					zkutil::CreateMode::Persistent));
+				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id + "/number",
 					toString(part_number),
 					storage.zookeeper->getDefaultACL(),

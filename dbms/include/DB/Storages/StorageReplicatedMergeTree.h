@@ -270,14 +270,14 @@ private:
 	/** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	  * Если нет - бросить исключение.
 	  */
-	void checkTableStructure();
+	void checkTableStructure(bool skip_sanity_checks);
 
 	/** Проверить, что множество кусков соответствует тому, что в ZK (/replicas/me/parts/).
 	  * Если каких-то кусков, описанных в ZK нет локально, бросить исключение.
 	  * Если какие-то локальные куски не упоминаются в ZK, удалить их.
 	  *  Но если таких слишком много, на всякий случай бросить исключение - скорее всего, это ошибка конфигурации.
 	  */
-	void checkParts();
+	void checkParts(bool skip_sanity_checks);
 
 	/// Положить все куски из data в virtual_parts.
 	void initVirtualParts();

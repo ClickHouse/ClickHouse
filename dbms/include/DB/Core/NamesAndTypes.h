@@ -74,6 +74,25 @@ public:
 		}
 	}
 
+	String toString() const
+	{
+		String s;
+		{
+			WriteBufferFromString out(s);
+			writeText(out);
+		}
+		return s;
+	}
+
+	static NamesAndTypesList parse(const String & s)
+	{
+		ReadBufferFromString in(s);
+		NamesAndTypesList res;
+		res.readText(in);
+		assertEOF(in);
+		return res;
+	}
+
 	/// Все элементы rhs должны быть различны.
 	bool isSubsetOf(const NamesAndTypesList & rhs) const
 	{
@@ -81,6 +100,16 @@ public:
 		vector.insert(vector.end(), begin(), end());
 		std::sort(vector.begin(), vector.end());
 		return std::unique(vector.begin(), vector.end()) == vector.begin() + rhs.size();
+	}
+
+	/// Расстояние Хемминга между множествами
+	///  (иными словами, добавленные и удаленные столбцы считаются один раз; столбцы, изменившие тип, - дважды).
+	size_t sizeOfDifference(const NamesAndTypesList & rhs) const
+	{
+		NamesAndTypes vector(rhs.begin(), rhs.end());
+		vector.insert(vector.end(), begin(), end());
+		std::sort(vector.begin(), vector.end());
+		return (std::unique(vector.begin(), vector.end()) - vector.begin()) * 2 - size() - rhs.size();
 	}
 };
 

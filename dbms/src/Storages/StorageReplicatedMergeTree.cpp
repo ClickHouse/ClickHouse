@@ -56,13 +56,26 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		if (!zookeeper->exists(zookeeper_path))
 			createTable();
 
-		checkTableStructure();
-		createReplica();
+		checkTableStructure(false);
+		createReplica(false);
 	}
 	else
 	{
-		checkTableStructure();
-		checkParts();
+		bool skip_sanity_checks = false;
+		if (zookeeper->exists(replica_path + "/flags/force_restore_data"))
+		{
+			skip_sanity_checks = true;
+			zookeeper->remove(replica_path + "/flags/force_restore_data");
+
+			if (skip_sanity_checks)
+			{
+				LOG_WARNING(log, "Skipping the limits on severity of changes to data parts (flag "
+					<< replica_path << "/flags/force_restore_data). " << sanity_report);
+			}
+		}
+
+		checkTableStructure(skip_sanity_checks);
+		checkParts(skip_sanity_checks);
 	}
 
 	initVirtualParts();
@@ -141,15 +154,10 @@ void StorageReplicatedMergeTree::createTable()
 	metadata << "sign column: " << data.sign_column << std::endl;
 	metadata << "primary key: " << formattedAST(data.primary_expr_ast) << std::endl;
 	metadata << "columns:" << std::endl;
-	WriteBufferFromOStream buf(metadata);
-	for (auto & it : data.getColumnsList())
 	{
-		writeBackQuotedString(it.name, buf);
-		writeChar(' ', buf);
-		writeString(it.type->getName(), buf);
-		writeChar('\n', buf);
+		WriteBufferFromOStream buf(metadata);
+		data.getColumnsList().writeText(buf);
 	}
-	buf.next();
 
 	zookeeper->create(zookeeper_path + "/metadata", metadata.str(), zkutil::CreateMode::Persistent);
 
@@ -163,7 +171,7 @@ void StorageReplicatedMergeTree::createTable()
 /** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	* Если нет - бросить исключение.
 	*/
-void StorageReplicatedMergeTree::checkTableStructure()
+void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
 {
 	String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
 	ReadBufferFromString buf(metadata_str);
@@ -181,18 +189,17 @@ void StorageReplicatedMergeTree::checkTableStructure()
 	assertString("\nprimary key: ", buf);
 	assertString(formattedAST(data.primary_expr_ast), buf);
 	assertString("\ncolumns:\n", buf);
-	for (auto & it : data.getColumnsList())
-	{
-		String name;
-		readBackQuotedString(name, buf);
-		if (name != it.name)
-			throw Exception("Unexpected column name in ZooKeeper: expected " + it.name + ", found " + name,
-				ErrorCodes::UNKNOWN_IDENTIFIER);
-		assertString(" ", buf);
-		assertString(it.type->getName(), buf);
-		assertString("\n", buf);
-	}
+	NamesAndTypesList columns;
+	columns.readText(buf);
 	assertEOF(buf);
+	if (columns != data.getColumnsList())
+	{
+		if (data.getColumnsList().sizeOfDifference(columns) <= 2 || skip_sanity_checks)
+			LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
+		else
+			throw Exception("Table structure in ZooKeeper is very different from local table structure.",
+							ErrorCodes::INCOMPATIBLE_COLUMNS);
+	}
 }
 
 void StorageReplicatedMergeTree::createReplica()
@@ -339,7 +346,7 @@ void StorageReplicatedMergeTree::activateReplica()
 	replica_is_active_node = zkutil::EphemeralNodeHolder::existing(replica_path + "/is_active", *zookeeper);
 }
 
-void StorageReplicatedMergeTree::checkParts()
+void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 {
 	Strings expected_parts_vec = zookeeper->getChildren(replica_path + "/parts");
 
@@ -391,13 +398,6 @@ void StorageReplicatedMergeTree::checkParts()
 	for (const String & name : parts_to_fetch)
 		expected_parts.erase(name);
 
-	bool skip_sanity_check = false;
-	if (zookeeper->exists(replica_path + "/flags/force_restore_data"))
-	{
-		skip_sanity_check = true;
-		zookeeper->remove(replica_path + "/flags/force_restore_data");
-	}
-
 	String sanity_report =
 		"There are " + toString(unexpected_parts.size()) + " unexpected parts, "
 					 + toString(parts_to_add.size()) + " unexpectedly merged parts, "
@@ -409,12 +409,7 @@ void StorageReplicatedMergeTree::checkParts()
 		expected_parts.size() > 20 ||
 		parts_to_fetch.size() > 2;
 
-	if (skip_sanity_check)
-	{
-		LOG_WARNING(log, "Skipping the limits on severity of changes to data parts (flag "
-			<< replica_path << "/flags/force_restore_data). " << sanity_report);
-	}
-	else if (insane)
+	if (insane && !skip_sanity_checks)
 	{
 		throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
 			+ sanity_report,
@@ -437,6 +432,7 @@ void StorageReplicatedMergeTree::checkParts()
 		LOG_ERROR(log, "Removing unexpectedly merged local part from ZooKeeper: " << name);
 
 		zkutil::Ops ops;
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/columns", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/checksums", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
 		zookeeper->multi(ops);
@@ -454,6 +450,7 @@ void StorageReplicatedMergeTree::checkParts()
 
 		/// Полагаемся, что это происходит до загрузки очереди (loadQueue).
 		zkutil::Ops ops;
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/columns", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/checksums", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
 		ops.push_back(new zkutil::Op::Create(
@@ -480,6 +477,7 @@ void StorageReplicatedMergeTree::initVirtualParts()
 
 void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops)
 {
+	asdqwe check columns (how to get data for multiple nodes simultaneously?)
 	String another_replica = findReplicaHavingPart(part->name, false);
 	if (!another_replica.empty())
 	{
