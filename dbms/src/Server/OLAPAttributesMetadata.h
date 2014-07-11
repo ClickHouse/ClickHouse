@@ -477,8 +477,8 @@ struct UserAgent : public IAttributeMetadata
 				+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
 			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 24)
 				+ (Poco::NumberParser::parseUnsigned(tokenizer[1]) << 16)
-				+ (static_cast<UInt32>(tokenizer[2][0]) << 8)
-				+ (tokenizer[2][1]))));
+				+ (static_cast<UInt32>(tokenizer[2][1]) << 8)
+				+ (tokenizer[2][0]))));
 	}
 };
 
@@ -491,8 +491,8 @@ struct UserAgentVersion : public IAttributeMetadata
 		return tokenizer.count() == 0 ? 0
 			: (tokenizer.count() == 1 ? (Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
 			: ((Poco::NumberParser::parseUnsigned(tokenizer[0]) << 16)
-				+ (static_cast<UInt32>(tokenizer[1][0]) << 8)
-				+ tokenizer[1][1]));
+				+ (static_cast<UInt32>(tokenizer[1][1]) << 8)
+				+ tokenizer[1][0]));
 	}
 };
 
