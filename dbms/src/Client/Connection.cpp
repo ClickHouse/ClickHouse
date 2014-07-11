@@ -286,24 +286,12 @@ void Connection::sendData(const Block & block, const String & name)
 
 void Connection::sendPreparedData(ReadBuffer & input, const String & name)
 {
-	if (!block_out)
-	{
-		if (compression == Protocol::Compression::Enable)
-			maybe_compressed_out = new CompressedWriteBuffer(*out);
-		else
-			maybe_compressed_out = out;
-
-		block_out = new NativeBlockOutputStream(*maybe_compressed_out);
-	}
-
 	writeVarUInt(Protocol::Client::Data, *out);
 
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		writeStringBinary(name, *out);
 
-	copyData(input, *maybe_compressed_out);
-
-	maybe_compressed_out->next();
+	copyData(input, *out);
 	out->next();
 }
 
