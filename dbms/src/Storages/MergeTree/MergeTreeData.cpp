@@ -463,6 +463,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 		transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
 	}
 
+	if (transaction->rename_map.empty())
+		transaction->data_part = nullptr;
+
 	return transaction;
 }
 

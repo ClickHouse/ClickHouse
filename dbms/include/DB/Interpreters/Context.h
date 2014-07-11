@@ -271,6 +271,9 @@ public:
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
 
+	/// Получить запрос на CREATE таблицы. Только если он есть на диске. Нужно вызывать при заблокированной структуре таблицы.
+	ASTPtr readCreateQueryFromDisk(const String & database_name, const String & table_name) const;
+
 	/// Для методов ниже может быть необходимо захватывать mutex самостоятельно.
 	Poco::Mutex & getMutex() const 											{ return shared->mutex; }
 

@@ -97,7 +97,7 @@ void InterpreterAlterQuery::updateMetadata(
 	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 	String metadata_temp_path = metadata_path + ".tmp";
 
-	ASTPtr attach_ptr = context.getCreateQuery(database_name, table_name);
+	ASTPtr attach_ptr = context.readCreateQueryFromDisk(database_name, table_name);
 	ASTCreateQuery & attach = typeid_cast<ASTCreateQuery &>(*attach_ptr);
 	attach.attach = true;
 
