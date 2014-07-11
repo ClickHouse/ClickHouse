@@ -89,12 +89,15 @@ public:
 	/// Если последний флаг true, то затем необходимо вызвать sendExternalTablesData
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
 		const Settings * settings = nullptr, bool with_pending_data = false);
-	
+
 	void sendCancel();
 	/// Отправить блок данных, на сервере сохранить во временную таблицу name
 	void sendData(const Block & block, const String & name = "");
 	/// Отправить все содержимое внешних таблиц
 	void sendExternalTablesData(ExternalTablesData & data);
+
+	/// Отправить блок данных, который уже был заранее сериализован (и, если надо, сжат), который следует прочитать из input-а.
+	void sendPreparedData(ReadBuffer & input, const String & name = "");
 
 	/// Проверить, есть ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);
@@ -136,7 +139,7 @@ private:
 	UInt64 server_version_major;
 	UInt64 server_version_minor;
 	UInt64 server_revision;
-	
+
 	Poco::Net::StreamSocket socket;
 	SharedPtr<ReadBuffer> in;
 	SharedPtr<WriteBuffer> out;
