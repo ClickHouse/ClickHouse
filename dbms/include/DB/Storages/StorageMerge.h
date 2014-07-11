@@ -49,7 +49,7 @@ public:
 	
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
-	void alter(const ASTAlterQuery::Parameters & params);
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
 
 	Block getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const;
 private:

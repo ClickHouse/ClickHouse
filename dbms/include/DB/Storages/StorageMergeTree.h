@@ -71,9 +71,7 @@ public:
 
 	void rename(const String & new_path_to_db, const String & new_name);
 
-	void alter(const ASTAlterQuery::Parameters & params);
-	void prepareAlterModify(const ASTAlterQuery::Parameters & params);
-	void commitAlterModify(const ASTAlterQuery::Parameters & params);
+	void alter(const AlterCommands & params);
 
 	bool supportsIndexForIn() const override { return true; }
 

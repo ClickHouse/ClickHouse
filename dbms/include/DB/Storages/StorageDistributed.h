@@ -59,7 +59,7 @@ public:
 	void rename(const String & new_path_to_db, const String & new_name) { name = new_name; }
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
-	void alter(const ASTAlterQuery::Parameters &params);
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
 
 private:
 	StorageDistributed(

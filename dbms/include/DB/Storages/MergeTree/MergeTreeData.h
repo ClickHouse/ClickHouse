@@ -493,9 +493,10 @@ public:
 	  */
 	void setPath(const String & full_path);
 
-	void alter(const ASTAlterQuery::Parameters & params);
-	void prepareAlterModify(const ASTAlterQuery::Parameters & params);
-	void commitAlterModify(const ASTAlterQuery::Parameters & params);
+	/// Выполняет ALTER куска данных и записывает результат во временные файлы.
+	void prepareAlterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns);
+	/// Переименовывает временные файлы, завершая ALTER куска.
+	void commitAlterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns);
 
 	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
 	SortDescription getSortDescription() const { return sort_descr; }

@@ -9,6 +9,7 @@
 #include <DB/Client/ConnectionPool.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <boost/bind.hpp>
 #include <DB/Core/Field.h>
 
@@ -132,9 +133,11 @@ BlockInputStreams StorageDistributed::read(
 	return res;
 }
 
-void StorageDistributed::alter(const ASTAlterQuery::Parameters &params)
+void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
-	alterColumns(params, columns, context);
+	auto lock = lockStructureForAlter();
+	params.apply(*columns);
+	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns, context);
 }
 
 }

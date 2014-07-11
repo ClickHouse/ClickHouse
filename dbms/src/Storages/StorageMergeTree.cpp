@@ -103,19 +103,10 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
 }
 
-void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
+void StorageMergeTree::alter(const AlterCommands & params)
 {
-	data.alter(params);
-}
-
-void StorageMergeTree::prepareAlterModify(const ASTAlterQuery::Parameters & params)
-{
-	data.prepareAlterModify(params);
-}
-
-void StorageMergeTree::commitAlterModify(const ASTAlterQuery::Parameters & params)
-{
-	data.commitAlterModify(params);
+	throw Exception("ALTER is closed for reconstruction. Please come back later.", ErrorCodes::NOT_IMPLEMENTED);
+	/// TODO: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
 }
 
 bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context * pool_context)
