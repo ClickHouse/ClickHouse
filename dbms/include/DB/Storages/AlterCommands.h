@@ -100,7 +100,7 @@ class AlterCommands : public std::vector<AlterCommand>
 public:
 	void apply(NamesAndTypesList & columns) const
 	{
-		NamesAndTypesList new_columns;
+		NamesAndTypesList new_columns = columns;
 		for (const AlterCommand & command : *this)
 			command.apply(new_columns);
 		columns = new_columns;

@@ -97,16 +97,37 @@ void InterpreterAlterQuery::updateMetadata(
 	String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 	String metadata_temp_path = metadata_path + ".tmp";
 
-	ASTPtr attach_ptr = context.readCreateQueryFromDisk(database_name, table_name);
-	ASTCreateQuery & attach = typeid_cast<ASTCreateQuery &>(*attach_ptr);
-	attach.attach = true;
+	StringPtr query = new String();
+	{
+		ReadBufferFromFile in(metadata_path);
+		WriteBufferFromString out(*query);
+		copyData(in, out);
+	}
+
+	const char * begin = query->data();
+	const char * end = begin + query->size();
+	const char * pos = begin;
+
+	ParserCreateQuery parser;
+	ASTPtr ast;
+	Expected expected = "";
+	bool parse_res = parser.parse(pos, end, ast, expected);
+
+	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
+	if (!parse_res || (pos != end && *pos != ';'))
+		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + metadata_path),
+			DB::ErrorCodes::SYNTAX_ERROR);
+
+	ast->query_string = query;
+
+	ASTCreateQuery & attach = typeid_cast<ASTCreateQuery &>(*ast);
 
 	ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
 	*std::find(attach.children.begin(), attach.children.end(), attach.columns) = new_columns;
 	attach.columns = new_columns;
 
 	{
-		Poco::FileOutputStream ostr(metadata_temp_path + ".tmp");
+		Poco::FileOutputStream ostr(metadata_temp_path);
 		formatAST(attach, ostr, 0, false);
 	}
 

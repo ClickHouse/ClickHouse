@@ -485,7 +485,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 			}
 			else
 			{
-				Poco::File(path + it.first).renameTo(it.second);
+				Poco::File(path + it.first).renameTo(path + it.second);
 			}
 		}
 		data_part = nullptr;

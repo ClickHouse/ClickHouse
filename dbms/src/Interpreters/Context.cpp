@@ -305,13 +305,35 @@ void Context::detachDatabase(const String & database_name)
 }
 
 
-ASTPtr Context::readCreateQueryFromDisk(const String & database_name, const String & table_name) const
+ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
 {
+	StoragePtr table;
+	String db;
+
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		db = database_name.empty() ? current_database : database_name;
+		table = getTable(db, table_name);
+	}
+
+	auto table_lock = table->lockStructure(false);
+
 	/// Здесь хранится определение таблицы
-	String metadata_path = shared->path + "metadata/" + escapeForFileName(database_name) + "/" + escapeForFileName(table_name) + ".sql";
+	String metadata_path = shared->path + "metadata/" + escapeForFileName(db) + "/" + escapeForFileName(table_name) + ".sql";
 
 	if (!Poco::File(metadata_path).exists())
-		return nullptr;
+	{
+		try
+		{
+			/// Если файл .sql не предусмотрен (например, для таблиц типа ChunkRef), то движок может сам предоставить запрос CREATE.
+			return table->getCustomCreateQuery(*this);
+		}
+		catch (...)
+		{
+			throw Exception("Metadata file " + metadata_path + " for table " + db + "." + table_name + " doesn't exist.",
+				ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
+		}
+	}
 
 	StringPtr query = new String();
 	{
@@ -336,41 +358,10 @@ ASTPtr Context::readCreateQueryFromDisk(const String & database_name, const Stri
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;
-	ast_create_query.database = database_name;
+	ast_create_query.database = db;
 	ast_create_query.query_string = query;
 
 	return ast;
-}
-
-
-ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
-{
-	StoragePtr table;
-	String db;
-
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-		db = database_name.empty() ? current_database : database_name;
-		table = getTable(db, table_name);
-	}
-
-	auto table_lock = table->lockStructure(false);
-
-	ASTPtr res = readCreateQueryFromDisk(db, table_name);
-
-	if (res)
-		return res;
-
-	try
-	{
-		/// Если файл .sql не предусмотрен (например, для таблиц типа ChunkRef), то движок может сам предоставить запрос CREATE.
-		return table->getCustomCreateQuery(*this);
-	}
-	catch (...)
-	{
-		throw Exception("Metadata file for table " + db + "." + table_name + " doesn't exist.",
-			ErrorCodes::TABLE_METADATA_DOESNT_EXIST);
-	}
 }
 
 
