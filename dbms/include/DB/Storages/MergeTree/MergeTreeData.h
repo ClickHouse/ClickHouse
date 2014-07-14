@@ -341,8 +341,9 @@ public:
 
 		bool hasColumnFiles(const String & column) const
 		{
-			return Poco::File(storage.full_path + name + "/" + column + ".bin").exists() &&
-			       Poco::File(storage.full_path + name + "/" + column + ".mrk").exists();
+			String escaped_column = escapeForFileName(column);
+			return Poco::File(storage.full_path + name + "/" + escaped_column + ".bin").exists() &&
+			       Poco::File(storage.full_path + name + "/" + escaped_column + ".mrk").exists();
 		}
 	};
 

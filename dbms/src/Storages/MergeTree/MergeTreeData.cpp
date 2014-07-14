@@ -421,6 +421,12 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part));
 	createConvertExpression(part, *columns, new_columns, expression, transaction->rename_map); // TODO: part->columns
 
+	if (transaction->rename_map.empty())
+	{
+		transaction->data_part = nullptr;
+		return transaction;
+	}
+
 	DataPart::Checksums add_checksums;
 
 	/// Применим выражение и запишем результат во временные файлы.
@@ -441,7 +447,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 		add_checksums = out.writeSuffixAndGetChecksums();
 	}
 
-	/// Обновим контрольные суммы. Заполним в транзакции список переименований файлов.
+	/// Обновим контрольные суммы.
 	DataPart::Checksums new_checksums = part->checksums;
 	for (auto it : transaction->rename_map)
 	{
@@ -462,9 +468,6 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 		new_checksums.writeText(checksums_file);
 		transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
 	}
-
-	if (transaction->rename_map.empty())
-		transaction->data_part = nullptr;
 
 	return transaction;
 }
