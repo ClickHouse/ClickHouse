@@ -27,7 +27,7 @@ struct NameAndTypePair
 
 	bool operator<(const NameAndTypePair & rhs) const
 	{
-		return std::make_pair(std::cref(name), type->getName()) < std::make_pair(std::cref(rhs.name), rhs.type->getName());
+		return std::forward_as_tuple(name, type->getName()) < std::forward_as_tuple(rhs.name, rhs.type->getName());
 	}
 
 	bool operator==(const NameAndTypePair & rhs) const

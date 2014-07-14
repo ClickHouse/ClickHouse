@@ -14,6 +14,7 @@
 #include <DB/IO/WriteBufferFromPocoSocket.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/copyData.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
@@ -279,6 +280,18 @@ void Connection::sendData(const Block & block, const String & name)
 	block.checkNestedArraysOffsets();
 	block_out->write(block);
 	maybe_compressed_out->next();
+	out->next();
+}
+
+
+void Connection::sendPreparedData(ReadBuffer & input, const String & name)
+{
+	writeVarUInt(Protocol::Client::Data, *out);
+
+	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
+		writeStringBinary(name, *out);
+
+	copyData(input, *out);
 	out->next();
 }
 

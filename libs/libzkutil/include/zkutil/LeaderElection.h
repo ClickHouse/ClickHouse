@@ -107,7 +107,7 @@ private:
 				}
 
 				if (zookeeper.exists(path + "/" + *(it - 1), nullptr, event))
-					event->tryWait(60 * 1000);
+					event->wait();
 
 				success = true;
 			}

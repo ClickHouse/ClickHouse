@@ -20,6 +20,7 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
+#include <DB/DataTypes/DataTypeNested.h>
 
 
 namespace DB
@@ -114,15 +115,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		/// Получаем список столбцов
 		if (create.columns)
 		{
-			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*create.columns);
-			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
-			{
-				ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(**it);
-				StringRange type_range = name_and_type_pair.type->range;
-				columns->push_back(NameAndTypePair(
-					name_and_type_pair.name,
-					context.getDataTypeFactory().get(String(type_range.first, type_range.second - type_range.first))));
-			}
+			columns = new NamesAndTypesList(parseColumns(create.columns, context.getDataTypeFactory()));
 		}
 		else if (!create.as_table.empty())
 			columns = new NamesAndTypesList(as_storage->getColumnsList());
@@ -135,34 +128,13 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		else
 			throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
-		/// Дополняем запрос списком столбцов из другой таблицы, если его не было.
-		if (!create.columns)
-		{
-			ASTPtr columns_list_ptr = new ASTExpressionList;
-			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
-
-			for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-			{
-				ASTPtr name_and_type_pair_ptr = new ASTNameTypePair;
-				ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
-				name_and_type_pair.name = it->name;
-				StringPtr type_name = new String(it->type->getName());
-
-				ParserIdentifierWithOptionalParameters storage_p;
-				Expected expected = "";
-				const char * pos = type_name->data();
-				const char * end = pos + type_name->size();
-
-				if (!storage_p.parse(pos, end, name_and_type_pair.type, expected))
-					throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
-
-				name_and_type_pair.type->query_string = type_name;
-				columns_list.children.push_back(name_and_type_pair_ptr);
-			}
-
-			create.columns = columns_list_ptr;
-			create.children.push_back(create.columns);
-		}
+		/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернем Nested).
+		ASTPtr new_columns = formatColumns(*columns);
+		if (create.columns)
+			*std::find(create.children.begin(), create.children.end(), create.columns) = new_columns;
+		else
+			create.children.push_back(new_columns);
+		create.columns = new_columns;
 
 		/// Выбор нужного движка таблицы
 		if (create.storage)
@@ -238,7 +210,6 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 		if (create.is_temporary)
 		{
-//			res->is_dropped = true;
 			context.getSessionContext().addExternalTable(table_name, res);
 		}
 		else
@@ -253,6 +224,49 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	}
 
 	return res;
+}
+
+NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory)
+{
+	NamesAndTypesList columns;
+	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*expression_list);
+	for (const ASTPtr & ast : columns_list.children)
+	{
+		const ASTNameTypePair & name_and_type_pair = typeid_cast<const ASTNameTypePair &>(*ast);
+		StringRange type_range = name_and_type_pair.type->range;
+		columns.push_back(NameAndTypePair(
+			name_and_type_pair.name,
+			data_type_factory.get(String(type_range.first, type_range.second - type_range.first))));
+	}
+	columns = *DataTypeNested::expandNestedColumns(columns);
+	return columns;
+}
+
+ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
+{
+	ASTPtr columns_list_ptr = new ASTExpressionList;
+	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
+
+	for (const NameAndTypePair & it : columns)
+	{
+		ASTPtr name_and_type_pair_ptr = new ASTNameTypePair;
+		ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
+		name_and_type_pair.name = it.name;
+		StringPtr type_name = new String(it.type->getName());
+
+		ParserIdentifierWithOptionalParameters storage_p;
+		Expected expected = "";
+		const char * pos = type_name->data();
+		const char * end = pos + type_name->size();
+
+		if (!storage_p.parse(pos, end, name_and_type_pair.type, expected))
+			throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
+
+		name_and_type_pair.type->query_string = type_name;
+		columns_list.children.push_back(name_and_type_pair_ptr);
+	}
+
+	return columns_list_ptr;
 }
 
 }

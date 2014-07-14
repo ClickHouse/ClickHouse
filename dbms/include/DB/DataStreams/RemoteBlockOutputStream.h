@@ -42,7 +42,7 @@ public:
 			throw Exception("Unexpected packet from server (expected Data or Exception, got "
 				+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
-	
+
 
 	void write(const Block & block)
 	{
@@ -60,6 +60,16 @@ public:
 		}
 
 		connection.sendData(block);
+	}
+
+
+	/// Отправить блок данных, который уже был заранее сериализован (и, если надо, сжат), который следует прочитать из input-а.
+	void writePrepared(ReadBuffer & input)
+	{
+		if (!sent_query)
+			sendQueryAndGetSampleBlock();	/// Никак не можем использовать sample_block.
+
+		connection.sendPreparedData(input);
 	}
 
 

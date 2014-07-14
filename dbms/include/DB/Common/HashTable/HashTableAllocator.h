@@ -120,13 +120,16 @@ template <size_t N = 64>
 class HashTableAllocatorWithStackMemory : private HashTableAllocator
 {
 private:
-	char stack_memory[N]{};
+	char stack_memory[N];
 
 public:
 	void * alloc(size_t size)
 	{
 		if (size <= N)
+		{
+			memset(stack_memory, 0, N);
 			return stack_memory;
+		}
 
 		return HashTableAllocator::alloc(size);
 	}

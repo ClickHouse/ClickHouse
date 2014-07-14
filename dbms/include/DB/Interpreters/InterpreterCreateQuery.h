@@ -21,6 +21,11 @@ public:
 	  *  (для случая выполнения запроса из существующего файла с метаданными).
 	  */
 	StoragePtr execute(bool assume_metadata_exists = false);
+
+	/** AST в список столбцов с типами и обратно. Столбцы типа Nested развернуты в список настоящих столбцов.
+	  */
+	static NamesAndTypesList parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory);
+	static ASTPtr formatColumns(const NamesAndTypesList & columns);
 	
 private:
 	ASTPtr query_ptr;

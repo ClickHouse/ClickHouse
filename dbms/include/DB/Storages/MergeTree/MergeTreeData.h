@@ -373,6 +373,13 @@ public:
 				}
 			}
 		}
+
+		bool hasColumnFiles(const String & column) const
+		{
+			String escaped_column = escapeForFileName(column);
+			return Poco::File(storage.full_path + name + "/" + escaped_column + ".bin").exists() &&
+			       Poco::File(storage.full_path + name + "/" + escaped_column + ".mrk").exists();
+		}
 	};
 
 	typedef std::shared_ptr<DataPart> MutableDataPartPtr;
@@ -419,6 +426,28 @@ public:
 		DataPartsVector removed_parts;
 		DataPartsVector added_parts;
 	};
+
+	/// Объект, помнящий какие временные файлы были созданы в директории с куском в ходе изменения (ALTER) его столбцов.
+	class AlterDataPartTransaction : private boost::noncopyable
+	{
+	public:
+		/// Переименовывает временные файлы, завершая ALTER куска.
+		void commit();
+
+		/// Если не был вызван commit(), удаляет временные файлы, отменяя ALTER куска.
+		~AlterDataPartTransaction();
+
+	private:
+		friend class MergeTreeData;
+
+		AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_) {}
+
+		DataPartPtr data_part;
+		/// Если значение - пустая строка, файл нужно удалить, и он не временный.
+		NameToNameMap rename_map;
+	};
+
+	typedef std::unique_ptr<AlterDataPartTransaction> AlterDataPartTransactionPtr;
 
 	/// Режим работы. См. выше.
 	enum Mode
@@ -527,13 +556,23 @@ public:
 
 	/** Перемещает всю директорию с данными.
 	  * Сбрасывает кеши разжатых блоков и засечек.
-	  * Нужно вызывать под залоченным lockStructure().
+	  * Нужно вызывать под залоченным lockStructureForAlter().
 	  */
 	void setPath(const String & full_path);
 
-	void alter(const ASTAlterQuery::Parameters & params);
-	void prepareAlterModify(const ASTAlterQuery::Parameters & params);
-	void commitAlterModify(const ASTAlterQuery::Parameters & params);
+	/* Проверить, что такой ALTER можно выполнить:
+	 *  - Есть все нужные столбцы.
+	 *  - Все преобразования типов допустимы.
+	 *  - Не затронуты столбцы ключа, знака и семплирования.
+	 * Бросает исключение, если что-то не так.
+	 */
+	void checkAlter(const AlterCommands & params);
+
+	/// Выполняет ALTER куска данных и записывает результат во временные файлы.
+	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns);
+
+	/// Нужно вызывать под залоченным lockStructureForAlter().
+	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
 
 	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
 	SortDescription getSortDescription() const { return sort_descr; }
@@ -580,12 +619,17 @@ private:
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
 
-	void removeColumnFiles(String column_name, bool remove_array_size_files);
-
 	/// Определить, не битые ли данные в директории. Проверяет индекс и засечеки, но не сами данные.
 	bool isBrokenPart(const String & path);
 
-	void createConvertExpression(const String & in_column_name, const String & out_type, ExpressionActionsPtr & out_expression, String & out_column);
+	/** Выражение, преобразующее типы столбцов.
+	  * Если преобразований типов нет, out_expression=nullptr.
+	  * out_rename_map отображает файлы-столбцы на выходе выражения в новые файлы таблицы.
+	  * Файлы, которые нужно удалить, в out_rename_map отображаются в пустую строку.
+	  * Если !part, просто проверяет, что все нужные преобразования типов допустимы.
+	  */
+	void createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map);
 };
 
 }
