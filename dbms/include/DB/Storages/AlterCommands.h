@@ -1,6 +1,7 @@
 #pragma once
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 namespace DB
 {
@@ -37,6 +38,15 @@ struct AlterCommand
 	{
 		if (type == ADD)
 		{
+			if (std::count_if(columns.begin(), columns.end(), std::bind(namesEqual, column_name, std::placeholders::_1)))
+				throw Exception("Cannot add column " + column_name + ": column with this name already exisits.",
+					DB::ErrorCodes::ILLEGAL_COLUMN);
+
+			if (DataTypeNested::extractNestedTableName(column_name) != column_name &&
+				!typeid_cast<const DataTypeArray *>(&*data_type))
+				throw Exception("Can't add nested column " + column_name + " of non-array type " + data_type->getName(),
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
 			NamesAndTypesList::iterator insert_it = columns.end();
 			if (!after_column.empty())
 			{

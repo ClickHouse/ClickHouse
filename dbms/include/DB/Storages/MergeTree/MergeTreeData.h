@@ -339,10 +339,10 @@ public:
 			}
 		}
 
-		bool hasColumnFiles(const String & name) const
+		bool hasColumnFiles(const String & column) const
 		{
-			return Poco::File(storage.full_path + name + "/" + name + ".bin").exists() &&
-			       Poco::File(storage.full_path + name + "/" + name + ".mrk").exists();
+			return Poco::File(storage.full_path + name + "/" + column + ".bin").exists() &&
+			       Poco::File(storage.full_path + name + "/" + column + ".mrk").exists();
 		}
 	};
 
