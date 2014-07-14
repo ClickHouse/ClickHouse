@@ -171,65 +171,69 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 }
 
 
-void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void HTTPHandler::trySendExceptionToClient(std::stringstream & s, Poco::Net::HTTPServerResponse & response)
 {
-	bool is_browser = false;
-	if (request.has("Accept"))
-	{
-		String accept = request.get("Accept");
-		if (0 == strncmp(accept.c_str(), "text/html", strlen("text/html")))
-			is_browser = true;
-	}
-
-	if (is_browser)
-		response.setContentType("text/plain; charset=UTF-8");
-
-	/// Для того, чтобы работал keep-alive.
-	if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
-		response.setChunkedTransferEncoding(true);
-
 	try
 	{
+		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		if (!response.sent())
+			response.send() << s.str() << std::endl;
+	}
+	catch (...)
+	{
+		LOG_ERROR(log, "Cannot send exception to client");
+	}
+}
+
+
+void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+{
+	try
+	{
+		bool is_browser = false;
+		if (request.has("Accept"))
+		{
+			String accept = request.get("Accept");
+			if (0 == strncmp(accept.c_str(), "text/html", strlen("text/html")))
+				is_browser = true;
+		}
+
+		if (is_browser)
+			response.setContentType("text/plain; charset=UTF-8");
+
+		/// Для того, чтобы работал keep-alive.
+		if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+			response.setChunkedTransferEncoding(true);
+
 		processQuery(request, response);
 		LOG_INFO(log, "Done processing query");
 	}
 	catch (Exception & e)
 	{
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 		std::stringstream s;
 		s << "Code: " << e.code()
 			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-		if (!response.sent())
-			response.send() << s.str() << std::endl;
 		LOG_ERROR(log, s.str());
+		trySendExceptionToClient(s, response);
 	}
 	catch (Poco::Exception & e)
 	{
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-		if (!response.sent())
-			response.send() << s.str() << std::endl;
-		LOG_ERROR(log, s.str());
+		trySendExceptionToClient(s, response);
 	}
 	catch (std::exception & e)
 	{
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
-		if (!response.sent())
-			response.send() << s.str() << std::endl;
-		LOG_ERROR(log, s.str());
+		trySendExceptionToClient(s, response);
 	}
 	catch (...)
 	{
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
-		if (!response.sent())
-			response.send() << s.str() << std::endl;
-		LOG_ERROR(log, s.str());
+		trySendExceptionToClient(s, response);
 	}
 }
 
