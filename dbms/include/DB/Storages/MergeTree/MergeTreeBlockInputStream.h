@@ -266,7 +266,7 @@ private:
 	NameSet column_name_set;
 	Names pre_column_names;
 	MergeTreeData & storage;
-	const MergeTreeData::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
+	MergeTreeData::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
 	std::unique_ptr<Poco::ScopedReadRWLock> part_columns_lock; /// Не дадим изменить список столбцов куска, пока мы из него читаем.
 	MarkRanges all_mark_ranges; /// В каких диапазонах засечек читать. В порядке возрастания номеров.
 	MarkRanges remaining_mark_ranges; /// В каких диапазонах засечек еще не прочли.

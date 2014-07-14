@@ -168,13 +168,13 @@ void ITableDeclaration::check(const NamesAndTypesList & columns) const
 
 void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & column_names) const
 {
-	if (column_names.empty())
-		throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
-			ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
-
 	const NamesAndTypesList & available_columns = getColumnsList();
 	const NamesAndTypesMap & available_columns_map = getColumnsMap(available_columns);
 	const NamesAndTypesMap & provided_columns_map = getColumnsMap(columns);
+
+	if (column_names.empty())
+		throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
+			ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
 	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;

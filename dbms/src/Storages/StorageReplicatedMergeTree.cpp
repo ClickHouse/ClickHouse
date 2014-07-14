@@ -33,7 +33,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
 	:
-	context(context_), zookeeper(context.getZooKeeper()),
+	context(context_), zookeeper(context.getZooKeeper()), database_name(database_name_),
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
 	replica_name(replica_name_),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
@@ -195,7 +195,10 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
 		if (data.getColumnsList().sizeOfDifference(columns) <= 2 || skip_sanity_checks)
 		{
 			LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
-			do alter here (and update data.columns)
+
+			/// Без всяких блокировок, потому что таблица еще не создана.
+			InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
+			data.setColumnsList(columns);
 		}
 		else
 		{
@@ -203,8 +206,6 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
 							ErrorCodes::INCOMPATIBLE_COLUMNS);
 		}
 	}
-
-	columns_version = stat.version;
 }
 
 void StorageReplicatedMergeTree::createReplica()
@@ -432,7 +433,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 		LOG_ERROR(log, "Adding unexpected local part to ZooKeeper: " << part->name);
 
 		zkutil::Ops ops;
-		checkPartAndAddToZooKeeper(part, ops);
+		checkPartAndAddToZooKeeper(part, -1, ops);
 		zookeeper->multi(ops);
 	}
 
@@ -485,8 +486,12 @@ void StorageReplicatedMergeTree::initVirtualParts()
 	}
 }
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops)
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
+	MergeTreeData::DataPartPtr part, int expected_columns_version, zkutil::Ops & ops)
 {
+	check(part->columns);
+	expected_columns_version = columns_version;
+
 	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 	std::random_shuffle(replicas.begin(), replicas.end());
 	String expected_columns_str = part->columns.toString();
@@ -519,6 +524,9 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 		checksums.checkEqual(part->checksums, true);
 	}
 
+	ops.push_back(new zkutil::Op::Check(
+		zookeeper_path + "/columns",
+		expected_columns_version));
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part->name,
 		"",
@@ -797,7 +805,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 	else if (entry.type == LogEntry::MERGE_PARTS)
 	{
 		MergeTreeData::DataPartsVector parts;
-		bool have_all_parts = true;;
+		bool have_all_parts = true;
 		for (const String & name : entry.parts_to_merge)
 		{
 			MergeTreeData::DataPartPtr part = data.getContainingPart(name);
@@ -835,11 +843,13 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 				}
 			}
 
+			auto table_lock = lockStructure(true);
+
 			MergeTreeData::Transaction transaction;
 			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, &transaction);
 
 			zkutil::Ops ops;
-			checkPartAndAddToZooKeeper(part, ops);
+			checkPartAndAddToZooKeeper(part, -1, ops);
 
 			zookeeper->multi(ops);
 			transaction.commit();
@@ -1225,7 +1235,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
 
 	zkutil::Ops ops;
-	checkPartAndAddToZooKeeper(part, ops);
+	checkPartAndAddToZooKeeper(part, -1, ops);
 
 	zookeeper->multi(ops);
 	transaction.commit();
@@ -1428,7 +1438,9 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 
 bool StorageReplicatedMergeTree::optimize()
 {
-	/// Померджим какие-нибудь куски из директории unreplicated. TODO: Мерджить реплицируемые куски тоже.
+	/// Померджим какие-нибудь куски из директории unreplicated.
+	/// TODO: Мерджить реплицируемые куски тоже.
+	/// TODO: Не давать вызывать это из нескольких потоков сразу: один кусок может принять участие в нескольких несовместимых слияниях.
 
 	if (!unreplicated_data)
 		return false;

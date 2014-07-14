@@ -10,6 +10,7 @@
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include "Names.h"
 
 
 namespace DB
@@ -116,7 +117,7 @@ public:
 	Names getNames() const
 	{
 		Names res;
-		res.reserve(size);
+		res.reserve(size());
 		for (const NameAndTypePair & column : *this)
 		{
 			res.push_back(column.name);
@@ -125,7 +126,7 @@ public:
 	}
 
 	/// Оставить только столбцы, имена которых есть в names. В names могут быть лишние столбцы.
-	NamesAndTypesList intersect(const Names & names)
+	NamesAndTypesList intersect(const Names & names) const
 	{
 		std::set<String> name_set(names.begin(), names.end());
 		NamesAndTypesList res;

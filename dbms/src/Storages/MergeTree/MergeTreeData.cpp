@@ -502,7 +502,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 			Poco::File(path + name).renameTo(path + name + ".tmp2");
 		}
 
-		/// 2) Переместим на их место новые.
+		/// 2) Переместим на их место новые и обновим метаданные в оперативке.
 		for (auto it : rename_map)
 		{
 			if (!it.second.empty())
@@ -510,8 +510,10 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 				Poco::File(path + it.first).renameTo(path + it.second);
 			}
 		}
-		data_part->checksums = new_checksums;
-		data_part->columns = new_columns;
+
+		DataPart & mutable_part = const_cast<DataPart &>(*data_part);
+		mutable_part.checksums = new_checksums;
+		mutable_part.columns = new_columns;
 
 		/// 3) Удалим старые файлы.
 		for (auto it : rename_map)

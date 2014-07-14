@@ -177,6 +177,7 @@ private:
 	  */
 	StringSet future_parts;
 
+	String database_name;
 	String table_name;
 	String full_path;
 
@@ -303,9 +304,9 @@ private:
 	  * Если ни у кого нет такого куска, ничего не проверяет.
 	  * Не очень надежно: если две реплики добавляют кусок почти одновременно, ни одной проверки не произойдет.
 	  * Кладет в ops действия, добавляющие данные о куске в ZooKeeper.
-	  * columns_version - версия ноды /table/columns, которая нужна для добавления куска. Если -1, возьмет последнюю автоматически.
+	  * Вызывать под TableStructureLock.
 	  */
-	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, int columns_version, zkutil::Ops & ops);
+	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, int expected_columns_version, zkutil::Ops & ops);
 
 	void clearOldParts();
 

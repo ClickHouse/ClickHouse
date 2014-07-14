@@ -135,7 +135,7 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context * pool_context)
 {
-	auto structure_lock = lockStructure(false);
+	auto structure_lock = lockStructure(true);
 
 	/// Удаляем старые куски.
 	data.clearOldParts();

@@ -737,6 +737,13 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 			s << (hilite ? hilite_keyword : "") << indent_str << "DROP COLUMN " << (hilite ? hilite_none : "");
 			formatAST(*p.column, s, indent, hilite, true);
 		}
+		else if (p.type == ASTAlterQuery::MODIFY)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (hilite ? hilite_none : "");
+			formatAST(*p.name_type, s, indent, hilite, true);
+		}
+		else
+			throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
 		std::string comma = (i < (ast.parameters.size() -1) ) ? "," : "";
 		s << (hilite ? hilite_keyword : "") << indent_str << comma << (hilite ? hilite_none : "");

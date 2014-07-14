@@ -227,7 +227,7 @@ public:
 		/** Блокируется на запись при изменении columns, checksums или любых файлов куска.
 		  * Блокируется на чтение при    чтении columns, checksums или любых файлов куска.
 		  */
-		Poco::RWLock columns_lock;
+		mutable Poco::RWLock columns_lock;
 
 		/** Берется на все время ALTER куска: от начала записи временных фалов до их переименования в постоянные.
 		  * Берется при разлоченном columns_lock.
@@ -237,7 +237,7 @@ public:
 		  * Взятие этого мьютекса означает, что мы хотим заблокировать columns_lock на чтение с намерением потом, не
 		  *  снимая блокировку, заблокировать его на запись.
 		  */
-		Poco::FastMutex alter_mutex;
+		mutable Poco::FastMutex alter_mutex;
 
 		/// NOTE можно загружать засечки тоже в оперативку
 
@@ -340,12 +340,15 @@ public:
 				if (!checksums.files.count("primary.idx"))
 					throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-				for (const NameAndTypePair & it : columns)
+				if (storage.require_part_metadata)
 				{
-					String name = escapeForFileName(it.name);
-					if (!checksums.files.count(name + ".idx") ||
-						!checksums.files.count(name + ".bin"))
-						throw Exception("No .idx or .bin file checksum for column " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+					for (const NameAndTypePair & it : columns)
+					{
+						String name = escapeForFileName(it.name);
+						if (!checksums.files.count(name + ".mrk") ||
+							!checksums.files.count(name + ".bin"))
+							throw Exception("No .mrk or .bin file checksum for column " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+					}
 				}
 
 				checksums.checkSizes(path + "/");
@@ -463,7 +466,7 @@ public:
 		}
 
 		DataPartPtr data_part;
-		Poco::ScopedLockWithUnlock alter_lock;
+		Poco::ScopedLockWithUnlock<Poco::FastMutex> alter_lock;
 
 		DataPart::Checksums new_checksums;
 		NamesAndTypesList new_columns;
