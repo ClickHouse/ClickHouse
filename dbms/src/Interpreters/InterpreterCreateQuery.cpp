@@ -131,7 +131,13 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернем Nested).
 		ASTPtr new_columns = formatColumns(*columns);
 		if (create.columns)
-			*std::find(create.children.begin(), create.children.end(), create.columns) = new_columns;
+		{
+			auto it = std::find(create.children.begin(), create.children.end(), create.columns);
+			if (it != create.children.end())
+				*it = new_columns;
+			else
+				create.children.push_back(new_columns);
+		}
 		else
 			create.children.push_back(new_columns);
 		create.columns = new_columns;

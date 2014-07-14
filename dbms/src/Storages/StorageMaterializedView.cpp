@@ -39,6 +39,7 @@ StorageMaterializedView::StorageMaterializedView(const String & table_name_, con
 		manual_create_query->database = database_name;
 		manual_create_query->table = getInnerTableName();
 		manual_create_query->columns = create.columns;
+		manual_create_query->children.push_back(manual_create_query->columns);
 		ASTPtr ast_create_query = manual_create_query;
 
 		/// Если не указан в запросе тип хранилища попробовать извлечь его из запроса Select.
@@ -51,6 +52,8 @@ StorageMaterializedView::StorageMaterializedView(const String & table_name_, con
 		}
 		else
 			manual_create_query->storage = create.inner_storage;
+
+		manual_create_query->children.push_back(manual_create_query->storage);
 
 		/// Выполним запрос.
 		InterpreterCreateQuery create_interpreter(ast_create_query, context);
