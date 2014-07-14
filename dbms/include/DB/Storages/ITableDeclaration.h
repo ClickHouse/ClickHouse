@@ -4,7 +4,6 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/Block.h>
-#include <DB/Parsers/ASTAlterQuery.h>
 
 namespace DB
 {
@@ -61,9 +60,6 @@ public:
 	  * Если need_all, еще проверяет, что все столбцы таблицы есть в блоке.
 	  */
 	void check(const Block & block, bool need_all = false) const;
-
-	/// реализация alter, модифицирующая список столбцов.
-	static void alterColumns(const ASTAlterQuery::Parameters & params, NamesAndTypesListPtr & columns, const Context & context);
 
 	virtual ~ITableDeclaration() {}
 };

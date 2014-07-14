@@ -33,15 +33,21 @@ std::string DataTypeNested::concatenateNestedName(const std::string & nested_tab
 
 std::string DataTypeNested::extractNestedTableName(const std::string & nested_name)
 {
-	const char * pos = strchr(nested_name.data(), '.');
-	return pos == nullptr ? nested_name : nested_name.substr(0, pos - nested_name.data());
+	const char * first_pos = strchr(nested_name.data(), '.');
+	const char * last_pos = strrchr(nested_name.data(), '.');
+	if (first_pos != last_pos)
+		throw Exception("Invalid nested column name: " + nested_name, ErrorCodes::INVALID_NESTED_NAME);
+	return first_pos == nullptr ? nested_name : nested_name.substr(0, first_pos - nested_name.data());
 }
 
 
 std::string DataTypeNested::extractNestedColumnName(const std::string & nested_name)
 {
-	const char * pos = strrchr(nested_name.data(), '.');
-	return pos == nullptr ? nested_name : nested_name.substr(pos - nested_name.data() + 1);
+	const char * first_pos = strchr(nested_name.data(), '.');
+	const char * last_pos = strrchr(nested_name.data(), '.');
+	if (first_pos != last_pos)
+		throw Exception("Invalid nested column name: " + nested_name, ErrorCodes::INVALID_NESTED_NAME);
+	return last_pos == nullptr ? nested_name : nested_name.substr(last_pos - nested_name.data() + 1);
 }
 
 

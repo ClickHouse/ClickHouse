@@ -11,6 +11,7 @@
 #include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/ITableDeclaration.h>
+#include <DB/Storages/AlterCommands.h>
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
 
@@ -196,28 +197,12 @@ public:
 	}
 
 	/** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
-	  * (ALTER, затрагивающий изменение движка, делается внешним кодом, путём копирования данных.)
-	  * Вызывается при заблокированной на запись структуре таблицы.
-	  * Для ALTER MODIFY можно использовать другие методы (см. ниже).
+	  * Этот метод должен полностью выполнить запрос ALTER, самостоятельно заботясь о блокировках.
+	  * Для обновления метаданных таблицы на диске этот метод должен вызвать InterpreterAlterQuery::updateMetadata.
 	  */
-	virtual void alter(const ASTAlterQuery::Parameters & params)
+	virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 	{
 		throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
-
-	/** ALTER MODIFY (изменение типа столбца) выполняется в два вызова:
-	  * Сначала вызывается prepareAlterModify при заблокированной записи данных, но незаблокированной структуре таблицы.
-	  *  В нем можно выполнить долгую работу по записи сконвертированных данных, оставляя доступными существующие данные.
-	  * Потом вызывается commitAlterModify при заблокированной структуре таблицы.
-	  *  В нем нужно закончить изменение типа столбца.
-	  * Для движков с тривиальным ALTER MODIFY можно оставить реализацию по умолчанию, вызывающую alter.
-	  */
-
-	virtual void prepareAlterModify(const ASTAlterQuery::Parameters & params) {}
-
-	virtual void commitAlterModify(const ASTAlterQuery::Parameters & params)
-	{
-		alter(params);
 	}
 
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.

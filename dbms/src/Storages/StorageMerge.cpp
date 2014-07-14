@@ -1,6 +1,7 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Interpreters/InterpreterAlterQuery.h>
 
 namespace DB
 {
@@ -166,9 +167,12 @@ void StorageMerge::getSelectedTables(StorageVector & selected_tables) const
 }
 
 
-void StorageMerge::alter(const ASTAlterQuery::Parameters & params)
+void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
-	alterColumns(params, columns, context);
+	auto lock = lockStructureForAlter();
+	params.apply(*columns);
+	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns, context);
 }
+
 }
 

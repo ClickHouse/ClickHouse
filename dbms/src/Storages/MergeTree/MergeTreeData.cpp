@@ -316,272 +316,219 @@ void MergeTreeData::dropAllData()
 	Poco::File(full_path).remove(true);
 }
 
-void MergeTreeData::removeColumnFiles(String column_name, bool remove_array_size_files)
+
+void MergeTreeData::checkAlter(const AlterCommands & params)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+	/// Проверим, что указанные преобразования можно совершить над списком столбцов без учета типов.
+	NamesAndTypesList new_columns = *columns;
+	params.apply(new_columns);
 
-	size_t dot_pos = column_name.find('.');
-	if (dot_pos != std::string::npos)
+	/// Список столбцов, которые нельзя трогать.
+	/// sampling_expression можно не учитывать, потому что он обязан содержаться в первичном ключе.
+	Names keys = primary_expr->getRequiredColumns();
+	keys.push_back(sign_column);
+	std::sort(keys.begin(), keys.end());
+
+	for (const AlterCommand & command : params)
 	{
-		std::string nested_column = column_name.substr(0, dot_pos);
-		column_name = nested_column + "%2E" + column_name.substr(dot_pos + 1);
-
-		if (remove_array_size_files)
-			column_name = std::string("(?:") + nested_column + "|" + column_name + ")";
+		if (std::binary_search(keys.begin(), keys.end(), command.column_name))
+			throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 	}
 
-	/// Регэксп выбирает файлы столбца для удаления
-	Poco::RegularExpression re(column_name + "(?:(?:\\.|\\%2E).+){0,1}" +"(?:\\.mrk|\\.bin|\\.size\\d+\\.bin|\\.size\\d+\\.mrk)");
-	/// Цикл по всем директориям кусочков
-	Poco::RegularExpression::MatchVec matches;
-	Poco::DirectoryIterator end;
-	for (Poco::DirectoryIterator it_dir = Poco::DirectoryIterator(full_path); it_dir != end; ++it_dir)
+	/// Проверим, что преобразования типов возможны.
+	ExpressionActionsPtr unused_expression;
+	NameToNameMap unused_map;
+	createConvertExpression(nullptr, *columns, new_columns, unused_expression, unused_map);
+}
+
+void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map)
+{
+	out_expression = nullptr;
+	out_rename_map.clear();
+
+	typedef std::map<String, DataTypePtr> NameToType;
+	NameToType new_types;
+	for (const NameAndTypePair & column : new_columns)
 	{
-		std::string dir_name = it_dir.name();
+		new_types[column.name] = column.type;
+	}
 
-		if (!ActiveDataPartSet::isPartDirectory(dir_name, matches))
-			continue;
+	/// Сколько столбцов сейчас в каждой вложенной структуре. Столбцы не из вложенных структур сюда тоже попадут и не помешают.
+	std::map<String, int> nested_table_counts;
+	for (const NameAndTypePair & column : old_columns)
+	{
+		++nested_table_counts[DataTypeNested::extractNestedTableName(column.name)];
+	}
 
-		/// Цикл по каждому из файлов в директории кусочков
-		String full_dir_name = full_path + dir_name + "/";
-		for (Poco::DirectoryIterator it_file(full_dir_name); it_file != end; ++it_file)
+	for (const NameAndTypePair & column : old_columns)
+	{
+		if (!new_types.count(column.name))
 		{
-			if (re.match(it_file.name()))
+			if (!part || part->hasColumnFiles(column.name))
 			{
-				Poco::File file(full_dir_name + it_file.name());
-				if (file.exists())
-					file.remove();
+				/// Столбец нужно удалить.
+
+				String escaped_column = escapeForFileName(column.name);
+				out_rename_map[escaped_column + ".bin"] = "";
+				out_rename_map[escaped_column + ".mrk"] = "";
+
+				/// Если это массив или последний столбец вложенной структуры, нужно удалить файлы с размерами.
+				if (typeid_cast<const DataTypeArray *>(&*column.type))
+				{
+					String nested_table = DataTypeNested::extractNestedTableName(column.name);
+					/// Если это был последний столбец, относящийся к этим файлам .size0, удалим файлы.
+					if (!--nested_table_counts[nested_table])
+					{
+						String escaped_nested_table = escapeForFileName(nested_table);
+						out_rename_map[escaped_nested_table + ".size0.bin"] = "";
+						out_rename_map[escaped_nested_table + ".size0.mrk"] = "";
+					}
+				}
 			}
 		}
-
-		/// Удаляем лишние столбцы из checksums.txt
-		for (auto & part : all_data_parts)
+		else
 		{
-			if (!part)
-				continue;
+			String new_type_name = new_types[column.name]->getName();
 
-			for (auto it = part->checksums.files.lower_bound(column_name);
-				(it != part->checksums.files.end()) && (it->first.substr(0, column_name.size()) == column_name);)
+			if (new_type_name != column.type->getName() &&
+				(!part || part->hasColumnFiles(column.name)))
 			{
-				if (re.match(it->first))
-					it = const_cast<DataPart::Checksums::FileChecksums &>(part->checksums.files).erase(it);
-				else
-					++it;
+				/// Нужно изменить тип столбца.
+
+				if (!out_expression)
+					out_expression = new ExpressionActions(NamesAndTypesList(), context.getSettingsRef());
+
+				out_expression->addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
+
+				FunctionPtr function = context.getFunctionFactory().get("to" + new_type_name, context);
+				Names out_names;
+				out_expression->add(ExpressionAction::applyFunction(function, Names(1, column.name)), out_names);
+				out_expression->add(ExpressionAction::removeColumn(column.name));
+
+				String escaped_expr = escapeForFileName(out_names[0]);
+				String escaped_column = escapeForFileName(column.name);
+				out_rename_map[escaped_expr + ".bin"] = escaped_column + ".bin";
+				out_rename_map[escaped_expr + ".mrk"] = escaped_column + ".mrk";
 			}
-			/// Записываем файл с чексуммами.
-			WriteBufferFromFile out(full_path + part->name + "/" + "checksums.txt", 1024);
-			part->checksums.writeText(out);
 		}
 	}
 }
 
-void MergeTreeData::createConvertExpression(
-	const String & in_column_name,
-	const String & out_type,
-	ExpressionActionsPtr & out_expression,
-	String & out_column)
+MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns)
 {
-	Names out_names;
-	out_expression = new ExpressionActions(
-		NamesAndTypesList(1, NameAndTypePair(in_column_name, getDataTypeByName(in_column_name))), context.getSettingsRef());
+	ExpressionActionsPtr expression;
+	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part));
+	createConvertExpression(part, *columns, new_columns, expression, transaction->rename_map); // TODO: part->columns
 
-	FunctionPtr function = context.getFunctionFactory().get("to" + out_type, context);
-	out_expression->add(ExpressionAction::applyFunction(function, Names(1, in_column_name)), out_names);
-	out_expression->add(ExpressionAction::removeColumn(in_column_name));
-
-	out_column = out_names[0];
-}
-
-static DataTypePtr getDataTypeByName(const String & name, const NamesAndTypesList & columns)
-{
-	for (const auto & it : columns)
+	if (transaction->rename_map.empty())
 	{
-		if (it.name == name)
-			return it.type;
-	}
-	throw Exception("No column " + name + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-}
-
-/// одинаковыми считаются имена, вида "name.*"
-static bool namesWithDotEqual(const String & name_with_dot, const NameAndTypePair & name_type)
-{
-	return (name_with_dot == name_type.name.substr(0, name_with_dot.length()));
-}
-
-void MergeTreeData::alter(const ASTAlterQuery::Parameters & params)
-{
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-		alterColumns(params, columns, context);
+		transaction->data_part = nullptr;
+		return transaction;
 	}
 
-	if (params.type == ASTAlterQuery::DROP)
-	{
-		String column_name = typeid_cast<const ASTIdentifier &>(*params.column).name;
+	DataPart::Checksums add_checksums;
 
-		/// Если нет колонок вида nested_name.*, то удалим столбцы размера массивов
-		bool remove_array_size_files = false;
-		size_t dot_pos = column_name.find('.');
-		if (dot_pos != std::string::npos)
-		{
-			remove_array_size_files = (columns->end() == std::find_if(columns->begin(), columns->end(), boost::bind(namesWithDotEqual, column_name.substr(0, dot_pos), _1)));
-		}
-		removeColumnFiles(column_name, remove_array_size_files);
-
-		context.resetCaches();
-	}
-}
-
-void MergeTreeData::prepareAlterModify(const ASTAlterQuery::Parameters & params)
-{
-	DataPartsVector parts;
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		parts = DataPartsVector(data_parts.begin(), data_parts.end());
-	}
-
-	Names column_name;
-	const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
-	StringRange type_range = name_type.type->range;
-	String type(type_range.first, type_range.second - type_range.first);
-	DataTypePtr old_type_ptr = DB::getDataTypeByName(name_type.name, *columns);
-	DataTypePtr new_type_ptr = context.getDataTypeFactory().get(type);
-	if (typeid_cast<DataTypeNested *>(old_type_ptr.get()) || typeid_cast<DataTypeArray *>(old_type_ptr.get()) ||
-		typeid_cast<DataTypeNested *>(new_type_ptr.get()) || typeid_cast<DataTypeArray *>(new_type_ptr.get()))
-		throw Exception("ALTER MODIFY not supported for nested and array types");
-
-	column_name.push_back(name_type.name);
-	ExpressionActionsPtr expr;
-	String out_column;
-	createConvertExpression(name_type.name, type, expr, out_column);
-
-	ColumnNumbers num(1, 0);
-	for (DataPartPtr & part : parts)
+	/// Применим выражение и запишем результат во временные файлы.
+	if (expression)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
-		ExpressionBlockInputStream in(new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, column_name, *this, part, ranges, false, nullptr, ""), expr);
+		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
+			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "");
+		ExpressionBlockInputStream in(part_in, expression);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 		in.readPrefix();
 		out.writePrefix();
 
-		try
+		while (Block b = in.read())
+			out.write(b);
+
+		in.readSuffix();
+		add_checksums = out.writeSuffixAndGetChecksums();
+	}
+
+	/// Обновим контрольные суммы.
+	DataPart::Checksums new_checksums = part->checksums;
+	for (auto it : transaction->rename_map)
+	{
+		if (it.second == "")
 		{
-			while (Block b = in.read())
-				out.write(b);
+			new_checksums.files.erase(it.first);
+		}
+		else
+		{
+			new_checksums.files[it.second] = add_checksums.files[it.first];
+		}
+	}
 
-			in.readSuffix();
-			DataPart::Checksums add_checksums = out.writeSuffixAndGetChecksums();
+	/// Запишем обновленные контрольные суммы во временный файл
+	if (!part->checksums.empty())
+	{
+		WriteBufferFromFile checksums_file(full_path + part->name + "/checksums.txt.tmp", 4096);
+		new_checksums.writeText(checksums_file);
+		transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
+	}
 
-			/// Запишем обновленные контрольные суммы во временный файл.
-			if (!part->checksums.empty())
+	return transaction;
+}
+
+void MergeTreeData::AlterDataPartTransaction::commit()
+{
+	if (!data_part)
+		return;
+	try
+	{
+		String path = data_part->storage.full_path + data_part->name + "/";
+		for (auto it : rename_map)
+		{
+			if (it.second.empty())
 			{
-				DataPart::Checksums new_checksums = part->checksums;
-				std::string escaped_name = escapeForFileName(name_type.name);
-				std::string escaped_out_column = escapeForFileName(out_column);
-				new_checksums.files[escaped_name  + ".bin"] = add_checksums.files[escaped_out_column + ".bin"];
-				new_checksums.files[escaped_name  + ".mrk"] = add_checksums.files[escaped_out_column + ".mrk"];
-
-				WriteBufferFromFile checksums_file(full_path + part->name + '/' + escaped_out_column + ".checksums.txt", 1024);
-				new_checksums.writeText(checksums_file);
+				Poco::File(path + it.first).renameTo(path + it.first + ".removing");
+				Poco::File(path + it.first + ".removing").remove();
+			}
+			else
+			{
+				Poco::File(path + it.first).renameTo(path + it.second);
 			}
 		}
-		catch (const Exception & e)
-		{
-			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
-				throw;
-		}
+		data_part = nullptr;
+	}
+	catch (...)
+	{
+		/// Если что-то пошло не так, не будем удалять временные файлы в деструкторе.
+		data_part = nullptr;
+		throw;
 	}
 }
 
-void MergeTreeData::commitAlterModify(const ASTAlterQuery::Parameters & params)
+MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 {
-	DataPartsVector parts;
+	try
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		parts = DataPartsVector(data_parts.begin(), data_parts.end());
-	}
+		if (!data_part)
+			return;
 
-	const ASTNameTypePair & name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
-	StringRange type_range = name_type.type->range;
-	String type(type_range.first, type_range.second - type_range.first);
+		LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->name);
 
-	ExpressionActionsPtr expr;
-	String out_column;
-	createConvertExpression(name_type.name, type, expr, out_column);
-
-	/// переименовываем файлы
-	/// переименовываем старые столбцы, добавляя расширение .old
-	for (DataPartPtr & part : parts)
-	{
-		std::string part_path = full_path + part->name + '/';
-		std::string path = part_path + escapeForFileName(name_type.name);
-		if (Poco::File(path + ".bin").exists())
+		String path = data_part->storage.full_path + data_part->name + "/";
+		for (auto it : rename_map)
 		{
-			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << path + ".bin" + ".old");
-			Poco::File(path + ".bin").renameTo(path + ".bin" + ".old");
-			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << path + ".mrk" + ".old");
-			Poco::File(path + ".mrk").renameTo(path + ".mrk" + ".old");
-
-			if (Poco::File(part_path + "checksums.txt").exists())
+			if (!it.second.empty())
 			{
-				LOG_TRACE(log, "Renaming " << part_path + "checksums.txt" << " to " << part_path + "checksums.txt" + ".old");
-				Poco::File(part_path + "checksums.txt").renameTo(part_path + "checksums.txt" + ".old");
+				try
+				{
+					Poco::File(path + it.first).remove();
+				}
+				catch (Poco::Exception & e)
+				{
+					LOG_WARNING(data_part->storage.log, "Can't remove " << path + it.first << ": " << e.displayText());
+				}
 			}
 		}
 	}
-
-	/// переименовываем временные столбцы
-	for (DataPartPtr & part : parts)
+	catch (...)
 	{
-		std::string part_path = full_path + part->name + '/';
-		std::string name = escapeForFileName(out_column);
-		std::string new_name = escapeForFileName(name_type.name);
-		std::string path = part_path + name;
-		std::string new_path = part_path + new_name;
-		if (Poco::File(path + ".bin").exists())
-		{
-			LOG_TRACE(log, "Renaming " << path + ".bin" << " to " << new_path + ".bin");
-			Poco::File(path + ".bin").renameTo(new_path + ".bin");
-			LOG_TRACE(log, "Renaming " << path + ".mrk" << " to " << new_path + ".mrk");
-			Poco::File(path + ".mrk").renameTo(new_path + ".mrk");
-
-			if (Poco::File(path + ".checksums.txt").exists())
-			{
-				LOG_TRACE(log, "Renaming " << path + ".checksums.txt" << " to " << part_path + ".checksums.txt");
-				Poco::File(path + ".checksums.txt").renameTo(part_path + "checksums.txt");
-			}
-		}
-	}
-
-	// удаляем старые столбцы
-	for (DataPartPtr & part : parts)
-	{
-		std::string part_path = full_path + part->name + '/';
-		std::string path = part_path + escapeForFileName(name_type.name);
-		if (Poco::File(path + ".bin" + ".old").exists())
-		{
-			LOG_TRACE(log, "Removing old column " << path + ".bin" + ".old");
-			Poco::File(path + ".bin" + ".old").remove();
-			LOG_TRACE(log, "Removing old column " << path + ".mrk" + ".old");
-			Poco::File(path + ".mrk" + ".old").remove();
-
-			if (Poco::File(part_path + "checksums.txt" + ".old").exists())
-			{
-				LOG_TRACE(log, "Removing old checksums " << part_path + "checksums.txt" + ".old");
-				Poco::File(part_path + "checksums.txt" + ".old").remove();
-			}
-		}
-	}
-
-	context.resetCaches();
-
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-		Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
-		alterColumns(params, columns, context);
+		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 }
 

@@ -2,6 +2,7 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Interpreters/InterpreterAlterQuery.h>
 
 namespace DB
 {
@@ -103,19 +104,33 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
 }
 
-void StorageMergeTree::alter(const ASTAlterQuery::Parameters & params)
+void StorageMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
-	data.alter(params);
-}
+	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
 
-void StorageMergeTree::prepareAlterModify(const ASTAlterQuery::Parameters & params)
-{
-	data.prepareAlterModify(params);
-}
+	auto table_soft_lock = lockDataForAlter();
 
-void StorageMergeTree::commitAlterModify(const ASTAlterQuery::Parameters & params)
-{
-	data.commitAlterModify(params);
+	data.checkAlter(params);
+
+	NamesAndTypesList new_columns = data.getColumnsList();
+	params.apply(new_columns);
+
+	MergeTreeData::DataParts parts = data.getDataParts();
+	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
+	for (MergeTreeData::DataPartPtr part : parts)
+	{
+		transactions.push_back(data.alterDataPart(part, new_columns));
+	}
+
+	auto table_hard_lock = lockStructureForAlter();
+
+	InterpreterAlterQuery::updateMetadata(database_name, table_name, new_columns, context);
+	data.setColumnsList(new_columns);
+
+	for (auto & transaction : transactions)
+	{
+		transaction->commit();
+	}
 }
 
 bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context * pool_context)
