@@ -112,6 +112,30 @@ public:
 		std::sort(vector.begin(), vector.end());
 		return (std::unique(vector.begin(), vector.end()) - vector.begin()) * 2 - size() - rhs.size();
 	}
+
+	Names getNames() const
+	{
+		Names res;
+		res.reserve(size);
+		for (const NameAndTypePair & column : *this)
+		{
+			res.push_back(column.name);
+		}
+		return res;
+	}
+
+	/// Оставить только столбцы, имена которых есть в names. В names могут быть лишние столбцы.
+	NamesAndTypesList intersect(const Names & names)
+	{
+		std::set<String> name_set(names.begin(), names.end());
+		NamesAndTypesList res;
+		for (const NameAndTypePair & column : *this)
+		{
+			if (name_set.count(column.name))
+				res.push_back(column);
+		}
+		return res;
+	}
 };
 
 typedef SharedPtr<NamesAndTypesList> NamesAndTypesListPtr;

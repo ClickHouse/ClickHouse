@@ -223,7 +223,21 @@ public:
 
 		/// Описание столбцов.
 		NamesAndTypesList columns;
+
+		/** Блокируется на запись при изменении columns, checksums или любых файлов куска.
+		  * Блокируется на чтение при    чтении columns, checksums или любых файлов куска.
+		  */
 		Poco::RWLock columns_lock;
+
+		/** Берется на все время ALTER куска: от начала записи временных фалов до их переименования в постоянные.
+		  * Берется при разлоченном columns_lock.
+		  *
+		  * NOTE: "Можно" было бы обойтись без этого мьютекса, если бы можно было превращать ReadRWLock в WriteRWLock, не снимая блокировку.
+		  * Такое превращение невозможно, потому что создало бы дедлок, если делать его из двух потоков сразу.
+		  * Взятие этого мьютекса означает, что мы хотим заблокировать columns_lock на чтение с намерением потом, не
+		  *  снимая блокировку, заблокировать его на запись.
+		  */
+		Poco::FastMutex alter_mutex;
 
 		/// NOTE можно загружать засечки тоже в оперативку
 
@@ -440,9 +454,19 @@ public:
 	private:
 		friend class MergeTreeData;
 
-		AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_) {}
+		AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+
+		void clear()
+		{
+			alter_lock.unlock();
+			data_part = nullptr;
+		}
 
 		DataPartPtr data_part;
+		Poco::ScopedLockWithUnlock alter_lock;
+
+		DataPart::Checksums new_checksums;
+		NamesAndTypesList new_columns;
 		/// Если значение - пустая строка, файл нужно удалить, и он не временный.
 		NameToNameMap rename_map;
 	};
