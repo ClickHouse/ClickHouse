@@ -218,6 +218,7 @@ private:
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
+	zkutil::EventPtr queue_updating_event = zkutil::EventPtr(new Poco::Event);
 
 	/// Задание, выполняющее действия из очереди.
 	BackgroundProcessingPool::TaskHandle queue_task_handle;
@@ -226,8 +227,8 @@ private:
 	std::thread merge_selecting_thread;
 	Poco::Event merge_selecting_event;
 
-	/// Поток, удаляющий информацию о старых блоках из ZooKeeper.
-	std::thread clear_old_blocks_thread;
+	/// Поток, удаляющий старые куски, записи в логе и блоки.
+	std::thread cleanup_thread;
 
 	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
 	std::thread restarting_thread;
@@ -323,8 +324,9 @@ private:
 	void loadQueue();
 
 	/** Копирует новые записи из логов всех реплик в очередь этой реплики.
+	  * Если next_update_event != nullptr, вызовет это событие, когда в логе появятся новые записи.
 	  */
-	void pullLogsToQueue();
+	void pullLogsToQueue(zkutil::EventPtr next_update_event = nullptr);
 
 	/** Можно ли сейчас попробовать выполнить это действие. Если нет, нужно оставить его в очереди и попробовать выполнить другое.
 	  * Вызывается под queue_mutex.
@@ -353,7 +355,7 @@ private:
 
 	/** В бесконечном цикле вызывает clearOldBlocks.
 	  */
-	void clearOldBlocksThread();
+	void cleanupThread();
 
 	/** В бесконечном цикле проверяет, не протухла ли сессия в ZooKeeper.
 	  */

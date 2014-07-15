@@ -80,7 +80,7 @@ public:
 			}
 			storage.checkPartAndAddToZooKeeper(part, ops);
 			ops.push_back(new zkutil::Op::Create(
-				storage.replica_path + "/log/log-",
+				storage.zookeeper_path + "/log/log-",
 				log_entry.toString(),
 				storage.zookeeper->getDefaultACL(),
 				zkutil::CreateMode::PersistentSequential));

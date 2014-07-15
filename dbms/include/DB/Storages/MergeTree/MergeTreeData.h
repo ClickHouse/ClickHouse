@@ -106,8 +106,12 @@ struct MergeTreeSettings
 	/// Таким образом, скорость вставок автоматически замедлится примерно до скорости слияний.
 	double insert_delay_step = 1.1;
 
-	/// Для скольки блоков, вставленных с непустым insert ID, хранить хеши в ZooKeeper.
+	/// Для скольки последних блоков хранить хеши в ZooKeeper.
 	size_t replicated_deduplication_window = 10000;
+
+	/// Хранить примерно столько последних записей в логе в ZooKeeper, даже если они никому уже не нужны.
+	/// Не влияет на работу таблиц; используется только чтобы успеть посмотреть на лог в ZooKeeper глазами прежде, чем его очистят.
+	size_t replicated_logs_to_keep = 100;
 };
 
 class MergeTreeData : public ITableDeclaration
