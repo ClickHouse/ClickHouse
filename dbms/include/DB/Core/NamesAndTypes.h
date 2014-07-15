@@ -126,16 +126,21 @@ public:
 	}
 
 	/// Оставить только столбцы, имена которых есть в names. В names могут быть лишние столбцы.
-	NamesAndTypesList intersect(const Names & names) const
+	NamesAndTypesList filter(const NameSet & names) const
 	{
-		std::set<String> name_set(names.begin(), names.end());
 		NamesAndTypesList res;
 		for (const NameAndTypePair & column : *this)
 		{
-			if (name_set.count(column.name))
+			if (names.count(column.name))
 				res.push_back(column);
 		}
 		return res;
+	}
+
+	/// Оставить только столбцы, имена которых есть в names. В names могут быть лишние столбцы.
+	NamesAndTypesList filter(const Names & names) const
+	{
+		return filter(NameSet(names.begin(), names.end()));
 	}
 };
 

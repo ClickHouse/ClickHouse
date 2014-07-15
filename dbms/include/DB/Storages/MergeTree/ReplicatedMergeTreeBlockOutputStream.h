@@ -63,13 +63,13 @@ public:
 					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
-					storage.zookeeper_path + "/blocks/" + block_id + "/checksums",
-					part->checksums.toString(),
+					storage.zookeeper_path + "/blocks/" + block_id + "/columns",
+					part->columns.toString(),
 					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
-					storage.zookeeper_path + "/blocks/" + block_id + "/columns",
-					part->columns.toString(),
+					storage.zookeeper_path + "/blocks/" + block_id + "/checksums",
+					part->checksums.toString(),
 					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
@@ -78,7 +78,7 @@ public:
 					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 			}
-			storage.checkPartAndAddToZooKeeper(part, -1, ops);
+			storage.checkPartAndAddToZooKeeper(part, ops);
 			ops.push_back(new zkutil::Op::Create(
 				storage.replica_path + "/log/log-",
 				log_entry.toString(),

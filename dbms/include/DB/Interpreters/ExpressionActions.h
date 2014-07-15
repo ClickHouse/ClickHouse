@@ -18,8 +18,6 @@ typedef Poco::SharedPtr<IFunction> FunctionPtr;
 
 typedef std::pair<std::string, std::string> NameWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
-typedef std::unordered_set<String> NameSet;
-typedef std::unordered_map<String, String> NameToNameMap;
 
 class Join;
 

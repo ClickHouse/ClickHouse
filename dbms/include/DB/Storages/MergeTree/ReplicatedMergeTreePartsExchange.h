@@ -25,8 +25,11 @@ public:
 
 		MergeTreeData::DataPartPtr part = findPart(part_name);
 
+		Poco::ScopedReadRWLock part_lock(part->columns_lock);
+
 		/// Список файлов возьмем из списка контрольных сумм.
 		MergeTreeData::DataPart::Checksums checksums = part->checksums;
+		/// Добавим файлы, которых нет в списке контрольных сумм.
 		checksums.files["checksums.txt"];
 		checksums.files["columns.txt"];
 

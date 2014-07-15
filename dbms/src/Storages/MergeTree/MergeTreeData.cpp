@@ -476,7 +476,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 
 	/// Запишем обновленный список столбцов во временный файл.
 	{
-		transaction->new_columns = new_columns.intersect(part->columns.getNames());
+		transaction->new_columns = new_columns.filter(part->columns.getNames());
 		WriteBufferFromFile columns_file(full_path + part->name + "/columns.txt.tmp", 4096);
 		transaction->new_columns.writeText(columns_file);
 		transaction->rename_map["columns.txt.tmp"] = "columns.txt";

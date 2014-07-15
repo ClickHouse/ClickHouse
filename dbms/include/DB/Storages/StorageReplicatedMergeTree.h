@@ -306,7 +306,7 @@ private:
 	  * Кладет в ops действия, добавляющие данные о куске в ZooKeeper.
 	  * Вызывать под TableStructureLock.
 	  */
-	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, int expected_columns_version, zkutil::Ops & ops);
+	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops);
 
 	void clearOldParts();
 

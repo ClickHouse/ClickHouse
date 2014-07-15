@@ -433,7 +433,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 		LOG_ERROR(log, "Adding unexpected local part to ZooKeeper: " << part->name);
 
 		zkutil::Ops ops;
-		checkPartAndAddToZooKeeper(part, -1, ops);
+		checkPartAndAddToZooKeeper(part, ops);
 		zookeeper->multi(ops);
 	}
 
@@ -486,11 +486,10 @@ void StorageReplicatedMergeTree::initVirtualParts()
 	}
 }
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
-	MergeTreeData::DataPartPtr part, int expected_columns_version, zkutil::Ops & ops)
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops)
 {
 	check(part->columns);
-	expected_columns_version = columns_version;
+	int expected_columns_version = columns_version;
 
 	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 	std::random_shuffle(replicas.begin(), replicas.end());
@@ -551,6 +550,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 	for (const String & name : parts)
 	{
 		zkutil::Ops ops;
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/columns", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/checksums", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
 		int32_t code = zookeeper->tryMulti(ops);
@@ -622,6 +622,7 @@ void StorageReplicatedMergeTree::clearOldBlocks()
 	{
 		zkutil::Ops ops;
 		ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + timed_blocks[i].second + "/number", -1));
+		ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + timed_blocks[i].second + "/columns", -1));
 		ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksums", -1));
 		ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + timed_blocks[i].second, -1));
 		zookeeper->multi(ops);
@@ -849,7 +850,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, &transaction);
 
 			zkutil::Ops ops;
-			checkPartAndAddToZooKeeper(part, -1, ops);
+			checkPartAndAddToZooKeeper(part, ops);
 
 			zookeeper->multi(ops);
 			transaction.commit();
@@ -1235,7 +1236,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
 
 	zkutil::Ops ops;
-	checkPartAndAddToZooKeeper(part, -1, ops);
+	checkPartAndAddToZooKeeper(part, ops);
 
 	zookeeper->multi(ops);
 	transaction.commit();
