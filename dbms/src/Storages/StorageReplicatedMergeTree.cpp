@@ -695,6 +695,9 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 			next_update_event->set();
 	}
 
+	if (!count)
+		return;
+
 	if (queue_task_handle)
 		queue_task_handle->wake();
 
@@ -1113,6 +1116,96 @@ void StorageReplicatedMergeTree::cleanupThread()
 	LOG_DEBUG(log, "cleanup thread finished");
 }
 
+void StorageReplicatedMergeTree::alterThread()
+{
+	bool force_recheck_parts = true;
+
+	while (!shutdown_called)
+	{
+		try
+		{
+			zkutil::Stat stat;
+			String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
+			NamesAndTypesList columns = NamesAndTypesList::parse(columns_str, context.getDataTypeFactory());
+
+			bool changed = false;
+
+			/// Проверим, что описание столбцов изменилось.
+			/// Чтобы не останавливать лишний раз все запросы в таблицу, проверим сначала под локом на чтение.
+			{
+				auto table_lock = lockStructure(false);
+				if (columns != data.getColumnsList())
+					changed = true;
+			}
+
+			/// Если описание столбцов изменилось, обновим структуру таблицы локально.
+			if (changed)
+			{
+				auto table_lock = lockStructureForAlter();
+				if (columns != data.getColumnsList())
+				{
+					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
+					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
+					data.setColumnsList(columns);
+					columns_version = stat.version;
+					LOG_INFO(log, "Applied changes to table.");
+				}
+				else
+				{
+					changed = false;
+				}
+			}
+
+			/// Обновим куски.
+			if (changed || force_recheck_parts)
+			{
+				if (changed)
+					LOG_INFO(log, "ALTER-ing parts");
+
+				auto parts = data.getDataParts();
+
+				int changed_parts = 0;
+
+				for (const MergeTreeData::DataPartPtr & part : parts)
+				{
+					/// Обновим кусок и запишем результат во временные файлы.
+					auto transaction = data.alterDataPart(part, columns);
+
+					if (!transaction)
+						continue;
+
+					++changed_parts;
+
+					/// Обновим метаданные куска в ZooKeeper.
+					zkutil::Ops ops;
+					ops.push_back(new zkutil::Op::SetData(replica_path + "/parts/" + part->name + "/columns", part->columns.toString(), -1));
+					ops.push_back(new zkutil::Op::SetData(replica_path + "/parts/" + part->name + "/checksums", part->checksums.toString(), -1));
+					zookeeper->multi(ops);
+
+					/// Применим изменения файлов.
+					transaction->commit();
+				}
+
+				if (changed || changed_parts != 0)
+					LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
+				force_recheck_parts = false;
+			}
+
+			alter_thread_event->wait();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+
+			force_recheck_parts = true;
+
+			alter_thread_event->tryWait(ERROR_SLEEP_MS);
+		}
+	}
+
+	LOG_DEBUG(log, "alter thread finished");
+}
+
 bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
 {
 	/// Если какой-то из кусков уже собираются слить в больший, не соглашаемся его сливать.
@@ -1286,6 +1379,7 @@ void StorageReplicatedMergeTree::startup()
 
 	queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
 	cleanup_thread = std::thread(&StorageReplicatedMergeTree::cleanupThread, this);
+	alter_thread = std::thread(&StorageReplicatedMergeTree::alterThread, this);
 	queue_task_handle = context.getBackgroundPool().addTask(
 		std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
 }

@@ -216,6 +216,8 @@ private:
 	std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
 	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
 
+	/// Потоки.
+
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
 	zkutil::EventPtr queue_updating_event = zkutil::EventPtr(new Poco::Event);
@@ -233,12 +235,9 @@ private:
 	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
 	std::thread restarting_thread;
 
-	/// Поток, следящий за изменениями списка столбцов в ZooKeeper и обновляющего куски в соответствии с этими изменениями.
+	/// Поток, следящий за изменениями списка столбцов в ZooKeeper и обновляющий куски в соответствии с этими изменениями.
 	std::thread alter_thread;
 	zkutil::EventPtr alter_thread_event = zkutil::EventPtr(new Poco::Event);
-
-	/// Когда последний раз выбрасывали старые логи из ZooKeeper.
-	time_t clear_old_logs_time = 0;
 
 	Logger * log;
 
@@ -356,6 +355,10 @@ private:
 	/** В бесконечном цикле вызывает clearOldBlocks.
 	  */
 	void cleanupThread();
+
+	/** В бесконечном цикле проверяет, не нужно ли сделать локальный ALTER, и делает его.
+	  */
+	void alterThread();
 
 	/** В бесконечном цикле проверяет, не протухла ли сессия в ZooKeeper.
 	  */

@@ -456,6 +456,9 @@ public:
 		/// Переименовывает временные файлы, завершая ALTER куска.
 		void commit();
 
+		/// Проверяет, сделаны ли какие-то изменения.
+		bool operator !() const { return !data_part; }
+
 		/// Если не был вызван commit(), удаляет временные файлы, отменяя ALTER куска.
 		~AlterDataPartTransaction();
 
@@ -600,7 +603,9 @@ public:
 	 */
 	void checkAlter(const AlterCommands & params);
 
-	/// Выполняет ALTER куска данных и записывает результат во временные файлы.
+	/** Выполняет ALTER куска данных, записывает результат во временные файлы.
+	  * Возвращает объект, позволяющий переименовать временные файлы в постоянные.
+	  */
 	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
