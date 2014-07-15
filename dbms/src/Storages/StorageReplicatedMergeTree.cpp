@@ -185,6 +185,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
 	/// NOTE: Можно сделать менее строгую проверку совпадения выражений, чтобы таблицы не ломались от небольших изменений
 	///       в коде formatAST.
 	assertString(formattedAST(data.primary_expr_ast), buf);
+	assertString("\n", buf);
 	assertEOF(buf);
 
 	zkutil::Stat stat;
