@@ -211,7 +211,8 @@ public:
  		MergeTreeData & storage;
 
 		size_t size;	/// в количестве засечек.
-		size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано
+		std::atomic<size_t> size_in_bytes; /// размер в байтах, 0 - если не посчитано;
+		                                   /// atomic, чтобы можно было не заботиться о блокировках при ALTER.
 		time_t modification_time;
 		mutable time_t remove_time; /// Когда кусок убрали из рабочего набора.
 

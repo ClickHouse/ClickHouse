@@ -522,6 +522,8 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 			Poco::File(path + name + ".tmp2").remove();
 		}
 
+		mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
+
 		clear();
 	}
 	catch (...)

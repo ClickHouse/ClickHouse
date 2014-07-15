@@ -750,7 +750,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue()
 
 bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 {
-	if ((entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART) &&future_parts.count(entry.new_part_name))
+	if ((entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART) && future_parts.count(entry.new_part_name))
 	{
 		LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name <<
 			" because another log entry for the same part is being processed. This shouldn't happen often.");
@@ -1361,9 +1361,9 @@ void StorageReplicatedMergeTree::restartingThread()
 				LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
 				/// Запретим писать в таблицу, пока подменяем zookeeper.
-				LOG_TRACE(log, "Locking all operations");
+				LOG_TRACE(log, "Locking INSERTs");
 				auto structure_lock = lockDataForAlter();
-				LOG_TRACE(log, "Locked all operations");
+				LOG_TRACE(log, "Locked INSERTs");
 
 				partialShutdown();
 
