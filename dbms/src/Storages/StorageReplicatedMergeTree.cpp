@@ -557,6 +557,8 @@ void StorageReplicatedMergeTree::clearOldLogs()
 
 	Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
 	std::sort(entries.begin(), entries.end());
+	/// Не будем трогать последние replicated_logs_to_keep записей.
+	entries.erase(entries.end() - std::min(entries.size(), data.settings.replicated_logs_to_keep), entries.end());
 	size_t removed = 0;
 
 	zkutil::Ops ops;
@@ -635,7 +637,7 @@ void StorageReplicatedMergeTree::loadQueue()
 	}
 }
 
-/// Преобразовать число в формате суффиксов автоинкрементных нод в ZooKeeper.
+/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
 static String padIndex(UInt64 index)
 {
 	String index_str = toString(index);
