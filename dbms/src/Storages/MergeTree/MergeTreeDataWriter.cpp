@@ -97,7 +97,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	/// Сортируем.
 	stableSortBlock(block, sort_descr);
 
-	NamesAndTypesList columns = block.getColumnsList();
+	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
 	MergedBlockOutputStream out(data, part_tmp_path, columns);
 	out.getIndex().reserve(part_size * sort_descr.size());
 
