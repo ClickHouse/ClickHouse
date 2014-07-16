@@ -8,6 +8,7 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
 #include <Poco/RWLock.h>
 
@@ -329,6 +330,14 @@ public:
 				if (storage.require_part_metadata)
 					throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 				columns = *storage.columns;
+
+				/// Если нет файла со списком столбцов, запишем его.
+				{
+					WriteBufferFromFile out(path + ".tmp", 4096);
+					columns.writeText(out);
+				}
+				Poco::File(path + ".tmp").renameTo(path);
+
 				return;
 			}
 

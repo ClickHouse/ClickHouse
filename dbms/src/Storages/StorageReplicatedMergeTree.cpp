@@ -1148,7 +1148,8 @@ void StorageReplicatedMergeTree::alterThread()
 					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
 					data.setColumnsList(columns);
-					/// TODO: unreplicated_data тоже!
+					if (unreplicated_data)
+						unreplicated_data->setColumnsList(columns);
 					columns_version = stat.version;
 					LOG_INFO(log, "Applied changes to table.");
 				}
@@ -1164,9 +1165,9 @@ void StorageReplicatedMergeTree::alterThread()
 				if (changed)
 					LOG_INFO(log, "ALTER-ing parts");
 
-				auto parts = data.getDataParts();
-
 				int changed_parts = 0;
+
+				auto parts = data.getDataParts();
 
 				for (const MergeTreeData::DataPartPtr & part : parts)
 				{
@@ -1188,9 +1189,23 @@ void StorageReplicatedMergeTree::alterThread()
 					transaction->commit();
 				}
 
-				/// TODO: Обновить нереплицируемые куски. Поскольку у них может изначально не быть columns.txt,
-				///        нужно записывать им columns.txt в MergeTreeData::loadDataParts.
-				///       После этого будет просто сделать неблокирующий ALTER в StorageMergeTree тоже.
+				/// То же самое для нереплицируемых данных.
+				if (unreplicated_data)
+				{
+					parts = unreplicated_data->getDataParts();
+
+					for (const MergeTreeData::DataPartPtr & part : parts)
+					{
+						auto transaction = unreplicated_data->alterDataPart(part, columns);
+
+						if (!transaction)
+							continue;
+
+						++changed_parts;
+
+						transaction->commit();
+					}
+				}
 
 				zookeeper->set(replica_path + "/columns", columns.toString());
 
