@@ -62,6 +62,8 @@ public:
 
 	bool optimize() override;
 
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
+
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */
 	void drop() override;
@@ -238,6 +240,10 @@ private:
 	/// Поток, следящий за изменениями списка столбцов в ZooKeeper и обновляющий куски в соответствии с этими изменениями.
 	std::thread alter_thread;
 	zkutil::EventPtr alter_thread_event = zkutil::EventPtr(new Poco::Event);
+
+
+	/// Событие, пробуждающее метод alter от ожидания завершения запроса ALTER.
+	zkutil::EventPtr alter_query_event = zkutil::EventPtr(new Poco::Event);
 
 	Logger * log;
 

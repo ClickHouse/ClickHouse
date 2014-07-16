@@ -220,6 +220,7 @@ void StorageReplicatedMergeTree::createReplica()
 
 	/// Создадим пустую реплику.
 	zookeeper->create(replica_path, "", zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/columns", data.getColumnsList().toString(), zkutil::CreateMode::Persistent);
 	zookeeper->create(replica_path + "/host", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(replica_path + "/log_pointer", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(replica_path + "/queue", "", zkutil::CreateMode::Persistent);
@@ -1147,6 +1148,7 @@ void StorageReplicatedMergeTree::alterThread()
 					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
 					data.setColumnsList(columns);
+					/// TODO: unreplicated_data тоже!
 					columns_version = stat.version;
 					LOG_INFO(log, "Applied changes to table.");
 				}
@@ -1185,6 +1187,12 @@ void StorageReplicatedMergeTree::alterThread()
 					/// Применим изменения файлов.
 					transaction->commit();
 				}
+
+				/// TODO: Обновить нереплицируемые куски. Поскольку у них может изначально не быть columns.txt,
+				///        нужно записывать им columns.txt в MergeTreeData::loadDataParts.
+				///       После этого будет просто сделать неблокирующий ALTER в StorageMergeTree тоже.
+
+				zookeeper->set(replica_path + "/columns", columns.toString());
 
 				if (changed || changed_parts != 0)
 					LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
@@ -1327,6 +1335,7 @@ void StorageReplicatedMergeTree::partialShutdown()
 	merge_selecting_event.set();
 	queue_updating_event->set();
 	alter_thread_event->set();
+	alter_query_event->set();
 	replica_is_active_node = nullptr;
 
 	merger.cancelAll();
@@ -1495,6 +1504,94 @@ bool StorageReplicatedMergeTree::optimize()
 
 	unreplicated_merger->mergeParts(parts, merged_name);
 	return true;
+}
+
+void StorageReplicatedMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
+{
+	LOG_DEBUG(log, "Doing ALTER");
+
+	NamesAndTypesList new_columns;
+	String new_columns_str;
+	int new_columns_version;
+	zkutil::Stat stat;
+
+	{
+		auto table_lock = lockStructureForAlter();
+
+		data.checkAlter(params);
+
+		new_columns = data.getColumnsList();
+		params.apply(new_columns);
+
+		new_columns_str = new_columns.toString();
+
+		/// Делаем ALTER.
+		zookeeper->set(zookeeper_path + "/columns", new_columns_str, -1, &stat);
+
+		new_columns_version = stat.version;
+	}
+
+	LOG_DEBUG(log, "Updated columns in ZooKeeper. Waiting for replicas to apply changes.");
+
+	/// Ждем, пока все реплики обновят данные.
+
+	/// Подпишемся на изменения столбцов, чтобы перестать ждать, если кто-то еще сделает ALTER.
+	if (!zookeeper->exists(zookeeper_path + "/columns", &stat, alter_query_event))
+		throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+	if (stat.version != new_columns_version)
+	{
+		LOG_WARNING(log, zookeeper_path + "/columns changed before this ALTER finished; "
+			"overlapping ALTER-s are fine but use caution with nontransitive changes");
+		return;
+	}
+
+	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+	for (const String & replica : replicas)
+	{
+		LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
+
+		while (!shutdown_called)
+		{
+			String replica_columns_str;
+
+			/// Реплику могли успеть удалить.
+			if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/columns", replica_columns_str, &stat))
+			{
+				LOG_WARNING(log, replica << " was removed");
+				break;
+			}
+
+			int replica_columns_version = stat.version;
+
+			if (replica_columns_str == new_columns_str)
+				break;
+
+			if (!zookeeper->exists(zookeeper_path + "/columns", &stat))
+				throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+			if (stat.version != new_columns_version)
+			{
+				LOG_WARNING(log, zookeeper_path + "/columns changed before ALTER finished; "
+					"overlapping ALTER-s are fine but use caution with nontransitive changes");
+				return;
+			}
+
+			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat))
+			{
+				LOG_WARNING(log, replica << " was removed");
+				break;
+			}
+
+			if (stat.version != replica_columns_version)
+				continue;
+
+			alter_query_event->wait();
+		}
+
+		if (shutdown_called)
+			break;
+	}
+
+	LOG_DEBUG(log, "ALTER finished");
 }
 
 void StorageReplicatedMergeTree::drop()
