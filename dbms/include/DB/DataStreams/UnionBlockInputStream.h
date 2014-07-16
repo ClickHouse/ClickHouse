@@ -3,8 +3,7 @@
 #include <list>
 #include <queue>
 #include <atomic>
-
-#include <Poco/Thread.h>
+#include <thread>
 
 #include <Yandex/logger_useful.h>
 
@@ -34,7 +33,6 @@ using Poco::SharedPtr;
   */
 class UnionBlockInputStream : public IProfilingBlockInputStream
 {
-	class Thread;
 public:
 	UnionBlockInputStream(BlockInputStreams inputs_, unsigned max_threads_ = 1)
 		: max_threads(std::min(inputs_.size(), static_cast<size_t>(max_threads_))),
@@ -43,11 +41,7 @@ public:
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 
 		for (size_t i = 0; i < inputs_.size(); ++i)
-		{
-			input_queue.push(InputData());
-			input_queue.back().in = inputs_[i];
-			input_queue.back().i = i;
-		}
+			input_queue.emplace(inputs_[i], i);
 	}
 
 	String getName() const { return "UnionBlockInputStream"; }
@@ -116,7 +110,7 @@ public:
 protected:
 	void finalize()
 	{
-		if (threads_data.empty())
+		if (threads.empty())
 			return;
 
 		LOG_TRACE(log, "Waiting for threads to finish");
@@ -124,14 +118,11 @@ protected:
 		/// Вынем всё, что есть в очереди готовых данных.
 		output_queue.clear();
 
-		/** В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
-		  * PS. Может быть, для переменной finish нужен барьер?
-		  */
+		/// В этот момент, запоздавшие потоки ещё могут вставить в очередь какие-нибудь блоки, но очередь не переполнится.
+		for (auto & thread : threads)
+			thread.join();
 
-		for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-			it->thread->join();
-
-		threads_data.clear();
+		threads.clear();
 
 		LOG_TRACE(log, "Waited for threads to finish");
 	}
@@ -143,15 +134,11 @@ protected:
 			return res.block;
 
 		/// Запускаем потоки, если это ещё не было сделано.
-		if (threads_data.empty())
+		if (threads.empty())
 		{
-			threads_data.resize(max_threads);
-			for (ThreadsData::iterator it = threads_data.begin(); it != threads_data.end(); ++it)
-			{
-				it->runnable = new Thread(*this, current_memory_tracker);
-				it->thread = new Poco::Thread;
-				it->thread->start(*it->runnable);
-			}
+			threads.reserve(max_threads);
+			for (size_t i = 0; i < max_threads; ++i)
+				threads.emplace_back([=] { thread(current_memory_tracker); });
 		}
 
 		/// Будем ждать, пока будет готов следующий блок или будет выкинуто исключение.
@@ -173,8 +160,9 @@ protected:
 
 		/// Может быть, в очереди есть ещё эксепшен.
 		OutputData res;
-		while (output_queue.tryPop(res) && res.exception)
-			res.exception->rethrow();
+		while (output_queue.tryPop(res))
+			if (res.exception)
+				res.exception->rethrow();
 
 		finalize();
 
@@ -188,127 +176,108 @@ private:
 	{
 		BlockInputStreamPtr in;
 		size_t i;		/// Порядковый номер источника (для отладки).
+
+		InputData() {}
+		InputData(BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
 	};
 
 
-	/// Данные отдельного потока
-	struct ThreadData
+	void thread(MemoryTracker * memory_tracker)
 	{
-		SharedPtr<Poco::Thread> thread;
-		SharedPtr<Thread> runnable;
-	};
+		current_memory_tracker = memory_tracker;
+		ExceptionPtr exception;
 
-
-	class Thread : public Poco::Runnable
-	{
-	public:
-		Thread(UnionBlockInputStream & parent_, MemoryTracker * memory_tracker_)
-			: parent(parent_), memory_tracker(memory_tracker_)
+		try
 		{
+			loop();
+		}
+		catch (...)
+		{
+			exception = cloneCurrentException();
 		}
 
-		void run()
+		if (exception)
 		{
-			current_memory_tracker = memory_tracker;
-			ExceptionPtr exception;
+			/// Отдаём эксепшен в основной поток.
+			output_queue.push(exception);
 
 			try
 			{
-				loop();
+				cancel();
 			}
 			catch (...)
 			{
-				exception = cloneCurrentException();
-			}
-
-			if (exception)
-			{
-				/// Отдаём эксепшен в основной поток.
-				parent.output_queue.push(exception);
-
-				try
-				{
-					parent.cancel();
-				}
-				catch (...)
-				{
-					/** Если не удалось попросить остановиться одного или несколько источников.
-					  * (например, разорвано соединение при распределённой обработке запроса)
-					  * - то пофиг.
-					  */
-				}
+				/** Если не удалось попросить остановиться одного или несколько источников.
+					* (например, разорвано соединение при распределённой обработке запроса)
+					* - то пофиг.
+					*/
 			}
 		}
+	}
 
-		void loop()
+	void loop()
+	{
+		while (!finish)	/// Может потребоваться прекратить работу раньше, чем все источники иссякнут.
 		{
-			while (!parent.finish)	/// Может потребоваться прекратить работу раньше, чем все источники иссякнут.
+			InputData input;
+
+			/// Выбираем следующий источник.
 			{
-				InputData input;
+				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-				/// Выбираем следующий источник.
+				/// Если свободных источников нет, то этот поток больше не нужен. (Но другие потоки могут работать со своими источниками.)
+				if (input_queue.empty())
+					break;
+
+				input = input_queue.front();
+
+				/// Убираем источник из очереди доступных источников.
+				input_queue.pop();
+			}
+
+			/// Основная работа.
+			Block block = input.in->read();
+
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
+				/// Если этот источник ещё не иссяк, то положим полученный блок в очередь готовых.
+				if (block)
 				{
-					Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
+					input_queue.push(input);
 
-					/// Если свободных источников нет, то этот поток больше не нужен. (Но другие потоки могут работать со своими источниками.)
-					if (parent.input_queue.empty())
+					if (finish)
 						break;
 
-					input = parent.input_queue.front();
-
-					/// Убираем источник из очереди доступных источников.
-					parent.input_queue.pop();
+					output_queue.push(block);
 				}
-
-				/// Основная работа.
-				Block block = input.in->read();
-
+				else
 				{
-					Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
+					++exhausted_inputs;
 
-					/// Если этот источник ещё не иссяк, то положим полученный блок в очередь готовых.
-					if (block)
+					/// Если все источники иссякли.
+					if (exhausted_inputs == children.size())
 					{
-						parent.input_queue.push(input);
-
-						if (parent.finish)
-							break;
-
-						parent.output_queue.push(block);
-					}
-					else
-					{
-						++parent.exhausted_inputs;
-
-						/// Если все источники иссякли.
-						if (parent.exhausted_inputs == parent.children.size())
-						{
-							parent.finish = true;
-							break;
-						}
+						finish = true;
+						break;
 					}
 				}
-			}
-
-			if (parent.finish)
-			{
-				/// Отдаём в основной поток пустой блок, что означает, что данных больше нет; только один раз.
-				if (false == parent.pushed_end_of_output_queue.exchange(true))
-					parent.output_queue.push(OutputData());
 			}
 		}
 
-	private:
-		UnionBlockInputStream & parent;
-		MemoryTracker * memory_tracker;
-	};
-
+		if (finish)
+		{
+			/// Отдаём в основной поток пустой блок, что означает, что данных больше нет; только один раз.
+			if (false == pushed_end_of_output_queue.exchange(true))
+				output_queue.push(OutputData());
+		}
+	}
 
 	unsigned max_threads;
 
 	/// Потоки.
-	typedef std::list<ThreadData> ThreadsData;
-	ThreadsData threads_data;
+	typedef std::vector<std::thread> ThreadsData;
+	ThreadsData threads;
 
 	/// Очередь доступных источников, которые не заняты каким-либо потоком в данный момент.
 	typedef std::queue<InputData> InputQueue;
