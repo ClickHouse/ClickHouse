@@ -72,7 +72,7 @@ protected:
 	}
 
 	/// Функция для отладочного вывода информации
-	virtual void write()
+	void write()
 	{
 		std::cerr << "file " << file << std::endl;
 		std::cerr << "name " << name << std::endl;
