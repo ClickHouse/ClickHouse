@@ -1591,7 +1591,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params, const Strin
 				return;
 			}
 
-			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat))
+			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat, alter_query_event))
 			{
 				LOG_WARNING(log, replica << " was removed");
 				break;

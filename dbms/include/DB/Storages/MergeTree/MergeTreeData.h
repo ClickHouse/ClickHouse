@@ -221,6 +221,9 @@ public:
 		time_t modification_time;
 		mutable time_t remove_time; /// Когда кусок убрали из рабочего набора.
 
+		/// Если true, деструктор удалит директорию с куском.
+		bool is_temp = false;
+
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
 		Index index;
@@ -246,6 +249,32 @@ public:
 		mutable Poco::FastMutex alter_mutex;
 
 		/// NOTE можно загружать засечки тоже в оперативку
+
+		~DataPart()
+		{
+			if (is_temp)
+			{
+				try
+				{
+					Poco::File dir(storage.full_path + name);
+					if (!dir.exists())
+						return;
+
+					if (name.substr(0, strlen("tmp")) != "tmp")
+					{
+						LOG_ERROR(storage.log, "~DataPart() should remove part " << storage.full_path + name
+							<< " but its name doesn't start with tmp. Too suspicious, keeping the part.");
+						return;
+					}
+
+					dir.remove(true);
+				}
+				catch (...)
+				{
+					tryLogCurrentException(__PRETTY_FUNCTION__);
+				}
+			}
+		}
 
 		/// Вычисляем сумарный размер всей директории со всеми файлами
 		static size_t calcTotalSize(const String &from)

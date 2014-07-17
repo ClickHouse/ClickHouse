@@ -341,7 +341,7 @@ public:
 			for (size_t i = 0; i < block.columns(); ++i)
 			{
 				addStream(part_path, block.getByPosition(i).name,
-					*block.getByPosition(i).type, 0, prefix + block.getByPosition(i).name);
+					*block.getByPosition(i).type, 0, block.getByPosition(i).name);
 			}
 			initialized = true;
 		}
@@ -375,8 +375,6 @@ public:
 				column_stream.second->sync();
 			std::string column = escapeForFileName(column_stream.first);
 			column_stream.second->addToChecksums(checksums, column);
-			Poco::File(part_path + prefix + column + ".bin").renameTo(part_path + column + ".bin");
-			Poco::File(part_path + prefix + column + ".mrk").renameTo(part_path + column + ".mrk");
 		}
 
 		column_streams.clear();
@@ -389,8 +387,6 @@ private:
 	String part_path;
 
 	bool initialized;
-
-	const std::string prefix = "tmp_";
 
 	bool sync;
 };

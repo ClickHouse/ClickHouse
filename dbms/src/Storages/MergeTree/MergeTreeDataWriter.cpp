@@ -89,6 +89,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	Poco::File(part_tmp_path).createDirectories();
 
+	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
+	new_data_part->name = tmp_part_name;
+	new_data_part->is_temp = true;
+
 	/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
 	data.getPrimaryExpression()->execute(block);
 
@@ -105,13 +109,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	out.write(block);
 	MergeTreeData::DataPart::Checksums checksums = out.writeSuffixAndGetChecksums();
 
-	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	new_data_part->left_date = DayNum_t(min_date);
 	new_data_part->right_date = DayNum_t(max_date);
 	new_data_part->left = temp_index;
 	new_data_part->right = temp_index;
 	new_data_part->level = 0;
-	new_data_part->name = tmp_part_name;
 	new_data_part->size = part_size;
 	new_data_part->modification_time = time(0);
 	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
