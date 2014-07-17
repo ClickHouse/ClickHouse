@@ -142,6 +142,23 @@ public:
 	{
 		return filter(NameSet(names.begin(), names.end()));
 	}
+
+	/// В отличие от filter, возвращает столбцы в том порядке, в котором они идут в names.
+	NamesAndTypesList addTypes(const Names & names) const
+	{
+		std::map<String, DataTypePtr> types;
+		for (const NameAndTypePair & column : *this)
+			types[column.name] = column.type;
+		NamesAndTypesList res;
+		for (const String & name : names)
+		{
+			auto it = types.find(name);
+			if (it == types.end())
+				throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
+			res.push_back(NameAndTypePair(name, it->second));
+		}
+		return res;
+	}
 };
 
 typedef SharedPtr<NamesAndTypesList> NamesAndTypesListPtr;

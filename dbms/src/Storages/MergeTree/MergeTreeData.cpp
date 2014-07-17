@@ -422,7 +422,7 @@ void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndType
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
-	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part));
+	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map);
 
 	if (!skip_sanity_checks && transaction->rename_map.size() > 5)
@@ -446,7 +446,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "");
+			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false);
 		ExpressionBlockInputStream in(part_in, expression);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 		in.readPrefix();
@@ -558,7 +558,9 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 			{
 				try
 				{
-					Poco::File(path + it.first).remove();
+					Poco::File file(path + it.first);
+					if (file.exists())
+						file.remove();
 				}
 				catch (Poco::Exception & e)
 				{
