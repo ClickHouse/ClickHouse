@@ -465,9 +465,6 @@ public:
 		/// Переименовывает временные файлы, завершая ALTER куска.
 		void commit();
 
-		/// Проверяет, сделаны ли какие-то изменения.
-		bool operator !() const { return !data_part; }
-
 		/// Если не был вызван commit(), удаляет временные файлы, отменяя ALTER куска.
 		~AlterDataPartTransaction();
 
@@ -614,8 +611,10 @@ public:
 
 	/** Выполняет ALTER куска данных, записывает результат во временные файлы.
 	  * Возвращает объект, позволяющий переименовать временные файлы в постоянные.
+	  * Если измененных столбцов подозрительно много, и !skip_sanity_checks, бросает исключение.
+	  * Если никаких действий над данными не требуется, возвращает nullptr.
 	  */
-	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns);
+	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
 	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }

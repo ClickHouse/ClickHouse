@@ -419,16 +419,24 @@ void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndType
 	}
 }
 
-MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns)
+MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part));
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map);
 
+	if (!skip_sanity_checks && transaction->rename_map.size() > 5)
+	{
+		transaction->clear();
+
+		throw Exception("Suspiciously many (" + toString(transaction->rename_map.size()) + ") files need to be modified in part " + part->name
+						+ ". Aborting just in case");
+	}
+
 	if (transaction->rename_map.empty())
 	{
 		transaction->clear();
-		return transaction;
+		return nullptr;
 	}
 
 	DataPart::Checksums add_checksums;
