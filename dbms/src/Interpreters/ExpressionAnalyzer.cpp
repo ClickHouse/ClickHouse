@@ -1245,8 +1245,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		Names join_key_names_right(join_key_names_right_set.begin(), join_key_names_right_set.end());
 		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
 
-		for (const auto & name_type : columns_added_by_join)
-			std::cerr << "! Column added by JOIN: " << name_type.name << std::endl;
+/*		for (const auto & name_type : columns_added_by_join)
+			std::cerr << "! Column added by JOIN: " << name_type.name << std::endl;*/
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
 		for (const auto & name_type : columns_added_by_join)
@@ -1596,8 +1596,6 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	if (!select_query || !select_query->join)
 		return;
 
-	std::cerr << "collectJoinedColumns" << std::endl;
-
 	auto & node = typeid_cast<ASTJoin &>(*select_query->join);
 	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
 	auto & table = node.table->children.at(0);		/// TODO: поддержка идентификаторов.
@@ -1626,14 +1624,14 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 		}
 	}
 
-	for (const auto & name : join_key_names_left_set)
+/*	for (const auto & name : join_key_names_left_set)
 		std::cerr << "JOIN key (left): " << name << std::endl;
 	for (const auto & name : join_key_names_right_set)
 		std::cerr << "JOIN key (right): " << name << std::endl;
 	std::cerr << std::endl;
 	for (const auto & name : joined_columns)
 		std::cerr << "JOINed column: " << name << std::endl;
-	std::cerr << std::endl;
+	std::cerr << std::endl;*/
 }
 
 Names ExpressionAnalyzer::getRequiredColumns()

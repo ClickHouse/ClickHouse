@@ -83,7 +83,7 @@ protected:
 	Block block;
 	ExceptionPtr exception;
 
-	
+
 	Block readImpl()
 	{
 		/// Если вычислений ещё не было - вычислим первый блок синхронно
@@ -108,14 +108,14 @@ protected:
 
 		return res;
 	}
-	
+
 
 	void next()
 	{
 		ready.reset();
 		pool.schedule(boost::bind(&AsynchronousBlockInputStream::calculate, this, current_memory_tracker));
 	}
-	
+
 
 	/// Вычисления, которые могут выполняться в отдельном потоке
 	void calculate(MemoryTracker * memory_tracker)

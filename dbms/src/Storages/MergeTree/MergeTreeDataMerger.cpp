@@ -253,10 +253,17 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
-	Names all_column_names;
+	NameSet union_columns_set;
+	for (const MergeTreeData::DataPartPtr & part : parts)
+	{
+		Poco::ScopedReadRWLock part_lock(part->columns_lock);
+		Names part_columns = part->columns.getNames();
+		union_columns_set.insert(part_columns.begin(), part_columns.end());
+	}
+
 	NamesAndTypesList columns_list = data.getColumnsList();
-	for (const auto & it : columns_list)
-		all_column_names.push_back(it.name);
+	NamesAndTypesList union_columns = columns_list.filter(union_columns_set);
+	Names union_column_names = union_columns.getNames();
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
@@ -271,7 +278,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
-			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, all_column_names, data,
+			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
 			parts[i], ranges, false, nullptr, ""), data.getPrimaryExpression()));
 	}
 
@@ -304,7 +311,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, data.getColumnsList());
+	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, union_columns);
 
 	merged_stream->readPrefix();
 	to->writePrefix();
@@ -317,8 +324,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		throw Exception("Canceled merging parts", ErrorCodes::ABORTED);
 
 	merged_stream->readSuffix();
+	new_data_part->columns = union_columns;
 	new_data_part->checksums = to->writeSuffixAndGetChecksums();
-
 	new_data_part->index.swap(to->getIndex());
 
 	/// Для удобства, даже CollapsingSortedBlockInputStream не может выдать ноль строк.

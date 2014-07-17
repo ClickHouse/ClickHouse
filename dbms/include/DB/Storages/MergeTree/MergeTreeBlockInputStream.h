@@ -21,11 +21,16 @@ public:
 		:
 		path(path_), block_size(block_size_), column_names(column_names_),
 		storage(storage_), owned_data_part(owned_data_part_),
+		part_columns_lock(new Poco::ScopedReadRWLock(owned_data_part->columns_lock)),
 		all_mark_ranges(mark_ranges_), remaining_mark_ranges(mark_ranges_),
 		use_uncompressed_cache(use_uncompressed_cache_),
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
 		log(&Logger::get("MergeTreeBlockInputStream"))
 	{
+		/// Под owned_data_part->columns_lock проверим, что все запрошенные столбцы в куске того же типа, что в таблице.
+		/// Это может быть не так во время ALTER MODIFY.
+		storage.check(owned_data_part->columns, column_names);
+
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
 		if (prewhere_actions)
@@ -246,6 +251,9 @@ protected:
 				*  буферы не висели в памяти.
 				*/
 			reader.reset();
+			pre_reader.reset();
+			part_columns_lock.reset();
+			owned_data_part.reset();
 		}
 
 		return res;
@@ -258,7 +266,8 @@ private:
 	NameSet column_name_set;
 	Names pre_column_names;
 	MergeTreeData & storage;
-	const MergeTreeData::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
+	MergeTreeData::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
+	std::unique_ptr<Poco::ScopedReadRWLock> part_columns_lock; /// Не дадим изменить список столбцов куска, пока мы из него читаем.
 	MarkRanges all_mark_ranges; /// В каких диапазонах засечек читать. В порядке возрастания номеров.
 	MarkRanges remaining_mark_ranges; /// В каких диапазонах засечек еще не прочли.
 									  /// В порядке убывания номеров, чтобы можно было выбрасывать из конца.

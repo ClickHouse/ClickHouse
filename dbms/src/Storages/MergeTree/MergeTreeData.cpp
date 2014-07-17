@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <algorithm>
 
 
@@ -25,12 +26,14 @@ MergeTreeData::MergeTreeData(
 	Mode mode_,
 	const String & sign_column_,
 	const MergeTreeSettings & settings_,
-	const String & log_name_)
+	const String & log_name_,
+	bool require_part_metadata_)
 	: context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
+	require_part_metadata(require_part_metadata_),
 	full_path(full_path_), columns(columns_), log_name(log_name_),
 	log(&Logger::get(log_name + " (Data)"))
 {
@@ -128,8 +131,9 @@ void MergeTreeData::loadDataParts()
 
 		try
 		{
-			part->loadIndex();
+			part->loadColumns();
 			part->loadChecksums();
+			part->loadIndex();
 			part->checkNotBroken();
 		}
 		catch (...)
@@ -419,11 +423,11 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part));
-	createConvertExpression(part, *columns, new_columns, expression, transaction->rename_map); // TODO: part->columns
+	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map);
 
 	if (transaction->rename_map.empty())
 	{
-		transaction->data_part = nullptr;
+		transaction->clear();
 		return transaction;
 	}
 
@@ -464,9 +468,18 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 	/// Запишем обновленные контрольные суммы во временный файл
 	if (!part->checksums.empty())
 	{
+		transaction->new_checksums = new_checksums;
 		WriteBufferFromFile checksums_file(full_path + part->name + "/checksums.txt.tmp", 4096);
 		new_checksums.writeText(checksums_file);
 		transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
+	}
+
+	/// Запишем обновленный список столбцов во временный файл.
+	{
+		transaction->new_columns = new_columns.filter(part->columns.getNames());
+		WriteBufferFromFile columns_file(full_path + part->name + "/columns.txt.tmp", 4096);
+		transaction->new_columns.writeText(columns_file);
+		transaction->rename_map["columns.txt.tmp"] = "columns.txt";
 	}
 
 	return transaction;
@@ -478,25 +491,45 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 		return;
 	try
 	{
+		Poco::ScopedWriteRWLock lock(data_part->columns_lock);
+
 		String path = data_part->storage.full_path + data_part->name + "/";
+
+		/// 1) Переименуем старые файлы.
 		for (auto it : rename_map)
 		{
-			if (it.second.empty())
-			{
-				Poco::File(path + it.first).renameTo(path + it.first + ".removing");
-				Poco::File(path + it.first + ".removing").remove();
-			}
-			else
+			String name = it.second.empty() ? it.first : it.second;
+			Poco::File(path + name).renameTo(path + name + ".tmp2");
+		}
+
+		/// 2) Переместим на их место новые и обновим метаданные в оперативке.
+		for (auto it : rename_map)
+		{
+			if (!it.second.empty())
 			{
 				Poco::File(path + it.first).renameTo(path + it.second);
 			}
 		}
-		data_part = nullptr;
+
+		DataPart & mutable_part = const_cast<DataPart &>(*data_part);
+		mutable_part.checksums = new_checksums;
+		mutable_part.columns = new_columns;
+
+		/// 3) Удалим старые файлы.
+		for (auto it : rename_map)
+		{
+			String name = it.second.empty() ? it.first : it.second;
+			Poco::File(path + name + ".tmp2").remove();
+		}
+
+		mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
+
+		clear();
 	}
 	catch (...)
 	{
 		/// Если что-то пошло не так, не будем удалять временные файлы в деструкторе.
-		data_part = nullptr;
+		clear();
 		throw;
 	}
 }

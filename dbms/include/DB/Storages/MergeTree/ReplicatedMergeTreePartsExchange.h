@@ -25,9 +25,13 @@ public:
 
 		MergeTreeData::DataPartPtr part = findPart(part_name);
 
+		Poco::ScopedReadRWLock part_lock(part->columns_lock);
+
 		/// Список файлов возьмем из списка контрольных сумм.
 		MergeTreeData::DataPart::Checksums checksums = part->checksums;
+		/// Добавим файлы, которых нет в списке контрольных сумм.
 		checksums.files["checksums.txt"];
+		checksums.files["columns.txt"];
 
 		writeBinary(checksums.files.size(), out);
 		for (const auto & it : checksums.files)
@@ -107,7 +111,8 @@ public:
 			if (expected_hash != hashing_out.getHash())
 				throw Exception("Checksum mismatch for file " + part_path + file_name + " transferred from " + replica_path);
 
-			if (file_name != "checksums.txt")
+			if (file_name != "checksums.txt" &&
+				file_name != "columns.txt")
 				checksums.addFile(file_name, file_size, expected_hash);
 		}
 
@@ -117,8 +122,9 @@ public:
 		ActiveDataPartSet::parsePartName(part_name, *new_data_part);
 		new_data_part->name = "tmp_" + part_name;
 		new_data_part->modification_time = time(0);
-		new_data_part->loadIndex();
+		new_data_part->loadColumns();
 		new_data_part->loadChecksums();
+		new_data_part->loadIndex();
 
 		new_data_part->checksums.checkEqual(checksums, false);
 

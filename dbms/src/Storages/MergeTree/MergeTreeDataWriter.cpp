@@ -97,7 +97,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	/// Сортируем.
 	stableSortBlock(block, sort_descr);
 
-	MergedBlockOutputStream out(data, part_tmp_path, block.getColumnsList());
+	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
+	MergedBlockOutputStream out(data, part_tmp_path, columns);
 	out.getIndex().reserve(part_size * sort_descr.size());
 
 	out.writePrefix();
@@ -115,8 +116,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->modification_time = time(0);
 	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
 	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
-	new_data_part->index.swap(out.getIndex());
+	new_data_part->columns = columns;
 	new_data_part->checksums = checksums;
+	new_data_part->index.swap(out.getIndex());
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(part_tmp_path);
 
 	return new_data_part;

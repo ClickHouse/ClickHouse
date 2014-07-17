@@ -55,6 +55,14 @@ public:
 	  */
 	void check(const Names & column_names) const;
 
+	/** Проверить, что все запрошенные имена есть в таблице и имеют правильные типы.
+	  */
+	void check(const NamesAndTypesList & columns) const;
+
+	/** Проверить, что все имена из пересечения names и columns есть в таблице и имеют одинаковые типы.
+	  */
+	void check(const NamesAndTypesList & columns, const Names & column_names) const;
+
 	/** Проверить, что блок с данными для записи содержит все столбцы таблицы с правильными типами,
 	  *  содержит только столбцы таблицы, и все столбцы различны.
 	  * Если need_all, еще проверяет, что все столбцы таблицы есть в блоке.

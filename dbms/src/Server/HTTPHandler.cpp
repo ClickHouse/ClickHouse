@@ -45,7 +45,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	std::string query_param = params.get("query", "");
 	if (!query_param.empty())
 		query_param += '\n';
-	
+
 	/// Если указано compress, то будем сжимать результат.
 	SharedPtr<WriteBufferFromHTTPServerResponse> out = new WriteBufferFromHTTPServerResponse(response);
 	SharedPtr<WriteBuffer> out_maybe_compressed;
@@ -69,7 +69,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	std::string quota_key = params.get("quota_key", "");
 	std::string query_id = params.get("query_id", "");
-	
+
 	Context context = *server.global_context;
 	context.setGlobalContext(*server.global_context);
 
@@ -171,10 +171,20 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 }
 
 
-void HTTPHandler::trySendExceptionToClient(std::stringstream & s, Poco::Net::HTTPServerResponse & response)
+void HTTPHandler::trySendExceptionToClient(std::stringstream & s, Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
 	try
 	{
+		/** Если POST и Keep-Alive, прочитаем тело до конца.
+		  * Иначе вместо следующего запроса, будет прочитан кусок этого тела.
+		  */
+		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+			&& response.getKeepAlive()
+			&& !request.stream().eof())
+		{
+			request.stream().ignore(std::numeric_limits<std::streamsize>::max());
+		}
+
 		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 		if (!response.sent())
 			response.send() << s.str() << std::endl;
@@ -214,26 +224,26 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		s << "Code: " << e.code()
 			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
 		LOG_ERROR(log, s.str());
-		trySendExceptionToClient(s, response);
+		trySendExceptionToClient(s, request, response);
 	}
 	catch (Poco::Exception & e)
 	{
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-		trySendExceptionToClient(s, response);
+		trySendExceptionToClient(s, request, response);
 	}
 	catch (std::exception & e)
 	{
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
-		trySendExceptionToClient(s, response);
+		trySendExceptionToClient(s, request, response);
 	}
 	catch (...)
 	{
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
-		trySendExceptionToClient(s, response);
+		trySendExceptionToClient(s, request, response);
 	}
 }
 

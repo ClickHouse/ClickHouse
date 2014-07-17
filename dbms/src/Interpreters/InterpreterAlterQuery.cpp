@@ -87,7 +87,7 @@ AlterCommands InterpreterAlterQuery::parseAlter(
 }
 
 void InterpreterAlterQuery::updateMetadata(
-	const String& database_name, const String& table_name, const NamesAndTypesList& columns, Context& context)
+	const String & database_name, const String & table_name, const NamesAndTypesList & columns, Context & context)
 {
 	String path = context.getPath();
 
