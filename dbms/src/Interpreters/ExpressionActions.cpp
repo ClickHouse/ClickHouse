@@ -151,8 +151,6 @@ void ExpressionAction::prepare(Block & sample_block)
 	{
 		for (const auto & col : columns_added_by_join)
 			sample_block.insert(ColumnWithNameAndType(col.type->createColumn(), col.type, col.name));
-
-		std::cerr << sample_block.dumpNames() << std::endl;
 	}
 	else if (type == ADD_COLUMN)
 	{
@@ -263,8 +261,6 @@ void ExpressionAction::execute(Block & block) const
 		case PROJECT:
 		{
 			Block new_block;
-
-			//std::cerr << block.dumpNames() << std::endl;
 
 			for (size_t i = 0; i < projection.size(); ++i)
 			{

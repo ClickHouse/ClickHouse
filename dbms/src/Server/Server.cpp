@@ -35,7 +35,15 @@ public:
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
-		response.send() << "Ok." << std::endl;
+		try
+		{
+			const char * data = "Ok.\n";
+			response.sendBuffer(data, strlen(data));
+		}
+		catch (...)
+		{
+			tryLogCurrentException("PingRequestHandler");
+		}
 	}
 };
 
@@ -47,11 +55,11 @@ private:
 	Server & server;
 	Logger * log;
 	std::string name;
-	
+
 public:
 	HTTPRequestHandlerFactory(Server & server_, const std::string & name_)
 		: server(server_), log(&Logger::get(name_)), name(name_) {}
-	
+
 	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request)
 	{
 		LOG_TRACE(log, "HTTP Request for " << name << ". "
@@ -74,14 +82,14 @@ class TCPConnectionFactory : public Poco::Net::TCPServerConnectionFactory
 private:
 	Server & server;
 	Logger * log;
-	
+
 public:
 	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
 
 	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket)
 	{
 		LOG_TRACE(log, "TCP Request. " << "Address: " << socket.peerAddress().toString());
-		
+
 		return new TCPHandler(server, socket);
 	}
 };
@@ -282,14 +290,14 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Создаём системные таблицы.
 	global_context->addDatabase("system");
-	
+
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
 	global_context->addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
 	global_context->addTable("system", "tables", 	StorageSystemTables::create("tables", *global_context));
 	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes", *global_context));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
-		
+
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 
 	{
@@ -363,9 +371,9 @@ int Server::main(const std::vector<std::string> & args)
 			olap_http_server->start();
 
 		LOG_INFO(log, "Ready for connections.");
-	
+
 		waitForTerminationRequest();
-	
+
 		LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
 
 		users_config_reloader = nullptr;
@@ -394,7 +402,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context = nullptr;
 
 	LOG_DEBUG(log, "Destroyed global context.");
-	
+
 	return Application::EXIT_OK;
 }
 
