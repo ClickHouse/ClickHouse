@@ -75,7 +75,7 @@ DESC TABLE test.alter;
 SHOW CREATE TABLE test.alter;
 SELECT * FROM test.alter ORDER BY k;
 
-ALTER TABLE test.alter MODIFY COLUMN dt String, MODIFY COLUMN s String;
+ALTER TABLE test.alter MODIFY COLUMN dt Date, MODIFY COLUMN s DateTime;
 
 DESC TABLE test.alter;
 SHOW CREATE TABLE test.alter;
