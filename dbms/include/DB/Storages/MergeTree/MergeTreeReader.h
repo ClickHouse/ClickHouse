@@ -38,16 +38,16 @@ class MergeTreeReader
 
 public:
 	MergeTreeReader(const String & path_,	/// Путь к куску
-		const Names & columns_names_, bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
-	: path(path_), column_names(columns_names_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
+		const NamesAndTypesList & columns_, bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
+	: path(path_), columns(columns_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
 	{
-		for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
-			addStream(*it, *storage.getDataTypeByName(*it), all_mark_ranges);
+		for (const NameAndTypePair & column : columns)
+			addStream(column.name, *column.type, all_mark_ranges);
 	}
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
 	  * Не добавляет столбцы, для которых нет файлов. Чтобы их добавить, нужно вызвать fillMissingColumns.
-	  * В блоке должно быть либо ни одного столбца из column_names, либо все, для которых есть файлы. */
+	  * В блоке должно быть либо ни одного столбца из columns, либо все, для которых есть файлы. */
 	void readRange(size_t from_mark, size_t to_mark, Block & res)
 	{
 		try
@@ -63,20 +63,20 @@ public:
 			/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
 			OffsetColumns offset_columns;
 
-			for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+			for (const NameAndTypePair & it : columns)
 			{
-				if (streams.end() == streams.find(*it))
+				if (streams.end() == streams.find(it.name))
 				{
 					has_missing_columns = true;
 					continue;
 				}
 
 				/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
-				bool append = res.has(*it);
+				bool append = res.has(it.name);
 
 				ColumnWithNameAndType column;
-				column.name = *it;
-				column.type = storage.getDataTypeByName(*it);
+				column.name = it.name;
+				column.type = it.type;
 				if (append)
 					column.column = res.getByName(column.name).column;
 
@@ -139,13 +139,13 @@ public:
 			}
 
 			size_t pos = 0;	/// Позиция, куда надо вставить недостающий столбец.
-			for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it, ++pos)
+			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it, ++pos)
 			{
-				if (!res.has(*it))
+				if (!res.has(it->name))
 				{
 					ColumnWithNameAndType column;
-					column.name = *it;
-					column.type = storage.getDataTypeByName(*it);
+					column.name = it->name;
+					column.type = it->type;
 
 					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
 					if (offset_columns.count(offsets_name))
@@ -292,7 +292,7 @@ private:
 
 	String path;
 	FileStreams streams;
-	Names column_names;
+	NamesAndTypesList columns;
 	bool use_uncompressed_cache;
 	MergeTreeData & storage;
 

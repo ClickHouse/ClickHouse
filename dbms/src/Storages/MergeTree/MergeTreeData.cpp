@@ -419,16 +419,24 @@ void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndType
 	}
 }
 
-MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns)
+MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
-	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part));
+	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map);
+
+	if (!skip_sanity_checks && transaction->rename_map.size() > 5)
+	{
+		transaction->clear();
+
+		throw Exception("Suspiciously many (" + toString(transaction->rename_map.size()) + ") files need to be modified in part " + part->name
+						+ ". Aborting just in case");
+	}
 
 	if (transaction->rename_map.empty())
 	{
 		transaction->clear();
-		return transaction;
+		return nullptr;
 	}
 
 	DataPart::Checksums add_checksums;
@@ -438,7 +446,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPart
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "");
+			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false);
 		ExpressionBlockInputStream in(part_in, expression);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
 		in.readPrefix();
@@ -550,7 +558,9 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 			{
 				try
 				{
-					Poco::File(path + it.first).remove();
+					Poco::File file(path + it.first);
+					if (file.exists())
+						file.remove();
 				}
 				catch (Poco::Exception & e)
 				{
@@ -587,7 +597,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 
-	String old_path = getFullPath() + part->name + "/";
+	String old_name = part->name;
+	String old_path = getFullPath() + old_name + "/";
 
 	/** Для StorageMergeTree важно, что получение номера куска происходит атомарно с добавлением этого куска в набор.
 	  * Иначе есть race condition - может произойти слияние пары кусков, диапазоны номеров которых
@@ -596,15 +607,24 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	if (increment)
 		part->left = part->right = increment->get(false);
 
-	part->name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+	String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
-	if (data_parts.count(part))
-		throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+	part->is_temp = false;
+	part->name = new_name;
+	bool duplicate = data_parts.count(part);
+	part->name = old_name;
+	part->is_temp = true;
 
-	String new_path = getFullPath() + part->name + "/";
+	if (duplicate)
+		throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+
+	String new_path = getFullPath() + new_name + "/";
 
 	/// Переименовываем кусок.
 	Poco::File(old_path).renameTo(new_path);
+
+	part->is_temp = false;
+	part->name = new_name;
 
 	bool obsolete = false; /// Покрыт ли part каким-нибудь куском.
 	DataPartsVector res;

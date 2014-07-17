@@ -119,7 +119,9 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 	for (MergeTreeData::DataPartPtr part : parts)
 	{
-		transactions.push_back(data.alterDataPart(part, new_columns));
+		auto transaction = data.alterDataPart(part, new_columns);
+		if (transaction)
+			transactions.push_back(std::move(transaction));
 	}
 
 	auto table_hard_lock = lockStructureForAlter();

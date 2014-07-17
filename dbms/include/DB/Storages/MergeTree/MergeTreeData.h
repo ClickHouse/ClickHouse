@@ -8,6 +8,7 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
 #include <Poco/RWLock.h>
 
@@ -220,6 +221,9 @@ public:
 		time_t modification_time;
 		mutable time_t remove_time; /// Когда кусок убрали из рабочего набора.
 
+		/// Если true, деструктор удалит директорию с куском.
+		bool is_temp = false;
+
 		/// Первичный ключ. Всегда загружается в оперативку.
 		typedef std::vector<Field> Index;
 		Index index;
@@ -245,6 +249,32 @@ public:
 		mutable Poco::FastMutex alter_mutex;
 
 		/// NOTE можно загружать засечки тоже в оперативку
+
+		~DataPart()
+		{
+			if (is_temp)
+			{
+				try
+				{
+					Poco::File dir(storage.full_path + name);
+					if (!dir.exists())
+						return;
+
+					if (name.substr(0, strlen("tmp")) != "tmp")
+					{
+						LOG_ERROR(storage.log, "~DataPart() should remove part " << storage.full_path + name
+							<< " but its name doesn't start with tmp. Too suspicious, keeping the part.");
+						return;
+					}
+
+					dir.remove(true);
+				}
+				catch (...)
+				{
+					tryLogCurrentException(__PRETTY_FUNCTION__);
+				}
+			}
+		}
 
 		/// Вычисляем сумарный размер всей директории со всеми файлами
 		static size_t calcTotalSize(const String &from)
@@ -329,6 +359,14 @@ public:
 				if (storage.require_part_metadata)
 					throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 				columns = *storage.columns;
+
+				/// Если нет файла со списком столбцов, запишем его.
+				{
+					WriteBufferFromFile out(path + ".tmp", 4096);
+					columns.writeText(out);
+				}
+				Poco::File(path + ".tmp").renameTo(path);
+
 				return;
 			}
 
@@ -600,8 +638,12 @@ public:
 	 */
 	void checkAlter(const AlterCommands & params);
 
-	/// Выполняет ALTER куска данных и записывает результат во временные файлы.
-	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns);
+	/** Выполняет ALTER куска данных, записывает результат во временные файлы.
+	  * Возвращает объект, позволяющий переименовать временные файлы в постоянные.
+	  * Если измененных столбцов подозрительно много, и !skip_sanity_checks, бросает исключение.
+	  * Если никаких действий над данными не требуется, возвращает nullptr.
+	  */
+	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
 	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }

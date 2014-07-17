@@ -90,6 +90,10 @@ public:
 		if (!Poco::File(part_path).createDirectory())
 			throw Exception("Directory " + part_path + " already exists");
 
+		MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
+		new_data_part->name = "tmp_" + part_name;
+		new_data_part->is_temp = true;
+
 		size_t files;
 		readBinary(files, in);
 		MergeTreeData::DataPart::Checksums checksums;
@@ -118,9 +122,7 @@ public:
 
 		assertEOF(in);
 
-		MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 		ActiveDataPartSet::parsePartName(part_name, *new_data_part);
-		new_data_part->name = "tmp_" + part_name;
 		new_data_part->modification_time = time(0);
 		new_data_part->loadColumns();
 		new_data_part->loadChecksums();

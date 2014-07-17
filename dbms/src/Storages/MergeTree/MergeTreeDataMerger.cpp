@@ -268,6 +268,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
 	new_data_part->name = "tmp_" + merged_name;
+	new_data_part->is_temp = true;
 
 	/** Читаем из всех кусков, сливаем и пишем в новый.
 	  * Попутно вычисляем выражение для сортировки.

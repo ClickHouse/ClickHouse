@@ -14,12 +14,12 @@ class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergeTreeBlockInputStream(const String & path_,	/// Путь к куску
-		size_t block_size_, const Names & column_names_,
+		size_t block_size_, Names column_names,
 		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
 		const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
-		ExpressionActionsPtr prewhere_actions_, String prewhere_column_)
+		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns = true)
 		:
-		path(path_), block_size(block_size_), column_names(column_names_),
+		path(path_), block_size(block_size_),
 		storage(storage_), owned_data_part(owned_data_part_),
 		part_columns_lock(new Poco::ScopedReadRWLock(owned_data_part->columns_lock)),
 		all_mark_ranges(mark_ranges_), remaining_mark_ranges(mark_ranges_),
@@ -27,11 +27,9 @@ public:
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
 		log(&Logger::get("MergeTreeBlockInputStream"))
 	{
-		/// Под owned_data_part->columns_lock проверим, что все запрошенные столбцы в куске того же типа, что в таблице.
-		/// Это может быть не так во время ALTER MODIFY.
-		storage.check(owned_data_part->columns, column_names);
-
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
+
+		Names pre_column_names;
 
 		if (prewhere_actions)
 		{
@@ -52,6 +50,24 @@ public:
 		}
 		column_name_set.insert(column_names.begin(), column_names.end());
 
+		if (check_columns)
+		{
+			/// Под owned_data_part->columns_lock проверим, что все запрошенные столбцы в куске того же типа, что в таблице.
+			/// Это может быть не так во время ALTER MODIFY.
+			if (!pre_column_names.empty())
+				storage.check(owned_data_part->columns, pre_column_names);
+			if (!column_names.empty())
+				storage.check(owned_data_part->columns, column_names);
+
+			pre_columns = storage.getColumnsList().addTypes(pre_column_names);
+			columns = storage.getColumnsList().addTypes(column_names);
+		}
+		else
+		{
+			pre_columns = owned_data_part->columns.addTypes(pre_column_names);
+			columns = owned_data_part->columns.addTypes(column_names);
+		}
+
 		LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
 			<< ", up to " << (all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity
 			<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
@@ -64,8 +80,11 @@ public:
 		std::stringstream res;
 		res << "MergeTree(" << path << ", columns";
 
-		for (size_t i = 0; i < column_names.size(); ++i)
-			res << ", " << column_names[i];
+		for (const NameAndTypePair & column : columns)
+			res << ", " << column.name;
+
+		if (prewhere_actions)
+			res << ", prewhere, " << prewhere_actions->getID();
 
 		res << ", marks";
 
@@ -90,9 +109,9 @@ protected:
 		if (!reader)
 		{
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader.reset(new MergeTreeReader(path, column_names, uncompressed_cache, storage, all_mark_ranges));
+			reader.reset(new MergeTreeReader(path, columns, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(path, pre_column_names, uncompressed_cache, storage, all_mark_ranges));
+				pre_reader.reset(new MergeTreeReader(path, pre_columns, uncompressed_cache, storage, all_mark_ranges));
 		}
 
 		if (prewhere_actions)
@@ -262,9 +281,9 @@ protected:
 private:
 	const String path;
 	size_t block_size;
-	Names column_names;
+	NamesAndTypesList columns;
 	NameSet column_name_set;
-	Names pre_column_names;
+	NamesAndTypesList pre_columns;
 	MergeTreeData & storage;
 	MergeTreeData::DataPartPtr owned_data_part;	/// Кусок не будет удалён, пока им владеет этот объект.
 	std::unique_ptr<Poco::ScopedReadRWLock> part_columns_lock; /// Не дадим изменить список столбцов куска, пока мы из него читаем.
