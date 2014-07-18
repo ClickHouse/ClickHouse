@@ -84,6 +84,7 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 				break;
 
 			list->children.push_back(elem);
+			first = false;
 		}
 		else
 		{
@@ -98,8 +99,6 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 
 			list->children.push_back(elem);
 		}
-
-		first = false;
 	}
 
 	if (!allow_empty && first)
@@ -123,6 +122,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 				return false;
 
 			node = elem;
+			first = false;
 		}
 		else
 		{
@@ -184,8 +184,6 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 
 			node = function_node;
 		}
-
-		first = false;
 	}
 
 	return true;

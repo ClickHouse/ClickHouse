@@ -36,7 +36,8 @@ bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expect
 		return false;
 
 	ws.ignore(pos, end);
-	contents.parse(pos, end, contents_node, expected);
+	if (!contents.parse(pos, end, contents_node, expected))
+		return false;
 	ws.ignore(pos, end);
 
 	if (!close.ignore(pos, end, expected))
@@ -64,7 +65,8 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, E
 		return false;
 
 	ws.ignore(pos, end);
-	contents.parse(pos, end, contents_node, expected);
+	if (!contents.parse(pos, end, contents_node, expected))
+		return false;
 	ws.ignore(pos, end);
 
 	if (!close.ignore(pos, end, expected))
@@ -108,7 +110,8 @@ bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 		return false;
 
 	ws.ignore(pos, end);
-	select.parse(pos, end, select_node, expected);
+	if (!select.parse(pos, end, select_node, expected))
+		return false;
 	ws.ignore(pos, end);
 
 	if (!close.ignore(pos, end, expected))
@@ -222,7 +225,8 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 
 	ws.ignore(pos, end);
 	Pos contents_begin = pos;
-	contents.parse(pos, end, expr_list_args, expected);
+	if (!contents.parse(pos, end, expr_list_args, expected))
+		return false;
 	Pos contents_end = pos;
 	ws.ignore(pos, end);
 
@@ -259,7 +263,8 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 		expr_list_args = nullptr;
 
 		ws.ignore(pos, end);
-		contents.parse(pos, end, expr_list_args, expected);
+		if (!contents.parse(pos, end, expr_list_args, expected))
+			return false;
 		ws.ignore(pos, end);
 
 		if (!close.ignore(pos, end, expected))
