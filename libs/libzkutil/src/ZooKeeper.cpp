@@ -214,9 +214,7 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZNODEEXISTS ||
-			code == ZNOCHILDRENFOREPHEMERALS ||
-			code == ZCONNECTIONLOSS ||
-			code == ZOPERATIONTIMEOUT))
+			code == ZNOCHILDRENFOREPHEMERALS))
 		throw KeeperException(code, path);
 
 	return code;
@@ -255,16 +253,20 @@ int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZBADVERSION ||
-			code == ZNOTEMPTY ||
-			code == ZCONNECTIONLOSS ||
-			code == ZOPERATIONTIMEOUT))
+			code == ZNOTEMPTY))
 		throw KeeperException(code, path);
 	return code;
 }
 
 int32_t ZooKeeper::tryRemoveWithRetries(const std::string & path, int32_t version)
 {
-	return retry(boost::bind(&ZooKeeper::tryRemove, this, boost::ref(path), version));
+	int32_t code = retry(boost::bind(&ZooKeeper::removeImpl, this, boost::ref(path), version));
+	if (!(	code == ZOK ||
+			code == ZNONODE ||
+			code == ZBADVERSION ||
+			code == ZNOTEMPTY))
+		throw KeeperException(code, path);
+	return code;
 }
 
 int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr watch)
@@ -329,10 +331,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_
 			code == ZNONODE))
 		throw KeeperException(code, path);
 
-	if (code == ZOK)
-		return true;
-	else
-		return false;
+	return code == ZOK;
 }
 
 int32_t ZooKeeper::setImpl(const std::string & path, const std::string & data,
@@ -360,9 +359,7 @@ int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
 
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
-			code == ZBADVERSION ||
-			code == ZCONNECTIONLOSS ||
-			code == ZOPERATIONTIMEOUT))
+			code == ZBADVERSION))
 		throw KeeperException(code, path);
 	return code;
 }
@@ -402,16 +399,22 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 		code == ZNODEEXISTS ||
 		code == ZNOCHILDRENFOREPHEMERALS ||
 		code == ZBADVERSION ||
-		code == ZNOTEMPTY ||
-		code == ZCONNECTIONLOSS ||
-		code == ZOPERATIONTIMEOUT))
+		code == ZNOTEMPTY))
 			throw KeeperException(code);
 	return code;
 }
 
 int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results)
 {
-	return retry(boost::bind(&ZooKeeper::tryMulti, this, boost::ref(ops), out_results));
+	int32_t code = retry(boost::bind(&ZooKeeper::multiImpl, this, boost::ref(ops), out_results));
+	if (!(code == ZOK ||
+		code == ZNONODE ||
+		code == ZNODEEXISTS ||
+		code == ZNOCHILDRENFOREPHEMERALS ||
+		code == ZBADVERSION ||
+		code == ZNOTEMPTY))
+			throw KeeperException(code);
+	return code;
 }
 
 static const int BATCH_SIZE = 100;

@@ -966,10 +966,13 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	{
 		success = executeLogEntry(entry, pool_context);
 
-		auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
-		if (code != ZOK)
-			LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
-				<< zkutil::ZooKeeper::error2string(code) + ". There must be a bug somewhere. Ignoring it.");
+		if (success)
+		{
+			auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
+			if (code != ZOK)
+				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
+					<< zkutil::ZooKeeper::error2string(code) + ". There must be a bug somewhere. Ignoring it.");
+		}
 
 		exception = false;
 	}
