@@ -73,8 +73,6 @@ public:
 	  *  - Нет родителя создаваемой ноды.
 	  *  - Родитель эфемерный.
 	  *  - Такая нода уже есть.
-	  *  - ZCONNECTIONLOSS
-	  *  - ZOPERATIONTIMEOUT
 	  * При остальных ошибках бросает исключение.
 	  */
 	int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated);
@@ -94,8 +92,6 @@ public:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
 	  *  - У ноды есть дети.
-	  *  - ZCONNECTIONLOSS
-	  *  - ZOPERATIONTIMEOUT
 	  */
 	int32_t tryRemove(const std::string & path, int32_t version = -1);
 	/// Если есть проблемы с сетью может сам удалить ноду и вернуть ZNONODE
@@ -116,8 +112,6 @@ public:
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
-	  *  - ZCONNECTIONLOSS
-	  *  - ZOPERATIONTIMEOUT
 	  */
 	int32_t trySet(const std::string & path, const std::string & data,
 							int32_t version = -1, Stat * stat = nullptr);
