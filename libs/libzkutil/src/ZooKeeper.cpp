@@ -50,7 +50,10 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 		/// Гарантируется, что не-ZOO_SESSION_EVENT событие придет ровно один раз (https://issues.apache.org/jira/browse/ZOOKEEPER-890).
 		if (type != ZOO_SESSION_EVENT)
 		{
-			watch->zk.watch_store.erase(watch);
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(watch->zk.mutex);
+				watch->zk.watch_store.erase(watch);
+			}
 			delete watch;
 		}
 	}
@@ -116,7 +119,10 @@ void * ZooKeeper::watchForEvent(EventPtr event)
 	if (event)
 	{
 		WatchWithEvent * res = new WatchWithEvent(*this, event);
-		watch_store.insert(res);
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+			watch_store.insert(res);
+		}
 		return reinterpret_cast<void *>(res);
 	}
 	else
@@ -178,7 +184,7 @@ int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data
 	size_t name_buffer_size = path.size() + SEQUENTIAL_SUFFIX_SIZE;
 	char * name_buffer = new char[name_buffer_size];
 
-	code = zoo_create(impl, path.c_str(), data.c_str(), data.size(), default_acl, mode,  name_buffer, name_buffer_size);
+	code = zoo_create(impl, path.c_str(), data.c_str(), data.size(), getDefaultACL(), mode,  name_buffer, name_buffer_size);
 
 	if (code == ZOK)
 	{
