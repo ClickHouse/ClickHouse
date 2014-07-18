@@ -414,18 +414,22 @@ int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_resul
 	return retry(boost::bind(&ZooKeeper::tryMulti, this, boost::ref(ops), out_results));
 }
 
+static const int BATCH_SIZE = 100;
+
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
 	Strings children = getChildren(path);
-	zkutil::Ops ops;
-	Strings strings;
-	for (const std::string & child : children)
+	while (!children.empty())
 	{
-		removeChildrenRecursive(path + "/" + child);
-		strings.push_back(path + "/" + child);
-		ops.push_back(new Op::Remove(strings.back(), -1));
+		zkutil::Ops ops;
+		for (size_t i = 0; i < BATCH_SIZE && !children.empty(); ++i)
+		{
+			removeChildrenRecursive(path + "/" + children.back());
+			ops.push_back(new Op::Remove(path + "/" + children.back(), -1));
+			children.pop_back();
+		}
+		multi(ops);
 	}
-	multi(ops);
 }
 
 void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
@@ -433,23 +437,27 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
 	Strings children;
 	if (tryGetChildren(path, children) != ZOK)
 		return;
-	zkutil::Ops ops;
-	Strings strings;
-	for (const std::string & child : children)
+	while (!children.empty())
 	{
-		tryRemoveChildrenRecursive(path + "/" + child);
-		strings.push_back(path + "/" + child);
-		ops.push_back(new Op::Remove(strings.back(), -1));
-	}
-
-	/** Сначала пытаемся удалить детей более быстрым способом - всех сразу. Если не получилось,
-	  *  значит кто-то кроме нас удаляет этих детей, и придется удалять их по одному.
-	  */
-	if (tryMulti(ops) != ZOK)
-	{
-		for (const std::string & child : children)
+		zkutil::Ops ops;
+		Strings batch;
+		for (size_t i = 0; i < BATCH_SIZE && !children.empty(); ++i)
 		{
-			tryRemove(child);
+			batch.push_back(path + "/" + children.back());
+			children.pop_back();
+			tryRemoveChildrenRecursive(batch.back());
+			ops.push_back(new Op::Remove(batch.back(), -1));
+		}
+
+		/** Сначала пытаемся удалить детей более быстрым способом - сразу пачкой. Если не получилось,
+		  *  значит кто-то кроме нас удаляет этих детей, и придется удалять их по одному.
+		  */
+		if (tryMulti(ops) != ZOK)
+		{
+			for (const std::string & child : batch)
+			{
+				tryRemove(child);
+			}
 		}
 	}
 }
