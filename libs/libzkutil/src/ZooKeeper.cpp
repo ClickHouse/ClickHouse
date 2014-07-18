@@ -122,6 +122,10 @@ void * ZooKeeper::watchForEvent(EventPtr event)
 		{
 			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 			watch_store.insert(res);
+			if (watch_store.size() % 10000 == 0)
+			{
+				LOG_ERROR(log, "There are " << watch_store.size() << " active watches. There must be a leak somewhere.");
+			}
 		}
 		return reinterpret_cast<void *>(res);
 	}
