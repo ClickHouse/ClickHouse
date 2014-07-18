@@ -734,7 +734,7 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 	return true;
 }
 
-void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context)
+bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context)
 {
 	if (entry.type == LogEntry::GET_PART ||
 		entry.type == LogEntry::MERGE_PARTS)
@@ -747,7 +747,7 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 		{
 			if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
 				LOG_DEBUG(log, "Skipping action for part " + entry.new_part_name + " - part already exists");
-			return;
+			return true;
 		}
 	}
 
@@ -823,9 +823,11 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 	if (do_fetch)
 	{
+		String replica;
+
 		try
 		{
-			String replica = findReplicaHavingPart(entry.new_part_name, true);
+			replica = findReplicaHavingPart(entry.new_part_name, true);
 			if (replica.empty())
 			{
 				ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
@@ -881,6 +883,15 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 							queue.splice(queue.end(), queue, it0, it);
 						}
 					}
+
+					/** Если этого куска ни у кого нет, но в очереди упоминается мердж с его участием, то наверно этот кусок такой старый,
+					  *  что его все померджили и удалили. Не будем бросать исключение, чтобы queueTask лишний раз не спала.
+					  */
+					if (replica.empty())
+					{
+						LOG_INFO(log, "No replica has part " << entry.new_part_name << ". Will fetch merged part instead.");
+						return false;
+					}
 				}
 			}
 			catch (...)
@@ -891,6 +902,8 @@ void StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			throw;
 		}
 	}
+
+	return true;
 }
 
 void StorageReplicatedMergeTree::queueUpdatingThread()
@@ -946,23 +959,24 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	if (!have_work)
 		return false;
 
+	bool exception = true;
 	bool success = false;
 
 	try
 	{
-		executeLogEntry(entry, pool_context);
+		success = executeLogEntry(entry, pool_context);
 
 		auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
 		if (code != ZOK)
 			LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
 				<< zkutil::ZooKeeper::error2string(code) + ". There must be a bug somewhere. Ignoring it.");
 
-		success = true;
+		exception = false;
 	}
 	catch (Exception & e)
 	{
 		if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
-			/// Если ни у кого нет нужного куска, это нормальная ситуация; не будем писать в лог с уровнем Error.
+			/// Если ни у кого нет нужного куска, наверно, просто не все реплики работают; не будем писать в лог с уровнем Error.
 			LOG_INFO(log, e.displayText());
 		else
 			tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -980,7 +994,8 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		queue.push_back(entry);
 	}
 
-	return success;
+	/// Если не было исключения, не нужно спать.
+	return !exception;
 }
 
 void StorageReplicatedMergeTree::mergeSelectingThread()

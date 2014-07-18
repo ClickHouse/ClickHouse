@@ -339,8 +339,9 @@ private:
 	bool shouldExecuteLogEntry(const LogEntry & entry);
 
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
+	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.
 	  */
-	void executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
+	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
 
 	/** В бесконечном цикле обновляет очередь.
 	  */
