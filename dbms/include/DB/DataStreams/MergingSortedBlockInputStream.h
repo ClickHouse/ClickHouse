@@ -92,7 +92,32 @@ protected:
 	void setRow(Row & row, TSortCursor & cursor)
 	{
 		for (size_t i = 0; i < num_columns; ++i)
-			cursor->all_columns[i]->get(cursor->pos, row[i]);
+		{
+			try
+			{
+				cursor->all_columns[i]->get(cursor->pos, row[i]);
+			}
+			catch (...)
+			{
+				tryLogCurrentException(__PRETTY_FUNCTION__);
+
+				/// Узнаем имя столбца и бросим исключение поинформативней.
+				
+				String column_name;
+				for (const Block & block : source_blocks)
+				{
+					if (i < block.columns())
+					{
+						column_name = block.getByPosition(i).name;
+						break;
+					}
+				}
+
+				throw DB::Exception("MergingSortedBlockInputStream failed to read row " + toString(cursor->pos)
+					+ " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
+					ErrorCodes::CORRUPTED_DATA);
+			}
+		}
 	}
 
 	/// Сохранить первичный ключ, на который указывает cursor в row.
