@@ -515,6 +515,15 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 		zkutil::CreateMode::Persistent));
 }
 
+void StorageReplicatedMergeTree::enqueuePartForCheck(const String & name)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+	if (parts_to_check_set.count(name))
+		return;
+	parts_to_check_queue.push_back(name);
+	parts_to_check_set.insert(name);
+}
+
 void StorageReplicatedMergeTree::clearOldParts()
 {
 	Strings parts = data.clearOldParts();
@@ -1247,6 +1256,139 @@ void StorageReplicatedMergeTree::alterThread()
 
 	LOG_DEBUG(log, "alter thread finished");
 }
+
+void StorageReplicatedMergeTree::partCheckThread()
+{
+	while (!shutdown_called)
+	{
+		try
+		{
+			/// Достанем из очереди кусок для проверки.
+			String part_name;
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+				if (parts_to_check_queue.empty())
+				{
+					if (!parts_to_check_set.empty())
+					{
+						LOG_ERROR(log, "Non-empty parts_to_check_set with empty parts_to_check_queue. This is a bug.");
+						parts_to_check_set.clear();
+					}
+				}
+				else
+				{
+					part_name = parts_to_check_queue.front();
+				}
+			}
+			if (part_name.empty())
+			{
+				parts_to_check_event.wait();
+				continue;
+			}
+
+			LOG_WARNING(log, "Checking part " << part_name);
+
+			auto part = data.getContainingPart(part_name);
+			String part_path = replica_path + "/parts/" + part_name;
+
+			/// Этого или покрывающего куска у нас нет.
+			if (!part)
+			{
+				/// Если кусок есть в ZooKeeper, удалим его оттуда и добавим в очередь задание скачать его.
+				if (zookeeper->exists(part_path))
+				{
+					LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. "
+						"Removing from ZooKeeper and queueing a fetch.");
+
+					LogEntry log_entry;
+					log_entry.type = LogEntry::GET_PART;
+					log_entry.source_replica = "";
+					log_entry.new_part_name = part_name;
+
+					zkutil::Ops ops;
+					ops.push_back(new zkutil::Op::Create(
+						replica_path + "/queue/queue-", log_entry.toString(), zookeeper->getDefaultACL(),
+						zkutil::CreateMode::PersistentSequential));
+					ops.push_back(new zkutil::Op::Remove(part_path + "/checksums", -1));
+					ops.push_back(new zkutil::Op::Remove(part_path + "/columns", -1));
+					ops.push_back(new zkutil::Op::Remove(part_path, -1));
+					auto results = zookeeper->multi(ops);
+
+					{
+						Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+
+						String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
+						log_entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+						log_entry.addResultToVirtualParts(*this);
+						queue.push_back(entry);
+					}
+				}
+				/// Если куска нет в ZooKeeper, проверим есть ли он хоть у кого-то.
+				else
+				{
+					LOG_WARNING(log, "Checking if anyone has part covering " << part_name << ".");
+					asdqwe;
+
+					/// Если ни у кого нет такого куска, удалим его из нашей очереди и добавим его в block_numbers.
+					//не получится надежно удалить из очереди :( Можно попробовать полагаться на block_numbers, но их могут удалить
+					LOG_ERROR(log,
+					//asdqwe;
+				}
+			}
+			/// У нас есть этот кусок, и он активен.
+			else if (part->name == part_name)
+			{
+				/// Если кусок есть в ZooKeeper, сверим его данные с его чексуммами, а их с ZooKeeper.
+				if (zookeeper->exists(replica_path + "/parts/" + part_name))
+				{
+					asdqwe;
+
+					/// Если кусок сломан, одновременно удалим его из ZK и добавим в очередь задание забрать этот кусок у другой реплики.
+					/// И удалим кусок локально.
+					asdqwe;
+				}
+				/// Если куска нет в ZooKeeper, удалим его локально.
+				else
+				{
+					/// Если этот кусок еще и получен в результате слияния, это уже чересчур странно.
+					if (part->left != part->right)
+					{
+						LOG_ERROR(log, );
+					}
+					else
+					{
+						asdqwe;
+					}
+				}
+			}
+			else
+			{
+				/// Если у нас есть покрывающий кусок, игнорируем все проблемы с этим куском.
+				/// В худшем случае в лог еще old_parts_lifetime секунд будут валиться ошибки, пока кусок не удалится как старый.
+			}
+
+			/// Удалим кусок из очереди.
+			{
+				Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+				if (parts_to_check_queue.empty() || parts_to_check_queue.front() != part_name)
+				{
+					LOG_ERROR(log, "Someone changed parts_to_check_queue.front(). This is a bug.");
+				}
+				else
+				{
+					parts_to_check_queue.pop_front();
+					parts_to_check_set.erase(part_name);
+				}
+			}
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+			parts_to_check_event.tryWait(ERROR_SLEEP_MS);
+		}
+	}
+}
+
 
 bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
 {
