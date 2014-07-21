@@ -204,8 +204,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			max_count_from_left = cur_longest_len;
 
 			if (!found
-				|| std::make_pair(std::make_pair(cur_longest_max, cur_longest_min), -cur_longest_len)
-					< std::make_pair(std::make_pair(min_max, min_min), -max_len))
+				|| std::forward_as_tuple(cur_longest_max, cur_longest_min, -cur_longest_len)
+				   < std::forward_as_tuple(min_max, min_min, -max_len))
 			{
 				found = true;
 				min_max = cur_longest_max;

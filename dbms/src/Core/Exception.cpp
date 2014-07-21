@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <string.h>
+#include <cxxabi.h>
 
 #include <Yandex/logger_useful.h>
 
@@ -71,7 +72,15 @@ void tryLogCurrentException(const char * log_name)
 	{
 		try
 		{
-			LOG_ERROR(&Logger::get(log_name), "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
+			int status;
+			char * realname = abi::__cxa_demangle(typeid(e).name(), 0, 0, &status);
+			std::string name = realname;
+			free(realname);
+
+			if (status)
+				name += " (demangling status: " + toString(status) + ")";
+
+			LOG_ERROR(&Logger::get(log_name), "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what());
 		}
 		catch (...) {}
 	}
