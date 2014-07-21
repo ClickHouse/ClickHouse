@@ -111,5 +111,11 @@ public:
 		pos = working_buffer.begin();
 		state = uint128(0, 0);
 	}
+
+	uint128 getHash()
+	{
+		next();
+		return IHashingBuffer<WriteBuffer>::getHash();
+	}
 };
 }

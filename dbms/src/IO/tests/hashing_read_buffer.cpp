@@ -52,7 +52,7 @@ void test(size_t data_size)
 
 		if (buf.getHash() != reference)
 		{
-			std::cout << uint128ToString(buf.getHash()) << " " << uint128ToString(reference) << std::endl;
+			//std::cout << uint128ToString(buf.getHash()) << " " << uint128ToString(reference) << std::endl;
 			FAIL("failed on data size " << data_size << " reading by blocks of size " << read_buffer_block_size);
 		}
 		if (buf.getHash() != out.getHash())
