@@ -20,9 +20,109 @@
 #include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
 
+#include <thread>
+#include <atomic>
+
+namespace
+{
+
+/**	Automatically sends ProfileEvents to Graphite every minute
+*/
+class ProfileEventsTransmitter
+{
+public:
+	~ProfileEventsTransmitter()
+	{
+		try
+		{
+			quit.store(true, std::memory_order_relaxed);
+			thread.join();
+		}
+		catch (...)
+		{
+			DB::tryLogCurrentException(__FUNCTION__);
+		}
+	}
+
+private:
+	void run()
+	{
+		while (!quit.load(std::memory_order_relaxed))
+		{
+			std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::minutes(1));
+			transmitCounters();
+		}
+	}
+
+	void transmitCounters()
+	{
+		decltype(prev_counters) counters;
+		std::copy(std::begin(prev_counters), std::end(prev_counters), counters);
+		std::transform(
+			std::begin(counters), std::end(counters), ProfileEvents::counters,
+			prev_counters, [] (size_t& prev, size_t& current)
+			{
+				prev = current - prev;
+				return prev;
+			}
+		);
+
+		auto key_vals = GraphiteWriter::KeyValueVector<size_t>{};
+		key_vals.reserve(ProfileEvents::END);
+
+		for (auto i = 0; i < ProfileEvents::END; ++i)
+		{
+			key_vals.push_back({
+				descriptionToKey(ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))),
+				counters[i]
+			});
+		}
+
+		Daemon::instance().writeToGraphite(key_vals);
+	}
+
+	std::string descriptionToKey(std::string desc)
+	{
+		std::transform(std::begin(desc), std::end(desc), std::begin(desc),
+			[] (const char c) { return c == ' ' ? '_' : std::tolower(c); }
+		);
+
+		return desc;
+	}
+
+	decltype(ProfileEvents::counters) prev_counters{0};
+	std::atomic<bool> quit;
+	std::thread thread{&ProfileEventsTransmitter::run, this};
+};
+
+}
 
 namespace DB
 {
+
+/** Каждые две секунды проверяет, не изменился ли конфиг.
+  *  Когда изменился, запускает на нем ConfigProcessor и вызывает setUsersConfig у контекста.
+  * NOTE: Не перезагружает конфиг, если изменились другие файлы, влияющие на обработку конфига: metrika.xml
+  *  и содержимое conf.d и users.d. Это можно исправить, переместив проверку времени изменения файлов в ConfigProcessor.
+  */
+class UsersConfigReloader
+{
+public:
+	UsersConfigReloader(const std::string & path, Context * context);
+	~UsersConfigReloader();
+private:
+	std::string path;
+	Context * context;
+
+	time_t file_modification_time;
+	std::atomic<bool> quit;
+	std::thread thread;
+
+	Logger * log;
+
+	void reloadIfNewer(bool force);
+	void run();
+};
 
 /// Отвечает "Ok.\n", если получен любой GET запрос. Используется для проверки живости.
 class PingRequestHandler : public Poco::Net::HTTPRequestHandler
@@ -95,7 +195,7 @@ public:
 };
 
 
-UsersConfigReloader::UsersConfigReloader(const std::string & path_, Poco::SharedPtr<Context> context_)
+UsersConfigReloader::UsersConfigReloader(const std::string & path_, Context * context_)
 	: path(path_), context(context_), file_modification_time(0), quit(false), log(&Logger::get("UsersConfigReloader"))
 {
 	/// Если путь к конфигу не абсолютный, угадаем, относительно чего он задан.
@@ -236,7 +336,7 @@ int Server::main(const std::vector<std::string> & args)
 	DateLUT::instance();
 	LOG_TRACE(log, "Initialized DateLUT.");
 
-	global_context = new Context;
+	global_context.reset(new Context);
 
 	/** Контекст содержит всё, что влияет на обработку запроса:
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
@@ -265,7 +365,9 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->setDefaultReplicaName(config().getString("replica_name"));
 
 	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	users_config_reloader = new UsersConfigReloader(users_config_path, global_context);
+	auto users_config_reloader = std::unique_ptr<UsersConfigReloader>{
+		new UsersConfigReloader(users_config_path, global_context.get())
+	};
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -301,6 +403,10 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 
 	{
+		const auto profile_events_transmitter = config().getBool("use_graphite", true)
+			? std::unique_ptr<ProfileEventsTransmitter>{new ProfileEventsTransmitter{}}
+			: nullptr;
+
 		bool use_olap_server = config().getBool("use_olap_http_server", false);
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
 
@@ -350,8 +456,8 @@ int Server::main(const std::vector<std::string> & args)
 		Poco::SharedPtr<Poco::Net::HTTPServer> olap_http_server;
 		if (use_olap_server)
 		{
-			olap_parser = new OLAP::QueryParser();
-			olap_converter = new OLAP::QueryConverter(config());
+			olap_parser.reset(new OLAP::QueryParser());
+			olap_converter.reset(new OLAP::QueryConverter(config()));
 
 			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config().getString("olap_http_port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
@@ -376,7 +482,7 @@ int Server::main(const std::vector<std::string> & args)
 
 		LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
 
-		users_config_reloader = nullptr;
+		users_config_reloader.reset();
 
 		is_cancelled = true;
 
@@ -399,7 +505,7 @@ int Server::main(const std::vector<std::string> & args)
 	/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
 	  * В этот момент никто больше не должен владеть shared-частью контекста.
 	  */
-	global_context = nullptr;
+	global_context.reset();
 
 	LOG_DEBUG(log, "Destroyed global context.");
 

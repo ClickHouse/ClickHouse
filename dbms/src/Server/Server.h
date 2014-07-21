@@ -25,9 +25,6 @@
 #include "OLAPQueryParser.h"
 #include "OLAPQueryConverter.h"
 
-#include <thread>
-#include <atomic>
-
 /** Сервер предоставляет три интерфейса:
   * 1. HTTP - простой интерфейс для доступа из любых приложений.
   * 2. TCP - интерфейс для доступа из родной библиотеки, родного клиента, и для межсерверного взаимодействия.
@@ -42,44 +39,16 @@
 namespace DB
 {
 
-
-/** Каждые две секунды проверяет, не изменился ли конфиг.
-  *  Когда изменился, запускает на нем ConfigProcessor и вызывает setUsersConfig у контекста.
-  * NOTE: Не перезагружает конфиг, если изменились другие файлы, влияющие на обработку конфига: metrika.xml
-  *  и содержимое conf.d и users.d. Это можно исправить, переместив проверку времени изменения файлов в ConfigProcessor.
-  */
-class UsersConfigReloader
-{
-public:
-	UsersConfigReloader(const std::string & path, Poco::SharedPtr<Context> context);
-	~UsersConfigReloader();
-private:
-	std::string path;
-	Poco::SharedPtr<Context> context;
-
-	time_t file_modification_time;
-	std::atomic<bool> quit;
-	std::thread thread;
-
-	Logger * log;
-
-	void reloadIfNewer(bool force);
-	void run();
-};
-
-
 class Server : public Daemon
 {
 public:
 	/// Глобальные настройки севрера
-	Poco::SharedPtr<Context> global_context;
+	std::unique_ptr<Context> global_context;
 	
-	Poco::SharedPtr<OLAP::QueryParser> olap_parser;
-	Poco::SharedPtr<OLAP::QueryConverter> olap_converter;
-	
-protected:
-	Poco::SharedPtr<UsersConfigReloader> users_config_reloader;
+	std::unique_ptr<OLAP::QueryParser> olap_parser;
+	std::unique_ptr<OLAP::QueryConverter> olap_converter;
 
+protected:
 	void initialize(Application& self)
 	{
 		Daemon::initialize(self);
@@ -94,6 +63,5 @@ protected:
 
 	int main(const std::vector<std::string>& args);
 };
-
 
 }
