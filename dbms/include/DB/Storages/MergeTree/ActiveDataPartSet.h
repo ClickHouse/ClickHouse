@@ -73,6 +73,8 @@ public:
 	/// Кладет в DataPart данные из имени кусочка.
 	static void parsePartName(const String & file_name, Part & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
 
+	static bool contains(const String & outer_part_name, const String & inner_part_name);
+
 private:
 	typedef std::set<Part> Parts;
 

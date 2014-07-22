@@ -532,6 +532,9 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 		mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
 
+		/// TODO: можно не сбрасывать кеши при добавлении столбца.
+		data_part->storage.context.resetCaches();
+
 		clear();
 	}
 	catch (...)

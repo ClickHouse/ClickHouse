@@ -70,6 +70,9 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
+	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
+	void enqueuePartForCheck(const String & name);
+
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 
@@ -186,7 +189,7 @@ private:
 	  */
 	StringSet parts_to_check_set;
 	StringList parts_to_check_queue;
-	Poco::FastMuterx parts_to_check_mutex;
+	Poco::FastMutex parts_to_check_mutex;
 	Poco::Event parts_to_check_event;
 
 	String database_name;
@@ -326,8 +329,8 @@ private:
 	  */
 	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops);
 
-	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
-	void enqueuePartForCheck(const String & name);
+	/// Убирает кусок из ZooKeeper и добавляет в очередь задание скачать его. Предполагается это делать с битыми кусками.
+	void removePartAndEnqueueFetch(const String & part_name);
 
 	void clearOldParts();
 
