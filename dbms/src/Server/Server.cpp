@@ -82,8 +82,9 @@ private:
 
 		for (auto i = 0; i < ProfileEvents::END; ++i)
 		{
-			const auto counter_increment = ProfileEvents::counters[i] - prev_counters[i];
-			prev_counters[i] = ProfileEvents::counters[i];
+			const auto counter = ProfileEvents::counters[i];
+			const auto counter_increment = counter - prev_counters[i];
+			prev_counters[i] = counter;
 
 			std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
 			std::replace(std::begin(key), std::end(key), ' ', '_');
