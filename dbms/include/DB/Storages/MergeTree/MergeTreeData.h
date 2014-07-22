@@ -137,6 +137,9 @@ public:
 
 				Checksum() {}
 				Checksum(size_t file_size_, uint128 file_hash_) : file_size(file_size_), file_hash(file_hash_) {}
+				Checksum(size_t file_size_, uint128 file_hash_, size_t uncompressed_size_, uint128 uncompressed_hash_)
+					: file_size(file_size_), file_hash(file_hash_), is_compressed(true),
+					uncompressed_size(uncompressed_size_), uncompressed_hash(uncompressed_hash_) {}
 
 				void checkEqual(const Checksum & rhs, bool have_uncompressed, const String & name) const;
 				void checkSize(const String & path) const;

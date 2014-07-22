@@ -51,6 +51,13 @@ public:
 		return res;
 	}
 
+
+	inline void nextIfAtEnd()
+	{
+		if (pos == working_buffer.end())
+			next();
+	}
+
 	virtual ~ReadBuffer() {}
 
 
@@ -85,6 +92,21 @@ public:
 
 		if (n)
 			throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+	}
+
+	/// Можно было бы назвать этот метод ignore, а ignore назвать ignoreStrict.
+	size_t tryIgnore(size_t n)
+	{
+		size_t bytes_ignored = 0;
+
+		while (bytes_ignored < n && !eof())
+		{
+			size_t bytes_to_ignore = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_ignored);
+			pos += bytes_to_ignore;
+			bytes_ignored += bytes_to_ignore;
+		}
+
+		return bytes_ignored;
 	}
 
 	/** Читает столько, сколько есть, не больше n байт. */
