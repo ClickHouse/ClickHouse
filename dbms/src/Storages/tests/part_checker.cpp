@@ -6,15 +6,15 @@ int main(int argc, char ** argv)
 	Logger::root().setChannel(new Poco::ConsoleChannel(std::cout));
 	Logger::root().setLevel("trace");
 
-	if (argc != 2 && argc != 3)
+	if ((argc != 3 && argc != 4) || (strcmp(argv[2], "0") && strcmp(argv[2], "1")))
 	{
-		std::cerr << "usage: " << argv[0] << " path [index_granularity]" << std::endl;
+		std::cerr << "usage: " << argv[0] << " path strict [index_granularity]" << std::endl;
 		return 1;
 	}
 
 	try
 	{
-		DB::MergeTreePartChecker::checkDataPart(argv[1], argc == 3 ? DB::parse<size_t>(argv[2]) : 8192ul, DB::DataTypeFactory());
+		DB::MergeTreePartChecker::checkDataPart(argv[1], argc == 3 ? DB::parse<size_t>(argv[2]) : 8192ul, argv[2][0] == '1', DB::DataTypeFactory());
 	}
 	catch (...)
 	{

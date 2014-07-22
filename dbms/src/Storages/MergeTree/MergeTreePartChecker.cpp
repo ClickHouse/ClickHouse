@@ -26,16 +26,16 @@ struct Stream
 	ReadBufferFromFile mrk_file_buf;
 	HashingReadBuffer mrk_hashing_buf;
 
-	Stream(const String & path, const String & name, DataTypePtr type_) : type(type_),
+	Stream(const String & path_, const String & name_, DataTypePtr type_) : type(type_), path(path_), name(name_),
 		file_buf(path + name + ".bin"), compressed_hashing_buf(file_buf), uncompressing_buf(compressed_hashing_buf),
 		uncompressed_hashing_buf(uncompressing_buf), mrk_file_buf(path + name + ".mrk"), mrk_hashing_buf(mrk_file_buf)
 	{
 		std::cerr << "hi: " << compressed_hashing_buf.count() << ' ' << uncompressed_hashing_buf.offset() << std::endl;
 	}
 
-	bool dataEOF()
+	bool marksEOF()
 	{
-		return uncompressed_hashing_buf.eof();
+		return mrk_hashing_buf.eof();
 	}
 
 	size_t read(size_t rows)
@@ -100,20 +100,25 @@ struct Stream
 		return size / sizeof(UInt64);
 	}
 
-	void assertMark()
+	void assertMark(bool strict)
 	{
 		MarkInCompressedFile mrk_mark;
 		readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
 		readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
 
 		MarkInCompressedFile data_mark;
-		data_mark.offset_in_compressed_file = compressed_hashing_buf.count();
-		data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-		if (mrk_mark == data_mark)
-			return;
+		if (!strict)
+		{
+			/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока,
+			///  и на начало следующего.
+			data_mark.offset_in_compressed_file = compressed_hashing_buf.count();
+			data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-		/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока, и на начало следующего.
+			if (mrk_mark == data_mark)
+				return;
+		}
+
 		uncompressed_hashing_buf.nextIfAtEnd();
 
 		data_mark.offset_in_compressed_file = compressed_hashing_buf.count();
@@ -140,7 +145,7 @@ struct Stream
 };
 
 /// Возвращает количество строк. Добавляет в checksums чексуммы всех файлов столбца.
-static size_t checkColumn(const String & path, const String & name, DataTypePtr type, size_t index_granularity,
+static size_t checkColumn(const String & path, const String & name, DataTypePtr type, size_t index_granularity, bool strict,
 						  MergeTreeData::DataPart::Checksums & checksums)
 {
 	size_t rows = 0;
@@ -149,17 +154,18 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 	{
 		if (auto array = dynamic_cast<const DataTypeArray *>(&*type))
 		{
-			Stream sizes_stream(path, name + ".size0", new DataTypeUInt64);
-			Stream data_stream(path, name, array->getNestedType());
+			String sizes_name = DataTypeNested::extractNestedTableName(name);
+			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", new DataTypeUInt64);
+			Stream data_stream(path, escapeForFileName(name), array->getNestedType());
 
 			ColumnUInt64::Container_t sizes;
 			while (true)
 			{
-				if (sizes_stream.dataEOF())
+				if (sizes_stream.marksEOF())
 					break;
 
-				sizes_stream.assertMark();
-				data_stream.assertMark();
+				sizes_stream.assertMark(strict);
+				data_stream.assertMark(strict);
 
 				size_t cur_rows = sizes_stream.readUInt64(index_granularity, sizes);
 
@@ -186,15 +192,15 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 		}
 		else
 		{
-			Stream data_stream(path, name, type);
+			Stream data_stream(path, escapeForFileName(name), type);
 
 			size_t rows = 0;
 			while (true)
 			{
-				if (data_stream.dataEOF())
+				if (data_stream.marksEOF())
 					break;
 
-				data_stream.assertMark();
+				data_stream.assertMark(strict);
 
 				size_t cur_rows = data_stream.read(index_granularity);
 
@@ -215,7 +221,7 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 	}
 }
 
-void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, const DataTypeFactory & data_type_factory)
+void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, bool strict, const DataTypeFactory & data_type_factory)
 {
 	if (!path.empty() && *path.rbegin() != '/')
 		path += "/";
@@ -242,7 +248,10 @@ void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, 
 	size_t rows = 0;
 	for (const NameAndTypePair & column : columns)
 	{
-		size_t cur_rows = checkColumn(path, escapeForFileName(column.name), column.type, index_granularity, checksums_data);
+		if (!strict && !Poco::File(path + escapeForFileName(column.name) + ".bin").exists())
+			continue;
+
+		size_t cur_rows = checkColumn(path, column.name, column.type, index_granularity, strict, checksums_data);
 		if (first)
 		{
 			rows = cur_rows;
@@ -256,6 +265,9 @@ void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, 
 
 		std::cerr << "column " << column.name << " ok" << std::endl;
 	}
+
+	if (first)
+		throw Exception("No columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
 	checksums_txt.checkEqual(checksums_data, true);
 }
