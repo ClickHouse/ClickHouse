@@ -22,11 +22,12 @@
 
 #include <thread>
 #include <atomic>
+#include <condition_variable>
 
 namespace
 {
 
-/**	Automatically sends ProfileEvents to Graphite every minute
+/**	Automatically sends difference of ProfileEvents to Graphite at beginning of every minute
 */
 class ProfileEventsTransmitter
 {
@@ -35,7 +36,13 @@ public:
 	{
 		try
 		{
-			quit.store(true, std::memory_order_relaxed);
+			{
+				std::lock_guard<std::mutex> lock{mutex};
+				quit = true;
+			}
+
+			cond.notify_one();
+
 			thread.join();
 		}
 		catch (...)
@@ -47,52 +54,53 @@ public:
 private:
 	void run()
 	{
-		while (!quit.load(std::memory_order_relaxed))
+		const auto get_next_minute = [] {
+			return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
+				std::chrono::system_clock::now() + std::chrono::minutes(1)
+			);
+		};
+
+		std::unique_lock<std::mutex> lock{mutex};
+
+		while (true)
 		{
-			std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::minutes(1));
+			const auto quit = cond.wait_until(lock, get_next_minute(), [this] {
+				return this->quit;
+			});
+
+			if (quit)
+				break;
+
 			transmitCounters();
 		}
 	}
 
 	void transmitCounters()
 	{
-		decltype(prev_counters) counters;
-		std::copy(std::begin(prev_counters), std::end(prev_counters), counters);
-		std::transform(
-			std::begin(counters), std::end(counters), ProfileEvents::counters,
-			prev_counters, [] (size_t& prev, size_t& current)
-			{
-				prev = current - prev;
-				return prev;
-			}
-		);
-
-		auto key_vals = GraphiteWriter::KeyValueVector<size_t>{};
+		GraphiteWriter::KeyValueVector<size_t> key_vals{};
 		key_vals.reserve(ProfileEvents::END);
 
 		for (auto i = 0; i < ProfileEvents::END; ++i)
 		{
-			key_vals.push_back({
-				descriptionToKey(ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))),
-				counters[i]
-			});
+			const auto counter_increment = ProfileEvents::counters[i] - prev_counters[i];
+			prev_counters[i] = ProfileEvents::counters[i];
+
+			std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
+			std::replace(std::begin(key), std::end(key), ' ', '_');
+
+			key_vals.emplace_back(event_path_prefix + key, counter_increment);
 		}
 
 		Daemon::instance().writeToGraphite(key_vals);
 	}
 
-	std::string descriptionToKey(std::string desc)
-	{
-		std::transform(std::begin(desc), std::end(desc), std::begin(desc),
-			[] (const char c) { return c == ' ' ? '_' : std::tolower(c); }
-		);
-
-		return desc;
-	}
-
-	decltype(ProfileEvents::counters) prev_counters{0};
-	std::atomic<bool> quit;
+	decltype(ProfileEvents::counters) prev_counters{};
+	bool quit = false;
+	std::mutex mutex;
+	std::condition_variable cond;
 	std::thread thread{&ProfileEventsTransmitter::run, this};
+
+	static constexpr auto event_path_prefix = "ClickHouse.ProfileEvents.";
 };
 
 }
