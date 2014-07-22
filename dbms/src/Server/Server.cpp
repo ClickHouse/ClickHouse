@@ -64,11 +64,7 @@ private:
 
 		while (true)
 		{
-			const auto quit = cond.wait_until(lock, get_next_minute(), [this] {
-				return this->quit;
-			});
-
-			if (quit)
+			if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
 				break;
 
 			transmitCounters();
@@ -80,7 +76,7 @@ private:
 		GraphiteWriter::KeyValueVector<size_t> key_vals{};
 		key_vals.reserve(ProfileEvents::END);
 
-		for (auto i = 0; i < ProfileEvents::END; ++i)
+		for (size_t i = 0; i < ProfileEvents::END; ++i)
 		{
 			const auto counter = ProfileEvents::counters[i];
 			const auto counter_increment = counter - prev_counters[i];
@@ -95,7 +91,9 @@ private:
 		Daemon::instance().writeToGraphite(key_vals);
 	}
 
+	/// Значения счётчиков при предыдущей отправке (или нули, если ни разу не отправляли).
 	decltype(ProfileEvents::counters) prev_counters{};
+
 	bool quit = false;
 	std::mutex mutex;
 	std::condition_variable cond;
