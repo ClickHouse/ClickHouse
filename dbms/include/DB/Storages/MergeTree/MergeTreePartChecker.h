@@ -15,8 +15,10 @@ public:
 	  *  - Проверяет правильность засечек.
 	  * Бросает исключение, если кусок испорчен или если проверить не получилось (TODO: можно попробовать разделить эти случаи).
 	  * Если strict, требует, чтобы для всех столбцов из columns.txt были файлы, и чтобы засечки не указывали в конец сжатого блока.
+	  * Если verbose, пишет в stderr прогресс и ошибки, и не останавливается при первой ошибке.
 	  */
-	static void checkDataPart(String path, size_t index_granularity, bool strict, const DataTypeFactory & data_type_factory);
+	static void checkDataPart(String path, size_t index_granularity, bool strict, const DataTypeFactory & data_type_factory,
+		bool verbose = false);
 };
 
 }

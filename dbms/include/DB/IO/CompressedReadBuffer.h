@@ -9,10 +9,18 @@ namespace DB
 class CompressedReadBuffer : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
+	size_t size_compressed = 0;
+
+	size_t currentBlockCompressedSize() const
+	{
+		return size_compressed;
+	}
+
 	bool nextImpl()
 	{
 		size_t size_decompressed;
-		if (!readCompressedData(size_decompressed))
+		size_compressed = readCompressedData(size_decompressed);
+		if (!size_compressed)
 			return false;
 
 		memory.resize(size_decompressed);
@@ -67,6 +75,12 @@ public:
 		}
 
 		return bytes_read;
+	}
+
+	/// Сжатый размер текущего блока.
+	size_t getSizeCompressed() const
+	{
+		return size_compressed;
 	}
 };
 

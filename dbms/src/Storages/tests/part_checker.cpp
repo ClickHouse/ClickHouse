@@ -14,7 +14,8 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		DB::MergeTreePartChecker::checkDataPart(argv[1], argc == 3 ? DB::parse<size_t>(argv[2]) : 8192ul, argv[2][0] == '1', DB::DataTypeFactory());
+		DB::MergeTreePartChecker::checkDataPart(argv[1], argc == 4 ? DB::parse<size_t>(argv[3]) : 8192ul, argv[2][0] == '1',
+												DB::DataTypeFactory(), true);
 	}
 	catch (...)
 	{
