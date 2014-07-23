@@ -43,6 +43,9 @@ public:
 	{
 		try
 		{
+			if (!Poco::File(path).exists())
+				throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+
 			for (const NameAndTypePair & column : columns)
 				addStream(column.name, *column.type, all_mark_ranges);
 		}

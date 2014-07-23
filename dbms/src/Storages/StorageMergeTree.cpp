@@ -171,7 +171,7 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 		{
 			for (const auto & part : parts)
 			{
-				if (part->size * data.index_granularity > 25 * 1024 * 1024)
+				if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
 				{
 					pool_context->incrementCounter("big merges");
 					break;

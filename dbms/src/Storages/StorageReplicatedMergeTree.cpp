@@ -798,7 +798,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
 			for (const auto & part : parts)
 			{
-				if (part->size * data.index_granularity > 25 * 1024 * 1024)
+				if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
 				{
 					pool_context.incrementCounter("big merges");
 					pool_context.incrementCounter("replicated big merges");
@@ -1041,7 +1041,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 								MergeTreeData::DataPartPtr part = data.getContainingPart(name);
 								if (!part || part->name != name)
 									continue;
-								if (part->size * data.index_granularity > 25 * 1024 * 1024)
+								if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
 								{
 									has_big_merge = true;
 									break;
@@ -1351,7 +1351,11 @@ void StorageReplicatedMergeTree::partCheckThread()
 					  * Для кусков, полученных в результате слияния такая проверка была бы некорректной,
 					  *  потому что слитого куска может еще ни у кого не быть.
 					  */
-					if (part_info.left == part_info.right)
+					if (part_info.left != part_info.right)
+					{
+						LOG_WARNING(log, "Not checking if part " << part_name << " is lost because it is a result of a merge.");
+					}
+					else
 					{
 						LOG_WARNING(log, "Checking if anyone has part covering " << part_name << ".");
 

@@ -72,11 +72,11 @@ struct MergeTreeSettings
 	/// Трудоемкость выбора кусков O(N * max_parts_to_merge_at_once).
 	size_t max_parts_to_merge_at_once = 10;
 
-	/// Куски настолько большого размера в основном потоке объединять нельзя вообще.
-	size_t max_rows_to_merge_parts = 100 * 1024 * 1024;
+	/// Куски настолько большого размера объединять нельзя вообще.
+	size_t max_bytes_to_merge_parts = 25ul * 1024 * 1024 * 1024;
 
-	/// Куски настолько большого размера во втором потоке объединять нельзя вообще.
-	size_t max_rows_to_merge_parts_second = 1024 * 1024;
+	/// Не больше половины потоков одновременно могут выполнять слияния, в которых участвует хоть один кусок хотя бы такого размера.
+	size_t max_bytes_to_merge_parts_small = 250 * 1024 * 1024;
 
 	/// Во столько раз ночью увеличиваем коэффициент.
 	size_t merge_parts_at_night_inc = 10;
@@ -222,8 +222,8 @@ public:
  		MergeTreeData & storage;
 
 		size_t size;	/// в количестве засечек.
-		std::atomic<size_t> size_in_bytes; /// размер в байтах, 0 - если не посчитано;
-		                                   /// atomic, чтобы можно было не заботиться о блокировках при ALTER.
+		volatile size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано;
+		                               /// используется из нескольких потоков без блокировок (изменяется при ALTER).
 		time_t modification_time;
 		mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// Когда кусок убрали из рабочего набора.
 
