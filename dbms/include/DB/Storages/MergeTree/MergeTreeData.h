@@ -234,6 +234,8 @@ public:
 		typedef std::vector<Field> Index;
 		Index index;
 
+		/// NOTE Засечки кэшируются в оперативке. См. MarkCache.h.
+
 		Checksums checksums;
 
 		/// Описание столбцов.
@@ -253,8 +255,6 @@ public:
 		  *  снимая блокировку, заблокировать его на запись.
 		  */
 		mutable Poco::FastMutex alter_mutex;
-
-		/// NOTE можно загружать засечки тоже в оперативку
 
 		~DataPart()
 		{
