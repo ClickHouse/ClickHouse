@@ -44,6 +44,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 {
 	if (!zookeeper)
 	{
+		if (!attach)
+			throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+
 		goReadOnly();
 		return;
 	}
@@ -1879,6 +1882,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params, const Strin
 
 void StorageReplicatedMergeTree::drop()
 {
+	if (!zookeeper)
+		throw Exception("Can't drop replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+
 	shutdown();
 
 	LOG_INFO(log, "Removing replica " << replica_path);
