@@ -1193,7 +1193,8 @@ void StorageReplicatedMergeTree::alterThread()
 				for (const MergeTreeData::DataPartPtr & part : parts)
 				{
 					/// Обновим кусок и запишем результат во временные файлы.
-					/// TODO: Можно пропускать проверку на слишком большие изменения, если в ZooKeeper есть, например, нода /flags/force_alter.
+					/// TODO: Можно пропускать проверку на слишком большие изменения, если в ZooKeeper есть, например,
+					///  нода /flags/force_alter.
 					auto transaction = data.alterDataPart(part, columns);
 
 					if (!transaction)
@@ -1384,7 +1385,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 							  *
 							  * Еще можно было бы добавить его в block_numbers, чтобы он не мешал слияниям,
 							  *  но если так сделать, ZooKeeper почему-то пропустит один номер для автоинкремента,
-							  *  и в номерах блоков все равно останется дырка. TODO: можно придумать workaround.
+							  *  и в номерах блоков все равно останется дырка.
+							  * TODO: можно это исправить, сделав две директории block_numbers: для автоинкрементных и ручных нод.
 							  */
 
 							{
@@ -1445,7 +1447,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 						removePartAndEnqueueFetch(part_name);
 
 						/// Удалим кусок локально.
-						data.deletePart(part);
+						data.deletePart(part, true);
 					}
 				}
 				/// Если куска нет в ZooKeeper, удалим его локально.
@@ -1461,7 +1463,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 					else
 					{
 						LOG_ERROR(log, "Unexpected part " << part_name << ". Removing.");
-						data.deletePart(part);
+						data.deletePart(part, false);
 					}
 				}
 			}

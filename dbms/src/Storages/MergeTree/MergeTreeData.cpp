@@ -267,7 +267,8 @@ Strings MergeTreeData::clearOldParts()
 	{
 		int ref_count = it->use_count();
 		if (ref_count == 1 && /// После этого ref_count не может увеличиться.
-			(*it)->remove_time + settings.old_parts_lifetime < now)
+			(*it)->remove_time < now &&
+			now - (*it)->remove_time > settings.old_parts_lifetime)
 		{
 			LOG_DEBUG(log, "Removing part " << (*it)->name);
 
@@ -709,13 +710,15 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 	if (!all_data_parts.erase(part))
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
+	part->remove_time = time(0);
 	data_parts.erase(part);
 	part->renameAddPrefix(prefix);
 }
 
-void MergeTreeData::deletePart(DataPartPtr part)
+void MergeTreeData::deletePart(DataPartPtr part, bool clear_without_timeout)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	part->remove_time = clear_without_timeout ? 0 : time(0);
 	data_parts.erase(part);
 }
 

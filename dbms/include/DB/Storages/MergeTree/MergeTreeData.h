@@ -225,7 +225,7 @@ public:
 		std::atomic<size_t> size_in_bytes; /// размер в байтах, 0 - если не посчитано;
 		                                   /// atomic, чтобы можно было не заботиться о блокировках при ALTER.
 		time_t modification_time;
-		mutable time_t remove_time; /// Когда кусок убрали из рабочего набора.
+		mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// Когда кусок убрали из рабочего набора.
 
 		/// Если true, деструктор удалит директорию с куском.
 		bool is_temp = false;
@@ -620,8 +620,9 @@ public:
 	void renameAndDetachPart(DataPartPtr part, const String & prefix);
 
 	/** Убрать кусок из рабочего набора. Его данные удалятся при вызове clearOldParts, когда их перестанут читать.
+	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
 	  */
-	void deletePart(DataPartPtr part);
+	void deletePart(DataPartPtr part, bool clear_without_timeout);
 
 	/** Удалить неактуальные куски. Возвращает имена удаленных кусков.
 	  */
