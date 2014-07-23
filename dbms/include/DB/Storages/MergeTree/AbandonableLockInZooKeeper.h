@@ -96,11 +96,6 @@ public:
 		return UNLOCKED;
 	}
 
-	static void createAbandonedIfNotExists(const String & path, zkutil::ZooKeeper & zookeeper)
-	{
-		zookeeper.createIfNotExists(path, "");
-	}
-
 private:
 	zkutil::ZooKeeper & zookeeper;
 	String path_prefix;
