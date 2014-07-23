@@ -710,16 +710,8 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
 	if (!all_data_parts.erase(part))
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
-	part->remove_time = time(0);
 	data_parts.erase(part);
 	part->renameAddPrefix(prefix);
-}
-
-void MergeTreeData::deletePart(DataPartPtr part, bool clear_without_timeout)
-{
-	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-	part->remove_time = clear_without_timeout ? 0 : time(0);
-	data_parts.erase(part);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()

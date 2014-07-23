@@ -21,9 +21,9 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 
 /// Выбираем отрезок из не более чем max_parts_to_merge_at_once кусков так, чтобы максимальный размер был меньше чем в max_size_ratio_to_merge_parts раз больше суммы остальных.
 /// Это обеспечивает в худшем случае время O(n log n) на все слияния, независимо от выбора сливаемых кусков, порядка слияния и добавления.
-/// При max_parts_to_merge_at_once >= log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts),
+/// При max_parts_to_merge_at_once >= log(max_bytes_to_merge_parts)/log(max_size_ratio_to_merge_parts),
 /// несложно доказать, что всегда будет что сливать, пока количество кусков больше
-/// log(max_rows_to_merge_parts/index_granularity)/log(max_size_ratio_to_merge_parts)*(количество кусков размером больше max_rows_to_merge_parts).
+/// log(max_bytes_to_merge_parts)/log(max_size_ratio_to_merge_parts)*(количество кусков размером больше max_bytes_to_merge_parts).
 /// Дальше эвристики.
 /// Будем выбирать максимальный по включению подходящий отрезок.
 /// Из всех таких выбираем отрезок с минимальным максимумом размера.
@@ -57,19 +57,19 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 	/// Нужно для определения максимальности по включению.
 	int max_count_from_left = 0;
 
-	size_t cur_max_rows_to_merge_parts = data.settings.max_rows_to_merge_parts;
+	size_t cur_max_bytes_to_merge_parts = data.settings.max_bytes_to_merge_parts;
 
 	/// Если ночь, можем мерджить сильно большие куски
 	if (now_hour >= 1 && now_hour <= 5)
-		cur_max_rows_to_merge_parts *= data.settings.merge_parts_at_night_inc;
+		cur_max_bytes_to_merge_parts *= data.settings.merge_parts_at_night_inc;
 
 	if (only_small)
-		cur_max_rows_to_merge_parts = data.settings.max_rows_to_merge_parts_second;
+		cur_max_bytes_to_merge_parts = data.settings.max_bytes_to_merge_parts_small;
 
 	/// Найдем суммарный размер еще не пройденных кусков (то есть всех).
-	size_t size_of_remaining_parts = 0;
+	size_t size_in_bytes_of_remaining_parts = 0;
 	for (const auto & part : data_parts)
-		size_of_remaining_parts += part->size;
+		size_in_bytes_of_remaining_parts += part->size_in_bytes;
 
 	/// Левый конец отрезка.
 	for (MergeTreeData::DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
@@ -77,10 +77,10 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		const MergeTreeData::DataPartPtr & first_part = *it;
 
 		max_count_from_left = std::max(0, max_count_from_left - 1);
-		size_of_remaining_parts -= first_part->size;
+		size_in_bytes_of_remaining_parts -= first_part->size_in_bytes;
 
 		/// Кусок достаточно мал или слияние "агрессивное".
-		if (first_part->size * data.index_granularity > cur_max_rows_to_merge_parts
+		if (first_part->size_in_bytes > cur_max_bytes_to_merge_parts
 			&& !aggressive)
 		{
 			continue;
@@ -99,10 +99,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		int cur_longest_len = 0;
 
 		/// Текущий отрезок, не обязательно валидный.
-		size_t cur_max = first_part->size;
-		size_t cur_min = first_part->size;
-		size_t cur_sum = first_part->size;
-		size_t cur_total_size = first_part->size_in_bytes;
+		size_t cur_max = first_part->size_in_bytes;
+		size_t cur_min = first_part->size_in_bytes;
+		size_t cur_sum = first_part->size_in_bytes;
 		int cur_len = 1;
 
 		DayNum_t month = first_part->left_month;
@@ -134,7 +133,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			}
 
 			/// Кусок достаточно мал или слияние "агрессивное".
-			if (last_part->size * data.index_granularity > cur_max_rows_to_merge_parts
+			if (last_part->size_in_bytes > cur_max_bytes_to_merge_parts
 				&& !aggressive)
 				break;
 
@@ -146,22 +145,21 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			}
 
 			oldest_modification_time = std::max(oldest_modification_time, last_part->modification_time);
-			cur_max = std::max(cur_max, last_part->size);
-			cur_min = std::min(cur_min, last_part->size);
-			cur_sum += last_part->size;
-			cur_total_size += last_part->size_in_bytes;
+			cur_max = std::max(cur_max, static_cast<size_t>(last_part->size_in_bytes));
+			cur_min = std::min(cur_min, static_cast<size_t>(last_part->size_in_bytes));
+			cur_sum += last_part->size_in_bytes;
 			++cur_len;
 			cur_id = last_part->right;
 
 			int min_len = 2;
 			int cur_age_in_sec = time(0) - oldest_modification_time;
 
-			/// Если куски примерно больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
-			if (cur_max * data.index_granularity * 150 > 1024*1024*1024 && cur_age_in_sec < 6*3600)
+			/// Если куски больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
+			if (cur_max > 1024 * 1024 * 1024 && cur_age_in_sec < 6 * 3600)
 				min_len = 3;
 
 			/// Размер кусков после текущих, делить на максимальный из текущих кусков. Чем меньше, тем новее текущие куски.
-			size_t oldness_coef = (size_of_remaining_parts + first_part->size - cur_sum + 0.0) / cur_max;
+			size_t oldness_coef = (size_in_bytes_of_remaining_parts + first_part->size_in_bytes - cur_sum + 0.0) / cur_max;
 
 			/// Эвристика: если после этой группы кусков еще накопилось мало строк, не будем соглашаться на плохо
 			///  сбалансированные слияния, расчитывая, что после будущих вставок данных появятся более привлекательные слияния.
@@ -171,12 +169,12 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			if (cur_len >= min_len
 				&& (static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio
 					/// За старый месяц объединяем что угодно, если разрешено и если этому куску хотя бы 5 дней
-					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600*24*5)
+					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600 * 24 * 5)
 					/// Если слияние "агрессивное", то сливаем что угодно
 					|| aggressive))
 			{
 				/// Достаточно места на диске, чтобы покрыть новый мердж с запасом.
-				if (available_disk_space > cur_total_size * DISK_USAGE_COEFFICIENT_TO_SELECT)
+				if (available_disk_space > cur_sum * DISK_USAGE_COEFFICIENT_TO_SELECT)
 				{
 					cur_longest_max = cur_max;
 					cur_longest_min = cur_min;
@@ -190,7 +188,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 						disk_space_warning_time = now;
 						LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name
 							<< " because not enough free space: " << available_disk_space << " free and unreserved, "
-							<< cur_total_size << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
+							<< cur_sum << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
 							<< "% on overhead); suppressing similar warnings for the next hour");
 					}
 					break;
