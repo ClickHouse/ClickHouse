@@ -1454,7 +1454,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 						removePartAndEnqueueFetch(part_name);
 
 						/// Удалим кусок локально.
-						data.deletePart(part, true);
+						data.renameAndDetachPart(part, "broken_");
 					}
 				}
 				/// Если куска нет в ZooKeeper, удалим его локально.
@@ -1470,7 +1470,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 					else
 					{
 						LOG_ERROR(log, "Unexpected part " << part_name << ". Removing.");
-						data.deletePart(part, false);
+						data.renameAndDetachPart(part, "unexpected_");
 					}
 				}
 			}
