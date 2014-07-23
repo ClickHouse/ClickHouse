@@ -614,15 +614,8 @@ public:
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
 	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
-	  * Лучше использовать только когда никто не может читать или писать этот кусок
-	  *  (например, при инициализации таблицы).
 	  */
 	void renameAndDetachPart(DataPartPtr part, const String & prefix);
-
-	/** Убрать кусок из рабочего набора. Его данные удалятся при вызове clearOldParts, когда их перестанут читать.
-	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
-	  */
-	void deletePart(DataPartPtr part, bool clear_without_timeout);
 
 	/** Удалить неактуальные куски. Возвращает имена удаленных кусков.
 	  */
