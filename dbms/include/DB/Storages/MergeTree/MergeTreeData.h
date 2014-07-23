@@ -118,6 +118,9 @@ struct MergeTreeSettings
 class MergeTreeData : public ITableDeclaration
 {
 public:
+	/// Функция, которую можно вызвать, если есть подозрение, что данные куска испорчены.
+	typedef std::function<void (const String &)> BrokenPartCallback;
+
 	/// Описание куска с данными.
 	struct DataPart : public ActiveDataPartSet::Part
 	{
@@ -531,6 +534,8 @@ public:
 		Aggregating,
 	};
 
+	static void doNothing(const String & name) {}
+
 	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов.
@@ -550,8 +555,8 @@ public:
 					const String & sign_column_,
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
-					bool require_part_metadata_
- 				);
+					bool require_part_metadata_,
+					BrokenPartCallback broken_part_callback_ = &MergeTreeData::doNothing);
 
 	std::string getModePrefix() const;
 
@@ -651,6 +656,12 @@ public:
 	/// Нужно вызывать под залоченным lockStructureForAlter().
 	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
 
+	/// Нужно вызвать, если есть подозрение, что данные куска испорчены.
+	void reportBrokenPart(const String & name)
+	{
+		broken_part_callback(name);
+	}
+
 	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
 	SortDescription getSortDescription() const { return sort_descr; }
 
@@ -678,6 +689,8 @@ private:
 	String full_path;
 
 	NamesAndTypesListPtr columns;
+
+	BrokenPartCallback broken_part_callback;
 
 	String log_name;
 	Logger * log;

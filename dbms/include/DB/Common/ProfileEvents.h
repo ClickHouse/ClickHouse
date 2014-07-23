@@ -33,6 +33,8 @@
 	M(ObsoleteReplicatedParts,			"Replicated parts rendered obsolete by fetches") \
 	M(ReplicatedPartMerges,				"Replicated part merges") \
 	M(ReplicatedPartFetchesOfMerged,	"Replicated part merges replaced with fetches") \
+	M(ReplicatedPartChecks,				"Replicated part checks") \
+	M(ReplicatedPartChecksFailed,		"Replicated part checks failed") \
 	\
 	M(END, "")
 

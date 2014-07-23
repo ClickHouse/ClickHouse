@@ -37,12 +37,20 @@ class MergeTreeReader
 	typedef std::map<std::string, ColumnPtr> OffsetColumns;
 
 public:
-	MergeTreeReader(const String & path_,	/// Путь к куску
+	MergeTreeReader(const String & path_, const String & part_name_,	/// Путь к куску
 		const NamesAndTypesList & columns_, bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
-	: path(path_), columns(columns_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
+	: path(path_), part_name(part_name_), columns(columns_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_)
 	{
-		for (const NameAndTypePair & column : columns)
-			addStream(column.name, *column.type, all_mark_ranges);
+		try
+		{
+			for (const NameAndTypePair & column : columns)
+				addStream(column.name, *column.type, all_mark_ranges);
+		}
+		catch (...)
+		{
+			storage.reportBrokenPart(part_name);
+			throw;
+		}
 	}
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
@@ -109,9 +117,18 @@ public:
 		}
 		catch (const Exception & e)
 		{
+			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
+				storage.reportBrokenPart(part_name);
+
 			/// Более хорошая диагностика.
 			throw Exception(e.message() + " (while reading from part " + path + " from mark " + toString(from_mark) + " to "
 				+ toString(to_mark) + ")", e.code());
+		}
+		catch (...)
+		{
+			storage.reportBrokenPart(part_name);
+
+			throw;
 		}
 	}
 
@@ -291,6 +308,7 @@ private:
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
 	String path;
+	String part_name;
 	FileStreams streams;
 	NamesAndTypesList columns;
 	bool use_uncompressed_cache;

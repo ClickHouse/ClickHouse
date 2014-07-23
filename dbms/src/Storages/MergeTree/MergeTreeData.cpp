@@ -27,15 +27,17 @@ MergeTreeData::MergeTreeData(
 	const String & sign_column_,
 	const MergeTreeSettings & settings_,
 	const String & log_name_,
-	bool require_part_metadata_)
+	bool require_part_metadata_,
+	BrokenPartCallback broken_part_callback_)
 	: context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
 	require_part_metadata(require_part_metadata_),
-	full_path(full_path_), columns(columns_), log_name(log_name_),
-	log(&Logger::get(log_name + " (Data)"))
+	full_path(full_path_), columns(columns_),
+	broken_part_callback(broken_part_callback_),
+	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();

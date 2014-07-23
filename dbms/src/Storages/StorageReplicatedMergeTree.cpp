@@ -36,7 +36,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
 	replica_name(replica_name_),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-			index_granularity_, mode_, sign_column_, settings_, database_name_ + "." + table_name, true),
+			index_granularity_, mode_, sign_column_, settings_, database_name_ + "." + table_name, true,
+			std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
 	reader(data), writer(data), merger(data), fetcher(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)")),
 	shutdown_event(false), permanent_shutdown_event(false)
@@ -894,6 +895,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 						return false;
 					}
 				}
+
+				/// Если ни у кого нет куска, и в очереди нет слияний с его участием, проверим, есть ли у кого-то покрывающий его.
+				if (replica.empty())
+					enqueuePartForCheck(entry.new_part_name);
 			}
 			catch (...)
 			{
@@ -1315,6 +1320,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 			}
 
 			LOG_WARNING(log, "Checking part " << part_name);
+			ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
 			auto part = data.getContainingPart(part_name);
 			String part_path = replica_path + "/parts/" + part_name;
@@ -1327,6 +1333,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 				{
 					LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. "
 						"Removing from ZooKeeper and queueing a fetch.");
+					ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
 					removePartAndEnqueueFetch(part_name);
 				}
@@ -1362,6 +1369,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 						  */
 						LOG_ERROR(log, "No replica has part covering " << part_name << ". This part is lost forever. "
 							<< "There might or might not be a data loss.");
+						ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
 						/// Если ни у кого нет такого куска, удалим его из нашей очереди и добавим его в block_numbers.
 
@@ -1432,7 +1440,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 					{
 						tryLogCurrentException(__PRETTY_FUNCTION__);
 
-						LOG_INFO(log, "Part " << part_name << " looks broken. Removing it and queueing a fetch.");
+						LOG_ERROR(log, "Part " << part_name << " looks broken. Removing it and queueing a fetch.");
+						ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
 						removePartAndEnqueueFetch(part_name);
 
@@ -1443,6 +1452,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 				/// Если куска нет в ZooKeeper, удалим его локально.
 				else
 				{
+					ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
+
 					/// Если этот кусок еще и получен в результате слияния, это уже чересчур странно.
 					if (part->left != part->right)
 					{

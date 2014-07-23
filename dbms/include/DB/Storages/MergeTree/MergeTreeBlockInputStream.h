@@ -109,9 +109,10 @@ protected:
 		if (!reader)
 		{
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader.reset(new MergeTreeReader(path, columns, uncompressed_cache, storage, all_mark_ranges));
+			reader.reset(new MergeTreeReader(path, owned_data_part->name, columns, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(path, pre_columns, uncompressed_cache, storage, all_mark_ranges));
+				pre_reader.reset(new MergeTreeReader(path, owned_data_part->name, pre_columns, uncompressed_cache, storage,
+													 all_mark_ranges));
 		}
 
 		if (prewhere_actions)
@@ -266,9 +267,9 @@ protected:
 		if (remaining_mark_ranges.empty())
 		{
 			/** Закрываем файлы (ещё до уничтожения объекта).
-				* Чтобы при создании многих источников, но одновременном чтении только из нескольких,
-				*  буферы не висели в памяти.
-				*/
+			  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
+			  *  буферы не висели в памяти.
+			  */
 			reader.reset();
 			pre_reader.reset();
 			part_columns_lock.reset();
