@@ -238,7 +238,7 @@ public:
 class ExtractAllImpl
 {
 private:
-	const OptimizedRegularExpression * re = nullptr;
+	Regexps::Pointer re;
 	OptimizedRegularExpression::MatchVec matches;
 	size_t capture;
 
@@ -263,7 +263,7 @@ public:
 			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
-		re = &Regexps::get(col->getData());
+		re = Regexps::get(col->getData());
 		capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
 		matches.resize(capture + 1);
