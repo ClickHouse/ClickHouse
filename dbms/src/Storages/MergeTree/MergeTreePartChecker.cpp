@@ -107,16 +107,13 @@ struct Stream
 
 		if (uncompressed_hashing_buf.position() == uncompressed_hashing_buf.buffer().end())
 		{
-			if (!strict)
-			{
-				/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока,
-				///  и на начало следующего.
-				data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
-				data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
+			/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока,
+			///  и на начало следующего.
+			data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
+			data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-				if (mrk_mark == data_mark)
-					return;
-			}
+			if (mrk_mark == data_mark)
+				return;
 
 			uncompressed_hashing_buf.next();
 		}

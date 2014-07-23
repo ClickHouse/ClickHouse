@@ -662,7 +662,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 		Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
 		index = entries.empty() ? 0 : parse<UInt64>(std::min_element(entries.begin(), entries.end())->substr(strlen("log-")));
 
-		zookeeper->set(replica_path + "/log_pointer", toString(index), zkutil::CreateMode::Persistent);
+		zookeeper->set(replica_path + "/log_pointer", toString(index));
 	}
 	else
 	{

@@ -48,10 +48,10 @@ void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & pa
 
 			if (file_name != "checksums.txt" &&
 				file_name != "columns.txt")
-				checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
+				data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
 		}
 
-		part->checksums.checkEqual(checksums, false);
+		part->checksums.checkEqual(data_checksums, false);
 	}
 	catch (...)
 	{
