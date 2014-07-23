@@ -11,11 +11,6 @@ class CompressedReadBuffer : public CompressedReadBufferBase, public BufferWithO
 private:
 	size_t size_compressed = 0;
 
-	size_t currentBlockCompressedSize() const
-	{
-		return size_compressed;
-	}
-
 	bool nextImpl()
 	{
 		size_t size_decompressed;
