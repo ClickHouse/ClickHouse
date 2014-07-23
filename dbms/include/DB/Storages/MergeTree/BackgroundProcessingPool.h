@@ -4,6 +4,7 @@
 #include <set>
 #include <map>
 #include <list>
+#include <condition_variable>
 #include <Poco/Mutex.h>
 #include <Poco/RWLock.h>
 #include <Poco/Event.h>
@@ -32,7 +33,7 @@ public:
 	public:
 		void incrementCounter(const String & name, int value = 1)
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(pool.mutex);
+			std::unique_lock<std::mutex> lock(pool.mutex);
 			local_counters[name] += value;
 			pool.counters[name] += value;
 		}
@@ -56,9 +57,12 @@ public:
 		/// Переставить таск в начало очереди и разбудить какой-нибудь поток.
 		void wake()
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(pool.mutex);
+			std::unique_lock<std::mutex> lock(pool.mutex);
 			pool.tasks.splice(pool.tasks.begin(), pool.tasks, iterator);
-			pool.wake_event.set();
+
+			/// Не очень надежно: если все потоки сейчас выполняют работу, этот вызов никого не разбудит,
+			///  и все будут спать в конце итерации.
+			pool.wake_event.notify_one();
 		}
 
 	private:
@@ -83,8 +87,8 @@ public:
 		if (size_ <= 0)
 			throw Exception("Invalid number of threads: " + toString(size_), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		Poco::ScopedLock<Poco::FastMutex> tlock(threads_mutex);
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::unique_lock<std::mutex> tlock(threads_mutex);
+		std::unique_lock<std::mutex> lock(mutex);
 
 		if (size_ == size)
 			return;
@@ -100,30 +104,30 @@ public:
 
 	int getNumberOfThreads()
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::unique_lock<std::mutex> lock(mutex);
 		return size;
 	}
 
 	void setSleepTime(double seconds)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::unique_lock<std::mutex> lock(mutex);
 		sleep_seconds = seconds;
 	}
 
 	int getCounter(const String & name)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::unique_lock<std::mutex> lock(mutex);
 		return counters[name];
 	}
 
 	TaskHandle addTask(const Task & task)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(threads_mutex);
+		std::unique_lock<std::mutex> lock(threads_mutex);
 
 		TaskHandle res(new TaskInfo(*this, task));
 
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+			std::unique_lock<std::mutex> lock(mutex);
 			tasks.push_back(res);
 			res->iterator = --tasks.end();
 		}
@@ -142,7 +146,7 @@ public:
 
 	void removeTask(const TaskHandle & task)
 	{
-		Poco::ScopedLock<Poco::FastMutex> tlock(threads_mutex);
+		std::unique_lock<std::mutex> tlock(threads_mutex);
 
 		/// Дождемся завершения всех выполнений этой задачи.
 		{
@@ -151,7 +155,7 @@ public:
 		}
 
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+			std::unique_lock<std::mutex> lock(mutex);
 			auto it = std::find(tasks.begin(), tasks.end(), task);
 			if (it == tasks.end())
 				throw Exception("Task not found", ErrorCodes::LOGICAL_ERROR);
@@ -161,6 +165,7 @@ public:
 		if (tasks.empty())
 		{
 			shutdown = true;
+			wake_event.notify_all();
 			for (std::thread & thread : threads)
 				thread.join();
 			threads.clear();
@@ -172,12 +177,12 @@ public:
 	{
 		try
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(threads_mutex);
+			std::unique_lock<std::mutex> lock(threads_mutex);
 			if (!threads.empty())
 			{
 				LOG_ERROR(&Logger::get("~BackgroundProcessingPool"), "Destroying non-empty BackgroundProcessingPool");
 				shutdown = true;
-				wake_event.set(); /// NOTE: это разбудит только один поток. Лучше было бы разбудить все.
+				wake_event.notify_all();
 				for (std::thread & thread : threads)
 					thread.join();
 			}
@@ -192,15 +197,16 @@ private:
 	typedef std::list<TaskHandle> Tasks;
 	typedef std::vector<std::thread> Threads;
 
-	Poco::FastMutex threads_mutex;
-	Poco::FastMutex mutex;
+	std::mutex threads_mutex;
+	std::mutex mutex;
 	int size;
 	Tasks tasks; /// Таски в порядке, в котором мы планируем их выполнять.
 	Threads threads;
-	Poco::Event wake_event;
 	Counters counters;
 	double sleep_seconds;
-	bool shutdown;
+
+	volatile bool shutdown;
+	std::condition_variable wake_event;
 
 	void threadFunction()
 	{
@@ -215,7 +221,7 @@ private:
 				TaskHandle task;
 
 				{
-					Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+					std::unique_lock<std::mutex> lock(mutex);
 
 					if (!tasks.empty())
 					{
@@ -243,7 +249,7 @@ private:
 				if (task->function(context))
 				{
 					/// Если у таска получилось выполнить какую-то работу, запустим его снова без паузы.
-					Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+					std::unique_lock<std::mutex> lock(mutex);
 
 					auto it = std::find(tasks.begin(), tasks.end(), task);
 					if (it != tasks.end())
@@ -262,7 +268,7 @@ private:
 			/// Вычтем все счетчики обратно.
 			if (!counters_diff.empty())
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+				std::unique_lock<std::mutex> lock(mutex);
 				for (const auto & it : counters_diff)
 				{
 					counters[it.first] -= it.second;
@@ -274,7 +280,8 @@ private:
 
 			if (need_sleep)
 			{
-				wake_event.tryWait(sleep_seconds * 1000. / tasks_count);
+				std::unique_lock<std::mutex> lock(mutex);
+				wake_event.wait_for(lock, std::chrono::duration<double>(sleep_seconds / tasks_count));
 			}
 		}
 	}

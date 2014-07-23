@@ -140,4 +140,12 @@ void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, con
 	part.right_month = date_lut.toFirstDayNumOfMonth(part.right_date);
 }
 
+bool ActiveDataPartSet::contains(const String & outer_part_name, const String & inner_part_name)
+{
+	Part outer, inner;
+	parsePartName(outer_part_name, outer);
+	parsePartName(inner_part_name, inner);
+	return outer.contains(inner);
+}
+
 }

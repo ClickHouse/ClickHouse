@@ -70,6 +70,9 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
+	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
+	void enqueuePartForCheck(const String & name);
+
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 
@@ -158,6 +161,7 @@ private:
 	typedef std::list<LogEntry> LogEntries;
 
 	typedef std::set<String> StringSet;
+	typedef std::list<String> StringList;
 
 	Context & context;
 	zkutil::ZooKeeperPtr zookeeper;
@@ -178,6 +182,15 @@ private:
 	  * Использовать под залоченным queue_mutex.
 	  */
 	StringSet future_parts;
+
+	/** Куски, для которых нужно проверить одно из двух:
+	  *  - Если кусок у нас есть, сверить, его данные с его контрольными суммами, а их с ZooKeeper.
+	  *  - Если куска у нас нет, проверить, есть ли он (или покрывающий его кусок) хоть у кого-то.
+	  */
+	StringSet parts_to_check_set;
+	StringList parts_to_check_queue;
+	Poco::FastMutex parts_to_check_mutex;
+	Poco::Event parts_to_check_event;
 
 	String database_name;
 	String table_name;
@@ -218,7 +231,7 @@ private:
 	std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
 	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
 
-	/// Потоки.
+	/// Потоки:
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
 	std::thread queue_updating_thread;
@@ -241,6 +254,8 @@ private:
 	std::thread alter_thread;
 	zkutil::EventPtr alter_thread_event = zkutil::EventPtr(new Poco::Event);
 
+	/// Поток, проверяющий данные кусков.
+	std::thread part_check_thread;
 
 	/// Событие, пробуждающее метод alter от ожидания завершения запроса ALTER.
 	zkutil::EventPtr alter_query_event = zkutil::EventPtr(new Poco::Event);
@@ -314,6 +329,9 @@ private:
 	  */
 	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops);
 
+	/// Убирает кусок из ZooKeeper и добавляет в очередь задание скачать его. Предполагается это делать с битыми кусками.
+	void removePartAndEnqueueFetch(const String & part_name);
+
 	void clearOldParts();
 
 	/// Удалить из ZooKeeper старые записи в логе.
@@ -343,7 +361,7 @@ private:
 	  */
 	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
 
-	/** В бесконечном цикле обновляет очередь.
+	/** Обновляет очередь.
 	  */
 	void queueUpdatingThread();
 
@@ -355,19 +373,23 @@ private:
 
 	void becomeLeader();
 
-	/** В бесконечном цикле выбирает куски для слияния и записывает в лог.
+	/** Выбирает куски для слияния и записывает в лог.
 	  */
 	void mergeSelectingThread();
 
-	/** В бесконечном цикле вызывает clearOldBlocks.
+	/** Удаляет устаревшие данные.
 	  */
 	void cleanupThread();
 
-	/** В бесконечном цикле проверяет, не нужно ли сделать локальный ALTER, и делает его.
+	/** Делает локальный ALTER, когда список столбцов в ZooKeeper меняется.
 	  */
 	void alterThread();
 
-	/** В бесконечном цикле проверяет, не протухла ли сессия в ZooKeeper.
+	/** Проверяет целостность кусков.
+	  */
+	void partCheckThread();
+
+	/** Когда сессия в ZooKeeper протухает, переходит на новую.
 	  */
 	void restartingThread();
 
