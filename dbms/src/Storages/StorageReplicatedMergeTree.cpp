@@ -384,7 +384,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	String sanity_report =
 		"There are " + toString(unexpected_parts.size()) + " unexpected parts, "
 					 + toString(parts_to_add.size()) + " unexpectedly merged parts, "
-					 + toString(expected_parts.size()) + " unexpectedly obsolete parts, "
+					 + toString(expected_parts.size()) + " missing obsolete parts, "
 					 + toString(parts_to_fetch.size()) + " missing parts";
 	bool insane =
 		parts_to_add.size() > 2 ||

@@ -132,7 +132,7 @@ private:
 			}
 
 			if (!success)
-				std::this_thread::sleep_for(std::chrono::seconds(10));
+				event->tryWait(10 * 1000);
 		}
 	}
 };
