@@ -5,6 +5,7 @@
 
 #include <Yandex/ApplicationServerExt.h>
 #include <statdaemons/ConfigProcessor.h>
+#include <statdaemons/stdext.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
@@ -374,9 +375,7 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->setDefaultReplicaName(config().getString("replica_name"));
 
 	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	auto users_config_reloader = std::unique_ptr<UsersConfigReloader>{
-		new UsersConfigReloader(users_config_path, global_context.get())
-	};
+	auto users_config_reloader = stdext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -413,7 +412,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	{
 		const auto profile_events_transmitter = config().getBool("use_graphite", true)
-			? std::unique_ptr<ProfileEventsTransmitter>{new ProfileEventsTransmitter{}}
+			? stdext::make_unique<ProfileEventsTransmitter>()
 			: nullptr;
 
 		bool use_olap_server = config().getBool("use_olap_http_server", false);

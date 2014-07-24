@@ -3,6 +3,7 @@
 #include <Poco/Mutex.h>
 
 #include <statdaemons/OptimizedRegularExpression.h>
+#include <statdaemons/stdext.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -248,14 +249,15 @@ namespace Regexps
 	struct Holder;
 	struct Deleter;
 
+	using Regexp = OptimizedRegularExpression;
 	using KnownRegexps = std::map<String, std::unique_ptr<Holder>>;
-	using Pointer = std::unique_ptr<OptimizedRegularExpression, Deleter>;
+	using Pointer = std::unique_ptr<Regexp, Deleter>;
 
 	///	Container for regular expressions with embedded mutex for safe addition and removal
 	struct Holder
 	{
 		std::mutex mutex;
-		std::stack<std::unique_ptr<OptimizedRegularExpression>> stack;
+		std::stack<std::unique_ptr<Regexp>> stack;
 
 		/**	Extracts and returns a pointer from the collection if it's not empty,
 		*	creates a new one by calling provided f() otherwise.
@@ -272,7 +274,7 @@ namespace Regexps
 
 		Deleter(Holder * holder = nullptr) : holder{holder} {}
 
-		void operator()(OptimizedRegularExpression * owning_ptr) const
+		void operator()(Regexp * owning_ptr) const
 		{
 			std::lock_guard<std::mutex> lock{holder->mutex};
 			holder->stack.emplace(owning_ptr);
@@ -295,9 +297,9 @@ namespace Regexps
 	}
 
 	template <bool like>
-	inline OptimizedRegularExpression createRegexp(const std::string & pattern) { return pattern; }
+	inline Regexp createRegexp(const std::string & pattern) { return pattern; }
 	template <>
-	inline OptimizedRegularExpression createRegexp<true>(const std::string & pattern) { return likePatternToRegexp(pattern); }
+	inline Regexp createRegexp<true>(const std::string & pattern) { return likePatternToRegexp(pattern); }
 
 	template <bool like = false>
 	inline Pointer get(const std::string & pattern)
@@ -309,10 +311,10 @@ namespace Regexps
 
 		auto it = known_regexps.find(pattern);
 		if (known_regexps.end() == it)
-			it = known_regexps.emplace(pattern, std::unique_ptr<Holder>{new Holder}).first;
+			it = known_regexps.emplace(pattern, stdext::make_unique<Holder>()).first;
 
 		return it->second->get([&pattern] {
-			return new OptimizedRegularExpression{createRegexp<like>(pattern)};
+			return new Regexp{createRegexp<like>(pattern)};
 		});
 	}
 }
