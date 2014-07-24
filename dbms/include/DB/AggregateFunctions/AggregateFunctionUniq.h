@@ -109,7 +109,7 @@ struct AggregateFunctionUniqExactData<String>
 
 namespace detail
 {
-	/** Структура для делегации работы по добавлению одного элемента в аггрегатные функции uniq.
+	/** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
 	  * Используется для частичной специализации для добавления строк.
 	  */
 	template<typename T, typename Data>
@@ -164,8 +164,6 @@ template <typename T, typename Data>
 class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
 {
 public:
-	AggregateFunctionUniq() {}
-
 	String getName() const { return Data::getName(); }
 
 	DataTypePtr getReturnType() const

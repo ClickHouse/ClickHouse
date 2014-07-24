@@ -6,6 +6,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
 #include <DB/AggregateFunctions/AggregateFunctionsArgMinMax.h>
 #include <DB/AggregateFunctions/AggregateFunctionUniq.h>
+#include <DB/AggregateFunctions/AggregateFunctionUniqUpTo.h>
 #include <DB/AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionGroupUniqArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
@@ -207,6 +208,26 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "uniqUpTo")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const IDataType & argument_type = *argument_types[0];
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqUpTo>(*argument_types[0]);
+
+		if (res)
+			return res;
+		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
+			return new AggregateFunctionUniqUpTo<DataTypeDate::FieldType>;
+		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
+			return new AggregateFunctionUniqUpTo<DataTypeDateTime::FieldType>;
+		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
+			return new AggregateFunctionUniqUpTo<String>;
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 	else if (name == "median" || name == "quantile")
 	{
 		if (argument_types.size() != 1)
@@ -350,6 +371,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 		"uniq",
 		"uniqHLL12",
 		"uniqExact",
+		"uniqUpTo",
 		"groupArray",
 		"groupUniqArray",
 		"median",
