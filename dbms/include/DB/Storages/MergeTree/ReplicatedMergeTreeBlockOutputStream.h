@@ -129,6 +129,7 @@ public:
 					e.code == ZCONNECTIONLOSS)
 				{
 					transaction.commit();
+					storage.enqueuePartForCheck(part->name);
 				}
 
 				throw;
