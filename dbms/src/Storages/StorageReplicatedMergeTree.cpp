@@ -697,6 +697,8 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 		index = parse<UInt64>(index_str);
 	}
 
+	UInt64 first_index = index;
+
 	size_t count = 0;
 	String entry_str;
 	while (zookeeper->tryGet(zookeeper_path + "/log/log-" + padIndex(index), entry_str))
@@ -732,7 +734,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 	if (queue_task_handle)
 		queue_task_handle->wake();
 
-	LOG_DEBUG(log, "Pulled " << count << " entries to queue");
+	LOG_DEBUG(log, "Pulled " << count << " entries to queue: log-" << padIndex(first_index) << " - log-" << padIndex(index - 1));
 }
 
 bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
