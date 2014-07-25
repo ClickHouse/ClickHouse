@@ -539,7 +539,9 @@ void StorageReplicatedMergeTree::clearOldParts()
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/columns", -1));
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
-			zookeeper->multi(ops);
+			auto code = zookeeper->tryMulti(ops);
+			if (code != ZOK)
+				LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
 
 			part->remove();
 			parts.pop_back();
