@@ -86,36 +86,52 @@ public:
 				zkutil::CreateMode::PersistentSequential));
 			block_number_lock.getUnlockOps(ops);
 
-			auto code = storage.zookeeper->tryMulti(ops);
-			if (code == ZOK)
+			try
 			{
-				transaction.commit();
-				storage.merge_selecting_event.set();
-			}
-			else if (code == ZNODEEXISTS)
-			{
-				/// Если блок с таким ID уже есть в таблице, откатим его вставку.
-				String expected_checksums_str;
-				if (!block_id.empty() && storage.zookeeper->tryGet(
-					storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
+				auto code = storage.zookeeper->tryMulti(ops);
+				if (code == ZOK)
 				{
-					LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+					transaction.commit();
+					storage.merge_selecting_event.set();
+				}
+				else if (code == ZNODEEXISTS)
+				{
+					/// Если блок с таким ID уже есть в таблице, откатим его вставку.
+					String expected_checksums_str;
+					if (!block_id.empty() && storage.zookeeper->tryGet(
+						storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
+					{
+						LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
 
-					auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
+						auto expected_checksums = MergeTreeData::DataPart::Checksums::parse(expected_checksums_str);
 
-					/// Если данные отличались от тех, что были вставлены ранее с тем же ID, бросим исключение.
-					expected_checksums.checkEqual(part->checksums, true);
+						/// Если данные отличались от тех, что были вставлены ранее с тем же ID, бросим исключение.
+						expected_checksums.checkEqual(part->checksums, true);
+					}
+					else
+					{
+						throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID " + block_id + ": "
+							+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+					}
 				}
 				else
 				{
-					throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID " + block_id + ": "
+					throw Exception("Unexpected error while adding block " + toString(part_number) + " with ID " + block_id + ": "
 						+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
 				}
 			}
-			else
+			catch (zkutil::KeeperException & e)
 			{
-				throw Exception("Unexpected error while adding block " + toString(part_number) + " with ID " + block_id + ": "
-					+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+				/** Если потерялось соединение, и мы не знаем, применились ли изменения, нельзя удалять локальный кусок:
+				  *  если изменения применились, в /blocks/ появился вставленный блок, и его нельзя будет вставить снова.
+				  */
+				if (e.code == ZOPERATIONTIMEOUT ||
+					e.code == ZCONNECTIONLOSS)
+				{
+					transaction.commit();
+				}
+
+				throw;
 			}
 		}
 	}

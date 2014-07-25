@@ -522,21 +522,35 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 
 void StorageReplicatedMergeTree::clearOldParts()
 {
-	Strings parts = data.clearOldParts();
+	MergeTreeData::DataPartsVector parts = data.grabOldParts();
+	size_t count = parts.size();
 
-	for (const String & name : parts)
+	if (!count)
+		return;
+
+	try
 	{
-		zkutil::Ops ops;
-		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/columns", -1));
-		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name + "/checksums", -1));
-		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + name, -1));
-		int32_t code = zookeeper->tryMulti(ops);
-		if (code != ZOK)
-			LOG_DEBUG(log, "Couldn't remove part " << name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
+		while (!parts.empty())
+		{
+			MergeTreeData::DataPartPtr part = parts.back();
+
+			zkutil::Ops ops;
+			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/columns", -1));
+			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
+			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
+			zookeeper->multi(ops);
+
+			part->remove();
+			parts.pop_back();
+		}
+	}
+	catch (...)
+	{
+		data.addOldParts(parts);
+		throw;
 	}
 
-	if (!parts.empty())
-		LOG_DEBUG(log, "Removed " << parts.size() << " old parts");
+	LOG_DEBUG(log, "Removed " << count << " old parts");
 }
 
 void StorageReplicatedMergeTree::clearOldLogs()
@@ -1462,16 +1476,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 				{
 					ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
-					/// Если этот кусок еще и получен в результате слияния, это уже чересчур странно.
-					if (part->left != part->right)
-					{
-						LOG_ERROR(log, "Unexpected part " << part_name << " is a result of a merge. You have to resolve this manually.");
-					}
-					else
-					{
-						LOG_ERROR(log, "Unexpected part " << part_name << ". Removing.");
-						data.renameAndDetachPart(part, "unexpected_");
-					}
+					LOG_ERROR(log, "Unexpected part " << part_name << ". Removing.");
+					data.renameAndDetachPart(part, "unexpected_");
 				}
 			}
 			else
