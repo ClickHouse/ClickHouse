@@ -16,6 +16,15 @@ const auto ERROR_SLEEP_MS = 1000;
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 const auto CLEANUP_SLEEP_MS = 30 * 1000;
 
+/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
+static String padIndex(UInt64 index)
+{
+	String index_str = toString(index);
+	while (index_str.size() < 10)
+		index_str = '0' + index_str;
+	return index_str;
+}
+
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
@@ -580,19 +589,21 @@ void StorageReplicatedMergeTree::clearOldLogs()
 
 	Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
 	std::sort(entries.begin(), entries.end());
+
 	/// Не будем трогать последние replicated_logs_to_keep записей.
 	entries.erase(entries.end() - std::min(entries.size(), data.settings.replicated_logs_to_keep), entries.end());
-	size_t removed = 0;
+	/// Не будем трогать записи, не меньшие min_pointer.
+	entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
+
+	if (entries.empty())
+		return;
 
 	zkutil::Ops ops;
-	for (const String & entry : entries)
+	for (size_t i = 0; i < entries.size(); ++i)
 	{
-		UInt64 index = parse<UInt64>(entry.substr(strlen("log-")));
-		if (index >= min_pointer)
-			break;
-		ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/log/" + entry, -1));
-		++removed;
-		if (ops.size() > 400)
+		ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/log/" + entries[i], -1));
+
+		if (ops.size() > 400 || i + 1 == entries.size())
 		{
 			/// Одновременно с очисткой лога проверим, не добавилась ли реплика с тех пор, как мы получили список реплик.
 			ops.push_back(new zkutil::Op::Check(zookeeper_path + "/replicas", stat.version));
@@ -601,16 +612,7 @@ void StorageReplicatedMergeTree::clearOldLogs()
 		}
 	}
 
-	if (!ops.empty())
-	{
-		ops.push_back(new zkutil::Op::Check(zookeeper_path + "/replicas", stat.version));
-		zookeeper->multi(ops);
-	}
-
-	if (removed == 0)
-		return;
-
-	LOG_DEBUG(log, "Removed " << removed << " old log entries");
+	LOG_DEBUG(log, "Removed " << entries.size() << " old log entries: " << entries.front() << " - " << entries.back());
 }
 
 void StorageReplicatedMergeTree::clearOldBlocks()
@@ -673,15 +675,6 @@ void StorageReplicatedMergeTree::loadQueue()
 		entry.addResultToVirtualParts(*this);
 		queue.push_back(entry);
 	}
-}
-
-/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
-static String padIndex(UInt64 index)
-{
-	String index_str = toString(index);
-	while (index_str.size() < 10)
-		index_str = '0' + index_str;
-	return index_str;
 }
 
 void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
@@ -1547,10 +1540,7 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 		String path = zookeeper_path + "/block_numbers/" + month_name + "/block-" + padIndex(number);
 
 		if (AbandonableLockInZooKeeper::check(path, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
-		{
-			LOG_DEBUG(log, "Can't merge parts " << left->name << " and " << right->name << " because block " << path << " exists");
 			return false;
-		}
 	}
 
 	return true;
